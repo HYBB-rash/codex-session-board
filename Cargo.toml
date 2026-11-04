@@ -1,6 +1,6 @@
 [package]
 name = "notion-program"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 description = "Notion task dispatcher and knowledge archiver"
 default-run = "notion-program"

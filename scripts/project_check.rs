@@ -6,13 +6,14 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::ops::Range;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 const RULES_FILE: &str = "project-rules.json";
 
 #[derive(Parser)]
-#[command(about = "检查工作区和逐次提交版本；默认只读，不暂存、不提交、不推送")]
+#[command(about = "检查工作区、逐次提交版本和测试钩子；默认只读，不暂存、不提交、不推送")]
 struct Cli {
     #[arg(long, help = "准备下一次提交的版本，同步 Cargo.toml 和 Cargo.lock")]
     prepare_commit: bool,
@@ -250,6 +251,36 @@ fn status(root: &Path) -> Result<Vec<u8>> {
     Ok(output.stdout)
 }
 
+fn check_hooks(root: &Path) -> bool {
+    let result = (|| -> Result<()> {
+        let configured =
+            git(root, &["config", "--get", "core.hooksPath"]).context("尚未配置提交前测试钩子")?;
+        ensure!(
+            configured.trim() == ".githooks",
+            "当前 hooksPath 不是项目的 .githooks：{}",
+            configured.trim()
+        );
+        let hook = root.join(".githooks/pre-commit");
+        ensure!(hook.is_file(), "缺少 .githooks/pre-commit");
+        ensure!(
+            fs::metadata(hook)?.permissions().mode() & 0o111 != 0,
+            "提交前测试钩子没有执行权限"
+        );
+        Ok(())
+    })();
+    match result {
+        Ok(()) => {
+            println!("[通过] 已启用提交前测试钩子，测试通过后才允许提交。");
+            true
+        }
+        Err(error) => {
+            println!("[未通过] 提交前测试钩子：{error:#}");
+            println!("  运行 ./scripts/install-git-hooks 启用；已有其他钩子时按安装提示处理。");
+            false
+        }
+    }
+}
+
 fn check(root: &Path, rules: &Rules) -> Result<bool> {
     let changes = status(root)?;
     let mut passed = changes.is_empty();
@@ -302,7 +333,7 @@ fn check(root: &Path, rules: &Rules) -> Result<bool> {
         println!(
             "  3. 获得提交授权后提交；若存在 agent-git，用 agent-git commit，否则用 git commit。"
         );
-        println!("  4. 提交后重新运行 ./scripts/check，直到两项检查均通过。");
+        println!("  4. 提交后重新运行 ./scripts/check，直到全部检查通过。");
         println!(
             "仅在用户明确宣布阶段完成时，使用 --prepare-commit --feature-complete '用户决定的说明'。"
         );
@@ -414,7 +445,8 @@ fn main() {
             prepare(&root, &mut rules, cli.feature_complete.as_deref())?;
             return Ok(true);
         }
-        check(&root, &rules)
+        let hooks_passed = check_hooks(&root);
+        Ok(check(&root, &rules)? && hooks_passed)
     })();
     match result {
         Ok(true) => {}
@@ -580,6 +612,28 @@ mod tests {
         assert!(locked_version("version=4\n", "sample").is_err());
         assert!(locked_version("[[package]]\nversion='0.1.0'\n", "sample").is_err());
         assert!(locked_version("[[package]]\nname='sample'\n", "sample").is_err());
+    }
+
+    #[test]
+    fn hook_configuration_and_executable_are_required() -> Result<()> {
+        let (directory, _) = fixture()?;
+        let root = directory.path();
+        assert!(!check_hooks(root));
+        fixture_git(root, &["config", "--local", "core.hooksPath", ".githooks"])?;
+        assert!(!check_hooks(root));
+        fs::create_dir(root.join(".githooks"))?;
+        let hook = root.join(".githooks/pre-commit");
+        fs::write(&hook, include_str!("../.githooks/pre-commit"))?;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o644))?;
+        assert!(!check_hooks(root));
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755))?;
+        assert!(check_hooks(root));
+        fixture_git(
+            root,
+            &["config", "--local", "core.hooksPath", "other-hooks"],
+        )?;
+        assert!(!check_hooks(root));
+        Ok(())
     }
 
     #[test]

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd -- "$project_root"
+git rev-parse --is-inside-work-tree >/dev/null
+current_hooks="$(git config --get core.hooksPath || true)"
+if [[ -n "$current_hooks" && "$current_hooks" != ".githooks" ]]; then
+    printf '%s\n' "[安装已停止] 已有 hooksPath：$current_hooks。请先决定如何保留已有钩子。" >&2
+    exit 1
+fi
+if [[ -z "$current_hooks" ]]; then
+    default_hooks="$(git rev-parse --git-path hooks)"
+    for existing_hook in "$default_hooks"/*; do
+        if [[ -f "$existing_hook" && -x "$existing_hook" && "$existing_hook" != *.sample ]]; then
+            printf '%s\n' "[安装已停止] 发现已有钩子：$existing_hook。请先决定如何保留。" >&2
+            exit 1
+        fi
+    done
+fi
+if [[ ! -x .githooks/pre-commit ]]; then
+    printf '%s\n' '[安装已停止] 缺少可执行的 .githooks/pre-commit。' >&2
+    exit 1
+fi
+git config --local core.hooksPath .githooks
+printf '%s\n' '已为当前仓库启用提交前测试；测试失败将阻止提交。'

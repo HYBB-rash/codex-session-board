@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_root="$(git rev-parse --show-toplevel)"
+cd -- "$project_root"
+snapshot="$(mktemp -d "${TMPDIR:-/tmp}/notion-pre-commit.XXXXXX")"
+snapshot="$(cd -- "$snapshot" && pwd)"
+trap 'rm -rf -- "$snapshot"' EXIT
+git checkout-index --all --prefix="$snapshot/"
+git_local_variables="$(git rev-parse --local-env-vars)"
+while IFS= read -r variable; do
+    unset "$variable"
+done <<< "$git_local_variables"
+
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$project_root/target}"
+if [[ "$CARGO_TARGET_DIR" != /* ]]; then
+    export CARGO_TARGET_DIR="$project_root/$CARGO_TARGET_DIR"
+fi
+cd -- "$snapshot"
+printf '%s\n' '[提交前测试] 正在离线测试暂存区中的代码……'
+if cargo test --locked --offline; then
+    printf '%s\n' '[提交前测试] 全部通过，允许提交。'
+else
+    printf '%s\n' '[提交已阻止] 测试未通过或无法运行。修复后重新暂存，再次提交。' >&2
+    exit 1
+fi

@@ -11,9 +11,13 @@
 ## 编译与验证
 
 会话或开发任务结束前统一运行 `./scripts/check`。
-当前检查工作区是否干净及每次提交的版本步进，失败时提供处理命令。
+当前检查工作区是否干净、每次提交的版本步进和测试钩子是否启用，失败时提供处理命令。
 提交前使用 `./scripts/check --prepare-commit` 准备版本；
 阶段完成升版须由用户明确决定。详细规则见 `CHECKS.md`。
+
+首次使用或重新克隆仓库后，运行 `./scripts/install-git-hooks` 启用提交前测试。
+之后每次提交都会对暂存区代码运行 `cargo test --locked --offline`，
+测试失败或无法运行都会阻止提交。
 
 ```bash
 cargo build --release --locked
