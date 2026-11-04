@@ -594,7 +594,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn fixture_git(root: &Path, arguments: &[&str]) -> Result<()> {
+    pub(super) fn fixture_git(root: &Path, arguments: &[&str]) -> Result<()> {
         let output = Command::new("git")
             .current_dir(root)
             .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -619,7 +619,7 @@ mod tests {
         Ok(())
     }
 
-    fn fixture() -> Result<(TempDir, Rules)> {
+    pub(super) fn fixture() -> Result<(TempDir, Rules)> {
         let directory = tempfile::tempdir()?;
         let root = directory.path();
         fixture_git(root, &["init", "--initial-branch=main"])?;
@@ -639,12 +639,12 @@ mod tests {
         Ok((directory, rules))
     }
 
-    fn commit(root: &Path) -> Result<()> {
+    pub(super) fn commit(root: &Path) -> Result<()> {
         fixture_git(root, &["add", "--all"])?;
         fixture_git(root, &["commit", "-m", "test fixture"])
     }
 
-    fn rewrite_version(root: &Path, version: &str) -> Result<()> {
+    pub(super) fn rewrite_version(root: &Path, version: &str) -> Result<()> {
         for (filename, header, name) in [
             ("Cargo.toml", "[package]", None),
             ("Cargo.lock", "[[package]]", Some("sample")),
@@ -666,6 +666,12 @@ mod tests {
         assert!(
             Cli::try_parse_from(["check", "--comments-only", "--baseline-repository", "/tmp"])
                 .is_ok()
+        );
+        assert!(Cli::try_parse_from(["check", "--pre-commit"]).is_ok());
+        assert!(Cli::try_parse_from(["check", "--pre-commit", "--prepare-commit"]).is_err());
+        assert!(Cli::try_parse_from(["check", "--pre-commit", "--comments-only"]).is_err());
+        assert!(
+            Cli::try_parse_from(["check", "--pre-commit", "--baseline-repository", "/tmp"]).is_ok()
         );
     }
 

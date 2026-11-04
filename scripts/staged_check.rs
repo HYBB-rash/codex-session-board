@@ -89,3 +89,7 @@ pub fn check(repository: Option<&Path>) -> Result<bool> {
         && lints_passed
         && version_passed)
 }
+
+#[cfg(test)]
+#[path = "staged_check_tests.rs"]
+mod tests;

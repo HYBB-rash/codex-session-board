@@ -1,4 +1,4 @@
-use super::git_output;
+use super::{git, git_output};
 use anyhow::{Context, Result, ensure};
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
@@ -77,11 +77,17 @@ fn statistics(output: &[u8]) -> Result<Statistics> {
 }
 
 fn measure(repository: &Path, snapshot: &Path) -> Result<Statistics> {
+    let git_directory = git(repository, &["rev-parse", "--absolute-git-dir"])?;
+    let snapshot = snapshot.to_str().context("暂存快照路径不是 UTF-8")?;
     let output = git_output(
         repository,
         &[
+            "--git-dir",
+            git_directory.trim_end_matches('\n'),
             "--work-tree",
-            snapshot.to_str().context("暂存快照路径不是 UTF-8")?,
+            snapshot,
+            "-C",
+            snapshot,
             "-c",
             "core.attributesFile=/dev/null",
             "diff",
@@ -133,6 +139,10 @@ pub fn check(repository: &Path, snapshot: &Path) -> Result<bool> {
     }
     Ok(passed)
 }
+
+#[cfg(test)]
+#[path = "commit_size_integration_tests.rs"]
+mod integration_tests;
 
 #[cfg(test)]
 mod tests {
