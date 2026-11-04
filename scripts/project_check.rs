@@ -10,11 +10,25 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+mod comment_policy;
+
 const RULES_FILE: &str = "project-rules.json";
 
 #[derive(Parser)]
 #[command(about = "检查项目约束；默认只读，不暂存、不提交、不推送")]
 struct Cli {
+    #[arg(
+        long,
+        conflicts_with_all = ["prepare_commit", "feature_complete"],
+        help = "仅检查 Rust 普通注释增量，不检查工作区和版本"
+    )]
+    comments_only: bool,
+    #[arg(
+        long,
+        requires = "comments_only",
+        help = "从指定 Git 仓库读取既有注释基线，检查当前目录中的暂存快照"
+    )]
+    baseline_repository: Option<PathBuf>,
     #[arg(long, help = "准备下一次提交的版本，同步 Cargo.toml 和 Cargo.lock")]
     prepare_commit: bool,
     #[arg(
@@ -73,6 +87,14 @@ impl fmt::Display for Version {
 struct Rules {
     schema_version: u64,
     versioning: VersionRules,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rust_comments: Option<CommentRules>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CommentRules {
+    baseline_commit: String,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -505,20 +527,37 @@ fn approve_feature_release(
     Ok(minor)
 }
 
+fn check_comments(root: &Path, repository: &Path, rules: &Rules) -> Result<bool> {
+    let policy = rules
+        .rust_comments
+        .as_ref()
+        .context("缺少 rust_comments.baseline_commit；请核对既有注释基线配置")?;
+    comment_policy::check(root, repository, &policy.baseline_commit)
+}
+
+fn run(cli: Cli) -> Result<bool> {
+    let root = if cli.comments_only {
+        std::env::current_dir()?
+    } else {
+        root_directory()?
+    };
+    let mut rules = Rules::parse(&fs::read_to_string(root.join(RULES_FILE))?)?;
+    if cli.prepare_commit {
+        prepare(&root, &mut rules, cli.feature_complete.as_deref())?;
+        return Ok(true);
+    }
+    let repository = cli.baseline_repository.as_deref().unwrap_or(&root);
+    let comments_passed = check_comments(&root, repository, &rules)?;
+    if cli.comments_only {
+        return Ok(comments_passed);
+    }
+    let hooks_passed = check_hooks(&root);
+    let rust_lints_passed = check_rust_lints(&root);
+    Ok(check(&root, &rules)? && hooks_passed && rust_lints_passed && comments_passed)
+}
+
 fn main() {
-    let cli = Cli::parse();
-    let result = (|| -> Result<bool> {
-        let root = root_directory()?;
-        let mut rules = Rules::parse(&fs::read_to_string(root.join(RULES_FILE))?)?;
-        if cli.prepare_commit {
-            prepare(&root, &mut rules, cli.feature_complete.as_deref())?;
-            return Ok(true);
-        }
-        let hooks_passed = check_hooks(&root);
-        let rust_lints_passed = check_rust_lints(&root);
-        Ok(check(&root, &rules)? && hooks_passed && rust_lints_passed)
-    })();
-    match result {
+    match run(Cli::parse()) {
         Ok(true) => {}
         Ok(false) => std::process::exit(1),
         Err(error) => {
@@ -594,6 +633,25 @@ mod tests {
             text.replace_range(span, version);
             fs::write(path, text)?;
         }
+        Ok(())
+    }
+
+    #[test]
+    fn comment_mode_excludes_preparation_and_controls_repository_override() {
+        assert!(Cli::try_parse_from(["check", "--comments-only"]).is_ok());
+        assert!(Cli::try_parse_from(["check", "--comments-only", "--prepare-commit"]).is_err());
+        assert!(Cli::try_parse_from(["check", "--baseline-repository", "/tmp"]).is_err());
+        assert!(
+            Cli::try_parse_from(["check", "--comments-only", "--baseline-repository", "/tmp"])
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn comment_checks_require_an_explicit_baseline_configuration() -> Result<()> {
+        let (directory, rules) = fixture()?;
+        let error = check_comments(directory.path(), directory.path(), &rules).unwrap_err();
+        assert!(error.to_string().contains("rust_comments.baseline_commit"));
         Ok(())
     }
 

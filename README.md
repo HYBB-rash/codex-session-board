@@ -11,15 +11,21 @@
 ## 编译与验证
 
 会话或开发任务结束前统一运行 `./scripts/check`。
-当前检查工作区是否干净、每次提交的版本步进和测试钩子是否启用，失败时提供处理命令。
+当前检查 Rust 普通注释增量、工作区是否干净、每次提交的版本步进和测试钩子是否启用，
+失败时提供处理建议。
 提交前使用 `./scripts/check --prepare-commit` 准备版本；
 阶段完成升版须由用户明确决定。详细规则见 `CHECKS.md`。
 
 首次使用或重新克隆仓库后，运行 `./scripts/install-git-hooks` 启用提交前测试。
-之后每次提交都会先对暂存区代码运行 Clippy，再运行 `cargo test --locked --offline`，
+之后每次提交都会先检查暂存区的普通注释，再运行 Clippy 和 `cargo test --locked --offline`，
 任一检查失败或无法运行都会阻止提交。正式代码禁用 `unsafe`、`.unwrap()` 和 `.expect()`；
 测试允许 `.unwrap()` 和 `.expect()`。所有函数按 Clippy 规则最多 41 行，
 测试、示例和 Rust 检查脚本同样受限，超限会阻止提交。
+
+开发风格是让代码自解释：优先用清晰命名、合适类型、简单函数和测试表达行为。
+不新增普通 Rust 行注释或块注释，暂时允许文档注释；既有普通注释按固定 Git 基线保留并报告。
+词法分析器区分真正注释与字符串中的符号，遇到问题应先改善代码表达，再用测试验证。
+单独检查可运行 `./scripts/check --comments-only`，详细范围及基线规则见 `CHECKS.md`。
 
 ```bash
 cargo build --release --locked

@@ -5,6 +5,52 @@ use std::path::Path;
 use std::process::{Command, Output};
 use tempfile::TempDir;
 
+const CHECK_ADAPTER: &str = r#"mod comment_policy;
+
+use anyhow::{Context, Result, ensure};
+use std::path::PathBuf;
+
+fn repository_argument() -> Result<PathBuf> {
+    let mut arguments = std::env::args().skip(1);
+    ensure!(arguments.next().as_deref() == Some("--comments-only"), "Missing comments-only flag");
+    ensure!(arguments.next().as_deref() == Some("--baseline-repository"), "Missing repository flag");
+    let repository = arguments.next().context("Missing baseline repository")?;
+    ensure!(arguments.next().is_none(), "Unexpected checker arguments");
+    Ok(PathBuf::from(repository))
+}
+
+fn main() -> Result<()> {
+    let repository = repository_argument()?;
+    let root = std::env::current_dir()?;
+    let rules: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(root.join("project-rules.json"))?)?;
+    let baseline = rules["rust_comments"]["baseline_commit"]
+        .as_str()
+        .context("Missing comment baseline")?;
+    if !comment_policy::check(&root, &repository, baseline)? {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+"#;
+
+const COMMENT_SYMBOLS_SOURCE: &str = r####"
+/** Documentation may contain ordinary comment symbols. */
+pub fn string_symbols() -> &'static str {
+    "escaped quote: \" // text /* text */"
+}
+
+/// Raw string contents are not comments.
+pub fn raw_string_symbols() -> &'static str {
+    r###"quote " // raw text /* raw text */"###
+}
+
+/// Byte string contents are not comments.
+pub fn byte_string_symbols() -> &'static [u8] {
+    br#"// bytes /* bytes */"#
+}
+"####;
+
 fn git(root: &Path, arguments: &[&str]) -> Result<Output> {
     Ok(Command::new("git")
         .current_dir(root)
@@ -60,11 +106,46 @@ fn source(root: &Path, value: u8) -> Result<()> {
 }
 
 fn fixture(value: u8) -> Result<TempDir> {
+    fixture_with_comments(value, "")
+}
+
+fn fixture_with_comments(value: u8, comments: &str) -> Result<TempDir> {
     let directory = tempfile::tempdir()?;
     let root = directory.path();
-    fs::create_dir(root.join(".githooks"))?;
-    fs::create_dir(root.join("scripts"))?;
-    fs::create_dir(root.join("src"))?;
+    fixture_files(root)?;
+    source(root, value)?;
+    prepend_source(root, comments)?;
+    successful_cargo(root, &["generate-lockfile", "--offline"])?;
+    successful_git(root, &["init", "--initial-branch=main"])?;
+    successful_git(root, &["add", "--all"])?;
+    successful_git(
+        root,
+        &[
+            "-c",
+            "core.hooksPath=/dev/null",
+            "commit",
+            "-m",
+            "comment baseline",
+        ],
+    )?;
+    let baseline = successful_git(root, &["rev-parse", "HEAD"])?;
+    let baseline = String::from_utf8(baseline.stdout)?;
+    let rules = serde_json::json!({"rust_comments":{"baseline_commit":baseline.trim()}});
+    fs::write(root.join("project-rules.json"), serde_json::to_vec(&rules)?)?;
+    let installed = install(root)?;
+    ensure!(
+        installed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&installed.stderr)
+    );
+    successful_git(root, &["add", "--all"])?;
+    Ok(directory)
+}
+
+fn fixture_files(root: &Path) -> Result<()> {
+    for directory in [".githooks", "scripts", "src"] {
+        fs::create_dir(root.join(directory))?;
+    }
     fs::write(
         root.join(".githooks/pre-commit"),
         include_str!("../.githooks/pre-commit"),
@@ -79,24 +160,97 @@ fn fixture(value: u8) -> Result<TempDir> {
     )?;
     fs::write(root.join(".gitignore"), "/target/\n")?;
     fs::write(root.join("clippy.toml"), include_str!("../clippy.toml"))?;
+    fixture_manifest(root)?;
+    copy_comment_policy(root)?;
+    fs::write(root.join("scripts/project_check.rs"), CHECK_ADAPTER)?;
+    Ok(())
+}
+
+fn fixture_manifest(root: &Path) -> Result<()> {
     fs::write(
         root.join("Cargo.toml"),
-        "[package]\nname='hook-fixture'\nversion='0.1.0'\nedition='2024'\n\n[lints.clippy]\nunwrap_used='deny'\nexpect_used='deny'\ntoo_many_lines='deny'\n",
+        "[package]\nname='hook-fixture'\nversion='0.1.0'\nedition='2024'\n\
+         \n[[example]]\nname='project_check'\npath='scripts/project_check.rs'\ntest=false\n\
+         \n[lints.clippy]\nunwrap_used='deny'\nexpect_used='deny'\ntoo_many_lines='deny'\n\
+         \n[dependencies]\nanyhow='1'\nserde_json='1'\nra-ap-rustc_lexer='=0.183.0'\n\
+         \n[dev-dependencies]\ntempfile='3'\n",
     )?;
-    fs::write(
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock"),
         root.join("Cargo.lock"),
-        "version = 4\n\n[[package]]\nname='hook-fixture'\nversion='0.1.0'\n",
     )?;
-    source(root, value)?;
-    successful_git(root, &["init", "--initial-branch=main"])?;
-    let installed = install(root)?;
+    Ok(())
+}
+
+fn copy_comment_policy(root: &Path) -> Result<()> {
+    let scripts = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts");
+    for entry in fs::read_dir(scripts)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name == "comment_policy.rs"
+            || name == "comment_policy"
+            || name.starts_with("comment_policy_")
+        {
+            copy_fixture_path(&entry.path(), &root.join("scripts").join(name.as_ref()))?;
+        }
+    }
     ensure!(
-        installed.status.success(),
-        "{}",
-        String::from_utf8_lossy(&installed.stderr)
+        root.join("scripts/comment_policy.rs").is_file(),
+        "Missing real comment policy checker"
     );
-    successful_git(root, &["add", "--all"])?;
-    Ok(directory)
+    Ok(())
+}
+
+fn copy_fixture_path(source: &Path, destination: &Path) -> Result<()> {
+    if source.is_dir() {
+        fs::create_dir(destination)?;
+        for entry in fs::read_dir(source)? {
+            let entry = entry?;
+            copy_fixture_path(&entry.path(), &destination.join(entry.file_name()))?;
+        }
+    } else {
+        fs::copy(source, destination)?;
+    }
+    Ok(())
+}
+
+fn successful_cargo(root: &Path, arguments: &[&str]) -> Result<Output> {
+    let output = Command::new("cargo")
+        .current_dir(root)
+        .env("CARGO_TARGET_DIR", root.join("target"))
+        .args(arguments)
+        .output()?;
+    ensure!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok(output)
+}
+
+fn prepend_source(root: &Path, prefix: &str) -> Result<()> {
+    let path = root.join("src/lib.rs");
+    let original = fs::read_to_string(&path)?;
+    fs::write(path, format!("{prefix}{original}"))?;
+    Ok(())
+}
+
+fn blocked_commit(root: &Path, message: &str) -> Result<Output> {
+    let head = successful_git(root, &["rev-parse", "HEAD"])?;
+    let index = successful_git(root, &["write-tree"])?;
+    let output = git(root, &["commit", "-m", message])?;
+    assert!(
+        !output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        head.stdout,
+        successful_git(root, &["rev-parse", "HEAD"])?.stdout
+    );
+    assert_eq!(index.stdout, successful_git(root, &["write-tree"])?.stdout);
+    Ok(output)
 }
 
 #[test]
@@ -117,16 +271,8 @@ fn passing_staged_tests_allow_a_commit_and_installation_is_idempotent() -> Resul
 fn failing_staged_tests_block_commits_and_preserve_the_index() -> Result<()> {
     let directory = fixture(0)?;
     let root = directory.path();
-    let before = successful_git(root, &["write-tree"])?;
-    let output = git(root, &["commit", "-m", "failing fixture"])?;
-    assert!(!output.status.success());
+    let output = blocked_commit(root, "failing fixture")?;
     assert!(String::from_utf8_lossy(&output.stderr).contains("提交已阻止"));
-    assert!(
-        !git(root, &["rev-parse", "--verify", "HEAD"])?
-            .status
-            .success()
-    );
-    assert_eq!(before.stdout, successful_git(root, &["write-tree"])?.stdout);
     Ok(())
 }
 
@@ -136,17 +282,8 @@ fn an_unstaged_fix_does_not_hide_failing_staged_code() -> Result<()> {
     let root = directory.path();
     source(root, 42)?;
     let before = fs::read(root.join("src/lib.rs"))?;
-    assert!(
-        !git(root, &["commit", "-m", "still failing"])?
-            .status
-            .success()
-    );
+    blocked_commit(root, "still failing")?;
     assert_eq!(before, fs::read(root.join("src/lib.rs"))?);
-    assert!(
-        !git(root, &["rev-parse", "--verify", "HEAD"])?
-            .status
-            .success()
-    );
     Ok(())
 }
 
@@ -193,15 +330,9 @@ fn clippy_failure_blocks_a_commit_even_when_unit_tests_would_pass() -> Result<()
             ),
         )?;
         successful_git(root, &["add", "--all"])?;
-        let output = git(root, &["commit", "-m", "blocked by clippy"])?;
-        assert!(!output.status.success());
+        let output = blocked_commit(root, "blocked by clippy")?;
         assert!(String::from_utf8_lossy(&output.stderr).contains("Clippy"));
         assert!(String::from_utf8_lossy(&output.stderr).contains(lint));
-        assert!(
-            !git(root, &["rev-parse", "--verify", "HEAD"])?
-                .status
-                .success()
-        );
     }
     Ok(())
 }
@@ -239,7 +370,11 @@ fn function_line_limit_accepts_41_and_blocks_42_on_commit() -> Result<()> {
         let root = directory.path();
         fs::write(root.join("src/lib.rs"), limited_function_source(body_lines))?;
         successful_git(root, &["add", "--all"])?;
-        let output = git(root, &["commit", "-m", "function length boundary"])?;
+        let output = if accepted {
+            successful_git(root, &["commit", "-m", "function length boundary"])?
+        } else {
+            blocked_commit(root, "function length boundary")?
+        };
         assert_eq!(
             output.status.success(),
             accepted,
@@ -248,12 +383,127 @@ fn function_line_limit_accepts_41_and_blocks_42_on_commit() -> Result<()> {
         );
         if !accepted {
             assert!(String::from_utf8_lossy(&output.stderr).contains("too_many_lines"));
-            assert!(
-                !git(root, &["rev-parse", "--verify", "HEAD"])?
-                    .status
-                    .success()
-            );
         }
     }
+    Ok(())
+}
+
+fn assert_comment_rejected(output: &Output) {
+    let transcript = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(transcript.contains("注释"), "{transcript}");
+    assert!(transcript.contains("提交已阻止"), "{transcript}");
+    assert!(!transcript.contains("正在运行 Clippy"), "{transcript}");
+}
+
+#[test]
+fn ordinary_comments_block_commits_even_when_tests_and_clippy_pass() -> Result<()> {
+    let directory = fixture(42)?;
+    let root = directory.path();
+    prepend_source(root, "// A new ordinary comment.\n")?;
+    successful_git(root, &["add", "--all"])?;
+    successful_cargo(root, &["test", "--locked", "--offline"])?;
+    successful_cargo(
+        root,
+        &[
+            "clippy",
+            "--all-targets",
+            "--locked",
+            "--offline",
+            "--",
+            "-D",
+            "warnings",
+        ],
+    )?;
+    let output = blocked_commit(root, "ordinary comment is forbidden")?;
+    assert_comment_rejected(&output);
+    Ok(())
+}
+
+#[test]
+fn baseline_comments_survive_code_changes() -> Result<()> {
+    let directory = fixture_with_comments(42, "// Existing line.\n/* Existing block. */\n")?;
+    let root = directory.path();
+    let path = root.join("src/lib.rs");
+    let original = fs::read_to_string(&path)?;
+    fs::write(
+        path,
+        format!("{original}\npub fn next_value() -> u8 {{ value() + 1 }}\n"),
+    )?;
+    successful_git(root, &["add", "--all"])?;
+    successful_git(
+        root,
+        &["commit", "-m", "keep baseline comments and change code"],
+    )?;
+    let committed = successful_git(root, &["show", "HEAD:src/lib.rs"])?;
+    let committed = String::from_utf8(committed.stdout)?;
+    assert!(committed.contains("// Existing line."));
+    assert!(committed.contains("/* Existing block. */"));
+    assert!(committed.contains("pub fn next_value()"));
+    Ok(())
+}
+
+#[test]
+fn documentation_and_comment_symbols_inside_strings_allow_a_commit() -> Result<()> {
+    let directory = fixture(42)?;
+    let root = directory.path();
+    let path = root.join("src/lib.rs");
+    let original = fs::read_to_string(&path)?;
+    fs::write(
+        path,
+        format!(
+            "//! Crate documentation.\n/// Value documentation.\n{original}\n{COMMENT_SYMBOLS_SOURCE}"
+        ),
+    )?;
+    successful_git(root, &["add", "--all"])?;
+    successful_git(
+        root,
+        &["commit", "-m", "documentation and strings are allowed"],
+    )?;
+    Ok(())
+}
+
+#[test]
+fn unstaged_comment_removal_cannot_hide_a_staged_ordinary_comment() -> Result<()> {
+    let directory = fixture(42)?;
+    let root = directory.path();
+    let path = root.join("src/lib.rs");
+    let original = fs::read(&path)?;
+    prepend_source(root, "// Staged ordinary comment.\n")?;
+    successful_git(root, &["add", "--all"])?;
+    fs::write(&path, &original)?;
+    let output = blocked_commit(root, "unstaged removal cannot hide staged comment")?;
+    assert_comment_rejected(&output);
+    assert_eq!(original, fs::read(path)?);
+    Ok(())
+}
+
+#[test]
+fn unstaged_ordinary_comments_do_not_reject_a_clean_staged_snapshot() -> Result<()> {
+    let directory = fixture(42)?;
+    let root = directory.path();
+    prepend_source(root, "// This comment is not staged.\n")?;
+    let before = fs::read(root.join("src/lib.rs"))?;
+    successful_git(
+        root,
+        &["commit", "-m", "only the staged snapshot is checked"],
+    )?;
+    assert_eq!(before, fs::read(root.join("src/lib.rs"))?);
+    let committed = successful_git(root, &["show", "HEAD:src/lib.rs"])?;
+    assert!(!String::from_utf8_lossy(&committed.stdout).contains("This comment is not staged"));
+    Ok(())
+}
+
+#[test]
+fn duplicating_a_baseline_comment_is_rejected() -> Result<()> {
+    let directory = fixture_with_comments(42, "// Existing comment.\n")?;
+    let root = directory.path();
+    prepend_source(root, "// Existing comment.\n")?;
+    successful_git(root, &["add", "--all"])?;
+    let output = blocked_commit(root, "baseline comments have a fixed multiplicity")?;
+    assert_comment_rejected(&output);
     Ok(())
 }
