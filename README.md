@@ -11,10 +11,10 @@
 ## 编译与验证
 
 会话或开发任务结束前统一运行 `./scripts/check`。
-当前检查 Rust 普通注释增量、工作区是否干净、每次提交的版本步进和测试钩子是否启用，
+当前检查根目录文档位置、Rust 普通注释增量、工作区是否干净、每次提交的版本步进和测试钩子是否启用，
 失败时提供处理建议。
 提交前使用 `./scripts/check --prepare-commit` 准备版本；
-阶段完成升版须由用户明确决定。详细规则见 `CHECKS.md`。
+阶段完成升版须由用户明确决定。详细规则见 [Docs/CHECKS.md](Docs/CHECKS.md)。
 
 首次使用或重新克隆仓库后，运行 `./scripts/install-git-hooks` 启用提交前测试。
 之后每次提交都会先检查暂存区的普通注释，再运行 Clippy 和 `cargo test --locked --offline`，
@@ -25,7 +25,9 @@
 开发风格是让代码自解释：优先用清晰命名、合适类型、简单函数和测试表达行为。
 不新增普通 Rust 行注释或块注释，暂时允许文档注释；既有普通注释按固定 Git 基线保留并报告。
 词法分析器区分真正注释与字符串中的符号，遇到问题应先改善代码表达，再用测试验证。
-单独检查可运行 `./scripts/check --comments-only`，详细范围及基线规则见 `CHECKS.md`。
+单独检查可运行 `./scripts/check --comments-only`，详细范围及基线规则见 [Docs/CHECKS.md](Docs/CHECKS.md)。
+
+根目录文档只保留 `AGENTS.md` 和 `README.md`，其他项目文档放在 `Docs/`。
 
 ```bash
 cargo build --release --locked
@@ -79,6 +81,7 @@ target/release/notion-program --config archive-config.json check-config
 | 位置 | 用途 |
 | --- | --- |
 | `src/` | Rust 程序 |
+| `Docs/` | 项目约束、移植和部署说明 |
 | `config.json`、`archive-config.json` | 本机配置 |
 | `data/state.json` | 调度检查点，保留原 JSON 字段和阶段名称 |
 | `data/events.jsonl` | 追加式事件记录 |
@@ -154,9 +157,9 @@ Notion 的读取和属性写入仍是分开的操作。
 不要让两份独立状态库同时调度同一个追踪表。
 
 `deploy/` 提供本机 systemd 单元，其他主机应先调整路径。
-本次经明确授权进行的服务切换、线上验证与回退方法见 `DEPLOYMENT.md`。
+本次经明确授权进行的服务切换、线上验证与回退方法见 [Docs/DEPLOYMENT.md](Docs/DEPLOYMENT.md)。
 一次性 demo、历史事故修复和旧部署切换脚本中的固定任务 ID 不作为默认操作；
 使用 `inspect`、本地状态和显式 `rpc` 命令按实际对象核对。
 `rpc` 是运维入口，只有明确请求该 RPC 时才使用，可能产生远端写入。
 
-模块对应关系和验证范围见 `MIGRATION.md`。
+模块对应关系和验证范围见 [Docs/MIGRATION.md](Docs/MIGRATION.md)。

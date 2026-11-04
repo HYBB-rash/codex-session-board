@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 mod comment_policy;
+mod document_policy;
 
 const RULES_FILE: &str = "project-rules.json";
 
@@ -551,9 +552,14 @@ fn run(cli: Cli) -> Result<bool> {
     if cli.comments_only {
         return Ok(comments_passed);
     }
+    let documents_passed = document_policy::check(&root)?;
     let hooks_passed = check_hooks(&root);
     let rust_lints_passed = check_rust_lints(&root);
-    Ok(check(&root, &rules)? && hooks_passed && rust_lints_passed && comments_passed)
+    Ok(check(&root, &rules)?
+        && hooks_passed
+        && rust_lints_passed
+        && comments_passed
+        && documents_passed)
 }
 
 fn main() {
