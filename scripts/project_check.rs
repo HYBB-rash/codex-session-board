@@ -11,12 +11,17 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 mod comment_policy;
+mod commit_size;
 mod document_policy;
+mod staged_check;
 
 const RULES_FILE: &str = "project-rules.json";
 
 #[derive(Parser)]
-#[command(about = "检查项目约束；默认只读，不暂存、不提交、不推送")]
+#[command(
+    about = "检查项目约束；默认只读，不暂存、不提交、不推送",
+    group(clap::ArgGroup::new("snapshot_mode").args(["comments_only", "pre_commit"]))
+)]
 struct Cli {
     #[arg(
         long,
@@ -26,7 +31,13 @@ struct Cli {
     comments_only: bool,
     #[arg(
         long,
-        requires = "comments_only",
+        conflicts_with_all = ["prepare_commit", "feature_complete"],
+        help = "检查本次实际暂存内容、提交规模和版本，不要求工作区干净"
+    )]
+    pre_commit: bool,
+    #[arg(
+        long,
+        requires = "snapshot_mode",
         help = "从指定 Git 仓库读取既有注释基线，检查当前目录中的暂存快照"
     )]
     baseline_repository: Option<PathBuf>,
@@ -405,7 +416,9 @@ fn print_commit_guidance() {
     println!(
         "  2. 用 git status --short 和 git diff 检查改动，仅暂存应提交文件，再用 git diff --cached 审阅。"
     );
-    println!("  3. 获得提交授权后提交；若存在 agent-git，用 agent-git commit，否则用 git commit。");
+    println!(
+        "  3. 运行 ./scripts/check --pre-commit；通过并获得提交授权后才提交，优先使用 agent-git commit。"
+    );
     println!("  4. 提交后重新运行 ./scripts/check，直到全部检查通过。");
     println!(
         "仅在用户明确宣布阶段完成时，使用 --prepare-commit --feature-complete '用户决定的说明'。"
@@ -537,6 +550,9 @@ fn check_comments(root: &Path, repository: &Path, rules: &Rules) -> Result<bool>
 }
 
 fn run(cli: Cli) -> Result<bool> {
+    if cli.pre_commit {
+        return staged_check::check(cli.baseline_repository.as_deref());
+    }
     let root = if cli.comments_only {
         std::env::current_dir()?
     } else {
