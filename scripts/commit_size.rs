@@ -160,4 +160,25 @@ mod tests {
         assert!(!statistics(b"201\t200\tfile\0")?.allowed());
         Ok(())
     }
+
+    #[test]
+    fn malformed_statistics_fail_closed_and_binary_paths_remain_bytes() -> Result<()> {
+        let malformed: &[&[u8]] = &[
+            b"1\t0\tfile",
+            b"x\t0\tfile\0",
+            b"-\t1\tfile\0",
+            b"1\t-\tfile\0",
+            b"0\t0\t\0old\0",
+            b"0\t0\t\0\0new\0",
+            b"0\t0\tfile\0\0extra\0",
+        ];
+        for record in malformed {
+            assert!(statistics(record).is_err(), "{record:?}");
+        }
+        assert!(statistics(format!("{}\t1\tfile\0", usize::MAX).as_bytes()).is_err());
+        let total = statistics(b"-\t-\t-\xff\tname\n\0")?;
+        assert_eq!(total.binaries, vec![b"-\xff\tname\n".to_vec()]);
+        assert!(statistics(b"")?.allowed());
+        Ok(())
+    }
 }

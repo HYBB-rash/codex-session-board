@@ -23,12 +23,17 @@ pub fn byte_string_symbols() -> &'static [u8] {
 "####;
 
 fn git(root: &Path, arguments: &[&str]) -> Result<Output> {
+    git_index(root, arguments, &root.join(".git/index"))
+}
+
+fn git_index(root: &Path, arguments: &[&str], index: &Path) -> Result<Output> {
     Ok(Command::new("git")
         .current_dir(root)
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_DIR", root.join(".git"))
         .env("GIT_WORK_TREE", root)
+        .env("GIT_INDEX_FILE", index)
         .env("CARGO_TARGET_DIR", root.join("target"))
         .args([
             "-c",
@@ -175,14 +180,14 @@ fn fixture_manifest(root: &Path) -> Result<()> {
          \n[dev-dependencies]\ntempfile='3'\n",
     )?;
     fs::copy(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock"),
+        std::env::current_dir()?.join("Cargo.lock"),
         root.join("Cargo.lock"),
     )?;
     Ok(())
 }
 
 fn copy_checker(root: &Path) -> Result<()> {
-    let scripts = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts");
+    let scripts = std::env::current_dir()?.join("scripts");
     for entry in fs::read_dir(scripts)? {
         let entry = entry?;
         let name = entry.file_name();
@@ -523,5 +528,148 @@ fn explicit_pre_commit_mode_ignores_unstaged_rust_and_manifest_failures() -> Res
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(String::from_utf8_lossy(&output.stdout).contains("暂存区版本 v0.1.2"));
+    Ok(())
+}
+
+fn transcript(output: &Output) -> String {
+    format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+}
+
+fn staged_totals(root: &Path) -> Result<(usize, usize)> {
+    let output = successful_git(root, &["diff", "--cached", "--numstat"])?;
+    let text = String::from_utf8(output.stdout)?;
+    let mut lines = 0;
+    for record in text.lines() {
+        for count in record.split('\t').take(2) {
+            lines += count.parse::<usize>()?;
+        }
+    }
+    Ok((text.lines().count(), lines))
+}
+
+fn boundary_payload(root: &Path, target_lines: usize, target_files: usize) -> Result<()> {
+    let (files, lines) = staged_totals(root)?;
+    ensure!(
+        files < target_files && lines < target_lines,
+        "Fixture already exceeds boundary"
+    );
+    fs::write(root.join("payload"), "text\n".repeat(target_lines - lines))?;
+    for number in files + 1..target_files {
+        fs::write(root.join(format!("payload-{number}")), b"")?;
+    }
+    successful_git(root, &["add", "--all"])?;
+    assert_eq!(staged_totals(root)?, (target_files, target_lines));
+    Ok(())
+}
+
+#[test]
+fn hooks_accept_exact_limits_and_block_either_excess_before_clippy() -> Result<()> {
+    for (lines, files, accepted) in [(400, 13, true), (401, 13, false), (400, 14, false)] {
+        let directory = fixture(42)?;
+        let root = directory.path();
+        boundary_payload(root, lines, files)?;
+        let output = if accepted {
+            successful_git(root, &["commit", "-m", "exact limits"])?
+        } else {
+            blocked_commit(root, "excessive candidate")?
+        };
+        let text = transcript(&output);
+        assert!(text.contains(&format!("{files} 个文件")));
+        assert!(text.contains(&format!("总变更 {lines} 行")));
+        if !accepted {
+            assert!(text.contains("拆分提交"));
+            assert!(!text.contains("正在运行 Clippy"));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn hooks_report_binary_files_and_include_them_in_the_file_count() -> Result<()> {
+    let directory = fixture(42)?;
+    let root = directory.path();
+    let (files, _) = staged_totals(root)?;
+    fs::write(root.join("binary.data"), b"binary\0payload")?;
+    successful_git(root, &["add", "--all"])?;
+    let output = successful_git(root, &["commit", "-m", "visible binary"])?;
+    let text = transcript(&output);
+    assert!(text.contains("二进制文件") && text.contains("binary.data"));
+    assert!(text.contains("无法按文本行数衡量"));
+    assert!(text.contains(&format!("{} 个文件", files + 1)));
+    Ok(())
+}
+
+#[test]
+fn hooks_reject_an_unstaged_version_preparation() -> Result<()> {
+    let directory = fixture(42)?;
+    let root = directory.path();
+    successful_git(
+        root,
+        &["checkout", "HEAD", "--", "Cargo.toml", "Cargo.lock"],
+    )?;
+    successful_cargo(
+        root,
+        &[
+            "run",
+            "--quiet",
+            "--locked",
+            "--offline",
+            "--example",
+            "project_check",
+            "--",
+            "--prepare-commit",
+        ],
+    )?;
+    let text = transcript(&blocked_commit(root, "version not staged")?);
+    assert!(text.contains("暂存区版本") && text.contains("v0.1.2"));
+    assert!(!text.contains("正在运行 Clippy"));
+    Ok(())
+}
+
+#[test]
+fn hooks_use_the_actual_alternative_index_in_both_directions() -> Result<()> {
+    for excessive_candidate in [true, false] {
+        let directory = fixture(42)?;
+        let root = directory.path();
+        let default_index = root.join(".git/index");
+        let candidate = root.join(".git/candidate-index");
+        fs::copy(&default_index, &candidate)?;
+        fs::write(root.join("payload"), "line\n".repeat(401))?;
+        let excessive = if excessive_candidate {
+            &candidate
+        } else {
+            &default_index
+        };
+        assert!(
+            git_index(root, &["add", "payload"], excessive)?
+                .status
+                .success()
+        );
+        let before = successful_git(root, &["rev-parse", "HEAD"])?;
+        let output = git_index(root, &["commit", "-m", "alternative index"], &candidate)?;
+        assert_eq!(
+            output.status.success(),
+            !excessive_candidate,
+            "{}",
+            transcript(&output)
+        );
+        if excessive_candidate {
+            assert!(transcript(&output).contains("总变更行数超过 400"));
+            assert_eq!(
+                before.stdout,
+                successful_git(root, &["rev-parse", "HEAD"])?.stdout
+            );
+        } else {
+            assert!(
+                !git(root, &["cat-file", "-e", "HEAD:payload"])?
+                    .status
+                    .success()
+            );
+        }
+    }
     Ok(())
 }

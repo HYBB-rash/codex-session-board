@@ -45,8 +45,10 @@ cargo clippy --all-targets --locked --offline -- -D warnings
 开发时查看 CLI 可用 `cargo run --bin notion-program --locked --offline -- --help`。
 本地检查和测试无需填写生产配置。首次配置及运行命令见[配置与命令](Docs/CONFIGURATION.md)。
 
-提交钩子检查暂存区的注释、Clippy 和测试；统一检查另含文档位置、工作区干净和版本步进等规则。
-未提交修改会使统一检查失败；提交前准备版本、历史要求及具体约束见[检查规则](Docs/CHECKS.md)。
+准备版本、选择暂存内容并审阅后，运行 `./scripts/check --pre-commit`：
+实际暂存内容的文本新增行数加删除行数最多 400 行、最多 13 个文件，含边界，并检查候选版本和适用规则。
+通过且获得授权后提交；钩子再次运行统一提交前模式、Clippy 和测试，检查器也从暂存快照编译。
+提交后运行普通 `./scripts/check`，仍要求工作区干净且历史版本合规；具体见[检查规则](Docs/CHECKS.md)。
 Agent 开发约定以 [AGENTS.md](AGENTS.md) 为准。
 
 ## 重要工作边界
