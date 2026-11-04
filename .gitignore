@@ -1,0 +1,9 @@
+/target/
+/data/
+/tasks/
+/outputs/
+/config.json
+/archive-config.json
+.env
+.env.*
+*.log

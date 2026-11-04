@@ -1,0 +1,35 @@
+[package]
+name = "notion-program"
+version = "0.1.1"
+edition = "2024"
+description = "Notion task dispatcher and knowledge archiver"
+default-run = "notion-program"
+
+[[bin]]
+name = "notion-program-test-server"
+path = "tests/support/protocol_server.rs"
+test = false
+bench = false
+
+[[example]]
+name = "project_check"
+path = "scripts/project_check.rs"
+test = true
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+fs2 = "0.4"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+tungstenite = "0.29"
+url = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[dev-dependencies]
+tempfile = "3"
+toml = "=1.1.2"

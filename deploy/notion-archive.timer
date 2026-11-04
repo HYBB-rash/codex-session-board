@@ -1,0 +1,11 @@
+[Unit]
+Description=Check completed Notion tasks for archival every minute
+
+[Timer]
+OnBootSec=45s
+OnUnitInactiveSec=60s
+AccuracySec=1s
+Unit=notion-archive.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd -- "$project_root"
+check_status=0
+cargo run --quiet --offline --locked --example project_check -- "$@" || check_status=$?
+if (( check_status > 2 )); then
+    printf '%s\n' '[检查错误] 检查器未能运行完成。请先修复上方 Cargo 或工具链错误，再重新运行。' >&2
+    exit 2
+fi
+exit "$check_status"
