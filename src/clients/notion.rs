@@ -2,10 +2,9 @@ use super::rpc::RpcFailure;
 use super::{ExternalError, Notion, RpcClient, external, required, truthy};
 use crate::common::canonical_id;
 use anyhow::{Context, Result, ensure};
-use regex::Regex;
+use lazy_regex::regex;
 use serde_json::{Map, Value, json};
 use std::collections::{HashMap, HashSet};
-use std::sync::{LazyLock, Mutex};
 use url::Url;
 
 const COLUMNS: [&str; 6] = [
@@ -20,18 +19,8 @@ const MARKDOWN_SPEC: &str = "notion://docs/notion-flavored-markdown-spec";
 const PAGE_SIZE: usize = 50;
 const MAX_QUERY_PAGES: usize = 100;
 
-fn regex(pattern: &'static str) -> Regex {
-    static EXPRESSIONS: LazyLock<Mutex<HashMap<&'static str, Regex>>> =
-        LazyLock::new(|| Mutex::new(HashMap::new()));
-    let mut expressions = EXPRESSIONS.lock().unwrap();
-    expressions
-        .entry(pattern)
-        .or_insert_with(|| Regex::new(pattern).expect("Static Notion parser expression"))
-        .clone()
-}
-
 pub(super) fn unescape(text: &str) -> String {
-    regex(r"&(#x[0-9a-fA-F]+|#X[0-9a-fA-F]+|#[0-9]+|[A-Za-z][A-Za-z0-9]+);")
+    regex!(r"&(#x[0-9a-fA-F]+|#X[0-9a-fA-F]+|#[0-9]+|[A-Za-z][A-Za-z0-9]+);")
         .replace_all(text, |capture: &regex::Captures<'_>| {
             let entity = &capture[1];
             let number = if entity.starts_with("#x") || entity.starts_with("#X") {
@@ -71,25 +60,25 @@ pub(super) fn unescape(text: &str) -> String {
 }
 
 fn attributes(text: &str) -> HashMap<String, String> {
-    regex(r#"([\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')"#)
+    regex!(r#"([\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')"#)
         .captures_iter(text)
-        .map(|capture| {
-            let value = capture.get(2).or_else(|| capture.get(3)).unwrap().as_str();
-            (capture[1].to_owned(), unescape(value))
+        .filter_map(|capture| {
+            let value = capture.get(2).or_else(|| capture.get(3))?.as_str();
+            Some((capture[1].to_owned(), unescape(value)))
         })
         .collect()
 }
 
-fn mask(bytes: &mut [u8]) {
-    for byte in bytes {
-        if *byte != b'\n' {
-            *byte = b' ';
-        }
-    }
+fn mask(output: &mut String, start: usize, end: usize) {
+    let replacement: String = output[start..end]
+        .bytes()
+        .map(|byte| if byte == b'\n' { '\n' } else { ' ' })
+        .collect();
+    output.replace_range(start..end, &replacement);
 }
 
 fn visible_markup(text: &str) -> String {
-    let mut bytes = text.as_bytes().to_vec();
+    let mut output = text.to_owned();
     let mut fence: Option<(u8, usize)> = None;
     let mut offset = 0;
     for line in text.split_inclusive('\n') {
@@ -104,21 +93,21 @@ fn visible_markup(text: &str) -> String {
                 .count()
         });
         if let Some((expected, minimum)) = fence {
-            mask(&mut bytes[offset..offset + line.len()]);
+            mask(&mut output, offset, offset + line.len());
             if marker == Some(expected) && width >= minimum {
                 fence = None;
             }
-        } else if width >= 3 {
-            fence = Some((marker.unwrap(), width));
-            mask(&mut bytes[offset..offset + line.len()]);
+        } else if let Some(marker) = marker.filter(|_| width >= 3) {
+            fence = Some((marker, width));
+            mask(&mut output, offset, offset + line.len());
         }
         offset += line.len();
     }
-    let fenced = String::from_utf8(bytes.clone()).expect("Masked UTF-8");
-    for matched in regex(r"<code\b[^>]*>[\s\S]*?</code>|`+[^`\n]*`+").find_iter(&fenced) {
-        mask(&mut bytes[matched.start()..matched.end()]);
+    let fenced = output.clone();
+    for matched in regex!(r"<code\b[^>]*>[\s\S]*?</code>|`+[^`\n]*`+").find_iter(&fenced) {
+        mask(&mut output, matched.start(), matched.end());
     }
-    String::from_utf8(bytes).expect("Masked UTF-8")
+    output
 }
 
 struct PageParts {
@@ -129,10 +118,10 @@ struct PageParts {
 
 fn page_parts(text: &str, operation: &str) -> Result<PageParts> {
     let fail = |kind| external(operation, kind, false, false);
-    let opening = regex(r"(?m)^<page\b[^>]*>")
+    let opening = regex!(r"(?m)^<page\b[^>]*>")
         .find(text)
         .ok_or_else(|| fail("incomplete_page_markup"))?;
-    let property_expression = regex(r"<properties\b[^>]*>");
+    let property_expression = regex!(r"<properties\b[^>]*>");
     let properties = property_expression
         .find(&text[opening.end()..])
         .ok_or_else(|| fail("incomplete_page_markup"))?;
@@ -145,28 +134,10 @@ fn page_parts(text: &str, operation: &str) -> Result<PageParts> {
         .filter(Value::is_object)
         .ok_or_else(|| fail("invalid_page_properties"))?;
     let end = start + decoder.byte_offset();
-    let closing = regex(r"^\s*</properties>")
+    let closing = regex!(r"^\s*</properties>")
         .find(&text[end..])
         .ok_or_else(|| fail("incomplete_page_markup"))?;
-    let body = &text[end + closing.end()..];
-    let visible = visible_markup(body);
-    let boundary = regex(r"(?m)^</page>[ \t]*(?:\n|$)")
-        .find(&visible)
-        .ok_or_else(|| fail("incomplete_page_markup"))?;
-    let body = &body[..boundary.start()];
-    let visible = &visible[..boundary.start()];
-    let content_open = regex(r"<content\b[^>]*>").find(visible);
-    let content_close = regex(r"</content>\s*$").find(visible);
-    let content = match (content_open, content_close) {
-        (Some(start), Some(end)) if end.start() >= start.end() => {
-            body[start.end()..end.start()].to_owned()
-        }
-        _ if regex(r"<content\s*/>\s*$").is_match(visible) => String::new(),
-        _ => return Err(fail("incomplete_page_markup")),
-    };
-    if truncated_markup(&format!("{}\n{visible}", opening.as_str())) {
-        return Err(fail("truncated_response"));
-    }
+    let content = page_content(&text[end + closing.end()..], opening.as_str(), operation)?;
     Ok(PageParts {
         properties: properties_value,
         content,
@@ -174,15 +145,38 @@ fn page_parts(text: &str, operation: &str) -> Result<PageParts> {
     })
 }
 
+fn page_content(body: &str, opening: &str, operation: &str) -> Result<String> {
+    let fail = |kind| external(operation, kind, false, false);
+    let visible = visible_markup(body);
+    let boundary = regex!(r"(?m)^</page>[ \t]*(?:\n|$)")
+        .find(&visible)
+        .ok_or_else(|| fail("incomplete_page_markup"))?;
+    let body = &body[..boundary.start()];
+    let visible = &visible[..boundary.start()];
+    let content_open = regex!(r"<content\b[^>]*>").find(visible);
+    let content_close = regex!(r"</content>\s*$").find(visible);
+    let content = match (content_open, content_close) {
+        (Some(start), Some(end)) if end.start() >= start.end() => {
+            body[start.end()..end.start()].to_owned()
+        }
+        _ if regex!(r"<content\s*/>\s*$").is_match(visible) => String::new(),
+        _ => return Err(fail("incomplete_page_markup")),
+    };
+    if truncated_markup(&format!("{opening}\n{visible}")) {
+        return Err(fail("truncated_response"));
+    }
+    Ok(content)
+}
+
 fn truncated_markup(text: &str) -> bool {
-    regex(r#"(?i)<(?:page|content)\b[^>]*\btruncated\s*=\s*["']true["']|<truncated\b"#)
+    regex!(r#"(?i)<(?:page|content)\b[^>]*\btruncated\s*=\s*["']true["']|<truncated\b"#)
         .is_match(text)
 }
 
 fn source_id(value: &str) -> Result<String> {
     let source = value.strip_prefix("collection://").unwrap_or(value);
     ensure!(
-        regex(r"^[A-Za-z0-9_-]{1,128}$").is_match(source),
+        regex!(r"^[A-Za-z0-9_-]{1,128}$").is_match(source),
         "Data source must be a simple Notion identifier"
     );
     Ok(source.to_owned())
@@ -212,7 +206,7 @@ fn page_argument(value: &str) -> Result<String> {
             .rsplit('/')
             .next()
             .unwrap_or("");
-        let identifier = regex(r"([0-9a-fA-F]{32}|[0-9a-fA-F-]{36})$")
+        let identifier = regex!(r"([0-9a-fA-F]{32}|[0-9a-fA-F-]{36})$")
             .find(tail)
             .context("Page URL requires a page ID")?
             .as_str()
@@ -220,7 +214,7 @@ fn page_argument(value: &str) -> Result<String> {
         return Ok(identifier);
     }
     ensure!(
-        regex(r"^[A-Za-z0-9_-]{1,128}$").is_match(value),
+        regex!(r"^[A-Za-z0-9_-]{1,128}$").is_match(value),
         "Page ID must be a simple Notion identifier"
     );
     Ok(value.to_owned())
@@ -242,8 +236,8 @@ fn metadata_id(value: &str) -> Result<String> {
             .rsplit('/')
             .next()
             .unwrap_or("");
-        let identifier = regex(
-            r"(?:^|-)([0-9a-fA-F]{32}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})$",
+        let identifier = regex!(
+            r"(?:^|-)([0-9a-fA-F]{32}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})$"
         )
         .captures(tail)
         .context("Metadata URL requires a page UUID")?[1]
@@ -251,7 +245,7 @@ fn metadata_id(value: &str) -> Result<String> {
         return canonical_id(&identifier);
     }
     ensure!(
-        regex(r"^(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})$")
+        regex!(r"^(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})$")
             .is_match(value),
         "Metadata page identity must be a complete UUID"
     );
@@ -265,7 +259,7 @@ fn template_allowance(raw: &Value, config: &Value) -> Option<Value> {
     }
     let profile = config.get("template_block_profile")?;
     let parts = page_parts(raw["text"].as_str()?, "fetch").ok()?;
-    let parent = regex(r"<parent-data-source\b[^>]*>").find(&parts.ancestry)?;
+    let parent = regex!(r"<parent-data-source\b[^>]*>").find(&parts.ancestry)?;
     let parent_attributes = attributes(parent.as_str());
     if parent_attributes.get("url")?
         != &format!("collection://{}", profile["data_source_id"].as_str()?)
@@ -274,9 +268,27 @@ fn template_allowance(raw: &Value, config: &Value) -> Option<Value> {
         return None;
     }
     let visible = visible_markup(&parts.content);
-    let headings: Vec<_> = regex(r"(?m)^## ([^\n]+?)\s*$")
-        .captures_iter(&visible)
-        .map(|capture| (capture.get(0).unwrap().end(), capture[1].to_owned()))
+    let headings = template_headings(&visible, profile)?;
+    let observed = template_observed(&visible, identifier, profile, &headings)?;
+    let ids = raw["unknown_block_ids"].as_array()?;
+    if ids.len() != observed.len() {
+        return None;
+    }
+    let mut allowance = Map::new();
+    for identifier in ids {
+        let identifier = identifier.as_str()?;
+        allowance.insert(
+            identifier.to_owned(),
+            observed.get(&identifier.replace('-', ""))?.clone(),
+        );
+    }
+    Some(Value::Object(allowance))
+}
+
+fn template_headings(visible: &str, profile: &Value) -> Option<Vec<(usize, String)>> {
+    let headings: Vec<_> = regex!(r"(?m)^## ([^\n]+?)\s*$")
+        .captures_iter(visible)
+        .filter_map(|capture| Some((capture.get(0)?.end(), capture[1].to_owned())))
         .collect();
     let required = profile["required_sections"].as_array()?;
     let mut previous = None;
@@ -293,36 +305,52 @@ fn template_allowance(raw: &Value, config: &Value) -> Option<Value> {
         }
         previous = Some(positions[0]);
     }
+    Some(headings)
+}
+
+fn template_block_id(url: &Url, identifier: &str) -> Option<String> {
+    let block = url.fragment()?.replace('-', "");
+    if url.scheme() != "https"
+        || !matches!(
+            url.host_str(),
+            Some("app.notion.com" | "www.notion.so" | "notion.so")
+        )
+        || url
+            .path()
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()?
+            .replace('-', "")
+            != identifier.replace('-', "")
+        || !regex!(r"^[0-9a-f]{32}$").is_match(&block)
+    {
+        return None;
+    }
+    Some(block)
+}
+
+fn template_observed(
+    visible: &str,
+    identifier: &str,
+    profile: &Value,
+    headings: &[(usize, String)],
+) -> Option<Map<String, Value>> {
     let mut counts: Map<String, Value> = profile["sections"]
         .as_object()?
         .keys()
         .map(|name| (name.clone(), json!({})))
         .collect();
     let mut observed = Map::new();
-    for matched in regex(r"<unknown\b[^>]*/>").find_iter(&visible) {
+    for matched in regex!(r"<unknown\b[^>]*/>").find_iter(visible) {
         let attrs = attributes(matched.as_str());
         let url = Url::parse(attrs.get("url")?).ok()?;
-        let block = url.fragment()?.replace('-', "");
+        let block = template_block_id(&url, identifier)?;
         let section = &headings
             .iter()
             .rev()
             .find(|(end, _)| *end <= matched.start())?
             .1;
-        if url.scheme() != "https"
-            || !matches!(
-                url.host_str(),
-                Some("app.notion.com" | "www.notion.so" | "notion.so")
-            )
-            || url
-                .path()
-                .trim_end_matches('/')
-                .rsplit('/')
-                .next()?
-                .replace('-', "")
-                != identifier.replace('-', "")
-            || !regex(r"^[0-9a-f]{32}$").is_match(&block)
-            || observed.contains_key(&block)
-        {
+        if observed.contains_key(&block) {
             return None;
         }
         let alt = attrs.get("alt")?;
@@ -334,19 +362,7 @@ fn template_allowance(raw: &Value, config: &Value) -> Option<Value> {
     if Value::Object(counts) != profile["sections"] {
         return None;
     }
-    let ids = raw["unknown_block_ids"].as_array()?;
-    if ids.len() != observed.len() {
-        return None;
-    }
-    let mut allowance = Map::new();
-    for identifier in ids {
-        let identifier = identifier.as_str()?;
-        allowance.insert(
-            identifier.to_owned(),
-            observed.get(&identifier.replace('-', ""))?.clone(),
-        );
-    }
-    Some(Value::Object(allowance))
+    Some(observed)
 }
 
 fn known_template_omissions(raw: &Value, config: &Value) -> bool {
@@ -368,46 +384,52 @@ fn known_template_omissions(raw: &Value, config: &Value) -> bool {
     {
         return false;
     }
-    let mut expected = HashMap::new();
-    let mut exact = HashSet::new();
-    for identifier in ids {
-        let Some(identifier) = identifier.as_str() else {
-            return false;
-        };
-        let Some(alt) = allowed.get(identifier).and_then(Value::as_str) else {
-            return false;
-        };
-        if !exact.insert(identifier) {
-            return false;
-        }
-        expected.insert(identifier.replace('-', ""), alt.to_owned());
-    }
+    let Some(expected) = expected_omissions(ids, allowed) else {
+        return false;
+    };
     let Some(text) = raw["text"].as_str() else {
         return false;
     };
     let Ok(parts) = page_parts(text, "fetch") else {
         return false;
     };
+    observed_omissions(&parts.content, identifier).is_some_and(|observed| observed == expected)
+}
+
+fn expected_omissions(
+    ids: &[Value],
+    allowed: &Map<String, Value>,
+) -> Option<HashMap<String, String>> {
+    let mut expected = HashMap::new();
+    let mut exact = HashSet::new();
+    for identifier in ids {
+        let identifier = identifier.as_str()?;
+        let alt = allowed.get(identifier).and_then(Value::as_str)?;
+        if !exact.insert(identifier) {
+            return None;
+        }
+        expected.insert(identifier.replace('-', ""), alt.to_owned());
+    }
+    Some(expected)
+}
+
+fn observed_omissions(content: &str, identifier: &str) -> Option<HashMap<String, String>> {
     let mut observed = HashMap::new();
-    for matched in regex(r"<unknown\b[^>]*/>").find_iter(&visible_markup(&parts.content)) {
+    for matched in regex!(r"<unknown\b[^>]*/>").find_iter(&visible_markup(content)) {
         let attrs = attributes(matched.as_str());
-        let Some(url) = attrs.get("url").and_then(|url| Url::parse(url).ok()) else {
-            return false;
-        };
+        let url = Url::parse(attrs.get("url")?).ok()?;
         let block = url.fragment().unwrap_or("").replace('-', "");
-        let Some(alt) = attrs.get("alt") else {
-            return false;
-        };
+        let alt = attrs.get("alt")?;
         if !url
             .path()
             .replace('-', "")
             .contains(&identifier.replace('-', ""))
             || observed.insert(block, alt.clone()).is_some()
         {
-            return false;
+            return None;
         }
     }
-    observed == expected
+    Some(observed)
 }
 
 fn complete(value: &Value, operation: &str, config: Option<&Value>, depth: usize) -> Result<()> {
@@ -452,7 +474,7 @@ fn complete(value: &Value, operation: &str, config: Option<&Value>, depth: usize
 
 fn rpc_reason(payload: &Value) -> Option<&'static str> {
     let text = payload["message"].as_str()?.to_lowercase();
-    if regex(r"\b(?:401|403|451)\b").is_match(&text)
+    if regex!(r"\b(?:401|403|451)\b").is_match(&text)
         || ["unauthorized", "forbidden", "authentication required"]
             .iter()
             .any(|word| text.contains(word))
@@ -504,29 +526,29 @@ fn unwrap(mut value: Value, operation: &str, config: Option<&Value>) -> Result<V
         } else if !value["structuredContent"].is_null() {
             value = value["structuredContent"].take();
         } else if let Some(content) = value["content"].as_array() {
-            if content.is_empty()
-                || content
-                    .iter()
-                    .any(|part| part["type"] != "text" || !part["text"].is_string())
-            {
-                return Err(external(
-                    operation,
-                    "unsupported_content_envelope",
-                    false,
-                    false,
-                ));
-            }
-            let mut text = String::new();
-            for part in content {
-                complete(part, operation, None, 0)?;
-                text.push_str(part["text"].as_str().unwrap());
-            }
-            value = json!(text);
+            value = envelope_text(content, operation)?;
         } else {
             return Ok(value);
         }
     }
     Err(external(operation, "response_nesting_limit", false, false))
+}
+
+fn envelope_text(content: &[Value], operation: &str) -> Result<Value> {
+    let fail = || external(operation, "unsupported_content_envelope", false, false);
+    if content.is_empty()
+        || content
+            .iter()
+            .any(|part| part["type"] != "text" || !part["text"].is_string())
+    {
+        return Err(fail());
+    }
+    let mut text = String::new();
+    for part in content {
+        complete(part, operation, None, 0)?;
+        text.push_str(part["text"].as_str().ok_or_else(fail)?);
+    }
+    Ok(json!(text))
 }
 
 fn text<'a>(value: &'a Value, operation: &str) -> Result<&'a str> {
@@ -542,33 +564,47 @@ fn text<'a>(value: &'a Value, operation: &str) -> Result<&'a str> {
 }
 
 fn rows(mut value: Value, source: &str, columns: &[&str]) -> Result<Vec<Value>> {
-    let mut names = Value::Null;
-    for depth in 0..8 {
-        complete(&value, "query", None, 0)?;
-        if truthy(&value["has_more"]) {
+    let (batch, names) = query_row_envelope(&mut value, source)?;
+    let column_names = query_column_names(&names)?;
+    batch
+        .iter()
+        .map(|row| metadata_row(row, &column_names, columns))
+        .collect()
+}
+
+fn validate_query_source(value: &Value, source: &str) -> Result<()> {
+    complete(value, "query", None, 0)?;
+    if truthy(&value["has_more"]) {
+        return Err(external(
+            "query",
+            "incomplete_metadata_result",
+            false,
+            false,
+        ));
+    }
+    if let Some(sources) = value.get("data_source_ids") {
+        let valid = sources.as_array().is_some_and(|sources| {
+            sources.len() == 1
+                && sources[0]
+                    .as_str()
+                    .is_some_and(|item| same_id(item, source))
+        });
+        if !valid {
             return Err(external(
                 "query",
-                "incomplete_metadata_result",
+                "unexpected_query_data_source",
                 false,
                 false,
             ));
         }
-        if let Some(sources) = value.get("data_source_ids") {
-            let valid = sources.as_array().is_some_and(|sources| {
-                sources.len() == 1
-                    && sources[0]
-                        .as_str()
-                        .is_some_and(|item| same_id(item, source))
-            });
-            if !valid {
-                return Err(external(
-                    "query",
-                    "unexpected_query_data_source",
-                    false,
-                    false,
-                ));
-            }
-        }
+    }
+    Ok(())
+}
+
+fn query_row_envelope<'a>(value: &'a mut Value, source: &str) -> Result<(&'a Vec<Value>, Value)> {
+    let mut names = Value::Null;
+    for depth in 0..8 {
+        validate_query_source(value, source)?;
         if let Some(list) = value.as_array() {
             if list.len() == 1
                 && list[0].is_object()
@@ -577,7 +613,7 @@ fn rows(mut value: Value, source: &str, columns: &[&str]) -> Result<Vec<Value>> 
                     .iter()
                     .any(|key| list[0].get(key).is_some())
             {
-                value = list[0].clone();
+                *value = list[0].clone();
                 continue;
             }
             break;
@@ -592,7 +628,7 @@ fn rows(mut value: Value, source: &str, columns: &[&str]) -> Result<Vec<Value>> 
             .into_iter()
             .find(|key| value.get(key).is_some())
             .ok_or_else(|| external("query", "missing_rows", false, false))?;
-        value = value[key].take();
+        *value = value[key].take();
         if depth == 7 {
             return Err(external("query", "response_nesting_limit", false, false));
         }
@@ -601,6 +637,10 @@ fn rows(mut value: Value, source: &str, columns: &[&str]) -> Result<Vec<Value>> 
         .as_array()
         .filter(|batch| batch.len() <= PAGE_SIZE)
         .ok_or_else(|| external("query", "invalid_rows", false, false))?;
+    Ok((batch, names))
+}
+
+fn query_column_names(names: &Value) -> Result<Vec<String>> {
     let mut column_names = Vec::new();
     if !names.is_null() {
         let names = names
@@ -622,43 +662,107 @@ fn rows(mut value: Value, source: &str, columns: &[&str]) -> Result<Vec<Value>> 
             column_names.push(name.to_owned());
         }
     }
-    let mut result = Vec::new();
-    for row in batch {
-        let row = if let Some(values) = row.as_array() {
-            if column_names.is_empty() || values.len() != column_names.len() {
-                return Err(external("query", "invalid_rows", false, false));
-            }
-            Value::Object(
-                column_names
-                    .iter()
-                    .cloned()
-                    .zip(values.iter().cloned())
-                    .collect(),
-            )
-        } else {
-            row.clone()
-        };
-        let object = row
-            .as_object()
-            .ok_or_else(|| external("query", "invalid_rows", false, false))?;
-        let mut selected = Map::new();
-        for column in columns {
-            let value = object
-                .get(*column)
-                .ok_or_else(|| external("query", "missing_metadata_column", false, false))?;
-            if !value.is_null() && !value.is_string() {
-                return Err(external("query", "invalid_metadata_column", false, false));
-            }
-            selected.insert((*column).to_owned(), value.clone());
+    Ok(column_names)
+}
+
+fn metadata_row(row: &Value, column_names: &[String], columns: &[&str]) -> Result<Value> {
+    let row = if let Some(values) = row.as_array() {
+        if column_names.is_empty() || values.len() != column_names.len() {
+            return Err(external("query", "invalid_rows", false, false));
         }
-        let url = selected["url"]
-            .as_str()
-            .filter(|url| !url.is_empty())
-            .ok_or_else(|| external("query", "invalid_row_url", false, false))?;
-        metadata_id(url).map_err(|_| external("query", "invalid_row_url", false, false))?;
-        result.push(Value::Object(selected));
+        Value::Object(
+            column_names
+                .iter()
+                .cloned()
+                .zip(values.iter().cloned())
+                .collect(),
+        )
+    } else {
+        row.clone()
+    };
+    let object = row
+        .as_object()
+        .ok_or_else(|| external("query", "invalid_rows", false, false))?;
+    let mut selected = Map::new();
+    for column in columns {
+        let value = object
+            .get(*column)
+            .ok_or_else(|| external("query", "missing_metadata_column", false, false))?;
+        if !value.is_null() && !value.is_string() {
+            return Err(external("query", "invalid_metadata_column", false, false));
+        }
+        selected.insert((*column).to_owned(), value.clone());
     }
-    Ok(result)
+    let url = selected["url"]
+        .as_str()
+        .filter(|url| !url.is_empty())
+        .ok_or_else(|| external("query", "invalid_row_url", false, false))?;
+    metadata_id(url).map_err(|_| external("query", "invalid_row_url", false, false))?;
+    Ok(Value::Object(selected))
+}
+
+fn tool_request_error(error: &anyhow::Error, role: &str, write: bool) -> anyhow::Error {
+    let reason = error
+        .downcast_ref::<RpcFailure>()
+        .and_then(|failure| rpc_reason(&failure.response["error"]));
+    let upstream = error.downcast_ref::<ExternalError>();
+    let kind = reason
+        .or_else(|| upstream.map(|error| error.kind.as_str()))
+        .unwrap_or("request_failed");
+    let read_reconnectable = reason.is_some()
+        || upstream.is_some_and(|error| {
+            error.kind.starts_with("connection") || error.kind.starts_with("timeout")
+        });
+    external(role, kind, write, read_reconnectable)
+}
+
+fn metadata_query(identifier: &str, source: &str, columns: &[&str]) -> Value {
+    let mut urls = Vec::new();
+    for prefix in [
+        "https://app.notion.com/",
+        "https://app.notion.com/p/",
+        "https://notion.so/",
+        "https://www.notion.so/",
+    ] {
+        for value in [identifier.to_owned(), identifier.replace('-', "")] {
+            urls.push(format!("{prefix}{value}"));
+        }
+    }
+    let query = format!(
+        "SELECT {} FROM \"collection://{}\" WHERE url IN ({}) LIMIT 2",
+        columns
+            .iter()
+            .map(|column| format!("\"{column}\""))
+            .collect::<Vec<_>>()
+            .join(", "),
+        source,
+        vec!["?"; urls.len()].join(", ")
+    );
+    json!({"data": {
+        "mode": "sql", "data_source_urls": [format!("collection://{source}")],
+        "query": query, "params": urls
+    }})
+}
+
+fn task_source(parts: &PageParts, config: &Value) -> Result<String> {
+    let parent = regex!(r"<parent-data-source\b[^>]*>")
+        .find(&parts.ancestry)
+        .ok_or_else(|| external("fetch", "incomplete_page_markup", false, false))?;
+    let attrs = attributes(parent.as_str());
+    let source = ["url", "id", "data-source-id"]
+        .iter()
+        .find_map(|key| attrs.get(*key))
+        .context("Missing parent data source")?;
+    let source = source_id(source)?;
+    if !same_id(&source, &source_id(required(config, "data_source_id")?)?) {
+        return Err(external(
+            "fetch",
+            "unexpected_parent_data_source",
+            false,
+            false,
+        ));
+    }
+    Ok(source)
 }
 
 pub struct NotionMcp {
@@ -726,7 +830,7 @@ impl NotionMcp {
         let source = source_id(required(&self.config, "data_source_id")?)?;
         let schema = self.call_raw("fetch", &json!({"id": format!("collection://{source}")}))?;
         let schema_text = text(&schema, "schema")?;
-        let table = regex(r"<sqlite-table\b[^>]*>([\s\S]*?)</sqlite-table>")
+        let table = regex!(r"<sqlite-table\b[^>]*>([\s\S]*?)</sqlite-table>")
             .captures(schema_text)
             .ok_or_else(|| external("schema", "missing_sqlite_schema", false, false))?;
         let sql = unescape(&table[1]);
@@ -791,23 +895,7 @@ impl NotionMcp {
                 "tool": tool, "arguments": args
             }),
         );
-        let result = match result {
-            Ok(result) => result,
-            Err(error) => {
-                let reason = error
-                    .downcast_ref::<RpcFailure>()
-                    .and_then(|failure| rpc_reason(&failure.response["error"]));
-                let upstream = error.downcast_ref::<ExternalError>();
-                let kind = reason
-                    .or_else(|| upstream.map(|error| error.kind.as_str()))
-                    .unwrap_or("request_failed");
-                let read_reconnectable = reason.is_some()
-                    || upstream.is_some_and(|error| {
-                        error.kind.starts_with("connection") || error.kind.starts_with("timeout")
-                    });
-                return Err(external(role, kind, write, read_reconnectable));
-            }
-        };
+        let result = result.map_err(|error| tool_request_error(&error, role, write))?;
         let config = (role == "fetch").then_some(&self.config);
         unwrap(result, role, config).map_err(|error| {
             let detail = error.downcast_ref::<ExternalError>();
@@ -824,36 +912,15 @@ impl NotionMcp {
         let identifier = metadata_id(pid)?;
         self.prepare()?;
         let source = source_id(required(&self.config, "data_source_id")?)?;
-        let mut urls = Vec::new();
-        for prefix in [
-            "https://app.notion.com/",
-            "https://app.notion.com/p/",
-            "https://notion.so/",
-            "https://www.notion.so/",
-        ] {
-            for value in [identifier.clone(), identifier.replace('-', "")] {
-                urls.push(format!("{prefix}{value}"));
-            }
-        }
-        let query = format!(
-            "SELECT {} FROM \"collection://{}\" WHERE url IN ({}) LIMIT 2",
-            columns
-                .iter()
-                .map(|column| format!("\"{column}\""))
-                .collect::<Vec<_>>()
-                .join(", "),
-            source,
-            vec!["?"; urls.len()].join(", ")
-        );
-        let response = self.call_raw(
-            "query",
-            &json!({"data": {
-                "mode": "sql", "data_source_urls": [format!("collection://{source}")],
-                "query": query, "params": urls
-            }}),
-        )?;
+        let response = self.call_raw("query", &metadata_query(&identifier, &source, columns))?;
         let rows = rows(response, &source, columns)?;
-        if rows.len() != 1 || metadata_id(rows[0]["url"].as_str().unwrap())? != identifier {
+        if rows.len() != 1
+            || metadata_id(
+                rows[0]["url"]
+                    .as_str()
+                    .context("Metadata row requires a URL")?,
+            )? != identifier
+        {
             return Err(external("query", "task_not_in_tracker", false, false));
         }
         Ok(json!({"id": identifier, "source_id": source, "properties": rows[0]}))
@@ -865,26 +932,7 @@ impl NotionMcp {
         let raw = self.call_raw("fetch", &json!({"id": identifier}))?;
         let notion_text = text(&raw, "fetch")?;
         let parts = page_parts(notion_text, "fetch")?;
-        let parent = regex(r"<parent-data-source\b[^>]*>")
-            .find(&parts.ancestry)
-            .ok_or_else(|| external("fetch", "incomplete_page_markup", false, false))?;
-        let attrs = attributes(parent.as_str());
-        let source = ["url", "id", "data-source-id"]
-            .iter()
-            .find_map(|key| attrs.get(*key))
-            .context("Missing parent data source")?;
-        let source = source_id(source)?;
-        if !same_id(
-            &source,
-            &source_id(required(&self.config, "data_source_id")?)?,
-        ) {
-            return Err(external(
-                "fetch",
-                "unexpected_parent_data_source",
-                false,
-                false,
-            ));
-        }
+        let source = task_source(&parts, &self.config)?;
         if let Some(actual) = raw["id"].as_str()
             && !same_id(&page_argument(actual)?, &identifier)
         {
@@ -1002,7 +1050,7 @@ impl Notion for NotionMcp {
             )?;
             let batch = rows(response, &source, &COLUMNS)?;
             for row in &batch {
-                let url = row["url"].as_str().unwrap();
+                let url = row["url"].as_str().context("Query row requires a URL")?;
                 if url <= after.as_str() {
                     return Err(external("query", "pagination_not_advancing", false, false));
                 }

@@ -74,6 +74,12 @@ pub fn project_context_prompt(pid: &str, record: &Value) -> Result<String> {
         "Unknown project context contract"
     );
     let owner = canonical_id(pid)?;
+    let command = project_context_command(&owner, record)?;
+    let example = project_context_example(&owner);
+    render_project_context_prompt(&command, &example)
+}
+
+fn project_context_command(owner: &str, record: &Value) -> Result<String> {
     let output = Path::new(record["cwd"].as_str().context("Missing task workspace")?)
         .join("data")
         .join(format!("round-{:03}-project-context.json", round(record)));
@@ -81,19 +87,25 @@ pub fn project_context_prompt(pid: &str, record: &Value) -> Result<String> {
     arguments.extend([
         "context".into(),
         "--task".into(),
-        owner.clone(),
+        owner.to_owned(),
         "--output".into(),
         output.to_string_lossy().into_owned(),
     ]);
-    let command = arguments
+    Ok(arguments
         .iter()
         .map(|argument| shell_quote(argument))
         .collect::<Vec<_>>()
-        .join(" ");
-    let example = json!({"contract":PROJECT_CONTEXT_CONTRACT,"status":"read","task_page_id":owner,
+        .join(" "))
+}
+
+fn project_context_example(owner: &str) -> Value {
+    json!({"contract":PROJECT_CONTEXT_CONTRACT,"status":"read","task_page_id":owner,
         "context_page_id":"实际项目上下文页UUID","version":"helper返回的实际版本","read_at":"实际读取时间",
         "topics":[{"page_id":"实际专题UUID","title":"实际专题标题","applied":"本轮如何实际应用该专题"}],
-        "application":"最新摘要和所读专题如何影响本轮实施与验证"});
+        "application":"最新摘要和所读专题如何影响本轮实施与验证"})
+}
+
+fn render_project_context_prompt(command: &str, example: &Value) -> Result<String> {
     Ok(format!(
         "项目上下文契约：{PROJECT_CONTEXT_CONTRACT}。每个新任务/新轮都要重新检查项目上下文。\
          实际开工前由执行者运行以下命令，不得复用上一轮结果冒充本轮读取；调度器不运行 helper，也不读取项目或专题正文：\n\
@@ -111,7 +123,7 @@ pub fn project_context_prompt(pid: &str, record: &Value) -> Result<String> {
          无所属项目时提交 status=unassigned、context_page_id=null、version=null、topics=[]、application 字符串（可空），\
          并增加非空 reason 记录 helper 确认无所属项目的实际依据。不能将 helper 失败写成 unassigned，未实际读取不得声明 read。\
          同轮续接保留本契约及原目标，不能改配置绕过检查。调度器只校验声明，不证明正文已被阅读。\n",
-        serde_json::to_string(&example)?
+        serde_json::to_string(example)?
     ))
 }
 
@@ -123,7 +135,20 @@ pub fn validate_project_context_receipt(pid: &str, record: &Value, result: &Valu
         record["project_context_contract"] == PROJECT_CONTEXT_CONTRACT,
         "Unknown project context contract"
     );
-    let context = result["project_context"]
+    validate_context_fields(&result["project_context"])?;
+    let context = &result["project_context"];
+    validate_context_identity(pid, record, context)?;
+    let topics = context["topics"]
+        .as_array()
+        .context("Project context topics must be a list")?;
+    if context["status"] == "unassigned" {
+        return validate_unassigned_context(context, topics);
+    }
+    validate_read_context(context, topics)
+}
+
+fn validate_context_fields(context: &Value) -> Result<()> {
+    let context = context
         .as_object()
         .context("Missing project context receipt")?;
     for field in [
@@ -141,7 +166,10 @@ pub fn validate_project_context_receipt(pid: &str, record: &Value, result: &Valu
             "Missing project context field: {field}"
         );
     }
-    let context = &result["project_context"];
+    Ok(())
+}
+
+fn validate_context_identity(pid: &str, record: &Value, context: &Value) -> Result<()> {
     ensure!(
         context["contract"] == record["project_context_contract"],
         "Project context receipt contract does not match this round"
@@ -158,22 +186,22 @@ pub fn validate_project_context_receipt(pid: &str, record: &Value, result: &Valu
         context["application"].is_string(),
         "Project context application must be text"
     );
-    let topics = context["topics"]
-        .as_array()
-        .context("Project context topics must be a list")?;
-    if context["status"] == "unassigned" {
-        ensure!(
-            context["context_page_id"].is_null()
-                && context["version"].is_null()
-                && topics.is_empty(),
-            "Unassigned project context requires null IDs/version and no topics"
-        );
-        ensure!(
-            nonempty(&context["reason"]),
-            "Unassigned project context requires a reason"
-        );
-        return Ok(());
-    }
+    Ok(())
+}
+
+fn validate_unassigned_context(context: &Value, topics: &[Value]) -> Result<()> {
+    ensure!(
+        context["context_page_id"].is_null() && context["version"].is_null() && topics.is_empty(),
+        "Unassigned project context requires null IDs/version and no topics"
+    );
+    ensure!(
+        nonempty(&context["reason"]),
+        "Unassigned project context requires a reason"
+    );
+    Ok(())
+}
+
+fn validate_read_context(context: &Value, topics: &[Value]) -> Result<()> {
     ensure!(
         context["status"] == "read",
         "Unknown project context receipt status"

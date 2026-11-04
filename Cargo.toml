@@ -1,6 +1,6 @@
 [package]
 name = "notion-program"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 description = "Notion task dispatcher and knowledge archiver"
 default-run = "notion-program"
@@ -16,13 +16,23 @@ name = "project_check"
 path = "scripts/project_check.rs"
 test = true
 
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+too_many_lines = "deny"
+
 [dependencies]
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 fs2 = "0.4"
+lazy-regex = "3"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+rustix = { version = "1", features = ["process"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"

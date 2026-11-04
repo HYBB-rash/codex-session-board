@@ -62,46 +62,50 @@ fn protocol_server() -> &'static Path {
             std::env::consts::EXE_SUFFIX
         ));
         if !server.is_file() {
-            let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-            let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
-            let target = profile
-                .parent()
-                .expect("Cargo profile must have a target directory");
-            let mut build = Command::new(cargo);
-            build
-                .args([
-                    "build",
-                    "--offline",
-                    "--locked",
-                    "--bin",
-                    "notion-program-test-server",
-                ])
-                .arg("--manifest-path")
-                .arg(manifest)
-                .arg("--target-dir")
-                .arg(target);
-            match profile.file_name().and_then(|name| name.to_str()) {
-                Some("debug") => {}
-                Some("release") => {
-                    build.arg("--release");
-                }
-                Some(name) => {
-                    build.args(["--profile", name]);
-                }
-                None => panic!("Cargo profile directory has no name"),
-            }
-            let output = build.output().expect("Build the Rust protocol test server");
-            assert!(
-                output.status.success(),
-                "Cannot build the Rust protocol test server:\n{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            assert!(
-                server.is_file(),
-                "Cargo did not create {}",
-                server.display()
-            );
+            build_protocol_server(profile, &server);
         }
         server
     })
+}
+
+fn build_protocol_server(profile: &Path, server: &Path) {
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+    let target = profile
+        .parent()
+        .expect("Cargo profile must have a target directory");
+    let mut build = Command::new(cargo);
+    build
+        .args([
+            "build",
+            "--offline",
+            "--locked",
+            "--bin",
+            "notion-program-test-server",
+        ])
+        .arg("--manifest-path")
+        .arg(manifest)
+        .arg("--target-dir")
+        .arg(target);
+    match profile.file_name().and_then(|name| name.to_str()) {
+        Some("debug") => {}
+        Some("release") => {
+            build.arg("--release");
+        }
+        Some(name) => {
+            build.args(["--profile", name]);
+        }
+        None => panic!("Cargo profile directory has no name"),
+    }
+    let output = build.output().expect("Build the Rust protocol test server");
+    assert!(
+        output.status.success(),
+        "Cannot build the Rust protocol test server:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        server.is_file(),
+        "Cargo did not create {}",
+        server.display()
+    );
 }

@@ -31,6 +31,71 @@ impl FakeNotion {
             "parent_page_id":parent,"parent_data_source_id":source,"title":title,"properties":properties}));
         identifier
     }
+
+    fn create_page(&mut self, arguments: &Value) -> Result<Value> {
+        self.creates += 1;
+        let page = &arguments["pages"][0];
+        let identifier = self.add(
+            page["content"].as_str().unwrap_or(""),
+            arguments["parent"]["page_id"].as_str(),
+            page["properties"]["title"].as_str().unwrap_or("page"),
+            json!({}),
+            None,
+        );
+        if self.lose_create {
+            bail!("response lost");
+        }
+        Ok(json!({"pages":[{"id":identifier}]}))
+    }
+
+    fn update_page(&mut self, arguments: &Value) -> Result<Value> {
+        let identifier = arguments["page_id"]
+            .as_str()
+            .context("Missing fake page ID")?;
+        let page = self
+            .pages
+            .get_mut(identifier)
+            .context("Missing fake page")?;
+        if arguments["command"] == "update_properties" {
+            self.status_writes += 1;
+            merge(&mut page["properties"], arguments["properties"].clone());
+            return Ok(json!({}));
+        }
+        self.writes += 1;
+        if !self.drop_update {
+            page["content"] = json!(updated_fake_content(
+                page["content"].as_str().unwrap_or(""),
+                arguments
+            )?);
+        }
+        if self.lose_update {
+            bail!("response lost");
+        }
+        Ok(json!({}))
+    }
+}
+
+fn updated_fake_content(before: &str, arguments: &Value) -> Result<String> {
+    match arguments["command"].as_str() {
+        Some("replace_content") => Ok(arguments["new_str"]
+            .as_str()
+            .context("Missing fake replacement")?
+            .to_string()),
+        Some("insert_content") => Ok(format!(
+            "{before}\n\n{}",
+            arguments["content"].as_str().unwrap_or("")
+        )),
+        Some("update_content") => Ok(before.replacen(
+            arguments["content_updates"][0]["old_str"]
+                .as_str()
+                .context("Missing old text")?,
+            arguments["content_updates"][0]["new_str"]
+                .as_str()
+                .context("Missing new text")?,
+            1,
+        )),
+        _ => bail!("Unsupported fake update"),
+    }
 }
 
 impl Notion for FakeNotion {
@@ -93,64 +158,8 @@ impl Notion for FakeNotion {
                 rows.truncate(50);
                 Ok(json!({"results":rows}))
             }
-            "create" => {
-                self.creates += 1;
-                let page = &arguments["pages"][0];
-                let identifier = self.add(
-                    page["content"].as_str().unwrap_or(""),
-                    arguments["parent"]["page_id"].as_str(),
-                    page["properties"]["title"].as_str().unwrap_or("page"),
-                    json!({}),
-                    None,
-                );
-                if self.lose_create {
-                    bail!("response lost");
-                }
-                Ok(json!({"pages":[{"id":identifier}]}))
-            }
-            "update" => {
-                let identifier = arguments["page_id"]
-                    .as_str()
-                    .context("Missing fake page ID")?;
-                let page = self
-                    .pages
-                    .get_mut(identifier)
-                    .context("Missing fake page")?;
-                if arguments["command"] == "update_properties" {
-                    self.status_writes += 1;
-                    merge(&mut page["properties"], arguments["properties"].clone());
-                    return Ok(json!({}));
-                }
-                self.writes += 1;
-                if !self.drop_update {
-                    let before = page["content"].as_str().unwrap_or("");
-                    let content = match arguments["command"].as_str() {
-                        Some("replace_content") => arguments["new_str"]
-                            .as_str()
-                            .context("Missing fake replacement")?
-                            .to_string(),
-                        Some("insert_content") => format!(
-                            "{before}\n\n{}",
-                            arguments["content"].as_str().unwrap_or("")
-                        ),
-                        Some("update_content") => before.replacen(
-                            arguments["content_updates"][0]["old_str"]
-                                .as_str()
-                                .context("Missing old text")?,
-                            arguments["content_updates"][0]["new_str"]
-                                .as_str()
-                                .context("Missing new text")?,
-                            1,
-                        ),
-                        _ => bail!("Unsupported fake update"),
-                    };
-                    page["content"] = json!(content);
-                }
-                if self.lose_update {
-                    bail!("response lost");
-                }
-                Ok(json!({}))
-            }
+            "create" => self.create_page(arguments),
+            "update" => self.update_page(arguments),
             _ => bail!("Unsupported fake operation {role}"),
         }
     }
@@ -492,57 +501,62 @@ fn native_envelopes_support_context_receipt_and_final_status() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn native_archive_empty_queue_uses_sql_and_nullable_mcp_envelopes() -> Result<()> {
-    use std::os::unix::net::UnixListener;
+fn offline_archive_daemon(listener: std::os::unix::net::UnixListener) -> Result<Vec<Value>> {
     use std::time::Duration;
     use tungstenite::Message;
 
+    let (stream, _) = listener.accept()?;
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    let mut socket = tungstenite::accept(stream)?;
+    let mut calls = Vec::new();
+    loop {
+        let frame = match socket.read() {
+            Ok(Message::Text(frame)) => frame,
+            Ok(Message::Close(_)) | Err(_) => break,
+            _ => continue,
+        };
+        let request: Value = serde_json::from_str(&frame)?;
+        if request.get("id").is_none() {
+            continue;
+        }
+        let response = offline_archive_response(&request, &mut calls)?;
+        socket.send(Message::Text(
+            json!({"id":request["id"],"result":response})
+                .to_string()
+                .into(),
+        ))?;
+    }
+    Ok(calls)
+}
+
+fn offline_archive_response(request: &Value, calls: &mut Vec<Value>) -> Result<Value> {
+    Ok(match request["method"].as_str() {
+        Some("initialize") => json!({"userAgent":"offline-archive-daemon"}),
+        Some("thread/start") => json!({"thread":{"id":Uuid::new_v4().to_string()}}),
+        Some("mcpServer/tool/call") => {
+            let params = &request["params"];
+            calls.push(params.clone());
+            match params["tool"].as_str() {
+                Some("fetch") => mcp_envelope(json!({
+                    "id":params["arguments"]["id"],"text":"<data-source>schema</data-source>"
+                })),
+                Some("query") => {
+                    ensure!(params["arguments"]["data"]["mode"] == "sql");
+                    mcp_envelope(json!({"results":[],"has_more":false}))
+                }
+                _ => bail!("Unexpected offline archive write"),
+            }
+        }
+        _ => bail!("Unexpected offline archive RPC"),
+    })
+}
+
+#[test]
+fn native_archive_empty_queue_uses_sql_and_nullable_mcp_envelopes() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let socket_path = directory.path().join("offline-daemon.sock");
-    let listener = UnixListener::bind(&socket_path)?;
-    let daemon = std::thread::spawn(move || -> Result<Vec<Value>> {
-        let (stream, _) = listener.accept()?;
-        stream.set_read_timeout(Some(Duration::from_secs(3)))?;
-        let mut socket = tungstenite::accept(stream)?;
-        let mut calls = Vec::new();
-        loop {
-            let frame = match socket.read() {
-                Ok(Message::Text(frame)) => frame,
-                Ok(Message::Close(_)) | Err(_) => break,
-                _ => continue,
-            };
-            let request: Value = serde_json::from_str(&frame)?;
-            if request.get("id").is_none() {
-                continue;
-            }
-            let response = match request["method"].as_str() {
-                Some("initialize") => json!({"userAgent":"offline-archive-daemon"}),
-                Some("thread/start") => json!({"thread":{"id":Uuid::new_v4().to_string()}}),
-                Some("mcpServer/tool/call") => {
-                    let params = &request["params"];
-                    calls.push(params.clone());
-                    match params["tool"].as_str() {
-                        Some("fetch") => mcp_envelope(json!({
-                            "id":params["arguments"]["id"],"text":"<data-source>schema</data-source>"
-                        })),
-                        Some("query") => {
-                            ensure!(params["arguments"]["data"]["mode"] == "sql");
-                            mcp_envelope(json!({"results":[],"has_more":false}))
-                        }
-                        _ => bail!("Unexpected offline archive write"),
-                    }
-                }
-                _ => bail!("Unexpected offline archive RPC"),
-            };
-            socket.send(Message::Text(
-                json!({"id":request["id"],"result":response})
-                    .to_string()
-                    .into(),
-            ))?;
-        }
-        Ok(calls)
-    });
+    let listener = std::os::unix::net::UnixListener::bind(&socket_path)?;
+    let daemon = std::thread::spawn(move || offline_archive_daemon(listener));
     let root = directory.path().join("archive");
     let config = json!({"enabled":true,"daemon_socket":socket_path,
         "request_timeout_seconds":2,"worker_cwd":directory.path(),
@@ -607,20 +621,20 @@ fn changed_knowledge_hash_and_receipt_prevent_status_commit() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn knowledge_update_creates_topic_and_preserves_conflict_sources() -> Result<()> {
-    let directory = tempfile::tempdir()?;
-    let (mut executor, identifier, project) = fixture(directory.path())?;
+fn conflict_sources(
+    executor: &mut Executor<FakeNotion>,
+    identifier: &str,
+) -> Result<(String, String, String)> {
     let old_source = executor.notion.add(
         "The deployed mode uses push.",
-        Some(&identifier),
+        Some(identifier),
         "Deployment report",
         json!({}),
         None,
     );
     let new_source = executor.notion.add(
         "The trial recommends pull.",
-        Some(&identifier),
+        Some(identifier),
         "Trial report",
         json!({}),
         None,
@@ -630,19 +644,34 @@ fn knowledge_update_creates_topic_and_preserves_conflict_sources() -> Result<()>
         mention(&old_source)?,
         mention(&new_source)?
     );
+    Ok((old_source, new_source, conflict))
+}
+
+fn conflict_plan(old_source: &str, new_source: &str, conflict: &str) -> Result<Value> {
     let summary = SUMMARY_SECTIONS
         .iter()
         .map(|section| format!("## {section}\n\n{conflict}"))
         .collect::<Vec<_>>()
         .join("\n\n");
-    let mut state = json!({"task_page_id":identifier,"project_id":project,"generation":1,"phase":"queued","title":"task"});
-    executor.prepare(&identifier, &mut state)?;
     let plan = json!({"summary":summary,"topics":[{"key":"synchronization","title":"Synchronization policy",
         "when_to_read":"Before changing synchronization.","content":conflict,
         "source_ids":[old_source,new_source]}],"no_update_reason":"","conflicts":[conflict]});
-    let plan = validate_plan(&plan, &[old_source.clone(), new_source.clone()], &[])?;
+    validate_plan(
+        &plan,
+        &[old_source.to_string(), new_source.to_string()],
+        &[],
+    )
+}
+
+#[test]
+fn knowledge_update_creates_topic_and_preserves_conflict_sources() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let (mut executor, identifier, project) = fixture(directory.path())?;
+    let (old_source, new_source, conflict) = conflict_sources(&mut executor, &identifier)?;
+    let mut state = json!({"task_page_id":identifier,"project_id":project,"generation":1,"phase":"queued","title":"task"});
+    executor.prepare(&identifier, &mut state)?;
     state["phase"] = json!("planned");
-    state["plan"] = plan;
+    state["plan"] = conflict_plan(&old_source, &new_source, &conflict)?;
     executor.apply_plan(&identifier, &mut state)?;
     assert_eq!(executor.notion.status_writes, 0);
     assert_eq!(

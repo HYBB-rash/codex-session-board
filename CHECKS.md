@@ -20,6 +20,16 @@
    不允许跳号、重复版本、回退版本或擅自增加主版本。
 3. 提交前必须通过测试。统一检查入口确认项目 Git 钩子已经启用，
    实际测试由 `pre-commit` 钩子在提交前运行。
+4. 项目自身 Rust 代码禁止使用 `unsafe`。`Cargo.toml` 使用
+   `[lints.rust] unsafe_code = "forbid"`，由编译器在构建与测试时执行，
+   不能通过局部 `#[allow(unsafe_code)]` 降低限制。
+5. 正式代码禁止使用 `.unwrap()` 和 `.expect()`。使用 Clippy 官方的
+   `unwrap_used = "deny"` 与 `expect_used = "deny"` 检查；
+   `clippy.toml` 允许测试代码使用这两个方法。
+6. 每个函数最多 41 行。使用 Clippy 官方的 `too_many_lines = "deny"`，
+   在 `clippy.toml` 设置 `too-many-lines-threshold = 41`。
+   行数按 Clippy 的规则统计；测试、示例和检查脚本中的 Rust 函数也受限制。
+   提交钩子运行全目标 Clippy，超限即阻止提交。
 
 基线与用户阶段决定保存在 `project-rules.json`。迁移前已发布基线设为 v0.1.0，
 因此首个 Git 提交使用 v0.1.1，之后为 v0.1.2、v0.1.3。
@@ -70,8 +80,10 @@
 `core.hooksPath`，不修改全局 Git 设置。重新克隆后需要再次安装。
 已有其他钩子配置时会停止安装，避免覆盖。
 
-每次提交前，将暂存区导出到临时目录，并运行 `cargo test --locked --offline`。
-全部通过后才允许提交；测试失败、编译失败或依赖不可用均会阻止提交。
+每次提交前，将暂存区导出到临时目录，先运行
+`cargo clippy --all-targets --locked --offline -- -D warnings`，
+再运行 `cargo test --locked --offline`。
+全部通过后才允许提交；Clippy 失败、测试失败、编译失败或依赖不可用均会阻止提交。
 第一次测试前需要准备好 Rust 工具链与锁文件对应的依赖。
 当前测试包含单元测试、命令行和契约测试及检查器自身测试，不连接线上服务。
 
@@ -89,4 +101,5 @@ cargo test --locked --offline --test git_hooks
 ```
 
 测试在临时 Git 仓库中构造提交，覆盖未提交文件、逐次升版、历史违规、
-锁文件版本不一致和阶段完成决定；不会提交当前项目或访问线上服务。
+锁文件版本不一致和阶段完成决定，以及函数 41 行允许提交、42 行拒绝提交的边界；
+不会提交当前项目或访问线上服务。

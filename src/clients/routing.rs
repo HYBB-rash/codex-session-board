@@ -5,10 +5,10 @@ use crate::common::digest;
 use anyhow::{Context, Result, ensure};
 use regex::Regex;
 use serde_json::{Map, Value, json};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, hash_map::Entry};
 
-fn marker_expression() -> Regex {
-    Regex::new(r"notion-program/[0-9a-f-]+/round-[0-9]+").unwrap()
+fn marker_expression() -> &'static Regex {
+    lazy_regex::regex!(r"notion-program/[0-9a-f-]+/round-[0-9]+")
 }
 
 fn frozen(model: &str, sandbox: &str, reviewer: &str) -> Value {
@@ -77,6 +77,93 @@ fn turn_summary(turn: &Value) -> Value {
     })
 }
 
+fn desktop_response(raw: Value, name: &str, write: bool) -> Result<Value> {
+    if truthy(&raw["isError"]) {
+        return Err(external(name, "desktop_tool_error", write, !write));
+    }
+    let parts = raw["content"]
+        .as_array()
+        .filter(|parts| !parts.is_empty())
+        .ok_or_else(|| external(name, "unsupported_desktop_response", write, false))?;
+    let mut text = String::new();
+    for part in parts {
+        if part["type"] != "text" {
+            return Err(external(name, "unsupported_desktop_response", write, false));
+        }
+        text.push_str(
+            part["text"]
+                .as_str()
+                .ok_or_else(|| external(name, "unsupported_desktop_response", write, false))?,
+        );
+    }
+    match serde_json::from_str(&text) {
+        Ok(result) => Ok(result),
+        Err(_) if name == "send_message_to_thread" => Ok(json!({"text": text})),
+        Err(_) => Err(external(name, "invalid_desktop_json", write, false)),
+    }
+}
+
+fn validate_native_owner(owner: &Value, thread: &str) -> Result<()> {
+    if owner["id"] != thread
+        || !owner["status"].is_object()
+        || !matches!(
+            owner["status"]["type"].as_str(),
+            Some("active" | "idle" | "notLoaded")
+        )
+        || owner["status"]
+            .get("activeFlags")
+            .is_some_and(|flags| !flags.is_array())
+    {
+        return Err(external("thread/read", "invalid_owner_state", false, false));
+    }
+    Ok(())
+}
+
+fn native_history_turns(history: &Value, messages: bool) -> Result<&Vec<Value>> {
+    let fail = || external("thread/turns/list", "invalid_owner_history", false, false);
+    let turns = history["data"].as_array().ok_or_else(fail)?;
+    let next = &history["nextCursor"];
+    if !next.is_null() && !next.is_string()
+        || turns.iter().any(|turn| {
+            !turn.is_object()
+                || turn["id"].as_str().is_none_or(str::is_empty)
+                || !turn["items"].is_array()
+                || messages && turn.get("itemsView").is_some_and(|view| view != "full")
+        })
+    {
+        return Err(fail());
+    }
+    Ok(turns)
+}
+
+fn read_native_page(
+    client: &mut RpcClient,
+    thread: &str,
+    messages: bool,
+    cursor: Option<&str>,
+) -> Result<Value> {
+    let response = client.request(
+        "thread/read",
+        &json!({"threadId": thread, "includeTurns": false}),
+    )?;
+    let owner = &response["thread"];
+    validate_native_owner(owner, thread)?;
+    let mut arguments = json!({
+        "threadId": thread, "limit": if messages { 5 } else { 2 },
+        "sortDirection": "desc", "itemsView": if messages { "full" } else { "summary" }
+    });
+    if let Some(cursor) = cursor {
+        arguments["cursor"] = json!(cursor);
+    }
+    let history = client.request("thread/turns/list", &arguments)?;
+    let turns = native_history_turns(&history, messages)?;
+    let next = &history["nextCursor"];
+    Ok(json!({
+        "thread": owner, "turns": turns, "observation_source": "app_server",
+        "page": {"hasMore": !next.is_null(), "nextCursor": next}
+    }))
+}
+
 pub struct RoutingExecutor {
     config: Value,
     primary: RpcClient,
@@ -118,11 +205,10 @@ impl RoutingExecutor {
         if !self.persistent() {
             return Ok(&mut self.primary);
         }
-        if !self.native_clients.contains_key(thread) {
-            let client = RpcClient::from_config(&self.config)?;
-            self.native_clients.insert(thread.to_owned(), client);
+        match self.native_clients.entry(thread.to_owned()) {
+            Entry::Occupied(entry) => Ok(entry.into_mut()),
+            Entry::Vacant(entry) => Ok(entry.insert(RpcClient::from_config(&self.config)?)),
         }
-        Ok(self.native_clients.get_mut(thread).unwrap())
     }
 
     fn desktop_tool(&mut self, name: &str, arguments: &Value) -> Result<Value> {
@@ -131,13 +217,17 @@ impl RoutingExecutor {
             self.desktop = Some(RpcClient::desktop(&self.config)?);
         }
         let write = name != "read_thread";
-        let result = self.desktop.as_mut().unwrap().request(
-            "tools/call",
-            &json!({
-                "name": name, "arguments": arguments,
-                "_meta": {"openai/threadId": caller}
-            }),
-        );
+        let result = self
+            .desktop
+            .as_mut()
+            .context("Desktop client was not initialized")?
+            .request(
+                "tools/call",
+                &json!({
+                    "name": name, "arguments": arguments,
+                    "_meta": {"openai/threadId": caller}
+                }),
+            );
         let raw = result.map_err(|error| {
             let detail = error.downcast_ref::<ExternalError>();
             external(
@@ -147,89 +237,15 @@ impl RoutingExecutor {
                 detail.is_some_and(|error| error.reconnectable),
             )
         })?;
-        if truthy(&raw["isError"]) {
-            return Err(external(name, "desktop_tool_error", write, !write));
-        }
-        let parts = raw["content"]
-            .as_array()
-            .filter(|parts| !parts.is_empty())
-            .ok_or_else(|| external(name, "unsupported_desktop_response", write, false))?;
-        let mut text = String::new();
-        for part in parts {
-            if part["type"] != "text" {
-                return Err(external(name, "unsupported_desktop_response", write, false));
-            }
-            text.push_str(
-                part["text"]
-                    .as_str()
-                    .ok_or_else(|| external(name, "unsupported_desktop_response", write, false))?,
-            );
-        }
-        match serde_json::from_str(&text) {
-            Ok(result) => Ok(result),
-            Err(_) if name == "send_message_to_thread" => Ok(json!({"text": text})),
-            Err(_) => Err(external(name, "invalid_desktop_json", write, false)),
-        }
+        desktop_response(raw, name, write)
     }
 
     fn read_native(&mut self, thread: &str, messages: bool, cursor: Option<&str>) -> Result<Value> {
-        if !self.native_observers.contains_key(thread) {
-            let client = RpcClient::from_config(&self.config)?;
-            self.native_observers.insert(thread.to_owned(), client);
-        }
-        let client = self.native_observers.get_mut(thread).unwrap();
-        let result = (|| -> Result<Value> {
-            let response = client.request(
-                "thread/read",
-                &json!({
-                    "threadId": thread, "includeTurns": false
-                }),
-            )?;
-            let owner = &response["thread"];
-            if owner["id"] != thread
-                || !owner["status"].is_object()
-                || !matches!(
-                    owner["status"]["type"].as_str(),
-                    Some("active" | "idle" | "notLoaded")
-                )
-                || owner["status"]
-                    .get("activeFlags")
-                    .is_some_and(|flags| !flags.is_array())
-            {
-                return Err(external("thread/read", "invalid_owner_state", false, false));
-            }
-            let mut arguments = json!({
-                "threadId": thread, "limit": if messages { 5 } else { 2 },
-                "sortDirection": "desc", "itemsView": if messages { "full" } else { "summary" }
-            });
-            if let Some(cursor) = cursor {
-                arguments["cursor"] = json!(cursor);
-            }
-            let history = client.request("thread/turns/list", &arguments)?;
-            let turns = history["data"].as_array().ok_or_else(|| {
-                external("thread/turns/list", "invalid_owner_history", false, false)
-            })?;
-            let next = &history["nextCursor"];
-            if !next.is_null() && !next.is_string()
-                || turns.iter().any(|turn| {
-                    !turn.is_object()
-                        || turn["id"].as_str().is_none_or(str::is_empty)
-                        || !turn["items"].is_array()
-                        || messages && turn.get("itemsView").is_some_and(|view| view != "full")
-                })
-            {
-                return Err(external(
-                    "thread/turns/list",
-                    "invalid_owner_history",
-                    false,
-                    false,
-                ));
-            }
-            Ok(json!({
-                "thread": owner, "turns": turns, "observation_source": "app_server",
-                "page": {"hasMore": !next.is_null(), "nextCursor": next}
-            }))
-        })();
+        let client = match self.native_observers.entry(thread.to_owned()) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.insert(RpcClient::from_config(&self.config)?),
+        };
+        let result = read_native_page(client, thread, messages, cursor);
         result.map_err(|error| {
             let detail = error.downcast_ref::<ExternalError>();
             external(
@@ -268,12 +284,11 @@ impl RoutingExecutor {
             })?;
         if result["thread"]["id"] != thread
             || !result["thread"]["status"].is_object()
-            || !result["turns"].is_array()
-            || result["turns"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|turn| !turn.is_object() || turn["id"].as_str().is_none_or(str::is_empty))
+            || result["turns"].as_array().is_none_or(|turns| {
+                turns
+                    .iter()
+                    .any(|turn| !turn.is_object() || turn["id"].as_str().is_none_or(str::is_empty))
+            })
         {
             return Err(external("read", "desktop_read", false, false));
         }
@@ -338,6 +353,143 @@ impl RoutingExecutor {
         }
         self.thread_settings
             .insert(thread.to_owned(), frozen.clone());
+        Ok(())
+    }
+
+    fn dispatch_intent(&mut self, draft: &Value, prompt: &str) -> Result<String> {
+        let thread = required(draft, "thread_id")?.to_owned();
+        if draft.get("send_receipt").is_some() || truthy(&draft["dispatched_turn_id"]) {
+            return Err(external("dispatch", "already_sent", true, false));
+        }
+        let expected = self.prepare_dispatch(&thread, prompt)?;
+        let valid_transport = matches!(
+            draft["transport"].as_str(),
+            Some("app_server" | "desktop_tools")
+        );
+        if !valid_transport
+            || [
+                "thread_id",
+                "dispatch_marker",
+                "source_thread_id",
+                "dispatch_prompt_sha256",
+            ]
+            .iter()
+            .any(|key| draft[*key] != expected[*key])
+            || draft.get("previous_turn_id").is_none()
+        {
+            return Err(external(
+                "dispatch",
+                "pre_send_intent_changed",
+                false,
+                false,
+            ));
+        }
+        Ok(thread)
+    }
+
+    fn dispatch_settings(&self, thread: &str, draft: &Value, model: &str) -> Result<Value> {
+        let frozen = settings(draft)?;
+        if self
+            .thread_settings
+            .get(thread)
+            .is_some_and(|known| known != &frozen)
+            || !model.is_empty()
+                && draft["model"]
+                    .as_str()
+                    .is_some_and(|expected| expected != model)
+        {
+            return Err(external("dispatch", "pre_send_settings", false, false));
+        }
+        Ok(frozen)
+    }
+
+    fn send_desktop_dispatch(
+        &mut self,
+        thread: &str,
+        draft: &Value,
+        prompt: &str,
+    ) -> Result<Value> {
+        if self
+            .routes
+            .get(thread)
+            .is_some_and(|route| route["previous_turn_id"] != draft["previous_turn_id"])
+        {
+            return Err(external(
+                "dispatch",
+                "pre_send_boundary_changed",
+                false,
+                false,
+            ));
+        }
+        let current = self
+            .read(thread, false, None, None)
+            .map_err(|_| external("dispatch", "pre_send_read", false, true))?;
+        if current["thread"]["status"]["type"] != "idle"
+            || !idle(&current)
+            || current["turns"][0]["id"] != draft["previous_turn_id"]
+        {
+            return Err(external("dispatch", "pre_send_state_changed", false, false));
+        }
+        let mut arguments = json!({"threadId": thread, "hostId": "local", "prompt": prompt});
+        if truthy(&draft["model"]) {
+            arguments["model"] = draft["model"].clone();
+        }
+        let receipt = self.desktop_tool("send_message_to_thread", &arguments)?;
+        Ok(merge(
+            draft,
+            &json!({"status": "in_progress", "send_receipt": receipt}),
+        ))
+    }
+
+    fn find_dispatch(
+        &mut self,
+        current: &Value,
+        receipt: &Value,
+        transport: &str,
+    ) -> Result<Value> {
+        let mut association = DispatchHistory::new(receipt, &self.config)?;
+        let mut page = current.clone();
+        let mut seen = HashSet::new();
+        let pages = self.config["execution_history_pages"].as_u64().unwrap_or(8);
+        for _ in 0..pages {
+            if association.scan(&page)? || !truthy(&page["page"]["hasMore"]) {
+                return association
+                    .found
+                    .ok_or_else(|| external("poll", "execution_dispatch_not_found", false, false));
+            }
+            let cursor = required(&page["page"], "nextCursor")?.to_owned();
+            if !seen.insert(cursor.clone()) {
+                return Err(external(
+                    "poll",
+                    "execution_pagination_incomplete",
+                    false,
+                    false,
+                ));
+            }
+            page = self.read(
+                required(receipt, "thread_id")?,
+                true,
+                Some(&cursor),
+                Some(transport),
+            )?;
+        }
+        Err(external("poll", "execution_history_bound", false, false))
+    }
+
+    fn continuation_owner(&mut self, thread: &str) -> Result<()> {
+        if self.persistent() {
+            let owner = self
+                .read_native(thread, true, None)
+                .map_err(|_| external("continuation", "pre_send_read", false, true))?;
+            if !idle(&owner) {
+                return Err(external(
+                    "continuation",
+                    "continuation_changed",
+                    false,
+                    false,
+                ));
+            }
+        }
         Ok(())
     }
 }
@@ -436,45 +588,8 @@ impl Executor for RoutingExecutor {
     }
 
     fn send_dispatch(&mut self, draft: &Value, prompt: &str, model: &str) -> Result<Value> {
-        let thread = required(draft, "thread_id")?.to_owned();
-        if draft.get("send_receipt").is_some() || truthy(&draft["dispatched_turn_id"]) {
-            return Err(external("dispatch", "already_sent", true, false));
-        }
-        let expected = self.prepare_dispatch(&thread, prompt)?;
-        let valid_transport = matches!(
-            draft["transport"].as_str(),
-            Some("app_server" | "desktop_tools")
-        );
-        if !valid_transport
-            || [
-                "thread_id",
-                "dispatch_marker",
-                "source_thread_id",
-                "dispatch_prompt_sha256",
-            ]
-            .iter()
-            .any(|key| draft[*key] != expected[*key])
-            || draft.get("previous_turn_id").is_none()
-        {
-            return Err(external(
-                "dispatch",
-                "pre_send_intent_changed",
-                false,
-                false,
-            ));
-        }
-        let frozen = settings(draft)?;
-        if self
-            .thread_settings
-            .get(&thread)
-            .is_some_and(|known| known != &frozen)
-            || !model.is_empty()
-                && draft["model"]
-                    .as_str()
-                    .is_some_and(|expected| expected != model)
-        {
-            return Err(external("dispatch", "pre_send_settings", false, false));
-        }
+        let thread = self.dispatch_intent(draft, prompt)?;
+        let frozen = self.dispatch_settings(&thread, draft, model)?;
         if draft["transport"] == "app_server" {
             if self.routes.contains_key(&thread) {
                 return Err(external(
@@ -490,36 +605,7 @@ impl Executor for RoutingExecutor {
             let result = self.native_turn(&thread, prompt)?;
             return Ok(bound_outcome(draft, &result));
         }
-        if self
-            .routes
-            .get(&thread)
-            .is_some_and(|route| route["previous_turn_id"] != draft["previous_turn_id"])
-        {
-            return Err(external(
-                "dispatch",
-                "pre_send_boundary_changed",
-                false,
-                false,
-            ));
-        }
-        let current = self
-            .read(&thread, false, None, None)
-            .map_err(|_| external("dispatch", "pre_send_read", false, true))?;
-        if current["thread"]["status"]["type"] != "idle"
-            || !idle(&current)
-            || current["turns"][0]["id"] != draft["previous_turn_id"]
-        {
-            return Err(external("dispatch", "pre_send_state_changed", false, false));
-        }
-        let mut arguments = json!({"threadId": thread, "hostId": "local", "prompt": prompt});
-        if truthy(&draft["model"]) {
-            arguments["model"] = draft["model"].clone();
-        }
-        let receipt = self.desktop_tool("send_message_to_thread", &arguments)?;
-        Ok(merge(
-            draft,
-            &json!({"status": "in_progress", "send_receipt": receipt}),
-        ))
+        self.send_desktop_dispatch(&thread, draft, prompt)
     }
 
     fn poll_execution(&mut self, receipt: &Value) -> Result<Value> {
@@ -530,43 +616,12 @@ impl Executor for RoutingExecutor {
         );
         let thread = required(receipt, "thread_id")?;
         let current = self.read(thread, true, None, Some(transport))?;
-        let status = &current["thread"]["status"];
-        let flags = status
-            .get("activeFlags")
-            .cloned()
-            .unwrap_or_else(|| json!([]));
-        let mut receipt = merge(
-            receipt,
-            &json!({
-                "thread_status": status["type"], "active_flags": flags
-            }),
-        );
-        if current.get("observation_source").is_some() {
-            receipt["observation_source"] = current["observation_source"].clone();
-        }
+        let receipt = observed_receipt(receipt, &current);
         let turns = current["turns"]
             .as_array()
             .context("Missing execution turns")?;
-        let waiting: Vec<_> = flags
-            .as_array()
-            .context("Invalid execution flags")?
-            .iter()
-            .filter(|flag| {
-                matches!(
-                    flag.as_str(),
-                    Some("waitingOnApproval" | "waitingOnUserInput")
-                )
-            })
-            .cloned()
-            .collect();
-        if !waiting.is_empty() {
-            return Ok(merge(
-                &receipt,
-                &json!({
-                    "status": "needs_attention", "waiting_flags": waiting,
-                    "turn": turn_summary(turns.first().unwrap_or(&Value::Null))
-                }),
-            ));
+        if let Some(waiting) = waiting_execution(&receipt, turns)? {
+            return Ok(waiting);
         }
         if turns.is_empty() && current["observation_source"] == "app_server" {
             return Err(external("read", "desktop_read", false, true));
@@ -575,152 +630,16 @@ impl Executor for RoutingExecutor {
             return Ok(merge(&receipt, &json!({"status": "in_progress"})));
         }
         let latest = turns[0].clone();
-        let marker = required(&receipt, "dispatch_marker")?.to_owned();
-        let anchor = receipt["dispatched_turn_id"].as_str().map(str::to_owned);
-        let expected_prompt = receipt["dispatch_prompt_sha256"]
-            .as_str()
-            .map(str::to_owned);
-        let source = receipt["source_thread_id"]
-            .as_str()
-            .or_else(|| self.config["desktop_caller_thread_id"].as_str())
-            .map(str::to_owned);
-        let mut page = current.clone();
-        let mut seen = HashSet::new();
-        let mut found = None;
-        let pages = self.config["execution_history_pages"].as_u64().unwrap_or(8);
-        let mut exhausted = true;
-        for _ in 0..pages {
-            let mut boundary = false;
-            for turn in page["turns"]
-                .as_array()
-                .context("Invalid execution history page")?
-            {
-                if turn["id"] == receipt["previous_turn_id"] {
-                    boundary = true;
-                    break;
-                }
-                let prompt = dispatch_prompt(turn, source.as_deref());
-                let markers: HashSet<_> = marker_expression()
-                    .find_iter(&prompt)
-                    .map(|matched| matched.as_str().to_owned())
-                    .collect();
-                if markers.iter().any(|candidate| candidate != &marker) {
-                    return Err(external(
-                        "poll",
-                        "execution_association_conflict",
-                        false,
-                        false,
-                    ));
-                }
-                if anchor
-                    .as_ref()
-                    .is_some_and(|anchor| turn["id"] == anchor.as_str())
-                {
-                    found = Some(turn.clone());
-                    break;
-                }
-                if anchor.is_none() && markers.contains(&marker) {
-                    if let Some(expected) = &expected_prompt {
-                        if digest(prompt.trim().as_bytes()) == *expected
-                            || digest(unescape(prompt.trim()).as_bytes()) == *expected
-                        {
-                            found = Some(turn.clone());
-                            break;
-                        }
-                    } else {
-                        found = Some(turn.clone());
-                    }
-                }
-            }
-            if boundary || found.is_some() && (anchor.is_some() || expected_prompt.is_some()) {
-                exhausted = false;
-                break;
-            }
-            if !truthy(&page["page"]["hasMore"]) {
-                exhausted = false;
-                break;
-            }
-            let cursor = required(&page["page"], "nextCursor")?.to_owned();
-            if !seen.insert(cursor.clone()) {
-                return Err(external(
-                    "poll",
-                    "execution_pagination_incomplete",
-                    false,
-                    false,
-                ));
-            }
-            page = self.read(thread, true, Some(&cursor), Some(transport))?;
-        }
-        if exhausted {
-            return Err(external("poll", "execution_history_bound", false, false));
-        }
-        let dispatch =
-            found.ok_or_else(|| external("poll", "execution_dispatch_not_found", false, false))?;
-        receipt["dispatched_turn_id"] = dispatch["id"].clone();
-        receipt["continuation"] = json!(latest["id"] != dispatch["id"]);
-        receipt["dispatch_turn"] = turn_summary(&dispatch);
-        receipt["turn"] = turn_summary(&latest);
-        if status["type"] == "active" {
-            receipt["status"] = json!("in_progress");
-        } else if latest["status"] == "completed"
-            && matches!(status["type"].as_str(), Some("idle" | "notLoaded"))
-        {
-            receipt["status"] = json!("completed");
-            receipt["text"] = json!(latest["items"]
-                .as_array()
-                .context("Missing final output items")?
-                .iter()
-                .filter(|item| item["type"] == "agentMessage" && item["phase"] == "final_answer")
-                .filter_map(|item| item["text"].as_str())
-                .collect::<Vec<_>>()
-                .join("\n"));
-        } else if matches!(latest["status"].as_str(), Some("failed" | "interrupted")) {
-            receipt["status"] = latest["status"].clone();
-            receipt["turn"]["error"] = latest["error"].clone();
-            receipt["automatic_retry_signal"] = retry_signal(&current, &latest, &receipt);
-        } else {
-            receipt["status"] = json!("in_progress");
-        }
-        Ok(receipt)
+        let dispatch = self.find_dispatch(&current, &receipt, transport)?;
+        completed_receipt(receipt, &current, &latest, &dispatch)
     }
 
     fn send_continuation(&mut self, draft: &Value, prompt: &str, model: &str) -> Result<Value> {
-        if draft.get("send_receipt").is_some() || truthy(&draft["dispatched_turn_id"]) {
-            return Err(external("continuation", "already_sent", true, false));
-        }
-        if digest(prompt.trim().as_bytes()) != draft["dispatch_prompt_sha256"]
-            || !prompt.contains(required(draft, "dispatch_marker")?)
-            || !truthy(&draft["retry_id"])
-        {
-            return Err(external(
-                "continuation",
-                "pre_send_intent_changed",
-                false,
-                false,
-            ));
-        }
-        let thread = required(draft, "thread_id")?.to_owned();
-        let transport = required(draft, "transport")?.to_owned();
-        ensure!(
-            matches!(transport.as_str(), "app_server" | "desktop_tools"),
-            "Invalid continuation transport"
-        );
+        let (thread, transport) = continuation_intent(draft, prompt)?;
         let native = transport == "app_server" && self.persistent();
-        if self.persistent() {
-            let owner = self
-                .read_native(&thread, true, None)
-                .map_err(|_| external("continuation", "pre_send_read", false, true))?;
-            if !idle(&owner) {
-                return Err(external(
-                    "continuation",
-                    "continuation_changed",
-                    false,
-                    false,
-                ));
-            }
-        }
+        self.continuation_owner(thread)?;
         let current = self
-            .read(&thread, true, None, Some(&transport))
+            .read(thread, true, None, Some(transport))
             .map_err(|_| external("continuation", "pre_send_read", false, true))?;
         continuation_allowed(&current, draft)?;
         if native {
@@ -728,12 +647,12 @@ impl Executor for RoutingExecutor {
             if frozen["model"] != model {
                 return Err(external("continuation", "pre_send_settings", false, false));
             }
-            self.resume_frozen(&thread, &frozen)?;
+            self.resume_frozen(thread, &frozen)?;
             let current = self
-                .read_native(&thread, true, None)
+                .read_native(thread, true, None)
                 .map_err(|_| external("continuation", "pre_send_read", false, true))?;
             continuation_allowed(&current, draft)?;
-            return Ok(bound_outcome(draft, &self.native_turn(&thread, prompt)?));
+            return Ok(bound_outcome(draft, &self.native_turn(thread, prompt)?));
         }
         let receipt = self.desktop_tool(
             "send_message_to_thread",
@@ -743,6 +662,182 @@ impl Executor for RoutingExecutor {
         )?;
         Ok(merge(draft, &json!({"send_receipt": receipt})))
     }
+}
+
+struct DispatchHistory<'a> {
+    receipt: &'a Value,
+    marker: String,
+    anchor: Option<String>,
+    expected_prompt: Option<String>,
+    source: Option<String>,
+    found: Option<Value>,
+}
+
+impl<'a> DispatchHistory<'a> {
+    fn new(receipt: &'a Value, config: &Value) -> Result<Self> {
+        Ok(Self {
+            receipt,
+            marker: required(receipt, "dispatch_marker")?.to_owned(),
+            anchor: receipt["dispatched_turn_id"].as_str().map(str::to_owned),
+            expected_prompt: receipt["dispatch_prompt_sha256"]
+                .as_str()
+                .map(str::to_owned),
+            source: receipt["source_thread_id"]
+                .as_str()
+                .or_else(|| config["desktop_caller_thread_id"].as_str())
+                .map(str::to_owned),
+            found: None,
+        })
+    }
+
+    fn scan(&mut self, page: &Value) -> Result<bool> {
+        for turn in page["turns"]
+            .as_array()
+            .context("Invalid execution history page")?
+        {
+            if turn["id"] == self.receipt["previous_turn_id"] {
+                return Ok(true);
+            }
+            if self.candidate(turn)? {
+                break;
+            }
+        }
+        Ok(self.found.is_some() && (self.anchor.is_some() || self.expected_prompt.is_some()))
+    }
+
+    fn candidate(&mut self, turn: &Value) -> Result<bool> {
+        let prompt = dispatch_prompt(turn, self.source.as_deref());
+        let markers: HashSet<_> = marker_expression()
+            .find_iter(&prompt)
+            .map(|matched| matched.as_str().to_owned())
+            .collect();
+        if markers.iter().any(|candidate| candidate != &self.marker) {
+            return Err(external(
+                "poll",
+                "execution_association_conflict",
+                false,
+                false,
+            ));
+        }
+        if self
+            .anchor
+            .as_ref()
+            .is_some_and(|anchor| turn["id"] == anchor.as_str())
+        {
+            self.found = Some(turn.clone());
+            return Ok(true);
+        }
+        if self.anchor.is_none() && markers.contains(&self.marker) {
+            if let Some(expected) = &self.expected_prompt {
+                if digest(prompt.trim().as_bytes()) == *expected
+                    || digest(unescape(prompt.trim()).as_bytes()) == *expected
+                {
+                    self.found = Some(turn.clone());
+                    return Ok(true);
+                }
+            } else {
+                self.found = Some(turn.clone());
+            }
+        }
+        Ok(false)
+    }
+}
+
+fn observed_receipt(receipt: &Value, current: &Value) -> Value {
+    let status = &current["thread"]["status"];
+    let flags = status
+        .get("activeFlags")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let mut receipt = merge(
+        receipt,
+        &json!({
+            "thread_status": status["type"], "active_flags": flags
+        }),
+    );
+    if current.get("observation_source").is_some() {
+        receipt["observation_source"] = current["observation_source"].clone();
+    }
+    receipt
+}
+
+fn waiting_execution(receipt: &Value, turns: &[Value]) -> Result<Option<Value>> {
+    let waiting: Vec<_> = receipt["active_flags"]
+        .as_array()
+        .context("Invalid execution flags")?
+        .iter()
+        .filter(|flag| {
+            matches!(
+                flag.as_str(),
+                Some("waitingOnApproval" | "waitingOnUserInput")
+            )
+        })
+        .cloned()
+        .collect();
+    Ok((!waiting.is_empty()).then(|| {
+        merge(
+            receipt,
+            &json!({
+                "status": "needs_attention", "waiting_flags": waiting,
+                "turn": turn_summary(turns.first().unwrap_or(&Value::Null))
+            }),
+        )
+    }))
+}
+
+fn completed_receipt(
+    mut receipt: Value,
+    current: &Value,
+    latest: &Value,
+    dispatch: &Value,
+) -> Result<Value> {
+    receipt["dispatched_turn_id"] = dispatch["id"].clone();
+    receipt["continuation"] = json!(latest["id"] != dispatch["id"]);
+    receipt["dispatch_turn"] = turn_summary(dispatch);
+    receipt["turn"] = turn_summary(latest);
+    let status = &current["thread"]["status"];
+    if status["type"] == "active" {
+        receipt["status"] = json!("in_progress");
+    } else if latest["status"] == "completed"
+        && matches!(status["type"].as_str(), Some("idle" | "notLoaded"))
+    {
+        receipt["status"] = json!("completed");
+        receipt["text"] =
+            json!(latest["items"].as_array().context("Missing final output items")?
+            .iter().filter(|item| item["type"] == "agentMessage" && item["phase"] == "final_answer")
+            .filter_map(|item| item["text"].as_str()).collect::<Vec<_>>().join("\n"));
+    } else if matches!(latest["status"].as_str(), Some("failed" | "interrupted")) {
+        receipt["status"] = latest["status"].clone();
+        receipt["turn"]["error"] = latest["error"].clone();
+        receipt["automatic_retry_signal"] = retry_signal(current, latest, &receipt);
+    } else {
+        receipt["status"] = json!("in_progress");
+    }
+    Ok(receipt)
+}
+
+fn continuation_intent<'a>(draft: &'a Value, prompt: &str) -> Result<(&'a str, &'a str)> {
+    if draft.get("send_receipt").is_some() || truthy(&draft["dispatched_turn_id"]) {
+        return Err(external("continuation", "already_sent", true, false));
+    }
+    if digest(prompt.trim().as_bytes()) != draft["dispatch_prompt_sha256"]
+        || !prompt.contains(required(draft, "dispatch_marker")?)
+        || !truthy(&draft["retry_id"])
+    {
+        return Err(external(
+            "continuation",
+            "pre_send_intent_changed",
+            false,
+            false,
+        ));
+    }
+    let thread = required(draft, "thread_id")?;
+    let transport = required(draft, "transport")?;
+    ensure!(
+        matches!(transport, "app_server" | "desktop_tools"),
+        "Invalid continuation transport"
+    );
+    Ok((thread, transport))
 }
 
 fn continuation_allowed(current: &Value, draft: &Value) -> Result<()> {
@@ -768,10 +863,9 @@ fn continuation_allowed(current: &Value, draft: &Value) -> Result<()> {
 }
 
 fn delegation(text: &str, source: Option<&str>) -> Option<String> {
-    let capture = Regex::new(
-        r"(?s)^<codex_delegation>\s*<source_thread_id>([^<]+)</source_thread_id>\s*<input>(.*?)</input>\s*</codex_delegation>$",
+    let capture = lazy_regex::regex!(
+        r"(?s)^<codex_delegation>\s*<source_thread_id>([^<]+)</source_thread_id>\s*<input>(.*?)</input>\s*</codex_delegation>$"
     )
-    .unwrap()
     .captures(text.trim())?;
     if Some(&capture[1]) != source {
         return None;
@@ -783,6 +877,24 @@ fn dispatch_prompt(turn: &Value, source: Option<&str>) -> String {
     let Some(items) = turn["items"].as_array() else {
         return String::new();
     };
+    let mut prompt = user_prompt_texts(items, source).join("\n");
+    for item in items {
+        if item["type"] == "functionCallOutput"
+            && item["name"] == "send_message_to_thread"
+            && item["namespace"] == "codex_app"
+            && item["output"]["truncated"] == false
+            && let Some(text) = item["output"]["text"]
+                .as_str()
+                .and_then(|text| delegation(text, source))
+        {
+            prompt.push('\n');
+            prompt.push_str(&text);
+        }
+    }
+    prompt
+}
+
+fn user_prompt_texts(items: &[Value], source: Option<&str>) -> Vec<String> {
     let mut texts = Vec::new();
     for item in items {
         if item["type"] != "userMessage" {
@@ -810,33 +922,24 @@ fn dispatch_prompt(turn: &Value, source: Option<&str>) -> String {
             }
         }
     }
-    let mut prompt = texts.join("\n");
-    for item in items {
-        if item["type"] == "functionCallOutput"
-            && item["name"] == "send_message_to_thread"
-            && item["namespace"] == "codex_app"
-            && item["output"]["truncated"] == false
-            && let Some(text) = item["output"]["text"]
-                .as_str()
-                .and_then(|text| delegation(text, source))
-        {
-            prompt.push('\n');
-            prompt.push_str(&text);
-        }
-    }
-    prompt
+    texts
 }
 
-pub fn retry_signal(current: &Value, turn: &Value, receipt: &Value) -> Value {
+fn retry_error(turn: &Value) -> (Value, Value) {
     let mut code = turn["error"]["codexErrorInfo"].clone();
     let mut http_status = Value::Null;
     if let Some(object) = code.as_object()
         && object.len() == 1
+        && let Some((kind, details)) = object.iter().next()
     {
-        let (kind, details) = object.iter().next().unwrap();
         http_status = details["httpStatusCode"].clone();
         code = json!(kind);
     }
+    (code, http_status)
+}
+
+pub fn retry_signal(current: &Value, turn: &Value, receipt: &Value) -> Value {
+    let (code, http_status) = retry_error(turn);
     let mut result = json!({
         "eligible": false, "reason": "unclassified_terminal", "error_code": code
     });
@@ -844,50 +947,74 @@ pub fn retry_signal(current: &Value, turn: &Value, receipt: &Value) -> Value {
         result["reason"] = json!("not_idle_or_waiting");
         return result;
     }
+    if !classify_retry(turn, receipt, &http_status, &mut result)
+        || !retry_operation_history(turn, &mut result)
+    {
+        return result;
+    }
+    result["eligible"] = json!(true);
+    if turn["status"] != "interrupted" {
+        result["reason"] = json!("structured_transport_failure");
+    }
+    result
+}
+
+fn owned_timeout(turn: &Value, receipt: &Value) -> bool {
+    let proof = &receipt["local_timeout"];
+    let times = (
+        turn["startedAt"].as_f64(),
+        turn["completedAt"].as_f64(),
+        proof["observed_at"].as_f64(),
+        proof["seconds"].as_f64(),
+    );
+    let (Some(started), Some(completed), Some(observed), Some(seconds)) = times else {
+        return false;
+    };
+    if truthy(&turn["error"])
+        || proof["source"] != "owned_app_server_wait"
+        || proof["turn_id"] != turn["id"]
+        || seconds <= 0.0
+        || completed - started < seconds - 2.0
+        || completed < observed - 2.0
+        || completed > observed + 10.0
+    {
+        return false;
+    }
+    true
+}
+
+fn classify_retry(turn: &Value, receipt: &Value, http_status: &Value, result: &mut Value) -> bool {
     if turn["status"] == "interrupted" {
-        let proof = &receipt["local_timeout"];
-        let times = (
-            turn["startedAt"].as_f64(),
-            turn["completedAt"].as_f64(),
-            proof["observed_at"].as_f64(),
-            proof["seconds"].as_f64(),
-        );
-        let (Some(started), Some(completed), Some(observed), Some(seconds)) = times else {
-            return result;
-        };
-        if truthy(&turn["error"])
-            || proof["source"] != "owned_app_server_wait"
-            || proof["turn_id"] != turn["id"]
-            || seconds <= 0.0
-            || completed - started < seconds - 2.0
-            || completed < observed - 2.0
-            || completed > observed + 10.0
-        {
-            return result;
+        if !owned_timeout(turn, receipt) {
+            return false;
         }
         result["error_code"] = json!("ownedAppServerTimeout");
         result["reason"] = json!("owned_app_server_timeout");
     } else {
         if !matches!(
-            code.as_str(),
+            result["error_code"].as_str(),
             Some(
                 "httpConnectionFailed"
                     | "responseStreamConnectionFailed"
                     | "responseStreamDisconnected"
             )
         ) {
-            return result;
+            return false;
         }
         if !http_status.is_null()
             && !matches!(http_status.as_u64(), Some(408 | 500 | 502 | 503 | 504))
         {
             result["reason"] = json!("nontransient_http_status");
-            return result;
+            return false;
         }
     }
+    true
+}
+
+fn retry_operation_history(turn: &Value, result: &mut Value) -> bool {
     let Some(items) = turn["items"].as_array() else {
         result["reason"] = json!("operation_history_missing");
-        return result;
+        return false;
     };
     for item in items {
         let allowed = matches!(
@@ -900,14 +1027,10 @@ pub fn retry_signal(current: &Value, turn: &Value, receipt: &Value) -> Value {
                 && !truthy(&item["processId"]);
         if !allowed {
             result["reason"] = json!("operation_outcome_unknown");
-            return result;
+            return false;
         }
     }
-    result["eligible"] = json!(true);
-    if turn["status"] != "interrupted" {
-        result["reason"] = json!("structured_transport_failure");
-    }
-    result
+    true
 }
 
 #[cfg(test)]

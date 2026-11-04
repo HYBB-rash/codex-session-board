@@ -16,8 +16,10 @@
 阶段完成升版须由用户明确决定。详细规则见 `CHECKS.md`。
 
 首次使用或重新克隆仓库后，运行 `./scripts/install-git-hooks` 启用提交前测试。
-之后每次提交都会对暂存区代码运行 `cargo test --locked --offline`，
-测试失败或无法运行都会阻止提交。
+之后每次提交都会先对暂存区代码运行 Clippy，再运行 `cargo test --locked --offline`，
+任一检查失败或无法运行都会阻止提交。正式代码禁用 `unsafe`、`.unwrap()` 和 `.expect()`；
+测试允许 `.unwrap()` 和 `.expect()`。所有函数按 Clippy 规则最多 41 行，
+测试、示例和 Rust 检查脚本同样受限，超限会阻止提交。
 
 ```bash
 cargo build --release --locked

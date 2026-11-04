@@ -1,6 +1,7 @@
 use super::{ExternalError, external, required};
 use crate::common::command;
 use anyhow::{Context, Result, ensure};
+use rustix::process::{Pid, Signal, kill_process_group};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::io::{self, BufRead, Read, Write};
@@ -10,7 +11,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex, mpsc};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use tungstenite::{Message, WebSocket, protocol::WebSocketConfig};
@@ -37,6 +38,39 @@ enum Endpoint {
     WebSocket(PathBuf),
 }
 
+impl Endpoint {
+    fn from_config(config: &Value) -> Result<Self> {
+        if let Some(path) = config["daemon_socket"].as_str() {
+            ensure!(!path.is_empty(), "Daemon socket cannot be empty");
+            return Ok(Self::WebSocket(PathBuf::from(path)));
+        }
+        if config["codex_command"].is_null() {
+            return Ok(Self::Process(vec![
+                "codex".into(),
+                "app-server".into(),
+                "proxy".into(),
+            ]));
+        }
+        let arguments = command(&config["codex_command"])?;
+        if !arguments.iter().any(|item| {
+            Path::new(item)
+                .file_name()
+                .is_some_and(|name| name == "daemon_bridge.py")
+        }) {
+            return Ok(Self::Process(arguments));
+        }
+        let position = arguments
+            .iter()
+            .position(|item| item == "--socket")
+            .context("Legacy daemon bridge command requires --socket")?;
+        let path = arguments
+            .get(position + 1)
+            .context("Missing daemon socket")?;
+        ensure!(!path.is_empty(), "Daemon socket cannot be empty");
+        Ok(Self::WebSocket(PathBuf::from(path)))
+    }
+}
+
 #[derive(Default)]
 struct Inbox {
     responses: HashMap<String, Value>,
@@ -47,7 +81,40 @@ struct Inbox {
     stderr: Vec<u8>,
 }
 
+impl Inbox {
+    fn check_integrity(&self, operation: &str, mutation: bool) -> Result<()> {
+        if self.failure.as_deref() == Some("inbox_poisoned") {
+            return Err(external(operation, "inbox_poisoned", mutation, false));
+        }
+        Ok(())
+    }
+}
+
 type Shared = Arc<(Mutex<Inbox>, Condvar)>;
+
+fn poisoned_inbox<'a>(shared: &Shared, mut inbox: MutexGuard<'a, Inbox>) -> MutexGuard<'a, Inbox> {
+    inbox.failure = Some("inbox_poisoned".to_owned());
+    shared.1.notify_all();
+    inbox
+}
+
+fn lock_inbox(shared: &Shared) -> MutexGuard<'_, Inbox> {
+    match shared.0.lock() {
+        Ok(inbox) => inbox,
+        Err(poisoned) => poisoned_inbox(shared, poisoned.into_inner()),
+    }
+}
+
+fn wait_inbox<'a>(
+    shared: &Shared,
+    inbox: MutexGuard<'a, Inbox>,
+    duration: Duration,
+) -> MutexGuard<'a, Inbox> {
+    match shared.1.wait_timeout(inbox, duration) {
+        Ok((inbox, _)) => inbox,
+        Err(poisoned) => poisoned_inbox(shared, poisoned.into_inner().0),
+    }
+}
 
 #[derive(Clone)]
 enum Sink {
@@ -74,7 +141,7 @@ impl Sink {
     fn end(&self, kind: Option<&str>) {
         match self {
             Self::Rpc(shared) => {
-                let mut inbox = shared.0.lock().unwrap();
+                let mut inbox = lock_inbox(shared);
                 if inbox.failure.is_none() {
                     inbox.failure = Some(kind.unwrap_or("connection_closed").to_owned());
                 }
@@ -100,10 +167,6 @@ struct Connection {
     socket: Option<UnixStream>,
 }
 
-unsafe extern "C" {
-    fn kill(pid: i32, signal: i32) -> i32;
-}
-
 impl Drop for Connection {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
@@ -111,18 +174,13 @@ impl Drop for Connection {
             let _ = socket.shutdown(Shutdown::Both);
         }
         if let Some(child) = &mut self.child {
-            if let Ok(group) = i32::try_from(child.id()) {
-                unsafe {
-                    kill(-group, 15);
-                }
-                let until = Instant::now() + Duration::from_millis(100);
-                while Instant::now() < until && matches!(child.try_wait(), Ok(None)) {
-                    thread::sleep(Duration::from_millis(5));
-                }
-                unsafe {
-                    kill(-group, 9);
-                }
+            let group = Pid::from_child(child);
+            let _ = kill_process_group(group, Signal::TERM);
+            let until = Instant::now() + Duration::from_millis(100);
+            while Instant::now() < until && matches!(child.try_wait(), Ok(None)) {
+                thread::sleep(Duration::from_millis(5));
             }
+            let _ = kill_process_group(group, Signal::KILL);
             let _ = child.kill();
             let _ = child.wait();
         }
@@ -176,7 +234,8 @@ fn accept_frame(shared: &Shared, bytes: &[u8]) -> Result<()> {
             "invalid_rpc_id",
         )?;
     }
-    let mut inbox = shared.0.lock().unwrap();
+    let mut inbox = lock_inbox(shared);
+    inbox.check_integrity("receive", false)?;
     if let Some(method) = message.get("method") {
         ensure_protocol(
             method.as_str().is_some_and(|text| !text.is_empty()),
@@ -263,49 +322,18 @@ fn process_connection(
         .process_group(0)
         .spawn()
         .map_err(|_| external("connect", "connection_spawn", false, true))?;
-    let mut input = child.stdin.take().context("Missing child stdin")?;
+    let input = child.stdin.take().context("Missing child stdin")?;
     let output = child.stdout.take().context("Missing child stdout")?;
-    let mut errors = child.stderr.take().context("Missing child stderr")?;
+    let errors = child.stderr.take().context("Missing child stderr")?;
     let stop = Arc::new(AtomicBool::new(false));
     let (writer, packets) = mpsc::sync_channel::<Packet>(1);
     let writer_stop = stop.clone();
     let writer_sink = Sink::Rpc(shared.clone());
-    let writer_thread = thread::spawn(move || {
-        while !writer_stop.load(Ordering::Acquire) {
-            match packets.recv_timeout(Duration::from_millis(10)) {
-                Ok(packet) => {
-                    let result = input
-                        .write_all(&packet.bytes)
-                        .and_then(|()| input.flush())
-                        .map_err(|_| "connection_write".to_owned());
-                    let failed = result.is_err();
-                    let _ = packet.acknowledgement.send(result);
-                    if failed {
-                        writer_sink.end(Some("connection_write"));
-                        return;
-                    }
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {}
-                Err(mpsc::RecvTimeoutError::Disconnected) => return,
-            }
-        }
-    });
+    let writer_thread =
+        thread::spawn(move || process_writer(input, packets, writer_stop, writer_sink));
     let output_sink = Sink::Rpc(shared.clone());
     let output_thread = thread::spawn(move || read_lines(output, limit, output_sink));
-    let error_thread = thread::spawn(move || {
-        let mut buffer = [0; 8192];
-        loop {
-            match errors.read(&mut buffer) {
-                Ok(0) | Err(_) => return,
-                Ok(count) => {
-                    let mut inbox = shared.0.lock().unwrap();
-                    inbox.stderr.extend_from_slice(&buffer[..count]);
-                    let excess = inbox.stderr.len().saturating_sub(stderr_limit);
-                    inbox.stderr.drain(..excess);
-                }
-            }
-        }
-    });
+    let error_thread = thread::spawn(move || process_stderr(errors, shared, stderr_limit));
     Ok(Connection {
         writer,
         stop,
@@ -313,6 +341,47 @@ fn process_connection(
         child: Some(child),
         socket: None,
     })
+}
+
+fn process_writer(
+    mut input: impl Write,
+    packets: mpsc::Receiver<Packet>,
+    stop: Arc<AtomicBool>,
+    sink: Sink,
+) {
+    while !stop.load(Ordering::Acquire) {
+        match packets.recv_timeout(Duration::from_millis(10)) {
+            Ok(packet) => {
+                let result = input
+                    .write_all(&packet.bytes)
+                    .and_then(|()| input.flush())
+                    .map_err(|_| "connection_write".to_owned());
+                let failed = result.is_err();
+                let _ = packet.acknowledgement.send(result);
+                if failed {
+                    sink.end(Some("connection_write"));
+                    return;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => return,
+        }
+    }
+}
+
+fn process_stderr(mut errors: impl Read, shared: Shared, stderr_limit: usize) {
+    let mut buffer = [0; 8192];
+    loop {
+        match errors.read(&mut buffer) {
+            Ok(0) | Err(_) => return,
+            Ok(count) => {
+                let mut inbox = lock_inbox(&shared);
+                inbox.stderr.extend_from_slice(&buffer[..count]);
+                let excess = inbox.stderr.len().saturating_sub(stderr_limit);
+                inbox.stderr.drain(..excess);
+            }
+        }
+    }
 }
 
 fn would_block(error: &tungstenite::Error) -> bool {
@@ -358,78 +427,105 @@ fn websocket_loop(
     stop: Arc<AtomicBool>,
     sink: Sink,
 ) {
-    let mut acknowledgement: Option<mpsc::Sender<std::result::Result<(), String>>> = None;
+    let mut acknowledgement = None;
     while !stop.load(Ordering::Acquire) {
-        if acknowledgement.is_none() {
-            match packets.try_recv() {
-                Ok(packet) => {
-                    let text = match String::from_utf8(packet.bytes) {
-                        Ok(text) => text.trim_end_matches(['\r', '\n']).to_owned(),
-                        Err(_) => {
-                            let _ = packet.acknowledgement.send(Err("invalid_utf8".to_owned()));
-                            sink.end(Some("protocol_invalid_utf8"));
-                            return;
-                        }
-                    };
-                    match websocket.write(Message::Text(text.into())) {
-                        Ok(()) => acknowledgement = Some(packet.acknowledgement),
-                        Err(error) if would_block(&error) => {
-                            acknowledgement = Some(packet.acknowledgement);
-                        }
-                        Err(_) => {
-                            let _ = packet
-                                .acknowledgement
-                                .send(Err("connection_write".to_owned()));
-                            sink.end(Some("connection_write"));
-                            return;
-                        }
-                    }
-                }
-                Err(mpsc::TryRecvError::Empty) => {}
-                Err(mpsc::TryRecvError::Disconnected) => return,
-            }
-        }
-        match websocket.flush() {
-            Ok(()) => {
-                if let Some(sender) = acknowledgement.take() {
-                    let _ = sender.send(Ok(()));
-                }
-            }
-            Err(error) if would_block(&error) => {}
-            Err(_) => {
-                sink.end(Some("connection_write"));
-                return;
-            }
-        }
-        for _ in 0..128 {
-            match websocket.read() {
-                Ok(Message::Text(text)) => {
-                    if sink.frame(text.as_bytes()).is_err() {
-                        sink.end(Some("protocol_invalid_frame"));
-                        return;
-                    }
-                }
-                Ok(Message::Ping(_) | Message::Pong(_)) => {}
-                Ok(Message::Close(_)) => {
-                    let _ = websocket.flush();
-                    sink.end(Some("connection_closed"));
-                    return;
-                }
-                Ok(_) => {
-                    sink.end(Some("protocol_nontext_frame"));
-                    return;
-                }
-                Err(error) if would_block(&error) => break,
-                Err(_) => {
-                    sink.end(Some("connection_read"));
-                    return;
-                }
-            }
+        if !websocket_flush_packets(websocket, &packets, &mut acknowledgement, &sink)
+            || !websocket_read_available(websocket, &sink)
+        {
+            return;
         }
         thread::sleep(Duration::from_millis(2));
     }
     let _ = websocket.close(None);
     let _ = websocket.flush();
+}
+
+type Acknowledgement = mpsc::Sender<std::result::Result<(), String>>;
+
+fn websocket_packet(
+    websocket: &mut WebSocket<UnixStream>,
+    packet: Packet,
+    sink: &Sink,
+) -> std::result::Result<Acknowledgement, ()> {
+    let text = match String::from_utf8(packet.bytes) {
+        Ok(text) => text.trim_end_matches(['\r', '\n']).to_owned(),
+        Err(_) => {
+            let _ = packet.acknowledgement.send(Err("invalid_utf8".to_owned()));
+            sink.end(Some("protocol_invalid_utf8"));
+            return Err(());
+        }
+    };
+    match websocket.write(Message::Text(text.into())) {
+        Ok(()) => Ok(packet.acknowledgement),
+        Err(error) if would_block(&error) => Ok(packet.acknowledgement),
+        Err(_) => {
+            let _ = packet
+                .acknowledgement
+                .send(Err("connection_write".to_owned()));
+            sink.end(Some("connection_write"));
+            Err(())
+        }
+    }
+}
+
+fn websocket_flush_packets(
+    websocket: &mut WebSocket<UnixStream>,
+    packets: &mpsc::Receiver<Packet>,
+    acknowledgement: &mut Option<Acknowledgement>,
+    sink: &Sink,
+) -> bool {
+    if acknowledgement.is_none() {
+        match packets.try_recv() {
+            Ok(packet) => match websocket_packet(websocket, packet, sink) {
+                Ok(sender) => *acknowledgement = Some(sender),
+                Err(()) => return false,
+            },
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => return false,
+        }
+    }
+    match websocket.flush() {
+        Ok(()) => {
+            if let Some(sender) = acknowledgement.take() {
+                let _ = sender.send(Ok(()));
+            }
+        }
+        Err(error) if would_block(&error) => {}
+        Err(_) => {
+            sink.end(Some("connection_write"));
+            return false;
+        }
+    }
+    true
+}
+
+fn websocket_read_available(websocket: &mut WebSocket<UnixStream>, sink: &Sink) -> bool {
+    for _ in 0..128 {
+        match websocket.read() {
+            Ok(Message::Text(text)) => {
+                if sink.frame(text.as_bytes()).is_err() {
+                    sink.end(Some("protocol_invalid_frame"));
+                    return false;
+                }
+            }
+            Ok(Message::Ping(_) | Message::Pong(_)) => {}
+            Ok(Message::Close(_)) => {
+                let _ = websocket.flush();
+                sink.end(Some("connection_closed"));
+                return false;
+            }
+            Ok(_) => {
+                sink.end(Some("protocol_nontext_frame"));
+                return false;
+            }
+            Err(error) if would_block(&error) => break,
+            Err(_) => {
+                sink.end(Some("connection_read"));
+                return false;
+            }
+        }
+    }
+    true
 }
 
 pub struct RpcClient {
@@ -448,37 +544,82 @@ pub struct RpcClient {
     pub last_turn_result: Option<Value>,
 }
 
+struct TurnExecution {
+    turn: Value,
+    acknowledged: bool,
+    start: usize,
+    until: Instant,
+}
+
+fn started_turn_status(turn: &Value, wait: bool) -> Result<Option<String>> {
+    match turn["status"].as_str() {
+        Some(status @ ("completed" | "failed" | "interrupted")) => Ok(Some(status.to_owned())),
+        _ if wait => Ok(None),
+        Some("inProgress") => Ok(Some("in_progress".to_owned())),
+        _ => Err(external("turn/start", "invalid_turn_status", true, false)),
+    }
+}
+
+fn completed_turn<'a>(
+    events: &'a [Value],
+    thread: &str,
+    turn: &Value,
+) -> Result<Option<&'a Value>> {
+    for event in events {
+        if event["method"] == "turn/completed"
+            && event["params"]["threadId"] == thread
+            && event["params"]["turn"]["id"] == turn["id"]
+        {
+            let completed = &event["params"]["turn"];
+            let status = required(completed, "status")?;
+            if !matches!(status, "completed" | "failed" | "interrupted") {
+                return Err(external(
+                    "turn/completed",
+                    "invalid_turn_status",
+                    true,
+                    false,
+                ));
+            }
+            return Ok(Some(completed));
+        }
+    }
+    Ok(None)
+}
+
+fn execution_status(execution: Result<String>) -> Result<String> {
+    execution.or_else(|error| {
+        let kind = error
+            .downcast_ref::<ExternalError>()
+            .map(|error| error.kind.as_str());
+        match kind {
+            Some("needs_attention") => Ok("needs_attention".to_owned()),
+            Some("timeout" | "timeout_connection_disabled") => Ok("timeout".to_owned()),
+            _ => Err(error),
+        }
+    })
+}
+
+fn observed_turn(thread: &str, events: &[Value]) -> Value {
+    events
+        .iter()
+        .rev()
+        .find(|event| {
+            matches!(
+                event["method"].as_str(),
+                Some("turn/started" | "turn/completed")
+            ) && event["params"]["threadId"] == thread
+                && event["params"]["turn"].is_object()
+        })
+        .map_or(Value::Null, |event| event["params"]["turn"].clone())
+}
+
 impl RpcClient {
     pub fn from_config(config: &Value) -> Result<Self> {
         let timeout = seconds(match config.get("request_timeout_seconds") {
             Some(value) => value.as_f64().context("RPC timeout must be a number")?,
             None => 120.0,
         })?;
-        let endpoint = if let Some(path) = config["daemon_socket"].as_str() {
-            ensure!(!path.is_empty(), "Daemon socket cannot be empty");
-            Endpoint::WebSocket(PathBuf::from(path))
-        } else if !config["codex_command"].is_null() {
-            let arguments = command(&config["codex_command"])?;
-            if arguments.iter().any(|item| {
-                Path::new(item)
-                    .file_name()
-                    .is_some_and(|name| name == "daemon_bridge.py")
-            }) {
-                let position = arguments
-                    .iter()
-                    .position(|item| item == "--socket")
-                    .context("Legacy daemon bridge command requires --socket")?;
-                let path = arguments
-                    .get(position + 1)
-                    .context("Missing daemon socket")?;
-                ensure!(!path.is_empty(), "Daemon socket cannot be empty");
-                Endpoint::WebSocket(PathBuf::from(path))
-            } else {
-                Endpoint::Process(arguments)
-            }
-        } else {
-            Endpoint::Process(vec!["codex".into(), "app-server".into(), "proxy".into()])
-        };
+        let endpoint = Endpoint::from_config(config)?;
         let frame_limit = integer_limit(config, "max_frame_bytes", FRAME_LIMIT)?;
         let stderr_limit = integer_limit(config, "stderr_limit_bytes", STDERR_LIMIT)?;
         Ok(Self {
@@ -517,15 +658,15 @@ impl RpcClient {
     }
 
     pub fn notifications(&self) -> Vec<Value> {
-        self.shared.0.lock().unwrap().notifications.clone()
+        lock_inbox(&self.shared).notifications.clone()
     }
 
     pub fn response_history(&self) -> Vec<Value> {
-        self.shared.0.lock().unwrap().response_history.clone()
+        lock_inbox(&self.shared).response_history.clone()
     }
 
     pub fn stderr_tail(&self) -> String {
-        String::from_utf8_lossy(&self.shared.0.lock().unwrap().stderr).into_owned()
+        String::from_utf8_lossy(&lock_inbox(&self.shared).stderr).into_owned()
     }
 
     pub fn connect(&mut self) -> Result<Value> {
@@ -553,26 +694,7 @@ impl RpcClient {
                 )?,
             });
         }
-        let initialized = self.raw_request("initialize", &self.initialize_params.clone(), until);
-        let result = (|| -> Result<Value> {
-            let initialized = initialized?;
-            if !initialized.is_object()
-                || self.mcp
-                    && initialized["protocolVersion"]
-                        .as_str()
-                        .is_none_or(str::is_empty)
-            {
-                return Err(external("initialize", "invalid_handshake", false, false));
-            }
-            let method = if self.mcp {
-                "notifications/initialized"
-            } else {
-                "initialized"
-            };
-            self.write_message(&json!({"method": method, "params": {}}), until, false)?;
-            self.initialized = Some(initialized.clone());
-            Ok(initialized)
-        })();
+        let result = self.initialize(until);
         if result.is_err() {
             self.connection.take();
             self.halted = true;
@@ -580,8 +702,29 @@ impl RpcClient {
         result
     }
 
+    fn initialize(&mut self, until: Instant) -> Result<Value> {
+        let initialized = self.raw_request("initialize", &self.initialize_params.clone(), until)?;
+        if !initialized.is_object()
+            || self.mcp
+                && initialized["protocolVersion"]
+                    .as_str()
+                    .is_none_or(str::is_empty)
+        {
+            return Err(external("initialize", "invalid_handshake", false, false));
+        }
+        let method = if self.mcp {
+            "notifications/initialized"
+        } else {
+            "initialized"
+        };
+        self.write_message(&json!({"method": method, "params": {}}), until, false)?;
+        self.initialized = Some(initialized.clone());
+        Ok(initialized)
+    }
+
     fn check(&self, operation: &str, mutation: bool) -> Result<()> {
-        let inbox = self.shared.0.lock().unwrap();
+        let inbox = lock_inbox(&self.shared);
+        inbox.check_integrity(operation, mutation)?;
         if inbox.attention.is_some() {
             return Err(external(operation, "needs_attention", mutation, false));
         }
@@ -655,13 +798,24 @@ impl RpcClient {
         }
         self.write_message(&message, until, mutation)?;
         let key = identifier.to_string();
+        self.wait_response(method, &key, until, mutation)
+    }
+
+    fn wait_response(
+        &mut self,
+        method: &str,
+        key: &str,
+        until: Instant,
+        mutation: bool,
+    ) -> Result<Value> {
         let shared = self.shared.clone();
-        let mut inbox = shared.0.lock().unwrap();
+        let mut inbox = lock_inbox(&shared);
         loop {
+            inbox.check_integrity(method, mutation)?;
             if inbox.attention.is_some() {
                 return Err(external(method, "needs_attention", mutation, false));
             }
-            if let Some(response) = inbox.responses.remove(&key) {
+            if let Some(response) = inbox.responses.remove(key) {
                 if response.get("error").is_some() {
                     return Err(anyhow::Error::new(RpcFailure {
                         response: response.clone(),
@@ -687,7 +841,7 @@ impl RpcClient {
                 Ok(duration) => duration,
                 Err(_) => return Err(self.timeout(method, mutation)),
             };
-            inbox = shared.1.wait_timeout(inbox, duration).unwrap().0;
+            inbox = wait_inbox(&shared, inbox, duration);
         }
     }
 
@@ -791,102 +945,88 @@ impl RpcClient {
 
     fn turn(&mut self, thread: &str, prompt: &str, wait: Option<Duration>) -> Result<Value> {
         ensure!(!thread.is_empty(), "Thread cannot be empty");
-        let start = self.notifications().len();
-        let until = deadline(wait.unwrap_or(self.timeout))?;
-        let mut turn = Value::Null;
-        let mut acknowledged = false;
-        let execution = (|| -> Result<String> {
-            self.connect_until(until)?;
-            let response = self.raw_request(
-                "turn/start",
-                &json!({"threadId": thread, "input": [{"type": "text", "text": prompt}]}),
-                until,
-            )?;
-            turn = object_with_id(&response, "turn")?;
-            acknowledged = true;
-            if wait.is_none() {
-                return match turn["status"].as_str() {
-                    Some("inProgress") => Ok("in_progress".to_owned()),
-                    Some(status @ ("completed" | "failed" | "interrupted")) => {
-                        Ok(status.to_owned())
-                    }
-                    _ => Err(external("turn/start", "invalid_turn_status", true, false)),
-                };
-            }
-            if let Some(status @ ("completed" | "failed" | "interrupted")) = turn["status"].as_str()
-            {
-                return Ok(status.to_owned());
-            }
-            let shared = self.shared.clone();
-            let mut inbox = shared.0.lock().unwrap();
-            let mut cursor = start;
-            loop {
-                if inbox.attention.is_some() {
-                    return Ok("needs_attention".to_owned());
-                }
-                for event in &inbox.notifications[cursor..] {
-                    if event["method"] == "turn/completed"
-                        && event["params"]["threadId"] == thread
-                        && event["params"]["turn"]["id"] == turn["id"]
-                    {
-                        let completed = &event["params"]["turn"];
-                        let status = required(completed, "status")?;
-                        if !matches!(status, "completed" | "failed" | "interrupted") {
-                            return Err(external(
-                                "turn/completed",
-                                "invalid_turn_status",
-                                true,
-                                false,
-                            ));
-                        }
-                        turn = completed.clone();
-                        return Ok(status.to_owned());
-                    }
-                }
-                cursor = inbox.notifications.len();
-                if let Some(kind) = &inbox.failure {
-                    return Err(external("turn/completed", kind, true, false));
-                }
-                let duration = match remaining(until) {
-                    Ok(duration) => duration,
-                    Err(_) => {
-                        self.halted = true;
-                        return Ok("timeout".to_owned());
-                    }
-                };
-                inbox = shared.1.wait_timeout(inbox, duration).unwrap().0;
-            }
-        })();
-        let status = match execution {
-            Ok(status) => status,
-            Err(error) => {
-                let kind = error
-                    .downcast_ref::<ExternalError>()
-                    .map(|error| error.kind.as_str());
-                match kind {
-                    Some("needs_attention") => "needs_attention".to_owned(),
-                    Some("timeout" | "timeout_connection_disabled") => "timeout".to_owned(),
-                    _ => return Err(error),
-                }
-            }
+        let mut execution = TurnExecution {
+            turn: Value::Null,
+            acknowledged: false,
+            start: self.notifications().len(),
+            until: deadline(wait.unwrap_or(self.timeout))?,
         };
-        let events = self.notifications()[start..].to_vec();
-        if turn.is_null() {
-            for event in &events {
-                if matches!(
-                    event["method"].as_str(),
-                    Some("turn/started" | "turn/completed")
-                ) && event["params"]["threadId"] == thread
-                    && event["params"]["turn"].is_object()
-                {
-                    turn = event["params"]["turn"].clone();
-                }
+        let status =
+            execution_status(self.execute_turn(thread, prompt, wait.is_some(), &mut execution))?;
+        self.turn_result(thread, execution, status)
+    }
+
+    fn execute_turn(
+        &mut self,
+        thread: &str,
+        prompt: &str,
+        wait: bool,
+        execution: &mut TurnExecution,
+    ) -> Result<String> {
+        self.connect_until(execution.until)?;
+        let response = self.raw_request(
+            "turn/start",
+            &json!({"threadId": thread, "input": [{"type": "text", "text": prompt}]}),
+            execution.until,
+        )?;
+        execution.turn = object_with_id(&response, "turn")?;
+        execution.acknowledged = true;
+        if let Some(status) = started_turn_status(&execution.turn, wait)? {
+            return Ok(status);
+        }
+        self.wait_turn(thread, execution)
+    }
+
+    fn wait_turn(&mut self, thread: &str, execution: &mut TurnExecution) -> Result<String> {
+        let shared = self.shared.clone();
+        let mut inbox = lock_inbox(&shared);
+        let mut cursor = execution.start;
+        loop {
+            inbox.check_integrity("turn/completed", true)?;
+            if inbox.attention.is_some() {
+                return Ok("needs_attention".to_owned());
             }
+            if let Some(completed) =
+                completed_turn(&inbox.notifications[cursor..], thread, &execution.turn)?
+            {
+                let status = required(completed, "status")?.to_owned();
+                execution.turn = completed.clone();
+                return Ok(status);
+            }
+            cursor = inbox.notifications.len();
+            if let Some(kind) = &inbox.failure {
+                return Err(external("turn/completed", kind, true, false));
+            }
+            let duration = match remaining(execution.until) {
+                Ok(duration) => duration,
+                Err(_) => {
+                    self.halted = true;
+                    return Ok("timeout".to_owned());
+                }
+            };
+            inbox = wait_inbox(&shared, inbox, duration);
+        }
+    }
+
+    fn turn_result(
+        &mut self,
+        thread: &str,
+        execution: TurnExecution,
+        status: String,
+    ) -> Result<Value> {
+        let events = {
+            let inbox = lock_inbox(&self.shared);
+            inbox.check_integrity("turn/completed", true)?;
+            inbox.notifications[execution.start..].to_vec()
+        };
+        let mut turn = execution.turn;
+        if turn.is_null() {
+            turn = observed_turn(thread, &events);
         }
         let result = json!({
             "turn": turn, "status": status,
             "text": turn_text(thread, &turn, &events),
-            "notifications": events, "start_response_received": acknowledged
+            "notifications": events, "start_response_received": execution.acknowledged
         });
         self.last_turn_result = Some(result.clone());
         Ok(result)
@@ -944,20 +1084,40 @@ fn read_only(method: &str, params: &Value) -> bool {
 }
 
 fn turn_text(thread: &str, turn: &Value, events: &[Value]) -> String {
-    let mut messages: Vec<(String, String, Option<String>, bool)> = Vec::new();
-    let mut store = |item: &Value, delta: bool| {
+    let mut messages = TurnMessages::default();
+    if !turn.is_null() {
+        messages.events(thread, turn, events);
+        if let Some(items) = turn["items"].as_array() {
+            for item in items {
+                if item["type"] == "agentMessage" {
+                    messages.store(item, false);
+                }
+            }
+        }
+    }
+    messages.text()
+}
+
+#[derive(Default)]
+struct TurnMessages {
+    entries: Vec<(String, String, Option<String>, bool)>,
+}
+
+impl TurnMessages {
+    fn store(&mut self, item: &Value, delta: bool) {
         let (Some(identifier), Some(text)) = (
             item["id"].as_str(),
             item[if delta { "delta" } else { "text" }].as_str(),
         ) else {
             return;
         };
-        let position = messages.iter().position(|entry| entry.0 == identifier);
+        let position = self.entries.iter().position(|entry| entry.0 == identifier);
         let position = position.unwrap_or_else(|| {
-            messages.push((identifier.to_owned(), String::new(), None, false));
-            messages.len() - 1
+            self.entries
+                .push((identifier.to_owned(), String::new(), None, false));
+            self.entries.len() - 1
         });
-        let entry = &mut messages[position];
+        let entry = &mut self.entries[position];
         if delta {
             if !entry.3 {
                 entry.1.push_str(text);
@@ -967,41 +1127,39 @@ fn turn_text(thread: &str, turn: &Value, events: &[Value]) -> String {
             entry.2 = item["phase"].as_str().map(str::to_owned);
             entry.3 = true;
         }
-    };
-    if !turn.is_null() {
+    }
+
+    fn events(&mut self, thread: &str, turn: &Value, events: &[Value]) {
         for event in events {
             let params = &event["params"];
             if params["threadId"] != thread || params["turnId"] != turn["id"] {
                 continue;
             }
             if event["method"] == "item/agentMessage/delta" {
-                store(
+                self.store(
                     &json!({"id": params["itemId"], "delta": params["delta"]}),
                     true,
                 );
             } else if event["method"] == "item/completed"
                 && params["item"]["type"] == "agentMessage"
             {
-                store(&params["item"], false);
-            }
-        }
-        if let Some(items) = turn["items"].as_array() {
-            for item in items {
-                if item["type"] == "agentMessage" {
-                    store(item, false);
-                }
+                self.store(&params["item"], false);
             }
         }
     }
-    let finals = messages
-        .iter()
-        .any(|entry| entry.2.as_deref() == Some("final_answer"));
-    messages
-        .iter()
-        .filter(|entry| !finals || entry.2.as_deref() == Some("final_answer"))
-        .map(|entry| entry.1.as_str())
-        .collect::<Vec<_>>()
-        .join("\n")
+
+    fn text(&self) -> String {
+        let finals = self
+            .entries
+            .iter()
+            .any(|entry| entry.2.as_deref() == Some("final_answer"));
+        self.entries
+            .iter()
+            .filter(|entry| !finals || entry.2.as_deref() == Some("final_answer"))
+            .map(|entry| entry.1.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 }
 
 pub fn bridge(socket: &Path, max_frame_bytes: usize) -> Result<()> {
@@ -1024,72 +1182,12 @@ fn bridge_streams(
     )?;
     let writer = connection.writer.clone();
     let input_thread = thread::spawn(move || {
-        struct Forward {
-            writer: mpsc::SyncSender<Packet>,
-        }
-        let mut reader = io::BufReader::new(input);
-        let mut pending = Vec::new();
-        let forward = Forward { writer };
-        let result = (|| -> Result<()> {
-            loop {
-                let available = reader.fill_buf()?;
-                if available.is_empty() {
-                    if !pending.is_empty() {
-                        forward.send(&pending)?;
-                    }
-                    return Ok(());
-                }
-                let count = available
-                    .iter()
-                    .position(|byte| *byte == b'\n')
-                    .map_or(available.len(), |position| position + 1);
-                ensure!(
-                    pending.len().saturating_add(count) <= max_frame_bytes,
-                    "RPC frame exceeds configured limit"
-                );
-                let complete = available[count - 1] == b'\n';
-                pending.extend_from_slice(&available[..count]);
-                reader.consume(count);
-                if complete {
-                    forward.send(&pending)?;
-                    pending.clear();
-                }
-            }
-        })();
+        let result = BridgeForward { writer }.read(input, max_frame_bytes);
         let _ = events.send(WireEvent::End(
             result.err().map(|_| "bridge_input_failed".to_owned()),
         ));
-        impl Forward {
-            fn send(&self, bytes: &[u8]) -> Result<()> {
-                if bytes.iter().all(u8::is_ascii_whitespace) {
-                    return Ok(());
-                }
-                std::str::from_utf8(bytes)?;
-                let (sender, receiver) = mpsc::channel();
-                self.writer.send(Packet {
-                    bytes: bytes.to_vec(),
-                    acknowledgement: sender,
-                })?;
-                receiver
-                    .recv()?
-                    .map_err(|_| external("bridge", "connection_write", true, false))
-            }
-        }
     });
-    let result = loop {
-        match incoming.recv() {
-            Ok(WireEvent::Frame(bytes)) => {
-                output.write_all(&bytes)?;
-                output.write_all(b"\n")?;
-                output.flush()?;
-            }
-            Ok(WireEvent::End(None)) => break Ok(()),
-            Ok(WireEvent::End(Some(kind))) => {
-                break Err(external("bridge", &kind, false, false));
-            }
-            Err(_) => break Err(external("bridge", "connection_closed", false, false)),
-        }
-    };
+    let result = bridge_output(incoming, &mut output);
     drop(connection);
     if input_thread.is_finished() {
         let _ = input_thread.join();
@@ -1097,11 +1195,201 @@ fn bridge_streams(
     result
 }
 
+struct BridgeForward {
+    writer: mpsc::SyncSender<Packet>,
+}
+
+impl BridgeForward {
+    fn read(&self, input: impl Read, max_frame_bytes: usize) -> Result<()> {
+        let mut reader = io::BufReader::new(input);
+        let mut pending = Vec::new();
+        loop {
+            let available = reader.fill_buf()?;
+            if available.is_empty() {
+                if !pending.is_empty() {
+                    self.send(&pending)?;
+                }
+                return Ok(());
+            }
+            let count = available
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map_or(available.len(), |position| position + 1);
+            ensure!(
+                pending.len().saturating_add(count) <= max_frame_bytes,
+                "RPC frame exceeds configured limit"
+            );
+            let complete = available[count - 1] == b'\n';
+            pending.extend_from_slice(&available[..count]);
+            reader.consume(count);
+            if complete {
+                self.send(&pending)?;
+                pending.clear();
+            }
+        }
+    }
+
+    fn send(&self, bytes: &[u8]) -> Result<()> {
+        if bytes.iter().all(u8::is_ascii_whitespace) {
+            return Ok(());
+        }
+        std::str::from_utf8(bytes)?;
+        let (sender, receiver) = mpsc::channel();
+        self.writer.send(Packet {
+            bytes: bytes.to_vec(),
+            acknowledgement: sender,
+        })?;
+        receiver
+            .recv()?
+            .map_err(|_| external("bridge", "connection_write", true, false))
+    }
+}
+
+fn bridge_output(incoming: mpsc::Receiver<WireEvent>, output: &mut impl Write) -> Result<()> {
+    loop {
+        match incoming.recv() {
+            Ok(WireEvent::Frame(bytes)) => {
+                output.write_all(&bytes)?;
+                output.write_all(b"\n")?;
+                output.flush()?;
+            }
+            Ok(WireEvent::End(None)) => return Ok(()),
+            Ok(WireEvent::End(Some(kind))) => {
+                return Err(external("bridge", &kind, false, false));
+            }
+            Err(_) => return Err(external("bridge", "connection_closed", false, false)),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::clients::test_support::{THREAD, config};
     use std::os::unix::net::UnixListener;
+
+    fn poison_inbox(shared: &Shared) {
+        let poisoned = std::panic::catch_unwind(|| {
+            let _inbox = shared.0.lock().unwrap();
+            panic!("Inject inbox mutex poison");
+        });
+        assert!(poisoned.is_err());
+    }
+
+    #[test]
+    fn poisoned_inbox_preserves_diagnostics_and_latches_failure() -> Result<()> {
+        let client = RpcClient::from_config(&json!({}))?;
+        let event = json!({"method": "test/notice"});
+        let response = json!({"id": 1, "result": {"ok": true}});
+        {
+            let mut inbox = client.shared.0.lock().unwrap();
+            inbox.notifications.push(event.clone());
+            inbox.response_history.push(response.clone());
+            inbox.stderr.extend_from_slice(b"diagnostic");
+            inbox.attention = Some(json!({"id": 2, "method": "test/attention"}));
+        }
+        poison_inbox(&client.shared);
+        assert_eq!(client.notifications(), vec![event]);
+        assert_eq!(client.response_history(), vec![response]);
+        assert_eq!(client.stderr_tail(), "diagnostic");
+        client.shared.0.clear_poison();
+        Sink::Rpc(client.shared.clone()).end(Some("connection_closed"));
+        let error = client.check("thread/read", false).unwrap_err();
+        let failure = error.downcast_ref::<ExternalError>().unwrap();
+        assert_eq!(failure.kind, "inbox_poisoned");
+        assert!(!failure.reconnectable);
+        assert!(!failure.outcome_unknown);
+        assert!(accept_frame(&client.shared, br#"{"id":1,"result":{"ok":true}}"#).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn poisoned_inbox_rejects_a_cached_success_after_a_mutation_was_sent() -> Result<()> {
+        let mut client = RpcClient::from_config(&json!({}))?;
+        let (writer, packets) = mpsc::sync_channel::<Packet>(1);
+        let shared = client.shared.clone();
+        let worker = thread::spawn(move || {
+            let packet = packets.recv_timeout(Duration::from_secs(2)).unwrap();
+            shared
+                .0
+                .lock()
+                .unwrap()
+                .responses
+                .insert("1".to_owned(), json!({"id": 1, "result": {"ok": true}}));
+            poison_inbox(&shared);
+            packet.acknowledgement.send(Ok(())).unwrap();
+        });
+        client.connection = Some(Connection {
+            writer,
+            stop: Arc::new(AtomicBool::new(false)),
+            threads: vec![worker],
+            child: None,
+            socket: None,
+        });
+        let error = client
+            .raw_request("turn/start", &json!({}), deadline(Duration::from_secs(2))?)
+            .unwrap_err();
+        let failure = error.downcast_ref::<ExternalError>().unwrap();
+        assert_eq!(failure.kind, "inbox_poisoned");
+        assert!(failure.outcome_unknown);
+        assert!(!failure.reconnectable);
+        Ok(())
+    }
+
+    #[test]
+    fn condvar_poison_wakes_a_waiter_with_a_terminal_failure() -> Result<()> {
+        let shared = Arc::new((Mutex::new(Inbox::default()), Condvar::new()));
+        let mut inbox = lock_inbox(&shared);
+        let poisoned = shared.clone();
+        let worker = thread::spawn(move || {
+            poison_inbox(&poisoned);
+            poisoned.1.notify_all();
+        });
+        let until = deadline(Duration::from_secs(2))?;
+        while inbox.failure.is_none() {
+            inbox = wait_inbox(&shared, inbox, remaining(until)?);
+        }
+        let result = inbox.check_integrity("turn/completed", true);
+        drop(inbox);
+        worker.join().unwrap();
+        let error = result.unwrap_err();
+        let failure = error.downcast_ref::<ExternalError>().unwrap();
+        assert_eq!(failure.kind, "inbox_poisoned");
+        assert!(failure.outcome_unknown);
+        assert!(!failure.reconnectable);
+        Ok(())
+    }
+
+    #[test]
+    fn dropping_process_connection_closes_descendant_pipes() -> Result<()> {
+        let mut child = Command::new("sh")
+            .args(["-c", "sleep 60 & printf 'ready\\n'; wait"])
+            .stdout(Stdio::piped())
+            .process_group(0)
+            .spawn()?;
+        let group = Pid::from_child(&child);
+        let mut output = io::BufReader::new(child.stdout.take().unwrap());
+        let connection = Connection {
+            writer: mpsc::sync_channel(1).0,
+            stop: Arc::new(AtomicBool::new(false)),
+            threads: Vec::new(),
+            child: Some(child),
+            socket: None,
+        };
+        let mut ready = String::new();
+        output.read_line(&mut ready)?;
+        assert_eq!(ready, "ready\n");
+        drop(connection);
+        let (sender, receiver) = mpsc::channel();
+        let reader = thread::spawn(move || {
+            let _ = sender.send(io::copy(&mut output, &mut io::sink()));
+        });
+        let closed = receiver.recv_timeout(Duration::from_secs(2));
+        let _ = kill_process_group(group, Signal::KILL);
+        reader.join().unwrap();
+        assert_eq!(closed??, 0);
+        Ok(())
+    }
 
     #[test]
     fn handshake_raw_results_and_interleaved_frames() -> Result<()> {
@@ -1355,37 +1643,9 @@ mod tests {
         let daemon = thread::spawn(move || {
             let mut active = false;
             for connection in listener.incoming().take(2) {
-                let mut websocket = tungstenite::accept(connection.unwrap()).unwrap();
-                loop {
-                    let message = match websocket.read() {
-                        Ok(Message::Text(message)) => message,
-                        Ok(Message::Close(_)) | Err(_) => break,
-                        _ => continue,
-                    };
-                    let request: Value = serde_json::from_str(&message).unwrap();
-                    let method = request["method"].as_str().unwrap();
-                    recorded.lock().unwrap().push(method.to_owned());
-                    if request.get("id").is_none() {
-                        continue;
-                    }
-                    let result = match method {
-                        "initialize" => json!({"userAgent": "fake-daemon"}),
-                        "turn/start" => {
-                            active = true;
-                            json!({"turn": {"id": "long-task", "status": "inProgress"}})
-                        }
-                        "thread/read" => json!({"active": active}),
-                        _ => Value::Null,
-                    };
-                    websocket
-                        .send(Message::Text(
-                            json!({"id": request["id"], "result": result})
-                                .to_string()
-                                .into(),
-                        ))
-                        .unwrap();
-                }
+                serve_monitor_connection(connection?, &mut active, &recorded)?;
             }
+            Ok::<_, anyhow::Error>(())
         });
         let settings = json!({"daemon_socket": path, "request_timeout_seconds": 2});
         {
@@ -1399,7 +1659,7 @@ mod tests {
                 true
             );
         }
-        daemon.join().unwrap();
+        daemon.join().unwrap()?;
         let methods = methods.lock().unwrap();
         assert_eq!(
             methods
@@ -1410,6 +1670,44 @@ mod tests {
         );
         assert!(!methods.iter().any(|method| method == "turn/interrupt"));
         Ok(())
+    }
+
+    fn serve_monitor_connection(
+        socket: UnixStream,
+        active: &mut bool,
+        recorded: &Mutex<Vec<String>>,
+    ) -> Result<()> {
+        let mut websocket = tungstenite::accept(socket)?;
+        loop {
+            let message = match websocket.read() {
+                Ok(Message::Text(message)) => message,
+                Ok(Message::Close(_)) | Err(_) => return Ok(()),
+                _ => continue,
+            };
+            let request: Value = serde_json::from_str(&message)?;
+            let method = required(&request, "method")?;
+            recorded
+                .lock()
+                .map_err(|_| anyhow::anyhow!("Test recording mutex poisoned"))?
+                .push(method.to_owned());
+            if request.get("id").is_none() {
+                continue;
+            }
+            let result = match method {
+                "initialize" => json!({"userAgent": "fake-daemon"}),
+                "turn/start" => {
+                    *active = true;
+                    json!({"turn": {"id": "long-task", "status": "inProgress"}})
+                }
+                "thread/read" => json!({"active": *active}),
+                _ => Value::Null,
+            };
+            websocket.send(Message::Text(
+                json!({"id": request["id"], "result": result})
+                    .to_string()
+                    .into(),
+            ))?;
+        }
     }
 
     #[test]
@@ -1423,20 +1721,22 @@ mod tests {
         Ok(())
     }
 
+    struct Output(mpsc::Sender<Vec<u8>>);
+
+    impl Write for Output {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0
+                .send(bytes.to_vec())
+                .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "Output closed"))?;
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
     #[test]
     fn bridge_forwards_text_frames_and_stops_only_its_connection_on_input_eof() -> Result<()> {
-        struct Output(mpsc::Sender<Vec<u8>>);
-        impl Write for Output {
-            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-                self.0
-                    .send(bytes.to_vec())
-                    .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "Output closed"))?;
-                Ok(bytes.len())
-            }
-            fn flush(&mut self) -> io::Result<()> {
-                Ok(())
-            }
-        }
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("bridge.sock");
         let listener = UnixListener::bind(&path)?;

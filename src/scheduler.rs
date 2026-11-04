@@ -58,6 +58,45 @@ pub struct StateScheduler<N: Notion, E: Executor> {
 
 struct SchedulerLock(fs::File);
 
+struct RoundFiles {
+    number: u64,
+    cwd: PathBuf,
+    snapshot: PathBuf,
+    result: PathBuf,
+}
+
+struct ExecutionSettings {
+    model: String,
+    sandbox: String,
+    reviewer: String,
+}
+
+struct StatusSubmission {
+    completed: bool,
+    restoring: bool,
+    target: String,
+}
+
+impl StatusSubmission {
+    fn new(record: &Value) -> Self {
+        let completed = phase(record) == "submitting_review";
+        let restoring = phase(record) == "restoring_execution";
+        let target = if restoring {
+            "进行中"
+        } else if completed {
+            "待审核"
+        } else {
+            "阻塞中"
+        }
+        .to_owned();
+        Self {
+            completed,
+            restoring,
+            target,
+        }
+    }
+}
+
 impl Drop for SchedulerLock {
     fn drop(&mut self) {
         let _ = fs2::FileExt::unlock(&self.0);
@@ -171,6 +210,80 @@ fn signature(error: &anyhow::Error) -> String {
     } else {
         format!("ValueError: {message}")
     }
+}
+
+fn reconnect_notion(error: &anyhow::Error) -> bool {
+    external(error).is_some_and(|error| {
+        error.reconnectable
+            && !error.outcome_unknown
+            && ["fetch", "schema", "query", "access"].contains(&error.operation.as_str())
+    })
+}
+
+fn start_error_kind(record: &Value, error: &anyhow::Error) -> &'static str {
+    if external(error).is_some_and(|error| error.operation == "update" && !error.outcome_unknown) {
+        "status_write_rejected"
+    } else if phase(record).starts_with("start_status") {
+        "write_unknown"
+    } else if association_error(error) {
+        "association"
+    } else if read_error(error) {
+        "read"
+    } else {
+        "start_pending"
+    }
+}
+
+fn deferred_error_kind(record: &Value, error: &anyhow::Error) -> Option<&'static str> {
+    let status_phase = [
+        "submitting_review",
+        "submitting_blocker",
+        "linking_chat",
+        "claiming",
+        "retry_status",
+        "restoring_execution",
+    ]
+    .contains(&phase(record));
+    if status_phase && external(error).is_some_and(|error| error.outcome_unknown) {
+        return Some("write_unknown");
+    }
+    let rejected = external(error)
+        .is_some_and(|error| error.operation == "update" && !error.outcome_unknown)
+        && record["dispatch_protocol"] == START_PROTOCOL
+        && [
+            "submitting_review",
+            "submitting_blocker",
+            "restoring_execution",
+            "retry_status",
+        ]
+        .contains(&phase(record));
+    if rejected {
+        Some("status_write_rejected")
+    } else {
+        read_error(error).then_some("read")
+    }
+}
+
+fn attention_error_kind(error: &anyhow::Error) -> &'static str {
+    if signature(error) == MODEL_ERROR {
+        "configuration"
+    } else if error.chain().any(|error| {
+        error.downcast_ref::<std::io::Error>().is_some_and(|error| {
+            error.kind() == std::io::ErrorKind::PermissionDenied || error.raw_os_error() == Some(30)
+        })
+    }) {
+        "filesystem_permission"
+    } else {
+        "unknown"
+    }
+}
+
+fn returned_to_todo(record: &Value, status: &str) -> bool {
+    status == "待办事项"
+        && (WAITING.contains(&phase(record))
+            || phase(record) == "needs_attention"
+                && WAITING.contains(&text(&record["interrupted_phase"]))
+                && record["error"] == RETURNED_TODO_ERROR)
 }
 
 impl<N: Notion, E: Executor> StateScheduler<N, E> {
@@ -360,6 +473,11 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
                 .is_some_and(|state| state.values().all(Value::is_object)),
             "Scheduler records must be objects"
         );
+        let candidates = self.candidate_tasks()?;
+        self.process_candidates(candidates)
+    }
+
+    fn candidate_tasks(&mut self) -> Result<Vec<String>> {
         let rows = self.notion.query_tasks()?;
         self.event(
             "queue_read",
@@ -379,17 +497,25 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
                 candidates.push(pid.clone());
             }
         }
+        Ok(candidates)
+    }
+
+    fn page_allowed(&self, pid: &str) -> bool {
+        let excluded = self.config["excluded_page_ids"]
+            .as_array()
+            .is_some_and(|ids| ids.contains(&json!(pid)));
+        let disallowed = self
+            .config
+            .get("allowed_page_ids")
+            .filter(|value| !value.is_null())
+            .is_some_and(|ids| !ids.as_array().is_some_and(|ids| ids.contains(&json!(pid))));
+        !excluded && !disallowed
+    }
+
+    fn process_candidates(&mut self, candidates: Vec<String>) -> Result<Vec<Value>> {
         let mut outcomes = Vec::new();
         for pid in candidates {
-            let excluded = self.config["excluded_page_ids"]
-                .as_array()
-                .is_some_and(|ids| ids.contains(&json!(pid)));
-            let disallowed = self
-                .config
-                .get("allowed_page_ids")
-                .filter(|value| !value.is_null())
-                .is_some_and(|ids| !ids.as_array().is_some_and(|ids| ids.contains(&json!(pid))));
-            if excluded || disallowed {
+            if !self.page_allowed(&pid) {
                 continue;
             }
             let outcome = match self.process(&pid) {
@@ -412,126 +538,94 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
             .get(pid)
             .cloned()
             .unwrap_or_else(|| json!({"phase": "pending", "last_delivered_round": 0}));
-        let current_phase = phase(&record).to_owned();
-        let error_signature = signature(error);
-        let reconnect = external(error).is_some_and(|error| {
-            error.reconnectable
-                && !error.outcome_unknown
-                && ["fetch", "schema", "query", "access"].contains(&error.operation.as_str())
-        });
-        if START_PHASES.contains(&current_phase.as_str()) {
-            let kind = if external(error)
-                .is_some_and(|error| error.operation == "update" && !error.outcome_unknown)
-            {
-                "status_write_rejected"
-            } else if current_phase.starts_with("start_status") {
-                "write_unknown"
-            } else if association_error(error) {
-                "association"
-            } else if read_error(error) {
-                "read"
-            } else {
-                "start_pending"
-            };
-            self.event(
-                "start_deferred",
-                json!({"page_id": pid, "round": record["round"], "phase": current_phase,
-                       "error": error_signature}),
-            )?;
-            self.diagnostic(pid, &mut record, kind, &[], None);
-            let mut outcome = json!({"page_id": pid, "status": "retry_next_cycle"});
-            if reconnect {
-                outcome["reconnect_notion"] = json!(true);
-            } else if read_error(error)
-                || external(error).is_some_and(|error| {
-                    error.outcome_unknown
-                        || [
-                            "connection",
-                            "timeout",
-                            "needs_attention",
-                            "CodexConnectionError",
-                            "CodexTimeoutError",
-                            "CodexNeedsAttention",
-                        ]
-                        .contains(&error.kind.as_str())
-                })
-            {
-                outcome["reconnect_before_next_task"] = json!(true);
-            }
-            return Ok(outcome);
+        if START_PHASES.contains(&phase(&record)) {
+            return self.defer_start_error(pid, &mut record, error);
         }
-        if presend_error(error) && current_phase == "executing" {
+        if presend_error(error) && phase(&record) == "executing" {
             self.checkpoint(pid, &mut record, "claimed", json!({}))?;
         }
-        let status_phase = [
-            "submitting_review",
-            "submitting_blocker",
-            "linking_chat",
-            "claiming",
-            "retry_status",
-            "restoring_execution",
-        ]
-        .contains(&phase(&record));
-        let uncertain = status_phase && external(error).is_some_and(|error| error.outcome_unknown);
-        let rejected = external(error)
-            .is_some_and(|error| error.operation == "update" && !error.outcome_unknown)
-            && record["dispatch_protocol"] == START_PROTOCOL
-            && [
-                "submitting_review",
-                "submitting_blocker",
-                "restoring_execution",
-                "retry_status",
-            ]
-            .contains(&phase(&record));
-        if read_error(error) || uncertain || rejected {
-            self.diagnostic(
-                pid,
-                &mut record,
-                if uncertain {
-                    "write_unknown"
-                } else if rejected {
-                    "status_write_rejected"
-                } else {
-                    "read"
-                },
-                &[],
-                None,
-            );
-            if record["last_read_error"] != error_signature {
-                self.event(
-                    "operation_deferred",
-                    json!({"page_id": pid, "error": error_signature, "phase": phase(&record)}),
-                )?;
-            }
-            record["last_read_error"] = json!(error_signature);
-            self.save(pid, &record)?;
-            let mut outcome = json!({"page_id": pid, "status": "retry_next_cycle"});
-            if reconnect {
-                outcome["reconnect_notion"] = json!(true);
-            } else if uncertain {
-                outcome["reconnect_before_next_task"] = json!(true);
-            }
-            return Ok(outcome);
+        if let Some(kind) = deferred_error_kind(&record, error) {
+            return self.defer_operation_error(pid, &mut record, error, kind);
         }
-        let kind = if error_signature == MODEL_ERROR {
-            "configuration"
-        } else if error.chain().any(|error| {
-            error.downcast_ref::<std::io::Error>().is_some_and(|error| {
-                error.kind() == std::io::ErrorKind::PermissionDenied
-                    || error.raw_os_error() == Some(30)
+        self.interrupt_task(pid, &mut record, error)
+    }
+
+    fn defer_start_error(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        error: &anyhow::Error,
+    ) -> Result<Value> {
+        let kind = start_error_kind(record, error);
+        self.event(
+            "start_deferred",
+            json!({"page_id": pid, "round": record["round"], "phase": phase(record),
+                       "error": signature(error)}),
+        )?;
+        self.diagnostic(pid, record, kind, &[], None);
+        let mut outcome = json!({"page_id": pid, "status": "retry_next_cycle"});
+        if reconnect_notion(error) {
+            outcome["reconnect_notion"] = json!(true);
+        } else if read_error(error)
+            || external(error).is_some_and(|error| {
+                error.outcome_unknown
+                    || [
+                        "connection",
+                        "timeout",
+                        "needs_attention",
+                        "CodexConnectionError",
+                        "CodexTimeoutError",
+                        "CodexNeedsAttention",
+                    ]
+                    .contains(&error.kind.as_str())
             })
-        }) {
-            "filesystem_permission"
-        } else {
-            "unknown"
-        };
+        {
+            outcome["reconnect_before_next_task"] = json!(true);
+        }
+        Ok(outcome)
+    }
+
+    fn defer_operation_error(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        error: &anyhow::Error,
+        kind: &str,
+    ) -> Result<Value> {
+        let error_signature = signature(error);
+        self.diagnostic(pid, record, kind, &[], None);
+        if record["last_read_error"] != error_signature {
+            self.event(
+                "operation_deferred",
+                json!({"page_id": pid, "error": error_signature, "phase": phase(record)}),
+            )?;
+        }
+        record["last_read_error"] = json!(error_signature);
+        self.save(pid, record)?;
+        let mut outcome = json!({"page_id": pid, "status": "retry_next_cycle"});
+        if reconnect_notion(error) {
+            outcome["reconnect_notion"] = json!(true);
+        } else if kind == "write_unknown" {
+            outcome["reconnect_before_next_task"] = json!(true);
+        }
+        Ok(outcome)
+    }
+
+    fn interrupt_task(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        error: &anyhow::Error,
+    ) -> Result<Value> {
+        let error_signature = signature(error);
+        let kind = attention_error_kind(error);
         let interrupted_stage = record["interrupted_phase"].as_str().map(str::to_owned);
-        self.diagnostic(pid, &mut record, kind, &[], interrupted_stage.as_deref());
+        self.diagnostic(pid, record, kind, &[], interrupted_stage.as_deref());
         if record["error"] != error_signature {
-            let interrupted = phase(&record).to_owned();
+            let interrupted = phase(record).to_owned();
             self.checkpoint(
                 pid,
-                &mut record,
+                record,
                 "needs_attention",
                 json!({"interrupted_phase": interrupted, "error": error_signature}),
             )?;
@@ -541,92 +635,140 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
 
     fn process(&mut self, pid: &str) -> Result<Value> {
         let mut record = self.state.get(pid).cloned().unwrap_or_else(|| json!({}));
-        let mut task = self.metadata(pid, None)?;
-        let mut status = text(&task["properties"]["状态"]).to_owned();
+        let task = self.observe_task_metadata(pid, &mut record)?;
+        if let Some(outcome) = self.initial_task_outcome(pid, &mut record, &task)? {
+            return Ok(outcome);
+        }
+        self.flush_feedback(pid, &mut record);
+        let route_text = text(&task["properties"]["AI 会话 / 线程"]);
+        ensure!(
+            route_text.is_empty() || thread_id(route_text).is_some(),
+            "Execution chat field is not a complete Codex thread link"
+        );
+        if let Some(outcome) = self.resume_task_phase(pid, &mut record, &task)? {
+            return Ok(outcome);
+        }
+        let task = self.reconcile_dispatch_metadata(pid, &mut record, task)?;
+        if let Some(outcome) = self.process_existing_round(pid, &mut record, &task)? {
+            return Ok(outcome);
+        }
+        self.dispatch_pending_task(pid, &mut record, &task)
+    }
+
+    fn observe_task_metadata(&mut self, pid: &str, record: &mut Value) -> Result<Value> {
+        let task = self.metadata(pid, None)?;
+        let status = text(&task["properties"]["状态"]);
         self.event(
             "task_metadata_read",
-            json!({"page_id": pid, "status": status, "round": round(&record)}),
+            json!({"page_id": pid, "status": status, "round": round(record)}),
         )?;
-        if remove(&mut record, "last_read_error").is_some() {
+        if remove(record, "last_read_error").is_some() {
             self.event(
                 "task_metadata_read_recovered",
-                json!({"page_id": pid, "round": round(&record)}),
+                json!({"page_id": pid, "round": round(record)}),
             )?;
-            self.save(pid, &record)?;
+            self.save(pid, record)?;
         }
-        if TERMINAL.contains(&status.as_str()) {
-            self.checkpoint(
-                pid,
-                &mut record,
-                "terminal",
-                json!({"remote_status": status}),
-            )?;
-            return Ok(json!({"page_id": pid, "status": status}));
+        Ok(task)
+    }
+
+    fn initial_task_outcome(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        task: &Value,
+    ) -> Result<Option<Value>> {
+        let status = text(&task["properties"]["状态"]);
+        if TERMINAL.contains(&status) {
+            self.checkpoint(pid, record, "terminal", json!({"remote_status": status}))?;
+            return Ok(Some(json!({"page_id": pid, "status": status})));
         }
-        if ["未开始", "计划中"].contains(&status.as_str())
+        if ["未开始", "计划中"].contains(&status)
             && [
                 "pending",
                 "awaiting_review",
                 "externally_stopped",
                 "terminal",
             ]
-            .contains(&phase(&record))
+            .contains(&phase(record))
         {
-            return self.event("existing_unmanaged_task", json!({"page_id": pid}));
+            return self
+                .event("existing_unmanaged_task", json!({"page_id": pid}))
+                .map(Some);
         }
-        self.flush_feedback(pid, &mut record);
-        let current_phase = phase(&record).to_owned();
-        let route_text = text(&task["properties"]["AI 会话 / 线程"]);
-        ensure!(
-            route_text.is_empty() || thread_id(route_text).is_some(),
-            "Execution chat field is not a complete Codex thread link"
-        );
+        Ok(None)
+    }
+
+    fn resume_task_phase(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        task: &Value,
+    ) -> Result<Option<Value>> {
+        let status = text(&task["properties"]["状态"]);
+        let current_phase = phase(record).to_owned();
         if START_PHASES.contains(&current_phase.as_str()) {
-            self.metadata(pid, Some(&record))?;
-            if !["待办事项", "进行中"].contains(&status.as_str()) {
-                return Ok(json!({"page_id": pid, "status": "start_state_changed"}));
+            self.metadata(pid, Some(record))?;
+            if !["待办事项", "进行中"].contains(&status) {
+                return Ok(Some(
+                    json!({"page_id": pid, "status": "start_state_changed"}),
+                ));
             }
-            return self.continue_start(pid, &mut record);
+            return self.continue_start(pid, record).map(Some);
         }
         if RETRY_PHASES.contains(&current_phase.as_str()) {
-            return self.continue_retry(pid, &mut record);
+            return self.continue_retry(pid, record).map(Some);
         }
         if status == RETRY_REQUEST {
-            return self.request_retry(pid, &mut record, false, None);
+            return self.request_retry(pid, record, false, None).map(Some);
         }
-        let returned = status == "待办事项"
-            && (WAITING.contains(&current_phase.as_str())
-                || current_phase == "needs_attention"
-                    && WAITING.contains(&text(&record["interrupted_phase"]))
-                    && record["error"] == RETURNED_TODO_ERROR);
-        if returned {
-            self.metadata(pid, Some(&record))?;
-            if !self.executor.is_thread_idle(text(&record["thread_id"]))? {
-                return Ok(json!({"page_id": pid, "status": "waiting_previous_execution"}));
-            }
-            task = self.metadata(pid, Some(&record))?;
-            if task["properties"]["状态"] != "待办事项" {
-                return Ok(json!({"page_id": pid, "status": "state_changed_before_rework"}));
-            }
-            record = self.prepare(pid, &record, &task)?;
-            return self.dispatch(pid, &mut record);
+        if returned_to_todo(record, status) {
+            return self.prepare_rework(pid, record).map(Some);
         }
         if current_phase == "needs_attention" {
-            let kind = if record["error"] == MODEL_ERROR {
-                "configuration_rechecked"
-            } else {
-                "unknown"
-            };
-            let stage = record["interrupted_phase"]
-                .as_str()
-                .unwrap_or(&current_phase)
-                .to_owned();
-            self.diagnostic(pid, &mut record, kind, &[], Some(&stage));
-            return Ok(json!({"page_id": pid, "status": current_phase}));
+            return Ok(Some(self.task_needs_attention(pid, record)));
         }
+        Ok(None)
+    }
+
+    fn prepare_rework(&mut self, pid: &str, record: &mut Value) -> Result<Value> {
+        self.metadata(pid, Some(record))?;
+        if !self.executor.is_thread_idle(text(&record["thread_id"]))? {
+            return Ok(json!({"page_id": pid, "status": "waiting_previous_execution"}));
+        }
+        let task = self.metadata(pid, Some(record))?;
+        if task["properties"]["状态"] != "待办事项" {
+            return Ok(json!({"page_id": pid, "status": "state_changed_before_rework"}));
+        }
+        *record = self.prepare(pid, record, &task)?;
+        self.dispatch(pid, record)
+    }
+
+    fn task_needs_attention(&mut self, pid: &str, record: &mut Value) -> Value {
+        let current_phase = phase(record).to_owned();
+        let kind = if record["error"] == MODEL_ERROR {
+            "configuration_rechecked"
+        } else {
+            "unknown"
+        };
+        let stage = record["interrupted_phase"]
+            .as_str()
+            .unwrap_or(&current_phase)
+            .to_owned();
+        self.diagnostic(pid, record, kind, &[], Some(&stage));
+        json!({"page_id": pid, "status": current_phase})
+    }
+
+    fn reconcile_dispatch_metadata(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        mut task: Value,
+    ) -> Result<Value> {
+        let current_phase = phase(record).to_owned();
         if ["linking_chat", "claiming"].contains(&current_phase.as_str()) {
-            task = self.metadata(pid, Some(&record))?;
-            status = text(&task["properties"]["状态"]).to_owned();
+            task = self.metadata(pid, Some(record))?;
+            let status = text(&task["properties"]["状态"]);
             let expected = if current_phase == "linking_chat" {
                 "待办事项"
             } else {
@@ -643,46 +785,68 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
             };
             self.checkpoint(
                 pid,
-                &mut record,
+                record,
                 next,
                 json!({"metadata_write_reconciled_at": now()}),
             )?;
             if record["diagnostic_feedback_desired"]["kind"] == "write_unknown" {
-                self.diagnostic(pid, &mut record, "metadata_reconciled", &[], None);
+                self.diagnostic(pid, record, "metadata_reconciled", &[], None);
             }
         }
+        Ok(task)
+    }
+
+    fn process_existing_round(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        task: &Value,
+    ) -> Result<Option<Value>> {
+        let status = text(&task["properties"]["状态"]);
         if [
             "submitting_review",
             "submitting_blocker",
             "restoring_execution",
         ]
-        .contains(&phase(&record))
+        .contains(&phase(record))
         {
-            return self.finish_status(pid, &mut record);
+            return self.finish_status(pid, record).map(Some);
         }
         if status == "待审核" {
-            if phase(&record) != "awaiting_review" {
+            if phase(record) != "awaiting_review" {
                 self.checkpoint(
                     pid,
-                    &mut record,
+                    record,
                     "externally_stopped",
                     json!({"remote_status": status}),
                 )?;
             }
-            return Ok(json!({"page_id": pid, "status": "awaiting_review"}));
+            return Ok(Some(json!({"page_id": pid, "status": "awaiting_review"})));
         }
-        if WAITING.contains(&phase(&record)) {
-            let latest = self.metadata(pid, Some(&record))?;
-            if latest["properties"]["状态"] != status {
-                return Ok(json!({"page_id": pid, "status": "state_changed_before_poll"}));
-            }
-            ensure!(
-                ["进行中", "阻塞中"].contains(&status.as_str())
-                    || RETRY_BLOCKED.contains(&status.as_str()),
-                "Active task returned to a different state; reconcile this round"
-            );
-            return self.poll(pid, &mut record);
+        if WAITING.contains(&phase(record)) {
+            return self.poll_verified_task(pid, record, status).map(Some);
         }
+        Ok(None)
+    }
+
+    fn poll_verified_task(&mut self, pid: &str, record: &mut Value, status: &str) -> Result<Value> {
+        let latest = self.metadata(pid, Some(record))?;
+        if latest["properties"]["状态"] != status {
+            return Ok(json!({"page_id": pid, "status": "state_changed_before_poll"}));
+        }
+        ensure!(
+            ["进行中", "阻塞中"].contains(&status) || RETRY_BLOCKED.contains(&status),
+            "Active task returned to a different state; reconcile this round"
+        );
+        self.poll(pid, record)
+    }
+
+    fn dispatch_pending_task(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        task: &Value,
+    ) -> Result<Value> {
         ensure!(
             ![
                 "result_ready",
@@ -690,7 +854,7 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
                 "notice_ready",
                 "notice_appended"
             ]
-            .contains(&phase(&record)),
+            .contains(&phase(record)),
             "Legacy delivery interrupted; execution chat must take over page delivery"
         );
         if [
@@ -699,34 +863,51 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
             "externally_stopped",
             "terminal",
         ]
-        .contains(&phase(&record))
+        .contains(&phase(record))
         {
-            if status != "待办事项"
-                || phase(&record) == "pending"
-                    && !text(&task["properties"]["AI 会话 / 线程"]).is_empty()
-            {
+            if !self.reserve_task_round(pid, record, task)? {
                 return self.event("existing_unmanaged_task", json!({"page_id": pid}));
             }
-            if let Some(bound) = record["thread_id"].as_str() {
-                ensure!(
-                    thread_id(text(&task["properties"]["AI 会话 / 线程"])).as_deref()
-                        == Some(bound),
-                    "Rework chat changed"
-                );
-            }
-            record = self.prepare(pid, &record, &task)?;
         } else {
             ensure!(
-                ["prepared", "chat_created", "claimed"].contains(&phase(&record)),
+                ["prepared", "chat_created", "claimed"].contains(&phase(record)),
                 "Interrupted dispatch requires reconciliation before sending again"
             );
         }
-        self.dispatch(pid, &mut record)
+        self.dispatch(pid, record)
+    }
+
+    fn reserve_task_round(&mut self, pid: &str, record: &mut Value, task: &Value) -> Result<bool> {
+        if task["properties"]["状态"] != "待办事项"
+            || phase(record) == "pending" && !text(&task["properties"]["AI 会话 / 线程"]).is_empty()
+        {
+            return Ok(false);
+        }
+        if let Some(bound) = record["thread_id"].as_str() {
+            ensure!(
+                thread_id(text(&task["properties"]["AI 会话 / 线程"])).as_deref() == Some(bound),
+                "Rework chat changed"
+            );
+        }
+        *record = self.prepare(pid, record, task)?;
+        Ok(true)
     }
 
     pub fn prepare(&mut self, pid: &str, previous: &Value, task: &Value) -> Result<Value> {
         self.verify(task, &["待办事项"])?;
         let context = prepare_project_context(&self.config)?;
+        let files = self.prepare_round_files(pid, previous)?;
+        let mut record = self.round_record(pid, previous, task, &files);
+        merge(&mut record, context);
+        let mut snapshot_value = json!({"fetched_at": now(), "trigger": self.trigger});
+        merge(&mut snapshot_value, task.clone());
+        write_json(&files.snapshot, &snapshot_value)?;
+        fs::create_dir_all(files.result.parent().context("Invalid receipt path")?)?;
+        self.checkpoint(pid, &mut record, "prepared", json!({}))?;
+        Ok(record)
+    }
+
+    fn prepare_round_files(&self, pid: &str, previous: &Value) -> Result<RoundFiles> {
         let number =
             round(previous).max(previous["last_delivered_round"].as_u64().unwrap_or(0)) + 1;
         let cwd = if let Some(cwd) = previous["cwd"].as_str().filter(|value| !value.is_empty()) {
@@ -744,6 +925,16 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
             !snapshot.exists() && !result.exists(),
             "Existing round files require reconciliation"
         );
+        self.archive_previous_round(pid, previous, number)?;
+        Ok(RoundFiles {
+            number,
+            cwd,
+            snapshot,
+            result,
+        })
+    }
+
+    fn archive_previous_round(&self, pid: &str, previous: &Value, number: u64) -> Result<()> {
         let archive = self
             .data
             .join("previous-rounds")
@@ -759,21 +950,24 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
         if has_previous {
             write_json(&archive, previous)?;
         }
+        Ok(())
+    }
+
+    fn round_record(&self, pid: &str, previous: &Value, task: &Value, files: &RoundFiles) -> Value {
         let props = &task["properties"];
         let title = props["任务名称"]
             .as_str()
             .filter(|value| !value.is_empty())
             .unwrap_or(pid);
         let mut record = json!({
-            "workflow": CONTRACT, "history_contract": ARTICLE_CONTRACT, "round": number,
+            "workflow": CONTRACT, "history_contract": ARTICLE_CONTRACT, "round": files.number,
             "dispatch_protocol": START_PROTOCOL,
             "last_delivered_round": previous["last_delivered_round"].as_u64().unwrap_or(0),
-            "cwd": cwd, "snapshot": snapshot, "result_path": result,
+            "cwd": files.cwd, "snapshot": files.snapshot, "result_path": files.result,
             "thread_id": thread_id(text(&props["AI 会话 / 线程"])),
             "model": props["模型"], "title": title,
             "execution_token": Uuid::new_v4().simple().to_string()
         });
-        merge(&mut record, context);
         for key in [
             "history_page_id",
             "round_article_page_ids",
@@ -783,12 +977,7 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
                 record[key] = value.clone();
             }
         }
-        let mut snapshot_value = json!({"fetched_at": now(), "trigger": self.trigger});
-        merge(&mut snapshot_value, task.clone());
-        write_json(&snapshot, &snapshot_value)?;
-        fs::create_dir_all(result.parent().context("Invalid receipt path")?)?;
-        self.checkpoint(pid, &mut record, "prepared", json!({}))?;
-        Ok(record)
+        record
     }
 
     fn model(&self, record: &Value) -> Result<String> {
@@ -804,6 +993,25 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
             !path.exists(),
             "Existing dispatch receipt requires reconciliation before sending"
         );
+        let route = self.dispatch_route(pid, record)?;
+        let settings = self.execution_settings(record)?;
+        self.ensure_execution_thread(pid, record, &settings)?;
+        if route.is_none() {
+            self.bind_execution_thread(pid, record)?;
+        }
+        self.executor.resume_thread(
+            text(&record["thread_id"]),
+            &settings.model,
+            &settings.sandbox,
+            &settings.reviewer,
+        )?;
+        if record["dispatch_protocol"] == START_PROTOCOL {
+            return self.prepare_start(pid, record);
+        }
+        self.dispatch_legacy(pid, record, &path, &settings.model)
+    }
+
+    fn dispatch_route(&mut self, pid: &str, record: &Value) -> Result<Option<String>> {
         let task = self.metadata(pid, None)?;
         let properties = &task["properties"];
         let expected = if phase(record) == "claimed" {
@@ -831,41 +1039,62 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
                 "Chat changed before claim"
             );
         }
+        Ok(route)
+    }
+
+    fn execution_settings(&self, record: &Value) -> Result<ExecutionSettings> {
         let model = self.model(record)?;
         let sandbox = self.config["execution_sandbox"]
             .as_str()
             .unwrap_or("workspace-write")
             .to_owned();
         let reviewer = text(&self.config["execution_approvals_reviewer"]).to_owned();
+        Ok(ExecutionSettings {
+            model,
+            sandbox,
+            reviewer,
+        })
+    }
+
+    fn ensure_execution_thread(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        settings: &ExecutionSettings,
+    ) -> Result<()> {
         if text(&record["thread_id"]).is_empty() {
             self.checkpoint(pid, record, "creating_chat", json!({}))?;
             let created = self.executor.start_thread(
-                &model,
+                &settings.model,
                 text(&record["cwd"]),
                 text(&record["title"]),
-                &sandbox,
-                &reviewer,
+                &settings.sandbox,
+                &settings.reviewer,
             )?;
             let thread = created.get("thread").unwrap_or(&created);
             let tid = canonical_id(thread["id"].as_str().context("Created chat has no ID")?)?;
             self.checkpoint(pid, record, "chat_created", json!({"thread_id": tid}))?;
         }
-        if route.is_none() {
-            let latest = self.metadata(pid, None)?;
-            ensure!(
-                latest["properties"]["状态"] == "待办事项"
-                    && text(&latest["properties"]["AI 会话 / 线程"]).is_empty()
-                    && latest["properties"]["模型"] == record["model"],
-                "Task changed before chat binding"
-            );
-            self.checkpoint(pid, record, "linking_chat", json!({}))?;
-            self.update(pid, json!({"AI 会话 / 线程": format!("codex://threads/{}", text(&record["thread_id"]))}))?;
-        }
-        self.executor
-            .resume_thread(text(&record["thread_id"]), &model, &sandbox, &reviewer)?;
-        if record["dispatch_protocol"] == START_PROTOCOL {
-            return self.prepare_start(pid, record);
-        }
+        Ok(())
+    }
+
+    fn bind_execution_thread(&mut self, pid: &str, record: &mut Value) -> Result<()> {
+        let latest = self.metadata(pid, None)?;
+        ensure!(
+            latest["properties"]["状态"] == "待办事项"
+                && text(&latest["properties"]["AI 会话 / 线程"]).is_empty()
+                && latest["properties"]["模型"] == record["model"],
+            "Task changed before chat binding"
+        );
+        self.checkpoint(pid, record, "linking_chat", json!({}))?;
+        self.update(
+            pid,
+            json!({"AI 会话 / 线程": format!("codex://threads/{}", text(&record["thread_id"]))}),
+        )?;
+        Ok(())
+    }
+
+    fn claim_legacy_task(&mut self, pid: &str, record: &mut Value) -> Result<()> {
         let task = self.metadata(pid, Some(record))?;
         if phase(record) != "claimed" {
             ensure!(
@@ -881,13 +1110,24 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
             latest["properties"]["状态"] == "进行中",
             "Claimed task changed state before sending"
         );
+        Ok(())
+    }
+
+    fn dispatch_legacy(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        path: &Path,
+        model: &str,
+    ) -> Result<Value> {
+        self.claim_legacy_task(pid, record)?;
         let prompt = self.worker_prompt(pid, record)?;
         let draft = self
             .executor
             .prepare_dispatch(text(&record["thread_id"]), &prompt)?;
         self.checkpoint(pid, record, "executing", json!({}))?;
-        let execution = self.executor.send_dispatch(&draft, &prompt, &model)?;
-        write_json(&path, &execution)?;
+        let execution = self.executor.send_dispatch(&draft, &prompt, model)?;
+        write_json(path, &execution)?;
         self.checkpoint(
             pid,
             record,
@@ -912,23 +1152,14 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
     pub fn worker_prompt(&self, pid: &str, record: &Value) -> Result<String> {
         let number = round(record);
         let marker = format!("notion-program/{pid}/round-{number:03}");
-        let history = if ["per_task_history_page_v1", ARTICLE_CONTRACT]
-            .contains(&text(&record["history_contract"]))
-        {
-            history_prompt(pid, record)?
-        } else {
-            String::new()
-        };
+        let history = self.worker_history(pid, record)?;
         let context = project_context_prompt(pid, record)?;
         let destination = if history.is_empty() {
             "把完整报告、证据和需要审核的事项直接写入本页，并核验实际写入结果。"
         } else {
             "按下方轮次契约保存完整报告、证据和需要审核的事项，任务主页只保留逐轮摘要与跳转链接，并核验实际写入结果。"
         };
-        let example = json!({"status":"completed", "page_id":pid, "round":number,
-            "execution_token":record["execution_token"],
-            "notion_delivery":{"report_written":true,"verified":true,"review_handled":true,
-                "reference":"实际交付页URL与本轮位置说明","delivered_at":"实际时间"}});
+        let example = self.worker_receipt_example(pid, record);
         Ok(format!(
             "派发标记：{marker}。\n\
              Herman 最新分工取代旧规则：调度器只控制状态与聊天路由，不读取、修改或校验页面正文。\
@@ -956,6 +1187,23 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
             serde_json::to_string(&example)?,
             text(&record["cwd"])
         ))
+    }
+
+    fn worker_history(&self, pid: &str, record: &Value) -> Result<String> {
+        if ["per_task_history_page_v1", ARTICLE_CONTRACT]
+            .contains(&text(&record["history_contract"]))
+        {
+            history_prompt(pid, record)
+        } else {
+            Ok(String::new())
+        }
+    }
+
+    fn worker_receipt_example(&self, pid: &str, record: &Value) -> Value {
+        json!({"status":"completed", "page_id":pid, "round":round(record),
+            "execution_token":record["execution_token"],
+            "notion_delivery":{"report_written":true,"verified":true,"review_handled":true,
+                "reference":"实际交付页URL与本轮位置说明","delivered_at":"实际时间"}})
     }
 
     fn prepare_start(&mut self, pid: &str, record: &mut Value) -> Result<Value> {
@@ -1001,36 +1249,10 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
             intent["draft"].is_object() && intent["prompt"].is_string(),
             "Invalid saved start intent"
         );
-        if phase(record) == "start_prepared" {
-            let latest = self.metadata(pid, Some(record))?;
-            ensure!(
-                latest["properties"]["状态"] == "待办事项",
-                "Task changed before sending reserved execution"
-            );
-            if path.exists() {
-                self.checkpoint(pid, record, "start_confirming", json!({}))?;
-            } else {
-                self.checkpoint(pid, record, "start_sending", json!({}))?;
-                let model = self.model(record)?;
-                let execution = match self.executor.send_dispatch(
-                    &intent["draft"],
-                    text(&intent["prompt"]),
-                    &model,
-                ) {
-                    Ok(execution) => execution,
-                    Err(error) => {
-                        if presend_error(&error) {
-                            self.checkpoint(pid, record, "start_prepared", json!({}))?;
-                        }
-                        return Err(error);
-                    }
-                };
-                write_json(&path, &execution)?;
-                self.checkpoint(pid, record, "start_confirming", json!({}))?;
-                if execution["transport"] == "app_server" && execution["turn"].is_object() {
-                    return self.confirm_start(pid, record, &execution);
-                }
-            }
+        if phase(record) == "start_prepared"
+            && let Some(outcome) = self.send_reserved_start(pid, record, &intent, &path)?
+        {
+            return Ok(outcome);
         }
         let mut receipt = if path.exists() {
             read_json(&path, Value::Null)?
@@ -1049,7 +1271,54 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
         self.confirm_start(pid, record, &execution)
     }
 
-    fn confirm_start(&mut self, pid: &str, record: &mut Value, execution: &Value) -> Result<Value> {
+    fn send_reserved_start(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        intent: &Value,
+        path: &Path,
+    ) -> Result<Option<Value>> {
+        let latest = self.metadata(pid, Some(record))?;
+        ensure!(
+            latest["properties"]["状态"] == "待办事项",
+            "Task changed before sending reserved execution"
+        );
+        if path.exists() {
+            self.checkpoint(pid, record, "start_confirming", json!({}))?;
+            return Ok(None);
+        }
+        self.checkpoint(pid, record, "start_sending", json!({}))?;
+        let execution = self.send_start_dispatch(pid, record, intent)?;
+        write_json(path, &execution)?;
+        self.checkpoint(pid, record, "start_confirming", json!({}))?;
+        if execution["transport"] == "app_server" && execution["turn"].is_object() {
+            return self.confirm_start(pid, record, &execution).map(Some);
+        }
+        Ok(None)
+    }
+
+    fn send_start_dispatch(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        intent: &Value,
+    ) -> Result<Value> {
+        let model = self.model(record)?;
+        match self
+            .executor
+            .send_dispatch(&intent["draft"], text(&intent["prompt"]), &model)
+        {
+            Ok(execution) => Ok(execution),
+            Err(error) => {
+                if presend_error(&error) {
+                    self.checkpoint(pid, record, "start_prepared", json!({}))?;
+                }
+                Err(error)
+            }
+        }
+    }
+
+    fn observe_start(&mut self, pid: &str, record: &mut Value, execution: &Value) -> Result<bool> {
         let observation = self.round_path(record, "data", "start-observation.json")?;
         write_json(&observation, execution)?;
         record["execution_observation_path"] = json!(observation);
@@ -1064,60 +1333,30 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
                         || !dispatched["startedAt"].is_null()));
         self.event("start_observed", json!({"page_id":pid,"round":round(record),"turn_id":turn["id"],
             "dispatched_turn_id":execution["dispatched_turn_id"],"execution_status":execution["status"],"turn_status":turn["status"]}))?;
-        if !associated {
-            self.checkpoint(pid, record, "start_confirming", json!({}))?;
-            self.diagnostic(pid, record, "start_pending", &[], None);
-            return Ok(json!({"page_id":pid,"status":"waiting_start"}));
+        Ok(associated)
+    }
+
+    fn confirm_start(&mut self, pid: &str, record: &mut Value, execution: &Value) -> Result<Value> {
+        if !self.observe_start(pid, record, execution)? {
+            return self.wait_for_start(pid, record);
         }
-        record["dispatched_turn_id"] = json!(anchor);
+        record["dispatched_turn_id"] = execution["dispatched_turn_id"].clone();
+        let turn = &execution["turn"];
         if execution["status"] == "completed" && turn["status"] == "completed" {
-            self.checkpoint(
-                pid,
-                record,
-                "start_confirming",
-                json!({"start_resolved_at":now()}),
-            )?;
+            self.resolve_start(pid, record)?;
             return self.accept_execution(pid, record, execution);
         }
         let observed_flags = flags(execution);
         if ["failed", "interrupted", "needs_attention"].contains(&text(&execution["status"]))
             || !observed_flags.is_empty()
         {
-            self.checkpoint(
-                pid,
-                record,
-                "start_confirming",
-                json!({"start_resolved_at":now()}),
-            )?;
-            if self.retry_policy()?.is_some()
-                && ["failed", "interrupted"].contains(&text(&execution["status"]))
-            {
-                let observed = if execution.get("automatic_retry_signal").is_some() {
-                    execution.clone()
-                } else {
-                    self.executor.poll_execution(execution)?
-                };
-                self.checkpoint(pid, record, "waiting_execution", json!({}))?;
-                if let Some(outcome) = self.automatic_retry(pid, record, &observed)? {
-                    return Ok(outcome);
-                }
-                self.checkpoint(pid, record, "start_confirming", json!({}))?;
-            }
-            return self.block(
-                pid,
-                record,
-                "Execution did not start normally",
-                text(&execution["status"]),
-                &observed_flags,
-            );
+            return self.handle_start_interruption(pid, record, execution);
         }
         if turn["status"] != "inProgress"
             || !["in_progress", "timeout"].contains(&text(&execution["status"]))
             || execution["transport"] != "app_server" && execution["thread_status"] != "active"
         {
-            self.checkpoint(pid, record, "start_confirming", json!({}))?;
-            self.diagnostic(pid, record, "start_pending", &[], None);
-            return Ok(json!({"page_id":pid,"status":"waiting_start"}));
+            return self.wait_for_start(pid, record);
         }
         self.checkpoint(
             pid,
@@ -1128,23 +1367,57 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
         self.publish_running(pid, record)
     }
 
+    fn resolve_start(&mut self, pid: &str, record: &mut Value) -> Result<()> {
+        self.checkpoint(
+            pid,
+            record,
+            "start_confirming",
+            json!({"start_resolved_at":now()}),
+        )
+    }
+
+    fn wait_for_start(&mut self, pid: &str, record: &mut Value) -> Result<Value> {
+        self.checkpoint(pid, record, "start_confirming", json!({}))?;
+        self.diagnostic(pid, record, "start_pending", &[], None);
+        Ok(json!({"page_id":pid,"status":"waiting_start"}))
+    }
+
+    fn handle_start_interruption(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        execution: &Value,
+    ) -> Result<Value> {
+        self.resolve_start(pid, record)?;
+        if self.retry_policy()?.is_some()
+            && ["failed", "interrupted"].contains(&text(&execution["status"]))
+        {
+            let observed = if execution.get("automatic_retry_signal").is_some() {
+                execution.clone()
+            } else {
+                self.executor.poll_execution(execution)?
+            };
+            self.checkpoint(pid, record, "waiting_execution", json!({}))?;
+            if let Some(outcome) = self.automatic_retry(pid, record, &observed)? {
+                return Ok(outcome);
+            }
+            self.checkpoint(pid, record, "start_confirming", json!({}))?;
+        }
+        self.block(
+            pid,
+            record,
+            "Execution did not start normally",
+            text(&execution["status"]),
+            &flags(execution),
+        )
+    }
+
     fn publish_running(&mut self, pid: &str, record: &mut Value) -> Result<Value> {
         let task = self.metadata(pid, Some(record))?;
         let status = text(&task["properties"]["状态"]);
         self.event("running_status_read", json!({"page_id":pid,"round":round(record),"observed_status":status,"phase":phase(record)}))?;
         if status == "进行中" {
-            self.checkpoint(
-                pid,
-                record,
-                "waiting_execution",
-                json!({"running_status_verified_at":now()}),
-            )?;
-            if record.get("diagnostic_feedback_desired").is_some()
-                || record.get("diagnostic_feedback_publication").is_some()
-            {
-                self.diagnostic(pid, record, "resumed", &[], None);
-            }
-            return Ok(json!({"page_id":pid,"status":"executing"}));
+            return self.confirm_running_status(pid, record);
         }
         ensure!(
             status == "待办事项",
@@ -1171,6 +1444,21 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
         }
         self.checkpoint(pid, record, "start_status_confirming", json!({}))?;
         self.publish_running(pid, record)
+    }
+
+    fn confirm_running_status(&mut self, pid: &str, record: &mut Value) -> Result<Value> {
+        self.checkpoint(
+            pid,
+            record,
+            "waiting_execution",
+            json!({"running_status_verified_at":now()}),
+        )?;
+        if record.get("diagnostic_feedback_desired").is_some()
+            || record.get("diagnostic_feedback_publication").is_some()
+        {
+            self.diagnostic(pid, record, "resumed", &[], None);
+        }
+        Ok(json!({"page_id":pid,"status":"executing"}))
     }
 
     fn execution_receipt(&self, record: &Value) -> Result<Value> {
@@ -1206,22 +1494,7 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
         record["execution_observation_path"] = json!(path);
         self.save(pid, record)?;
         if execution["status"] == "in_progress" {
-            if phase(record) == "execution_blocked"
-                && execution["turn"]["status"] == "inProgress"
-                && execution["thread_status"] == "active"
-                && flags(&execution).is_empty()
-            {
-                self.checkpoint(pid, record, "restoring_execution", json!({}))?;
-                return self.finish_status(pid, record);
-            }
-            if self
-                .round_path(record, "outputs", "diagnostic.md")?
-                .exists()
-                || record.get("diagnostic_feedback_desired").is_some()
-            {
-                self.diagnostic(pid, record, "resumed", &[], None);
-            }
-            return Ok(json!({"page_id":pid,"status":"executing"}));
+            return self.observe_running_execution(pid, record, &execution);
         }
         if execution["status"] != "completed" {
             if let Some(outcome) = self.automatic_retry(pid, record, &execution)? {
@@ -1236,6 +1509,30 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
             );
         }
         self.accept_execution(pid, record, &execution)
+    }
+
+    fn observe_running_execution(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        execution: &Value,
+    ) -> Result<Value> {
+        if phase(record) == "execution_blocked"
+            && execution["turn"]["status"] == "inProgress"
+            && execution["thread_status"] == "active"
+            && flags(execution).is_empty()
+        {
+            self.checkpoint(pid, record, "restoring_execution", json!({}))?;
+            return self.finish_status(pid, record);
+        }
+        if self
+            .round_path(record, "outputs", "diagnostic.md")?
+            .exists()
+            || record.get("diagnostic_feedback_desired").is_some()
+        {
+            self.diagnostic(pid, record, "resumed", &[], None);
+        }
+        Ok(json!({"page_id":pid,"status":"executing"}))
     }
 
     pub fn read_worker_receipt(&self, pid: &str, record: &Value) -> Result<(Value, String)> {
@@ -1285,20 +1582,7 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
         record: &mut Value,
         execution: &Value,
     ) -> Result<Value> {
-        let validated = (|| -> Result<(Value, String)> {
-            let (result, hash) = self.read_worker_receipt(pid, record)?;
-            let expected = format!(
-                "NOTION_RESULT notion-program/{pid}/round-{:03} {hash}",
-                round(record)
-            );
-            ensure!(
-                text(&execution["text"])
-                    .lines()
-                    .any(|line| line == expected),
-                "执行回合尚未确认当前收据的 SHA256"
-            );
-            Ok((result, hash))
-        })();
+        let validated = self.validated_execution_receipt(pid, record, execution);
         let (result, hash) = match validated {
             Ok(result) => result,
             Err(error) => {
@@ -1306,6 +1590,42 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
                 return self.block(pid, record, &error.to_string(), kind, &[]);
             }
         };
+        self.record_round_delivery(pid, record, &result)?;
+        self.checkpoint(
+            pid,
+            record,
+            "submitting_review",
+            json!({"receipt_sha256":hash}),
+        )?;
+        self.finish_status(pid, record)
+    }
+
+    fn validated_execution_receipt(
+        &self,
+        pid: &str,
+        record: &Value,
+        execution: &Value,
+    ) -> Result<(Value, String)> {
+        let (result, hash) = self.read_worker_receipt(pid, record)?;
+        let expected = format!(
+            "NOTION_RESULT notion-program/{pid}/round-{:03} {hash}",
+            round(record)
+        );
+        ensure!(
+            text(&execution["text"])
+                .lines()
+                .any(|line| line == expected),
+            "执行回合尚未确认当前收据的 SHA256"
+        );
+        Ok((result, hash))
+    }
+
+    fn record_round_delivery(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        result: &Value,
+    ) -> Result<()> {
         let history =
             validate_history_delivery(pid, record, &result["notion_delivery"], &self.state)?;
         if record["automatic_recovery"].is_object() {
@@ -1329,13 +1649,7 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
             record["round_article_page_ids"][number] =
                 json!(canonical_id(text(&article["page_id"]))?);
         }
-        self.checkpoint(
-            pid,
-            record,
-            "submitting_review",
-            json!({"receipt_sha256":hash}),
-        )?;
-        self.finish_status(pid, record)
+        Ok(())
     }
 
     fn block(
@@ -1371,28 +1685,38 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
     }
 
     fn finish_status(&mut self, pid: &str, record: &mut Value) -> Result<Value> {
-        let completed = phase(record) == "submitting_review";
-        let restoring = phase(record) == "restoring_execution";
-        let mut target = if restoring {
-            "进行中"
-        } else if completed {
-            "待审核"
-        } else {
-            "阻塞中"
-        }
-        .to_owned();
-        if completed {
+        let mut submission = StatusSubmission::new(record);
+        if submission.completed {
             self.read_worker_receipt(pid, record)?;
         }
         let task = self.metadata(pid, Some(record))?;
         let status = text(&task["properties"]["状态"]);
-        if !completed && !restoring && RETRY_BLOCKED.contains(&status) {
-            target = status.to_owned();
+        if !submission.completed && !submission.restoring && RETRY_BLOCKED.contains(&status) {
+            submission.target = status.to_owned();
         }
         if TERMINAL.contains(&status) {
             self.checkpoint(pid, record, "terminal", json!({"remote_status":status}))?;
             return Ok(json!({"page_id":pid,"status":status}));
         }
+        if let Some(outcome) = self.reconcile_status_submission(pid, record, status, &submission)? {
+            return Ok(outcome);
+        }
+        self.validate_submission_status(record, status, &submission)?;
+        let receipt = self.submit_status(pid, record, status, &submission.target)?;
+        if submission.restoring && status != submission.target {
+            return self.finish_status(pid, record);
+        }
+        self.confirm_status_intent(record);
+        self.complete_status_submission(pid, record, &submission, receipt)
+    }
+
+    fn pending_status_confirmed(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        status: &str,
+        target: &str,
+    ) -> Result<bool> {
         if record["pending_status_write"].is_object()
             && record["pending_status_write"]["state"] != "rejected"
         {
@@ -1403,25 +1727,61 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
             );
             if status != target {
                 self.diagnostic(pid, record, "write_unknown", &[], None);
-                return Ok(json!({"page_id":pid,"status":"waiting_status_confirmation"}));
+                return Ok(false);
             }
         }
-        if restoring && !["阻塞中", "进行中"].contains(&status) {
-            self.checkpoint(pid, record, "execution_blocked", json!({}))?;
-            return Ok(json!({"page_id":pid,"status":"recovery_state_changed"}));
+        Ok(true)
+    }
+
+    fn reconcile_status_submission(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        status: &str,
+        submission: &StatusSubmission,
+    ) -> Result<Option<Value>> {
+        if !self.pending_status_confirmed(pid, record, status, &submission.target)? {
+            return Ok(Some(
+                json!({"page_id":pid,"status":"waiting_status_confirmation"}),
+            ));
         }
+        if submission.restoring && !["阻塞中", "进行中"].contains(&status) {
+            self.checkpoint(pid, record, "execution_blocked", json!({}))?;
+            return Ok(Some(
+                json!({"page_id":pid,"status":"recovery_state_changed"}),
+            ));
+        }
+        Ok(None)
+    }
+
+    fn validate_submission_status(
+        &self,
+        record: &Value,
+        status: &str,
+        submission: &StatusSubmission,
+    ) -> Result<()> {
         let before_running = record["dispatch_protocol"] == START_PROTOCOL
             && !record["start_resolved_at"].is_null()
             && record["running_status_verified_at"].is_null()
             && record["start_final_write_attempted_at"].is_null();
         ensure!(
             ["进行中", "阻塞中", RETRY_REQUEST].contains(&status)
-                || status == target
+                || status == submission.target
                 || RETRY_BLOCKED.contains(&status)
                 || before_running && status == "待办事项",
             "Task state changed before submission"
         );
-        let receipt = if status != target {
+        Ok(())
+    }
+
+    fn submit_status(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        status: &str,
+        target: &str,
+    ) -> Result<Value> {
+        if status != target {
             if record["pending_status_write"].is_object() {
                 ensure!(
                     record["pending_status_write"]["phase"] == phase(record)
@@ -1438,44 +1798,43 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
                     json!({"start_final_write_attempted_at":now()}),
                 )?;
             }
-            self.write_status_intent(pid, record, &target)?;
-            let receipt = match self.update(pid, json!({"状态":target})) {
-                Ok(receipt) => receipt,
-                Err(error) => {
-                    self.status_error(pid, record, &error)?;
-                    return Err(error);
-                }
-            };
-            record["pending_status_write"]["state"] = json!("acknowledged");
-            record["pending_status_write"]["receipt"] = receipt.clone();
-            self.save(pid, record)?;
-            if restoring {
-                return self.finish_status(pid, record);
-            }
-            receipt
+            self.update_status_with_intent(pid, record, target)
         } else {
-            json!({"reconciled_by_metadata_read":true,"status":target})
-        };
-        self.confirm_status_intent(record);
-        if restoring {
-            for field in [
-                "blocker_kind",
-                "blocker_flags",
-                "blocker_reason",
-                "blocker_status_receipt",
-            ] {
-                remove(record, field);
-            }
-            self.checkpoint(
-                pid,
-                record,
-                "waiting_execution",
-                json!({"resumed_at":now(),"running_recovery_receipt":receipt}),
-            )?;
-            self.diagnostic(pid, record, "resumed", &[], None);
-            return Ok(json!({"page_id":pid,"status":"executing","round":round(record)}));
+            Ok(json!({"reconciled_by_metadata_read":true,"status":target}))
         }
-        if completed {
+    }
+
+    fn update_status_with_intent(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        target: &str,
+    ) -> Result<Value> {
+        self.write_status_intent(pid, record, target)?;
+        let receipt = match self.update(pid, json!({"状态":target})) {
+            Ok(receipt) => receipt,
+            Err(error) => {
+                self.status_error(pid, record, &error)?;
+                return Err(error);
+            }
+        };
+        record["pending_status_write"]["state"] = json!("acknowledged");
+        record["pending_status_write"]["receipt"] = receipt.clone();
+        self.save(pid, record)?;
+        Ok(receipt)
+    }
+
+    fn complete_status_submission(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        submission: &StatusSubmission,
+        receipt: Value,
+    ) -> Result<Value> {
+        if submission.restoring {
+            return self.finish_execution_restoration(pid, record, receipt);
+        }
+        if submission.completed {
             self.checkpoint(pid, record, "awaiting_review", json!({"last_delivered_round":round(record),"submitted_at":now(),"submit_receipt":receipt}))?;
         } else {
             self.checkpoint(
@@ -1485,6 +1844,35 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
                 json!({"blocker_status_receipt":receipt}),
             )?;
         }
+        self.submission_feedback(pid, record, submission.completed);
+        Ok(json!({"page_id":pid,"status":phase(record),"round":round(record)}))
+    }
+
+    fn finish_execution_restoration(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        receipt: Value,
+    ) -> Result<Value> {
+        for field in [
+            "blocker_kind",
+            "blocker_flags",
+            "blocker_reason",
+            "blocker_status_receipt",
+        ] {
+            remove(record, field);
+        }
+        self.checkpoint(
+            pid,
+            record,
+            "waiting_execution",
+            json!({"resumed_at":now(),"running_recovery_receipt":receipt}),
+        )?;
+        self.diagnostic(pid, record, "resumed", &[], None);
+        Ok(json!({"page_id":pid,"status":"executing","round":round(record)}))
+    }
+
+    fn submission_feedback(&mut self, pid: &str, record: &mut Value, completed: bool) {
         if record.get("diagnostic_feedback_desired").is_some()
             || record.get("diagnostic_feedback_publication").is_some()
         {
@@ -1499,7 +1887,6 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
             let observed = flags(&json!({"active_flags":record["blocker_flags"]}));
             self.diagnostic(pid, record, &kind, &observed, None);
         }
-        Ok(json!({"page_id":pid,"status":phase(record),"round":round(record)}))
     }
 
     fn write_status_intent(&mut self, pid: &str, record: &mut Value, target: &str) -> Result<()> {

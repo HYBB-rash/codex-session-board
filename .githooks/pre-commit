@@ -17,6 +17,11 @@ if [[ "$CARGO_TARGET_DIR" != /* ]]; then
     export CARGO_TARGET_DIR="$project_root/$CARGO_TARGET_DIR"
 fi
 cd -- "$snapshot"
+printf '%s\n' '[提交前检查] 正在运行 Clippy……'
+if ! cargo clippy --all-targets --locked --offline -- -D warnings; then
+    printf '%s\n' '[提交已阻止] Clippy 检查未通过或无法运行。修复后重新暂存，再次提交。' >&2
+    exit 1
+fi
 printf '%s\n' '[提交前测试] 正在离线测试暂存区中的代码……'
 if cargo test --locked --offline; then
     printf '%s\n' '[提交前测试] 全部通过，允许提交。'

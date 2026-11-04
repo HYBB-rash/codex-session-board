@@ -83,6 +83,33 @@ enum ArchiveAction {
     },
 }
 
+fn check_archive_config(config: &Value) -> Result<()> {
+    for key in [
+        "archive_data_dir",
+        "worker_cwd",
+        "project_data_source_id",
+        "analysis_model",
+    ] {
+        required_str(config, key)?;
+    }
+    notion_program::common::canonical_id(required_str(config, "project_data_source_id")?)?;
+    Ok(())
+}
+
+fn check_scheduler_models(config: &Value) -> Result<()> {
+    let models = config["model_map"]
+        .as_object()
+        .filter(|models| !models.is_empty())
+        .context("model_map must be a nonempty object")?;
+    ensure!(
+        models
+            .values()
+            .all(|value| value.as_str().is_some_and(|text| !text.is_empty())),
+        "Model mappings must be nonempty strings"
+    );
+    Ok(())
+}
+
 fn check_config(config: &Value, is_archive: bool) -> Result<Value> {
     for key in [
         "workspace",
@@ -106,31 +133,15 @@ fn check_config(config: &Value, is_archive: bool) -> Result<Value> {
         notion_program::common::command(command)?;
     }
     if is_archive {
-        for key in [
-            "archive_data_dir",
-            "worker_cwd",
-            "project_data_source_id",
-            "analysis_model",
-        ] {
-            required_str(config, key)?;
-        }
-        notion_program::common::canonical_id(required_str(config, "project_data_source_id")?)?;
+        check_archive_config(config)?;
     } else {
-        ensure!(
-            config["model_map"]
-                .as_object()
-                .is_some_and(|models| !models.is_empty()),
-            "model_map must be a nonempty object"
-        );
-        ensure!(
-            config["model_map"]
-                .as_object()
-                .unwrap()
-                .values()
-                .all(|value| value.as_str().is_some_and(|text| !text.is_empty())),
-            "Model mappings must be nonempty strings"
-        );
+        check_scheduler_models(config)?;
     }
+    check_connection_config(config)?;
+    Ok(json!({"status": "valid", "config": config["_config_path"], "archive": is_archive}))
+}
+
+fn check_connection_config(config: &Value) -> Result<()> {
     if let Some(timeout) = config.get("request_timeout_seconds") {
         ensure!(
             timeout
@@ -159,7 +170,14 @@ fn check_config(config: &Value, is_archive: bool) -> Result<Value> {
         (0.0..=30.0).contains(&delay),
         "connection_retry_delay_seconds must be 0..30"
     );
-    Ok(json!({"status": "valid", "config": config["_config_path"], "archive": is_archive}))
+    Ok(())
+}
+
+fn scheduler_attempt(config: &Value, trigger: &str) -> Result<Vec<Value>> {
+    let notion = connect_notion(config)?;
+    let executor = RoutingExecutor::new(config.clone())?;
+    let mut scheduler = StateScheduler::new(config.clone(), notion, executor, trigger.into())?;
+    scheduler.run_once()
 }
 
 fn run_scheduler(config: Value, trigger: String) -> Result<Value> {
@@ -169,13 +187,7 @@ fn run_scheduler(config: Value, trigger: String) -> Result<Value> {
         .as_f64()
         .unwrap_or(2.0);
     for attempt in 1..=attempts {
-        let outcome = (|| -> Result<Vec<Value>> {
-            let notion = connect_notion(&config)?;
-            let executor = RoutingExecutor::new(config.clone())?;
-            let mut scheduler =
-                StateScheduler::new(config.clone(), notion, executor, trigger.clone())?;
-            scheduler.run_once()
-        })();
+        let outcome = scheduler_attempt(&config, &trigger);
         match outcome {
             Ok(outcomes) => {
                 if attempt == attempts
@@ -206,6 +218,45 @@ fn run_scheduler(config: Value, trigger: String) -> Result<Value> {
     bail!("Connection retry budget exhausted")
 }
 
+fn migrate_config(config: &mut Value, destination: &Path) -> Result<()> {
+    config["workspace"] = json!(destination);
+    config["data_dir"] = json!(destination.join("data"));
+    config["task_workspace_root"] = json!(destination.join("tasks"));
+    if let Some(command) = config["codex_command"].as_array()
+        && let Some(position) = command.iter().position(|value| value == "--socket")
+    {
+        let socket = command
+            .get(position + 1)
+            .and_then(Value::as_str)
+            .context("Missing source daemon socket")?
+            .to_string();
+        config["daemon_socket"] = json!(socket);
+        config
+            .as_object_mut()
+            .context("Source configuration must be an object")?
+            .remove("codex_command");
+    } else if config["daemon_socket"].is_null() {
+        let command = config["codex_command"]
+            .as_array()
+            .context("Original configuration has no transport")?;
+        let contains_python = command.iter().filter_map(Value::as_str).any(|argument| {
+            argument.ends_with(".py")
+                || Path::new(argument)
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with("python"))
+        });
+        ensure!(
+            !contains_python,
+            "Cannot migrate an unknown Python transport automatically"
+        );
+    }
+    config
+        .as_object_mut()
+        .context("Source configuration must be an object")?
+        .remove("_config_path");
+    Ok(())
+}
+
 fn import_config(source: &Path, destination: &Path) -> Result<Value> {
     let source = fs::canonicalize(source).context("Original project does not exist")?;
     let destination =
@@ -224,51 +275,13 @@ fn import_config(source: &Path, destination: &Path) -> Result<Value> {
     let mut config = read_json(&source.join("config.json"), Value::Null)?;
     ensure!(config.is_object(), "Source configuration is missing");
     let mut archiver = read_json(&source.join("archive-config.json"), Value::Null)?;
-    let migrate = |config: &mut Value| -> Result<()> {
-        config["workspace"] = json!(destination);
-        config["data_dir"] = json!(destination.join("data"));
-        config["task_workspace_root"] = json!(destination.join("tasks"));
-        if let Some(command) = config["codex_command"].as_array()
-            && let Some(position) = command.iter().position(|value| value == "--socket")
-        {
-            let socket = command
-                .get(position + 1)
-                .and_then(Value::as_str)
-                .context("Missing source daemon socket")?
-                .to_string();
-            config["daemon_socket"] = json!(socket);
-            config.as_object_mut().unwrap().remove("codex_command");
-        } else if config["daemon_socket"].is_null() {
-            ensure!(
-                config["codex_command"].is_array(),
-                "Original configuration has no transport"
-            );
-            let contains_python = config["codex_command"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .filter_map(Value::as_str)
-                .any(|argument| {
-                    argument.ends_with(".py")
-                        || Path::new(argument)
-                            .file_name()
-                            .is_some_and(|name| name.to_string_lossy().starts_with("python"))
-                });
-            ensure!(
-                !contains_python,
-                "Cannot migrate an unknown Python transport automatically"
-            );
-        }
-        config.as_object_mut().unwrap().remove("_config_path");
-        Ok(())
-    };
-    migrate(&mut config)?;
+    migrate_config(&mut config, &destination)?;
     if config["project_context"]["enabled"] == true {
         config["project_context"]["helper_command"] =
             json!([executable, "--config", archive_target, "archive"]);
     }
     if archiver.is_object() {
-        migrate(&mut archiver)?;
+        migrate_config(&mut archiver, &destination)?;
         archiver["archive_data_dir"] = json!(destination.join("data/archive-runtime"));
         archiver["worker_cwd"] = json!(destination);
         write_json(&archive_target, &archiver)?;
@@ -277,6 +290,74 @@ fn import_config(source: &Path, destination: &Path) -> Result<Value> {
     Ok(json!({"status": "imported", "config": config_target,
         "archive_config": if archiver.is_object() { json!(archive_target) } else { Value::Null },
         "runtime_state_copied": false, "services_changed": false}))
+}
+
+fn inspect_task(config: &Value, page: &str, body: bool, output: Option<&Path>) -> Result<Value> {
+    let pid = page_id(page)?;
+    let mut notion = connect_notion(config)?;
+    let result = if body {
+        notion.fetch(&pid)?
+    } else {
+        notion.get_task_metadata(&pid)?
+    };
+    if let Some(output) = output {
+        write_json(output, &result)?;
+        Ok(json!({"page_id": pid, "saved": output}))
+    } else {
+        Ok(result)
+    }
+}
+
+fn probe(config: &Value) -> Result<Value> {
+    let mut notion = connect_notion(config)?;
+    let result = notion.fetch(&format!(
+        "collection://{}",
+        required_str(config, "data_source_id")?
+    ))?;
+    let path = PathBuf::from(required_str(config, "data_dir")?).join("live-fetch-probe.json");
+    write_json(&path, &result)?;
+    Ok(json!({"status": "connected", "saved": path}))
+}
+
+fn execute_archive(config: &mut Value, command: ArchiveAction) -> Result<Value> {
+    match command {
+        ArchiveAction::Run { probe } => {
+            config["_notification_probe"] = json!(probe);
+            config["_probe"] = json!(probe);
+            archive::run(config)
+        }
+        ArchiveAction::Context { task, output } => {
+            let pid = page_id(&task)?;
+            match archive::context_for_task(config, &pid) {
+                Ok(value) => {
+                    write_json(&output, &value)?;
+                    Ok(value)
+                }
+                Err(error) => {
+                    write_json(
+                        &output,
+                        &json!({"contract": "project_context_v1", "status": "blocked", "task_page_id": pid, "at": now(), "reason": error.to_string()}),
+                    )?;
+                    Err(error)
+                }
+            }
+        }
+    }
+}
+
+fn local_status(config: &Value) -> Result<Value> {
+    let state = read_json(
+        &PathBuf::from(required_str(config, "data_dir")?).join("state.json"),
+        json!({}),
+    )?;
+    let mut counts = serde_json::Map::new();
+    let records = state.as_object().context("State must be an object")?;
+    for record in records.values() {
+        let phase = record["phase"].as_str().unwrap_or("pending");
+        let count = counts.get(phase).and_then(Value::as_u64).unwrap_or(0);
+        counts.insert(phase.into(), json!(count + 1));
+    }
+    Ok(json!({"tasks": records.len(), "phases": counts, "state": state}))
 }
 
 fn execute(cli: Cli) -> Result<Value> {
@@ -300,71 +381,11 @@ fn execute(cli: Cli) -> Result<Value> {
         Action::Run => run_scheduler(config, cli.trigger),
         Action::CheckConfig => check_config(&config, config.get("archive_data_dir").is_some()),
         Action::Inspect { page, body, output } => {
-            let pid = page_id(&page)?;
-            let mut notion = connect_notion(&config)?;
-            let result = if body {
-                notion.fetch(&pid)?
-            } else {
-                notion.get_task_metadata(&pid)?
-            };
-            if let Some(output) = output {
-                write_json(&output, &result)?;
-                Ok(json!({"page_id": pid, "saved": output}))
-            } else {
-                Ok(result)
-            }
+            inspect_task(&config, &page, body, output.as_deref())
         }
-        Action::Probe => {
-            let mut notion = connect_notion(&config)?;
-            let result = notion.fetch(&format!(
-                "collection://{}",
-                required_str(&config, "data_source_id")?
-            ))?;
-            let path =
-                PathBuf::from(required_str(&config, "data_dir")?).join("live-fetch-probe.json");
-            write_json(&path, &result)?;
-            Ok(json!({"status": "connected", "saved": path}))
-        }
-        Action::Archive { command } => match command {
-            ArchiveAction::Run { probe } => {
-                config["_notification_probe"] = json!(probe);
-                config["_probe"] = json!(probe);
-                archive::run(&config)
-            }
-            ArchiveAction::Context { task, output } => {
-                let pid = page_id(&task)?;
-                match archive::context_for_task(&config, &pid) {
-                    Ok(value) => {
-                        write_json(&output, &value)?;
-                        Ok(value)
-                    }
-                    Err(error) => {
-                        write_json(
-                            &output,
-                            &json!({"contract": "project_context_v1", "status": "blocked", "task_page_id": pid, "at": now(), "reason": error.to_string()}),
-                        )?;
-                        Err(error)
-                    }
-                }
-            }
-        },
-        Action::Status => {
-            let state = read_json(
-                &PathBuf::from(required_str(&config, "data_dir")?).join("state.json"),
-                json!({}),
-            )?;
-            let mut counts = serde_json::Map::new();
-            for record in state
-                .as_object()
-                .context("State must be an object")?
-                .values()
-            {
-                let phase = record["phase"].as_str().unwrap_or("pending");
-                let count = counts.get(phase).and_then(Value::as_u64).unwrap_or(0);
-                counts.insert(phase.into(), json!(count + 1));
-            }
-            Ok(json!({"tasks": state.as_object().unwrap().len(), "phases": counts, "state": state}))
-        }
+        Action::Probe => probe(&config),
+        Action::Archive { command } => execute_archive(&mut config, command),
+        Action::Status => local_status(&config),
         Action::Rpc { method, params } => {
             RpcClient::from_config(&config)?.request(&method, &serde_json::from_str(&params)?)
         }
@@ -373,15 +394,17 @@ fn execute(cli: Cli) -> Result<Value> {
 }
 
 fn main() {
-    match execute(Cli::parse()) {
-        Ok(value) => {
-            if !value.is_null() {
-                println!("{}", serde_json::to_string_pretty(&value).unwrap());
-            }
+    let result = execute(Cli::parse()).and_then(|value| {
+        if !value.is_null() {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&value).context("Serialize command output")?
+            );
         }
-        Err(error) => {
-            eprintln!("notion-program: {error:#}");
-            std::process::exit(2);
-        }
+        Ok(())
+    });
+    if let Err(error) = result {
+        eprintln!("notion-program: {error:#}");
+        std::process::exit(2);
     }
 }

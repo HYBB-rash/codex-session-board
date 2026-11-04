@@ -31,6 +31,22 @@ pub struct SafeWriter<'a, N: Notion + ?Sized> {
     spec_loaded: bool,
 }
 
+struct ChildRequest<'a> {
+    parent: &'a str,
+    title: &'a str,
+    marker: &'a str,
+    content: &'a str,
+    mutable: bool,
+    path: PathBuf,
+}
+
+struct Replacement<'a> {
+    identifier: &'a str,
+    content: &'a str,
+    path: &'a Path,
+    expected_before: Option<&'a str>,
+}
+
 impl<'a, N: Notion + ?Sized> SafeWriter<'a, N> {
     pub fn new(notion: &'a mut N, root: impl Into<PathBuf>) -> Self {
         Self {
@@ -94,78 +110,121 @@ impl<'a, N: Notion + ?Sized> SafeWriter<'a, N> {
     ) -> Result<Value> {
         let path = self.root.join(format!("{key}.json"));
         let mut state = read_json(&path, json!({}))?;
-        let current = self.page(parent)?;
-        let mut candidates = Vec::new();
-        for child in current["children"].as_array().context("Missing children")? {
-            if state.as_object().is_some_and(|state| state.is_empty())
-                || child["title"] == title
-                || child["id"] == state["page_id"]
-            {
-                let candidate = self.page(text(child, "id")?)?;
-                ensure!(
-                    candidate["parent_page_id"] == parent,
-                    "Child page parent mismatch"
-                );
-                if text(&candidate, "content")?.contains(marker) {
-                    candidates.push(candidate);
-                } else {
-                    ensure!(
-                        child["title"] != title,
-                        "Existing same-title page has unverified ownership"
-                    );
-                }
-            }
-        }
+        let request = ChildRequest {
+            parent,
+            title,
+            marker,
+            content,
+            mutable,
+            path,
+        };
+        let mut candidates = self.child_candidates(&request, &state)?;
         ensure!(
             candidates.len() <= 1,
             "Multiple child pages have the same ownership marker"
         );
         if let Some(candidate) = candidates.pop() {
-            ensure!(
-                state["page_id"].is_null() || candidate["id"] == state["page_id"],
-                "Bound page routing changed"
-            );
-            let expected = if state["phase"] == "creating" {
-                state["content"].as_str().unwrap_or(content)
-            } else {
-                content
-            };
-            if !mutable || state["phase"] == "creating" {
-                ensure!(
-                    canonical(text(&candidate, "content")?) == canonical(expected),
-                    "Recovered creation failed complete content verification"
-                );
-            }
-            merge(
-                &mut state,
-                json!({"phase":"verified","page_id":candidate["id"],"parent":parent,"marker":marker,"verified_at":timestamp()}),
-            );
-            write_json(&path, &state)?;
-            return Ok(candidate);
+            return Self::recover_child(&request, &mut state, candidate);
         }
+        self.create_child(&request, &mut state)
+    }
+
+    fn child_candidates(
+        &mut self,
+        request: &ChildRequest<'_>,
+        state: &Value,
+    ) -> Result<Vec<Value>> {
+        let current = self.page(request.parent)?;
+        let mut candidates = Vec::new();
+        for child in current["children"].as_array().context("Missing children")? {
+            if state.as_object().is_some_and(|state| state.is_empty())
+                || child["title"] == request.title
+                || child["id"] == state["page_id"]
+            {
+                let candidate = self.page(text(child, "id")?)?;
+                ensure!(
+                    candidate["parent_page_id"] == request.parent,
+                    "Child page parent mismatch"
+                );
+                if text(&candidate, "content")?.contains(request.marker) {
+                    candidates.push(candidate);
+                } else {
+                    ensure!(
+                        child["title"] != request.title,
+                        "Existing same-title page has unverified ownership"
+                    );
+                }
+            }
+        }
+        Ok(candidates)
+    }
+
+    fn recover_child(
+        request: &ChildRequest<'_>,
+        state: &mut Value,
+        candidate: Value,
+    ) -> Result<Value> {
+        ensure!(
+            state["page_id"].is_null() || candidate["id"] == state["page_id"],
+            "Bound page routing changed"
+        );
+        let expected = if state["phase"] == "creating" {
+            state["content"].as_str().unwrap_or(request.content)
+        } else {
+            request.content
+        };
+        if !request.mutable || state["phase"] == "creating" {
+            ensure!(
+                canonical(text(&candidate, "content")?) == canonical(expected),
+                "Recovered creation failed complete content verification"
+            );
+        }
+        merge(
+            state,
+            json!({"phase":"verified","page_id":candidate["id"],"parent":request.parent,"marker":request.marker,"verified_at":timestamp()}),
+        );
+        write_json(&request.path, state)?;
+        Ok(candidate)
+    }
+
+    fn create_child(&mut self, request: &ChildRequest<'_>, state: &mut Value) -> Result<Value> {
         ensure!(
             state.as_object().is_some_and(|state| state.is_empty()),
             "Created/bound page not found; creation held for reconciliation"
         );
-        state = json!({"phase":"creating","parent":parent,"marker":marker,"title":title,"content":content,"at":timestamp()});
-        write_json(&path, &state)?;
+        *state = json!({"phase":"creating","parent":request.parent,"marker":request.marker,"title":request.title,"content":request.content,"at":timestamp()});
+        write_json(&request.path, state)?;
         self.spec()?;
         let response = self.call(
             "create",
             &json!({
-                "parent":{"page_id":parent},"allow_async":false,
-                "pages":[{"properties":{"title":title},"content":content}]
+                "parent":{"page_id":request.parent},"allow_async":false,
+                "pages":[{"properties":{"title":request.title},"content":request.content}]
             }),
         )?;
         state["response"] = response;
-        write_json(&path, &state)?;
-        let current = self.page(parent)?;
+        write_json(&request.path, state)?;
+        let candidate = self.created_child(request)?;
+        ensure!(
+            canonical(request.content) == canonical(text(&candidate, "content")?),
+            "Created content did not survive readback"
+        );
+        merge(
+            state,
+            json!({"phase":"verified","page_id":candidate["id"],"verified_at":timestamp()}),
+        );
+        write_json(&request.path, state)?;
+        Ok(candidate)
+    }
+
+    fn created_child(&mut self, request: &ChildRequest<'_>) -> Result<Value> {
+        let current = self.page(request.parent)?;
         let mut candidates = Vec::new();
         for child in current["children"].as_array().context("Missing children")? {
-            if child["title"] == title {
+            if child["title"] == request.title {
                 let candidate = self.page(text(child, "id")?)?;
-                if candidate["parent_page_id"] == parent
-                    && text(&candidate, "content")?.contains(marker)
+                if candidate["parent_page_id"] == request.parent
+                    && text(&candidate, "content")?.contains(request.marker)
                 {
                     candidates.push(candidate);
                 }
@@ -175,17 +234,7 @@ impl<'a, N: Notion + ?Sized> SafeWriter<'a, N> {
             candidates.len() == 1,
             "Creation outcome unknown; parent/marker reconciliation required"
         );
-        let candidate = candidates.pop().context("Creation outcome unknown")?;
-        ensure!(
-            canonical(content) == canonical(text(&candidate, "content")?),
-            "Created content did not survive readback"
-        );
-        merge(
-            &mut state,
-            json!({"phase":"verified","page_id":candidate["id"],"verified_at":timestamp()}),
-        );
-        write_json(&path, &state)?;
-        Ok(candidate)
+        candidates.pop().context("Creation outcome unknown")
     }
 
     pub fn replace(
@@ -197,7 +246,6 @@ impl<'a, N: Notion + ?Sized> SafeWriter<'a, N> {
     ) -> Result<Value> {
         let mut key = operation_key.to_string();
         let mut expected_before = expected_before.map(str::to_string);
-        let child_page_pattern = Regex::new(r"(?s)<page\b[^>]*>.*?</page>")?;
         for _ in 0..64 {
             let path = self.root.join(format!("{key}.json"));
             let mut state = read_json(&path, json!({}))?;
@@ -210,19 +258,7 @@ impl<'a, N: Notion + ?Sized> SafeWriter<'a, N> {
             if let Some(after) = state["after"].as_str()
                 && canonical(after) != canonical(content)
             {
-                let observed = canonical(current_content);
-                ensure!(
-                    observed == canonical(state["before"].as_str().unwrap_or(""))
-                        || observed == canonical(after),
-                    "Earlier write must be reconciled before changing its target"
-                );
-                let revision = format!("{key}-revision-{}", &digest(content.as_bytes())[..16]);
-                merge(
-                    &mut state,
-                    json!({"superseded_by":revision,"reconciled_at":timestamp(),"observed_sha256":digest(observed.as_bytes())}),
-                );
-                write_json(&path, &state)?;
-                key = revision;
+                key = Self::supersede(&key, &path, &mut state, current_content, content)?;
                 expected_before = Some(current_content.to_string());
                 continue;
             }
@@ -234,59 +270,102 @@ impl<'a, N: Notion + ?Sized> SafeWriter<'a, N> {
                 write_json(&path, &state)?;
                 return Ok(current);
             }
-            let empty = state.as_object().is_some_and(|state| state.is_empty());
-            if empty {
-                if let Some(before) = &expected_before {
-                    ensure!(
-                        canonical(current_content) == canonical(before),
-                        "Knowledge changed since analysis; preserve the human edit"
-                    );
-                }
-                state = json!({"page_id":identifier,"before":current_content,"after":content});
-            } else {
-                ensure!(
-                    state["phase"] != "verified",
-                    "Verified page changed after write; preserve current content"
-                );
-                ensure!(
-                    canonical(current_content) == canonical(text(&state, "before")?),
-                    "Unknown write produced different content; reconcile"
-                );
-                ensure!(
-                    state["attempts"].as_u64().unwrap_or(1) < 2,
-                    "Write retry exhausted after unchanged readback"
-                );
-            }
-            let children = child_page_pattern
-                .find_iter(current_content)
-                .map(|matched| matched.as_str())
-                .collect::<Vec<_>>();
-            let new_content = if children.is_empty() {
-                content.to_string()
-            } else {
-                format!("{content}\n\n{}", children.join("\n\n"))
+            let request = Replacement {
+                identifier,
+                content,
+                path: &path,
+                expected_before: expected_before.as_deref(),
             };
-            let attempts = state["attempts"].as_u64().unwrap_or(0) + 1;
-            merge(
-                &mut state,
-                json!({"after":content,"phase":"writing","attempts":attempts,"at":timestamp()}),
-            );
-            write_json(&path, &state)?;
-            self.spec()?;
-            self.call("update", &json!({"page_id":identifier,"command":"replace_content","allow_async":false,"new_str":new_content}))?;
-            let result = self.page(identifier)?;
-            ensure!(
-                canonical(content) == canonical(text(&result, "content")?),
-                "Written content failed full readback"
-            );
-            merge(
-                &mut state,
-                json!({"phase":"verified","verified_at":timestamp()}),
-            );
-            write_json(&path, &state)?;
-            return Ok(result);
+            Self::prepare_replacement(&request, &mut state, current_content)?;
+            return self.write_replacement(&request, &mut state, current_content);
         }
         bail!("Write operation revision chain is invalid")
+    }
+
+    fn supersede(
+        key: &str,
+        path: &Path,
+        state: &mut Value,
+        current: &str,
+        content: &str,
+    ) -> Result<String> {
+        let observed = canonical(current);
+        ensure!(
+            observed == canonical(state["before"].as_str().unwrap_or(""))
+                || observed == canonical(text(state, "after")?),
+            "Earlier write must be reconciled before changing its target"
+        );
+        let revision = format!("{key}-revision-{}", &digest(content.as_bytes())[..16]);
+        merge(
+            state,
+            json!({"superseded_by":revision,"reconciled_at":timestamp(),"observed_sha256":digest(observed.as_bytes())}),
+        );
+        write_json(path, state)?;
+        Ok(revision)
+    }
+
+    fn prepare_replacement(
+        request: &Replacement<'_>,
+        state: &mut Value,
+        current_content: &str,
+    ) -> Result<()> {
+        let empty = state.as_object().is_some_and(|state| state.is_empty());
+        if empty {
+            if let Some(before) = request.expected_before {
+                ensure!(
+                    canonical(current_content) == canonical(before),
+                    "Knowledge changed since analysis; preserve the human edit"
+                );
+            }
+            *state = json!({"page_id":request.identifier,"before":current_content,"after":request.content});
+        } else {
+            ensure!(
+                state["phase"] != "verified",
+                "Verified page changed after write; preserve current content"
+            );
+            ensure!(
+                canonical(current_content) == canonical(text(state, "before")?),
+                "Unknown write produced different content; reconcile"
+            );
+            ensure!(
+                state["attempts"].as_u64().unwrap_or(1) < 2,
+                "Write retry exhausted after unchanged readback"
+            );
+        }
+        Ok(())
+    }
+
+    fn write_replacement(
+        &mut self,
+        request: &Replacement<'_>,
+        state: &mut Value,
+        current_content: &str,
+    ) -> Result<Value> {
+        let children = Regex::new(r"(?s)<page\b[^>]*>.*?</page>")?
+            .find_iter(current_content)
+            .map(|matched| matched.as_str())
+            .collect::<Vec<_>>();
+        let new_content = if children.is_empty() {
+            request.content.to_string()
+        } else {
+            format!("{}\n\n{}", request.content, children.join("\n\n"))
+        };
+        let attempts = state["attempts"].as_u64().unwrap_or(0) + 1;
+        merge(
+            state,
+            json!({"after":request.content,"phase":"writing","attempts":attempts,"at":timestamp()}),
+        );
+        write_json(request.path, state)?;
+        self.spec()?;
+        self.call("update", &json!({"page_id":request.identifier,"command":"replace_content","allow_async":false,"new_str":new_content}))?;
+        let result = self.page(request.identifier)?;
+        ensure!(
+            canonical(request.content) == canonical(text(&result, "content")?),
+            "Written content failed full readback"
+        );
+        merge(state, json!({"phase":"verified","verified_at":timestamp()}));
+        write_json(request.path, state)?;
+        Ok(result)
     }
 
     pub fn append_once(

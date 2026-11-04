@@ -10,9 +10,13 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 pub fn now() -> String {
-    Utc::now()
-        .with_timezone(&FixedOffset::east_opt(8 * 3600).unwrap())
-        .to_rfc3339_opts(SecondsFormat::Secs, false)
+    let now = Utc::now();
+    FixedOffset::east_opt(8 * 3600)
+        .map(|offset| {
+            now.with_timezone(&offset)
+                .to_rfc3339_opts(SecondsFormat::Secs, false)
+        })
+        .unwrap_or_else(|| now.to_rfc3339_opts(SecondsFormat::Secs, false))
 }
 
 pub fn canonical_id(value: &str) -> Result<String> {

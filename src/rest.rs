@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, ensure};
 use chrono::{DateTime, NaiveDate, Utc};
-use reqwest::blocking::Client;
+use reqwest::blocking::{Client, Response};
+use reqwest::header::HeaderMap;
 use reqwest::{Method, redirect::Policy};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -11,6 +12,37 @@ use std::time::Duration;
 
 pub const API_VERSION: &str = "2025-09-03";
 pub const MAX_PAYLOAD_BYTES: usize = 500_000;
+
+const ERROR_CODES: &[&str] = &[
+    "invalid_json",
+    "invalid_request_url",
+    "invalid_request",
+    "invalid_grant",
+    "validation_error",
+    "missing_version",
+    "invalid_beta",
+    "unauthorized",
+    "restricted_resource",
+    "object_not_found",
+    "conflict_error",
+    "rate_limited",
+    "internal_server_error",
+    "bad_gateway",
+    "service_unavailable",
+    "database_connection_unavailable",
+    "gateway_timeout",
+    "service_overload",
+];
+
+const RATE_LIMIT_REASONS: &[&str] = &[
+    "public_api_request_rate_limit",
+    "public_api_space_request_rate_limit",
+    "public_api_endpoint_rate_limit",
+    "mcp_tool_rate_limit",
+    "collection_router_too_many_requests",
+    "collection_router_upstream_429",
+    "public_api_request_blocked",
+];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NotionError {
@@ -61,6 +93,184 @@ fn error(category: &str, method: &str, attempt: usize, read_only: bool) -> Notio
         committed_resource_id: None,
         committed_child_ids: Vec::new(),
     }
+}
+
+fn retry_after(headers: &HeaderMap) -> Option<f64> {
+    headers
+        .get("Retry-After")
+        .and_then(|header| header.to_str().ok())
+        .and_then(|header| {
+            header
+                .parse::<f64>()
+                .ok()
+                .filter(|value| value.is_finite())
+                .map(|value| value.max(0.0))
+                .or_else(|| {
+                    DateTime::parse_from_rfc2822(header)
+                        .ok()
+                        .map(|date| ((date.timestamp() - Utc::now().timestamp()) as f64).max(0.0))
+                })
+        })
+}
+
+fn http_category(status: u16) -> &'static str {
+    match status {
+        400 => "validation",
+        401 => "authentication",
+        403 => "permission",
+        404 => "not_found",
+        408 => "timeout",
+        409 => "conflict",
+        429 => "rate_limited",
+        529 => "overloaded",
+        300..400 => "redirect",
+        500.. => "server",
+        _ => "http",
+    }
+}
+
+fn response_metadata(failure: &mut NotionError, body: &Value) {
+    failure.code = body["code"]
+        .as_str()
+        .filter(|code| ERROR_CODES.contains(code))
+        .map(String::from);
+    failure.request_id = body["request_id"]
+        .as_str()
+        .and_then(|value| uuid::Uuid::parse_str(value).ok())
+        .map(|value| value.to_string());
+    let extra = &body["additional_data"];
+    failure.rate_limit_reason = extra["rate_limit_reason"]
+        .as_str()
+        .filter(|value| RATE_LIMIT_REASONS.contains(value))
+        .map(String::from);
+    failure.committed_resource_id = extra["committed_resource_id"]
+        .as_str()
+        .and_then(|value| uuid::Uuid::parse_str(value).ok())
+        .map(|value| value.to_string());
+    failure.committed_child_ids = extra["committed_child_ids"]
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .filter_map(|value| uuid::Uuid::parse_str(value).ok())
+                .map(|value| value.to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+}
+
+fn response_failure(
+    status: u16,
+    body: &Value,
+    retry_after: Option<f64>,
+    method: &str,
+    attempt: usize,
+    read_only: bool,
+) -> NotionError {
+    let mut failure = error(http_category(status), method, attempt, read_only);
+    response_metadata(&mut failure, body);
+    failure.status = Some(status);
+    failure.retry_after = retry_after;
+    let rejected =
+        status == 429 || (status == 529 && failure.code.as_deref() == Some("service_overload"));
+    failure.retryable = (rejected
+        && failure.rate_limit_reason.as_deref() != Some("public_api_request_blocked"))
+        || (read_only && (status == 408 || status == 409 || status >= 500));
+    failure.outcome_unknown =
+        !read_only && !rejected && ((300..400).contains(&status) || status == 408 || status >= 500);
+    failure
+}
+
+fn decode_response(
+    response: Response,
+    method: &str,
+    attempt: usize,
+    read_only: bool,
+) -> std::result::Result<Value, Box<NotionError>> {
+    let status = response.status().as_u16();
+    let retry_after = retry_after(response.headers());
+    let body: Option<Value> = response.json().ok();
+    if (200..300).contains(&status) {
+        return body.filter(Value::is_object).ok_or_else(|| {
+            let mut failure = error("invalid_response", method, attempt, read_only);
+            failure.retryable = false;
+            Box::new(failure)
+        });
+    }
+    Err(Box::new(response_failure(
+        status,
+        &body.unwrap_or(Value::Null),
+        retry_after,
+        method,
+        attempt,
+        read_only,
+    )))
+}
+
+fn code_block_text(body: &Value, text: &str) -> String {
+    let longest = text
+        .split(|character| character != '`')
+        .map(str::len)
+        .max()
+        .unwrap_or(0);
+    let fence = "`".repeat((longest + 1).max(3));
+    format!(
+        "{fence}{}\n{text}\n{fence}",
+        body["language"].as_str().unwrap_or_default()
+    )
+}
+
+fn table_row_text(body: &Value) -> String {
+    format!(
+        "| {} |",
+        body["cells"]
+            .as_array()
+            .map(|cells| cells.iter().map(plain_text).collect::<Vec<_>>().join(" | "))
+            .unwrap_or_default()
+    )
+}
+
+fn caption_text(kind: &str, body: &Value) -> String {
+    let text = plain_text(&body["caption"]);
+    if kind == "unsupported" {
+        "[unsupported block]".into()
+    } else if text.is_empty() {
+        body["url"]
+            .as_str()
+            .or(body["name"].as_str())
+            .unwrap_or_default()
+            .into()
+    } else {
+        text
+    }
+}
+
+fn block_text(block: &Value) -> Result<String> {
+    let kind = block["type"].as_str().unwrap_or("unsupported");
+    let body = &block[kind];
+    ensure!(body.is_null() || body.is_object(), "Invalid block");
+    let text = plain_text(&body["rich_text"]);
+    Ok(match kind {
+        "heading_1" => format!("# {text}"),
+        "heading_2" => format!("## {text}"),
+        "heading_3" => format!("### {text}"),
+        "heading_4" => format!("#### {text}"),
+        "bulleted_list_item" | "toggle" => format!("- {text}"),
+        "numbered_list_item" => format!("1. {text}"),
+        "to_do" => format!(
+            "- [{}] {text}",
+            if body["checked"] == true { "x" } else { " " }
+        ),
+        "quote" => format!("> {text}"),
+        "code" => code_block_text(body, &text),
+        "equation" => body["expression"].as_str().unwrap_or_default().into(),
+        "table_row" => table_row_text(body),
+        "divider" => "---".into(),
+        "child_page" | "child_database" => body["title"].as_str().unwrap_or_default().into(),
+        _ if text.is_empty() => caption_text(kind, body),
+        _ => text,
+    })
 }
 
 pub fn text_chunks(text: &str, chunk_size: usize) -> Result<Vec<String>> {
@@ -256,7 +466,8 @@ impl NotionClient {
         }
         ensure!(
             NaiveDate::parse_from_str(&self.api_version, "%Y-%m-%d")?
-                >= NaiveDate::from_ymd_opt(2025, 9, 3).unwrap(),
+                >= NaiveDate::from_ymd_opt(2025, 9, 3)
+                    .context("Invalid minimum Notion API date")?,
             "API version must be >= 2025-09-03"
         );
         ensure!(
@@ -284,6 +495,39 @@ impl NotionClient {
         Ok(())
     }
 
+    fn request_once(
+        &self,
+        method: &Method,
+        path: &str,
+        bytes: Option<&[u8]>,
+        read_only: bool,
+        attempt: usize,
+    ) -> std::result::Result<Value, Box<NotionError>> {
+        let mut request = self
+            .http
+            .request(method.clone(), format!("{}{path}", self.root))
+            .bearer_auth(&self.token)
+            .header("Notion-Version", &self.api_version)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json");
+        if let Some(bytes) = bytes {
+            request = request.body(bytes.to_vec());
+        }
+        let response = request.send().map_err(|transport| {
+            Box::new(error(
+                if transport.is_timeout() {
+                    "timeout"
+                } else {
+                    "network"
+                },
+                method.as_str(),
+                attempt,
+                read_only,
+            ))
+        })?;
+        decode_response(response, method.as_str(), attempt, read_only)
+    }
+
     pub fn request(
         &self,
         method: Method,
@@ -300,146 +544,11 @@ impl NotionClient {
             "Request exceeds Notion's 500 KB payload limit"
         );
         for attempt in 1..=self.max_retries + 1 {
-            let mut request = self
-                .http
-                .request(method.clone(), format!("{}{path}", self.root))
-                .bearer_auth(&self.token)
-                .header("Notion-Version", &self.api_version)
-                .header("Content-Type", "application/json")
-                .header("Accept", "application/json");
-            if let Some(bytes) = &bytes {
-                request = request.body(bytes.clone());
-            }
-            let failure = match request.send() {
-                Err(transport) => error(
-                    if transport.is_timeout() {
-                        "timeout"
-                    } else {
-                        "network"
-                    },
-                    method.as_str(),
-                    attempt,
-                    read_only,
-                ),
-                Ok(response) => {
-                    let status = response.status().as_u16();
-                    let retry_after = response
-                        .headers()
-                        .get("Retry-After")
-                        .and_then(|header| header.to_str().ok())
-                        .and_then(|header| {
-                            header
-                                .parse::<f64>()
-                                .ok()
-                                .filter(|value| value.is_finite())
-                                .map(|value| value.max(0.0))
-                                .or_else(|| {
-                                    DateTime::parse_from_rfc2822(header).ok().map(|date| {
-                                        ((date.timestamp() - Utc::now().timestamp()) as f64)
-                                            .max(0.0)
-                                    })
-                                })
-                        });
-                    let body: Option<Value> = response.json().ok();
-                    if (200..300).contains(&status) {
-                        let valid = body.filter(Value::is_object).ok_or_else(|| {
-                            let mut failure =
-                                error("invalid_response", method.as_str(), attempt, read_only);
-                            failure.retryable = false;
-                            failure
-                        })?;
-                        return Ok(valid);
-                    }
-                    let body = body.unwrap_or(Value::Null);
-                    let mut failure = error(
-                        match status {
-                            400 => "validation",
-                            401 => "authentication",
-                            403 => "permission",
-                            404 => "not_found",
-                            408 => "timeout",
-                            409 => "conflict",
-                            429 => "rate_limited",
-                            529 => "overloaded",
-                            300..400 => "redirect",
-                            500.. => "server",
-                            _ => "http",
-                        },
-                        method.as_str(),
-                        attempt,
-                        read_only,
-                    );
-                    let codes = [
-                        "invalid_json",
-                        "invalid_request_url",
-                        "invalid_request",
-                        "invalid_grant",
-                        "validation_error",
-                        "missing_version",
-                        "invalid_beta",
-                        "unauthorized",
-                        "restricted_resource",
-                        "object_not_found",
-                        "conflict_error",
-                        "rate_limited",
-                        "internal_server_error",
-                        "bad_gateway",
-                        "service_unavailable",
-                        "database_connection_unavailable",
-                        "gateway_timeout",
-                        "service_overload",
-                    ];
-                    failure.code = body["code"]
-                        .as_str()
-                        .filter(|code| codes.contains(code))
-                        .map(String::from);
-                    failure.status = Some(status);
-                    failure.retry_after = retry_after;
-                    failure.request_id = body["request_id"]
-                        .as_str()
-                        .and_then(|value| uuid::Uuid::parse_str(value).ok())
-                        .map(|value| value.to_string());
-                    let extra = &body["additional_data"];
-                    let reasons = [
-                        "public_api_request_rate_limit",
-                        "public_api_space_request_rate_limit",
-                        "public_api_endpoint_rate_limit",
-                        "mcp_tool_rate_limit",
-                        "collection_router_too_many_requests",
-                        "collection_router_upstream_429",
-                        "public_api_request_blocked",
-                    ];
-                    failure.rate_limit_reason = extra["rate_limit_reason"]
-                        .as_str()
-                        .filter(|value| reasons.contains(value))
-                        .map(String::from);
-                    failure.committed_resource_id = extra["committed_resource_id"]
-                        .as_str()
-                        .and_then(|value| uuid::Uuid::parse_str(value).ok())
-                        .map(|value| value.to_string());
-                    failure.committed_child_ids = extra["committed_child_ids"]
-                        .as_array()
-                        .map(|items| {
-                            items
-                                .iter()
-                                .filter_map(Value::as_str)
-                                .filter_map(|value| uuid::Uuid::parse_str(value).ok())
-                                .map(|value| value.to_string())
-                                .collect()
-                        })
-                        .unwrap_or_default();
-                    let rejected = status == 429
-                        || (status == 529 && failure.code.as_deref() == Some("service_overload"));
-                    failure.retryable = (rejected
-                        && failure.rate_limit_reason.as_deref()
-                            != Some("public_api_request_blocked"))
-                        || (read_only && (status == 408 || status == 409 || status >= 500));
-                    failure.outcome_unknown = !read_only
-                        && !rejected
-                        && ((300..400).contains(&status) || status == 408 || status >= 500);
-                    failure
-                }
-            };
+            let failure =
+                match self.request_once(&method, path, bytes.as_deref(), read_only, attempt) {
+                    Ok(value) => return Ok(value),
+                    Err(failure) => *failure,
+                };
             if failure.retryable && attempt <= self.max_retries {
                 let delay = failure
                     .retry_after
@@ -453,38 +562,50 @@ impl NotionClient {
         unreachable!()
     }
 
+    fn query_page(
+        &self,
+        method: &Method,
+        path: &str,
+        payload: &Value,
+        cursor: Option<&str>,
+    ) -> Result<Value> {
+        let mut params = json!({"page_size": 100});
+        if let Some(cursor) = cursor {
+            params["start_cursor"] = json!(cursor);
+        }
+        if method == Method::GET {
+            let mut address = url::Url::parse(&format!("{}{path}", self.root))?;
+            address.query_pairs_mut().append_pair("page_size", "100");
+            if let Some(cursor) = cursor {
+                address
+                    .query_pairs_mut()
+                    .append_pair("start_cursor", cursor);
+            }
+            self.request(
+                Method::GET,
+                &format!("{path}?{}", address.query().unwrap_or_default()),
+                None,
+                true,
+            )
+        } else {
+            let object = params
+                .as_object_mut()
+                .context("Pagination parameters must be an object")?;
+            if let Some(fields) = payload.as_object() {
+                for (key, value) in fields {
+                    object.insert(key.clone(), value.clone());
+                }
+            }
+            self.request(method.clone(), path, Some(&params), true)
+        }
+    }
+
     pub fn paginate(&self, method: Method, path: &str, payload: &Value) -> Result<Vec<Value>> {
         let mut result = Vec::new();
         let mut cursor: Option<String> = None;
         let mut seen = HashSet::new();
         loop {
-            let mut params = json!({"page_size": 100});
-            if let Some(cursor) = &cursor {
-                params["start_cursor"] = json!(cursor);
-            }
-            let response = if method == Method::GET {
-                let mut address = url::Url::parse(&format!("{}{path}", self.root))?;
-                address.query_pairs_mut().append_pair("page_size", "100");
-                if let Some(cursor) = &cursor {
-                    address
-                        .query_pairs_mut()
-                        .append_pair("start_cursor", cursor);
-                }
-                self.request(
-                    Method::GET,
-                    &format!("{path}?{}", address.query().unwrap_or_default()),
-                    None,
-                    true,
-                )?
-            } else {
-                let object = params.as_object_mut().unwrap();
-                if let Some(fields) = payload.as_object() {
-                    for (key, value) in fields {
-                        object.insert(key.clone(), value.clone());
-                    }
-                }
-                self.request(method.clone(), path, Some(&params), true)?
-            };
+            let response = self.query_page(&method, path, payload, cursor.as_deref())?;
             ensure!(
                 response["request_status"].is_null() || response["request_status"].is_object(),
                 "Invalid query status"
@@ -588,68 +709,7 @@ impl NotionClient {
         while let Some((block, depth, ancestors)) = stack.pop() {
             ensure!(depth < 256, "Block tree nesting limit");
             let kind = block["type"].as_str().unwrap_or("unsupported");
-            let body = &block[kind];
-            ensure!(body.is_null() || body.is_object(), "Invalid block");
-            let mut text = plain_text(&body["rich_text"]);
-            match kind {
-                "heading_1" => text = format!("# {text}"),
-                "heading_2" => text = format!("## {text}"),
-                "heading_3" => text = format!("### {text}"),
-                "heading_4" => text = format!("#### {text}"),
-                "bulleted_list_item" | "toggle" => text = format!("- {text}"),
-                "numbered_list_item" => text = format!("1. {text}"),
-                "to_do" => {
-                    text = format!(
-                        "- [{}] {text}",
-                        if body["checked"] == true { "x" } else { " " }
-                    )
-                }
-                "quote" => text = format!("> {text}"),
-                "code" => {
-                    let longest = text
-                        .split(|character| character != '`')
-                        .map(str::len)
-                        .max()
-                        .unwrap_or(0);
-                    let fence = "`".repeat((longest + 1).max(3));
-                    text = format!(
-                        "{fence}{}\n{text}\n{fence}",
-                        body["language"].as_str().unwrap_or_default()
-                    );
-                }
-                "equation" => text = body["expression"].as_str().unwrap_or_default().into(),
-                "table_row" => {
-                    text = format!(
-                        "| {} |",
-                        body["cells"]
-                            .as_array()
-                            .map(|cells| cells
-                                .iter()
-                                .map(plain_text)
-                                .collect::<Vec<_>>()
-                                .join(" | "))
-                            .unwrap_or_default()
-                    )
-                }
-                "divider" => text = "---".into(),
-                "child_page" | "child_database" => {
-                    text = body["title"].as_str().unwrap_or_default().into()
-                }
-                _ if text.is_empty() => {
-                    text = plain_text(&body["caption"]);
-                    if text.is_empty() {
-                        text = body["url"]
-                            .as_str()
-                            .or(body["name"].as_str())
-                            .unwrap_or_default()
-                            .into();
-                    }
-                    if kind == "unsupported" {
-                        text = "[unsupported block]".into();
-                    }
-                }
-                _ => {}
-            }
+            let text = block_text(&block)?;
             if !text.is_empty() {
                 lines.extend(
                     text.split('\n')

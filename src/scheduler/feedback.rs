@@ -90,6 +90,15 @@ pub fn render_feedback(
     if ["failed", "interrupted"].contains(&kind) {
         action.push_str(" 确认只是普通中断后，可使用任务的「中断续试」入口；仍须通过续试检查。");
     }
+    let retry = automatic_retry_feedback(pid, record, kind);
+    format!(
+        "{heading}\n分类：{category}\n环节：{stage}\n已知事实：{fact}\n{basis}\n下一步：{action}\n{retry}\n\
+         证据入口：本任务的「AI 会话 / 线程」；本机 outputs 中的同轮诊断文件、历史和观察记录（仅为证据位置，不代表已读）。\n\
+         限制：未知原因须由执行会话补充到本轮文章；本属性可读回不代表 Herman 已看到。"
+    )
+}
+
+fn automatic_retry_feedback(pid: &str, record: &Value, kind: &str) -> String {
     let mut retry =
         "已采取：保留原会话、轮次及检查点；本说明不会发送重试。续试不等于批准权限或解除任务障碍。"
             .to_owned();
@@ -108,49 +117,49 @@ pub fn render_feedback(
             text(&record["thread_id"])
         );
         for attempt in attempts.iter().skip(attempts.len().saturating_sub(3)) {
-            let result = match text(&attempt["result"]) {
-                "prepared" => "prepared",
-                "sending" => "sending",
-                "send_unknown" => "send_unknown",
-                "not_sent_state_changed" => "not_sent_state_changed",
-                "in_progress" => "in_progress",
-                "completed" => "completed",
-                "failed" => "failed",
-                "interrupted" => "interrupted",
-                "needs_attention" => "needs_attention",
-                _ => "unknown",
-            };
-            let code = match text(&attempt["error_code"]) {
-                "httpConnectionFailed" => "httpConnectionFailed",
-                "responseStreamConnectionFailed" => "responseStreamConnectionFailed",
-                "responseStreamDisconnected" => "responseStreamDisconnected",
-                "ownedAppServerTimeout" => "ownedAppServerTimeout",
-                _ => "unknown",
-            };
-            let prepared = text(&attempt["prepared_at"]);
-            let prepared = if prepared.len() <= 40
-                && prepared
-                    .chars()
-                    .all(|character| character.is_ascii_digit() || "-T:+.Z".contains(character))
-            {
-                prepared
-            } else {
-                "时间待核对"
-            };
-            retry.push_str(&format!(
-                "第 {} 次：{result}；{code}；{prepared}\n",
-                attempt["number"].as_u64().unwrap_or(0)
-            ));
+            retry.push_str(&automatic_attempt_feedback(attempt));
         }
         retry.push_str(&format!(
             "完整历史共 {} 条，保留在本轮自动恢复记录中。",
             attempts.len()
         ));
     }
+    retry
+}
+
+fn automatic_attempt_feedback(attempt: &Value) -> String {
+    let result = match text(&attempt["result"]) {
+        "prepared" => "prepared",
+        "sending" => "sending",
+        "send_unknown" => "send_unknown",
+        "not_sent_state_changed" => "not_sent_state_changed",
+        "in_progress" => "in_progress",
+        "completed" => "completed",
+        "failed" => "failed",
+        "interrupted" => "interrupted",
+        "needs_attention" => "needs_attention",
+        _ => "unknown",
+    };
+    let code = match text(&attempt["error_code"]) {
+        "httpConnectionFailed" => "httpConnectionFailed",
+        "responseStreamConnectionFailed" => "responseStreamConnectionFailed",
+        "responseStreamDisconnected" => "responseStreamDisconnected",
+        "ownedAppServerTimeout" => "ownedAppServerTimeout",
+        _ => "unknown",
+    };
+    let prepared = text(&attempt["prepared_at"]);
+    let prepared = if prepared.len() <= 40
+        && prepared
+            .chars()
+            .all(|character| character.is_ascii_digit() || "-T:+.Z".contains(character))
+    {
+        prepared
+    } else {
+        "时间待核对"
+    };
     format!(
-        "{heading}\n分类：{category}\n环节：{stage}\n已知事实：{fact}\n{basis}\n下一步：{action}\n{retry}\n\
-         证据入口：本任务的「AI 会话 / 线程」；本机 outputs 中的同轮诊断文件、历史和观察记录（仅为证据位置，不代表已读）。\n\
-         限制：未知原因须由执行会话补充到本轮文章；本属性可读回不代表 Herman 已看到。"
+        "第 {} 次：{result}；{code}；{prepared}\n",
+        attempt["number"].as_u64().unwrap_or(0)
     )
 }
 
@@ -241,27 +250,7 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
             .unwrap_or_else(|| json!({}));
         let task = self.feedback_task(pid, record)?;
         let current = text(&task["properties"][FEEDBACK_PROPERTY]);
-        if ["prepared", "sent", "outcome_unknown"].contains(&text(&publication["state"])) {
-            if current != text(&publication["text"]) {
-                self.event(
-                    "diagnostic_feedback_needs_reconciliation",
-                    json!({"page_id":pid}),
-                )?;
-                return Ok(());
-            }
-            publication["state"] = json!("verified");
-            publication["verified_at"] = json!(now());
-            record["diagnostic_feedback_publication"] = publication.clone();
-            self.save(pid, record)?;
-        }
-        if current == text(&desired["text"]) {
-            if publication["state"] != "verified" || publication["key"] != desired["key"] {
-                let mut publication = desired;
-                publication["state"] = json!("verified");
-                publication["verified_at"] = json!(now());
-                record["diagnostic_feedback_publication"] = publication;
-                self.save(pid, record)?;
-            }
+        if !self.reconcile_feedback(pid, record, &desired, &mut publication, current)? {
             return Ok(());
         }
         let expected = if publication["state"] == "verified" {
@@ -273,12 +262,8 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
             self.event("diagnostic_feedback_conflict", json!({"page_id":pid}))?;
             return Ok(());
         }
-        let latest = self.feedback_task(pid, record)?;
-        for field in ["状态", "AI 会话 / 线程", "模型", FEEDBACK_PROPERTY] {
-            if latest["properties"][field] != task["properties"][field] {
-                self.event("diagnostic_feedback_target_changed", json!({"page_id":pid}))?;
-                return Ok(());
-            }
+        if !self.feedback_target_unchanged(pid, record, &task)? {
+            return Ok(());
         }
         publication = desired.clone();
         publication["before"] = json!(current);
@@ -286,6 +271,66 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
         publication["attempted_at"] = json!(now());
         record["diagnostic_feedback_publication"] = publication.clone();
         self.save(pid, record)?;
+        self.write_feedback(pid, record, &desired, &mut publication)
+    }
+
+    fn reconcile_feedback(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        desired: &Value,
+        publication: &mut Value,
+        current: &str,
+    ) -> Result<bool> {
+        if ["prepared", "sent", "outcome_unknown"].contains(&text(&publication["state"])) {
+            if current != text(&publication["text"]) {
+                self.event(
+                    "diagnostic_feedback_needs_reconciliation",
+                    json!({"page_id":pid}),
+                )?;
+                return Ok(false);
+            }
+            publication["state"] = json!("verified");
+            publication["verified_at"] = json!(now());
+            record["diagnostic_feedback_publication"] = publication.clone();
+            self.save(pid, record)?;
+        }
+        if current == text(&desired["text"]) {
+            if publication["state"] != "verified" || publication["key"] != desired["key"] {
+                let mut publication = desired.clone();
+                publication["state"] = json!("verified");
+                publication["verified_at"] = json!(now());
+                record["diagnostic_feedback_publication"] = publication;
+                self.save(pid, record)?;
+            }
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
+    fn feedback_target_unchanged(
+        &mut self,
+        pid: &str,
+        record: &Value,
+        task: &Value,
+    ) -> Result<bool> {
+        let latest = self.feedback_task(pid, record)?;
+        for field in ["状态", "AI 会话 / 线程", "模型", FEEDBACK_PROPERTY] {
+            if latest["properties"][field] != task["properties"][field] {
+                self.event("diagnostic_feedback_target_changed", json!({"page_id":pid}))?;
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn write_feedback(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        desired: &Value,
+        publication: &mut Value,
+    ) -> Result<()> {
         let desired_text = desired["text"].as_str().context("Missing feedback text")?;
         ensure!(
             !desired_text.is_empty() && desired_text.chars().count() <= 1900,
@@ -316,11 +361,21 @@ impl<N: Notion, E: Executor> StateScheduler<N, E> {
         publication["state"] = json!("sent");
         record["diagnostic_feedback_publication"] = publication.clone();
         self.save(pid, record)?;
+        self.confirm_feedback(pid, record, desired, publication)
+    }
+
+    fn confirm_feedback(
+        &mut self,
+        pid: &str,
+        record: &mut Value,
+        desired: &Value,
+        publication: &mut Value,
+    ) -> Result<()> {
         let confirmed = self.feedback_task(pid, record)?;
         if confirmed["properties"][FEEDBACK_PROPERTY] == desired["text"] {
             publication["state"] = json!("verified");
             publication["verified_at"] = json!(now());
-            record["diagnostic_feedback_publication"] = publication;
+            record["diagnostic_feedback_publication"] = publication.clone();
             self.save(pid, record)?;
             self.event(
                 "diagnostic_feedback_verified",

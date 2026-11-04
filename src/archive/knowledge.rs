@@ -1,6 +1,7 @@
 use super::{page_url, text, truthy};
 use crate::common::canonical_id;
 use anyhow::{Context, Result, bail, ensure};
+use lazy_regex::regex;
 use regex::Regex;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -17,65 +18,18 @@ pub const SUMMARY_TARGET: usize = 1500;
 pub const MAX_SUMMARY_LENGTH: usize = 2500;
 pub const MAX_TOPICS: usize = 12;
 
-fn regex(pattern: &str) -> Regex {
-    Regex::new(pattern).expect("static archive regex")
-}
-
 pub fn normalize_id(value: &str) -> Result<String> {
     let value = value.trim();
     ensure!(!value.is_empty(), "ID must be a UUID or Notion URL");
     let candidate = if let Some(value) = value.strip_prefix("collection://") {
         value.to_string()
     } else if value.contains("://") {
-        let parsed = Url::parse(value)?;
-        let authority = value
-            .split_once("://")
-            .map(|(_, rest)| rest.split(['/', '?', '#']).next().unwrap_or(""))
-            .unwrap_or("");
-        ensure!(
-            parsed.scheme() == "https"
-                && parsed.username().is_empty()
-                && parsed.password().is_none()
-                && parsed.port().is_none()
-                && [
-                    "notion.so",
-                    "www.notion.so",
-                    "app.notion.com",
-                    "notion.com",
-                    "www.notion.com"
-                ]
-                .iter()
-                .any(|host| authority.eq_ignore_ascii_case(host))
-                && !value.chars().any(char::is_whitespace)
-                && matches!(
-                    parsed.host_str(),
-                    Some(
-                        "notion.so"
-                            | "www.notion.so"
-                            | "app.notion.com"
-                            | "notion.com"
-                            | "www.notion.com"
-                    )
-                ),
-            "ID URL must be a trusted Notion HTTPS URL"
-        );
-        let segment = parsed
-            .path()
-            .trim_end_matches('/')
-            .rsplit('/')
-            .next()
-            .unwrap_or("");
-        let matched = regex(
-            r"(?:^|-)([0-9a-fA-F]{32}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})$",
-        )
-        .captures(segment)
-        .context("Notion URL has no page UUID")?;
-        matched[1].to_string()
+        notion_url_id(value)?
     } else {
         value.to_string()
     };
     ensure!(
-        regex(r"^(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})$")
+        regex!(r"^(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})$")
             .is_match(&candidate),
         "ID must contain a complete UUID"
     );
@@ -86,6 +40,57 @@ pub fn normalize_id(value: &str) -> Result<String> {
         "placeholder UUID is not a source ID"
     );
     Ok(identifier)
+}
+
+fn notion_url_id(value: &str) -> Result<String> {
+    let parsed = trusted_notion_url(value)?;
+    let segment = parsed
+        .path()
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or("");
+    let matched =
+        regex!(r"(?:^|-)([0-9a-fA-F]{32}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})$")
+            .captures(segment)
+            .context("Notion URL has no page UUID")?;
+    Ok(matched[1].to_string())
+}
+
+fn trusted_notion_url(value: &str) -> Result<Url> {
+    let parsed = Url::parse(value)?;
+    let authority = value
+        .split_once("://")
+        .map(|(_, rest)| rest.split(['/', '?', '#']).next().unwrap_or(""))
+        .unwrap_or("");
+    ensure!(
+        parsed.scheme() == "https"
+            && parsed.username().is_empty()
+            && parsed.password().is_none()
+            && parsed.port().is_none()
+            && [
+                "notion.so",
+                "www.notion.so",
+                "app.notion.com",
+                "notion.com",
+                "www.notion.com"
+            ]
+            .iter()
+            .any(|host| authority.eq_ignore_ascii_case(host))
+            && !value.chars().any(char::is_whitespace)
+            && matches!(
+                parsed.host_str(),
+                Some(
+                    "notion.so"
+                        | "www.notion.so"
+                        | "app.notion.com"
+                        | "notion.com"
+                        | "www.notion.com"
+                )
+            ),
+        "ID URL must be a trusted Notion HTTPS URL"
+    );
+    Ok(parsed)
 }
 
 fn entity_id(value: &Value) -> Result<String> {
@@ -138,7 +143,7 @@ pub fn project_id(properties: &Value) -> Result<String> {
 }
 
 pub(crate) fn html_unescape(input: &str) -> String {
-    regex(r"&(#x[0-9a-fA-F]+|#X[0-9a-fA-F]+|#[0-9]+|[A-Za-z][A-Za-z0-9]+);")
+    regex!(r"&(#x[0-9a-fA-F]+|#X[0-9a-fA-F]+|#[0-9]+|[A-Za-z][A-Za-z0-9]+);")
         .replace_all(input, |captures: &regex::Captures<'_>| {
             let entity = &captures[1];
             let character = if entity.starts_with("#x") || entity.starts_with("#X") {
@@ -188,7 +193,7 @@ fn html_escape(input: &str) -> String {
 }
 
 fn attributes(input: &str) -> Result<BTreeMap<String, String>> {
-    let pattern = regex(r#"([\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')"#);
+    let pattern = regex!(r#"([\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')"#);
     let mut result = BTreeMap::new();
     for captures in pattern.captures_iter(input) {
         ensure!(
@@ -213,16 +218,32 @@ fn attributes(input: &str) -> Result<BTreeMap<String, String>> {
     Ok(result)
 }
 
-fn mask(bytes: &mut [u8], start: usize, end: usize) {
-    for byte in &mut bytes[start..end] {
-        if *byte != b'\n' && *byte != b'\r' {
-            *byte = b' ';
-        }
-    }
+fn mask(output: &mut String, start: usize, end: usize) {
+    let replacement: String = output[start..end]
+        .bytes()
+        .map(|byte| match byte {
+            b'\n' => '\n',
+            b'\r' => '\r',
+            _ => ' ',
+        })
+        .collect();
+    output.replace_range(start..end, &replacement);
 }
 
 pub(crate) fn mask_literals(input: &str, html_code: bool) -> String {
-    let mut bytes = input.as_bytes().to_vec();
+    let mut output = input.to_string();
+    mask_fences(input, &mut output);
+    let visible = output.clone();
+    if html_code {
+        for matched in regex!(r"(?s)<code\b[^>]*>.*?</code>").find_iter(&visible) {
+            mask(&mut output, matched.start(), matched.end());
+        }
+    }
+    mask_inline_code(&mut output);
+    output
+}
+
+fn mask_fences(input: &str, output: &mut String) {
     let mut offset = 0;
     let mut fence: Option<(u8, usize)> = None;
     for line in input.split_inclusive('\n') {
@@ -231,7 +252,7 @@ pub(crate) fn mask_literals(input: &str, html_code: bool) -> String {
         let length = trimmed.bytes().take_while(|value| *value == marker).count();
         let is_fence = matches!(marker, b'`' | b'~') && length >= 3;
         if let Some((character, opening_length)) = fence {
-            mask(&mut bytes, offset, offset + line.len());
+            mask(output, offset, offset + line.len());
             if is_fence
                 && marker == character
                 && length >= opening_length
@@ -241,36 +262,33 @@ pub(crate) fn mask_literals(input: &str, html_code: bool) -> String {
             }
         } else if is_fence && (marker != b'`' || !trimmed[length..].contains('`')) {
             fence = Some((marker, length));
-            mask(&mut bytes, offset, offset + line.len());
+            mask(output, offset, offset + line.len());
         }
         offset += line.len();
     }
-    let visible = String::from_utf8(bytes.clone()).expect("masked UTF-8");
-    if html_code {
-        for matched in regex(r"(?s)<code\b[^>]*>.*?</code>").find_iter(&visible) {
-            mask(&mut bytes, matched.start(), matched.end());
-        }
-    }
+}
+
+fn mask_inline_code(output: &mut String) {
     let mut cursor = 0;
-    while cursor < bytes.len() {
-        if bytes[cursor] != b'`' {
+    while cursor < output.len() {
+        if output.as_bytes()[cursor] != b'`' {
             cursor += 1;
             continue;
         }
         let start = cursor;
-        while cursor < bytes.len() && bytes[cursor] == b'`' {
+        while cursor < output.len() && output.as_bytes()[cursor] == b'`' {
             cursor += 1;
         }
         let length = cursor - start;
         let mut end = cursor;
-        while end < bytes.len() && bytes[end] != b'\n' {
-            if bytes[end] == b'`' {
+        while end < output.len() && output.as_bytes()[end] != b'\n' {
+            if output.as_bytes()[end] == b'`' {
                 let closing = end;
-                while end < bytes.len() && bytes[end] == b'`' {
+                while end < output.len() && output.as_bytes()[end] == b'`' {
                     end += 1;
                 }
                 if end - closing == length {
-                    mask(&mut bytes, start, end);
+                    mask(output, start, end);
                     cursor = end;
                     break;
                 }
@@ -279,7 +297,6 @@ pub(crate) fn mask_literals(input: &str, html_code: bool) -> String {
             }
         }
     }
-    String::from_utf8(bytes).expect("masked UTF-8")
 }
 
 fn metadata(value: &Value, explained: bool, depth: usize) -> Result<()> {
@@ -335,13 +352,13 @@ fn fetch_object(raw: &Value) -> Result<Value> {
 }
 
 fn truncated(input: &str) -> bool {
-    regex(r"(?im)<(?:truncated|omitted|truncation)\b|[\[【（(][^\n\]】）)]*(?:truncated|content omitted|已截断|内容截断|内容已省略)[^\n\]】）)]*[\]】）)]|^\s*(?:\.\.\.\s*)?(?:output|response|content|text) truncated\b|^\s*(?:正文|内容|输出)(?:已被|已)?截断[。.!！]?\s*$")
+    regex!(r"(?im)<(?:truncated|omitted|truncation)\b|[\[【（(][^\n\]】）)]*(?:truncated|content omitted|已截断|内容截断|内容已省略)[^\n\]】）)]*[\]】）)]|^\s*(?:\.\.\.\s*)?(?:output|response|content|text) truncated\b|^\s*(?:正文|内容|输出)(?:已被|已)?截断[。.!！]?\s*$")
         .is_match(input)
 }
 
 fn headings(input: &str) -> Vec<String> {
     let mut stack: Vec<(usize, String)> = Vec::new();
-    for captures in regex(r"(?m)^[ \t]*(#{1,6})[ \t]+([^\n]+)").captures_iter(input) {
+    for captures in regex!(r"(?m)^[ \t]*(#{1,6})[ \t]+([^\n]+)").captures_iter(input) {
         let depth = captures[1].len();
         let title = captures[2].trim().trim_matches('#').trim();
         let title = title
@@ -361,7 +378,7 @@ fn template_section(visible: &str, start: usize, end: usize, kind: &str) -> Resu
     let before = &visible[..start];
     let headings = headings(before);
     let protected =
-        regex(r"任务要求|报告|审阅填写|审阅意见|审阅结论|我的决定|下一轮要求|完成标准|执行指令");
+        regex!(r"任务要求|报告|审阅填写|审阅意见|审阅结论|我的决定|下一轮要求|完成标准|执行指令");
     ensure!(
         !headings.iter().any(|heading| protected.is_match(heading)),
         "unknown block appears in requirements, report or review input"
@@ -376,17 +393,7 @@ fn template_section(visible: &str, start: usize, end: usize, kind: &str) -> Resu
                 .is_empty(),
         "unknown block appears inside text"
     );
-    let mut containers = Vec::new();
-    for captures in regex(r"<(/?)(callout|columns|column)\b[^>]*>").captures_iter(before) {
-        if &captures[1] == "/" {
-            ensure!(
-                containers.pop().as_deref() == Some(&captures[2]),
-                "unbalanced template containers"
-            );
-        } else {
-            containers.push(captures[2].to_string());
-        }
-    }
+    let containers = template_containers(before)?;
     ensure!(
         !containers.iter().any(|item| item == "callout")
             || !headings.iter().any(|item| item.contains("审阅")),
@@ -407,6 +414,21 @@ fn template_section(visible: &str, start: usize, end: usize, kind: &str) -> Resu
     bail!("unknown block is outside a recognized template section")
 }
 
+fn template_containers(before: &str) -> Result<Vec<String>> {
+    let mut containers = Vec::new();
+    for captures in regex!(r"<(/?)(callout|columns|column)\b[^>]*>").captures_iter(before) {
+        if &captures[1] == "/" {
+            ensure!(
+                containers.pop().as_deref() == Some(&captures[2]),
+                "unbalanced template containers"
+            );
+        } else {
+            containers.push(captures[2].to_string());
+        }
+    }
+    Ok(containers)
+}
+
 fn immediate_parent(ancestry: &str, tag: &str) -> Result<Option<String>> {
     let pattern = Regex::new(&format!(r"<{tag}\b([^>]*)/?>"))?;
     let matches: Vec<_> = pattern.captures_iter(ancestry).collect();
@@ -425,14 +447,19 @@ fn immediate_parent(ancestry: &str, tag: &str) -> Result<Option<String>> {
     }
 }
 
-pub fn parse_page(raw: &Value) -> Result<Value> {
-    let value = fetch_object(raw)?;
-    let page_text = text(&value, "text")?;
-    let opening = regex(r"(?m)^<page\b([^>]*)>")
+struct PageEnvelope<'a> {
+    opening: regex::Captures<'a>,
+    properties: Value,
+    ancestry: &'a str,
+    body: &'a str,
+}
+
+fn page_envelope(page_text: &str) -> Result<PageEnvelope<'_>> {
+    let opening = regex!(r"(?m)^<page\b([^>]*)>")
         .captures(page_text)
         .context("missing page markup")?;
     let opening_span = opening.get(0).context("missing page markup")?;
-    let property_opening = regex(r"<properties\b[^>]*>")
+    let property_opening = regex!(r"<properties\b[^>]*>")
         .find(&page_text[opening_span.end()..])
         .context("missing properties markup")?;
     let property_start = opening_span.end() + property_opening.end();
@@ -441,58 +468,106 @@ pub fn parse_page(raw: &Value) -> Result<Value> {
     let properties = stream.next().context("missing properties")??;
     ensure!(properties.is_object(), "invalid page properties");
     let property_end = property_start + stream.byte_offset();
-    let closing = regex(r"^\s*</properties>")
+    let closing = regex!(r"^\s*</properties>")
         .find(&page_text[property_end..])
         .context("invalid properties boundary")?;
     let offset = property_end + closing.end();
     let body = &page_text[offset..];
-    let visible = mask_literals(body, true);
-    let mut content_start = None;
-    let mut content_end = None;
-    let mut outer_end = None;
-    let mut stack = vec!["page".to_string()];
-    if let Some(blank) = regex(r"(?s)^\s*(?:<iconMetadata>.*?</iconMetadata>\s*)?<blank-page>This page is blank and has no content\.</blank-page>\s*</page>").find(body) {
-        content_start = Some(0);
-        content_end = Some(0);
-        outer_end = Some(blank.end());
-    } else {
-        for captures in regex(r#"<(/?)(page|content)\b((?:[^>"']|"[^"]*"|'[^']*')*)>"#).captures_iter(&visible) {
-            let token = captures.get(0).context("missing token")?;
-            if token.start() > 0 && visible.as_bytes()[token.start() - 1] == b'\\' {
-                continue;
+    let ancestry = &page_text[opening_span.end()..opening_span.end() + property_opening.start()];
+    Ok(PageEnvelope {
+        opening,
+        properties,
+        ancestry,
+        body,
+    })
+}
+
+#[derive(Default)]
+struct ContentBounds {
+    start: Option<usize>,
+    end: Option<usize>,
+    outer_end: Option<usize>,
+    stack: Vec<String>,
+}
+
+impl ContentBounds {
+    fn observe(&mut self, captures: &regex::Captures<'_>) -> Result<bool> {
+        let token = captures.get(0).context("missing token")?;
+        let tag = &captures[2];
+        let attrs = &captures[3];
+        if &captures[1] == "/" {
+            ensure!(
+                attrs.trim().is_empty() && self.stack.last().map(String::as_str) == Some(tag),
+                "unbalanced page/content markup"
+            );
+            if tag == "content" {
+                self.end = Some(token.start());
+            } else if self.stack.len() == 1 {
+                ensure!(
+                    self.end.is_some(),
+                    "outer page closed before complete content"
+                );
+                self.outer_end = Some(token.end());
+                return Ok(true);
             }
-            let tag = &captures[2];
-            let attrs = &captures[3];
-            if &captures[1] == "/" {
-                ensure!(attrs.trim().is_empty() && stack.last().map(String::as_str) == Some(tag), "unbalanced page/content markup");
-                if tag == "content" {
-                    content_end = Some(token.start());
-                } else if stack.len() == 1 {
-                    ensure!(content_end.is_some(), "outer page closed before complete content");
-                    outer_end = Some(token.end());
-                    break;
-                }
-                stack.pop();
-            } else if tag == "content" {
-                ensure!(stack == ["page"] && content_start.is_none(), "unexpected content boundary");
-                content_start = Some(token.end());
-                if attrs.trim_end().ends_with('/') {
-                    content_end = Some(token.end());
-                } else {
-                    stack.push(tag.to_string());
-                }
+            self.stack.pop();
+        } else {
+            self.open(tag, attrs, token.end())?;
+        }
+        Ok(false)
+    }
+
+    fn open(&mut self, tag: &str, attrs: &str, end: usize) -> Result<()> {
+        if tag == "content" {
+            ensure!(
+                self.stack == ["page"] && self.start.is_none(),
+                "unexpected content boundary"
+            );
+            self.start = Some(end);
+            if attrs.trim_end().ends_with('/') {
+                self.end = Some(end);
             } else {
-                ensure!(stack == ["page", "content"] && !attrs.trim_end().ends_with('/'), "child page must be a complete page inside content");
-                stack.push(tag.to_string());
+                self.stack.push(tag.to_string());
             }
+        } else {
+            ensure!(
+                self.stack == ["page", "content"] && !attrs.trim_end().ends_with('/'),
+                "child page must be a complete page inside content"
+            );
+            self.stack.push(tag.to_string());
+        }
+        Ok(())
+    }
+}
+
+fn content_bounds(body: &str, visible: &str) -> Result<(usize, usize, usize)> {
+    if let Some(blank) = regex!(r"(?s)^\s*(?:<iconMetadata>.*?</iconMetadata>\s*)?<blank-page>This page is blank and has no content\.</blank-page>\s*</page>").find(body) {
+        return Ok((0, 0, blank.end()));
+    }
+    let mut bounds = ContentBounds {
+        stack: vec!["page".to_string()],
+        ..ContentBounds::default()
+    };
+    for captures in
+        regex!(r#"<(/?)(page|content)\b((?:[^>"']|"[^"]*"|'[^']*')*)>"#).captures_iter(visible)
+    {
+        let token = captures.get(0).context("missing token")?;
+        if token.start() > 0 && visible.as_bytes()[token.start() - 1] == b'\\' {
+            continue;
+        }
+        if bounds.observe(&captures)? {
+            break;
         }
     }
-    let start = content_start.context("incomplete page/content markup")?;
-    let end = content_end.context("incomplete page/content markup")?;
-    let outer_end = outer_end.context("incomplete page/content markup")?;
-    let content = &body[start..end];
-    let ancestry = &page_text[opening_span.end()..opening_span.end() + property_opening.start()];
-    let opening_attrs = regex(r"(?:^|\s)deleted(?:\s|$)").replace_all(&opening[1], " ");
+    Ok((
+        bounds.start.context("incomplete page/content markup")?,
+        bounds.end.context("incomplete page/content markup")?,
+        bounds.outer_end.context("incomplete page/content markup")?,
+    ))
+}
+
+fn page_identifier(value: &Value, properties: &Value, opening: &str) -> Result<String> {
+    let opening_attrs = regex!(r"(?:^|\s)deleted(?:\s|$)").replace_all(opening, " ");
     let attrs = attributes(&opening_attrs)?;
     let mut identifiers = Vec::new();
     for candidate in [value.get("id"), value.get("url"), properties.get("url")]
@@ -519,27 +594,42 @@ pub fn parse_page(raw: &Value) -> Result<Value> {
         !identifiers.is_empty() && identifiers.iter().all(|item| item == &identifiers[0]),
         "page ID is missing or inconsistent"
     );
-    let identifier = &identifiers[0];
-    let visible_content = mask_literals(content, true);
+    Ok(identifiers[0].clone())
+}
+
+fn validate_truncation(
+    envelope: &PageEnvelope<'_>,
+    prefix: &str,
+    outer_end: usize,
+    visible_content: &str,
+) -> Result<()> {
     ensure!(
         !truncated(&format!(
-            "{visible_content}\n{ancestry}\n{}",
-            mask_literals(&body[outer_end..], true)
-        )) && !regex(r#"(?i)<(?:page|content)\b[^>]*\btruncated\s*=\s*["']true["']"#)
-            .is_match(&format!("{}\n{}", opening_span.as_str(), &visible[..start])),
+            "{visible_content}\n{}\n{}",
+            envelope.ancestry,
+            mask_literals(&envelope.body[outer_end..], true)
+        )) && !regex!(r#"(?i)<(?:page|content)\b[^>]*\btruncated\s*=\s*["']true["']"#)
+            .is_match(&format!("{}\n{prefix}", &envelope.opening[0])),
         "actual text truncation marker"
     );
-    let unknown_pattern = regex(r"<unknown\b([^>]*)/>");
+    Ok(())
+}
+
+fn unknown_blocks(
+    visible_content: &str,
+    identifier: &str,
+) -> Result<(BTreeSet<String>, Vec<String>)> {
+    let unknown_pattern = regex!(r"<unknown\b([^>]*)/>");
     let unknowns: Vec<_> = unknown_pattern
-        .captures_iter(&visible_content)
+        .captures_iter(visible_content)
         .filter(|capture| {
             capture.get(0).is_some_and(|matched| {
                 matched.start() == 0 || visible_content.as_bytes()[matched.start() - 1] != b'\\'
             })
         })
         .collect();
-    let unknown_count = regex(r"</?unknown\b")
-        .find_iter(&visible_content)
+    let unknown_count = regex!(r"</?unknown\b")
+        .find_iter(visible_content)
         .filter(|matched| {
             matched.start() == 0 || visible_content.as_bytes()[matched.start() - 1] != b'\\'
         })
@@ -548,40 +638,53 @@ pub fn parse_page(raw: &Value) -> Result<Value> {
     let mut observed = BTreeSet::new();
     let mut limitations = Vec::new();
     for captures in unknowns {
-        let attrs = attributes(&captures[1])?;
-        let kind = attrs
-            .get("alt")
-            .map(String::as_str)
-            .context("unsupported unknown block type")?;
-        ensure!(
-            [
-                "unknown",
-                "drive",
-                "figma",
-                "button",
-                "external_object_instance"
-            ]
-            .contains(&kind),
-            "unsupported unknown block type"
-        );
-        let source_url = attrs.get("url").context("unknown block has no URL")?;
-        ensure!(
-            normalize_id(source_url)? == *identifier,
-            "unknown block belongs to another page"
-        );
-        let parsed_url = Url::parse(source_url)?;
-        let block = normalize_id(
-            parsed_url
-                .fragment()
-                .context("unknown block has no block ID")?,
-        )?;
-        ensure!(observed.insert(block.clone()), "duplicate unknown block");
-        let matched = captures.get(0).context("missing unknown block")?;
-        let section = template_section(&visible_content, matched.start(), matched.end(), kind)?;
-        limitations.push(format!(
-            "已忽略「{section}」模板块 {kind}（{block}）；其子内容未读取，不作为知识来源。"
-        ));
+        let (block, limitation) = unknown_block(visible_content, identifier, &captures)?;
+        ensure!(observed.insert(block), "duplicate unknown block");
+        limitations.push(limitation);
     }
+    Ok((observed, limitations))
+}
+
+fn unknown_block(
+    visible_content: &str,
+    identifier: &str,
+    captures: &regex::Captures<'_>,
+) -> Result<(String, String)> {
+    let attrs = attributes(&captures[1])?;
+    let kind = attrs
+        .get("alt")
+        .map(String::as_str)
+        .context("unsupported unknown block type")?;
+    ensure!(
+        [
+            "unknown",
+            "drive",
+            "figma",
+            "button",
+            "external_object_instance"
+        ]
+        .contains(&kind),
+        "unsupported unknown block type"
+    );
+    let source_url = attrs.get("url").context("unknown block has no URL")?;
+    ensure!(
+        normalize_id(source_url)? == identifier,
+        "unknown block belongs to another page"
+    );
+    let parsed_url = Url::parse(source_url)?;
+    let block = normalize_id(
+        parsed_url
+            .fragment()
+            .context("unknown block has no block ID")?,
+    )?;
+    let matched = captures.get(0).context("missing unknown block")?;
+    let section = template_section(visible_content, matched.start(), matched.end(), kind)?;
+    let limitation =
+        format!("已忽略「{section}」模板块 {kind}（{block}）；其子内容未读取，不作为知识来源。");
+    Ok((block, limitation))
+}
+
+fn validate_unknown_metadata(value: &Value, observed: &BTreeSet<String>) -> Result<()> {
     let ids = value
         .get("unknown_block_ids")
         .cloned()
@@ -593,7 +696,7 @@ pub fn parse_page(raw: &Value) -> Result<Value> {
         .collect::<Result<Vec<_>>>()?;
     let unique: BTreeSet<_> = normalized.iter().cloned().collect();
     ensure!(
-        unique.len() == normalized.len() && unique == observed,
+        unique.len() == normalized.len() && unique == *observed,
         "unknown IDs do not exactly explain omissions"
     );
     let count = value
@@ -604,17 +707,15 @@ pub fn parse_page(raw: &Value) -> Result<Value> {
         count.as_u64() == Some(observed.len() as u64),
         "unknown block count does not explain omissions"
     );
-    metadata(&value, !observed.is_empty(), 0)?;
-    let parent_page = immediate_parent(ancestry, "parent-page")?;
-    let parent_source = immediate_parent(ancestry, "parent-data-source")?;
-    ensure!(
-        parent_page.is_none() || parent_source.is_none(),
-        "page has two immediate parent types"
-    );
+    metadata(value, !observed.is_empty(), 0)?;
+    Ok(())
+}
+
+fn child_pages(content: &str, visible_content: &str, identifier: &str) -> Result<Vec<Value>> {
     let mut children = Vec::new();
     let mut child_ids = BTreeSet::new();
-    let child_pattern = regex(r"(?s)<page\b([^>]*)>(.*?)</page>");
-    for captures in child_pattern.captures_iter(&visible_content) {
+    let child_pattern = regex!(r"(?s)<page\b([^>]*)>(.*?)</page>");
+    for captures in child_pattern.captures_iter(visible_content) {
         let matched = captures.get(0).context("missing child page")?;
         if matched.start() > 0 && visible_content.as_bytes()[matched.start() - 1] == b'\\' {
             continue;
@@ -623,19 +724,23 @@ pub fn parse_page(raw: &Value) -> Result<Value> {
         let child_url = attrs.get("url").context("child page has no URL")?;
         let child = normalize_id(child_url)?;
         ensure!(
-            child != *identifier && child_ids.insert(child.clone()),
+            child != identifier && child_ids.insert(child.clone()),
             "duplicate or self-referencing child page"
         );
         let title = captures.get(2).context("child page has no title")?;
         children.push(json!({"id": child, "title": html_unescape(content[title.start()..title.end()].trim()), "url": child_url}));
     }
-    let count = regex(r"<page\b")
-        .find_iter(&visible_content)
+    let count = regex!(r"<page\b")
+        .find_iter(visible_content)
         .filter(|matched| {
             matched.start() == 0 || visible_content.as_bytes()[matched.start() - 1] != b'\\'
         })
         .count();
     ensure!(count == children.len(), "incomplete child page markup");
+    Ok(children)
+}
+
+fn page_edited(value: &Value, properties: &Value) -> Result<Value> {
     let edited = ["page_last_edited_at", "last_edited_time", "edited_at"]
         .into_iter()
         .find_map(|key| value.get(key).filter(|value| !value.is_null()))
@@ -650,11 +755,33 @@ pub fn parse_page(raw: &Value) -> Result<Value> {
         edited.is_null() || edited.is_string(),
         "edited timestamp must be a string"
     );
+    Ok(edited)
+}
+
+pub fn parse_page(raw: &Value) -> Result<Value> {
+    let value = fetch_object(raw)?;
+    let envelope = page_envelope(text(&value, "text")?)?;
+    let visible = mask_literals(envelope.body, true);
+    let (start, end, outer_end) = content_bounds(envelope.body, &visible)?;
+    let content = &envelope.body[start..end];
+    let identifier = page_identifier(&value, &envelope.properties, &envelope.opening[1])?;
+    let visible_content = mask_literals(content, true);
+    validate_truncation(&envelope, &visible[..start], outer_end, &visible_content)?;
+    let (observed, limitations) = unknown_blocks(&visible_content, &identifier)?;
+    validate_unknown_metadata(&value, &observed)?;
+    let parent_page = immediate_parent(envelope.ancestry, "parent-page")?;
+    let parent_source = immediate_parent(envelope.ancestry, "parent-data-source")?;
+    ensure!(
+        parent_page.is_none() || parent_source.is_none(),
+        "page has two immediate parent types"
+    );
+    let children = child_pages(content, &visible_content, &identifier)?;
+    let edited = page_edited(&value, &envelope.properties)?;
     let deleted = value["is_archived"] == true
         || value["in_trash"] == true
-        || regex(r"\bdeleted(?:\s|/|$)").is_match(&opening[1]);
+        || regex!(r"\bdeleted(?:\s|/|$)").is_match(&envelope.opening[1]);
     Ok(
-        json!({"id": identifier, "properties": properties, "content": content, "deleted": deleted,
+        json!({"id": identifier, "properties": envelope.properties, "content": content, "deleted": deleted,
         "parent_page_id": parent_page, "parent_data_source_id": parent_source,
         "edited_at": edited, "limitations": limitations, "children": children}),
     )
@@ -682,7 +809,7 @@ fn key(value: &Value) -> Result<String> {
         .as_str()
         .context("topic key must be a lowercase ASCII slug")?;
     ensure!(
-        regex(r"^[a-z0-9]+(?:-[a-z0-9]+)*$").is_match(value),
+        regex!(r"^[a-z0-9]+(?:-[a-z0-9]+)*$").is_match(value),
         "topic key must be a lowercase ASCII slug"
     );
     Ok(value.to_string())
@@ -704,7 +831,17 @@ fn source_url(input: &str, available: Option<&BTreeSet<String>>) -> Result<Strin
 
 fn safe_text(input: &str, available: Option<&BTreeSet<String>>) -> Result<()> {
     let visible = mask_literals(input, false);
-    for captures in regex(r"<(/?)([A-Za-z][\w-]*)\b([^>]*)>").captures_iter(&visible) {
+    safe_markup(&visible, available)?;
+    safe_links(&visible, available)?;
+    ensure!(
+        !truncated(&visible),
+        "knowledge must not contain truncation placeholders"
+    );
+    Ok(())
+}
+
+fn safe_markup(visible: &str, available: Option<&BTreeSet<String>>) -> Result<()> {
+    for captures in regex!(r"<(/?)([A-Za-z][\w-]*)\b([^>]*)>").captures_iter(visible) {
         let closing = &captures[1] == "/";
         match &captures[2] {
             "b" | "strong" | "i" | "em" | "s" | "del" | "u" | "code" | "br" | "p" => {
@@ -729,10 +866,14 @@ fn safe_text(input: &str, available: Option<&BTreeSet<String>>) -> Result<()> {
         }
     }
     ensure!(
-        !regex(r"(?i)<!--|<!DOCTYPE|<\?|<\s*/?\s*(?:script|iframe|img)\b").is_match(&visible),
+        !regex!(r"(?i)<!--|<!DOCTYPE|<\?|<\s*/?\s*(?:script|iframe|img)\b").is_match(visible),
         "unsafe HTML"
     );
-    for captures in regex(r"!?\[[^\]\n]*\]\(([^)\n]*)\)").captures_iter(&visible) {
+    Ok(())
+}
+
+fn safe_links(visible: &str, available: Option<&BTreeSet<String>>) -> Result<()> {
+    for captures in regex!(r"!?\[[^\]\n]*\]\(([^)\n]*)\)").captures_iter(visible) {
         source_url(
             captures[1]
                 .trim()
@@ -741,12 +882,12 @@ fn safe_text(input: &str, available: Option<&BTreeSet<String>>) -> Result<()> {
             available,
         )?;
     }
-    for captures in regex(r"(?m)^\s{0,3}\[[^\]\n]+\]:\s*(\S+)").captures_iter(&visible) {
+    for captures in regex!(r"(?m)^\s{0,3}\[[^\]\n]+\]:\s*(\S+)").captures_iter(visible) {
         source_url(captures[1].trim_matches(['<', '>']), available)?;
     }
     for matched in
-        regex(r#"(?i)(?:[A-Za-z][A-Za-z0-9+.-]*://|javascript:|data:|vbscript:)[^\s<>()\[\]"']+"#)
-            .find_iter(&visible)
+        regex!(r#"(?i)(?:[A-Za-z][A-Za-z0-9+.-]*://|javascript:|data:|vbscript:)[^\s<>()\[\]"']+"#)
+            .find_iter(visible)
     {
         source_url(
             matched
@@ -755,18 +896,14 @@ fn safe_text(input: &str, available: Option<&BTreeSet<String>>) -> Result<()> {
             available,
         )?;
     }
-    ensure!(
-        !truncated(&visible),
-        "knowledge must not contain truncation placeholders"
-    );
     Ok(())
 }
 
 fn summary(value: &Value, empty: bool) -> Result<String> {
     let summary = string(value, "summary", empty)?;
     let visible =
-        regex(r"(?s)<mention\b[^>]*?(?:/>|>.*?</mention>)").replace_all(&summary, "[来源]");
-    let visible = regex(r"\[([^\]\n]*)\]\([^)\n]+\)")
+        regex!(r"(?s)<mention\b[^>]*?(?:/>|>.*?</mention>)").replace_all(&summary, "[来源]");
+    let visible = regex!(r"\[([^\]\n]*)\]\([^)\n]+\)")
         .replace_all(&visible, "$1")
         .into_owned();
     ensure!(
@@ -790,6 +927,11 @@ fn summary(value: &Value, empty: bool) -> Result<String> {
             == SUMMARY_SECTIONS,
         "summary must contain all five named sections in order"
     );
+    validate_summary_sections(&summary, &matches)?;
+    Ok(summary)
+}
+
+fn validate_summary_sections(summary: &str, matches: &[regex::Captures<'_>]) -> Result<()> {
     for (index, capture) in matches.iter().enumerate() {
         let start = capture.get(0).context("missing summary section")?.end();
         let end = matches
@@ -804,7 +946,7 @@ fn summary(value: &Value, empty: bool) -> Result<String> {
             "each summary section must contain meaningful text"
         );
     }
-    Ok(summary)
+    Ok(())
 }
 
 fn exact_fields(value: &Value, names: &[&str], message: &str) -> Result<()> {
@@ -826,27 +968,12 @@ pub fn validate_plan(
         &["summary", "topics", "no_update_reason", "conflicts"],
         "plan must have summary, topics, no_update_reason and conflicts",
     )?;
-    let available: BTreeSet<_> = available_source_ids
-        .iter()
-        .map(|value| normalize_id(value))
-        .collect::<Result<_>>()?;
-    for existing in existing_topic_keys {
-        key(&json!(existing))?;
-    }
+    let available = plan_sources(available_source_ids, existing_topic_keys)?;
     let reason = string(&plan["no_update_reason"], "no_update_reason", true)?;
     let summary = summary(&plan["summary"], !reason.is_empty())?;
     safe_text(&summary, Some(&available))?;
     safe_text(&reason, Some(&available))?;
-    let conflicts = plan["conflicts"]
-        .as_array()
-        .context("conflicts must be a list")?
-        .iter()
-        .map(|value| {
-            let value = string(value, "conflict", false)?;
-            safe_text(&value, Some(&available))?;
-            Ok(value)
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let conflicts = plan_conflicts(&plan["conflicts"], &available)?;
     let topics = plan["topics"].as_array().context("topics must be a list")?;
     ensure!(
         topics.len() <= MAX_TOPICS,
@@ -859,53 +986,89 @@ pub fn validate_plan(
     let mut seen = BTreeSet::new();
     let mut normalized = Vec::new();
     for topic in topics {
-        exact_fields(
-            topic,
-            &["key", "title", "when_to_read", "content", "source_ids"],
-            "topic has an invalid JSON shape",
-        )?;
-        let topic_key = key(&topic["key"])?;
-        ensure!(seen.insert(topic_key.clone()), "duplicate topic key");
-        let source_ids = topic["source_ids"]
-            .as_array()
-            .context("source_ids must be a list")?;
-        ensure!(!source_ids.is_empty(), "each topic needs source_ids");
-        let mut sources = Vec::new();
-        for source in source_ids {
-            let source = normalize_id(source.as_str().context("source ID must be text")?)?;
-            ensure!(
-                available.contains(&source),
-                "topic uses a source that was not read completely"
-            );
-            if !sources.contains(&source) {
-                sources.push(source);
-            }
-        }
-        let title = string(&topic["title"], "title", false)?;
-        let condition = string(&topic["when_to_read"], "when_to_read", false)?;
-        let content = string(&topic["content"], "content", false)?;
-        for value in [&title, &condition, &content] {
-            safe_text(value, Some(&available))?;
-            for matched in
-                regex(r#"https://[^\s<>()\[\]"']+"#).find_iter(&mask_literals(value, false))
-            {
-                let cited = normalize_id(
-                    matched
-                        .as_str()
-                        .trim_end_matches(['.', ',', ';', '，', '。', '；']),
-                )?;
-                if !sources.contains(&cited) {
-                    sources.push(cited);
-                }
-            }
-        }
-        normalized.push(
-            json!({"key": topic_key, "title": title, "when_to_read": condition,
-            "content": clean_topic_body(&content)?, "source_ids": sources}),
+        let topic = validate_topic(topic, &available)?;
+        ensure!(
+            seen.insert(text(&topic, "key")?.to_string()),
+            "duplicate topic key"
         );
+        normalized.push(topic);
     }
     Ok(
         json!({"summary": summary, "topics": normalized, "no_update_reason": reason, "conflicts": conflicts}),
+    )
+}
+
+fn plan_sources(source_ids: &[String], topic_keys: &[String]) -> Result<BTreeSet<String>> {
+    let sources = source_ids
+        .iter()
+        .map(|value| normalize_id(value))
+        .collect::<Result<_>>()?;
+    for existing in topic_keys {
+        key(&json!(existing))?;
+    }
+    Ok(sources)
+}
+
+fn plan_conflicts(value: &Value, available: &BTreeSet<String>) -> Result<Vec<String>> {
+    value
+        .as_array()
+        .context("conflicts must be a list")?
+        .iter()
+        .map(|value| {
+            let value = string(value, "conflict", false)?;
+            safe_text(&value, Some(available))?;
+            Ok(value)
+        })
+        .collect()
+}
+
+fn topic_sources(topic: &Value, available: &BTreeSet<String>) -> Result<Vec<String>> {
+    let source_ids = topic["source_ids"]
+        .as_array()
+        .context("source_ids must be a list")?;
+    ensure!(!source_ids.is_empty(), "each topic needs source_ids");
+    let mut sources = Vec::new();
+    for source in source_ids {
+        let source = normalize_id(source.as_str().context("source ID must be text")?)?;
+        ensure!(
+            available.contains(&source),
+            "topic uses a source that was not read completely"
+        );
+        if !sources.contains(&source) {
+            sources.push(source);
+        }
+    }
+    Ok(sources)
+}
+
+fn validate_topic(topic: &Value, available: &BTreeSet<String>) -> Result<Value> {
+    exact_fields(
+        topic,
+        &["key", "title", "when_to_read", "content", "source_ids"],
+        "topic has an invalid JSON shape",
+    )?;
+    let topic_key = key(&topic["key"])?;
+    let mut sources = topic_sources(topic, available)?;
+    let title = string(&topic["title"], "title", false)?;
+    let condition = string(&topic["when_to_read"], "when_to_read", false)?;
+    let content = string(&topic["content"], "content", false)?;
+    for value in [&title, &condition, &content] {
+        safe_text(value, Some(available))?;
+        for matched in regex!(r#"https://[^\s<>()\[\]"']+"#).find_iter(&mask_literals(value, false))
+        {
+            let cited = normalize_id(
+                matched
+                    .as_str()
+                    .trim_end_matches(['.', ',', ';', '，', '。', '；']),
+            )?;
+            if !sources.contains(&cited) {
+                sources.push(cited);
+            }
+        }
+    }
+    Ok(
+        json!({"key": topic_key, "title": title, "when_to_read": condition,
+            "content": clean_topic_body(&content)?, "source_ids": sources}),
     )
 }
 
@@ -915,8 +1078,8 @@ pub fn clean_topic_body(content: &str) -> Result<String> {
     while index < lines.len() {
         let line = lines[index].trim();
         if line.is_empty()
-            || regex(r"^归属标记：notion-program/topic/[0-9a-f-]+/[a-z0-9-]+$").is_match(line)
-            || regex(r"^(?:项目|入口|任务)：<mention\b.*(?:</mention>|/>)$").is_match(line)
+            || regex!(r"^归属标记：notion-program/topic/[0-9a-f-]+/[a-z0-9-]+$").is_match(line)
+            || regex!(r"^(?:项目|入口|任务)：<mention\b.*(?:</mention>|/>)$").is_match(line)
             || line.starts_with("阅读条件：")
         {
             index += 1;
@@ -948,7 +1111,7 @@ fn version(value: &Value) -> Result<String> {
         .as_str()
         .context("version must be a nonnegative integer or a simple version key")?;
     ensure!(
-        regex(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]*$").is_match(value),
+        regex!(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]*$").is_match(value),
         "version must be a nonnegative integer or a simple version key"
     );
     Ok(value.to_string())
@@ -1007,17 +1170,7 @@ pub fn render_topic(project: &str, context: &str, topic: &Value, task: &str) -> 
     let title = string(&topic["title"], "title", false)?;
     let condition = string(&topic["when_to_read"], "when_to_read", false)?;
     let content = string(&topic["content"], "content", false)?;
-    let sources = topic["source_ids"]
-        .as_array()
-        .context("topic needs source_ids")?;
-    ensure!(!sources.is_empty(), "topic needs source_ids");
-    let mut identifiers = Vec::new();
-    for source in sources {
-        let source = normalize_id(source.as_str().context("source ID must be text")?)?;
-        if !identifiers.contains(&source) {
-            identifiers.push(source);
-        }
-    }
+    let identifiers = render_sources(topic)?;
     let allowed = identifiers.iter().cloned().collect();
     for value in [&title, &condition, &content] {
         safe_text(value, Some(&allowed))?;
@@ -1047,6 +1200,21 @@ pub fn render_topic(project: &str, context: &str, topic: &Value, task: &str) -> 
     Ok(lines.join("\n\n") + "\n")
 }
 
+fn render_sources(topic: &Value) -> Result<Vec<String>> {
+    let sources = topic["source_ids"]
+        .as_array()
+        .context("topic needs source_ids")?;
+    ensure!(!sources.is_empty(), "topic needs source_ids");
+    let mut identifiers = Vec::new();
+    for source in sources {
+        let source = normalize_id(source.as_str().context("source ID must be text")?)?;
+        if !identifiers.contains(&source) {
+            identifiers.push(source);
+        }
+    }
+    Ok(identifiers)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1060,6 +1228,28 @@ mod tests {
             .map(|section| format!("## {section}\n完整说明。"))
             .collect::<Vec<_>>()
             .join("\n\n")
+    }
+
+    #[test]
+    fn literal_mask_preserves_unicode_offsets_and_crlf() {
+        let input =
+            "正文🙂\r\n```text\r\n中文🦀<br>\r\n```\r\n尾部 `中文` <code>🎉\r\n<br></code>\r\n结束";
+        let expected = format!(
+            "正文🙂\r\n{}\r\n{}\r\n{}\r\n尾部 {} {}\r\n{}\r\n结束",
+            " ".repeat(7),
+            " ".repeat(14),
+            " ".repeat(3),
+            " ".repeat(8),
+            " ".repeat(10),
+            " ".repeat(11),
+        );
+        let masked = mask_literals(input, true);
+        assert_eq!(masked, expected);
+        assert_eq!(masked.len(), input.len());
+        assert_eq!(
+            mask_literals("正文 `中文` <code>保留</code>", false),
+            "正文          <code>保留</code>"
+        );
     }
 
     #[test]

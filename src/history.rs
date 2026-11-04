@@ -13,6 +13,39 @@ fn identifier(value: &Value, field: &str) -> Result<String> {
     )
 }
 
+fn article_prompt(owner: &str, record: &Value) -> Result<String> {
+    let number = record["round"]
+        .as_u64()
+        .context("Invalid execution round")?;
+    let bound = record["round_article_page_ids"][number.to_string()]
+        .as_str()
+        .map(|value| {
+            canonical_id(value).map(|value| format!("本轮已绑定文章 page_id={value}，必须复用。"))
+        })
+        .transpose()?
+        .unwrap_or_default();
+    Ok(format!(
+        "每个任务独占一个固定记录页作为索引，历轮复用；每轮独立文章保存该轮完整报告、证据、已消费指令及续接阶段记录。\
+             禁止以所有轮次全文合并在记录页代替每轮独立文章。任务主页按轮次保留可展开标题、执行人、日期、简短摘要及对应文章的原生链接。\n\
+             文章必须是绑定记录页的子页面，含任务回链、记录页回链、文章归属标记 notion-program/article/{owner}/round-{number:03} \
+             及派发标记 notion-program/{owner}/round-{number:03}。同轮续接复用同一文章，保留旧阶段；不同轮次使用不同文章。\
+             先查本轮收据、链接及子页面，多个候选、归属冲突、读取不完整或创建结果不确定时先核查，无法确认则 blocked。{bound}\n\
+             notion_delivery 还须包含 article 对象：\
+             {{\"page_id\":\"实际本轮文章UUID\",\"task_page_id\":\"{owner}\",\"history_page_id\":\"实际记录页UUID\",\"round\":{number},\
+             \"link_verified\":true,\"report_verified\":true,\"instructions_verified\":true,\"task_summary_verified\":true}}。\
+             history.report_verified 表示核验索引指向的本轮完整文章，不在索引重复全文。reference 同时注明文章 URL。\n"
+    ))
+}
+
+fn history_templates() -> String {
+    format!(
+        "\n任务页模板：\n{}\n索引模板：\n{}\n轮次文章模板：\n{}",
+        include_str!("../execution-templates/task-page.md"),
+        include_str!("../execution-templates/history-page.md"),
+        include_str!("../execution-templates/round-article.md")
+    )
+}
+
 pub fn history_prompt(pid: &str, record: &Value) -> Result<String> {
     let owner = canonical_id(pid)?;
     let contract = record["history_contract"]
@@ -28,37 +61,11 @@ pub fn history_prompt(pid: &str, record: &Value) -> Result<String> {
         "尚未绑定记录页：先查本任务已有链接及子页面，确认不存在才创建。".to_string()
     };
     let article_rules = if contract == ARTICLE_CONTRACT {
-        let number = record["round"]
-            .as_u64()
-            .context("Invalid execution round")?;
-        let bound = record["round_article_page_ids"][number.to_string()]
-            .as_str()
-            .map(|value| {
-                canonical_id(value)
-                    .map(|value| format!("本轮已绑定文章 page_id={value}，必须复用。"))
-            })
-            .transpose()?
-            .unwrap_or_default();
-        format!(
-            "每个任务独占一个固定记录页作为索引，历轮复用；每轮独立文章保存该轮完整报告、证据、已消费指令及续接阶段记录。\
-             禁止以所有轮次全文合并在记录页代替每轮独立文章。任务主页按轮次保留可展开标题、执行人、日期、简短摘要及对应文章的原生链接。\n\
-             文章必须是绑定记录页的子页面，含任务回链、记录页回链、文章归属标记 notion-program/article/{owner}/round-{number:03} \
-             及派发标记 notion-program/{owner}/round-{number:03}。同轮续接复用同一文章，保留旧阶段；不同轮次使用不同文章。\
-             先查本轮收据、链接及子页面，多个候选、归属冲突、读取不完整或创建结果不确定时先核查，无法确认则 blocked。{bound}\n\
-             notion_delivery 还须包含 article 对象：\
-             {{\"page_id\":\"实际本轮文章UUID\",\"task_page_id\":\"{owner}\",\"history_page_id\":\"实际记录页UUID\",\"round\":{number},\
-             \"link_verified\":true,\"report_verified\":true,\"instructions_verified\":true,\"task_summary_verified\":true}}。\
-             history.report_verified 表示核验索引指向的本轮完整文章，不在索引重复全文。reference 同时注明文章 URL。\n"
-        )
+        article_prompt(&owner, record)?
     } else {
         "每个任务独占一个轮次记录页，历轮复用；完整报告、证据和已消费指令写入记录页，任务主页只保留摘要与原生跳转链接。\n".to_string()
     };
-    let templates = format!(
-        "\n任务页模板：\n{}\n索引模板：\n{}\n轮次文章模板：\n{}",
-        include_str!("../execution-templates/task-page.md"),
-        include_str!("../execution-templates/history-page.md"),
-        include_str!("../execution-templates/round-article.md")
-    );
+    let templates = history_templates();
     Ok(format!(
         "轮次记录契约：{contract}。{article_rules}\
          禁止将完整轮次正文继续写入任务主页，禁止多个任务共用记录页。\n\
@@ -118,6 +125,14 @@ pub fn validate_history_delivery(
             "Bound history page changed"
         );
     }
+    validate_history_ownership(&owner, &target, state)?;
+    if contract == Some(ARTICLE_CONTRACT) || !delivery["article"].is_null() {
+        validate_article_delivery(&owner, record, delivery, state, &target)?;
+    }
+    Ok(Some(target))
+}
+
+fn validate_history_ownership(owner: &str, target: &str, state: &Value) -> Result<()> {
     for (other_pid, other) in state.as_object().context("State must be an object")? {
         let other_owner = canonical_id(other_pid)?;
         if other_owner != owner {
@@ -138,10 +153,7 @@ pub fn validate_history_delivery(
             }
         }
     }
-    if contract == Some(ARTICLE_CONTRACT) || !delivery["article"].is_null() {
-        validate_article_delivery(&owner, record, delivery, state, &target)?;
-    }
-    Ok(Some(target))
+    Ok(())
 }
 
 pub fn validate_article_delivery(
@@ -160,6 +172,24 @@ pub fn validate_article_delivery(
         .as_u64()
         .filter(|number| *number > 0)
         .context("Invalid execution round")?;
+    let target = validate_article_attestation(owner, article, history_id, number)?;
+    let round_key = number.to_string();
+    if let Some(expected) = record["round_article_page_ids"][&round_key].as_str() {
+        ensure!(
+            canonical_id(expected)? == target,
+            "Bound round article changed"
+        );
+    }
+    validate_article_ownership(owner, &target, &round_key, record, state)?;
+    Ok(target)
+}
+
+fn validate_article_attestation(
+    owner: &str,
+    article: &Value,
+    history_id: &str,
+    number: u64,
+) -> Result<String> {
     ensure!(
         identifier(article, "task_page_id")? == owner,
         "Article belongs to another task"
@@ -188,13 +218,16 @@ pub fn validate_article_delivery(
             "Article delivery not verified: {field}"
         );
     }
-    let round_key = number.to_string();
-    if let Some(expected) = record["round_article_page_ids"][&round_key].as_str() {
-        ensure!(
-            canonical_id(expected)? == target,
-            "Bound round article changed"
-        );
-    }
+    Ok(target)
+}
+
+fn validate_article_ownership(
+    owner: &str,
+    target: &str,
+    round_key: &str,
+    record: &Value,
+    state: &Value,
+) -> Result<()> {
     let mut records = state.as_object().context("Invalid state")?.clone();
     records.insert(owner.to_string(), record.clone());
     for (other_pid, other) in records {
@@ -211,14 +244,14 @@ pub fn validate_article_delivery(
                 if canonical_id(other_article.as_str().context("Invalid bound article")?)? == target
                 {
                     ensure!(
-                        other_owner == owner && other_round == &round_key,
+                        other_owner == owner && other_round == round_key,
                         "Article already belongs to another task or round"
                     );
                 }
             }
         }
     }
-    Ok(target)
+    Ok(())
 }
 
 #[cfg(test)]

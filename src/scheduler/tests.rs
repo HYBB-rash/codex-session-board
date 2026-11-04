@@ -148,6 +148,11 @@ impl FakeExecutor {
         if let Some(context) = &self.context {
             result["project_context"] = context.clone();
         }
+        self.apply_receipt_problem(&mut result);
+        self.write_result(record, result)
+    }
+
+    fn apply_receipt_problem(&self, result: &mut Value) {
         match self.problem.as_deref() {
             Some("stale") => result["execution_token"] = json!("stale"),
             Some("unuploaded") => result["notion_delivery"]["verified"] = json!(false),
@@ -158,6 +163,9 @@ impl FakeExecutor {
             }
             _ => {}
         }
+    }
+
+    fn write_result(&self, record: &Value, result: Value) -> Result<(Value, String)> {
         if self.problem.as_deref() == Some("missing") {
             return Ok((result, "done".into()));
         }
@@ -169,7 +177,10 @@ impl FakeExecutor {
             if self.problem.as_deref() == Some("unbound") {
                 "done".into()
             } else {
-                format!("NOTION_RESULT notion-program/{PID}/round-{number:03} {hash}")
+                format!(
+                    "NOTION_RESULT notion-program/{PID}/round-{:03} {hash}",
+                    round(record)
+                )
             },
         ))
     }
@@ -993,53 +1004,53 @@ fn feedback_deduplicates_preserves_human_edits_and_reconciles_unknown_writes() -
         Some(Failure::UnknownBefore),
         Some(Failure::UnknownAfter),
     ] {
-        let mut harness = Harness::new()?;
-        harness.scheduler.config["diagnostic_feedback_property"] = json!("调度诊断");
-        harness.tick()?;
-        if let Some(failure) = failure {
-            harness.store.borrow_mut().failure = Some(("feedback".into(), failure));
-        }
-        let mut record = harness.record();
-        harness
-            .scheduler
-            .diagnostic(PID, &mut record, "interrupted", &[], None);
-        let writes = harness
-            .store
-            .borrow()
-            .writes
-            .iter()
-            .filter(|value| value.get("调度诊断").is_some())
-            .count();
-        harness
-            .scheduler
-            .diagnostic(PID, &mut record, "interrupted", &[], None);
-        assert_eq!(
-            harness
-                .store
-                .borrow()
-                .writes
-                .iter()
-                .filter(|value| value.get("调度诊断").is_some())
-                .count(),
-            writes
-        );
-        assert_eq!(harness.scheduler.executor.sent, 1);
-        if !matches!(failure, Some(Failure::UnknownBefore)) {
-            assert_eq!(
-                record["diagnostic_feedback_publication"]["state"],
-                "verified"
-            );
-        }
-        harness.store.borrow_mut().properties["调度诊断"] = json!("Herman wrote instructions");
-        harness
-            .scheduler
-            .diagnostic(PID, &mut record, "resolved", &[], None);
-        assert_eq!(
-            harness.store.borrow().properties["调度诊断"],
-            "Herman wrote instructions"
-        );
+        verify_feedback_reconciliation(failure)?;
     }
     Ok(())
+}
+
+fn verify_feedback_reconciliation(failure: Option<Failure>) -> Result<()> {
+    let mut harness = Harness::new()?;
+    harness.scheduler.config["diagnostic_feedback_property"] = json!("调度诊断");
+    harness.tick()?;
+    if let Some(failure) = failure {
+        harness.store.borrow_mut().failure = Some(("feedback".into(), failure));
+    }
+    let mut record = harness.record();
+    harness
+        .scheduler
+        .diagnostic(PID, &mut record, "interrupted", &[], None);
+    let writes = feedback_writes(&harness);
+    harness
+        .scheduler
+        .diagnostic(PID, &mut record, "interrupted", &[], None);
+    assert_eq!(feedback_writes(&harness), writes);
+    assert_eq!(harness.scheduler.executor.sent, 1);
+    if !matches!(failure, Some(Failure::UnknownBefore)) {
+        assert_eq!(
+            record["diagnostic_feedback_publication"]["state"],
+            "verified"
+        );
+    }
+    harness.store.borrow_mut().properties["调度诊断"] = json!("Herman wrote instructions");
+    harness
+        .scheduler
+        .diagnostic(PID, &mut record, "resolved", &[], None);
+    assert_eq!(
+        harness.store.borrow().properties["调度诊断"],
+        "Herman wrote instructions"
+    );
+    Ok(())
+}
+
+fn feedback_writes(harness: &Harness) -> usize {
+    harness
+        .store
+        .borrow()
+        .writes
+        .iter()
+        .filter(|value| value.get("调度诊断").is_some())
+        .count()
 }
 
 #[test]

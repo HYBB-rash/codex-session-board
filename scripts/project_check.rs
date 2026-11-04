@@ -13,7 +13,7 @@ use std::process::{Command, Output};
 const RULES_FILE: &str = "project-rules.json";
 
 #[derive(Parser)]
-#[command(about = "检查工作区、逐次提交版本和测试钩子；默认只读，不暂存、不提交、不推送")]
+#[command(about = "检查项目约束；默认只读，不暂存、不提交、不推送")]
 struct Cli {
     #[arg(long, help = "准备下一次提交的版本，同步 Cargo.toml 和 Cargo.lock")]
     prepare_commit: bool,
@@ -209,24 +209,7 @@ fn validate_history(root: &Path, rules: &Rules) -> Result<History> {
             Some(parent) => *versions.get(parent).context("缺少父提交的版本")?,
             None => baseline,
         };
-        let (name, version) = package(&committed(root, commit, "Cargo.toml")?)?;
-        ensure!(
-            locked_version(&committed(root, commit, "Cargo.lock")?, &name)? == version,
-            "提交 {commit} 中 Cargo.toml 与 Cargo.lock 的版本不一致"
-        );
-        let recorded = Rules::parse(&committed(root, commit, RULES_FILE)?)?;
-        ensure!(
-            recorded.versioning.baseline == rules.versioning.baseline,
-            "不能修改既有版本基线来绕过历史检查"
-        );
-        let patch = previous.next_patch()?;
-        let minor = previous.next_minor()?;
-        let approved = parent
-            .is_some_and(|parent| version == minor && recorded.approves(parent, previous, version));
-        ensure!(
-            version == patch || approved,
-            "提交 {commit} 的版本 v{version} 不符合规范：普通提交须为 v{patch}；阶段完成须有用户决定记录并恰好升到 v{minor}"
-        );
+        let version = validate_commit_version(root, rules, commit, parent, previous)?;
         versions.insert(commit, version);
         history.count += 1;
     }
@@ -234,6 +217,34 @@ fn validate_history(root: &Path, rules: &Rules) -> Result<History> {
     history.version = *versions.get(tip.as_str()).context("缺少 HEAD 的版本")?;
     history.tip = Some(tip);
     Ok(history)
+}
+
+fn validate_commit_version(
+    root: &Path,
+    rules: &Rules,
+    commit: &str,
+    parent: Option<&str>,
+    previous: Version,
+) -> Result<Version> {
+    let (name, version) = package(&committed(root, commit, "Cargo.toml")?)?;
+    ensure!(
+        locked_version(&committed(root, commit, "Cargo.lock")?, &name)? == version,
+        "提交 {commit} 中 Cargo.toml 与 Cargo.lock 的版本不一致"
+    );
+    let recorded = Rules::parse(&committed(root, commit, RULES_FILE)?)?;
+    ensure!(
+        recorded.versioning.baseline == rules.versioning.baseline,
+        "不能修改既有版本基线来绕过历史检查"
+    );
+    let patch = previous.next_patch()?;
+    let minor = previous.next_minor()?;
+    let approved = parent
+        .is_some_and(|parent| version == minor && recorded.approves(parent, previous, version));
+    ensure!(
+        version == patch || approved,
+        "提交 {commit} 的版本 v{version} 不符合规范：普通提交须为 v{patch}；阶段完成须有用户决定记录并恰好升到 v{minor}"
+    );
+    Ok(version)
 }
 
 fn status(root: &Path) -> Result<Vec<u8>> {
@@ -281,9 +292,50 @@ fn check_hooks(root: &Path) -> bool {
     }
 }
 
+fn check_rust_lints(root: &Path) -> bool {
+    let result = (|| -> Result<()> {
+        let manifest = fs::read_to_string(root.join("Cargo.toml"))?.parse::<toml::Table>()?;
+        let lint = manifest
+            .get("lints")
+            .and_then(|lints| lints.get("rust"))
+            .and_then(|rust| rust.get("unsafe_code"));
+        let level = lint.and_then(|lint| {
+            lint.as_str()
+                .or_else(|| lint.get("level").and_then(toml::Value::as_str))
+        });
+        ensure!(
+            level == Some("forbid"),
+            "Cargo.toml 必须设置 [lints.rust] unsafe_code = \"forbid\""
+        );
+        Ok(())
+    })();
+    match result {
+        Ok(()) => {
+            println!("[通过] 已配置 unsafe_code = \"forbid\"，编译器禁止项目自身使用 unsafe。");
+            true
+        }
+        Err(error) => {
+            println!("[未通过] Rust 安全约束：{error:#}");
+            false
+        }
+    }
+}
+
 fn check(root: &Path, rules: &Rules) -> Result<bool> {
+    let mut passed = check_worktree(root)?;
+    if let Err(error) = validate_current_version(root, rules) {
+        passed = false;
+        println!("[未通过] 版本规则：{error:#}");
+    }
+    if !passed {
+        print_commit_guidance();
+    }
+    Ok(passed)
+}
+
+fn check_worktree(root: &Path) -> Result<bool> {
     let changes = status(root)?;
-    let mut passed = changes.is_empty();
+    let passed = changes.is_empty();
     if passed {
         println!("[通过] 工作区干净，没有暂存、未暂存或未跟踪的变更。");
     } else {
@@ -296,50 +348,46 @@ fn check(root: &Path, rules: &Rules) -> Result<bool> {
         }
         println!("  保留有用改动，检查差异后提交；不要通过删除文件或扩大忽略规则掩盖问题。");
     }
-    let versions = (|| -> Result<()> {
-        let history = validate_history(root, rules)?;
-        let (name, current) = package(&fs::read_to_string(root.join("Cargo.toml"))?)?;
-        ensure!(
-            locked_version(&fs::read_to_string(root.join("Cargo.lock"))?, &name)? == current,
-            "Cargo.toml 与 Cargo.lock 的当前版本不一致"
-        );
-        ensure!(
-            history.tip.is_some(),
-            "仓库尚无提交；已发布基线为 v{}，首次提交必须为 v{}",
-            history.version,
-            history.version.next_patch()?
-        );
-        ensure!(
-            current == history.version,
-            "当前文件版本 v{current} 尚未形成合规提交，HEAD 为 v{}",
-            history.version
-        );
-        println!(
-            "[通过] {} 次提交的版本步进正确，当前 v{current}。",
-            history.count
-        );
-        Ok(())
-    })();
-    if let Err(error) = versions {
-        passed = false;
-        println!("[未通过] 版本规则：{error:#}");
-    }
-    if !passed {
-        println!("\n处理顺序：");
-        println!("  1. 运行 ./scripts/check --prepare-commit，准备本次提交的补丁版本。");
-        println!(
-            "  2. 用 git status --short 和 git diff 检查改动，仅暂存应提交文件，再用 git diff --cached 审阅。"
-        );
-        println!(
-            "  3. 获得提交授权后提交；若存在 agent-git，用 agent-git commit，否则用 git commit。"
-        );
-        println!("  4. 提交后重新运行 ./scripts/check，直到全部检查通过。");
-        println!(
-            "仅在用户明确宣布阶段完成时，使用 --prepare-commit --feature-complete '用户决定的说明'。"
-        );
-        println!("检查不会自动提交、推送、删除文件、修改忽略规则或升级正在运行的服务。");
-    }
     Ok(passed)
+}
+
+fn validate_current_version(root: &Path, rules: &Rules) -> Result<()> {
+    let history = validate_history(root, rules)?;
+    let (name, current) = package(&fs::read_to_string(root.join("Cargo.toml"))?)?;
+    ensure!(
+        locked_version(&fs::read_to_string(root.join("Cargo.lock"))?, &name)? == current,
+        "Cargo.toml 与 Cargo.lock 的当前版本不一致"
+    );
+    ensure!(
+        history.tip.is_some(),
+        "仓库尚无提交；已发布基线为 v{}，首次提交必须为 v{}",
+        history.version,
+        history.version.next_patch()?
+    );
+    ensure!(
+        current == history.version,
+        "当前文件版本 v{current} 尚未形成合规提交，HEAD 为 v{}",
+        history.version
+    );
+    println!(
+        "[通过] {} 次提交的版本步进正确，当前 v{current}。",
+        history.count
+    );
+    Ok(())
+}
+
+fn print_commit_guidance() {
+    println!("\n处理顺序：");
+    println!("  1. 运行 ./scripts/check --prepare-commit，准备本次提交的补丁版本。");
+    println!(
+        "  2. 用 git status --short 和 git diff 检查改动，仅暂存应提交文件，再用 git diff --cached 审阅。"
+    );
+    println!("  3. 获得提交授权后提交；若存在 agent-git，用 agent-git commit，否则用 git commit。");
+    println!("  4. 提交后重新运行 ./scripts/check，直到全部检查通过。");
+    println!(
+        "仅在用户明确宣布阶段完成时，使用 --prepare-commit --feature-complete '用户决定的说明'。"
+    );
+    println!("检查不会自动提交、推送、删除文件、修改忽略规则或升级正在运行的服务。");
 }
 
 fn version_span(text: &str, header: &str, name: Option<&str>) -> Result<Range<usize>> {
@@ -350,7 +398,7 @@ fn version_span(text: &str, header: &str, name: Option<&str>) -> Result<Range<us
     let sections = headers.find_iter(text).collect::<Vec<_>>();
     let mut found = Vec::new();
     for (index, section) in sections.iter().enumerate() {
-        if section.as_str().split('#').next().unwrap().trim() != header {
+        if section.as_str().split('#').next().unwrap_or("").trim() != header {
             continue;
         }
         let start = section.end();
@@ -369,7 +417,7 @@ fn version_span(text: &str, header: &str, name: Option<&str>) -> Result<Range<us
         let capture = versions
             .captures(body)
             .context("版本须以单行 version = \"0.1.1\" 形式声明")?;
-        let value = capture.name("version").unwrap();
+        let value = capture.name("version").context("版本正则缺少命名捕获")?;
         found.push(start + value.start()..start + value.end());
     }
     ensure!(found.len() == 1, "找不到唯一的本地包版本字段");
@@ -383,42 +431,7 @@ fn prepare(root: &Path, rules: &mut Rules, decision: Option<&str>) -> Result<Ver
     let mut manifest = fs::read_to_string(&manifest_path)?;
     let mut lockfile = fs::read_to_string(&lock_path)?;
     let (name, current) = package(&manifest)?;
-    let patch = history.version.next_patch()?;
-    let minor = history.version.next_minor()?;
-    let target = if let Some(decision) = decision {
-        ensure!(!decision.trim().is_empty(), "用户决定的说明不能为空");
-        let parent = history
-            .tip
-            .as_deref()
-            .context("须先有普通提交，才能结束阶段")?;
-        ensure!(
-            [history.version, patch, minor].contains(&current),
-            "当前版本 v{current} 不是本次允许准备的版本"
-        );
-        if !rules.approves(parent, history.version, minor) {
-            rules.versioning.feature_releases.push(FeatureRelease {
-                after_commit: parent.to_string(),
-                from: history.version.to_string(),
-                to: minor.to_string(),
-                decision: decision.to_string(),
-            });
-        }
-        minor
-    } else if current == minor
-        && history
-            .tip
-            .as_deref()
-            .is_some_and(|parent| rules.approves(parent, history.version, minor))
-    {
-        minor
-    } else {
-        ensure!(
-            current == history.version || current == patch,
-            "普通提交只能从 v{} 步进到 v{patch}；不能自动认可 v{current}",
-            history.version
-        );
-        patch
-    };
+    let target = prepare_target(&history, rules, current, decision)?;
     let manifest_span = version_span(&manifest, "[package]", None)?;
     let lock_span = version_span(&lockfile, "[[package]]", Some(&name))?;
     manifest.replace_range(manifest_span, &target.to_string());
@@ -436,6 +449,62 @@ fn prepare(root: &Path, rules: &mut Rules, decision: Option<&str>) -> Result<Ver
     Ok(target)
 }
 
+fn prepare_target(
+    history: &History,
+    rules: &mut Rules,
+    current: Version,
+    decision: Option<&str>,
+) -> Result<Version> {
+    let patch = history.version.next_patch()?;
+    let minor = history.version.next_minor()?;
+    let target = if let Some(decision) = decision {
+        approve_feature_release(history, rules, current, decision)?
+    } else if current == minor
+        && history
+            .tip
+            .as_deref()
+            .is_some_and(|parent| rules.approves(parent, history.version, minor))
+    {
+        minor
+    } else {
+        ensure!(
+            current == history.version || current == patch,
+            "普通提交只能从 v{} 步进到 v{patch}；不能自动认可 v{current}",
+            history.version
+        );
+        patch
+    };
+    Ok(target)
+}
+
+fn approve_feature_release(
+    history: &History,
+    rules: &mut Rules,
+    current: Version,
+    decision: &str,
+) -> Result<Version> {
+    let patch = history.version.next_patch()?;
+    let minor = history.version.next_minor()?;
+    ensure!(!decision.trim().is_empty(), "用户决定的说明不能为空");
+    let parent = history
+        .tip
+        .as_deref()
+        .context("须先有普通提交，才能结束阶段")?;
+    ensure!(
+        [history.version, patch, minor].contains(&current),
+        "当前版本 v{current} 不是本次允许准备的版本"
+    );
+    if !rules.approves(parent, history.version, minor) {
+        rules.versioning.feature_releases.push(FeatureRelease {
+            after_commit: parent.to_string(),
+            from: history.version.to_string(),
+            to: minor.to_string(),
+            decision: decision.to_string(),
+        });
+    }
+    Ok(minor)
+}
+
 fn main() {
     let cli = Cli::parse();
     let result = (|| -> Result<bool> {
@@ -446,7 +515,8 @@ fn main() {
             return Ok(true);
         }
         let hooks_passed = check_hooks(&root);
-        Ok(check(&root, &rules)? && hooks_passed)
+        let rust_lints_passed = check_rust_lints(&root);
+        Ok(check(&root, &rules)? && hooks_passed && rust_lints_passed)
     })();
     match result {
         Ok(true) => {}
@@ -633,6 +703,29 @@ mod tests {
             &["config", "--local", "core.hooksPath", "other-hooks"],
         )?;
         assert!(!check_hooks(root));
+        Ok(())
+    }
+
+    #[test]
+    fn unsafe_policy_cannot_be_removed_or_weakened() -> Result<()> {
+        let (directory, _) = fixture()?;
+        let root = directory.path();
+        assert!(!check_rust_lints(root));
+        let manifest = fs::read_to_string(root.join("Cargo.toml"))?;
+        for level in ["allow", "warn", "deny", "forbid"] {
+            fs::write(
+                root.join("Cargo.toml"),
+                format!("{manifest}\n[lints.rust]\nunsafe_code = '{level}'\n"),
+            )?;
+            assert_eq!(check_rust_lints(root), level == "forbid");
+        }
+        fs::write(
+            root.join("Cargo.toml"),
+            format!(
+                "{manifest}\n[lints.rust]\nunsafe_code = {{ level = 'forbid', priority = 0 }}\n"
+            ),
+        )?;
+        assert!(check_rust_lints(root));
         Ok(())
     }
 

@@ -1,5 +1,5 @@
-use anyhow::{Result, bail, ensure};
-use regex::Regex;
+use anyhow::{Context, Result, bail, ensure};
+use lazy_regex::regex;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Token {
@@ -14,7 +14,7 @@ enum Token {
 }
 
 pub fn unescape_html(text: &str) -> String {
-    let pattern = Regex::new(r"&(?:#x[0-9a-fA-F]+|#[0-9]+|[A-Za-z]+);").unwrap();
+    let pattern = regex!(r"&(?:#x[0-9a-fA-F]+|#[0-9]+|[A-Za-z]+);");
     pattern
         .replace_all(text, |captures: &regex::Captures<'_>| {
             let entity = &captures[0];
@@ -42,7 +42,7 @@ pub fn unescape_html(text: &str) -> String {
         .into_owned()
 }
 
-fn prose(text: &str) -> String {
+fn prose(text: &str) -> Result<String> {
     let characters: Vec<_> = text.chars().collect();
     let mut result = String::new();
     let mut position = 0;
@@ -66,11 +66,11 @@ fn prose(text: &str) -> String {
         result.push(characters[position]);
         position += 1;
     }
-    let array = Regex::new(r"\\\[([0-9]+(?:,\s*[0-9]+)+)\\\]").unwrap();
+    let array = regex!(r"\\\[([0-9]+(?:,\s*[0-9]+)+)\\\]");
     let mut normalized = String::new();
     let mut cursor = 0;
     for captures in array.captures_iter(&result) {
-        let found = captures.get(0).unwrap();
+        let found = captures.get(0).context("Missing escaped array match")?;
         normalized.push_str(&result[cursor..found.start()]);
         if result[found.end()..].starts_with(['[', '(']) {
             normalized.push_str(found.as_str());
@@ -82,136 +82,243 @@ fn prose(text: &str) -> String {
         cursor = found.end();
     }
     normalized.push_str(&result[cursor..]);
-    normalized
+    Ok(normalized)
+}
+
+enum InlineMatch {
+    Token(usize, Token),
+    LineBreak(usize),
+}
+
+fn inline_code(tail: &str) -> Result<InlineMatch> {
+    if tail.starts_with("<code>") {
+        let end = tail
+            .find("</code>")
+            .context("Unsupported code markup cannot be verified")?;
+        return Ok(InlineMatch::Token(
+            end + 7,
+            Token::Code(unescape_html(&tail[6..end])),
+        ));
+    }
+    let count = tail.bytes().take_while(|value| *value == b'`').count();
+    let delimiter = "`".repeat(count);
+    let remainder = &tail[count..];
+    let end = remainder
+        .find(&delimiter)
+        .context("Unmatched code delimiter cannot be verified")?;
+    ensure!(
+        !remainder[..end].contains('\n'),
+        "Multiline inline code cannot be verified"
+    );
+    Ok(InlineMatch::Token(
+        count + end + count,
+        Token::Code(remainder[..end].into()),
+    ))
+}
+
+fn inline_link(tail: &str) -> Result<Option<InlineMatch>> {
+    if let Some(label_end) = tail.find("](")
+        && let Some(target_end) = tail[label_end + 2..].find(')')
+    {
+        let label = &tail[1..label_end];
+        let target = &tail[label_end + 2..label_end + 2 + target_end];
+        ensure!(
+            !target.contains(['(', '\n', ' ', '\t']),
+            "Unsupported link syntax"
+        );
+        return Ok(Some(InlineMatch::Token(
+            label_end + 3 + target_end,
+            Token::Link(label.into(), target.into()),
+        )));
+    }
+    Ok(None)
+}
+
+fn inline_tag(tail: &str) -> Result<Option<InlineMatch>> {
+    let line_break = regex!(r"^<br\s*/?>$");
+    let unsupported_code = regex!(r"^</?(?:code|pre|script|style|textarea)\b");
+    let Some(end) = tail.find('>') else {
+        return Ok(None);
+    };
+    let tag = &tail[..=end];
+    if line_break.is_match(tag) {
+        return Ok(Some(InlineMatch::LineBreak(end + 1)));
+    }
+    ensure!(
+        !unsupported_code.is_match(tag),
+        "Unsupported code markup cannot be verified"
+    );
+    Ok(Some(InlineMatch::Token(end + 1, Token::Tag(tag.into()))))
+}
+
+fn match_inline(tail: &str) -> Result<Option<InlineMatch>> {
+    if tail.starts_with("\\<") {
+        return Ok(tail
+            .find('>')
+            .map(|end| InlineMatch::Token(end + 1, Token::Literal(tail[..=end].into()))));
+    }
+    if tail.starts_with("<code>") || tail.starts_with('`') {
+        return inline_code(tail).map(Some);
+    }
+    if tail.starts_with('[') {
+        return inline_link(tail);
+    }
+    if ["https://", "http://", "codex://"]
+        .iter()
+        .any(|prefix| tail.starts_with(prefix))
+    {
+        let end = tail
+            .find(|character: char| character.is_whitespace() || "<>()".contains(character))
+            .unwrap_or(tail.len());
+        return Ok(Some(InlineMatch::Token(
+            end,
+            Token::Url(tail[..end].into()),
+        )));
+    }
+    if tail.starts_with('<') {
+        return inline_tag(tail);
+    }
+    Ok(None)
+}
+
+fn flush_prose(plain: &mut String, result: &mut Vec<Token>) -> Result<()> {
+    result.extend(prose(plain)?.chars().map(Token::Character));
+    plain.clear();
+    Ok(())
 }
 
 fn inline(text: &str) -> Result<Vec<Token>> {
-    let line_break = Regex::new(r"^<br\s*/?>$")?;
-    let unsupported_code = Regex::new(r"^</?(?:code|pre|script|style|textarea)\b")?;
     let mut result = Vec::new();
     let mut plain = String::new();
     let mut position = 0;
-    let flush = |plain: &mut String, result: &mut Vec<Token>| {
-        result.extend(prose(plain).chars().map(Token::Character));
-        plain.clear();
-    };
     while position < text.len() {
         let tail = &text[position..];
-        let mut matched: Option<(usize, Token)> = None;
-        if tail.starts_with("\\<") {
-            if let Some(end) = tail.find('>') {
-                matched = Some((end + 1, Token::Literal(tail[..=end].into())));
-            }
-        } else if tail.starts_with("<code>") {
-            if let Some(end) = tail.find("</code>") {
-                matched = Some((end + 7, Token::Code(unescape_html(&tail[6..end]))));
-            } else {
-                bail!("Unsupported code markup cannot be verified");
-            }
-        } else if tail.starts_with('`') {
-            let count = tail.bytes().take_while(|value| *value == b'`').count();
-            let delimiter = "`".repeat(count);
-            let remainder = &tail[count..];
-            let end = remainder
-                .find(&delimiter)
-                .ok_or_else(|| anyhow::anyhow!("Unmatched code delimiter cannot be verified"))?;
-            ensure!(
-                !remainder[..end].contains('\n'),
-                "Multiline inline code cannot be verified"
-            );
-            matched = Some((count + end + count, Token::Code(remainder[..end].into())));
-        } else if tail.starts_with('[') {
-            if let Some(label_end) = tail.find("](")
-                && let Some(target_end) = tail[label_end + 2..].find(')')
-            {
-                let label = &tail[1..label_end];
-                let target = &tail[label_end + 2..label_end + 2 + target_end];
-                ensure!(
-                    !target.contains(['(', '\n', ' ', '\t']),
-                    "Unsupported link syntax"
-                );
-                matched = Some((
-                    label_end + 3 + target_end,
-                    Token::Link(label.into(), target.into()),
-                ));
-            }
-        } else if ["https://", "http://", "codex://"]
-            .iter()
-            .any(|prefix| tail.starts_with(prefix))
-        {
-            let end = tail
-                .find(|character: char| character.is_whitespace() || "<>()".contains(character))
-                .unwrap_or(tail.len());
-            matched = Some((end, Token::Url(tail[..end].into())));
-        } else if tail.starts_with('<')
-            && let Some(end) = tail.find('>')
-        {
-            let tag = &tail[..=end];
-            if line_break.is_match(tag) {
+        match match_inline(tail)? {
+            Some(InlineMatch::LineBreak(length)) => {
                 plain.push('\n');
-                position += end + 1;
-                continue;
+                position += length;
             }
-            ensure!(
-                !unsupported_code.is_match(tag),
-                "Unsupported code markup cannot be verified"
-            );
-            matched = Some((end + 1, Token::Tag(tag.into())));
-        }
-        if let Some((length, token)) = matched {
-            flush(&mut plain, &mut result);
-            result.push(token);
-            position += length;
-        } else {
-            let character = tail.chars().next().unwrap();
-            plain.push(character);
-            position += character.len_utf8();
+            Some(InlineMatch::Token(length, token)) => {
+                flush_prose(&mut plain, &mut result)?;
+                result.push(token);
+                position += length;
+            }
+            None => {
+                let character = tail.chars().next().context("Missing inline character")?;
+                plain.push(character);
+                position += character.len_utf8();
+            }
         }
     }
     ensure!(
         !plain.contains("](") && !plain.contains("]["),
         "Unsupported link syntax"
     );
-    flush(&mut plain, &mut result);
+    flush_prose(&mut plain, &mut result)?;
     Ok(result)
 }
 
+fn fenced_line(lines: &[&str], index: usize, result: &mut Vec<Token>) -> Result<Option<usize>> {
+    let fence_pattern = regex!(r"^ {0,3}(`{3,}|~{3,})([^\n]*)$");
+    let Some(fence) = fence_pattern.captures(lines[index].trim_end_matches('\n')) else {
+        return Ok(None);
+    };
+    let delimiter = &fence[1];
+    let character = delimiter
+        .chars()
+        .next()
+        .context("Missing fence delimiter")?;
+    let mut end = index + 1;
+    while end < lines.len() {
+        let closing = lines[end].trim();
+        if closing.len() >= delimiter.len() && closing.chars().all(|value| value == character) {
+            break;
+        }
+        end += 1;
+    }
+    ensure!(end < lines.len(), "Unclosed code fence cannot be verified");
+    result.push(Token::Fence(
+        fence[2].into(),
+        lines[index + 1..end].concat(),
+    ));
+    if lines[end].ends_with('\n') {
+        result.push(Token::Character('\n'));
+    }
+    Ok(Some(end + 1))
+}
+
+fn normalize_separator(lines: &[&str], index: usize) -> String {
+    let separator = regex!(r"^\|(?:[ \t]*:?-{3,}:?[ \t]*\|)+[ \t]*$");
+    let line = lines[index];
+    let stripped = line.trim_end_matches('\n');
+    if separator.is_match(stripped)
+        && index > 0
+        && lines[index - 1].starts_with('|')
+        && lines[index - 1].matches('|').count() == stripped.matches('|').count()
+        && (index < 2 || !lines[index - 2].starts_with('|'))
+    {
+        let count = stripped.matches('|').count() - 1;
+        format!(
+            "|{}{}",
+            "---|".repeat(count),
+            if line.ends_with('\n') { "\n" } else { "" }
+        )
+    } else {
+        line.to_string()
+    }
+}
+
+fn validate_line_breaks(line: &str, parsed: &[Token]) -> Result<()> {
+    let break_pattern = regex!(r"<br\s*/?>");
+    if !break_pattern.is_match(line.trim_end_matches('\n')) {
+        return Ok(());
+    }
+    let block = regex!(r"^(?:[ \t]{4}|\t|[ \t]*(?:[|>#]|[-+*]\s|[0-9]+[.)]\s|`{3}|~{3}))");
+    let mut visible: String = parsed
+        .iter()
+        .map(|token| match token {
+            Token::Character(character) => *character,
+            _ => '\u{fffc}',
+        })
+        .collect();
+    if line.ends_with('\n') {
+        visible.pop();
+    }
+    if visible.contains('\n') {
+        ensure!(
+            !visible
+                .split('\n')
+                .any(|part| part.is_empty() || block.is_match(part)),
+            "Line breaks across block boundaries cannot be verified"
+        );
+    }
+    Ok(())
+}
+
+fn plain_line(lines: &[&str], index: usize) -> Result<Vec<Token>> {
+    let reference_link = regex!(r"^[ \t]*\[[^\]]+\]:");
+    let nested_fence = regex!(r"^[ \t]*(?:>[ \t]*|[-+*][ \t]+|[0-9]+[.)][ \t]+)+[`~]{3}");
+    let line = lines[index];
+    ensure!(
+        !nested_fence.is_match(line),
+        "Nested code fence cannot be verified"
+    );
+    ensure!(!reference_link.is_match(line), "Unsupported link syntax");
+    let parsed = inline(&normalize_separator(lines, index))?;
+    validate_line_breaks(line, &parsed)?;
+    Ok(parsed)
+}
+
 fn tokens(text: &str) -> Result<Vec<Token>> {
-    let reference_link = Regex::new(r"^[ \t]*\[[^\]]+\]:")?;
     ensure!(!text.contains('\0'), "NUL content cannot be verified");
-    let fence_pattern = Regex::new(r"^ {0,3}(`{3,}|~{3,})([^\n]*)$")?;
-    let nested_fence = Regex::new(r"^[ \t]*(?:>[ \t]*|[-+*][ \t]+|[0-9]+[.)][ \t]+)+[`~]{3}")?;
-    let block = Regex::new(r"^(?:[ \t]{4}|\t|[ \t]*(?:[|>#]|[-+*]\s|[0-9]+[.)]\s|`{3}|~{3}))")?;
-    let separator = Regex::new(r"^\|(?:[ \t]*:?-{3,}:?[ \t]*\|)+[ \t]*$")?;
-    let break_pattern = Regex::new(r"<br\s*/?>")?;
     let lines: Vec<_> = text.split_inclusive('\n').collect();
     let mut result = Vec::new();
     let mut index = 0;
     while index < lines.len() {
         let line = lines[index];
         let stripped = line.trim_end_matches('\n');
-        if let Some(fence) = fence_pattern.captures(stripped) {
-            let delimiter = &fence[1];
-            let character = delimiter.chars().next().unwrap();
-            let mut end = index + 1;
-            while end < lines.len() {
-                let closing = lines[end].trim();
-                if closing.len() >= delimiter.len()
-                    && closing.chars().all(|value| value == character)
-                {
-                    break;
-                }
-                end += 1;
-            }
-            ensure!(end < lines.len(), "Unclosed code fence cannot be verified");
-            result.push(Token::Fence(
-                fence[2].into(),
-                lines[index + 1..end].concat(),
-            ));
-            if lines[end].ends_with('\n') {
-                result.push(Token::Character('\n'));
-            }
-            index = end + 1;
+        if let Some(next) = fenced_line(&lines, index, &mut result)? {
+            index = next;
             continue;
         }
         if line.starts_with("    ")
@@ -223,48 +330,7 @@ fn tokens(text: &str) -> Result<Vec<Token>> {
                 result.push(Token::Character('\n'));
             }
         } else {
-            ensure!(
-                !nested_fence.is_match(line),
-                "Nested code fence cannot be verified"
-            );
-            ensure!(!reference_link.is_match(line), "Unsupported link syntax");
-            let normalized = if separator.is_match(stripped)
-                && index > 0
-                && lines[index - 1].starts_with('|')
-                && lines[index - 1].matches('|').count() == stripped.matches('|').count()
-                && (index < 2 || !lines[index - 2].starts_with('|'))
-            {
-                let count = stripped.matches('|').count() - 1;
-                format!(
-                    "|{}{}",
-                    "---|".repeat(count),
-                    if line.ends_with('\n') { "\n" } else { "" }
-                )
-            } else {
-                line.to_string()
-            };
-            let parsed = inline(&normalized)?;
-            if break_pattern.is_match(stripped) {
-                let mut visible: String = parsed
-                    .iter()
-                    .map(|token| match token {
-                        Token::Character(character) => *character,
-                        _ => '\u{fffc}',
-                    })
-                    .collect();
-                if line.ends_with('\n') {
-                    visible.pop();
-                }
-                if visible.contains('\n') {
-                    ensure!(
-                        !visible
-                            .split('\n')
-                            .any(|part| part.is_empty() || block.is_match(part)),
-                        "Line breaks across block boundaries cannot be verified"
-                    );
-                }
-            }
-            result.extend(parsed);
+            result.extend(plain_line(&lines, index)?);
         }
         index += 1;
     }
@@ -280,7 +346,7 @@ fn tokens(text: &str) -> Result<Vec<Token>> {
 pub fn assert_content_equal(expected: &str, actual: &str, context: &str) -> Result<()> {
     let wanted = tokens(expected)?;
     let received = tokens(actual)?;
-    let filename = Regex::new(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:py|zip)(?::[0-9]+)?$")?;
+    let filename = regex!(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:py|zip)(?::[0-9]+)?$");
     let boundary = |token: Option<&Token>| match token {
         Some(Token::Character(character)) => {
             !character.is_ascii_alphanumeric() && !"_./:@?&#%+~=-[]".contains(*character)

@@ -78,9 +78,10 @@ fn fixture(value: u8) -> Result<TempDir> {
         include_str!("../scripts/install-git-hooks"),
     )?;
     fs::write(root.join(".gitignore"), "/target/\n")?;
+    fs::write(root.join("clippy.toml"), include_str!("../clippy.toml"))?;
     fs::write(
         root.join("Cargo.toml"),
-        "[package]\nname='hook-fixture'\nversion='0.1.0'\nedition='2024'\n",
+        "[package]\nname='hook-fixture'\nversion='0.1.0'\nedition='2024'\n\n[lints.clippy]\nunwrap_used='deny'\nexpect_used='deny'\ntoo_many_lines='deny'\n",
     )?;
     fs::write(
         root.join("Cargo.lock"),
@@ -173,5 +174,86 @@ fn installation_preserves_existing_hooks_configuration() -> Result<()> {
     assert!(!install(root)?.status.success());
     let configured = successful_git(root, &["config", "--get", "core.hooksPath"])?;
     assert_eq!(String::from_utf8(configured.stdout)?.trim(), "custom-hooks");
+    Ok(())
+}
+
+#[test]
+fn clippy_failure_blocks_a_commit_even_when_unit_tests_would_pass() -> Result<()> {
+    for (method, lint) in [
+        ("unwrap()", "unwrap_used"),
+        ("expect(\"fixed test input\")", "expect_used"),
+    ] {
+        let directory = fixture(42)?;
+        let root = directory.path();
+        fs::write(
+            root.join("src/lib.rs"),
+            format!(
+                "pub fn value() -> u8 {{ \"42\".parse::<u8>().{method} }}\n\
+                 #[test]\nfn passing_test() {{ assert_eq!(value(), 42); }}\n"
+            ),
+        )?;
+        successful_git(root, &["add", "--all"])?;
+        let output = git(root, &["commit", "-m", "blocked by clippy"])?;
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("Clippy"));
+        assert!(String::from_utf8_lossy(&output.stderr).contains(lint));
+        assert!(
+            !git(root, &["rev-parse", "--verify", "HEAD"])?
+                .status
+                .success()
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn unwrap_and_expect_remain_allowed_inside_tests() -> Result<()> {
+    let directory = fixture(42)?;
+    let root = directory.path();
+    fs::write(
+        root.join("src/lib.rs"),
+        "pub fn value() -> u8 { 42 }\n\
+         #[test]\nfn test_helpers_are_allowed() {\n\
+         assert_eq!(value().checked_add(0).unwrap(), 42);\n\
+         assert_eq!(value().checked_add(0).expect(\"test value\"), 42);\n}\n",
+    )?;
+    successful_git(root, &["add", "--all"])?;
+    successful_git(root, &["commit", "-m", "test unwraps are allowed"])?;
+    Ok(())
+}
+
+fn limited_function_source(body_lines: usize) -> String {
+    let increments = body_lines - 2;
+    format!(
+        "pub fn value() -> u8 {{\nlet mut value = {}u8;\n{}value\n}}\n\
+         #[test]\nfn passing_test() {{ assert_eq!(value(), 42); }}\n",
+        42 - increments,
+        "value += 1;\n".repeat(increments)
+    )
+}
+
+#[test]
+fn function_line_limit_accepts_41_and_blocks_42_on_commit() -> Result<()> {
+    for (body_lines, accepted) in [(41, true), (42, false)] {
+        let directory = fixture(42)?;
+        let root = directory.path();
+        fs::write(root.join("src/lib.rs"), limited_function_source(body_lines))?;
+        successful_git(root, &["add", "--all"])?;
+        let output = git(root, &["commit", "-m", "function length boundary"])?;
+        assert_eq!(
+            output.status.success(),
+            accepted,
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if !accepted {
+            assert!(String::from_utf8_lossy(&output.stderr).contains("too_many_lines"));
+            assert!(
+                !git(root, &["rev-parse", "--verify", "HEAD"])?
+                    .status
+                    .success()
+            );
+        }
+    }
     Ok(())
 }

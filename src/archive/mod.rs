@@ -16,7 +16,7 @@ pub use writer::SafeWriter;
 use crate::common::digest;
 use anyhow::{Context, Result, ensure};
 use chrono::{SecondsFormat, Utc};
-use regex::Regex;
+use lazy_regex::regex;
 use serde_json::Value;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -145,7 +145,7 @@ pub fn mention(identifier: &str) -> Result<String> {
     Ok(format!("<mention url=\"{}\" />", page_url(identifier)?))
 }
 
-pub fn canonical(input: &str) -> String {
+fn canonical_fences(input: &str) -> String {
     let mut output = String::new();
     let lines: Vec<_> = input.split_inclusive('\n').collect();
     let mut index = 0;
@@ -182,16 +182,17 @@ pub fn canonical(input: &str) -> String {
         output.push_str(line);
         index += 1;
     }
-    output = Regex::new(r"(?s)<page\b[^>]*>.*?</page>")
-        .expect("static regex")
+    output
+}
+
+pub fn canonical(input: &str) -> String {
+    let mut output = canonical_fences(input);
+    output = regex!(r"(?s)<page\b[^>]*>.*?</page>")
         .replace_all(&output, "")
         .into_owned();
-    output = Regex::new(r"<p\s*/>")
-        .expect("static regex")
-        .replace_all(&output, "")
-        .into_owned();
+    output = regex!(r"<p\s*/>").replace_all(&output, "").into_owned();
     let visible = knowledge::mask_literals(&output, true);
-    let breaks = Regex::new(r"<br\s*/?>").expect("static regex");
+    let breaks = regex!(r"<br\s*/?>");
     let mut replaced = String::new();
     let mut cursor = 0;
     for found in breaks.find_iter(&visible) {
@@ -205,16 +206,17 @@ pub fn canonical(input: &str) -> String {
         .replace("</b>", "**")
         .replace("<code>", "`")
         .replace("</code>", "`");
-    output = Regex::new(r#"(?s)<mention\s+url="([^"]+)"\s*>.*?</mention>"#)
-        .expect("static regex")
+    canonical_links(&output)
+}
+
+fn canonical_links(input: &str) -> String {
+    let mut output = regex!(r#"(?s)<mention\s+url="([^"]+)"\s*>.*?</mention>"#)
+        .replace_all(input, "<mention url=\"$1\" />")
+        .into_owned();
+    output = regex!(r"\[[^\]\n]*\]\((https://(?:app\.)?notion\.(?:com|so)/[^)]+)\)")
         .replace_all(&output, "<mention url=\"$1\" />")
         .into_owned();
-    output = Regex::new(r"\[[^\]\n]*\]\((https://(?:app\.)?notion\.(?:com|so)/[^)]+)\)")
-        .expect("static regex")
-        .replace_all(&output, "<mention url=\"$1\" />")
-        .into_owned();
-    output = Regex::new(r"\[(https?://[^\]\s]+)\]\((https?://[^)]+)\)")
-        .expect("static regex")
+    output = regex!(r"\[(https?://[^\]\s]+)\]\((https?://[^)]+)\)")
         .replace_all(&output, |captures: &regex::Captures<'_>| {
             if captures[1] == captures[2] {
                 captures[1].to_string()
@@ -223,15 +225,12 @@ pub fn canonical(input: &str) -> String {
             }
         })
         .into_owned();
-    output =
-        Regex::new(r"https://(?:www\.)?(?:app\.)?notion\.(?:so|com)/(?:p/)?([0-9a-f-]{32,36})")
-            .expect("static regex")
-            .replace_all(&output, |captures: &regex::Captures<'_>| {
-                page_url(&captures[1]).unwrap_or_else(|_| captures[0].to_string())
-            })
-            .into_owned();
-    output = Regex::new(r"\\([\\`*_{}\[\]()#+\-.!<>:|])")
-        .expect("static regex")
+    output = regex!(r"https://(?:www\.)?(?:app\.)?notion\.(?:so|com)/(?:p/)?([0-9a-f-]{32,36})")
+        .replace_all(&output, |captures: &regex::Captures<'_>| {
+            page_url(&captures[1]).unwrap_or_else(|_| captures[0].to_string())
+        })
+        .into_owned();
+    output = regex!(r"\\([\\`*_{}\[\]()#+\-.!<>:|])")
         .replace_all(&output, "$1")
         .into_owned();
     output.split_whitespace().collect::<Vec<_>>().join(" ")
@@ -273,27 +272,31 @@ pub(crate) fn decode_tool(
         {
             value = structured.clone();
         } else if value.get("text").is_none() && value["content"].is_array() {
-            let parts = value["content"]
-                .as_array()
-                .context("Invalid tool content")?;
-            ensure!(
-                !parts.is_empty()
-                    && parts
-                        .iter()
-                        .all(|part| part["type"] == "text" && part["text"].is_string()),
-                "Ambiguous Notion response"
-            );
-            let mut content = String::new();
-            for part in parts {
-                inspect(part)?;
-                content.push_str(text(part, "text")?);
-            }
-            value = Value::String(content);
+            value = tool_text(&value, &mut inspect)?;
         } else {
             return Ok(value);
         }
     }
     anyhow::bail!("Notion response nesting limit")
+}
+
+fn tool_text(value: &Value, inspect: &mut impl FnMut(&Value) -> Result<()>) -> Result<Value> {
+    let parts = value["content"]
+        .as_array()
+        .context("Invalid tool content")?;
+    ensure!(
+        !parts.is_empty()
+            && parts
+                .iter()
+                .all(|part| part["type"] == "text" && part["text"].is_string()),
+        "Ambiguous Notion response"
+    );
+    let mut content = String::new();
+    for part in parts {
+        inspect(part)?;
+        content.push_str(text(part, "text")?);
+    }
+    Ok(Value::String(content))
 }
 
 pub(crate) fn unwrap_tool(value: Value) -> Result<Value> {

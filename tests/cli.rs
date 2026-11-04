@@ -1,6 +1,7 @@
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::fs;
+use std::path::Path;
 use std::process::Command;
 
 fn binary() -> Command {
@@ -25,8 +26,7 @@ fn help_runs_without_configuration() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn imports_config_without_copying_runtime_state_or_python_dependency() -> Result<()> {
+fn import_fixture() -> Result<tempfile::TempDir> {
     let directory = tempfile::tempdir()?;
     let source = directory.path().join("original");
     let destination = directory.path().join("rust");
@@ -46,6 +46,38 @@ fn imports_config_without_copying_runtime_state_or_python_dependency() -> Result
         source.join("data/state.json"),
         br#"{"original":"preserve"}"#,
     )?;
+    Ok(directory)
+}
+
+fn verify_import(destination: &Path) -> Result<()> {
+    let config: Value = serde_json::from_slice(&fs::read(destination.join("config.json"))?)?;
+    assert!(config.get("codex_command").is_none());
+    assert_eq!(config["workspace"], json!(destination));
+    assert_eq!(config["daemon_socket"], "/tmp/test-notion-no-service.sock");
+    assert!(
+        config["project_context"]["helper_command"][0]
+            .as_str()
+            .is_some_and(|command| command.ends_with("target/release/notion-program"))
+    );
+    let check = binary()
+        .arg("--config")
+        .arg(destination.join("config.json"))
+        .arg("check-config")
+        .output()?;
+    assert!(
+        check.status.success(),
+        "{}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+    Ok(())
+}
+
+#[test]
+fn imports_config_without_copying_runtime_state_or_python_dependency() -> Result<()> {
+    let directory = import_fixture()?;
+    let source = directory.path().join("original");
+    let destination = directory.path().join("rust");
+    let original_bytes = fs::read(source.join("config.json"))?;
     let result = binary()
         .arg("import-config")
         .arg("--source")
@@ -60,26 +92,7 @@ fn imports_config_without_copying_runtime_state_or_python_dependency() -> Result
     );
     assert_eq!(fs::read(source.join("config.json"))?, original_bytes);
     assert!(!destination.join("data").exists());
-    let config: Value = serde_json::from_slice(&fs::read(destination.join("config.json"))?)?;
-    assert!(config.get("codex_command").is_none());
-    assert_eq!(config["workspace"], json!(destination));
-    assert_eq!(config["daemon_socket"], "/tmp/test-notion-no-service.sock");
-    assert!(
-        config["project_context"]["helper_command"][0]
-            .as_str()
-            .unwrap()
-            .ends_with("target/release/notion-program")
-    );
-    let check = binary()
-        .arg("--config")
-        .arg(destination.join("config.json"))
-        .arg("check-config")
-        .output()?;
-    assert!(
-        check.status.success(),
-        "{}",
-        String::from_utf8_lossy(&check.stderr)
-    );
+    verify_import(&destination)?;
     let second = binary()
         .arg("import-config")
         .arg("--source")

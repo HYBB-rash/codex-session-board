@@ -40,14 +40,7 @@ impl<Output: Write> Server<Output> {
     }
 
     fn handle(&mut self, request: Value) -> Result<Option<i32>> {
-        self.seen.push(request.clone());
-        if truthy(&self.options["log"]) {
-            let path = string(&self.options["log"])?;
-            let mut log = OpenOptions::new().create(true).append(true).open(path)?;
-            let mut bytes = serde_json::to_vec(&request)?;
-            bytes.push(b'\n');
-            log.write_all(&bytes)?;
-        }
+        self.record_request(&request)?;
         let method = string(&request["method"])?;
         let params = request.get("params").cloned().unwrap_or_else(|| json!({}));
         match method {
@@ -59,37 +52,93 @@ impl<Output: Write> Server<Output> {
                     json!({"code": -32000, "message": "Not initialized"}),
                 )?;
             }
-            "test/history" => self.reply(&request, json!(self.seen))?,
-            "test/echo" => self.reply(&request, params)?,
-            "test/null" => self.reply(&request, Value::Null)?,
-            "test/scalar" => self.reply(&request, json!(42))?,
+            _ if method.starts_with("test/") => return self.test_message(method, &request, params),
+            _ if method.starts_with("thread/") => self.thread_message(method, &request, &params)?,
+            "turn/start" => self.start_turn(&request, &params)?,
+            "mcpServer/tool/call" => return self.notion_tool(&request, &params),
+            "tools/call" => return self.desktop_tool(&request, &params),
+            _ => self.unknown_method(&request)?,
+        }
+        Ok(None)
+    }
+
+    fn record_request(&mut self, request: &Value) -> Result<()> {
+        self.seen.push(request.clone());
+        if truthy(&self.options["log"]) {
+            let path = string(&self.options["log"])?;
+            let mut log = OpenOptions::new().create(true).append(true).open(path)?;
+            let mut bytes = serde_json::to_vec(request)?;
+            bytes.push(b'\n');
+            log.write_all(&bytes)?;
+        }
+        Ok(())
+    }
+
+    fn unknown_method(&mut self, request: &Value) -> Result<()> {
+        self.error(
+            request,
+            json!({"code": -32601, "message": "unknown method"}),
+        )
+    }
+
+    fn test_result(&self, method: &str, params: Value) -> Option<Value> {
+        match method {
+            "test/history" => Some(json!(self.seen)),
+            "test/echo" => Some(params),
+            "test/null" => Some(Value::Null),
+            "test/scalar" => Some(json!(42)),
+            _ => None,
+        }
+    }
+
+    fn test_message(
+        &mut self,
+        method: &str,
+        request: &Value,
+        params: Value,
+    ) -> Result<Option<i32>> {
+        if let Some(result) = self.test_result(method, params) {
+            self.reply(request, result)?;
+            return Ok(None);
+        }
+        match method {
             "test/interleaved" => {
                 self.emit(&json!({"id": "unrelated", "result": {"keep": true}}))?;
                 self.note("unrelated/notice", json!({"keep": true}))?;
-                self.reply(&request, json!({"ok": true}))?;
+                self.reply(request, json!({"ok": true}))?;
             }
-            "test/chunks" => {
-                let mut packet = serde_json::to_vec(&json!({
-                    "id": request["id"], "result": {"text": "你好🙂"}
-                }))?;
-                packet.extend_from_slice(b"\r\n");
-                self.output.write_all(b"\n\r\n")?;
-                self.output.flush()?;
-                for byte in packet {
-                    self.output.write_all(&[byte])?;
-                    self.output.flush()?;
-                }
-            }
+            "test/chunks" => self.test_chunks(request)?,
             "test/attention" => {
                 self.emit(&json!({
                     "id": request["id"], "method": "item/tool/requestUserInput", "params": {}
                 }))?;
-                self.reply(&request, json!({}))?;
+                self.reply(request, json!({}))?;
             }
             "test/error" => self.error(
-                &request,
+                request,
                 json!({"code": -32603, "message": "private-secret", "data": {"keep": true}}),
             )?,
+            _ => return self.test_transport(method, request),
+        }
+        Ok(None)
+    }
+
+    fn test_chunks(&mut self, request: &Value) -> Result<()> {
+        let mut packet = serde_json::to_vec(&json!({
+            "id": request["id"], "result": {"text": "你好🙂"}
+        }))?;
+        packet.extend_from_slice(b"\r\n");
+        self.output.write_all(b"\n\r\n")?;
+        self.output.flush()?;
+        for byte in packet {
+            self.output.write_all(&[byte])?;
+            self.output.flush()?;
+        }
+        Ok(())
+    }
+
+    fn test_transport(&mut self, method: &str, request: &Value) -> Result<Option<i32>> {
+        match method {
             "test/partial" => {
                 self.output.write_all(b"{\"id\":")?;
                 self.output.flush()?;
@@ -106,65 +155,74 @@ impl<Output: Write> Server<Output> {
             }
             "test/exit" => return Ok(Some(7)),
             "test/block" => {
-                self.reply(&request, json!({}))?;
+                self.reply(request, json!({}))?;
                 std::thread::sleep(Duration::from_secs(30));
             }
-            "thread/start" => {
-                self.reply(&request, json!({"thread": {
-                    "id": self.options.get("thread_id").cloned().unwrap_or_else(|| json!(THREAD)),
-                    "ephemeral": params["ephemeral"], "cwd": params["cwd"], "custom": 1
-                }}))?;
-            }
-            "thread/name/set" => {
-                if truthy(&self.options["title_error"]) {
-                    self.error(&request, json!({"code": -9, "message": "name rejected"}))?;
-                } else {
-                    self.reply(&request, json!({}))?;
-                }
-            }
-            "thread/resume" => {
-                if truthy(&self.options["active_writer"]) {
-                    self.error(
-                        &request,
-                        json!({
-                            "code": -32600, "message": "thread already has an active writer"
-                        }),
-                    )?;
-                } else {
-                    self.reply(
-                        &request,
-                        json!({"thread": {
-                            "id": params["threadId"], "custom": 2
-                        }}),
-                    )?;
-                }
-            }
-            "thread/read" => {
-                let thread = self.options["native"]
-                    .get("thread")
-                    .cloned()
-                    .unwrap_or_else(|| {
-                        json!({
-                            "id": params["threadId"], "status": {"type": "idle", "activeFlags": []}
-                        })
-                    });
-                self.reply(&request, json!({"thread": thread}))?;
-            }
-            "thread/turns/list" => {
-                self.reply(&request, json!({
-                    "data": self.options["native"].get("turns").cloned().unwrap_or_else(|| json!([])),
-                    "nextCursor": null
-                }))?;
-            }
-            "turn/start" => self.start_turn(&request, &params)?,
-            "mcpServer/tool/call" => return self.notion_tool(&request, &params),
-            "tools/call" => return self.desktop_tool(&request, &params),
-            _ => self.error(
-                &request,
-                json!({"code": -32601, "message": "unknown method"}),
-            )?,
+            _ => self.unknown_method(request)?,
         }
         Ok(None)
+    }
+
+    fn thread_message(&mut self, method: &str, request: &Value, params: &Value) -> Result<()> {
+        match method {
+            "thread/start" => self.thread_start(request, params),
+            "thread/name/set" => self.thread_name(request),
+            "thread/resume" => self.thread_resume(request, params),
+            "thread/read" => self.thread_read(request, params),
+            "thread/turns/list" => self.reply(request, json!({
+                "data": self.options["native"].get("turns").cloned().unwrap_or_else(|| json!([])),
+                "nextCursor": null
+            })),
+            _ => self.unknown_method(request),
+        }
+    }
+
+    fn thread_start(&mut self, request: &Value, params: &Value) -> Result<()> {
+        self.reply(
+            request,
+            json!({"thread": {
+                "id": self.options.get("thread_id").cloned().unwrap_or_else(|| json!(THREAD)),
+                "ephemeral": params["ephemeral"], "cwd": params["cwd"], "custom": 1
+            }}),
+        )
+    }
+
+    fn thread_name(&mut self, request: &Value) -> Result<()> {
+        if truthy(&self.options["title_error"]) {
+            self.error(request, json!({"code": -9, "message": "name rejected"}))
+        } else {
+            self.reply(request, json!({}))
+        }
+    }
+
+    fn thread_resume(&mut self, request: &Value, params: &Value) -> Result<()> {
+        if truthy(&self.options["active_writer"]) {
+            self.error(
+                request,
+                json!({
+                    "code": -32600, "message": "thread already has an active writer"
+                }),
+            )
+        } else {
+            self.reply(
+                request,
+                json!({"thread": {
+                    "id": params["threadId"], "custom": 2
+                }}),
+            )
+        }
+    }
+
+    fn thread_read(&mut self, request: &Value, params: &Value) -> Result<()> {
+        let thread = self.options["native"]
+            .get("thread")
+            .cloned()
+            .unwrap_or_else(|| {
+                json!({
+                    "id": params["threadId"], "status": {"type": "idle", "activeFlags": []}
+                })
+            });
+        self.reply(request, json!({"thread": thread}))
     }
 
     fn initialize(&mut self, request: &Value) -> Result<()> {
@@ -215,6 +273,16 @@ impl<Output: Write> Server<Output> {
         if mode == "active" {
             return Ok(());
         }
+        self.turn_output(request, params, &turn, &mode)
+    }
+
+    fn turn_output(
+        &mut self,
+        request: &Value,
+        params: &Value,
+        turn: &Value,
+        mode: &str,
+    ) -> Result<()> {
         self.note(
             "item/agentMessage/delta",
             json!({
@@ -228,6 +296,16 @@ impl<Output: Write> Server<Output> {
             }))?;
             return Ok(());
         }
+        self.finish_turn(request, params, turn, mode)
+    }
+
+    fn finish_turn(
+        &mut self,
+        request: &Value,
+        params: &Value,
+        turn: &Value,
+        mode: &str,
+    ) -> Result<()> {
         self.note(
             "item/completed",
             json!({
@@ -238,8 +316,8 @@ impl<Output: Write> Server<Output> {
             }),
         )?;
         let mut done = turn.clone();
-        done["status"] = json!(if matches!(mode.as_str(), "failed" | "interrupted") {
-            mode.as_str()
+        done["status"] = json!(if matches!(mode, "failed" | "interrupted") {
+            mode
         } else {
             "completed"
         });
@@ -264,25 +342,41 @@ impl<Output: Write> Server<Output> {
             self.error(request, self.options["rpc_error"].clone())?;
             return Ok(None);
         }
-        let result = match role {
+        let result = self.notion_result(role, args)?;
+        if self.options["disconnect_role"] == role {
+            return Ok(Some(0));
+        }
+        self.reply(
+            request,
+            json!({
+                "content": [{"type": "text", "text": serde_json::to_string(&result)?}]
+            }),
+        )?;
+        Ok(None)
+    }
+
+    fn notion_fetch(&self, args: &Value) -> Result<Value> {
+        let identifier = string(&args["id"])?;
+        Ok(if identifier.starts_with("collection://") {
+            json!({"text": self.options.get("schema").cloned().unwrap_or_else(|| json!(SCHEMA))})
+        } else if identifier.starts_with("notion://docs/") {
+            json!({"text": "Notion Markdown specification"})
+        } else {
+            self.options
+                .get("page")
+                .cloned()
+                .unwrap_or_else(|| json!({"text": ""}))
+        })
+    }
+
+    fn notion_result(&mut self, role: &str, args: &Value) -> Result<Value> {
+        Ok(match role {
             "access" => self
                 .options
                 .get("access")
                 .cloned()
                 .unwrap_or_else(|| json!({"tools": {}})),
-            "fetch" => {
-                let identifier = string(&args["id"])?;
-                if identifier.starts_with("collection://") {
-                    json!({"text": self.options.get("schema").cloned().unwrap_or_else(|| json!(SCHEMA))})
-                } else if identifier.starts_with("notion://docs/") {
-                    json!({"text": "Notion Markdown specification"})
-                } else {
-                    self.options
-                        .get("page")
-                        .cloned()
-                        .unwrap_or_else(|| json!({"text": ""}))
-                }
-            }
+            "fetch" => self.notion_fetch(args)?,
             "query" => {
                 let pages = self
                     .options
@@ -298,36 +392,13 @@ impl<Output: Write> Server<Output> {
                 .get("write_result")
                 .cloned()
                 .unwrap_or_else(|| json!({"success": true})),
-        };
-        if self.options["disconnect_role"] == role {
-            return Ok(Some(0));
-        }
-        self.reply(
-            request,
-            json!({
-                "content": [{"type": "text", "text": serde_json::to_string(&result)?}]
-            }),
-        )?;
-        Ok(None)
+        })
     }
 
     fn desktop_tool(&mut self, request: &Value, params: &Value) -> Result<Option<i32>> {
         require_jsonrpc(request)?;
         let result = if params["name"] == "read_thread" {
-            let pages = self
-                .options
-                .get("desktop_pages")
-                .cloned()
-                .unwrap_or_else(|| {
-                    json!([self
-                        .options
-                        .get("desktop")
-                        .cloned()
-                        .unwrap_or_else(|| json!({}))])
-                });
-            let result = page_at(&pages, self.desktop_index)?;
-            self.desktop_index += 1;
-            result
+            self.desktop_read_result()?
         } else {
             if truthy(&self.options["send_exit"]) {
                 return Ok(Some(0));
@@ -344,6 +415,23 @@ impl<Output: Write> Server<Output> {
             }),
         )?;
         Ok(None)
+    }
+
+    fn desktop_read_result(&mut self) -> Result<Value> {
+        let pages = self
+            .options
+            .get("desktop_pages")
+            .cloned()
+            .unwrap_or_else(|| {
+                json!([self
+                    .options
+                    .get("desktop")
+                    .cloned()
+                    .unwrap_or_else(|| json!({}))])
+            });
+        let result = page_at(&pages, self.desktop_index)?;
+        self.desktop_index += 1;
+        Ok(result)
     }
 }
 
