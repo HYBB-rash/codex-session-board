@@ -3,6 +3,7 @@ set -euo pipefail
 
 project_root="$(git rev-parse --show-toplevel)"
 cd -- "$project_root"
+commit_index="$(git rev-parse --path-format=absolute --git-path index)"
 snapshot="$(mktemp -d "${TMPDIR:-/tmp}/notion-pre-commit.XXXXXX")"
 snapshot="$(cd -- "$snapshot" && pwd)"
 trap 'rm -rf -- "$snapshot"' EXIT
@@ -17,10 +18,10 @@ if [[ "$CARGO_TARGET_DIR" != /* ]]; then
     export CARGO_TARGET_DIR="$project_root/$CARGO_TARGET_DIR"
 fi
 cd -- "$snapshot"
-printf '%s\n' '[提交前检查] 正在检查暂存区中的 Rust 普通注释……'
-if ! cargo run --quiet --locked --offline --example project_check -- \
-    --comments-only --baseline-repository "$project_root"; then
-    printf '%s\n' '[提交已阻止] 普通注释检查未通过或无法运行。先改善代码表达并用测试验证，再重新暂存。' >&2
+printf '%s\n' '[提交前检查] 正在运行统一提交前检查……'
+if ! GIT_INDEX_FILE="$commit_index" ./scripts/check --pre-commit \
+    --baseline-repository "$project_root"; then
+    printf '%s\n' '[提交已阻止] 项目提交前检查未通过或无法运行。按检查建议处理后重新暂存，再次提交。' >&2
     exit 1
 fi
 printf '%s\n' '[提交前检查] 正在运行 Clippy……'

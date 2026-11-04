@@ -2,8 +2,42 @@
 set -euo pipefail
 project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd -- "$project_root"
+check_arguments=("$@")
+check_repository=""
+previous_argument=""
+check_staged=false
+for argument in "$@"; do
+    if [[ "$previous_argument" == "--baseline-repository" ]]; then
+        check_repository="$argument"
+    fi
+    case "$argument" in
+        --pre-commit) check_staged=true ;;
+        --baseline-repository=*) check_repository="${argument#*=}" ;;
+    esac
+    previous_argument="$argument"
+done
+if "$check_staged"; then
+    if [[ -z "$check_repository" ]]; then
+        check_repository="$(git rev-parse --show-toplevel)"
+        check_arguments+=(--baseline-repository "$check_repository")
+    fi
+    check_index="$(git -C "$check_repository" rev-parse --path-format=absolute --git-path index)"
+    check_snapshot="$(mktemp -d "${TMPDIR:-/tmp}/notion-project-check.XXXXXX")"
+    trap 'rm -rf -- "$check_snapshot"' EXIT
+    git -C "$check_repository" checkout-index --all --prefix="$check_snapshot/"
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$project_root/target}"
+    if [[ "$CARGO_TARGET_DIR" != /* ]]; then
+        export CARGO_TARGET_DIR="$project_root/$CARGO_TARGET_DIR"
+    fi
+    git_local_variables="$(git -C "$check_repository" rev-parse --local-env-vars)"
+    while IFS= read -r variable; do
+        unset "$variable"
+    done <<< "$git_local_variables"
+    export GIT_INDEX_FILE="$check_index"
+    cd -- "$check_snapshot"
+fi
 check_status=0
-cargo run --quiet --offline --locked --example project_check -- "$@" || check_status=$?
+cargo run --quiet --offline --locked --example project_check -- "${check_arguments[@]}" || check_status=$?
 if (( check_status > 2 )); then
     printf '%s\n' '[检查错误] 检查器未能运行完成。请先修复上方 Cargo 或工具链错误，再重新运行。' >&2
     exit 2

@@ -5,35 +5,6 @@ use std::path::Path;
 use std::process::{Command, Output};
 use tempfile::TempDir;
 
-const CHECK_ADAPTER: &str = r#"mod comment_policy;
-
-use anyhow::{Context, Result, ensure};
-use std::path::PathBuf;
-
-fn repository_argument() -> Result<PathBuf> {
-    let mut arguments = std::env::args().skip(1);
-    ensure!(arguments.next().as_deref() == Some("--comments-only"), "Missing comments-only flag");
-    ensure!(arguments.next().as_deref() == Some("--baseline-repository"), "Missing repository flag");
-    let repository = arguments.next().context("Missing baseline repository")?;
-    ensure!(arguments.next().is_none(), "Unexpected checker arguments");
-    Ok(PathBuf::from(repository))
-}
-
-fn main() -> Result<()> {
-    let repository = repository_argument()?;
-    let root = std::env::current_dir()?;
-    let rules: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(root.join("project-rules.json"))?)?;
-    let baseline = rules["rust_comments"]["baseline_commit"]
-        .as_str()
-        .context("Missing comment baseline")?;
-    if !comment_policy::check(&root, &repository, baseline)? {
-        std::process::exit(1);
-    }
-    Ok(())
-}
-"#;
-
 const COMMENT_SYMBOLS_SOURCE: &str = r####"
 /** Documentation may contain ordinary comment symbols. */
 pub fn string_symbols() -> &'static str {
@@ -130,8 +101,30 @@ fn fixture_with_comments(value: u8, comments: &str) -> Result<TempDir> {
     )?;
     let baseline = successful_git(root, &["rev-parse", "HEAD"])?;
     let baseline = String::from_utf8(baseline.stdout)?;
-    let rules = serde_json::json!({"rust_comments":{"baseline_commit":baseline.trim()}});
+    activate_checks(root, baseline.trim())?;
+    Ok(directory)
+}
+
+fn activate_checks(root: &Path, baseline: &str) -> Result<()> {
+    let rules = serde_json::json!({
+        "schema_version": 1,
+        "versioning": {"baseline": "0.1.0", "feature_releases": []},
+        "rust_comments": {"baseline_commit": baseline}
+    });
     fs::write(root.join("project-rules.json"), serde_json::to_vec(&rules)?)?;
+    successful_cargo(
+        root,
+        &[
+            "run",
+            "--quiet",
+            "--locked",
+            "--offline",
+            "--example",
+            "project_check",
+            "--",
+            "--prepare-commit",
+        ],
+    )?;
     let installed = install(root)?;
     ensure!(
         installed.status.success(),
@@ -139,7 +132,7 @@ fn fixture_with_comments(value: u8, comments: &str) -> Result<TempDir> {
         String::from_utf8_lossy(&installed.stderr)
     );
     successful_git(root, &["add", "--all"])?;
-    Ok(directory)
+    Ok(())
 }
 
 fn fixture_files(root: &Path) -> Result<()> {
@@ -161,18 +154,24 @@ fn fixture_files(root: &Path) -> Result<()> {
     fs::write(root.join(".gitignore"), "/target/\n")?;
     fs::write(root.join("clippy.toml"), include_str!("../clippy.toml"))?;
     fixture_manifest(root)?;
-    copy_comment_policy(root)?;
-    fs::write(root.join("scripts/project_check.rs"), CHECK_ADAPTER)?;
+    copy_checker(root)?;
+    fs::write(
+        root.join("project-rules.json"),
+        r#"{"schema_version":1,"versioning":{"baseline":"0.1.0","feature_releases":[]}}"#,
+    )?;
     Ok(())
 }
 
 fn fixture_manifest(root: &Path) -> Result<()> {
     fs::write(
         root.join("Cargo.toml"),
-        "[package]\nname='hook-fixture'\nversion='0.1.0'\nedition='2024'\n\
+        "[package]\nname='hook-fixture'\nversion='0.1.1'\nedition='2024'\n\
          \n[[example]]\nname='project_check'\npath='scripts/project_check.rs'\ntest=false\n\
          \n[lints.clippy]\nunwrap_used='deny'\nexpect_used='deny'\ntoo_many_lines='deny'\n\
+         \n[lints.rust]\nunsafe_code='forbid'\n\
          \n[dependencies]\nanyhow='1'\nserde_json='1'\nra-ap-rustc_lexer='=0.183.0'\n\
+         clap={version='4',features=['derive']}\nregex='1'\ntoml='=1.1.2'\n\
+         serde={version='1',features=['derive']}\n\
          \n[dev-dependencies]\ntempfile='3'\n",
     )?;
     fs::copy(
@@ -182,23 +181,19 @@ fn fixture_manifest(root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn copy_comment_policy(root: &Path) -> Result<()> {
+fn copy_checker(root: &Path) -> Result<()> {
     let scripts = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts");
     for entry in fs::read_dir(scripts)? {
         let entry = entry?;
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if name == "comment_policy.rs"
-            || name == "comment_policy"
-            || name.starts_with("comment_policy_")
-        {
+        if name.ends_with(".rs") || entry.path().is_dir() {
             copy_fixture_path(&entry.path(), &root.join("scripts").join(name.as_ref()))?;
         }
     }
-    ensure!(
-        root.join("scripts/comment_policy.rs").is_file(),
-        "Missing real comment policy checker"
-    );
+    let check = root.join("scripts/check");
+    fs::write(&check, include_str!("../scripts/check"))?;
+    fs::set_permissions(check, fs::Permissions::from_mode(0o755))?;
     Ok(())
 }
 
@@ -505,5 +500,28 @@ fn duplicating_a_baseline_comment_is_rejected() -> Result<()> {
     successful_git(root, &["add", "--all"])?;
     let output = blocked_commit(root, "baseline comments have a fixed multiplicity")?;
     assert_comment_rejected(&output);
+    Ok(())
+}
+
+#[test]
+fn explicit_pre_commit_mode_ignores_unstaged_rust_and_manifest_failures() -> Result<()> {
+    let directory = fixture(42)?;
+    let root = directory.path();
+    fs::write(root.join("src/lib.rs"), "invalid Rust source")?;
+    fs::write(root.join("Cargo.toml"), "invalid TOML manifest")?;
+    let output = Command::new("bash")
+        .arg(root.join("scripts/check"))
+        .arg("--pre-commit")
+        .current_dir(root)
+        .env("CARGO_TARGET_DIR", root.join("target"))
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .output()?;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("暂存区版本 v0.1.2"));
     Ok(())
 }
