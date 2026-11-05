@@ -398,24 +398,43 @@ impl<N: Notion> Executor<N> {
     fn indexed_topic(page: &Value, child: &Value) -> Result<Option<Value>> {
         let content = text(page, "content")?;
         let child_url = page_url(text(child, "id")?)?;
-        let entry = content
-            .find(&child_url)
-            .map(|offset| content[offset..].chars().take(1000).collect::<String>())
-            .unwrap_or_default();
-        let pattern = Regex::new(r"专题键[：:]\s*([a-z0-9-]+)")?;
-        let Some(key) = pattern.captures(&entry) else {
+        let Some(entry) = Self::topic_directory_entry(content, &child_url)? else {
             return Ok(None);
         };
-        let condition = Regex::new(r"阅读条件[：:]\s*([^\n]+)")?
-            .captures(&entry)
+        let pattern = Regex::new(r"(?m)^专题键[：:][ \t]*([a-z0-9-]+)[ \t]*\r?$")?;
+        let keys: Vec<_> = pattern.captures_iter(entry).collect();
+        ensure!(keys.len() == 1, "Expected one topic key for {child_url}");
+        let condition = Regex::new(r"(?m)^阅读条件[：:][ \t]*([^\r\n]+)")?
+            .captures(entry)
             .map(|capture| capture[1].to_string())
             .unwrap_or_else(|| "参见摘要目录".to_string());
         let mut topic = child.clone();
         merge(
             &mut topic,
-            json!({"key":key[1].to_string(),"when_to_read":condition}),
+            json!({"key":keys[0][1].to_string(),"when_to_read":condition}),
         );
         Ok(Some(topic))
+    }
+
+    fn topic_directory_entry<'a>(content: &'a str, child_url: &str) -> Result<Option<&'a str>> {
+        let boundaries = Regex::new(r"(?m)^专题[：:][^\r\n]*|^#{1,6} |^<page\b")?;
+        let sections: Vec<_> = boundaries.find_iter(content).collect();
+        let quoted_url = format!("\"{child_url}\"");
+        let mut entry = None;
+        for (index, section) in sections.iter().enumerate() {
+            if !section.as_str().starts_with("专题") || !section.as_str().contains(&quoted_url) {
+                continue;
+            }
+            ensure!(
+                entry.is_none(),
+                "Duplicate topic directory entry for {child_url}"
+            );
+            let end = sections
+                .get(index + 1)
+                .map_or(content.len(), |next| next.start());
+            entry = Some(&content[section.end()..end]);
+        }
+        Ok(entry)
     }
 
     fn context_topic(

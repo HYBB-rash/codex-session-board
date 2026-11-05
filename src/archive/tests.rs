@@ -303,6 +303,159 @@ fn fixture(directory: &std::path::Path) -> Result<(Executor<FakeNotion>, String,
     Ok((Executor::new(config, notion, None)?, task, project))
 }
 
+fn indexed_context_fixture(
+    directory: &std::path::Path,
+    template: &str,
+) -> Result<(Executor<FakeNotion>, String)> {
+    let (mut executor, task, project) = fixture(directory)?;
+    let (context, _) = executor.ensure_context(&project, false)?;
+    let context_id = context["id"].as_str().context("Missing context ID")?;
+    let mut content = template.to_string();
+    for key in ["first", "second"] {
+        let topic = executor.notion.add(
+            &format!("归属标记：notion-program/topic/{project}/{key}"),
+            Some(context_id),
+            key,
+            json!({}),
+            None,
+        );
+        content = content.replace(&format!("${key}"), &mention(&topic)?);
+    }
+    executor
+        .notion
+        .pages
+        .get_mut(context_id)
+        .context("Missing context page")?["content"] = json!(format!(
+        "归属标记：notion-program/context/{project}\n\n{content}"
+    ));
+    Ok((executor, task))
+}
+
+#[test]
+fn context_directory_ignores_earlier_summary_references() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let template = "摘要引用：$second\n\n# 按需专题\n\n专题：$first\n\n阅读条件：读取第一项\n\n专题键：first\n\n专题：$second\n\n阅读条件：读取第二项\n\n专题键：second";
+    let (mut executor, task) = indexed_context_fixture(directory.path(), template)?;
+    let context = executor.context_for_task(&task)?;
+    let topics = context["topics"].as_array().context("Missing topics")?;
+    assert_eq!(topics.len(), 2);
+    assert!(
+        topics
+            .iter()
+            .any(|topic| topic["key"] == "first" && topic["when_to_read"] == "读取第一项")
+    );
+    assert!(
+        topics
+            .iter()
+            .any(|topic| topic["key"] == "second" && topic["when_to_read"] == "读取第二项")
+    );
+    Ok(())
+}
+
+#[test]
+fn context_directory_reads_long_entries_without_a_character_limit() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let condition = "详细阅读条件。".repeat(200);
+    let template = format!(
+        "专题：$first\n\n阅读条件：{condition}\n\n专题键：first\n\n专题：$second\n\n专题键：second"
+    );
+    let (mut executor, task) = indexed_context_fixture(directory.path(), &template)?;
+    let context = executor.context_for_task(&task)?;
+    assert_eq!(context["topics"].as_array().map(Vec::len), Some(2));
+    assert!(
+        context["topics"]
+            .as_array()
+            .context("Missing topics")?
+            .iter()
+            .any(|topic| topic["key"] == "first" && topic["when_to_read"] == condition)
+    );
+    Ok(())
+}
+
+#[test]
+fn context_directory_rejects_a_missing_key_without_borrowing_the_next_entry() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let template = "专题：$first\n\n阅读条件：缺少键\n\n专题：$second\n\n专题键：second";
+    let (mut executor, task) = indexed_context_fixture(directory.path(), template)?;
+    let error = executor
+        .context_for_task(&task)
+        .err()
+        .context("Expected error")?;
+    assert!(error.to_string().contains("Expected one topic key"));
+    Ok(())
+}
+
+#[test]
+fn context_directory_still_rejects_genuinely_duplicate_keys() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let template = "专题：$first\n\n专题键：same\n\n专题：$second\n\n专题键：same";
+    let (mut executor, task) = indexed_context_fixture(directory.path(), template)?;
+    let error = executor
+        .context_for_task(&task)
+        .err()
+        .context("Expected error")?;
+    assert!(error.to_string().contains("Duplicate topic keys"));
+    Ok(())
+}
+
+#[test]
+fn context_directory_ignores_children_without_directory_entries() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let template = "摘要引用：$first\n\n# 按需专题\n\n专题：$second\n\n专题键：second";
+    let (mut executor, task) = indexed_context_fixture(directory.path(), template)?;
+    let context = executor.context_for_task(&task)?;
+    assert_eq!(context["topics"].as_array().map(Vec::len), Some(1));
+    assert_eq!(context["topics"][0]["key"], "second");
+    Ok(())
+}
+
+#[test]
+fn context_directory_rejects_duplicate_entries_for_the_same_page() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let template = "专题：$first\n\n专题键：first\n\n专题：$first\n\n专题键：second";
+    let (mut executor, task) = indexed_context_fixture(directory.path(), template)?;
+    let error = executor
+        .context_for_task(&task)
+        .err()
+        .context("Expected error")?;
+    assert!(
+        error
+            .to_string()
+            .contains("Duplicate topic directory entry")
+    );
+    Ok(())
+}
+
+#[test]
+fn context_directory_ignores_key_labels_in_titles_and_reading_conditions() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let template = "专题：$first 专题键：second 的说明\n\n阅读条件：排查专题键：second 时\n\n专题键：first\n\n专题：$second\n\n专题键：second";
+    let (mut executor, task) = indexed_context_fixture(directory.path(), template)?;
+    let context = executor.context_for_task(&task)?;
+    let topics = context["topics"].as_array().context("Missing topics")?;
+    assert_eq!(topics.len(), 2);
+    assert!(
+        topics.iter().any(
+            |topic| topic["key"] == "first" && topic["when_to_read"] == "排查专题键：second 时"
+        )
+    );
+    assert!(topics.iter().any(|topic| topic["key"] == "second"));
+    Ok(())
+}
+
+#[test]
+fn context_directory_rejects_multiple_key_fields_in_one_entry() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let template = "专题：$first\n\n专题键：first\n\n专题键：second";
+    let (mut executor, task) = indexed_context_fixture(directory.path(), template)?;
+    let error = executor
+        .context_for_task(&task)
+        .err()
+        .context("Expected error")?;
+    assert!(error.to_string().contains("Expected one topic key"));
+    Ok(())
+}
+
 #[test]
 fn no_new_knowledge_creates_verified_receipt_before_status() -> Result<()> {
     let directory = tempfile::tempdir()?;
