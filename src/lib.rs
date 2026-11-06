@@ -5,6 +5,7 @@ pub mod mcp;
 pub mod model;
 pub mod observer;
 pub mod rpc;
+pub mod sections;
 pub mod service;
 pub mod store;
 pub mod titles;

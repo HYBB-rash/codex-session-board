@@ -1,16 +1,17 @@
 use crate::{
     config::Config,
     model::{STATES, now},
-    rpc::{DesktopConnection, Role},
+    rpc::{DesktopConnection, Role, SidebarConnection},
     store::Store,
     titles,
 };
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
+use std::collections::HashSet;
 use std::process::{Command, Stdio};
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 use std::time::Duration;
 
@@ -20,20 +21,28 @@ pub struct App {
     pub refresh: AtomicBool,
     pub health: Mutex<Value>,
     title_lock: Mutex<()>,
+    pub(crate) section_lock: Mutex<()>,
+    pub(crate) active_sessions: Mutex<Option<HashSet<String>>>,
+    pub(crate) section_cursor: AtomicUsize,
 }
 
 impl App {
     pub fn new(config: Config) -> Result<Self> {
         let store = Arc::new(Store::open(&config.data_dir, config.sync_titles)?);
+        let sections_enabled = config.sync_sections;
         Ok(Self {
             config,
             store,
             refresh: AtomicBool::new(false),
             title_lock: Mutex::new(()),
+            section_lock: Mutex::new(()),
+            active_sessions: Mutex::new(None),
+            section_cursor: AtomicUsize::new(0),
             health: Mutex::new(json!({
                 "lastScanAt":null,"lastSuccessAt":null,"error":null,"scanComplete":false,
                 "refreshing":false,"discovered":0,"runtimeVerified":false,
                 "runtimeError":"尚未连接桌面运行观察","runtimeLastAt":null,
+                "sectionsEnabled":sections_enabled,"sectionsError":null,"sectionsVerified":false,
             })),
         })
     }
@@ -47,6 +56,33 @@ impl App {
             health[key] = value.clone();
         }
         Ok(())
+    }
+
+    pub fn discover(&self, threads: &[Value], complete: bool) -> Result<()> {
+        self.store.discover(threads)?;
+        if complete {
+            let mut active = self
+                .active_sessions
+                .lock()
+                .map_err(|_| anyhow::anyhow!("会话发现锁已损坏"))?;
+            *active = Some(
+                threads
+                    .iter()
+                    .filter_map(|thread| thread["id"].as_str())
+                    .map(str::to_owned)
+                    .collect(),
+            );
+        }
+        Ok(())
+    }
+
+    pub fn is_active(&self, identifier: &str) -> Result<bool> {
+        Ok(self
+            .active_sessions
+            .lock()
+            .map_err(|_| anyhow::anyhow!("会话发现锁已损坏"))?
+            .as_ref()
+            .is_some_and(|active| active.contains(identifier)))
     }
 
     pub fn snapshot(&self) -> Result<Value> {
@@ -96,11 +132,42 @@ impl App {
         self.store
             .set_state(identifier, state.as_str(), &note, version, Some(input))?;
         self.sync_title(identifier)?;
+        let sections = self.sync_sections(Some(identifier))?;
         let pending = self.store.pending_titles(Some(identifier))?;
         Ok(
             json!({"ok":true,"titleEnabled":self.store.sync_titles,"titlePending":!pending.is_empty(),
-            "titleError":pending.first().map(|job| &job["error"])}),
+            "titleError":pending.first().map(|job| &job["error"]),
+            "sectionsEnabled":self.config.sync_sections,"sectionsPending":sections["pending"],
+            "sectionsError":sections["error"]}),
         )
+    }
+
+    pub fn sync_sections(&self, only: Option<&str>) -> Result<Value> {
+        if !self.config.sync_sections {
+            return Ok(json!({"pending":0,"error":null}));
+        }
+        let Ok(_guard) = self.section_lock.try_lock() else {
+            return Ok(json!({"pending":1,"error":null}));
+        };
+        let timeout = Duration::from_secs(self.config.rpc_timeout_seconds.min(if only.is_some() {
+            3
+        } else {
+            20
+        }));
+        let result =
+            SidebarConnection::connect(&self.config, timeout).and_then(|mut writer| match only {
+                Some(identifier) => crate::sections::move_one(self, &mut writer, identifier),
+                None => crate::sections::reconcile(self, &mut writer, None),
+            });
+        let report = match result {
+            Ok(report) => report,
+            Err(error) => json!({"pending":1,"error":error.to_string()}),
+        };
+        if only.is_none() {
+            self.update_health(json!({"sectionsVerified":report["pending"] == 0,
+                "sectionsPending":report["pending"],"sectionsError":report["error"]}))?;
+        }
+        Ok(report)
     }
 
     pub fn sync_title(&self, identifier: &str) -> Result<()> {
@@ -128,11 +195,15 @@ impl App {
         turn: &Value,
         since: f64,
     ) -> Result<()> {
+        let before = self.store.state_revision(identifier)?;
         if self
             .store
             .observe_runtime(identifier, status, turn, Some(since))?
         {
             self.sync_title(identifier)?;
+        }
+        if self.store.state_revision(identifier)? != before {
+            self.sync_sections(Some(identifier))?;
         }
         Ok(())
     }

@@ -87,7 +87,7 @@ pub fn scan_runtime(
     let (threads, complete) =
         rpc::list_threads(reader, app.config.page_size, app.config.max_pages)?;
     ensure!(complete, "桌面运行状态分页未完成");
-    app.store.discover(&threads)?;
+    app.discover(&threads, complete)?;
     let mut unreadable = 0;
     for thread in &threads {
         let identifier = thread["id"].as_str().context("会话缺少 ID")?;
@@ -197,5 +197,14 @@ pub fn start(app: &Arc<App>) {
     if app.config.sync_titles {
         let titles = Arc::clone(app);
         std::thread::spawn(move || title_worker(titles));
+    }
+    if app.config.sync_sections {
+        let sections = Arc::clone(app);
+        std::thread::spawn(move || {
+            loop {
+                let _ = sections.sync_sections(None);
+                std::thread::sleep(Duration::from_secs(sections.config.runtime_poll_seconds));
+            }
+        });
     }
 }
