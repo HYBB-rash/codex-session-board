@@ -2,14 +2,14 @@
   "schema_version": 1,
   "updated_at": "2026-11-06",
   "current_phase": {
-    "id": "new-session-button",
-    "status": "implemented_pending_live_verification",
+    "id": "deploy-new-session-button",
+    "status": "deployed_and_button_verified",
     "as_of": "2026-11-06",
-    "summary": "状态导航右侧的新建会话按钮已实现，打开 Codex 空白输入页。IO 与按钮交互测试通过；新入口尚未部署和进行原生操作验证。用户已授权提交，待归档排序保存于 c2fbc51（0.1.16），新入口及上下文收尾准备为 0.1.17。"
+    "summary": "Rust 看板 0.1.17 已部署，沿用原配置和数据库。原生 UI 真实点击新建会话按钮后成功进入空白输入页，未发送消息；113 条会话和运行观察正常。完整发布验收的其他真实环境证据仍待补充。"
   },
   "active_tasks": [],
-  "known_open_issues": ["完整验收缺少真实环境证据，release_ready=false。", "新建会话入口尚未部署和完成原生客户端验证；升版后的实现指纹需要重新生成验收证据。"],
-  "last_completed_task": "context/tasks/completed/commit-board-changes.md",
+  "known_open_issues": ["完整验收缺少其他真实环境证据，release_ready=false；升版后的实现指纹需要重新生成验收证据。", "源码插件清单仍为 0.1.15，本次部署副本清单已同步为 0.1.17；后续打包应统一版本生成。"],
+  "last_completed_task": "context/tasks/completed/commit-deployment-records.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
