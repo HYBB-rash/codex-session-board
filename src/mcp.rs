@@ -17,6 +17,7 @@ pub fn tools() -> Value {
         ("board_view", "会话看板", true),
         ("board_snapshot", "读取会话状态", true),
         ("board_update", "确认工作状态", false),
+        ("board_archive", "归档待归档会话", false),
         ("board_open", "打开已有会话", true),
         ("board_new", "打开新建会话页", false),
         ("board_refresh", "重新发现", false),
@@ -30,7 +31,7 @@ pub fn tools() -> Value {
         };
         tools.push(json!({"name":name,"title":title,"description":title,
             "inputSchema":{"type":"object","properties":properties,"required":required,"additionalProperties":false},
-            "annotations":{"readOnlyHint":read_only,"destructiveHint":false,"openWorldHint":false},
+            "annotations":{"readOnlyHint":read_only,"destructiveHint":name == "board_archive","openWorldHint":false},
             "icons":[{"src":format!("data:image/svg+xml;base64,{icon}"),"mimeType":"image/svg+xml"}],
             "_meta":meta}));
     }
@@ -48,6 +49,11 @@ fn schema(name: &str) -> (Value, Value) {
             json!(["id", "state", "version", "inputVersion"]),
         ),
         "board_open" => (json!({"id":{"type":"string"}}), json!(["id"])),
+        "board_archive" => (
+            json!({"id":{"type":"string"},"version":{"type":"integer","minimum":0},
+                "inputVersion":{"type":"integer","minimum":0}}),
+            json!(["id", "version", "inputVersion"]),
+        ),
         _ => (json!({}), json!([])),
     }
 }
@@ -56,7 +62,7 @@ pub fn resource() -> Value {
     let bridge = include_str!("../assets/app-bridge.js")
         .replace(
             "\"/api/refresh\":\"board_refresh\"",
-            "\"/api/refresh\":\"board_refresh\",\"/api/new\":\"board_new\"",
+            "\"/api/refresh\":\"board_refresh\",\"/api/new\":\"board_new\",\"/api/archive\":\"board_archive\"",
         )
         .replace("</script", "<\\/script");
     let html = include_str!("../index.html")
@@ -78,6 +84,7 @@ pub fn backend(config_path: &Path, name: &str, arguments: &Value) -> Result<Valu
     let path = match name {
         "board_snapshot" => "/api/sessions",
         "board_update" => "/api/state",
+        "board_archive" => "/api/archive",
         "board_open" => "/api/open",
         "board_new" => "/api/new",
         "board_refresh" => "/api/refresh",
@@ -133,7 +140,7 @@ pub fn dispatch(method: &str, params: &Value, path: &Path) -> Result<Value> {
             json!({"protocolVersion":params["protocolVersion"].as_str().unwrap_or("2025-06-18"),
             "capabilities":{"tools":{},"resources":{}},
             "serverInfo":{"name":"codex-session-board","version":env!("CARGO_PKG_VERSION")},
-            "instructions":"本地会话看板。界面操作不发送消息，不执行或归档任务。"}),
+            "instructions":"本地会话看板。不发送消息或执行任务。仅显式归档按钮归档待归档会话。"}),
         ),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(tools()),

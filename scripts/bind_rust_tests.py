@@ -15,6 +15,7 @@ def matching(names, *needles):
 def build():
     names = inventory(executables())
     group = lambda *needles: matching(names, *needles)
+    archive = group("test::archive_flow::")
     state = group("::state_contract_tests::")
     runtime = group("::runtime_tests::")
     observer = group("test::observer_contract::")
@@ -41,16 +42,16 @@ def build():
         )
     ]
     mappings = {
-        "STATE-001": state,
+        "STATE-001": state + archive,
         "AUTO-001": runtime + state + observer,
         "AUTO-002": runtime + state + observer,
         "AUTO-003": runtime + state + observer,
         "AUTO-004": runtime + store + isolation,
         "AUTO-005": runtime + state,
         "AUTO-006": runtime + store,
-        "MANUAL-001": store + isolation + observer + group("::sections::tests::"),
-        "MANUAL-002": store + runtime + observer,
-        "MANUAL-003": store + runtime + observer,
+        "MANUAL-001": store + isolation + observer + archive + group("::sections::tests::"),
+        "MANUAL-002": store + runtime + observer + archive,
+        "MANUAL-003": store + runtime + observer + archive,
         "TITLE-001": title_io + isolation,
         "TITLE-002": title_io,
         "TITLE-003": title_io + title_store + isolation,
@@ -63,12 +64,12 @@ def build():
         "UI-001": [],
         "UI-002": store,
         "UI-003": [],
-        "MCP-001": mcp,
+        "MCP-001": mcp + archive,
         "DATA-001": configuration,
         "DATA-002": service,
         "SERVICE-001": service,
-        "BOUNDARY-001": rpc + security + group("disabled_title"),
-        "SECURITY-001": security + store,
+        "BOUNDARY-001": rpc + security + archive + group("disabled_title"),
+        "SECURITY-001": security + store + archive,
         "HEALTH-001": observer,
         "DELIVERY-001": ["acceptance.test_gate.PackageTests.test_package_is_reproducible_and_has_only_portable_source"],
         "GATE-001": python_gate + group("example::project_check::", "test::git_hooks::"),

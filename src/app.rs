@@ -112,6 +112,7 @@ impl App {
         match (path, body) {
             ("/api/sessions", None) => self.snapshot(),
             ("/api/state", Some(body)) => self.save(body),
+            ("/api/archive", Some(body)) => crate::archive::request(self, body),
             ("/api/new", Some(_)) => {
                 let url = open_client_url("codex://threads/new".to_string(), &self.config)?;
                 Ok(json!({"ok":true,"url":url}))

@@ -37,6 +37,7 @@ impl std::error::Error for RequestError {}
 pub enum Role {
     Reader,
     TitleWriter,
+    ArchiveWriter,
 }
 
 impl Role {
@@ -44,6 +45,14 @@ impl Role {
         let allowed = match self {
             Self::Reader => matches!(method, "initialize" | "thread/list" | "thread/turns/list"),
             Self::TitleWriter => matches!(method, "initialize" | "thread/read" | "thread/name/set"),
+            Self::ArchiveWriter => matches!(
+                method,
+                "initialize"
+                    | "thread/list"
+                    | "thread/read"
+                    | "thread/turns/list"
+                    | "thread/archive"
+            ),
         };
         ensure!(allowed, "此 RPC 连接不允许调用 {method}");
         Ok(())
@@ -305,7 +314,7 @@ pub struct DesktopConnection {
 
 impl DesktopConnection {
     pub fn connect(path: &Path, timeout: Duration, role: Role) -> Result<Self> {
-        let budget = if role == Role::TitleWriter {
+        let budget = if role != Role::Reader {
             timeout.min(Duration::from_secs(3))
         } else {
             timeout
@@ -323,7 +332,7 @@ impl DesktopConnection {
             request_id: 0,
             timeout,
             role,
-            title_deadline: (role == Role::TitleWriter).then_some(deadline),
+            title_deadline: (role != Role::Reader).then_some(deadline),
         };
         reader.call(
             "initialize",
@@ -876,6 +885,30 @@ mod tests {
             assert!(connection.call(denied, json!({})).is_err());
             assert_eq!(connection.request_id, 0);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn archive_role_rejects_other_writes_before_io() -> Result<()> {
+        let (mut connection, _server) = local_connection(Role::ArchiveWriter)?;
+        for method in [
+            "turn/start",
+            "thread/resume",
+            "thread/unarchive",
+            "thread/name/set",
+        ] {
+            assert!(connection.call(method, json!({})).is_err());
+        }
+        for method in [
+            "initialize",
+            "thread/list",
+            "thread/read",
+            "thread/turns/list",
+            "thread/archive",
+        ] {
+            Role::ArchiveWriter.check(method)?;
+        }
+        assert_eq!(connection.request_id, 0);
         Ok(())
     }
 

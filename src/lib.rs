@@ -1,13 +1,14 @@
 pub mod app;
+pub mod archive;
 pub mod config;
 pub mod http;
 pub mod mcp;
 pub mod model;
 pub mod observer;
 pub mod projects;
-mod workspaces;
 pub mod rpc;
 pub mod sections;
 pub mod service;
 pub mod store;
 pub mod titles;
+mod workspaces;

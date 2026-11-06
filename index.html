@@ -80,7 +80,7 @@ textarea{resize:vertical;min-height:90px}.dialog-actions{display:flex;justify-co
   <div class="board-viewport" id="board-viewport" tabindex="0" aria-label="横向滚动查看全部状态列">
     <div class="board" id="board" aria-label="会话状态看板"></div>
   </div>
-  <p class="foot">AI 开始或恢复执行时进入“进行中”，异常暂停进入“已阻塞”，正常结束进入“待审阅”。人工调整保留到下一次执行阶段变化。“待归档”只做标记。</p>
+  <p class="foot">AI 开始或恢复执行时进入“进行中”，异常暂停进入“已阻塞”，正常结束进入“待审阅”。人工调整保留到下一次执行阶段变化。在“待归档”卡片上点击“归档”会直接归档原会话。</p>
 </main>
 <dialog id="editor">
   <form id="edit-form">
@@ -168,7 +168,15 @@ function makeCard(session) {
     element("time",date(session.updatedAt)));
   const button = element("button","调整状态","row-action");
   button.onclick = () => {if (!saving) openEditor(session.id);};
-  footer.append(details,button); card.append(footer);
+  footer.append(details,button);
+  if (session.state === "to_archive") {
+    const archive = element("button","归档","row-action");
+    archive.type = "button";
+    archive.title = "直接归档此 Codex 会话";
+    archive.onclick = () => archiveSession(session,archive);
+    footer.append(archive);
+  }
+  card.append(footer);
   card.onclick = event => {
     if (!event.target.closest("button,a,input,select,textarea")) openSession(session.id);
   };
@@ -198,6 +206,17 @@ async function openSession(id) {
     announce("已发送会话跳转请求。");
   } catch (error) {announce(error.message,true);}
   finally {opening = false;}
+}
+async function archiveSession(session, button) {
+  if (saving || dragging || byId("editor").open) return;
+  saving = true; button.disabled = true; ++requestSerial;
+  announce("正在归档会话…");
+  try {
+    await post("/api/archive",{id:session.id,version:session.version,inputVersion:session.inputVersion});
+    data.sessions = data.sessions.filter(row => row.id !== session.id);
+    announce("会话已归档。");
+  } catch (error) {announce(error.message,true);}
+  finally {saving = false;button.disabled = false;render();await load();}
 }
 function makeColumn(state, label, sessions) {
   const column = element("section",undefined,"column " + state);

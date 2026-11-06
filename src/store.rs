@@ -142,6 +142,7 @@ impl Store {
             ("runtime_key", "TEXT"),
             ("automatic_state", "TEXT"),
             ("automatic_reason", "TEXT"),
+            ("archived", "INTEGER NOT NULL DEFAULT 0"),
         ] {
             if !columns.iter().any(|column| column == name) {
                 database.execute(
@@ -163,7 +164,7 @@ impl Store {
         Ok(self
             .connection()?
             .query_row(
-                "SELECT 1 FROM sessions WHERE id=?",
+                "SELECT 1 FROM sessions WHERE id=? AND archived=0",
                 [identifier],
                 |_| Ok(()),
             )
@@ -177,6 +178,39 @@ impl Store {
             .as_str()
             .context("会话备注格式无效")?
             .to_string())
+    }
+
+    pub fn archive(
+        &self,
+        identifier: &str,
+        version: i64,
+        input_version: i64,
+        operation: impl FnOnce(&Value) -> Result<()>,
+    ) -> Result<()> {
+        let mut database = self.connection()?;
+        let transaction = database.transaction()?;
+        let row = get_row(&transaction, identifier)?;
+        ensure!(row["archived"] == 0, "会话已归档，请刷新看板");
+        ensure!(row["version"] == version, "状态已更新，请刷新后重试");
+        ensure!(
+            row["input_revision"] == input_version,
+            "会话有新输入，请刷新并核对后重试"
+        );
+        ensure!(row["needs_review"] == 0, "会话有新输入，请先调整状态确认");
+        ensure!(
+            crate::model::board_state(&effective(&row)) == "to_archive",
+            "只能归档待归档会话"
+        );
+        let expected = json!({"id":row["selection_turn"],
+            "userItems":serde_json::from_str::<Value>(text(&row,"selection_users"))?});
+        operation(&expected)?;
+        transaction.execute(
+            "UPDATE sessions SET archived=1,version=version+1 WHERE id=?",
+            [identifier],
+        )?;
+        transaction.execute("DELETE FROM title_updates WHERE thread_id=?", [identifier])?;
+        transaction.commit()?;
+        Ok(())
     }
 
     pub fn discover(&self, threads: &[Value]) -> Result<()> {
@@ -216,6 +250,9 @@ impl Store {
     pub fn observe(&self, identifier: &str, turn: &Value, error: Option<&str>) -> Result<()> {
         let mut database = self.connection()?;
         let transaction = database.transaction()?;
+        if get_row(&transaction, identifier)?["archived"] == 1 {
+            return Ok(());
+        }
         if let Some(error) = error {
             transaction.execute(
                 "UPDATE sessions SET observation_error=?,attempted_at=? WHERE id=?",
@@ -261,6 +298,7 @@ impl Store {
         let mut database = self.connection()?;
         let transaction = database.transaction()?;
         let row = get_row(&transaction, identifier)?;
+        ensure!(row["archived"] == 0, "会话已归档，请刷新看板");
         ensure!(row["version"] == version, "状态已更新，请刷新后重试");
         ensure!(
             input_version.is_none_or(|version| row["input_revision"] == version),
@@ -316,7 +354,7 @@ impl Store {
         let mut database = self.connection()?;
         let transaction = database.transaction()?;
         let row = get_row(&transaction, identifier)?;
-        if row["runtime_key"] == key {
+        if row["archived"] == 1 || row["runtime_key"] == key {
             return Ok(false);
         }
         transaction.execute(
@@ -389,7 +427,7 @@ impl Store {
     pub fn pending(&self) -> Result<Vec<Value>> {
         let database = self.connection()?;
         let mut statement = database.prepare(
-            "SELECT * FROM sessions ORDER BY attempted_at IS NOT NULL,attempted_at,updated_at DESC",
+            "SELECT * FROM sessions WHERE archived=0 ORDER BY attempted_at IS NOT NULL,attempted_at,updated_at DESC",
         )?;
         Ok(statement
             .query_map([], row_value)?
@@ -458,8 +496,8 @@ impl Store {
 
     pub fn sessions(&self) -> Result<Vec<Value>> {
         let database = self.connection()?;
-        let mut statement =
-            database.prepare("SELECT * FROM sessions ORDER BY updated_at DESC,id")?;
+        let mut statement = database
+            .prepare("SELECT * FROM sessions WHERE archived=0 ORDER BY updated_at DESC,id")?;
         let rows = statement
             .query_map([], row_value)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
