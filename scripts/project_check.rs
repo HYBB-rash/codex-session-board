@@ -417,7 +417,7 @@ fn print_commit_guidance() {
         "  2. 用 git status --short 和 git diff 检查改动，仅暂存应提交文件，再用 git diff --cached 审阅。"
     );
     println!(
-        "  3. 运行 ./scripts/check --pre-commit；通过并获得提交授权后才提交，优先使用 agent-git commit。"
+        "  3. 运行 ./scripts/check --pre-commit；审阅和检查通过后自主提交，优先使用 agent-git commit。"
     );
     println!("  4. 提交后重新运行 ./scripts/check，直到全部检查通过。");
     println!(

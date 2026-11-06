@@ -1,8 +1,9 @@
 # Rust 重构与验收
 
 2026 年 11 月 6 日，用户确认把当前仓库整体改成会话看板。
-新程序名为 `codex-session-board`，版本仍沿用本仓库当前版本；
-未经提交授权不提交、不推进版本。
+新程序名为 `codex-session-board`，版本仍沿用本仓库当前版本。
+2026 年 11 月 7 日，用户改为由 Agent 自主决定本地提交，不再逐次申请授权。
+准备提交时按仓库规则推进版本，推送和部署按对应任务的授权范围执行。
 
 验收来源是 Codex 会话 `01a1ac96-0282-7871-ae59-1d2ce1a8583e`
 交付的 `codex-session-board-0.2.5-acceptance-v1.tar.gz`。
@@ -29,4 +30,4 @@ cargo run --locked --offline -- --config /path/to/new/config.json migrate --sour
 
 当前仓库仍使用原 `scripts/check`、注释限制、Clippy 和 Git 钩子。
 开发改动尚未提交时，工作区干净检查会失败，不可用忽略文件或重置工作区掩盖。
-提交仍须用户授权，随后按每次最多 13 文件、400 行和补丁升版规则分步处理。
+Agent 自主按每次最多 13 文件、400 行和补丁升版规则分步提交。
