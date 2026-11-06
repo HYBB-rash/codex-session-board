@@ -7,7 +7,7 @@
     "as_of": "2026-11-07",
     "summary": "0.1.35 已整合归档功能、自主提交规则与 main 的 1978198 PWA 日常部署记录；本次收尾采用合并提交并快进 main，保留双方历史。当前源码 265 项自动验收通过，完整验收退出 2，release_ready=false。部署记录确认日常版本为 0.1.30，PWA 安装入口已实测；本轮不推送或部署，归档功能真实客户端证据仍待补充。"
   },
-  "active_tasks": ["context/tasks/active/archive-button.md"],
+  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/new-session-project-main-integration.md"],
   "known_open_issues": ["完整验收缺少其他真实环境证据，release_ready=false；PWA 安装入口实测不能代替全部 31 条验收。", "源码插件清单仍为 0.1.15，部署副本已统一为 0.1.30；后续打包应统一版本生成。", "项目登记与分区读回依赖当前 Codex 客户端内部状态格式，格式改变时需重新核对。", "PWA 安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。", "五状态与归档按钮待真实客户端证据和部署；原生取消归档后尚不自动恢复本地已确认归档卡片。"],
   "last_completed_task": "context/tasks/completed/archive-main-integration.md",
   "disclosure": {
