@@ -237,6 +237,7 @@ function render() {
   byId("jump").replaceChildren();
   for (const [state,label] of Object.entries(data.states)) {
     const sessions = filtered.filter(session => session.state === state);
+    if (state === "to_archive") sessions.sort((first,second) => first.updatedAt - second.updatedAt);
     const total = data.sessions.filter(session => session.state === state).length;
     columns.push(makeColumn(state,label,sessions,total));
     const jump = element("button",`${label} ${total}`);
