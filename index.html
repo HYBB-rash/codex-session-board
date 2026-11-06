@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>会话状态 · Codex</title>
+<style>
+:root{color-scheme:light;--paper:#f4f3ef;--ink:#242821;--muted:#74796f;--line:#dedfd7;--green:#32694b}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.55 system-ui,"Noto Sans CJK SC",sans-serif}
+button,input,select,textarea{font:inherit}button{cursor:pointer}button:disabled{opacity:.5;cursor:wait}
+.shell{max-width:1900px;margin:auto;padding:28px 24px 32px}
+.eyebrow{font-size:12px;letter-spacing:.12em;color:var(--green);margin-bottom:12px}
+header{display:flex;justify-content:space-between;align-items:center;gap:20px}h1{font-size:32px;letter-spacing:-1px;margin:0;font-weight:650}
+.subtitle{color:var(--muted);margin:8px 0 18px;max-width:900px}
+button{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 15px;color:var(--ink)}
+button:hover{border-color:var(--green)}button.primary{background:var(--green);color:#fff;border-color:var(--green)}
+.health{padding:11px 14px;background:#e8eee6;color:#3d6248;border:1px solid #d5dfd0;border-radius:8px;font-size:13px}
+.health.error{background:#f6e9df;border-color:#e7cbb5;color:#7d4b27}
+.health strong{font-weight:600}
+.tools{display:flex;gap:12px;align-items:center;margin:18px 0 14px}
+input[type=search]{flex:1;max-width:480px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 13px;min-width:140px}
+.count{font-size:13px;color:var(--muted);margin-left:auto;white-space:nowrap}
+.jump{display:flex;gap:7px;overflow-x:auto;padding:0 0 12px}
+.jump button{white-space:nowrap;font-size:12px;padding:5px 10px;background:transparent}
+.board-viewport{overflow-x:auto;padding-bottom:12px;border-radius:12px}
+.board{display:grid;grid-template-columns:repeat(6,minmax(250px,1fr));gap:12px;min-width:1570px}
+.column{--accent:#8b9183;display:flex;flex-direction:column;height:calc(100dvh - 315px);min-height:350px;background:#ebece5;border:1px solid #dfe1d7;border-top:3px solid var(--accent);border-radius:10px;transition:background .15s,border-color .15s}
+.column.in_progress{--accent:#678fb3}.column.review{--accent:#c89a43}.column.blocked{--accent:#bc7768}
+.column.completed{--accent:#6d9877}.column.to_archive{--accent:#9a82b3}
+.column.drop-target{background:#dfeadc;border-color:var(--green);box-shadow:inset 0 0 0 1px var(--green)}
+.column-heading{display:flex;align-items:center;gap:8px;padding:14px 13px 11px}
+.column h2{font-size:14px;font-weight:600;margin:0}
+.column-count{margin-left:auto;font-size:12px;border-radius:5px;background:#ffffff90;padding:1px 7px;color:#72786c}
+.cards{flex:1;min-height:160px;overflow-y:auto;overscroll-behavior:contain;padding:0 9px 12px;scrollbar-width:thin}
+.card{background:#fff;border:1px solid #dedfd6;border-radius:8px;padding:13px;margin-bottom:9px;box-shadow:0 1px 2px #24282106;cursor:grab;user-select:none}
+.card:hover{border-color:#aebaa7;box-shadow:0 2px 7px #2428210a}
+.card:focus-within{outline:2px solid #87a27c;outline-offset:1px}.card.drag-source{opacity:.35}
+.title{font-size:13px;font-weight:550;word-break:break-word;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.card-title{width:100%;text-align:left;border:0;border-radius:0;padding:0;background:none;cursor:pointer;color:var(--ink)}
+.card-title:hover{color:var(--green);text-decoration:underline}
+.meta{font-size:11px;color:var(--muted);margin-top:7px;overflow-wrap:anywhere}
+.project{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card-note{font-size:12px;color:#646b5b;margin-top:10px;white-space:pre-wrap;overflow-wrap:anywhere}
+.source{font-size:11px;color:var(--muted)}.follow{color:#a06c22;font-size:12px;margin-top:7px}
+.card-footer{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px}
+.card-footer time{font-size:11px;color:var(--muted)}
+.row-action{white-space:nowrap;font-size:11px;padding:4px 7px;background:#fafaf7}
+.empty-column{border:1px dashed #cdd1c4;border-radius:8px;color:#92998a;text-align:center;padding:28px 12px;font-size:12px;margin-top:3px}
+.drag-active .empty-column{border-color:#a7b79e;color:#5f7854}
+.foot{font-size:12px;color:var(--muted);margin:12px 0 0}
+.feedback{font-size:13px;min-height:24px;color:var(--green);margin:7px 0}.feedback.error{color:#a04530}
+dialog{border:1px solid var(--line);border-radius:14px;padding:28px;width:min(540px,calc(100vw - 32px));box-shadow:0 20px 90px #24282125;background:#fff;color:var(--ink)}
+dialog::backdrop{background:#20271e55}dialog h2{font-size:20px;margin:0 0 8px}.dialog-title{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+label{display:block;margin:20px 0 7px;font-size:13px}select,textarea{width:100%;border:1px solid var(--line);border-radius:7px;background:#fafaf7;padding:10px}
+textarea{resize:vertical;min-height:90px}.dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}.reason{font-size:13px;color:var(--muted);margin-top:14px}
+.notice{color:#a04530;min-height:22px;font-size:13px;margin-top:10px}
+@media(max-width:800px){
+  .shell{padding:22px 16px}.tools{flex-wrap:wrap}.count{margin-left:0}h1{font-size:27px}
+  .board{grid-template-columns:repeat(6,270px);min-width:1680px}.column{height:calc(100dvh - 350px)}
+  .subtitle{font-size:13px}.health{font-size:12px}
+}
+</style>
+<main class="shell">
+  <div class="eyebrow">CODEX / LOCAL WORKSPACE</div>
+  <header><h1>会话看板</h1><button id="refresh">重新发现</button></header>
+  <p class="subtitle">点击卡片回到原会话，拖到另一列改变状态。拖入“已阻塞”时填写原因。</p>
+  <div id="health" class="health" role="status">正在连接本地会话读取器…</div>
+  <div class="tools">
+    <input id="search" type="search" placeholder="搜索会话名称或项目路径" aria-label="搜索会话">
+    <button id="all">全部会话</button>
+    <span id="count" class="count"></span>
+  </div>
+  <nav class="jump" id="jump" aria-label="跳转到状态列"></nav>
+  <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
+  <div class="board-viewport" id="board-viewport" tabindex="0" aria-label="横向滚动查看全部状态列">
+    <div class="board" id="board" aria-label="会话状态看板"></div>
+  </div>
+  <p class="foot">AI 开始或恢复执行时进入“进行中”，异常暂停进入“已阻塞”，正常结束进入“待审阅”。人工调整保留到下一次执行阶段变化。“待归档”只做标记。</p>
+</main>
+<dialog id="editor">
+  <form id="edit-form">
+    <h2>调整工作状态</h2>
+    <div id="dialog-title" class="dialog-title"></div>
+    <label for="state">状态</label><select id="state"></select>
+    <label for="note">备注 / 阻塞原因</label><textarea id="note" maxlength="2000" placeholder="记录下一步，或说明卡在哪里"></textarea>
+    <div id="reason" class="reason"></div>
+    <div id="notice" class="notice" role="alert"></div>
+    <div class="dialog-actions"><button type="button" id="cancel">取消</button><button type="submit" id="save" class="primary">保存状态</button></div>
+  </form>
+</dialog>
+<script>
+const csrf = "__CSRF_TOKEN__";
+let data = {states:{},sessions:[],health:{}}, editing = null, dragging = null;
+let saving = false, requestSerial = 0, dragPoint = null, scrollFrame = null;
+let opening = false, suppressOpenUntil = 0;
+const byId = id => document.getElementById(id);
+const date = value => value ? new Date(value * 1000).toLocaleString("zh-CN",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "尚未读取";
+function element(tag, text, className) {
+  const node = document.createElement(tag);
+  if (text !== undefined) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+}
+async function request(path, body) {
+  if (window.boardRequest) return window.boardRequest(path,body);
+  const options = body === undefined ? {} : {method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(body)};
+  const response = await fetch(path,options);
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "操作失败");
+  return result;
+}
+const post = (path,body) => request(path,body);
+function announce(message, error = false) {
+  byId("feedback").textContent = message;
+  byId("feedback").className = "feedback" + (error ? " error" : "");
+}
+function scrollWhileDragging() {
+  if (!dragging || !dragPoint) return;
+  const viewport = byId("board-viewport");
+  const bounds = viewport.getBoundingClientRect();
+  if (dragPoint.y >= bounds.top && dragPoint.y <= bounds.bottom) {
+    if (dragPoint.x > bounds.right - 45) viewport.scrollLeft += 12;
+    else if (dragPoint.x < bounds.left + 45) viewport.scrollLeft -= 12;
+    for (const list of document.querySelectorAll(".cards")) {
+      const rect = list.getBoundingClientRect();
+      if (dragPoint.x < rect.left || dragPoint.x > rect.right) continue;
+      if (dragPoint.y < rect.top + 45) list.scrollTop -= 10;
+      else if (dragPoint.y > rect.bottom - 45) list.scrollTop += 10;
+    }
+  }
+  scrollFrame = requestAnimationFrame(scrollWhileDragging);
+}
+function finishDrag() {
+  suppressOpenUntil = performance.now() + 400;
+  dragging = null; dragPoint = null;
+  cancelAnimationFrame(scrollFrame); scrollFrame = null;
+  document.body.classList.remove("drag-active");
+  document.querySelectorAll(".drop-target,.drag-source").forEach(node =>
+    node.classList.remove("drop-target","drag-source"));
+}
+function makeCard(session) {
+  const card = element("article",undefined,"card");
+  card.dataset.id = session.id;
+  card.draggable = true;
+  card.setAttribute("aria-label",session.title);
+  const title = element("button",session.title,"title card-title");
+  title.type = "button";
+  title.title = "打开会话：" + session.title;
+  title.onclick = () => openSession(session.id);
+  const project = element("div",session.cwd || "未记录项目路径","meta project");
+  project.title = session.cwd;
+  card.append(title,project);
+  if (session.note) card.append(element("div",session.note,"card-note"));
+  if (!session.manual && session.state === "blocked") card.append(element("div",session.reason,"card-note"));
+  if (session.followUp) card.append(element("div","有新输入，待复核","follow"));
+  if (session.observationError) card.append(element("div","历史读取失败，保留原状态","follow"));
+  if (session.titleSyncPending) card.append(element("div",session.titleSyncError ? "状态已保存，标题同步待重试" : "状态已保存，标题正在同步","follow"));
+  const footer = element("div",undefined,"card-footer");
+  const details = element("div");
+  details.append(element("div",session.manual ? "人工确认" : session.source === "runtime" ? "自动流转" : "历史状态","source"),
+    element("time",date(session.updatedAt)));
+  const button = element("button","调整状态","row-action");
+  button.onclick = () => {if (!saving) openEditor(session.id);};
+  footer.append(details,button); card.append(footer);
+  card.onclick = event => {
+    if (!event.target.closest("button,a,input,select,textarea")) openSession(session.id);
+  };
+  card.ondragstart = event => {
+    if (saving || byId("editor").open) {event.preventDefault();return;}
+    dragging = {...session};
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain",session.id);
+    card.classList.add("drag-source");
+    document.body.classList.add("drag-active");
+    dragPoint = {x:event.clientX,y:event.clientY};
+    scrollFrame = requestAnimationFrame(scrollWhileDragging);
+    announce("拖到目标状态列后松开鼠标。");
+  };
+  card.ondragend = () => {
+    finishDrag();
+    if (!saving && !byId("editor").open) render();
+  };
+  return card;
+}
+async function openSession(id) {
+  if (dragging || saving || opening || performance.now() < suppressOpenUntil) return;
+  opening = true;
+  announce("正在打开 Codex 会话…");
+  try {
+    await post("/api/open",{id});
+    announce("已发送会话跳转请求。");
+  } catch (error) {announce(error.message,true);}
+  finally {opening = false;}
+}
+function makeColumn(state, label, sessions, total) {
+  const column = element("section",undefined,"column " + state);
+  column.dataset.state = state; column.id = "column-" + state;
+  column.setAttribute("aria-label",label);
+  const heading = element("div",undefined,"column-heading");
+  heading.append(element("h2",label),element("span",sessions.length === total ? String(total) : `${sessions.length} / ${total}`,"column-count"));
+  const cards = element("div",undefined,"cards");
+  for (const session of sessions) cards.append(makeCard(session));
+  if (!sessions.length) cards.append(element("div","拖动卡片到这里","empty-column"));
+  column.append(heading,cards);
+  column.ondragover = event => {
+    if (!dragging || saving) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = dragging.state === state ? "none" : "move";
+    column.classList.toggle("drop-target",dragging.state !== state);
+  };
+  column.ondragleave = event => {
+    if (!column.contains(event.relatedTarget)) column.classList.remove("drop-target");
+  };
+  column.ondrop = event => {
+    if (!dragging || saving) return;
+    event.preventDefault();
+    const session = dragging;
+    finishDrag();
+    if (session.state === state) {announce("状态未改变。");render();return;}
+    if (state === "blocked") {
+      openEditor(session.id,state,session);
+      announce("填写阻塞原因后保存，卡片才会移入已阻塞列。");
+      return;
+    }
+    moveCard(session,state);
+  };
+  return column;
+}
+function render() {
+  if (dragging || saving || byId("editor").open) return;
+  const scrollPositions = new Map(
+    Array.from(document.querySelectorAll(".column")).map(column =>
+      [column.dataset.state,column.querySelector(".cards").scrollTop]));
+  const query = byId("search").value.toLowerCase();
+  const filtered = data.sessions.filter(session =>
+    (session.title + " " + session.cwd).toLowerCase().includes(query));
+  const columns = [];
+  byId("jump").replaceChildren();
+  for (const [state,label] of Object.entries(data.states)) {
+    const sessions = filtered.filter(session => session.state === state);
+    const total = data.sessions.filter(session => session.state === state).length;
+    columns.push(makeColumn(state,label,sessions,total));
+    const jump = element("button",`${label} ${total}`);
+    jump.onclick = () => {
+      const viewport = byId("board-viewport");
+      viewport.scrollTo({left:byId("column-" + state).offsetLeft - byId("board").offsetLeft,behavior:"smooth"});
+    };
+    byId("jump").append(jump);
+  }
+  byId("board").replaceChildren(...columns);
+  for (const column of columns) column.querySelector(".cards").scrollTop = scrollPositions.get(column.dataset.state) || 0;
+  byId("count").textContent = `筛选 ${filtered.length} / 共 ${data.sessions.length} 条`;
+  const health = data.health;
+  byId("health").className = "health" + (health.error || health.runtimeError || !health.scanComplete && health.lastScanAt && !health.refreshing ? " error" : "");
+  byId("health").textContent = health.error ? `连接异常，已保留本地状态。${health.error}` :
+    health.refreshing ? `正在扫描与补读历史，已发现 ${data.sessions.length} 条。` :
+    health.lastSuccessAt ? `已发现 ${health.discovered} 条本机会话 · 最近扫描 ${date(health.lastSuccessAt)}${health.scanComplete ? "" : " · 尚有未扫描的分页，请调整扫描上限"}` : "等待首次扫描…";
+  byId("health").textContent += health.runtimeError ? " · " + (health.runtimeVerified ? health.runtimeError : "执行状态连接异常，保留原状态") :
+    health.runtimeVerified ? " · 自动状态已连接" : " · 等待执行状态连接";
+}
+function openEditor(id, state, snapshot) {
+  editing = snapshot || data.sessions.find(session => session.id === id);
+  if (!editing) return;
+  byId("dialog-title").textContent = editing.title;
+  byId("state").replaceChildren();
+  for (const [value,label] of Object.entries(data.states)) byId("state").append(new Option(label,value));
+  byId("state").value = state || editing.state;
+  byId("note").value = editing.note;
+  byId("reason").textContent = editing.reason;
+  byId("notice").textContent = "";
+  byId("editor").showModal();
+}
+async function load() {
+  if (dragging || saving || byId("editor").open) return;
+  const serial = ++requestSerial;
+  try {
+    const result = await request("/api/sessions");
+    if (serial !== requestSerial || dragging || saving || byId("editor").open) return;
+    data = result; render();
+  } catch (error) {
+    if (serial !== requestSerial) return;
+    byId("health").className = "health error";
+    byId("health").textContent = "连接已断开，显示上次结果。"+error.message;
+  }
+}
+async function persist(session, state, note) {
+  ++requestSerial;
+  const result = await post("/api/state",{id:session.id,state,note,version:session.version,inputVersion:session.inputVersion});
+  data.sessions = data.sessions.map(row => row.id === session.id ? {
+    ...row,state:state || row.suggestion,note,manual:state !== null,
+    version:session.version+1,followUp:false,titleSyncPending:result.titlePending,titleSyncError:result.titleError
+  } : row);
+  return result;
+}
+async function moveCard(session, state) {
+  saving = true;
+  announce(`正在移到${data.states[state]}…`);
+  try {
+    const result = await persist(session,state,session.note);
+    announce(`已移到${data.states[state]}，状态已保存。` + (result.titleEnabled ? result.titlePending ? "标题同步待重试。" : "标题已同步。" : ""));
+  } catch(error) {announce(error.message,true);}
+  finally {saving = false;render();await load();}
+}
+byId("edit-form").onsubmit = async event => {
+  event.preventDefault();
+  if (saving) return;
+  saving = true; byId("save").disabled = true; byId("cancel").disabled = true;
+  try {
+    const result = await persist(editing,byId("state").value === "auto" ? null : byId("state").value,byId("note").value);
+    byId("editor").close(); announce("状态已保存。" + (result.titleEnabled ? result.titlePending ? "标题同步待重试。" : "标题已同步。" : ""));
+  } catch(error) {byId("notice").textContent = error.message;}
+  finally {
+    saving = false;byId("save").disabled = false;byId("cancel").disabled = false;
+    render();await load();
+  }
+};
+byId("cancel").onclick = () => byId("editor").close();
+byId("editor").addEventListener("cancel",event => {if (saving) event.preventDefault();});
+byId("editor").addEventListener("close",() => {editing=null;render();load();});
+byId("refresh").onclick = async () => {
+  try {await post("/api/refresh",{}); await load();}
+  catch(error) {byId("health").textContent = error.message;}
+};
+byId("search").oninput = render;
+byId("all").onclick = () => {byId("search").value="";render();};
+document.addEventListener("dragover",event => {
+  if (dragging) dragPoint = {x:event.clientX,y:event.clientY};
+});
+load(); setInterval(load,4000);
+</script>
+</html>

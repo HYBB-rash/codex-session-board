@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "session_board": {
+      "command": "./bin/codex-session-board",
+      "args": ["mcp"],
+      "cwd": "."
+    }
+  }
+}

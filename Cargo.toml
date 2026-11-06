@@ -1,15 +1,9 @@
 [package]
-name = "notion-program"
-version = "0.1.12"
+name = "codex-session-board"
+version = "0.1.13"
 edition = "2024"
-description = "Notion task dispatcher and knowledge archiver"
-default-run = "notion-program"
-
-[[bin]]
-name = "notion-program-test-server"
-path = "tests/support/protocol_server.rs"
-test = false
-bench = false
+description = "Local Codex conversation status board"
+default-run = "codex-session-board"
 
 [[example]]
 name = "project_check"
@@ -26,19 +20,20 @@ too_many_lines = "deny"
 
 [dependencies]
 anyhow = "1"
-chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 fs2 = "0.4"
-lazy-regex = "3"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
-rustix = { version = "1", features = ["process"] }
+rustix = { version = "1", features = ["process", "net"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 tungstenite = "0.29"
 url = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
+rusqlite = { version = "0.38", features = ["bundled", "backup"] }
+tiny_http = "0.12"
 
 [dev-dependencies]
 ra-ap-rustc_lexer = "=0.183.0"

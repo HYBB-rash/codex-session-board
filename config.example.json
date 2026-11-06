@@ -1,43 +1,15 @@
 {
-  "version": 1,
-  "workspace": ".",
-  "data_dir": "data",
-  "task_workspace_root": "tasks",
-  "data_source_id": "REPLACE_WITH_TASK_DATA_SOURCE_UUID",
-  "executor": "Fedora Codex",
-  "model_map": {
-    "GPT-6 Astra": "group/gpt-6-astra",
-    "GPT-6.1 Sol": "group/gpt-6.1-sol",
-    "GPT-6.1 Terra": "group/gpt-6.1-terra",
-    "GPT-6 Luna": "group/gpt-6-luna",
-    "DeepSeek V4.1 Flash": "group/deepseek-v4.1-flash",
-    "DeepSeek V4 Pro": "group/deepseek-v4-pro",
-    "MiniMax M3.1 Flash": "group/minimax-m3.1-flash",
-    "GLM 5.3 Flash": "group/glm-5.3-flash"
-  },
-  "daemon_socket": "/path/to/app-server-control.sock",
-  "mcp_server": "codex_apps",
-  "tools": {
-    "fetch": "notion.fetch",
-    "query": "notion.query-data-sources",
-    "update": "notion.notion-update-page",
-    "create": "notion.notion-create-pages"
-  },
-  "execution_transport": "persistent_daemon",
-  "execution_sandbox": "workspace-write",
-  "execution_approvals_reviewer": "auto_review",
-  "request_timeout_seconds": 120,
-  "interval_seconds": 300,
-  "connection_attempts": 2,
-  "connection_retry_delay_seconds": 2,
-  "automatic_retry": {
-    "enabled": true,
-    "max_attempts": 3,
-    "delays_seconds": [60, 180, 300]
-  },
-  "excluded_page_ids": [],
-  "diagnostic_feedback_property": "调度诊断",
-  "project_context": {
-    "enabled": false
-  }
+  "codex_command": ["codex", "app-server", "--stdio"],
+  "data_dir": "./persistent",
+  "port": 8767,
+  "poll_seconds": 30,
+  "rpc_timeout_seconds": 20,
+  "page_size": 100,
+  "max_pages": 100,
+  "history_per_poll": 20,
+  "host_id": "local",
+  "open_command": ["xdg-open"],
+  "desktop_socket": "",
+  "runtime_poll_seconds": 2,
+  "sync_titles": true
 }

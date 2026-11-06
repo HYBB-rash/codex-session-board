@@ -1,6 +1,0 @@
-[Unit]
-Description=Notify about an unavailable Notion dispatcher
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/notify-send --app-name=Notion调度 "Notion 调度器运行失败" "任务处理可能暂停；请检查 notion-program.service 的状态和日志。"

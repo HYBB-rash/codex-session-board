@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "contract_sha256": "",
+  "build_sha256": "",
+  "checks": {
+    "STATE-001": {"status": "pending"},
+    "AUTO-001": {"status": "pending"},
+    "AUTO-002": {"status": "pending"},
+    "AUTO-003": {"status": "pending"},
+    "TITLE-001": {"status": "pending"},
+    "TITLE-003": {"status": "pending"},
+    "DISCOVERY-001": {"status": "pending"},
+    "NAV-001": {"status": "pending"},
+    "APP-001": {"status": "pending"},
+    "UI-001": {"status": "pending"},
+    "UI-002": {"status": "pending"},
+    "UI-003": {"status": "pending"},
+    "HEALTH-001": {"status": "pending"},
+    "DELIVERY-001": {
+      "status": "pending",
+      "operator": "",
+      "environment": "",
+      "observed_at": "",
+      "notes": "",
+      "artifacts": []
+    }
+  }
+}
