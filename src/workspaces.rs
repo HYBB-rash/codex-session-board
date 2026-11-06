@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 pub(crate) struct Repository {
     pub root: PathBuf,
     pub common: PathBuf,
+    pub has_head: bool,
 }
 
 fn read_optional(path: &Path) -> Result<Option<String>> {
@@ -14,7 +15,7 @@ fn read_optional(path: &Path) -> Result<Option<String>> {
     }
 }
 
-fn common_directory(root: &Path, metadata: &Path) -> Result<PathBuf> {
+fn common_directory(root: &Path, metadata: &Path) -> Result<(PathBuf, bool)> {
     let directory = if metadata.is_dir() {
         metadata.to_path_buf()
     } else {
@@ -27,7 +28,7 @@ fn common_directory(root: &Path, metadata: &Path) -> Result<PathBuf> {
         ensure!(!target.is_empty(), "Git 目录指针为空");
         root.join(target)
     };
-    ensure!(directory.join("HEAD").is_file(), "Git 工作树元数据不完整");
+    let has_head = directory.join("HEAD").is_file();
     let common = match read_optional(&directory.join("commondir"))? {
         Some(target) => {
             ensure!(!target.trim().is_empty(), "Git 共享目录指针为空");
@@ -35,7 +36,10 @@ fn common_directory(root: &Path, metadata: &Path) -> Result<PathBuf> {
         }
         None => directory,
     };
-    common.canonicalize().context("无法解析 Git 共享目录")
+    Ok((
+        common.canonicalize().context("无法解析 Git 共享目录")?,
+        has_head,
+    ))
 }
 
 pub(crate) fn repository(path: &Path) -> Result<Option<Repository>> {
@@ -43,9 +47,11 @@ pub(crate) fn repository(path: &Path) -> Result<Option<Repository>> {
         let metadata = root.join(".git");
         match std::fs::metadata(&metadata) {
             Ok(_) => {
+                let (common, has_head) = common_directory(root, &metadata)?;
                 return Ok(Some(Repository {
                     root: root.to_path_buf(),
-                    common: common_directory(root, &metadata)?,
+                    common,
+                    has_head,
                 }));
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,

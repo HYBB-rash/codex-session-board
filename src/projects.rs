@@ -158,6 +158,7 @@ impl Catalog {
         let Some(repository) = crate::workspaces::repository(&path)? else {
             return Ok(Value::Null);
         };
+        ensure!(repository.has_head, "Git 工作树元数据不完整");
         let relative = path.strip_prefix(&repository.root)?;
         let candidates = self.linked_roots(&repository, relative)?;
         let depth = candidates.iter().map(|(depth, _)| *depth).max();
@@ -186,6 +187,7 @@ impl Catalog {
                 };
                 let suffix = root.strip_prefix(&source.root)?;
                 if source.common == repository.common && relative.starts_with(suffix) {
+                    ensure!(source.has_head, "关联项目的 Git 元数据不完整");
                     candidates.push((suffix.components().count(), item.id.clone()));
                 }
             }
@@ -456,6 +458,29 @@ mod tests {
         worktree(directory.path(), "topic")?;
         catalog.annotate(&mut sessions);
         assert!(sessions[0]["projectIssue"].is_null());
+        Ok(())
+    }
+
+    #[test]
+    fn unrelated_incomplete_repository_does_not_block_worktree_membership() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let checkout = worktree(directory.path(), "topic")?;
+        let unrelated = directory.path().join("unrelated");
+        std::fs::create_dir_all(unrelated.join(".git"))?;
+        let mut catalog = Catalog::default();
+        catalog.update(response(vec![
+            local(
+                "project",
+                "项目",
+                directory.path().join("repo").to_str().unwrap(),
+            ),
+            local("unrelated", "残缺元数据项目", unrelated.to_str().unwrap()),
+        ]))?;
+        assert_eq!(catalog.assignment(checkout.to_str().unwrap())?, "project");
+        assert_eq!(
+            catalog.assignment(unrelated.to_str().unwrap())?,
+            "unrelated"
+        );
         Ok(())
     }
 }

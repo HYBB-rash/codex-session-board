@@ -2,14 +2,14 @@
   "schema_version": 1,
   "updated_at": "2026-11-06",
   "current_phase": {
-    "id": "status-sidebar-sections",
+    "id": "project-filter",
     "status": "implementation_committed_evidence_pending",
     "as_of": "2026-11-06",
-    "summary": "状态分区实现、回归测试、规则变更与项目筛选调研记录已分批整理提交，最终源码版本 0.1.23；部署仍为此前的 0.1.18，本轮不部署。0.1.22 提交后普通检查已退出 0，最终记录提交后再次检查。0.1.23 完整验收的 243 项自动检查通过，缺少真实环境证据，release_ready=false。项目下拉与标题搜索切换仅完成调研和设计确认，尚未实现。"
+    "summary": "项目下拉与搜索按钮切换已实现，源码版本 0.1.26；隔离界面验证和本机四项目、外部工作树只读匹配验证通过。完整验收 252 项自动检查通过，缺少真实环境证据，release_ready=false，不宣称开发完成。本轮不部署，既有服务仍为此前版本。最终提交后运行普通检查直到退出 0。"
   },
-  "active_tasks": ["context/tasks/active/project-filter-implementation.md"],
-  "known_open_issues": ["完整验收缺少其他真实环境证据，release_ready=false；状态分区有独立 API 实测但没有完整 UI 证据。", "源码插件清单仍为 0.1.15，本次部署副本清单已同步为 0.1.18；后续打包应统一版本生成。", "分区读回依赖当前 Codex 客户端内部身份映射格式，格式改变时需重新核对。"],
-  "last_completed_task": "context/tasks/completed/check-closeout.md",
+  "active_tasks": [],
+  "known_open_issues": ["完整验收缺少其他真实环境证据，release_ready=false；隔离项目筛选 UI 验证不能代替全部 31 条真实环境验收。", "源码插件清单仍为 0.1.15，既有部署副本为 0.1.18；后续打包应统一版本生成。", "项目登记与分区读回依赖当前 Codex 客户端内部状态格式，格式改变时需重新核对。"],
+  "last_completed_task": "context/tasks/completed/project-filter-implementation.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",

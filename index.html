@@ -17,7 +17,7 @@ button:hover{border-color:var(--green)}button.primary{background:var(--green);co
 .health.error{background:#f6e9df;border-color:#e7cbb5;color:#7d4b27}
 .health strong{font-weight:600}
 .tools{display:flex;gap:12px;align-items:center;margin:18px 0 14px}
-input[type=search]{flex:1;max-width:480px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 13px;min-width:140px}
+.tools input[type=search],.tools select{flex:1;width:auto;max-width:480px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 13px;min-width:140px}
 .count{font-size:13px;color:var(--muted);margin-left:auto;white-space:nowrap}
 .navigation{display:flex;align-items:flex-start;gap:12px}.navigation .jump{flex:1;min-width:0}
 #new-session{white-space:nowrap}
@@ -67,8 +67,9 @@ textarea{resize:vertical;min-height:90px}.dialog-actions{display:flex;justify-co
   <p class="subtitle">点击卡片回到原会话，拖到另一列改变状态。拖入“已阻塞”时填写原因。</p>
   <div id="health" class="health" role="status">正在连接本地会话读取器…</div>
   <div class="tools">
-    <input id="search" type="search" placeholder="搜索会话名称或项目路径" aria-label="搜索会话">
-    <button id="all">全部会话</button>
+    <select id="project-filter" aria-label="选择项目" disabled><option value="all">全部项目</option></select>
+    <input id="search" type="search" placeholder="搜索会话名称或项目路径" aria-label="搜索会话" hidden>
+    <button id="filter-toggle" type="button" aria-controls="project-filter search" aria-pressed="false">搜索会话</button>
     <span id="count" class="count"></span>
   </div>
   <div class="navigation">
@@ -94,9 +95,10 @@ textarea{resize:vertical;min-height:90px}.dialog-actions{display:flex;justify-co
 </dialog>
 <script>
 const csrf = "__CSRF_TOKEN__";
-let data = {states:{},sessions:[],health:{}}, editing = null, dragging = null;
+let data = {states:{},sessions:[],health:{},projectCatalog:{loaded:false,items:[]}}, editing = null, dragging = null;
 let saving = false, requestSerial = 0, dragPoint = null, scrollFrame = null;
 let opening = false, suppressOpenUntil = 0;
+let filterMode = "project", selectedProject = "all", projectOptionsKey = "";
 const byId = id => document.getElementById(id);
 const date = value => value ? new Date(value * 1000).toLocaleString("zh-CN",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "尚未读取";
 function element(tag, text, className) {
@@ -158,6 +160,7 @@ function makeCard(session) {
   if (!session.manual && session.state === "blocked") card.append(element("div",session.reason,"card-note"));
   if (session.followUp) card.append(element("div","有新输入，待复核","follow"));
   if (session.observationError) card.append(element("div","历史读取失败，保留原状态","follow"));
+  if (session.projectIssue) card.append(element("div","项目归属待确认","follow"));
   if (session.titleSyncPending) card.append(element("div",session.titleSyncError ? "状态已保存，标题同步待重试" : "状态已保存，标题正在同步","follow"));
   const footer = element("div",undefined,"card-footer");
   const details = element("div");
@@ -196,12 +199,12 @@ async function openSession(id) {
   } catch (error) {announce(error.message,true);}
   finally {opening = false;}
 }
-function makeColumn(state, label, sessions, total) {
+function makeColumn(state, label, sessions) {
   const column = element("section",undefined,"column " + state);
   column.dataset.state = state; column.id = "column-" + state;
   column.setAttribute("aria-label",label);
   const heading = element("div",undefined,"column-heading");
-  heading.append(element("h2",label),element("span",sessions.length === total ? String(total) : `${sessions.length} / ${total}`,"column-count"));
+  heading.append(element("h2",label),element("span",String(sessions.length),"column-count"));
   const cards = element("div",undefined,"cards");
   for (const session of sessions) cards.append(makeCard(session));
   if (!sessions.length) cards.append(element("div","拖动卡片到这里","empty-column"));
@@ -230,22 +233,67 @@ function makeColumn(state, label, sessions, total) {
   };
   return column;
 }
+function updateProjectOptions() {
+  const catalog = data.projectCatalog || {loaded:false,items:[]};
+  const key = JSON.stringify([catalog.loaded,catalog.items]);
+  if (key === projectOptionsKey) return;
+  projectOptionsKey = key;
+  const menu = byId("project-filter");
+  const labels = new Map();
+  for (const item of catalog.items) labels.set(item.label,(labels.get(item.label) || 0) + 1);
+  menu.replaceChildren(new Option("全部项目","all"),new Option("默认工作区","default"));
+  for (const item of catalog.items) {
+    const paths = item.paths.join(" · ");
+    const option = new Option(item.label + (labels.get(item.label) > 1 ? " · " + paths : ""),"project:" + item.id);
+    option.title = paths;
+    menu.append(option);
+  }
+  if (selectedProject.startsWith("project:") &&
+      !catalog.items.some(item => "project:" + item.id === selectedProject)) {
+    selectedProject = catalog.loaded ? "default" : "all";
+    announce("项目已移除，已切换到默认工作区。");
+  }
+  menu.value = selectedProject;
+  menu.disabled = !catalog.loaded;
+}
+function visibleSessions() {
+  if (filterMode === "search") {
+    const query = byId("search").value.trim().toLowerCase();
+    return data.sessions.filter(session =>
+      (session.title + " " + session.cwd).toLowerCase().includes(query));
+  }
+  if (selectedProject === "all") return data.sessions;
+  if (selectedProject === "default") return data.sessions.filter(session => session.projectId === null && !session.projectIssue);
+  return data.sessions.filter(session => "project:" + session.projectId === selectedProject);
+}
+function resetFilterScroll() {
+  for (const cards of document.querySelectorAll(".cards")) cards.scrollTop = 0;
+}
+function toggleFilter() {
+  if (dragging || saving || byId("editor").open) return;
+  filterMode = filterMode === "project" ? "search" : "project";
+  byId("project-filter").hidden = filterMode !== "project";
+  byId("search").hidden = filterMode !== "search";
+  byId("filter-toggle").textContent = filterMode === "project" ? "搜索会话" : "选择项目";
+  byId("filter-toggle").setAttribute("aria-pressed",String(filterMode === "search"));
+  resetFilterScroll();
+  render();
+  byId(filterMode === "project" ? "project-filter" : "search").focus();
+}
 function render() {
   if (dragging || saving || byId("editor").open) return;
+  updateProjectOptions();
   const scrollPositions = new Map(
     Array.from(document.querySelectorAll(".column")).map(column =>
       [column.dataset.state,column.querySelector(".cards").scrollTop]));
-  const query = byId("search").value.toLowerCase();
-  const filtered = data.sessions.filter(session =>
-    (session.title + " " + session.cwd).toLowerCase().includes(query));
+  const filtered = visibleSessions();
   const columns = [];
   byId("jump").replaceChildren();
   for (const [state,label] of Object.entries(data.states)) {
     const sessions = filtered.filter(session => session.state === state);
     if (state === "to_archive") sessions.sort((first,second) => first.updatedAt - second.updatedAt);
-    const total = data.sessions.filter(session => session.state === state).length;
-    columns.push(makeColumn(state,label,sessions,total));
-    const jump = element("button",`${label} ${total}`);
+    columns.push(makeColumn(state,label,sessions));
+    const jump = element("button",`${label} ${sessions.length}`);
     jump.onclick = () => {
       const viewport = byId("board-viewport");
       viewport.scrollTo({left:byId("column-" + state).offsetLeft - byId("board").offsetLeft,behavior:"smooth"});
@@ -254,7 +302,7 @@ function render() {
   }
   byId("board").replaceChildren(...columns);
   for (const column of columns) column.querySelector(".cards").scrollTop = scrollPositions.get(column.dataset.state) || 0;
-  byId("count").textContent = `筛选 ${filtered.length} / 共 ${data.sessions.length} 条`;
+  byId("count").textContent = `当前 ${filtered.length} / 全部 ${data.sessions.length} 条`;
   const health = data.health;
   byId("health").className = "health" + (health.error || health.runtimeError || health.sectionsError || !health.scanComplete && health.lastScanAt && !health.refreshing ? " error" : "");
   byId("health").textContent = health.error ? `连接异常，已保留本地状态。${health.error}` :
@@ -264,6 +312,15 @@ function render() {
     health.runtimeVerified ? " · 自动状态已连接" : " · 等待执行状态连接";
   if (health.sectionsEnabled) byId("health").textContent += health.sectionsError ?
     " · 分区同步待重试：" + health.sectionsError : health.sectionsVerified ? " · 状态分区已同步" : " · 状态分区同步中";
+  const catalog = data.projectCatalog;
+  if (catalog && catalog.error) {
+    byId("health").className = "health error";
+    byId("health").textContent += catalog.loaded ? " · 项目列表暂不可读，保留上次分类" : " · 项目列表尚未读取，可切换搜索";
+  }
+  if (data.sessions.some(session => session.projectIssue)) {
+    byId("health").className = "health error";
+    byId("health").textContent += " · 有会话项目归属待确认，可在全部项目中查看";
+  }
 }
 function openEditor(id, state, snapshot) {
   editing = snapshot || data.sessions.find(session => session.id === id);
@@ -342,8 +399,17 @@ byId("refresh").onclick = async () => {
   try {await post("/api/refresh",{}); await load();}
   catch(error) {byId("health").textContent = error.message;}
 };
-byId("search").oninput = render;
-byId("all").onclick = () => {byId("search").value="";render();};
+byId("search").oninput = () => {resetFilterScroll();render();};
+byId("filter-toggle").onclick = toggleFilter;
+byId("project-filter").onchange = () => {
+  if (dragging || saving || byId("editor").open) {
+    byId("project-filter").value = selectedProject;
+    return;
+  }
+  selectedProject = byId("project-filter").value;
+  resetFilterScroll();
+  render();
+};
 document.addEventListener("dragover",event => {
   if (dragging) dragPoint = {x:event.clientX,y:event.clientY};
 });

@@ -669,6 +669,7 @@
       "lib::codex_session_board::projects::tests::live_file_refresh_updates_snapshots_and_read_failures_preserve_classification",
       "lib::codex_session_board::projects::tests::multiple_roots_and_native_order_are_preserved_without_remote_projects",
       "lib::codex_session_board::projects::tests::nested_roots_use_components_and_only_registered_local_projects",
+      "lib::codex_session_board::projects::tests::unrelated_incomplete_repository_does_not_block_worktree_membership",
       "lib::codex_session_board::rpc::tests::each_role_accepts_exactly_its_three_declared_methods",
       "lib::codex_session_board::rpc::tests::empty_turns_and_missing_summary_fields_are_safe",
       "lib::codex_session_board::rpc::tests::latest_turn_requests_one_summary_and_drops_message_bodies",
