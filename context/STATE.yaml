@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-11-06",
+  "updated_at": "2026-11-07",
   "current_phase": {
-    "id": "pwa-rebase",
-    "status": "integration_verified",
-    "as_of": "2026-11-06",
-    "summary": "原任务在 e828e96 完成部署及实测后，将 PWA 重放到该最终基线。功能提交 e9b2402 为 0.1.28，集成记录为 0.1.29，保留项目筛选、全局搜索、状态分区、真实环境归属修复及全部验收绑定。集成验证后仅快进合回 codex/pwa-support，不创建合并提交。日常部署仍为 0.1.27；本轮不部署，完整发布仍缺真实环境证据，release_ready=false。"
+    "id": "archive-button",
+    "status": "committed_pending_live_evidence",
+    "as_of": "2026-11-07",
+    "summary": "用户将本地提交改为 Agent 自主决定，规则和已有功能按五批提交至 0.1.34。五状态界面与一键真实归档源码已提交，旧 completed 兼容显示为待归档。最终 256 项 Rust 测试、265 项自动验收、严格 Clippy 及隔离浏览器交互通过。归档前核对原生最新输入，独立审查问题已修复。完整验收退出 2，release_ready=false，尚待目标客户端实测。日常部署仍为 0.1.27，本轮未推送或部署。"
   },
-  "active_tasks": [],
-  "known_open_issues": ["完整验收缺少其他真实环境证据，release_ready=false；项目筛选真实实测不能代替全部 31 条验收。", "源码插件清单仍为 0.1.15，部署副本已统一为 0.1.27；后续打包应统一版本生成。", "项目登记与分区读回依赖当前 Codex 客户端内部状态格式，格式改变时需重新核对。", "PWA 尚未部署到日常服务，也未执行操作系统安装和独立应用启动。"],
-  "last_completed_task": "context/tasks/completed/pwa-rebase.md",
+  "active_tasks": ["context/tasks/active/archive-button.md"],
+  "known_open_issues": ["完整验收缺少其他真实环境证据，release_ready=false；项目筛选真实实测不能代替全部 31 条验收。", "源码插件清单仍为 0.1.15，部署副本已统一为 0.1.27；后续打包应统一版本生成。", "项目登记与分区读回依赖当前 Codex 客户端内部状态格式，格式改变时需重新核对。", "PWA 尚未部署到日常服务，也未执行操作系统安装和独立应用启动。", "五状态与归档按钮待真实客户端证据和部署；原生取消归档后尚不自动恢复本地已确认归档卡片。"],
+  "last_completed_task": "context/tasks/completed/autonomous-commits.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
@@ -20,7 +20,7 @@
   },
   "verification": {
     "status": "passed",
-    "last_checked_at": "2026-11-06",
+    "last_checked_at": "2026-11-07",
     "method": "sh scripts/verify_context.sh",
     "boundary": "Project-local context files and declared local paths only."
   }

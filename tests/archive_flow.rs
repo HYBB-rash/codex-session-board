@@ -5,6 +5,8 @@ use codex_session_board::{app::App, archive, config::Config, mcp, rpc::Rpc, stor
 use serde_json::{Value, json};
 use std::collections::VecDeque;
 
+#[path = "archive_flow/transport.rs"]
+mod transport;
 
 const FIRST: &str = "11111111-1111-4111-8111-111111111111";
 
