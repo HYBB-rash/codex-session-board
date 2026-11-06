@@ -764,6 +764,8 @@
     "NAV-001": [
       "test::board_io::host_origin_and_token_are_required_for_mutation",
       "test::board_io::navigation_is_canonical_and_encodes_host_as_one_value",
+      "test::board_io::new_session_rejects_stale_projects_without_changing_default_navigation",
+      "test::board_io::new_session_uses_explicit_projects_and_preserves_state",
       "test::board_io::open_accepts_only_known_uuid_and_preserves_all_state",
       "test::board_io::real_http_persistence_security_and_launcher_reuse",
       "test::board_io::real_http_pwa_assets_preserve_host_and_mutation_checks",
@@ -771,6 +773,7 @@
     ],
     "APP-001": [
       "test::board_io::mcp_bridge_uses_http_versions_and_reports_pending_title_without_rollback",
+      "test::board_io::mcp_new_session_forwards_optional_project_to_http",
       "test::board_io::native_resource_and_tools_expose_global_app_only_actions",
       "test::board_io::real_stdio_mcp_handshake_and_resource_round_trip",
       "test::board_io::saved_state_reports_pending_title_without_rollback"

@@ -48,6 +48,7 @@ fn schema(name: &str) -> (Value, Value) {
             json!(["id", "state", "version", "inputVersion"]),
         ),
         "board_open" => (json!({"id":{"type":"string"}}), json!(["id"])),
+        "board_new" => (json!({"projectId":{"type":"string"}}), json!([])),
         _ => (json!({}), json!([])),
     }
 }

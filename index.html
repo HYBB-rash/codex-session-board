@@ -388,7 +388,9 @@ byId("new-session").onclick = async () => {
   if (button.disabled) return;
   button.disabled = true;
   try {
-    await post("/api/new",{});
+    const projectId = filterMode === "project" && selectedProject.startsWith("project:")
+      ? selectedProject.slice("project:".length) : null;
+    await post("/api/new",projectId === null ? {} : {projectId});
     announce("已发送新建会话页面打开请求。");
   } catch(error) {announce(error.message,true);}
   finally {button.disabled = false;}

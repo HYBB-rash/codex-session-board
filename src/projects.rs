@@ -20,15 +20,26 @@ fn source_path(config: &crate::config::Config) -> Result<PathBuf> {
     Ok(home.join(".codex-global-state.json"))
 }
 
+fn read(config: &crate::config::Config) -> Result<Value> {
+    let path = source_path(config)?;
+    serde_json::from_reader(std::fs::File::open(path)?).context("无法读取完整 Codex 项目登记表")
+}
+
 pub fn refresh(app: &crate::app::App) -> Result<()> {
-    let response = (|| {
-        let path = source_path(&app.config)?;
-        serde_json::from_reader(std::fs::File::open(path)?).context("无法读取完整 Codex 项目登记表")
-    })();
+    let response = read(&app.config);
     app.projects
         .lock()
         .map_err(|_| anyhow::anyhow!("项目列表锁已损坏"))?
         .update(response)
+}
+
+pub fn validate_project(config: &crate::config::Config, identifier: &str) -> Result<()> {
+    let items = parse(read(config)?)?;
+    ensure!(
+        items.iter().any(|item| item.id == identifier),
+        "项目已移除或不可用，请刷新后重试"
+    );
+    Ok(())
 }
 
 #[derive(Clone, Serialize)]

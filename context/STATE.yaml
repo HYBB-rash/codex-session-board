@@ -2,14 +2,14 @@
   "schema_version": 1,
   "updated_at": "2026-11-07",
   "current_phase": {
-    "id": "pwa-live-deployment",
-    "status": "deployed_installation_pending",
+    "id": "new-session-project",
+    "status": "implemented_live_validation_pending",
     "as_of": "2026-11-07",
-    "summary": "按用户授权将 main 功能部署到日常看板，部署记录补丁为 0.1.30。保留原生产配置、端口 18767、118 条会话及全部旧备注。服务与插件构建一致，扫描、运行观察及状态分区同步正常。用户 Chrome 已打开实际网页，安装按钮可见、清单和安装资格无错误、Service Worker 正常。等待用户自行试装；完整发布仍缺其他真实环境证据，release_ready=false。"
+    "summary": "按用户确认范围实现新建会话带入明确选中的项目。项目模式具体选择发送 projectId，搜索、全部项目与默认工作区沿用原来的空请求和 threads/new。项目校验使用本次独立登记表快照，HTTP/MCP 参数一致。前端 18 场景和 257 项自动验收通过，完整验收退出 2、release_ready=false。尚未部署、提交或验证原生客户端最终选择；此前 PWA 部署保持原状。"
   },
-  "active_tasks": [],
+  "active_tasks": ["context/tasks/active/deploy-new-session-project.md"],
   "known_open_issues": ["完整验收缺少其他真实环境证据，release_ready=false；PWA 安装入口实测不能代替全部 31 条验收。", "源码插件清单仍为 0.1.15，部署副本已统一为 0.1.30；后续打包应统一版本生成。", "项目登记与分区读回依赖当前 Codex 客户端内部状态格式，格式改变时需重新核对。", "PWA 安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。"],
-  "last_completed_task": "context/tasks/completed/pwa-live-deployment.md",
+  "last_completed_task": "context/tasks/completed/new-session-project.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",

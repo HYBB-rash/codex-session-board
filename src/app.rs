@@ -103,10 +103,7 @@ impl App {
         match (path, body) {
             ("/api/sessions", None) => self.snapshot(),
             ("/api/state", Some(body)) => self.save(body),
-            ("/api/new", Some(_)) => {
-                let url = open_client_url("codex://threads/new".to_string(), &self.config)?;
-                Ok(json!({"ok":true,"url":url}))
-            }
+            ("/api/new", Some(body)) => self.new_session(body),
             ("/api/open", Some(body)) => {
                 let identifier = body["id"].as_str().context("缺少会话 ID")?;
                 ensure!(self.store.contains(identifier)?, "会话不在本地看板中");
@@ -119,6 +116,22 @@ impl App {
             }
             _ => bail!("接口不存在"),
         }
+    }
+
+    fn new_session(&self, body: &Value) -> Result<Value> {
+        ensure!(body.is_object(), "请求格式无效");
+        let url = match body.get("projectId") {
+            None => "codex://threads/new".to_string(),
+            Some(project) => {
+                let identifier = project.as_str().context("项目 ID 必须是文本")?;
+                crate::projects::validate_project(&self.config, identifier)?;
+                let mut url = url::Url::parse("codex://new")?;
+                url.query_pairs_mut().append_pair("projectId", identifier);
+                url.to_string()
+            }
+        };
+        let url = open_client_url(url, &self.config)?;
+        Ok(json!({"ok":true,"url":url}))
     }
 
     fn save(&self, body: &Value) -> Result<Value> {
