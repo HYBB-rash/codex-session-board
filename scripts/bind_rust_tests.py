@@ -48,7 +48,7 @@ def build():
         "AUTO-004": runtime + store + isolation,
         "AUTO-005": runtime + state,
         "AUTO-006": runtime + store,
-        "MANUAL-001": store + isolation + observer,
+        "MANUAL-001": store + isolation + observer + group("::sections::tests::"),
         "MANUAL-002": store + runtime + observer,
         "MANUAL-003": store + runtime + observer,
         "TITLE-001": title_io + isolation,
