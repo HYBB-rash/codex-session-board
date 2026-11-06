@@ -1,0 +1,15 @@
+{
+  "id": "/",
+  "name": "Codex 会话看板",
+  "short_name": "会话看板",
+  "description": "查看本机 Codex 会话，调整状态和备注，回到原会话。",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f3ef",
+  "theme_color": "#32694b",
+  "icons": [
+    {"src": "/assets/board.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}
+  ]
+}

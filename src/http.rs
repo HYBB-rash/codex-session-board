@@ -69,6 +69,40 @@ pub fn info(app: &App) -> Result<Value> {
     crate::service::info(&app.config)
 }
 
+fn web_html(token: &str) -> String {
+    include_str!("../index.html")
+        .replace("__CSRF_TOKEN__", token)
+        .replacen(
+            "<title>",
+            concat!(
+                "<link rel=\"manifest\" href=\"/manifest.webmanifest\">\n",
+                "<link rel=\"icon\" href=\"/assets/board.svg\" type=\"image/svg+xml\">\n",
+                "<meta name=\"theme-color\" content=\"#32694b\">\n",
+                "<script src=\"/assets/pwa.js\" defer></script>\n<title>"
+            ),
+            1,
+        )
+}
+
+fn web_asset(path: &str) -> Option<(&'static str, &'static str)> {
+    match path {
+        "/manifest.webmanifest" => Some((
+            include_str!("../assets/manifest.webmanifest"),
+            "application/manifest+json; charset=utf-8",
+        )),
+        "/assets/board.svg" => Some((include_str!("../assets/board.svg"), "image/svg+xml")),
+        "/assets/pwa.js" => Some((
+            include_str!("../assets/pwa.js"),
+            "text/javascript; charset=utf-8",
+        )),
+        "/sw.js" => Some((
+            include_str!("../assets/sw.js"),
+            "text/javascript; charset=utf-8",
+        )),
+        _ => None,
+    }
+}
+
 pub fn handle(mut request: Request, app: &App, token: &str, port: u16) {
     let writing = request.method() != &Method::Get;
     if !authorized(
@@ -83,12 +117,10 @@ pub fn handle(mut request: Request, app: &App, token: &str, port: u16) {
     }
     let path = request.url().split('?').next().unwrap_or("").to_string();
     if !writing && path == "/" {
-        return response(
-            request,
-            200,
-            include_str!("../index.html").replace("__CSRF_TOKEN__", token),
-            "text/html; charset=utf-8",
-        );
+        return response(request, 200, web_html(token), "text/html; charset=utf-8");
+    }
+    if !writing && let Some((body, content_type)) = web_asset(&path) {
+        return response(request, 200, body.to_string(), content_type);
     }
     let result = if !writing && path == "/api/info" {
         info(app)

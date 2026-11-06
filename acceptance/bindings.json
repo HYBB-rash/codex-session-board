@@ -765,7 +765,9 @@
       "test::board_io::host_origin_and_token_are_required_for_mutation",
       "test::board_io::navigation_is_canonical_and_encodes_host_as_one_value",
       "test::board_io::open_accepts_only_known_uuid_and_preserves_all_state",
-      "test::board_io::real_http_persistence_security_and_launcher_reuse"
+      "test::board_io::real_http_persistence_security_and_launcher_reuse",
+      "test::board_io::real_http_pwa_assets_preserve_host_and_mutation_checks",
+      "test::board_io::real_http_pwa_manifest_and_assets_are_local_and_uncached"
     ],
     "APP-001": [
       "test::board_io::mcp_bridge_uses_http_versions_and_reports_pending_title_without_rollback",
@@ -872,7 +874,9 @@
       "test::board_io::host_origin_and_token_are_required_for_mutation",
       "test::board_io::navigation_is_canonical_and_encodes_host_as_one_value",
       "test::board_io::open_accepts_only_known_uuid_and_preserves_all_state",
-      "test::board_io::real_http_persistence_security_and_launcher_reuse"
+      "test::board_io::real_http_persistence_security_and_launcher_reuse",
+      "test::board_io::real_http_pwa_assets_preserve_host_and_mutation_checks",
+      "test::board_io::real_http_pwa_manifest_and_assets_are_local_and_uncached"
     ],
     "SECURITY-001": [
       "test::board_contract::store_tests::discovery_updates_metadata_but_never_removes_missing_records",
@@ -898,7 +902,9 @@
       "test::board_io::manual_save_preserves_note_when_field_is_omitted",
       "test::board_io::navigation_is_canonical_and_encodes_host_as_one_value",
       "test::board_io::open_accepts_only_known_uuid_and_preserves_all_state",
-      "test::board_io::real_http_persistence_security_and_launcher_reuse"
+      "test::board_io::real_http_persistence_security_and_launcher_reuse",
+      "test::board_io::real_http_pwa_assets_preserve_host_and_mutation_checks",
+      "test::board_io::real_http_pwa_manifest_and_assets_are_local_and_uncached"
     ],
     "HEALTH-001": [
       "test::observer_contract::active_thread_metadata_with_terminal_summary_does_not_invent_execution",

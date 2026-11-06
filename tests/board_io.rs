@@ -503,6 +503,8 @@ fn native_resource_and_tools_expose_global_app_only_actions() {
     assert_eq!(create["annotations"]["readOnlyHint"], false);
     assert!(!html.contains("<iframe") && !html.contains("https://cdn"));
     assert!(!html.contains("__CSRF_TOKEN__"));
+    assert!(!html.contains("manifest.webmanifest"));
+    assert!(!html.contains("/assets/pwa.js"));
 }
 
 #[test]
@@ -647,6 +649,87 @@ fn real_http_persistence_security_and_launcher_reuse() {
         fixture.app().store.sessions().unwrap()[0]["state"],
         "to_archive"
     );
+}
+
+#[test]
+fn real_http_pwa_manifest_and_assets_are_local_and_uncached() {
+    let fixture = Fixture::new(false);
+    let running = fixture.launch();
+    let origin = running["url"].as_str().unwrap();
+    let client = client();
+    let html = client.get(origin).send().unwrap().text().unwrap();
+    assert!(html.contains("<link rel=\"manifest\" href=\"/manifest.webmanifest\">"));
+    assert!(html.contains("<script src=\"/assets/pwa.js\" defer></script>"));
+    assert!(!html.contains("__CSRF_TOKEN__"));
+    let response = client
+        .get(format!("{origin}/manifest.webmanifest"))
+        .send()
+        .unwrap();
+    assert!(response.status().is_success());
+    assert_eq!(
+        response.headers()["Content-Type"],
+        "application/manifest+json; charset=utf-8"
+    );
+    assert_eq!(response.headers()["Cache-Control"], "no-store");
+    let manifest: Value = response.json().unwrap();
+    assert_eq!(manifest["id"], "/");
+    assert_eq!(manifest["display"], "standalone");
+    assert_eq!(manifest["start_url"], "/");
+    assert_eq!(manifest["scope"], "/");
+    assert_eq!(manifest["name"], "Codex 会话看板");
+    check_pwa_icons(&client, &manifest, origin);
+    for path in ["/assets/pwa.js", "/sw.js"] {
+        let response = client.get(format!("{origin}{path}")).send().unwrap();
+        assert!(response.status().is_success());
+        assert_eq!(
+            response.headers()["Content-Type"],
+            "text/javascript; charset=utf-8"
+        );
+        assert_eq!(response.headers()["Cache-Control"], "no-store");
+        assert_eq!(response.headers()["X-Content-Type-Options"], "nosniff");
+        assert!(!response.text().unwrap().contains("__CSRF_TOKEN__"));
+    }
+}
+
+fn check_pwa_icons(client: &reqwest::blocking::Client, manifest: &Value, origin: &str) {
+    for icon in manifest["icons"].as_array().unwrap() {
+        let url = url::Url::parse(origin)
+            .unwrap()
+            .join(icon["src"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(url.origin(), url::Url::parse(origin).unwrap().origin());
+        let response = client.get(url).send().unwrap();
+        assert!(response.status().is_success());
+        assert_eq!(
+            response.headers()["Content-Type"],
+            icon["type"].as_str().unwrap()
+        );
+        assert!(response.text().unwrap().starts_with("<svg"));
+    }
+}
+
+#[test]
+fn real_http_pwa_assets_preserve_host_and_mutation_checks() {
+    let fixture = Fixture::new(false);
+    let running = fixture.launch();
+    let origin = running["url"].as_str().unwrap();
+    let client = client();
+    for path in ["/", "/manifest.webmanifest", "/assets/pwa.js", "/sw.js"] {
+        let endpoint = format!("{origin}{path}");
+        let response = client
+            .get(&endpoint)
+            .header("Host", "attacker.invalid")
+            .send()
+            .unwrap();
+        assert_eq!(response.status(), 403);
+        let response = client.post(&endpoint).json(&json!({})).send().unwrap();
+        assert_eq!(response.status(), 403);
+    }
+    let response = client
+        .get(format!("{origin}/assets/../config.example.json"))
+        .send()
+        .unwrap();
+    assert!(!response.status().is_success());
 }
 
 fn save_over_http(url: &str, client: &reqwest::blocking::Client) {

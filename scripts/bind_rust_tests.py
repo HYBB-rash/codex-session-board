@@ -26,7 +26,7 @@ def build():
     configuration = group("::config::tests::")
     service = group("::service::tests::", "changed_config_or_port", "real_http_persistence", "service_update")
     mcp = group("native_resource", "real_stdio_mcp", "saved_state_reports", "mcp_bridge_")
-    security = group("host_origin", "navigation_is_canonical", "open_accepts", "real_http_persistence")
+    security = group("host_origin", "navigation_is_canonical", "open_accepts", "real_http_persistence", "real_http_pwa")
     python_gate = [
         "acceptance.test_gate.GateTests." + name
         for name in (

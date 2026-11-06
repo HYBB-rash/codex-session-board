@@ -2,14 +2,14 @@
   "schema_version": 1,
   "updated_at": "2026-11-06",
   "current_phase": {
-    "id": "project-filter",
-    "status": "deployed_feature_verified_release_evidence_pending",
+    "id": "pwa-support",
+    "status": "rebased_verification_pending",
     "as_of": "2026-11-06",
-    "summary": "已部署 0.1.27 到既有服务与原生插件，项目切换、全局搜索、真实移除和同目录重新添加均通过实测。修复无关残缺 Git 仓库错误显示归属待确认的问题。118 条记录、4 个本地项目、默认工作区 85 条，备注保留，运行观察及分区同步正常。完整验收 252 项自动检查通过，其他真实环境证据仍缺，release_ready=false。最终提交后运行普通检查直到退出 0。"
+    "summary": "等待原任务完成部署与实测收尾后，将 PWA 重放到 e828e96，补丁版本为 0.1.28。保留项目筛选、全局搜索、状态分区、无关残缺 Git 仓库归属修复及全部验收绑定。日常部署仍为原任务验证的 0.1.27，本轮仅准备源码快进合回，不部署；release_ready=false。"
   },
   "active_tasks": [],
-  "known_open_issues": ["完整验收缺少其他真实环境证据，release_ready=false；项目筛选真实实测不能代替全部 31 条验收。", "源码插件清单仍为 0.1.15，部署副本已统一为 0.1.27；后续打包应统一版本生成。", "项目登记与分区读回依赖当前 Codex 客户端内部状态格式，格式改变时需重新核对。"],
-  "last_completed_task": "context/tasks/completed/project-filter-live-deployment.md",
+  "known_open_issues": ["完整验收缺少其他真实环境证据，release_ready=false；项目筛选真实实测不能代替全部 31 条验收。", "源码插件清单仍为 0.1.15，部署副本已统一为 0.1.27；后续打包应统一版本生成。", "项目登记与分区读回依赖当前 Codex 客户端内部状态格式，格式改变时需重新核对。", "PWA 尚未部署到日常服务，也未执行操作系统安装和独立应用启动；最新基线需要重新验证。"],
+  "last_completed_task": "context/tasks/completed/pwa-support.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
