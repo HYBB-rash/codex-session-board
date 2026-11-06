@@ -11,5 +11,10 @@
   "open_command": ["xdg-open"],
   "desktop_socket": "",
   "runtime_poll_seconds": 2,
-  "sync_titles": true
+  "sync_titles": true,
+  "sync_sections": false,
+  "sidebar_socket": "",
+  "sidebar_caller": "",
+  "sidebar_state_file": "",
+  "status_sections": {}
 }

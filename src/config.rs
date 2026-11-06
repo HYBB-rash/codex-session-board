@@ -2,6 +2,7 @@ use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, HashSet};
 use std::env;
 use std::fs::{self, DirBuilder, OpenOptions};
 use std::io::{Read, Write};
@@ -25,6 +26,11 @@ pub struct Config {
     pub desktop_socket: PathBuf,
     pub runtime_poll_seconds: u64,
     pub sync_titles: bool,
+    pub sync_sections: bool,
+    pub sidebar_socket: PathBuf,
+    pub sidebar_caller: String,
+    pub sidebar_state_file: PathBuf,
+    pub status_sections: BTreeMap<String, String>,
 }
 
 impl Default for Config {
@@ -52,6 +58,11 @@ impl Default for Config {
                 .unwrap_or_default(),
             runtime_poll_seconds: 2,
             sync_titles: true,
+            sync_sections: false,
+            sidebar_socket: PathBuf::new(),
+            sidebar_caller: String::new(),
+            sidebar_state_file: PathBuf::new(),
+            status_sections: BTreeMap::new(),
         }
     }
 }
@@ -69,6 +80,9 @@ impl Config {
         }
         ensure!(!self.host_id.is_empty(), "host_id 必须为非空文本");
         ensure!(!self.data_dir.as_os_str().is_empty(), "data_dir 不得为空");
+        if self.sync_sections {
+            self.validate_sections()?;
+        }
         for (name, value) in [
             ("poll_seconds", self.poll_seconds as u128),
             ("rpc_timeout_seconds", self.rpc_timeout_seconds as u128),
@@ -78,6 +92,35 @@ impl Config {
             ("runtime_poll_seconds", self.runtime_poll_seconds as u128),
         ] {
             ensure!(value > 0, "{name} 必须为正整数");
+        }
+        Ok(())
+    }
+
+    fn validate_sections(&self) -> Result<()> {
+        ensure!(
+            self.sidebar_state_file.is_absolute(),
+            "sidebar_state_file 必须为绝对路径"
+        );
+        ensure!(
+            uuid::Uuid::parse_str(&self.sidebar_caller).is_ok(),
+            "sidebar_caller 必须为会话 ID"
+        );
+        ensure!(
+            self.sidebar_socket.is_absolute(),
+            "sidebar_socket 必须为绝对路径"
+        );
+        ensure!(
+            self.status_sections.len() == crate::model::STATES.len(),
+            "需要六个状态分区"
+        );
+        let mut identifiers = HashSet::new();
+        for (state, _) in crate::model::STATES {
+            let identifier = self.status_sections.get(state).context("缺少状态分区")?;
+            ensure!(
+                uuid::Uuid::parse_str(identifier).is_ok(),
+                "状态分区 ID 无效"
+            );
+            ensure!(identifiers.insert(identifier), "状态分区不得重复");
         }
         Ok(())
     }
@@ -357,6 +400,36 @@ mod tests {
             assert!(load(Some(&path)).is_err(), "{invalid}");
         }
         assert!(!fixture.0.join("data").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn section_sync_requires_explicit_unique_complete_destinations() -> Result<()> {
+        let fixture = Fixture::new()?;
+        let mut config = Config {
+            data_dir: fixture.0.clone(),
+            ..Config::default()
+        };
+        config.validate()?;
+        config.sync_sections = true;
+        assert!(config.validate().is_err());
+        config.sidebar_socket = fixture.0.join("desktop.sock");
+        config.sidebar_caller = uuid::Uuid::new_v4().to_string();
+        config.sidebar_state_file = fixture.0.join("state.json");
+        config.status_sections = crate::model::STATES
+            .iter()
+            .map(|(state, _)| (state.to_string(), uuid::Uuid::new_v4().to_string()))
+            .collect();
+        config.validate()?;
+        let duplicate = config.status_sections["unknown"].clone();
+        config.status_sections.insert("review".into(), duplicate);
+        assert!(config.validate().is_err());
+        config
+            .status_sections
+            .insert("review".into(), "pinned".into());
+        assert!(config.validate().is_err());
+        config.status_sections.remove("review");
+        assert!(config.validate().is_err());
         Ok(())
     }
 

@@ -407,6 +407,15 @@ impl Store {
             .collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    pub fn state_revision(&self, identifier: &str) -> Result<(String, i64)> {
+        let database = self.connection()?;
+        let row = get_row(&database, identifier)?;
+        Ok((
+            effective(&row),
+            row["version"].as_i64().context("状态版本无效")?,
+        ))
+    }
+
     pub fn title_current(&self, identifier: &str, version: i64) -> Result<bool> {
         Ok(self
             .connection()?

@@ -397,6 +397,111 @@ impl Drop for DesktopConnection {
     }
 }
 
+pub struct SidebarConnection {
+    stream: DeadlineStream,
+    caller: String,
+    host: String,
+    request_id: u64,
+}
+
+fn sidebar_path(configured: &Path) -> Result<PathBuf> {
+    match configured.canonicalize() {
+        Ok(path) => return Ok(path),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    let parent = configured.parent().context("分区连接缺少父目录")?;
+    let candidates = std::fs::read_dir(parent)?
+        .map(|entry| entry.map(|entry| entry.path()))
+        .collect::<io::Result<Vec<_>>>()?
+        .into_iter()
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "sock")
+        })
+        .collect::<Vec<_>>();
+    ensure!(
+        candidates.len() == 1,
+        "分区连接已更换，无法唯一确定新 socket"
+    );
+    Ok(candidates[0].canonicalize()?)
+}
+
+impl SidebarConnection {
+    pub fn connect(config: &crate::config::Config, timeout: Duration) -> Result<Self> {
+        use std::os::unix::fs::FileTypeExt;
+        let path = sidebar_path(&config.sidebar_socket)?;
+        let metadata = path.metadata()?;
+        let parent = path.parent().context("分区连接缺少父目录")?.metadata()?;
+        let owner = rustix::process::getuid().as_raw();
+        ensure!(
+            metadata.file_type().is_socket()
+                && metadata.uid() == owner
+                && metadata.mode() & 0o7777 == 0o600
+                && parent.uid() == owner
+                && parent.mode() & 0o022 == 0,
+            "分区连接所有者或权限无效"
+        );
+        let deadline = deadline_after(timeout)?;
+        Ok(Self {
+            stream: DeadlineStream {
+                stream: connect_unix(&path, deadline)?,
+                deadline,
+            },
+            caller: config.sidebar_caller.clone(),
+            host: config.host_id.clone(),
+            request_id: 0,
+        })
+    }
+
+    fn receive(&mut self) -> Result<Value> {
+        let mut header = [0; 4];
+        self.stream.read_exact(&mut header)?;
+        let length = u32::from_le_bytes(header) as usize;
+        ensure!(length <= 8 * 1024 * 1024, "分区响应过大");
+        let mut bytes = vec![0; length];
+        self.stream.read_exact(&mut bytes)?;
+        Ok(serde_json::from_slice(&bytes)?)
+    }
+}
+
+impl Rpc for SidebarConnection {
+    fn call(&mut self, method: &str, params: Value) -> Result<Value> {
+        ensure!(
+            matches!(method, "list_threads" | "move_thread_to_sidebar_section"),
+            "分区连接不允许调用 {method}"
+        );
+        self.request_id = self.request_id.checked_add(1).context("分区请求编号耗尽")?;
+        let request = json!({"jsonrpc":"2.0","id":self.request_id,"method":"tools/call",
+            "params":{"namespace":"codex_app","tool":method,"arguments":params,
+                "callerSource":"codex","hostId":self.host,"threadId":self.caller,
+                "turnId":"session-board-sections","callId":uuid::Uuid::new_v4().to_string()}});
+        let bytes = serde_json::to_vec(&request)?;
+        self.stream
+            .write_all(&u32::try_from(bytes.len())?.to_le_bytes())?;
+        self.stream.write_all(&bytes)?;
+        loop {
+            let response = self.receive()?;
+            if let Some(result) = response_result(response, self.request_id, method)? {
+                ensure!(
+                    result["success"] == true,
+                    "分区工具失败: {}",
+                    result["contentItems"]
+                );
+                let content = result["contentItems"]
+                    .as_array()
+                    .context("分区回执缺少内容")?;
+                let text = content
+                    .iter()
+                    .find(|item| item["type"] == "inputText")
+                    .and_then(|item| item["text"].as_str())
+                    .context("分区回执缺少 JSON")?;
+                return Ok(serde_json::from_str(text)?);
+            }
+        }
+    }
+}
+
 pub fn list_threads(
     reader: &mut dyn Rpc,
     page_size: usize,
@@ -494,6 +599,94 @@ mod tests {
     struct MockRpc {
         replies: VecDeque<Value>,
         calls: Vec<(String, Value)>,
+    }
+
+    fn sidebar_pair() -> Result<(SidebarConnection, UnixStream)> {
+        let (client, server) = UnixStream::pair()?;
+        client.set_nonblocking(true)?;
+        Ok((
+            SidebarConnection {
+                stream: DeadlineStream {
+                    stream: client,
+                    deadline: deadline_after(Duration::from_millis(300))?,
+                },
+                caller: "caller".into(),
+                host: "local".into(),
+                request_id: 0,
+            },
+            server,
+        ))
+    }
+
+    #[test]
+    fn sidebar_frames_wrap_caller_and_preserve_target_and_decode_content() -> Result<()> {
+        let (mut client, mut server) = sidebar_pair()?;
+        let worker = thread::spawn(move || -> Result<()> {
+            let mut header = [0; 4];
+            server.read_exact(&mut header)?;
+            let mut bytes = vec![0; u32::from_le_bytes(header) as usize];
+            server.read_exact(&mut bytes)?;
+            let request: Value = serde_json::from_slice(&bytes)?;
+            assert_eq!(request["params"]["threadId"], "caller");
+            assert_eq!(request["params"]["arguments"]["threadId"], "target");
+            assert_eq!(request["params"]["namespace"], "codex_app");
+            assert_eq!(request["params"]["tool"], "move_thread_to_sidebar_section");
+            let response = serde_json::to_vec(&json!({"id":request["id"],"result":{
+                "success":true,"contentItems":[{"type":"inputText","text":"{\"ok\":true}"}]}}))?;
+            server.write_all(&u32::try_from(response.len())?.to_le_bytes())?;
+            server.write_all(&response)?;
+            Ok(())
+        });
+        assert_eq!(
+            client.call(
+                "move_thread_to_sidebar_section",
+                json!({"threadId":"target"})
+            )?["ok"],
+            true
+        );
+        worker.join().unwrap()?;
+        Ok(())
+    }
+
+    #[test]
+    fn sidebar_denies_other_tools_before_io_and_bounds_missing_responses() -> Result<()> {
+        let (mut client, mut server) = sidebar_pair()?;
+        for method in [
+            "create_sidebar_section",
+            "delete_sidebar_section",
+            "send_message_to_thread",
+            "thread/unarchive",
+        ] {
+            assert!(client.call(method, json!({})).is_err());
+        }
+        server.set_nonblocking(true)?;
+        assert_eq!(
+            server.read(&mut [0; 1]).unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
+        client.stream.deadline = deadline_after(Duration::from_millis(30))?;
+        let started = Instant::now();
+        assert!(client.call("list_threads", json!({})).is_err());
+        assert!(started.elapsed() < Duration::from_millis(150));
+        Ok(())
+    }
+
+    #[test]
+    fn sidebar_successor_is_unique_and_permissions_are_rechecked() -> Result<()> {
+        let sandbox = Sandbox::create()?;
+        let (path, _listener) = sandbox.listener()?;
+        let old = sandbox.0.join("previous.sock");
+        assert_eq!(sidebar_path(&old)?, path);
+        let config = crate::config::Config {
+            sidebar_socket: old.clone(),
+            ..crate::config::Config::default()
+        };
+        let _connection = SidebarConnection::connect(&config, Duration::from_millis(100))?;
+        fs::set_permissions(&path, Permissions::from_mode(0o666))?;
+        assert!(SidebarConnection::connect(&config, Duration::from_millis(100)).is_err());
+        let _another = UnixListener::bind(sandbox.0.join("another.sock"))?;
+        assert!(sidebar_path(&old).is_err());
+        Ok(())
     }
 
     impl Rpc for MockRpc {
