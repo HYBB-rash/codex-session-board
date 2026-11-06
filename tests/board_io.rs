@@ -41,6 +41,58 @@ impl Fixture {
         app::App::new(config::load(Some(&self.path)).unwrap()).unwrap()
     }
 
+    fn register_projects(&mut self, identifiers: &[&str]) -> PathBuf {
+        let path = self._directory.path().join("projects.json");
+        let mut entries = serde_json::Map::new();
+        for (position, identifier) in identifiers.iter().enumerate() {
+            let root = self._directory.path().join(format!("project-{position}"));
+            fs::create_dir_all(&root).unwrap();
+            entries.insert(
+                identifier.to_string(),
+                json!({"id":identifier,"name":"同名项目","rootPaths":[root]}),
+            );
+        }
+        fs::write(&path, json!({"local-projects":entries}).to_string()).unwrap();
+        self.settings["sidebar_state_file"] = json!(path);
+        fs::write(&self.path, self.settings.to_string()).unwrap();
+        path
+    }
+
+    fn capture_opens(&mut self) -> PathBuf {
+        let path = self._directory.path().join("opened-urls");
+        self.settings["open_command"] =
+            json!(["/bin/sh", "-c", "printf '%s\\n' \"$1\" >> \"$0\"", path]);
+        fs::write(&self.path, self.settings.to_string()).unwrap();
+        path
+    }
+
+    fn mcp_calls(&self, requests: &[(&str, Value)]) -> Vec<Value> {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
+            .args(["mcp", "--config", self.path.to_str().unwrap()])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut input = child.stdin.take().unwrap();
+        for (position, (name, arguments)) in requests.iter().enumerate() {
+            writeln!(
+                input,
+                "{}",
+                json!({"id":position + 1,"method":"tools/call",
+                    "params":{"name":name,"arguments":arguments}})
+            )
+            .unwrap();
+        }
+        drop(input);
+        let output = child.wait_with_output().unwrap();
+        assert!(output.status.success());
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    }
+
     fn cli(&self, action: &str) -> std::process::Output {
         Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
             .args(["--config", self.path.to_str().unwrap(), action])
@@ -501,6 +553,11 @@ fn native_resource_and_tools_expose_global_app_only_actions() {
         .unwrap();
     assert_eq!(create["_meta"]["ui"]["visibility"], json!(["app"]));
     assert_eq!(create["annotations"]["readOnlyHint"], false);
+    assert_eq!(
+        create["inputSchema"]["properties"]["projectId"],
+        json!({"type":"string"})
+    );
+    assert_eq!(create["inputSchema"]["required"], json!([]));
     assert!(!html.contains("<iframe") && !html.contains("https://cdn"));
     assert!(!html.contains("__CSRF_TOKEN__"));
     assert!(!html.contains("manifest.webmanifest"));
@@ -546,36 +603,13 @@ fn real_stdio_mcp_handshake_and_resource_round_trip() {
 fn mcp_bridge_uses_http_versions_and_reports_pending_title_without_rollback() {
     let fixture = Fixture::new(true);
     fixture.populate();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
-        .args(["mcp", "--config", fixture.path.to_str().unwrap()])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
     let body = json!({"id":FIRST,"state":"review","note":"桥接备注","version":0,"inputVersion":0});
-    let mut input = child.stdin.take().unwrap();
-    for (identifier, name, arguments) in [
-        (1, "board_update", body.clone()),
-        (2, "board_update", body),
-        (3, "board_snapshot", json!({})),
-        (4, "board_open", json!({"id":"invalid"})),
-    ] {
-        writeln!(
-            input,
-            "{}",
-            json!({"id":identifier,"method":"tools/call",
-            "params":{"name":name,"arguments":arguments}})
-        )
-        .unwrap();
-    }
-    drop(input);
-    let output = child.wait_with_output().unwrap();
-    assert!(output.status.success());
-    let replies: Vec<Value> = String::from_utf8(output.stdout)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
+    let replies = fixture.mcp_calls(&[
+        ("board_update", body.clone()),
+        ("board_update", body),
+        ("board_snapshot", json!({})),
+        ("board_open", json!({"id":"invalid"})),
+    ]);
     assert_eq!(
         replies[0]["result"]["structuredContent"]["titlePending"],
         true
@@ -585,6 +619,26 @@ fn mcp_bridge_uses_http_versions_and_reports_pending_title_without_rollback() {
     assert_eq!(row["state"], "review");
     assert_eq!(row["note"], "桥接备注");
     assert_eq!(replies[3]["result"]["isError"], true);
+}
+
+#[test]
+fn mcp_new_session_forwards_optional_project_to_http() {
+    let mut fixture = Fixture::new(false);
+    fixture.register_projects(&["project-a"]);
+    let replies = fixture.mcp_calls(&[
+        ("board_new", json!({"projectId":"project-a"})),
+        ("board_new", json!({})),
+        ("board_new", json!({"projectId":"removed"})),
+    ]);
+    assert_eq!(
+        replies[0]["result"]["structuredContent"]["url"],
+        "codex://new?projectId=project-a"
+    );
+    assert_eq!(
+        replies[1]["result"]["structuredContent"]["url"],
+        "codex://threads/new"
+    );
+    assert_eq!(replies[2]["result"]["isError"], true);
 }
 
 #[test]
@@ -859,4 +913,85 @@ fn open_accepts_only_known_uuid_and_preserves_all_state() {
     failing_config.open_command = vec!["/bin/false".into()];
     let failing_app = app::App::new(failing_config).unwrap();
     assert!(failing_app.request("/api/new", Some(&json!({}))).is_err());
+}
+
+#[test]
+fn new_session_uses_explicit_projects_and_preserves_state() {
+    let mut fixture = Fixture::new(false);
+    let identifiers = ["project-a", "项目 B &prompt=unexpected?#/"];
+    fixture.register_projects(&identifiers);
+    let captured = fixture.capture_opens();
+    fixture.populate();
+    let app = fixture.app();
+    let before = app.store.sessions().unwrap();
+    assert_eq!(
+        app.request("/api/new", Some(&json!({}))).unwrap()["url"],
+        "codex://threads/new"
+    );
+    let mut expected = vec!["codex://threads/new".to_string()];
+    for identifier in identifiers {
+        let result = app
+            .request("/api/new", Some(&json!({"projectId":identifier})))
+            .unwrap();
+        let url = result["url"].as_str().unwrap();
+        let parsed = url::Url::parse(url).unwrap();
+        assert_eq!(parsed.host_str(), Some("new"));
+        assert_eq!(
+            parsed.query_pairs().collect::<Vec<_>>(),
+            vec![("projectId".into(), identifier.into())]
+        );
+        expected.push(url.to_string());
+    }
+    assert_eq!(
+        fs::read_to_string(captured)
+            .unwrap()
+            .lines()
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert_eq!(app.store.sessions().unwrap(), before);
+}
+
+#[test]
+fn new_session_rejects_stale_projects_without_changing_default_navigation() {
+    let mut fixture = Fixture::new(false);
+    let projects = fixture.register_projects(&["project-a"]);
+    let captured = fixture.capture_opens();
+    let app = fixture.app();
+    app.request("/api/new", Some(&json!({"projectId":"project-a"})))
+        .unwrap();
+    for invalid in [json!(null), json!(42), json!(""), json!("unknown")] {
+        assert!(
+            app.request("/api/new", Some(&json!({"projectId":invalid})))
+                .is_err()
+        );
+    }
+    for contents in [Some("{\"local-projects\":{}}"), Some("{"), None] {
+        fixture.register_projects(&["project-a"]);
+        codex_session_board::projects::refresh(&app).unwrap();
+        match contents {
+            Some(text) => fs::write(&projects, text).unwrap(),
+            None => fs::remove_file(&projects).unwrap(),
+        }
+        assert!(
+            app.request("/api/new", Some(&json!({"projectId":"project-a"})))
+                .is_err()
+        );
+        assert_eq!(
+            app.request("/api/new", Some(&json!({}))).unwrap()["url"],
+            "codex://threads/new"
+        );
+    }
+    assert_eq!(
+        fs::read_to_string(captured)
+            .unwrap()
+            .lines()
+            .collect::<Vec<_>>(),
+        vec![
+            "codex://new?projectId=project-a",
+            "codex://threads/new",
+            "codex://threads/new",
+            "codex://threads/new"
+        ]
+    );
 }
