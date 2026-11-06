@@ -1,6 +1,6 @@
 use crate::{
     config::Config,
-    model::{STATES, now},
+    model::{board_state, board_states, now},
     rpc::{DesktopConnection, Role, SidebarConnection},
     store::Store,
     titles,
@@ -21,7 +21,7 @@ pub struct App {
     pub refresh: AtomicBool,
     pub health: Mutex<Value>,
     pub(crate) projects: Mutex<crate::projects::Catalog>,
-    title_lock: Mutex<()>,
+    pub(crate) title_lock: Mutex<()>,
     pub(crate) section_lock: Mutex<()>,
     pub(crate) active_sessions: Mutex<Option<HashSet<String>>>,
     pub(crate) section_cursor: AtomicUsize,
@@ -88,15 +88,24 @@ impl App {
     }
 
     pub fn snapshot(&self) -> Result<Value> {
-        let states: serde_json::Map<String, Value> = STATES
-            .iter()
+        let states: serde_json::Map<String, Value> = board_states()
             .map(|(state, label)| (state.to_string(), json!(label)))
             .collect();
         let mut sessions = self.store.sessions()?;
-        let mut projects = self.projects.lock().map_err(|_| anyhow::anyhow!("项目列表锁已损坏"))?;
+        for session in &mut sessions {
+            if session["state"] == "completed" {
+                session["state"] = json!(board_state("completed"));
+            }
+        }
+        let mut projects = self
+            .projects
+            .lock()
+            .map_err(|_| anyhow::anyhow!("项目列表锁已损坏"))?;
         projects.annotate(&mut sessions);
-        Ok(json!({"states":states,"sessions":sessions,"projectCatalog":*projects,
-            "health":self.health.lock().map_err(|_| anyhow::anyhow!("健康状态锁已损坏"))?.clone()}))
+        Ok(
+            json!({"states":states,"sessions":sessions,"projectCatalog":*projects,
+            "health":self.health.lock().map_err(|_| anyhow::anyhow!("健康状态锁已损坏"))?.clone()}),
+        )
     }
 
     pub fn request(&self, path: &str, body: Option<&Value>) -> Result<Value> {

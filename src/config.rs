@@ -110,11 +110,13 @@ impl Config {
             "sidebar_socket 必须为绝对路径"
         );
         ensure!(
-            self.status_sections.len() == crate::model::STATES.len(),
-            "需要六个状态分区"
+            self.status_sections
+                .keys()
+                .all(|state| crate::model::STATES.iter().any(|item| item.0 == state)),
+            "包含未知状态分区"
         );
         let mut identifiers = HashSet::new();
-        for (state, _) in crate::model::STATES {
+        for (state, _) in crate::model::board_states() {
             let identifier = self.status_sections.get(state).context("缺少状态分区")?;
             ensure!(
                 uuid::Uuid::parse_str(identifier).is_ok(),
@@ -422,6 +424,8 @@ mod tests {
             .collect();
         config.validate()?;
         let duplicate = config.status_sections["unknown"].clone();
+        config.status_sections.remove("completed");
+        config.validate()?;
         config.status_sections.insert("review".into(), duplicate);
         assert!(config.validate().is_err());
         config

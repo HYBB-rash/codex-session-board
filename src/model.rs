@@ -9,6 +9,20 @@ pub const STATES: [(&str, &str); 6] = [
     ("completed", "已完成"),
 ];
 
+pub fn board_state(state: &str) -> &str {
+    if state == "completed" {
+        "to_archive"
+    } else {
+        state
+    }
+}
+
+pub fn board_states() -> impl Iterator<Item = (&'static str, &'static str)> {
+    STATES
+        .into_iter()
+        .filter(|(state, _)| *state != "completed")
+}
+
 pub fn runtime_state(status: &Value, turn: &Value) -> Option<(&'static str, &'static str)> {
     match status["type"].as_str() {
         Some("active") if turn["status"] == "inProgress" => {

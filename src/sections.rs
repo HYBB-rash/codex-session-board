@@ -1,4 +1,8 @@
-use crate::{app::App, model::STATES, rpc::Rpc};
+use crate::{
+    app::App,
+    model::{board_state, board_states},
+    rpc::Rpc,
+};
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -17,7 +21,7 @@ pub fn layout(writer: &mut dyn Rpc, app: &App) -> Result<HashMap<String, HashSet
     );
     let sections = response["sections"].as_array().context("缺少原生分区")?;
     let mut result = HashMap::new();
-    for (state, label) in STATES {
+    for (state, label) in board_states() {
         let identifier = app
             .config
             .status_sections
@@ -105,7 +109,7 @@ pub fn move_one(app: &App, writer: &mut dyn Rpc, identifier: &str) -> Result<Val
     let target = app
         .config
         .status_sections
-        .get(&state)
+        .get(board_state(&state))
         .context("缺少目标状态分区")?;
     ensure!(app.is_active(identifier)?, "会话已离开当前发现范围");
     writer.call("move_thread_to_sidebar_section",
@@ -131,7 +135,7 @@ pub fn reconcile(app: &App, writer: &mut dyn Rpc, only: Option<&str>) -> Result<
         uuid::Uuid::parse_str(identifier).context("无效会话 ID")?;
         let (state, version) = app.store.state_revision(identifier)?;
         if before
-            .get(&state)
+            .get(board_state(&state))
             .is_some_and(|keys| keys.contains(&item_key(app, identifier)))
         {
             continue;
@@ -139,7 +143,7 @@ pub fn reconcile(app: &App, writer: &mut dyn Rpc, only: Option<&str>) -> Result<
         let target = app
             .config
             .status_sections
-            .get(&state)
+            .get(board_state(&state))
             .context("缺少目标状态分区")?;
         if !app.is_active(identifier)? || app.store.state_revision(identifier)? != (state, version)
         {
@@ -157,7 +161,7 @@ pub fn reconcile(app: &App, writer: &mut dyn Rpc, only: Option<&str>) -> Result<
             let state = session["state"].as_str().unwrap_or("");
             let identifier = session["id"].as_str().unwrap_or("");
             !after
-                .get(state)
+                .get(board_state(state))
                 .is_some_and(|keys| keys.contains(&item_key(app, identifier)))
         })
         .count();
@@ -170,6 +174,7 @@ pub fn reconcile(app: &App, writer: &mut dyn Rpc, only: Option<&str>) -> Result<
 mod tests {
     use super::*;
     use crate::config::Config;
+    use crate::model::STATES;
     use anyhow::bail;
 
     const FIRST: &str = "00000000-0000-4000-8000-000000000001";
@@ -483,7 +488,7 @@ mod tests {
         assert_eq!(native.calls.len(), 1);
         assert_eq!(
             native.calls[0]["sectionId"],
-            app.config.status_sections["completed"]
+            app.config.status_sections["to_archive"]
         );
         assert_eq!(reconcile(&app, &mut native, Some(FIRST))?["pending"], 0);
         app.discover(&[json!({"id":SECOND})], true)?;
