@@ -21,3 +21,8 @@ coordinator: codex
 
 随后按用户要求与 main 的 PWA 部署记录整合至 0.1.35，保留双方历史并快进 main。
 新指纹下 265 项自动验收通过，完整验收仍退出 2；归档扩展未部署。
+
+用户随后授权部署 main，现已部署组合版本 0.1.39。
+实际 Chrome 看板已显示五列和归档按钮，插件读回 board_archive schema。
+120 条既有会话、备注及人工状态保留；未点击归档按钮，真实归档执行仍待验证。
+部署证据见 context/tasks/completed/main-live-deployment.md。

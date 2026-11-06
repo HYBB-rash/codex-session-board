@@ -48,3 +48,10 @@ STATE-001 的六状态与 BOUNDARY-001 的禁止真实归档不再是新界面�
 日常版本应以该部署记录的 0.1.30 为准；PWA 安装入口已实测，归档扩展仍未部署。
 新报告 archive-merge-0.1.35.json：265 项自动检查通过，完整验收退出 2，release_ready=false；
 实现指纹 d0743bbfa654e2e101282853a85dc2efd6a6c7aa08c5fa806c9b14a74202fbe3。
+
+最新进展：用户授权部署 main，现日常服务及插件为 0.1.39，
+包含归档扩展与项目继承新建会话。实际 Chrome 已显示五列及归档按钮，
+当前版本 268 项自动检查通过，完整验收退出 2，release_ready=false。
+没有归档用户真实会话，下一步是获得专用会话的原生执行证据。
+备份、版本和数据核对见 context/tasks/completed/main-live-deployment.md，
+本次保留原生产配置及分区映射，没有删除原生自定义分区。
