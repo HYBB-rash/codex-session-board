@@ -3,13 +3,13 @@
   "updated_at": "2026-11-06",
   "current_phase": {
     "id": "project-filter",
-    "status": "implementation_committed_evidence_pending",
+    "status": "deployed_feature_verified_release_evidence_pending",
     "as_of": "2026-11-06",
-    "summary": "项目下拉与搜索按钮切换已实现，源码版本 0.1.26；隔离界面验证和本机四项目、外部工作树只读匹配验证通过。完整验收 252 项自动检查通过，缺少真实环境证据，release_ready=false，不宣称开发完成。本轮不部署，既有服务仍为此前版本。最终提交后运行普通检查直到退出 0。"
+    "summary": "已部署 0.1.27 到既有服务与原生插件，项目切换、全局搜索、真实移除和同目录重新添加均通过实测。修复无关残缺 Git 仓库错误显示归属待确认的问题。118 条记录、4 个本地项目、默认工作区 85 条，备注保留，运行观察及分区同步正常。完整验收 252 项自动检查通过，其他真实环境证据仍缺，release_ready=false。最终提交后运行普通检查直到退出 0。"
   },
   "active_tasks": [],
-  "known_open_issues": ["完整验收缺少其他真实环境证据，release_ready=false；隔离项目筛选 UI 验证不能代替全部 31 条真实环境验收。", "源码插件清单仍为 0.1.15，既有部署副本为 0.1.18；后续打包应统一版本生成。", "项目登记与分区读回依赖当前 Codex 客户端内部状态格式，格式改变时需重新核对。"],
-  "last_completed_task": "context/tasks/completed/project-filter-implementation.md",
+  "known_open_issues": ["完整验收缺少其他真实环境证据，release_ready=false；项目筛选真实实测不能代替全部 31 条验收。", "源码插件清单仍为 0.1.15，部署副本已统一为 0.1.27；后续打包应统一版本生成。", "项目登记与分区读回依赖当前 Codex 客户端内部状态格式，格式改变时需重新核对。"],
+  "last_completed_task": "context/tasks/completed/project-filter-live-deployment.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",

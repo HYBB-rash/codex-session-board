@@ -158,9 +158,12 @@ impl Catalog {
         let Some(repository) = crate::workspaces::repository(&path)? else {
             return Ok(Value::Null);
         };
-        ensure!(repository.has_head, "Git 工作树元数据不完整");
         let relative = path.strip_prefix(&repository.root)?;
         let candidates = self.linked_roots(&repository, relative)?;
+        ensure!(
+            candidates.is_empty() || repository.has_head,
+            "Git 工作树元数据不完整"
+        );
         let depth = candidates.iter().map(|(depth, _)| *depth).max();
         let matches: HashSet<_> = candidates
             .into_iter()
@@ -481,6 +484,12 @@ mod tests {
             catalog.assignment(unrelated.to_str().unwrap())?,
             "unrelated"
         );
+        let unregistered = directory.path().join("unregistered");
+        std::fs::create_dir_all(unregistered.join(".git"))?;
+        let mut sessions = vec![json!({"cwd":unregistered})];
+        catalog.annotate(&mut sessions);
+        assert!(sessions[0]["projectId"].is_null());
+        assert!(sessions[0]["projectIssue"].is_null());
         Ok(())
     }
 }
