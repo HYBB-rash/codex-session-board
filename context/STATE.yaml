@@ -3,13 +3,13 @@
   "updated_at": "2026-11-06",
   "current_phase": {
     "id": "status-sidebar-sections",
-    "status": "deployed_and_live_verified",
+    "status": "implementation_committed_evidence_pending",
     "as_of": "2026-11-06",
-    "summary": "Rust 看板 0.1.18 已部署状态分区扩展。七个旧自定义分区替换为六状态，115 条本机会话原生位置与看板状态一致，真实 HTTP 状态切换及恢复均独立读回成功。既有验收 243 项自动通过，其他真实环境证据待补充，release_ready=false。正在整理提交与检查收尾，源码首批已准备 0.1.19，尚未创建提交。"
+    "summary": "状态分区实现、回归测试、规则变更与项目筛选调研记录已分批整理提交，最终源码版本 0.1.23；部署仍为此前的 0.1.18，本轮不部署。0.1.22 提交后普通检查已退出 0，最终记录提交后再次检查。0.1.23 完整验收的 243 项自动检查通过，缺少真实环境证据，release_ready=false。项目下拉与标题搜索切换仅完成调研和设计确认，尚未实现。"
   },
-  "active_tasks": ["context/tasks/active/check-closeout.md"],
+  "active_tasks": [],
   "known_open_issues": ["完整验收缺少其他真实环境证据，release_ready=false；状态分区有独立 API 实测但没有完整 UI 证据。", "源码插件清单仍为 0.1.15，本次部署副本清单已同步为 0.1.18；后续打包应统一版本生成。", "分区读回依赖当前 Codex 客户端内部身份映射格式，格式改变时需重新核对。"],
-  "last_completed_task": "context/tasks/completed/project-filter-research.md",
+  "last_completed_task": "context/tasks/completed/check-closeout.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
