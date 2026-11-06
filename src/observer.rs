@@ -187,7 +187,16 @@ fn title_worker(app: Arc<App>) {
     }
 }
 
+fn project_worker(app: Arc<App>) {
+    loop {
+        let _ = crate::projects::refresh(&app);
+        std::thread::sleep(Duration::from_secs(app.config.runtime_poll_seconds));
+    }
+}
+
 pub fn start(app: &Arc<App>) {
+    let projects = Arc::clone(app);
+    std::thread::spawn(move || project_worker(projects));
     let history = Arc::clone(app);
     std::thread::spawn(move || history_worker(history));
     if !app.config.desktop_socket.as_os_str().is_empty() {

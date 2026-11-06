@@ -661,9 +661,12 @@
       "test::board_contract::title_store_tests::title_activation_epoch_survives_restart_and_catches_new_completed_turn"
     ],
     "DISCOVERY-001": [
+      "lib::codex_session_board::projects::tests::broken_worktree_metadata_retains_previous_membership_until_a_complete_resolution",
       "lib::codex_session_board::projects::tests::canonical_paths_match_symlinks_and_missing_directories_lexically",
       "lib::codex_session_board::projects::tests::directory_membership_tracks_removal_and_readdition_without_mutating_saved_fields",
+      "lib::codex_session_board::projects::tests::external_worktrees_match_registered_subdirectories_and_reject_ambiguous_checkouts",
       "lib::codex_session_board::projects::tests::failed_or_malformed_refresh_retains_the_last_complete_catalog",
+      "lib::codex_session_board::projects::tests::live_file_refresh_updates_snapshots_and_read_failures_preserve_classification",
       "lib::codex_session_board::projects::tests::multiple_roots_and_native_order_are_preserved_without_remote_projects",
       "lib::codex_session_board::projects::tests::nested_roots_use_components_and_only_registered_local_projects",
       "lib::codex_session_board::rpc::tests::each_role_accepts_exactly_its_three_declared_methods",

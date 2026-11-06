@@ -4,6 +4,33 @@ use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 
+fn source_path(config: &crate::config::Config) -> Result<PathBuf> {
+    if !config.sidebar_state_file.as_os_str().is_empty() {
+        ensure!(
+            config.sidebar_state_file.is_absolute(),
+            "项目源必须为绝对路径"
+        );
+        return Ok(config.sidebar_state_file.clone());
+    }
+    let home = std::env::var_os("CODEX_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".codex")))
+        .context("无法确定 Codex 项目源，请配置 sidebar_state_file")?;
+    ensure!(home.is_absolute(), "Codex 状态目录必须为绝对路径");
+    Ok(home.join(".codex-global-state.json"))
+}
+
+pub fn refresh(app: &crate::app::App) -> Result<()> {
+    let response = (|| {
+        let path = source_path(&app.config)?;
+        serde_json::from_reader(std::fs::File::open(path)?).context("无法读取完整 Codex 项目登记表")
+    })();
+    app.projects
+        .lock()
+        .map_err(|_| anyhow::anyhow!("项目列表锁已损坏"))?
+        .update(response)
+}
+
 #[derive(Clone, Serialize)]
 pub struct Project {
     pub id: String,
@@ -18,6 +45,8 @@ pub struct Catalog {
     pub loaded: bool,
     pub error: Option<String>,
     pub items: Vec<Project>,
+    #[serde(skip)]
+    assignments: HashMap<String, Value>,
 }
 
 fn normalized(path: &Path) -> PathBuf {
@@ -28,6 +57,12 @@ fn normalized(path: &Path) -> PathBuf {
                 result.pop();
             } else {
                 result.push(component.as_os_str());
+            }
+        }
+        for ancestor in result.ancestors() {
+            if let (Ok(root), Ok(suffix)) = (ancestor.canonicalize(), result.strip_prefix(ancestor))
+            {
+                return root.join(suffix);
             }
         }
         result
@@ -114,15 +149,75 @@ impl Catalog {
             .map_or(Value::Null, |(item, _)| json!(item.id))
     }
 
-    pub fn annotate(&self, sessions: &mut [Value]) {
+    fn assignment(&self, cwd: &str) -> Result<Value> {
+        let direct = self.identify(cwd);
+        if !direct.is_null() || !self.loaded || !Path::new(cwd).is_absolute() {
+            return Ok(direct);
+        }
+        let path = normalized(Path::new(cwd));
+        let Some(repository) = crate::workspaces::repository(&path)? else {
+            return Ok(Value::Null);
+        };
+        let relative = path.strip_prefix(&repository.root)?;
+        let candidates = self.linked_roots(&repository, relative)?;
+        let depth = candidates.iter().map(|(depth, _)| *depth).max();
+        let matches: HashSet<_> = candidates
+            .into_iter()
+            .filter(|(candidate, _)| Some(*candidate) == depth)
+            .map(|(_, id)| id)
+            .collect();
+        ensure!(matches.len() <= 1, "工作树对应多个已加载项目，无法确定归属");
+        Ok(matches
+            .into_iter()
+            .next()
+            .map_or(Value::Null, |id| json!(id)))
+    }
+
+    fn linked_roots(
+        &self,
+        repository: &crate::workspaces::Repository,
+        relative: &Path,
+    ) -> Result<Vec<(usize, String)>> {
+        let mut candidates = Vec::new();
+        for item in &self.items {
+            for root in &item.roots {
+                let Some(source) = crate::workspaces::repository(root)? else {
+                    continue;
+                };
+                let suffix = root.strip_prefix(&source.root)?;
+                if source.common == repository.common && relative.starts_with(suffix) {
+                    candidates.push((suffix.components().count(), item.id.clone()));
+                }
+            }
+        }
+        Ok(candidates)
+    }
+
+    pub fn annotate(&mut self, sessions: &mut [Value]) {
         let mut paths = HashMap::new();
         for session in sessions {
             let cwd = session["cwd"].as_str().unwrap_or("").to_owned();
-            session["projectId"] = paths
-                .entry(cwd.clone())
-                .or_insert_with(|| self.identify(&cwd))
-                .clone();
+            let (identifier, issue) =
+                paths
+                    .entry(cwd.clone())
+                    .or_insert_with(|| match self.assignment(&cwd) {
+                        Ok(identifier) => (identifier, Value::Null),
+                        Err(error) => {
+                            let previous = self.assignments.get(&cwd).filter(|id| {
+                                self.items
+                                    .iter()
+                                    .any(|item| id.as_str() == Some(item.id.as_str()))
+                            });
+                            (
+                                previous.cloned().unwrap_or(Value::Null),
+                                json!(error.to_string()),
+                            )
+                        }
+                    });
+            session["projectId"] = identifier.clone();
+            session["projectIssue"] = issue.clone();
         }
+        self.assignments = paths.into_iter().map(|(cwd, (id, _))| (cwd, id)).collect();
     }
 }
 
@@ -226,6 +321,10 @@ mod tests {
             catalog.identify(root.to_str().context("目录无效")?),
             "linked"
         );
+        assert_eq!(
+            catalog.identify(alias.join("missing").to_str().unwrap()),
+            "linked"
+        );
         catalog.update(response(vec![local(
             "missing",
             "缺失目录",
@@ -248,6 +347,115 @@ mod tests {
         assert_eq!(catalog.identify("/second/task"), "outer");
         assert_eq!(catalog.identify("/second/nested"), "inner");
         assert!(catalog.identify("/remote").is_null());
+        Ok(())
+    }
+
+    #[test]
+    fn live_file_refresh_updates_snapshots_and_read_failures_preserve_classification() -> Result<()>
+    {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("state.json");
+        let app = crate::app::App::new(crate::config::Config {
+            data_dir: directory.path().join("data"),
+            sync_titles: false,
+            sidebar_state_file: path.clone(),
+            ..crate::config::Config::default()
+        })?;
+        app.store
+            .discover(&[json!({"id":"chat","name":"任务","cwd":"/repo/task"})])?;
+        assert!(app.snapshot()?["projectCatalog"]["loaded"] == false);
+        std::fs::write(
+            &path,
+            response(vec![local("project", "项目", "/repo")])?.to_string(),
+        )?;
+        refresh(&app)?;
+        assert_eq!(app.snapshot()?["sessions"][0]["projectId"], "project");
+        std::fs::write(&path, "{")?;
+        assert!(refresh(&app).is_err());
+        let stale = app.snapshot()?;
+        assert_eq!(stale["sessions"][0]["projectId"], "project");
+        assert!(stale["projectCatalog"]["error"].is_string());
+        std::fs::write(&path, response(vec![])?.to_string())?;
+        refresh(&app)?;
+        assert!(app.snapshot()?["sessions"][0]["projectId"].is_null());
+        assert!(app.snapshot()?["projectCatalog"]["error"].is_null());
+        Ok(())
+    }
+
+    fn worktree(root: &Path, name: &str) -> Result<PathBuf> {
+        let metadata = root.join("repo/.git/worktrees").join(name);
+        let checkout = root.join(name);
+        std::fs::create_dir_all(&metadata)?;
+        std::fs::create_dir_all(&checkout)?;
+        std::fs::write(root.join("repo/.git/HEAD"), "ref: refs/heads/main\n")?;
+        std::fs::write(metadata.join("HEAD"), "ref: refs/heads/topic\n")?;
+        std::fs::write(metadata.join("commondir"), "../..\n")?;
+        std::fs::write(
+            checkout.join(".git"),
+            format!("gitdir: ../repo/.git/worktrees/{name}\n"),
+        )?;
+        Ok(checkout)
+    }
+
+    #[test]
+    fn external_worktrees_match_registered_subdirectories_and_reject_ambiguous_checkouts()
+    -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let checkout = worktree(directory.path(), "topic")?;
+        let repo = directory.path().join("repo");
+        let mut catalog = Catalog::default();
+        catalog.update(response(vec![local(
+            "project",
+            "项目",
+            repo.to_str().unwrap(),
+        )]))?;
+        assert_eq!(catalog.assignment(checkout.to_str().unwrap())?, "project");
+        let subdirectory = repo.join("sub");
+        catalog.update(response(vec![local(
+            "sub",
+            "子项目",
+            subdirectory.to_str().unwrap(),
+        )]))?;
+        assert!(catalog.assignment(checkout.to_str().unwrap())?.is_null());
+        assert_eq!(
+            catalog.assignment(checkout.join("sub/task").to_str().unwrap())?,
+            "sub"
+        );
+        let second = worktree(directory.path(), "second")?;
+        catalog.update(response(vec![
+            local("one", "一", repo.to_str().unwrap()),
+            local("two", "二", second.to_str().unwrap()),
+        ]))?;
+        assert!(catalog.assignment(checkout.to_str().unwrap()).is_err());
+        let mut sessions = vec![json!({"cwd":checkout})];
+        catalog.annotate(&mut sessions);
+        assert!(sessions[0]["projectIssue"].is_string());
+        catalog.update(response(vec![]))?;
+        catalog.annotate(&mut sessions);
+        assert!(sessions[0]["projectId"].is_null() && sessions[0]["projectIssue"].is_null());
+        Ok(())
+    }
+
+    #[test]
+    fn broken_worktree_metadata_retains_previous_membership_until_a_complete_resolution()
+    -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let checkout = worktree(directory.path(), "topic")?;
+        let mut catalog = Catalog::default();
+        catalog.update(response(vec![local(
+            "project",
+            "项目",
+            directory.path().join("repo").to_str().unwrap(),
+        )]))?;
+        let mut sessions = vec![json!({"cwd":checkout})];
+        catalog.annotate(&mut sessions);
+        std::fs::write(checkout.join(".git"), "broken")?;
+        catalog.annotate(&mut sessions);
+        assert_eq!(sessions[0]["projectId"], "project");
+        assert!(sessions[0]["projectIssue"].is_string());
+        worktree(directory.path(), "topic")?;
+        catalog.annotate(&mut sessions);
+        assert!(sessions[0]["projectIssue"].is_null());
         Ok(())
     }
 }

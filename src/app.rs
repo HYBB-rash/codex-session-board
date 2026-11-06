@@ -20,6 +20,7 @@ pub struct App {
     pub store: Arc<Store>,
     pub refresh: AtomicBool,
     pub health: Mutex<Value>,
+    pub(crate) projects: Mutex<crate::projects::Catalog>,
     title_lock: Mutex<()>,
     pub(crate) section_lock: Mutex<()>,
     pub(crate) active_sessions: Mutex<Option<HashSet<String>>>,
@@ -34,6 +35,7 @@ impl App {
             config,
             store,
             refresh: AtomicBool::new(false),
+            projects: Mutex::new(crate::projects::Catalog::default()),
             title_lock: Mutex::new(()),
             section_lock: Mutex::new(()),
             active_sessions: Mutex::new(None),
@@ -90,7 +92,10 @@ impl App {
             .iter()
             .map(|(state, label)| (state.to_string(), json!(label)))
             .collect();
-        Ok(json!({"states":states,"sessions":self.store.sessions()?,
+        let mut sessions = self.store.sessions()?;
+        let mut projects = self.projects.lock().map_err(|_| anyhow::anyhow!("项目列表锁已损坏"))?;
+        projects.annotate(&mut sessions);
+        Ok(json!({"states":states,"sessions":sessions,"projectCatalog":*projects,
             "health":self.health.lock().map_err(|_| anyhow::anyhow!("健康状态锁已损坏"))?.clone()}))
     }
 
