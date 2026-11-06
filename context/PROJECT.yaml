@@ -4,7 +4,7 @@
   "project": {
     "id": "codex-session-board",
     "name": "codex-session-board",
-    "purpose": "使用 Rust 实现本地 Codex 会话看板，自动发现会话、维护状态与备注并同步原生标题。"
+    "purpose": "使用 Rust 实现本地 Codex 会话看板，自动发现会话、维护状态与备注，并按显式配置同步原生标题和状态分区。"
   },
   "profile": "code",
   "locale": {

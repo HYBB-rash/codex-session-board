@@ -2,14 +2,14 @@
   "schema_version": 1,
   "updated_at": "2026-11-06",
   "current_phase": {
-    "id": "deploy-new-session-button",
-    "status": "deployed_and_button_verified",
+    "id": "status-sidebar-sections",
+    "status": "deployed_and_live_verified",
     "as_of": "2026-11-06",
-    "summary": "Rust 看板 0.1.17 已部署，沿用原配置和数据库。原生 UI 真实点击新建会话按钮后成功进入空白输入页，未发送消息；113 条会话和运行观察正常。完整发布验收的其他真实环境证据仍待补充。"
+    "summary": "Rust 看板 0.1.18 已部署状态分区扩展。七个旧自定义分区替换为六状态，115 条本机会话原生位置与看板状态一致，真实 HTTP 状态切换及恢复均独立读回成功。既有验收 243 项自动通过，其他真实环境证据待补充，release_ready=false。正在整理提交与检查收尾，源码首批已准备 0.1.19，尚未创建提交。"
   },
-  "active_tasks": [],
-  "known_open_issues": ["完整验收缺少其他真实环境证据，release_ready=false；升版后的实现指纹需要重新生成验收证据。", "源码插件清单仍为 0.1.15，本次部署副本清单已同步为 0.1.17；后续打包应统一版本生成。"],
-  "last_completed_task": "context/tasks/completed/commit-deployment-records.md",
+  "active_tasks": ["context/tasks/active/check-closeout.md"],
+  "known_open_issues": ["完整验收缺少其他真实环境证据，release_ready=false；状态分区有独立 API 实测但没有完整 UI 证据。", "源码插件清单仍为 0.1.15，本次部署副本清单已同步为 0.1.18；后续打包应统一版本生成。", "分区读回依赖当前 Codex 客户端内部身份映射格式，格式改变时需重新核对。"],
+  "last_completed_task": "context/tasks/completed/project-filter-research.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
