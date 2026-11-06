@@ -56,7 +56,7 @@ def build():
         "TITLE-003": title_io + title_store + isolation,
         "TITLE-004": title_io + title_store,
         "TITLE-005": title_store,
-        "DISCOVERY-001": rpc + store,
+        "DISCOVERY-001": rpc + store + group("::projects::tests::"),
         "DISCOVERY-002": group("observer_selection") + store + observer,
         "NAV-001": security,
         "APP-001": mcp,
