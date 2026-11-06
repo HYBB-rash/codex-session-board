@@ -491,6 +491,16 @@ fn native_resource_and_tools_expose_global_app_only_actions() {
     let html = resource["text"].as_str().unwrap();
     assert_eq!(resource["mimeType"], mcp::MIME);
     assert!(html.contains("window.boardRequest"));
+    assert!(html.contains("\"/api/new\":\"board_new\""));
+    assert!(html.contains("id=\"new-session\""));
+    let create = definitions["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "board_new")
+        .unwrap();
+    assert_eq!(create["_meta"]["ui"]["visibility"], json!(["app"]));
+    assert_eq!(create["annotations"]["readOnlyHint"], false);
     assert!(!html.contains("<iframe") && !html.contains("https://cdn"));
     assert!(!html.contains("__CSRF_TOKEN__"));
 }
@@ -758,4 +768,12 @@ fn open_accepts_only_known_uuid_and_preserves_all_state() {
         .is_err()
     );
     assert_eq!(app.store.sessions().unwrap(), before);
+    let created = app.request("/api/new", Some(&json!({}))).unwrap();
+    assert_eq!(created["url"], "codex://threads/new");
+    assert_eq!(app.store.sessions().unwrap(), before);
+    assert!(app.request("/api/new", None).is_err());
+    let mut failing_config = app.config.clone();
+    failing_config.open_command = vec!["/bin/false".into()];
+    let failing_app = app::App::new(failing_config).unwrap();
+    assert!(failing_app.request("/api/new", Some(&json!({}))).is_err());
 }

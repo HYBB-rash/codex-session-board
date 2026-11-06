@@ -2,14 +2,14 @@
   "schema_version": 1,
   "updated_at": "2026-11-06",
   "current_phase": {
-    "id": "bootstrap",
-    "status": "ready",
+    "id": "new-session-button",
+    "status": "implemented_pending_live_verification",
     "as_of": "2026-11-06",
-    "summary": "Project context initialized; no business work has been recorded."
+    "summary": "状态导航右侧的新建会话按钮已实现，打开 Codex 空白输入页。IO 与按钮交互测试通过；新入口尚未部署和进行原生操作验证。用户已授权提交，待归档排序保存于 c2fbc51（0.1.16），新入口及上下文收尾准备为 0.1.17。"
   },
   "active_tasks": [],
-  "known_open_issues": [],
-  "last_completed_task": null,
+  "known_open_issues": ["完整验收缺少真实环境证据，release_ready=false。", "新建会话入口尚未部署和完成原生客户端验证；升版后的实现指纹需要重新生成验收证据。"],
+  "last_completed_task": "context/tasks/completed/commit-board-changes.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",

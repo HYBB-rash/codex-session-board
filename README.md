@@ -42,3 +42,10 @@ python3 scripts/verify_acceptance.py --evidence /path/to/evidence.json --report 
 原 Notion 调度与知识归档源码保留在 Git 历史 `8f86014`，不再属于当前程序。
 原运行配置与数据仍保留在工作目录的忽略路径中。
 重构不安装或重启旧的 systemd 调度服务。
+
+## 新建会话
+
+状态导航右侧的“＋ 新建会话”按钮打开 Codex 空白会话输入页，
+由用户选择项目并输入消息。按钮复用配置中的 `open_command`，
+不自动发送消息或启动模型；输入页尚未发送消息时不会生成看板卡片。
+原生看板与备用网页均提供此入口。

@@ -19,6 +19,8 @@ button:hover{border-color:var(--green)}button.primary{background:var(--green);co
 .tools{display:flex;gap:12px;align-items:center;margin:18px 0 14px}
 input[type=search]{flex:1;max-width:480px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 13px;min-width:140px}
 .count{font-size:13px;color:var(--muted);margin-left:auto;white-space:nowrap}
+.navigation{display:flex;align-items:flex-start;gap:12px}.navigation .jump{flex:1;min-width:0}
+#new-session{white-space:nowrap}
 .jump{display:flex;gap:7px;overflow-x:auto;padding:0 0 12px}
 .jump button{white-space:nowrap;font-size:12px;padding:5px 10px;background:transparent}
 .board-viewport{overflow-x:auto;padding-bottom:12px;border-radius:12px}
@@ -69,7 +71,10 @@ textarea{resize:vertical;min-height:90px}.dialog-actions{display:flex;justify-co
     <button id="all">全部会话</button>
     <span id="count" class="count"></span>
   </div>
-  <nav class="jump" id="jump" aria-label="跳转到状态列"></nav>
+  <div class="navigation">
+    <nav class="jump" id="jump" aria-label="跳转到状态列"></nav>
+    <button id="new-session" class="primary" type="button">＋ 新建会话</button>
+  </div>
   <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
   <div class="board-viewport" id="board-viewport" tabindex="0" aria-label="横向滚动查看全部状态列">
     <div class="board" id="board" aria-label="会话状态看板"></div>
@@ -315,6 +320,16 @@ byId("edit-form").onsubmit = async event => {
   }
 };
 byId("cancel").onclick = () => byId("editor").close();
+byId("new-session").onclick = async () => {
+  const button = byId("new-session");
+  if (button.disabled) return;
+  button.disabled = true;
+  try {
+    await post("/api/new",{});
+    announce("已发送新建会话页面打开请求。");
+  } catch(error) {announce(error.message,true);}
+  finally {button.disabled = false;}
+};
 byId("editor").addEventListener("cancel",event => {if (saving) event.preventDefault();});
 byId("editor").addEventListener("close",() => {editing=null;render();load();});
 byId("refresh").onclick = async () => {

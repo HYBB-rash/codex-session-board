@@ -62,6 +62,10 @@ impl App {
         match (path, body) {
             ("/api/sessions", None) => self.snapshot(),
             ("/api/state", Some(body)) => self.save(body),
+            ("/api/new", Some(_)) => {
+                let url = open_client_url("codex://threads/new".to_string(), &self.config)?;
+                Ok(json!({"ok":true,"url":url}))
+            }
             ("/api/open", Some(body)) => {
                 let identifier = body["id"].as_str().context("缺少会话 ID")?;
                 ensure!(self.store.contains(identifier)?, "会话不在本地看板中");
@@ -146,6 +150,10 @@ pub fn conversation_url(identifier: &str, host: &str) -> Result<String> {
 
 pub fn open_conversation(identifier: &str, config: &Config) -> Result<String> {
     let url = conversation_url(identifier, &config.host_id)?;
+    open_client_url(url, config)
+}
+
+fn open_client_url(url: String, config: &Config) -> Result<String> {
     let mut child = Command::new(config.open_command.first().context("缺少客户端命令")?)
         .args(&config.open_command[1..])
         .arg(&url)

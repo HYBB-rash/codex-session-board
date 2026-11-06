@@ -18,6 +18,7 @@ pub fn tools() -> Value {
         ("board_snapshot", "读取会话状态", true),
         ("board_update", "确认工作状态", false),
         ("board_open", "打开已有会话", true),
+        ("board_new", "打开新建会话页", false),
         ("board_refresh", "重新发现", false),
     ] {
         let (properties, required) = schema(name);
@@ -52,7 +53,12 @@ fn schema(name: &str) -> (Value, Value) {
 }
 
 pub fn resource() -> Value {
-    let bridge = include_str!("../assets/app-bridge.js").replace("</script", "<\\/script");
+    let bridge = include_str!("../assets/app-bridge.js")
+        .replace(
+            "\"/api/refresh\":\"board_refresh\"",
+            "\"/api/refresh\":\"board_refresh\",\"/api/new\":\"board_new\"",
+        )
+        .replace("</script", "<\\/script");
     let html = include_str!("../index.html")
         .replace("__CSRF_TOKEN__", "")
         .replacen(
@@ -73,6 +79,7 @@ pub fn backend(config_path: &Path, name: &str, arguments: &Value) -> Result<Valu
         "board_snapshot" => "/api/sessions",
         "board_update" => "/api/state",
         "board_open" => "/api/open",
+        "board_new" => "/api/new",
         "board_refresh" => "/api/refresh",
         _ => bail!("未知看板工具"),
     };
