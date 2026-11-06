@@ -15,7 +15,8 @@ PATTERNS = (
     ".agents/plugins/marketplace.json", ".gitignore", ".githooks/*",
     "AGENTS.md", "README.md", "Docs/*.md", "assets/*", "skills/**/*",
     "scripts/*.py", "scripts/*.rs", "scripts/check", "scripts/install-git-hooks",
-    "scripts/build-plugin", "acceptance/*.py", "acceptance/*.json", "acceptance/*.md",
+    "scripts/build-plugin", "scripts/verify_context.sh", "context/**/*.md", "context/*.yaml",
+    "acceptance/*.py", "acceptance/*.json", "acceptance/*.md",
 )
 FORBIDDEN_SUFFIXES = {".sqlite", ".sqlite3", ".db", ".log", ".png", ".pyc"}
 
@@ -34,7 +35,8 @@ def package_contents(root):
         "src/main.rs", "src/store.rs", "src/mcp.rs", "Cargo.lock", "Docs/MIGRATION.md",
         "acceptance/requirements.json", "acceptance/model.py",
         "acceptance/bindings.json", "acceptance/contract.lock.json",
-        "acceptance/README.md", "assets/app-bridge.js",
+        "acceptance/README.md", "assets/app-bridge.js", "context/PROJECT.yaml",
+        "context/STATE.yaml", "scripts/verify_context.sh", "scripts/check_context.py",
     )
     if any(name not in contents for name in required):
         raise ValueError("Missing a required migration file")

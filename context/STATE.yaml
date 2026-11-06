@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-11-06",
+  "current_phase": {
+    "id": "bootstrap",
+    "status": "ready",
+    "as_of": "2026-11-06",
+    "summary": "Project context initialized; no business work has been recorded."
+  },
+  "active_tasks": [],
+  "known_open_issues": [],
+  "last_completed_task": null,
+  "disclosure": {
+    "startup": [
+      "AGENTS.md",
+      "context/README.md",
+      "context/PROJECT.yaml",
+      "context/STATE.yaml"
+    ]
+  },
+  "verification": {
+    "status": "passed",
+    "last_checked_at": "2026-11-06",
+    "method": "sh scripts/verify_context.sh",
+    "boundary": "Project-local context files and declared local paths only."
+  }
+}
