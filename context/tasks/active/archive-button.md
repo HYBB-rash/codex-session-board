@@ -18,3 +18,6 @@ coordinator: codex
 265 项自动验收通过，严格 Clippy 和隔离 Chrome 的桌面、窄屏检查通过。
 完整验收退出 2，release_ready=false。提交收尾后使用 ./scripts/check 核对干净工作区。
 继续工作见 context/handoffs/archive-button.md。
+
+随后按用户要求与 main 的 PWA 部署记录整合至 0.1.35，保留双方历史并快进 main。
+新指纹下 265 项自动验收通过，完整验收仍退出 2；归档扩展未部署。
