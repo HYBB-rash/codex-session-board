@@ -3,9 +3,9 @@
   "updated_at": "2026-11-07",
   "current_phase": {
     "id": "native-section-authority",
-    "status": "implementation_verified_pending_deployment",
+    "status": "deployed_pending_native_timeout_fix",
     "as_of": "2026-11-07",
-    "summary": "按用户授权改为桌面原生分区权威状态，保留本地备注及人工确认。19 个新路径集成测试与 7 个协议测试通过，包括真实构建 HTTP/MCP、原生移列丢回执、归档资格及不同会话并发。旧后台对账已停止，正在移除遗留适配器；日常服务仍为 0.1.39，待完整检查及切换部署。app-server 分区与实际侧栏不联动，已实测后改用桌面工具接口。"
+    "summary": "原生分区权威模式已部署 0.1.53，旧对账和全局分区锁已移除。284 项自动检查通过，20 个新路径集成测试与 7 个协议测试通过。日常 123 条记录及备注、确认字段保留；真实外部移列、拒绝旧编辑、草稿恢复和重启保留选择已验证。实际原生快照需约 5.68 秒，写入路径原三秒预算过短，正在修复并复验后结束任务。完整验收仍 release_ready=false。"
   },
   "active_tasks": ["context/tasks/active/native-section-authority.md", "context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md"],
   "known_open_issues": ["新建会话已随 main 部署至 0.1.39；此前仅确认真实点击后客户端选中项目 ID，输入页和第二项目切换尚未实测通过。见 context/handoffs/new-session-project-live-validation.md。", "完整验收缺少其他真实环境证据，release_ready=false；PWA 安装入口实测不能代替全部 31 条验收。", "项目登记与分区读回依赖当前 Codex 客户端内部状态格式，格式改变时需重新核对。", "PWA 安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。", "五状态与归档按钮已部署，网页可见性已验证；真实客户端归档执行仍待专用会话验证。原生取消归档后尚不自动恢复本地已确认归档卡片。"],
