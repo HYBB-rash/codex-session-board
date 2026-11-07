@@ -25,6 +25,7 @@ pub struct Config {
     pub open_command: Vec<String>,
     pub desktop_socket: PathBuf,
     pub runtime_poll_seconds: u64,
+    pub auto_archive_seconds: Option<u64>,
     pub sync_titles: bool,
     pub sync_sections: bool,
     pub native_sections: bool,
@@ -58,6 +59,7 @@ impl Default for Config {
                 .map(PathBuf::from)
                 .unwrap_or_default(),
             runtime_poll_seconds: 2,
+            auto_archive_seconds: None,
             sync_titles: true,
             sync_sections: false,
             native_sections: false,
@@ -71,6 +73,10 @@ impl Default for Config {
 
 impl Config {
     pub fn validate(&self) -> Result<()> {
+        ensure!(
+            self.auto_archive_seconds.is_none_or(|seconds| seconds > 0),
+            "auto_archive_seconds 必须为空或正整数"
+        );
         for (name, command) in [
             ("codex_command", &self.codex_command),
             ("open_command", &self.open_command),

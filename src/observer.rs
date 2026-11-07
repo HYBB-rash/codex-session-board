@@ -227,6 +227,7 @@ fn remote_worker(app: Arc<App>) {
 }
 
 pub fn start(app: &Arc<App>) {
+    crate::auto_archive::start(app);
     if !app.config.sidebar_socket.as_os_str().is_empty() && !app.config.sidebar_caller.is_empty() {
         let remote = Arc::clone(app);
         std::thread::spawn(move || remote_worker(remote));
