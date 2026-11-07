@@ -80,7 +80,7 @@ textarea{resize:vertical;min-height:90px}.dialog-actions{display:flex;justify-co
   <div class="board-viewport" id="board-viewport" tabindex="0" aria-label="横向滚动查看全部状态列">
     <div class="board" id="board" aria-label="会话状态看板"></div>
   </div>
-  <p class="foot">本机会话根据真实执行阶段自动流转，在“待归档”卡片上点击“归档”会直接归档原会话。远程会话的状态和备注由本看板人工维护，暂不支持自动流转、标题同步、新建和归档。</p>
+  <p class="foot">拖动卡片修改状态。“待归档”列的一键归档会归档当前筛选下该列中的全部本机会话，也可以逐张点击归档。远程会话暂不支持自动流转、标题同步、新建和归档。</p>
 </main>
 <dialog id="editor">
   <form id="edit-form">
@@ -207,15 +207,26 @@ async function openSession(id) {
   finally {opening = false;}
 }
 async function archiveSession(session, button) {
-  if (session.canArchive === false) {announce("远程会话暂不支持归档。",true);return;}
+  return archiveSessions([session],button);
+}
+async function archiveSessions(sessions, button) {
   if (saving || dragging || byId("editor").open) return;
+  const targets = sessions.filter(session => session.state === "to_archive" && !session.remote && session.canArchive !== false);
+  if (!targets.length) {announce("当前列没有可归档的本机会话。");return;}
   saving = true; button.disabled = true; ++requestSerial;
-  announce("正在归档会话…");
+  let archived = 0;
+  const failures = [];
   try {
-    await post("/api/archive",{id:session.id,version:session.version,inputVersion:session.inputVersion,sectionVersion:session.sectionVersion});
-    data.sessions = data.sessions.filter(row => row.id !== session.id);
-    announce("会话已归档。");
-  } catch (error) {announce(error.message,true);}
+    for (const [index,session] of targets.entries()) {
+      announce(`正在归档 ${index + 1} / ${targets.length}：${session.title}`);
+      try {
+        await post("/api/archive",{id:session.id,version:session.version,inputVersion:session.inputVersion,sectionVersion:session.sectionVersion});
+        data.sessions = data.sessions.filter(row => row.id !== session.id);
+        archived++;
+      } catch (error) {failures.push(`${session.title}：${error.message}`);}
+    }
+    announce(`已归档 ${archived} 条会话。` + (failures.length ? `${failures.length} 条未完成，已保留卡片。${failures.join("；")}` : ""),failures.length > 0);
+  }
   finally {saving = false;button.disabled = false;render();await load();}
 }
 function makeColumn(state, label, sessions) {
@@ -224,6 +235,14 @@ function makeColumn(state, label, sessions) {
   column.setAttribute("aria-label",label);
   const heading = element("div",undefined,"column-heading");
   heading.append(element("h2",label),element("span",String(sessions.length),"column-count"));
+  if (state === "to_archive") {
+    const archiveAll = element("button","一键归档","row-action");
+    archiveAll.type = "button";
+    archiveAll.title = "归档当前筛选下本列中的全部本机会话，远程会话保留";
+    archiveAll.disabled = !sessions.some(session => !session.remote && session.canArchive !== false);
+    archiveAll.onclick = () => archiveSessions(sessions,archiveAll);
+    heading.append(archiveAll);
+  }
   const cards = element("div",undefined,"cards");
   for (const session of sessions) cards.append(makeCard(session));
   if (!sessions.length) cards.append(element("div","拖动卡片到这里","empty-column"));
