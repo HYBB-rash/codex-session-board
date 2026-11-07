@@ -313,6 +313,7 @@
       "test::board_io::manual_save_preserves_note_when_field_is_omitted"
     ],
     "MANUAL-001": [
+      "test::native_authority::transport::direct_transport_reads_shared_backend_positions_without_sidebar_projection",
       "test::native_direct::direct_read_maps_only_the_local_backend_and_never_queries_the_aggregate",
       "test::native_direct::direct_read_rejects_ambiguous_missing_renamed_and_wrong_host_mappings",
       "test::native_direct::direct_snapshot_rejects_partial_pages_and_malformed_target_results",

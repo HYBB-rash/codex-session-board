@@ -1,4 +1,4 @@
-use super::transport::{BlockingMove, Server, body, section_id, wait_for_release};
+use super::transport::{BlockingMove, Server, Surface, body, section_id, wait_for_release};
 use super::*;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -23,7 +23,7 @@ pub(super) struct Engine {
 }
 
 impl Engine {
-    pub fn new(path: &std::path::Path) -> Result<Self> {
+    pub fn new(path: &std::path::Path, surface: Arc<Mutex<Surface>>) -> Result<Self> {
         let listener = UnixListener::bind(path)?;
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
         listener.set_nonblocking(true)?;
@@ -39,8 +39,9 @@ impl Engine {
                 if let Ok((stream, _)) = listener.accept() {
                     let state = Arc::clone(&state);
                     let gate = Arc::clone(&gate);
+                    let surface = Arc::clone(&surface);
                     clients.push(std::thread::spawn(move || {
-                        engine_connection(stream, state, gate)
+                        engine_connection(stream, state, gate, surface)
                     }));
                 } else {
                     std::thread::sleep(Duration::from_millis(2));
@@ -63,6 +64,7 @@ fn engine_connection(
     stream: UnixStream,
     archived: Arc<Mutex<HashSet<String>>>,
     blocked: Arc<Mutex<Option<BlockingMove>>>,
+    surface: Arc<Mutex<Surface>>,
 ) -> Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(10)))?;
     let mut socket = tungstenite::accept(stream)?;
@@ -79,7 +81,11 @@ fn engine_connection(
             request["method"] == "thread/archive" && block.identifier == identifier
         });
         wait_for_release(block)?;
-        let result = engine_reply(&request, &archived)?;
+        if request["method"] == "thread/read" {
+            let block = surface.lock().unwrap().read_blocked.clone();
+            wait_for_release(block)?;
+        }
+        let result = engine_reply(&request, &archived, &mut surface.lock().unwrap())?;
         socket.send(tungstenite::Message::Text(
             json!({"id":request["id"],"result":result})
                 .to_string()
@@ -89,20 +95,32 @@ fn engine_connection(
     Ok(())
 }
 
-fn engine_reply(request: &Value, archived: &Mutex<HashSet<String>>) -> Result<Value> {
+fn engine_reply(
+    request: &Value,
+    archived: &Mutex<HashSet<String>>,
+    surface: &mut Surface,
+) -> Result<Value> {
     let identifier = request["params"]["threadId"].as_str().unwrap_or(FIRST);
-    Ok(match request["method"].as_str().unwrap_or("") {
+    let method = request["method"].as_str().unwrap_or("");
+    surface.calls.push(method.into());
+    Ok(match method {
         "initialize" => json!({}),
         "thread/list" => {
             let desired = request["params"]["archived"] == true;
-            let values: Vec<_> = [FIRST, SECOND]
-                .into_iter()
+            let values: Vec<_> = surface
+                .slots
+                .keys()
                 .filter(|identifier| archived.lock().unwrap().contains(*identifier) == desired)
-                .map(|identifier| json!({"id":identifier,"status":{"type":"idle"},"updatedAt":1}))
+                .map(|identifier| {
+                    json!({"id":identifier,"status":{"type":"idle"},"updatedAt":1,
+                    "section":surface.backend_section(identifier)})
+                })
                 .collect();
             json!({"data":values})
         }
-        "thread/read" => json!({"thread":{"id":identifier,"status":{"type":"idle"}}}),
+        "threadSection/list" => surface.catalog(),
+        "thread/read" => json!({"thread":{"id":identifier,"status":{"type":"idle"},
+            "section":surface.backend_section(identifier)}}),
         "thread/turns/list" => {
             if request["params"]["itemsView"] != "summary" {
                 assert_eq!(request["params"]["itemsView"], "full");
@@ -123,7 +141,7 @@ fn native_archive_keeps_its_configured_budget_during_slow_section_verification()
     let mut server = Server::new(directory.path())?;
     server.config.rpc_timeout_seconds = 6;
     server.config.desktop_socket = directory.path().join("engine.sock");
-    let engine = Engine::new(&server.config.desktop_socket)?;
+    let engine = Engine::new(&server.config.desktop_socket, Arc::clone(&server.surface))?;
     let app = Arc::new(server.app()?);
     app.request("/api/state", Some(&body(&app, "to_archive", "保留备注")?))?;
     let (sender, started) = mpsc::channel();
@@ -152,7 +170,7 @@ fn a_slow_native_archive_does_not_hold_the_database_lock_for_other_chats() -> Re
     let directory = tempfile::tempdir()?;
     let mut server = Server::new(directory.path())?;
     server.config.desktop_socket = directory.path().join("engine.sock");
-    let engine = Engine::new(&server.config.desktop_socket)?;
+    let engine = Engine::new(&server.config.desktop_socket, Arc::clone(&server.surface))?;
     let app = Arc::new(server.app()?);
     app.discover(&[json!({"id":FIRST}), json!({"id":SECOND})], true)?;
     {
@@ -204,7 +222,7 @@ fn native_archive_rejects_external_moves_before_archiving_and_accepts_fresh_conf
     let directory = tempfile::tempdir()?;
     let mut server = Server::new(directory.path())?;
     server.config.desktop_socket = directory.path().join("engine.sock");
-    let engine = Engine::new(&server.config.desktop_socket)?;
+    let engine = Engine::new(&server.config.desktop_socket, Arc::clone(&server.surface))?;
     let app = server.app()?;
     server
         .surface
@@ -241,7 +259,7 @@ fn a_blocked_move_in_another_chat_does_not_block_native_archive() -> Result<()> 
     let mut server = Server::new(directory.path())?;
     server.config.rpc_timeout_seconds = 6;
     server.config.desktop_socket = directory.path().join("engine.sock");
-    let engine = Engine::new(&server.config.desktop_socket)?;
+    let engine = Engine::new(&server.config.desktop_socket, Arc::clone(&server.surface))?;
     let app = Arc::new(server.app()?);
     app.discover(&[json!({"id":FIRST}), json!({"id":SECOND})], true)?;
     server

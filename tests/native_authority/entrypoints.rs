@@ -146,7 +146,10 @@ fn built_binary_preserves_native_position_guards_over_http_and_mcp() -> Result<(
     let directory = tempfile::tempdir()?;
     let mut server = Server::new(directory.path())?;
     server.config.desktop_socket = directory.path().join("engine.sock");
-    let _engine = Engine::new(&server.config.desktop_socket)?;
+    let _engine = Engine::new(
+        &server.config.desktop_socket,
+        std::sync::Arc::clone(&server.surface),
+    )?;
     drop(server.app()?);
     let live = Live::new(&mut server.config, directory.path())?;
     let client = reqwest::blocking::Client::builder()

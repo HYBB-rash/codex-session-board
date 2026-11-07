@@ -56,6 +56,32 @@ pub(super) fn wait_for_release(blocked: Option<BlockingMove>) -> Result<()> {
 }
 
 impl Surface {
+    pub(super) fn catalog(&self) -> Value {
+        let sections: Vec<_> = self.layout()["sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|section| {
+                json!({"id":format!("backend:{}",section["sectionId"].as_str().unwrap()),
+                "name":section["name"],"appearance":null})
+            })
+            .collect();
+        json!({"data":sections})
+    }
+
+    pub(super) fn backend_section(&self, identifier: &str) -> Value {
+        self.slots
+            .get(identifier)
+            .map(|state| {
+                let label = codex_session_board::model::board_states()
+                    .find(|(value, _)| *value == state)
+                    .unwrap()
+                    .1;
+                json!({"id":format!("backend:{}",section_id(state)),"name":label,"appearance":null})
+            })
+            .unwrap_or(Value::Null)
+    }
+
     pub(super) fn layout(&self) -> Value {
         let sections: Vec<_> = codex_session_board::model::board_states()
             .map(|(state, label)| {
@@ -112,6 +138,7 @@ pub(super) struct Server {
     stop: Arc<AtomicBool>,
     worker: Option<std::thread::JoinHandle<()>>,
     pub config: Config,
+    _engine: super::archive::Engine,
 }
 
 impl Server {
@@ -121,23 +148,18 @@ impl Server {
         let listener = UnixListener::bind(&socket)?;
         std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
         listener.set_nonblocking(true)?;
-        let aliases = directory.join("aliases.json");
-        std::fs::write(
-            &aliases,
-            json!({"electron-persisted-atom-state":{}}).to_string(),
-        )?;
         let config = Config {
             data_dir: directory.join("data"),
             native_sections: true,
             sync_titles: false,
             sidebar_socket: socket,
             sidebar_caller: FIRST.into(),
-            sidebar_state_file: aliases,
+            sidebar_state_file: write_mapping(directory)?,
             status_sections: codex_session_board::model::board_states()
                 .map(|(state, _)| (state.into(), section_id(state)))
                 .collect(),
             rpc_timeout_seconds: 2,
-            desktop_socket: directory.join("unused-desktop.sock"),
+            desktop_socket: directory.join("desktop.sock"),
             codex_command: vec!["/bin/false".into()],
             open_command: vec!["/bin/true".into()],
             ..Config::default()
@@ -145,6 +167,7 @@ impl Server {
         config.validate()?;
         let surface = Arc::new(Mutex::new(Surface::default()));
         let stop = Arc::new(AtomicBool::new(false));
+        let engine = super::archive::Engine::new(&config.desktop_socket, Arc::clone(&surface))?;
         let worker = serve(
             listener,
             Arc::clone(&surface),
@@ -156,6 +179,7 @@ impl Server {
             stop,
             worker: Some(worker),
             config,
+            _engine: engine,
         })
     }
 
@@ -170,6 +194,24 @@ impl Server {
         app.refresh_native()?;
         Ok(app)
     }
+}
+
+fn write_mapping(directory: &std::path::Path) -> Result<std::path::PathBuf> {
+    let path = directory.join("aliases.json");
+    let sections: Vec<_> = codex_session_board::model::board_states()
+        .map(|(state, _)| {
+            json!({"id":section_id(state),
+            "hostSectionIds":{"local":format!("backend:{}",section_id(state))}})
+        })
+        .collect();
+    std::fs::write(
+        &path,
+        json!({"electron-persisted-atom-state":{
+            "sidebar-custom-sections-v3":{"account":{"sections":sections}}
+        }})
+        .to_string(),
+    )?;
+    Ok(path)
 }
 
 fn serve(
@@ -249,10 +291,56 @@ impl Drop for Server {
 
 pub(super) fn body(app: &App, state: &str, note: &str) -> Result<Value> {
     let snapshot = app.snapshot()?;
-    let session = &snapshot["sessions"][0];
+    let session = snapshot["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|session| session["id"] == FIRST)
+        .unwrap();
     Ok(
         json!({"id":FIRST,"state":state,"note":note,"version":session["version"],"inputVersion":session["inputVersion"],"sectionVersion":session["sectionVersion"]}),
     )
+}
+
+#[test]
+fn direct_transport_reads_shared_backend_positions_without_sidebar_projection() -> Result<()> {
+    use codex_session_board::{
+        native_sections::direct,
+        rpc::{DesktopConnection, Role},
+    };
+    let directory = tempfile::tempdir()?;
+    let server = Server::new(directory.path())?;
+    let _app = server.app()?;
+    server.surface.lock().unwrap().calls.clear();
+    let mut reader = DesktopConnection::connect(
+        &server.config.desktop_socket,
+        Duration::from_secs(2),
+        Role::NativeReader,
+    )?;
+    assert_eq!(
+        direct::read(&mut reader, &server.config, FIRST)?.version,
+        section_id("review")
+    );
+    server
+        .surface
+        .lock()
+        .unwrap()
+        .slots
+        .insert(FIRST.into(), "to_archive".into());
+    assert_eq!(
+        direct::read(&mut reader, &server.config, FIRST)?.version,
+        section_id("to_archive")
+    );
+    assert!(
+        !server
+            .surface
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .any(|method| method == "list_threads")
+    );
+    Ok(())
 }
 
 #[test]
