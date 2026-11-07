@@ -1,6 +1,6 @@
 [package]
 name = "codex-session-board"
-version = "0.1.89"
+version = "0.1.90"
 edition = "2024"
 description = "Local Codex conversation status board"
 default-run = "codex-session-board"
@@ -8,6 +8,10 @@ default-run = "codex-session-board"
 [[example]]
 name = "project_check"
 path = "scripts/project_check.rs"
+test = true
+
+[[example]]
+name = "remote_parity_lab"
 test = true
 
 [lints.rust]

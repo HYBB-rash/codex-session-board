@@ -1,0 +1,153 @@
+use anyhow::{Context, Result, ensure};
+use codex_session_board::{
+    archive,
+    config::Config,
+    native_sections::{self, Observation},
+    rpc::Rpc,
+    store::Store,
+    titles,
+};
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use std::path::Path;
+
+pub struct Partition {
+    pub host: String,
+    pub config: Config,
+    pub store: Store,
+}
+
+impl Partition {
+    pub fn open(root: &Path, host: &str) -> Result<Self> {
+        ensure!(!host.is_empty(), "Empty host");
+        let directory = root.join(format!("{:x}", Sha256::digest(host.as_bytes())));
+        std::fs::create_dir_all(&directory)?;
+        let mut store = Store::open(&directory, true)?;
+        store.native_sections = true;
+        let config = Config {
+            host_id: host.into(),
+            native_sections: true,
+            status_sections: codex_session_board::model::board_states()
+                .map(|(state, _)| (state.into(), format!("{state}-id")))
+                .collect(),
+            ..Config::default()
+        };
+        Ok(Self {
+            host: host.into(),
+            config,
+            store,
+        })
+    }
+
+    pub fn discover(&self, host: &str, threads: &[Value]) -> Result<()> {
+        ensure!(host == self.host, "Wrong host");
+        let threads = threads
+            .iter()
+            .map(|thread| {
+                let identifier = thread["id"].as_str().context("Missing thread ID")?;
+                uuid::Uuid::parse_str(identifier)?;
+                ensure!(thread["hostId"] == self.host, "Wrong thread host");
+                let mut thread = thread.clone();
+                thread["name"] = thread["title"].clone();
+                Ok(thread)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        self.store.discover(&threads)
+    }
+
+    pub fn refresh(&self, reader: &mut impl Rpc, identifier: &str) -> Result<Observation> {
+        let observed = native_sections::read(reader, &self.config, identifier)?;
+        self.store.cache_native(identifier, &observed)?;
+        Ok(observed)
+    }
+
+    pub fn row(&self, identifier: &str) -> Result<Value> {
+        self.store
+            .sessions()?
+            .into_iter()
+            .find(|row| row["id"] == identifier)
+            .context("Missing thread")
+    }
+
+    pub fn save(
+        &self,
+        authority: &mut impl Rpc,
+        identifier: &str,
+        state: &str,
+        note: &str,
+        expected: &Value,
+    ) -> Result<()> {
+        let revision = revisions(expected)?;
+        self.store
+            .validate_state(identifier, Some(state), note, revision)?;
+        let section = expected["sectionVersion"]
+            .as_str()
+            .context("Missing native section")?;
+        let confirmed = native_sections::move_checked(
+            authority,
+            &self.config,
+            identifier,
+            section,
+            Some(state),
+        )?;
+        self.store
+            .set_native_state(identifier, Some(state), note, revision, &confirmed)
+    }
+
+    pub fn sync_title(&self, target: &mut impl Rpc, identifier: &str) -> Result<()> {
+        titles::sync(&self.store, target, identifier)
+    }
+
+    pub fn runtime(
+        &self,
+        authority: &mut impl Rpc,
+        identifier: &str,
+        status: &Value,
+        turn: &Value,
+        since: f64,
+    ) -> Result<()> {
+        if let Some(change) = self
+            .store
+            .prepare_native_runtime(identifier, status, turn, since)?
+        {
+            if !self
+                .config
+                .status_sections
+                .values()
+                .any(|section| *section == change.section_version)
+            {
+                return self.store.consume_native_runtime(identifier, &change);
+            }
+            let confirmed = native_sections::move_checked(
+                authority,
+                &self.config,
+                identifier,
+                &change.section_version,
+                Some(change.state),
+            )?;
+            self.store
+                .commit_native_runtime(identifier, &change, &confirmed)?;
+        }
+        Ok(())
+    }
+
+    pub fn archive(&self, target: &mut impl Rpc, identifier: &str, row: &Value) -> Result<()> {
+        let revision = revisions(row)?;
+        let expected = self.store.prepare_archive(identifier, revision)?;
+        archive::archive(target, identifier, self.config.max_pages, &expected)?;
+        self.store.confirm_archive(identifier, revision)
+    }
+}
+
+fn revisions(row: &Value) -> Result<(i64, i64)> {
+    Ok((
+        row["version"].as_i64().context("Missing version")?,
+        row["inputVersion"]
+            .as_i64()
+            .context("Missing input version")?,
+    ))
+}
+
+pub fn seed(host: &str, identifier: &str) -> Value {
+    json!({"id":identifier,"hostId":host,"title":"完整标题","updatedAt":1})
+}

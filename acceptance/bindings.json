@@ -27,6 +27,7 @@
     "skills",
     "acceptance",
     "scripts",
+    "examples",
     "AGENTS.md",
     "README.md",
     "Docs/*.md"
@@ -908,6 +909,10 @@
       "test::board_io::saved_state_reports_pending_title_without_rollback"
     ],
     "DATA-001": [
+      "example::remote_parity_lab::host_isolation_tests::host_re_registration_requires_explicit_migration",
+      "example::remote_parity_lab::host_isolation_tests::malformed_thread_and_traversal_host_cannot_escape_partition",
+      "example::remote_parity_lab::host_isolation_tests::mixed_host_page_is_rejected_without_partial_import",
+      "example::remote_parity_lab::host_isolation_tests::same_uuid_on_three_hosts_keeps_independent_durable_state",
       "lib::codex_session_board::config::tests::initialization_never_overwrites_and_uses_private_permissions",
       "lib::codex_session_board::config::tests::invalid_types_and_zero_quotas_are_rejected_before_creating_data",
       "lib::codex_session_board::config::tests::json_publication_does_not_follow_a_replacement_symlink",
