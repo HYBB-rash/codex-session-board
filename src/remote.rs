@@ -8,6 +8,8 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashSet};
 use std::time::Duration;
 
+pub mod hosts;
+
 fn projects(reader: &mut dyn Rpc) -> Result<Vec<Value>> {
     let response = reader.call("list_projects", json!({}))?;
     let projects = response["projects"]

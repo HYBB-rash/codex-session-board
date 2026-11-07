@@ -29,6 +29,7 @@ pub struct App {
     pub(crate) active_sessions: Mutex<Option<HashSet<String>>>,
     thread_operations: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     native_generation: AtomicUsize,
+    pub(crate) enabled: AtomicBool,
 }
 
 impl App {
@@ -51,6 +52,7 @@ impl App {
             active_sessions: Mutex::new(None),
             thread_operations: Mutex::new(HashMap::new()),
             native_generation: AtomicUsize::new(0),
+            enabled: AtomicBool::new(true),
             health: Mutex::new(json!({
                 "lastScanAt":null,"lastSuccessAt":null,"error":null,"scanComplete":false,
                 "refreshing":false,"discovered":0,"runtimeVerified":false,
@@ -59,6 +61,15 @@ impl App {
                 "nativeSections":native_sections,"nativeVerified":false,"nativeError":null,
             })),
         })
+    }
+
+    pub(crate) fn connection(&self, timeout: Duration, role: Role) -> Result<DesktopConnection> {
+        ensure!(self.enabled.load(Ordering::SeqCst), "主机登记已改变，请刷新核对");
+        if self.config.proxy_command.is_empty() {
+            DesktopConnection::connect(&self.config.desktop_socket, timeout, role)
+        } else {
+            DesktopConnection::proxy(&self.config.proxy_command, timeout, role)
+        }
     }
 
     pub fn update_health(&self, updates: Value) -> Result<()> {
@@ -245,7 +256,7 @@ impl App {
             return Ok(());
         }
         let timeout = Duration::from_secs(self.config.rpc_timeout_seconds.min(3));
-        match DesktopConnection::connect(&self.config.desktop_socket, timeout, Role::TitleWriter) {
+        match self.connection(timeout, Role::TitleWriter) {
             Ok(mut writer) => titles::sync(&self.store, &mut writer, identifier),
             Err(error) => self
                 .store

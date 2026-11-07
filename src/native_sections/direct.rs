@@ -59,10 +59,10 @@ fn logical(config: &Config) -> Result<HashMap<String, String>> {
     for entry in candidates[0] {
         let identifier = entry["id"].as_str().context("逻辑分区缺少 ID")?;
         ensure!(identifiers.insert(identifier), "逻辑分区 ID 重复");
-        if let Some(backend) = entry["hostSectionIds"]["local"].as_str() {
+        if let Some(backend) = entry["hostSectionIds"][&config.host_id].as_str() {
             ensure!(
                 logical.insert(backend.into(), identifier.into()).is_none(),
-                "本机分区映射重复"
+                "主机分区映射重复"
             );
         }
     }
@@ -71,7 +71,6 @@ fn logical(config: &Config) -> Result<HashMap<String, String>> {
 
 impl Catalog {
     pub fn load(reader: &mut impl Rpc, config: &Config) -> Result<Self> {
-        ensure!(config.host_id == "local", "原生直读仅支持本机");
         let catalog = Self {
             sections: sections(reader, config)?,
             logical: logical(config)?,
@@ -86,8 +85,11 @@ impl Catalog {
                 .logical
                 .iter()
                 .find(|(_, logical)| *logical == identifier)
-                .map(|(backend, _)| backend)
-                .context("状态分区缺少本机映射")?;
+                .map(|(backend, _)| backend);
+            if config.host_id != "local" && backend.is_none() {
+                continue;
+            }
+            let backend = backend.context("状态分区缺少主机映射")?;
             let section = self.sections.get(backend).context("原生分区已移除")?;
             let label = model::STATES
                 .iter()

@@ -11,8 +11,7 @@ impl Drop for Mutation<'_> {
 
 impl App {
     pub(crate) fn native_reader(&self) -> Result<DesktopConnection> {
-        DesktopConnection::connect(
-            &self.config.desktop_socket,
+        self.connection(
             Duration::from_secs(self.config.rpc_timeout_seconds),
             Role::NativeReader,
         )
@@ -37,8 +36,10 @@ impl App {
         self.native_generation.fetch_add(1, Ordering::SeqCst);
         let _mutation = Mutation(self);
         let mut reader = self.native_reader()?;
+        let mut caller = self.config.clone();
+        caller.host_id = "local".into();
         let mut writer = SidebarConnection::connect(
-            &self.config,
+            &caller,
             Duration::from_secs(self.config.rpc_timeout_seconds),
         )?;
         let result = native_sections::direct::move_checked(

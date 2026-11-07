@@ -1,6 +1,6 @@
 use crate::{
     app::App,
-    rpc::{DesktopConnection, Role, Rpc, summarize_turn},
+    rpc::{Role, Rpc, summarize_turn},
 };
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
@@ -52,7 +52,7 @@ fn remote(app: &App, identifier: &str, expected: &Value, body: &Value) -> Result
         app.config.rpc_timeout_seconds.min(3)
     });
     let mut writer =
-        DesktopConnection::connect(&app.config.desktop_socket, timeout, Role::ArchiveWriter)?;
+        app.connection(timeout, Role::ArchiveWriter)?;
     archive_checked(
         &mut writer,
         identifier,

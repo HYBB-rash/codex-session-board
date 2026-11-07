@@ -932,6 +932,8 @@
       "test::board_io::saved_state_reports_pending_title_without_rollback"
     ],
     "DATA-001": [
+      "lib::codex_session_board::remote::hosts::tests::registered_hosts_do_not_depend_on_projects_and_respect_disabled_connections",
+      "lib::codex_session_board::remote::hosts::tests::host_paths_cannot_escape_and_ssh_options_cannot_be_injected",
       "example::remote_parity_lab::host_isolation_tests::host_re_registration_requires_explicit_migration",
       "example::remote_parity_lab::host_isolation_tests::malformed_thread_and_traversal_host_cannot_escape_partition",
       "example::remote_parity_lab::host_isolation_tests::mixed_host_page_is_rejected_without_partial_import",

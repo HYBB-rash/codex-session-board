@@ -170,8 +170,7 @@ fn runtime_worker(app: Arc<App>) {
     loop {
         let result = (|| {
             if reader.is_none() {
-                reader = Some(DesktopConnection::connect(
-                    &app.config.desktop_socket,
+                reader = Some(app.connection(
                     Duration::from_secs(app.config.rpc_timeout_seconds),
                     Role::Reader,
                 )?);
