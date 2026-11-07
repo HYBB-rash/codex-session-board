@@ -170,7 +170,7 @@ fn input_items_known(turn: &Value) -> bool {
     })
 }
 
-fn archived(writer: &mut dyn Rpc, identifier: &str, max_pages: usize) -> Result<bool> {
+pub fn archived(writer: &mut dyn Rpc, identifier: &str, max_pages: usize) -> Result<bool> {
     let mut cursor = Value::Null;
     let mut cursors = HashSet::new();
     for _ in 0..max_pages {

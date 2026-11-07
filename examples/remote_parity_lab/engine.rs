@@ -179,13 +179,15 @@ impl Partition {
     pub fn archive(&self, target: &mut impl HostRpc, identifier: &str, row: &Value) -> Result<()> {
         ensure!(target.host() == self.host, "Wrong connection host");
         ensure!(target.execution_authority(), "Execution authority unknown");
-        let native = native_sections::read(target, &self.config, identifier)?;
-        ensure!(
-            native.state == "to_archive" && row["sectionVersion"] == native.version,
-            "Native archive eligibility changed"
-        );
         let revision = revisions(row)?;
         let expected = self.store.prepare_archive(identifier, revision)?;
+        if !archive::archived(target, identifier, self.config.max_pages)? {
+            let native = native_sections::read(target, &self.config, identifier)?;
+            ensure!(
+                native.state == "to_archive" && row["sectionVersion"] == native.version,
+                "Native archive eligibility changed"
+            );
+        }
         archive::archive(target, identifier, self.config.max_pages, &expected)?;
         self.store.confirm_archive(identifier, revision)
     }

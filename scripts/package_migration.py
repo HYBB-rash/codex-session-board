@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PATTERNS = (
     "Cargo.toml", "Cargo.lock", "clippy.toml", "project-rules.json",
-    "src/**/*.rs", "tests/**/*.rs", "index.html", "config.example.json",
+    "src/**/*.rs", "tests/**/*.rs", "examples/**/*.rs", "index.html", "config.example.json",
     "plugin.json", "mcp.json", ".mcp.json", ".codex-plugin/plugin.json",
     ".agents/plugins/marketplace.json", ".gitignore", ".githooks/*",
     "AGENTS.md", "README.md", "Docs/*.md", "assets/*", "skills/**/*",

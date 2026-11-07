@@ -41,7 +41,7 @@ impl Surface {
             .chain([("pinned", "Pinned")])
             .map(|(state, label)| {
                 let section = format!("{state}-id");
-                let items = if self.section == section {
+                let items = if self.section == section && !self.archived {
                     vec![format!("codex:thread:{}:{THREAD}", self.host)]
                 } else {
                     vec![]
