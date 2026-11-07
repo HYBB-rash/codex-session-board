@@ -33,16 +33,7 @@ fn version(root: &Path, repository: &Path, rules: &Rules) -> Result<bool> {
         locked_version(&fs::read_to_string(root.join("Cargo.lock"))?, &name)? == current,
         "暂存区 Cargo.toml 与 Cargo.lock 的版本不一致"
     );
-    let patch = history.version.next_patch()?;
-    let approved = current == history.version.next_minor()?
-        && history
-            .tip
-            .as_deref()
-            .is_some_and(|parent| rules.approves(parent, history.version, current));
-    ensure!(
-        current == patch || approved,
-        "暂存区版本 v{current} 不合规，普通提交应为 v{patch}；阶段完成须有匹配的用户决定"
-    );
+    rules.validate_step(history.tip.as_deref(), history.version, current)?;
     println!(
         "[通过] 暂存区版本 v{current}，历史 {} 次提交的版本步进正确。",
         history.count

@@ -2,7 +2,8 @@
   "schema_version": 1,
   "versioning": {
     "baseline": "0.1.0",
-    "feature_releases": []
+    "feature_releases": [],
+    "rollover_after": "b7acaa72fb62e2ffaf0d44292956a31d34bee036"
   },
   "rust_comments": {
     "baseline_commit": "f0fd5d3d208d018b00ae04dbe7e22151bcac518a"

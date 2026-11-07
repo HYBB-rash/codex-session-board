@@ -14,6 +14,7 @@ mod comment_policy;
 mod commit_size;
 mod document_policy;
 mod staged_check;
+mod version_policy;
 
 const RULES_FILE: &str = "project-rules.json";
 
@@ -47,7 +48,7 @@ struct Cli {
         long,
         requires = "prepare_commit",
         value_name = "用户明确决定的说明",
-        help = "仅在用户明确宣布阶段功能完成后使用，将次版本加一并将补丁号清零"
+        help = "旧规则兼容参数；自动进位启用后禁止人工阶段升版"
     )]
     feature_complete: Option<String>,
 }
@@ -114,6 +115,8 @@ struct CommentRules {
 struct VersionRules {
     baseline: String,
     feature_releases: Vec<FeatureRelease>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rollover_after: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -227,6 +230,7 @@ fn validate_history(root: &Path, rules: &Rules) -> Result<History> {
     };
     if !head.status.success() {
         ensure!(head.status.code() == Some(1), "无法读取当前 HEAD");
+        version_policy::validate_transition(root, rules, None)?;
         return Ok(history);
     }
     let baseline = history.version;
@@ -238,18 +242,20 @@ fn validate_history(root: &Path, rules: &Rules) -> Result<History> {
     for entry in commits.lines() {
         let mut fields = entry.split_whitespace();
         let commit = fields.next().context("提交记录缺少提交号")?;
-        let parent = fields.next();
+        let parents = fields.collect::<Vec<_>>();
+        let parent = parents.first().copied();
         let previous = match parent {
             Some(parent) => *versions.get(parent).context("缺少父提交的版本")?,
             None => baseline,
         };
-        let version = validate_commit_version(root, rules, commit, parent, previous)?;
+        let version = validate_commit_version(root, rules, commit, &parents, previous)?;
         versions.insert(commit, version);
         history.count += 1;
     }
     let tip = String::from_utf8(head.stdout)?.trim().to_string();
     history.version = *versions.get(tip.as_str()).context("缺少 HEAD 的版本")?;
     history.tip = Some(tip);
+    version_policy::validate_transition(root, rules, history.tip.as_deref())?;
     Ok(history)
 }
 
@@ -257,7 +263,7 @@ fn validate_commit_version(
     root: &Path,
     rules: &Rules,
     commit: &str,
-    parent: Option<&str>,
+    parents: &[&str],
     previous: Version,
 ) -> Result<Version> {
     let (name, version) = package(&committed(root, commit, "Cargo.toml")?)?;
@@ -270,14 +276,10 @@ fn validate_commit_version(
         recorded.versioning.baseline == rules.versioning.baseline,
         "不能修改既有版本基线来绕过历史检查"
     );
-    let patch = previous.next_patch()?;
-    let minor = previous.next_minor()?;
-    let approved = parent
-        .is_some_and(|parent| version == minor && recorded.approves(parent, previous, version));
-    ensure!(
-        version == patch || approved,
-        "提交 {commit} 的版本 v{version} 不符合规范：普通提交须为 v{patch}；阶段完成须有用户决定记录并恰好升到 v{minor}"
-    );
+    let parent = parents.first().copied();
+    version_policy::validate_transition(root, &recorded, parent)?;
+    version_policy::validate_merge(root, &recorded, parents)?;
+    recorded.validate_step(parent, previous, version)?;
     Ok(version)
 }
 
@@ -396,7 +398,7 @@ fn validate_current_version(root: &Path, rules: &Rules) -> Result<()> {
         history.tip.is_some(),
         "仓库尚无提交；已发布基线为 v{}，首次提交必须为 v{}",
         history.version,
-        history.version.next_patch()?
+        rules.next_version(history.version)?
     );
     ensure!(
         current == history.version,
@@ -412,7 +414,7 @@ fn validate_current_version(root: &Path, rules: &Rules) -> Result<()> {
 
 fn print_commit_guidance() {
     println!("\n处理顺序：");
-    println!("  1. 运行 ./scripts/check --prepare-commit，准备本次提交的补丁版本。");
+    println!("  1. 运行 ./scripts/check --prepare-commit，准备本次提交的下一版本。");
     println!(
         "  2. 用 git status --short 和 git diff 检查改动，仅暂存应提交文件，再用 git diff --cached 审阅。"
     );
@@ -420,9 +422,7 @@ fn print_commit_guidance() {
         "  3. 运行 ./scripts/check --pre-commit；审阅和检查通过后自主提交，优先使用 agent-git commit。"
     );
     println!("  4. 提交后重新运行 ./scripts/check，直到全部检查通过。");
-    println!(
-        "仅在用户明确宣布阶段完成时，使用 --prepare-commit --feature-complete '用户决定的说明'。"
-    );
+    println!("自动进位规则启用后，每次提交前进一步，不接受人工阶段升版。");
     println!("检查不会自动提交、推送、删除文件、修改忽略规则或升级正在运行的服务。");
 }
 
@@ -491,6 +491,19 @@ fn prepare_target(
     current: Version,
     decision: Option<&str>,
 ) -> Result<Version> {
+    if rules.versioning.rollover_after.is_some() {
+        ensure!(
+            decision.is_none(),
+            "自动进位模式禁止 --feature-complete 人工升版"
+        );
+        let target = rules.next_version(history.version)?;
+        ensure!(
+            current == history.version || current == target,
+            "普通提交只能从 v{} 步进到 v{target}；不能自动认可 v{current}",
+            history.version
+        );
+        return Ok(target);
+    }
     let patch = history.version.next_patch()?;
     let minor = history.version.next_minor()?;
     let target = if let Some(decision) = decision {

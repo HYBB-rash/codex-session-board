@@ -30,4 +30,6 @@ cargo run --locked --offline -- --config /path/to/new/config.json migrate --sour
 
 当前仓库仍使用原 `scripts/check`、注释限制、Clippy 和 Git 钩子。
 开发改动尚未提交时，工作区干净检查会失败，不可用忽略文件或重置工作区掩盖。
-Agent 自主按每次最多 13 文件、400 行和补丁升版规则分步提交。
+Agent 自主按每次最多 13 文件、400 行和每次提交自动进位规则分步提交。
+2026 年 11 月 7 日起第三段满 100、第二段满 10 自动向前进位，
+不再等待人工宣布阶段完成。旧历史按固定切换点兼容，详见 `Docs/CHECKS.md`。
