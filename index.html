@@ -29,7 +29,8 @@ button:hover{border-color:var(--green)}button.primary{background:var(--green);co
 .column.in_progress{--accent:#678fb3}.column.review{--accent:#c89a43}.column.blocked{--accent:#bc7768}
 .column.to_archive{--accent:#9a82b3}
 .column.drop-target{background:#dfeadc;border-color:var(--green);box-shadow:inset 0 0 0 1px var(--green)}
-.column-heading{display:flex;align-items:center;gap:8px;padding:14px 13px 11px}
+.column-heading{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:14px 13px 11px}
+.column-sort{flex-basis:100%;font-size:12px;padding:5px 8px}
 .column h2{font-size:14px;font-weight:600;margin:0}
 .column-count{margin-left:auto;font-size:12px;border-radius:5px;background:#ffffff90;padding:1px 7px;color:#72786c}
 .cards{flex:1;min-height:160px;overflow-y:auto;overscroll-behavior:contain;padding:0 9px 12px;scrollbar-width:thin}
@@ -271,23 +272,91 @@ async function archiveSessions(sessions, button) {
   }
   finally {saving = false;button.disabled = false;render();await load();}
 }
-function makeColumn(state, label, sessions) {
+function columnSort(state) {
+  return data.columnSorts?.[state] || {field:"updated_at",direction:state === "to_archive" ? "asc" : "desc",version:0};
+}
+function compareSessions(first, second, preference) {
+  let comparison = 0;
+  switch (preference.field) {
+    case "updated_at": {
+      const valid = value => Number.isFinite(value) && value > 0 && value <= 8640000000000;
+      const firstValid = valid(first.updatedAt), secondValid = valid(second.updatedAt);
+      if (firstValid !== secondValid) return firstValid ? -1 : 1;
+      if (firstValid) comparison = first.updatedAt - second.updatedAt;
+      break;
+    }
+    default: throw new Error("不支持的排序字段，请刷新看板。");
+  }
+  if (comparison) return preference.direction === "asc" ? comparison : -comparison;
+  return first.id < second.id ? -1 : first.id > second.id ? 1 : 0;
+}
+async function changeColumnSort(state, menu) {
+  const previous = {...(menu.sortPreference || columnSort(state))}, direction = menu.value;
+  if (saving || dragging || byId("editor").open) {menu.value = previous.direction;return;}
+  let changed = false;
+  saving = true;menu.disabled = true;++requestSerial;
+  try {
+    const result = await post("/api/column-sort",{state,...previous,direction});
+    data.columnSorts = {...data.columnSorts,[state]:result.preference};
+    changed = true;
+    announce(`${data.states[state]}已按更新时间${direction === "asc" ? "旧的在前" : "新的在前"}排列。`);
+  } catch (error) {
+    menu.value = previous.direction;
+    announce(error.message,true);
+  } finally {
+    menu.sortPreference = {...columnSort(state)};menu.value = menu.sortPreference.direction;
+    saving = false;menu.disabled = false;render(changed ? state : null);menu.focus({preventScroll:true});
+    await load();
+    menu.sortPreference = {...columnSort(state)};menu.value = menu.sortPreference.direction;
+  }
+}
+function captureScroll(cards) {
+  const top = cards.scrollTop, bounds = cards.getBoundingClientRect();
+  const anchor = top > 0 ? Array.from(cards.querySelectorAll(".card")).find(card =>
+    card.getBoundingClientRect().bottom > bounds.top) : null;
+  return {top,id:anchor?.dataset.id,offset:anchor ? anchor.getBoundingClientRect().top - bounds.top : 0};
+}
+function restoreScroll(cards, position) {
+  cards.scrollTop = position?.top || 0;
+  const anchor = position?.id && Array.from(cards.querySelectorAll(".card")).find(card => card.dataset.id === position.id);
+  if (anchor) cards.scrollTop += anchor.getBoundingClientRect().top - cards.getBoundingClientRect().top - position.offset;
+}
+function updateColumn(column, state, sessions) {
+  column.querySelector(".column-count").textContent = String(sessions.length);
+  const menu = column.querySelector(".column-sort");
+  if (document.activeElement !== menu) menu.value = columnSort(state).direction;
+  const archiveAll = column.querySelector("[data-archive-all]");
+  if (archiveAll) {
+    archiveAll.disabled = !sessions.some(session => !session.remote && session.canArchive !== false);
+    archiveAll.onclick = () => archiveSessions(sessions,archiveAll);
+  }
+  const cards = column.querySelector(".cards");
+  cards.replaceChildren(...sessions.map(makeCard));
+  if (!sessions.length) cards.append(element("div","拖动卡片到这里","empty-column"));
+}
+function makeColumn(state, label) {
   const column = element("section",undefined,"column " + state);
   column.dataset.state = state; column.id = "column-" + state;
   column.setAttribute("aria-label",label);
   const heading = element("div",undefined,"column-heading");
-  heading.append(element("h2",label),element("span",String(sessions.length),"column-count"));
+  heading.append(element("h2",label),element("span","0","column-count"));
   if (state === "to_archive") {
     const archiveAll = element("button","一键归档","row-action");
     archiveAll.type = "button";
     archiveAll.title = "归档当前筛选下本列中的全部本机会话，远程会话保留";
-    archiveAll.disabled = !sessions.some(session => !session.remote && session.canArchive !== false);
-    archiveAll.onclick = () => archiveSessions(sessions,archiveAll);
+    archiveAll.dataset.archiveAll = "";
     heading.append(archiveAll);
   }
+  const menu = element("select",undefined,"column-sort");
+  menu.setAttribute("aria-label",label + "排序");
+  menu.title = "按会话更新时间排列；拖入本列后也遵循此顺序";
+  menu.append(new Option("更新时间：新的在前","desc"),new Option("更新时间：旧的在前","asc"));
+  menu.value = columnSort(state).direction;
+  menu.onfocus = () => {menu.sortPreference = {...columnSort(state)};};
+  menu.onchange = () => changeColumnSort(state,menu);
+  menu.onblur = () => {menu.sortPreference = null;menu.value = columnSort(state).direction;};
+  heading.append(menu);
   const cards = element("div",undefined,"cards");
-  for (const session of sessions) cards.append(makeCard(session));
-  if (!sessions.length) cards.append(element("div","拖动卡片到这里","empty-column"));
   column.append(heading,cards);
   column.ondragover = event => {
     if (!dragging || saving) return;
@@ -370,14 +439,14 @@ function toggleFilter() {
   render();
   byId(filterMode === "project" ? "project-filter" : "search").focus();
 }
-function render() {
+function render(resetState = null) {
   if (dragging || saving || byId("editor").open) return;
   updateProjectOptions();
   byId("new-session").disabled = remoteNewTarget();
   byId("new-session").title = remoteNewTarget() ? "远程项目暂不支持新建会话" : "打开新建会话页";
   const scrollPositions = new Map(
     Array.from(document.querySelectorAll(".column")).map(column =>
-      [column.dataset.state,column.querySelector(".cards").scrollTop]));
+      [column.dataset.state,column.dataset.state === resetState ? null : captureScroll(column.querySelector(".cards"))]));
   const expandedProjects = new Set(Array.from(document.querySelectorAll(".project-tag[open]"))
     .map(tag => tag.closest(".card").dataset.id));
   const focusedProject = document.activeElement?.closest(".project-tag")?.closest(".card")?.dataset.id;
@@ -386,8 +455,10 @@ function render() {
   byId("jump").replaceChildren();
   for (const [state,label] of Object.entries(data.states)) {
     const sessions = filtered.filter(session => session.state === state);
-    if (state === "to_archive") sessions.sort((first,second) => first.updatedAt - second.updatedAt);
-    columns.push(makeColumn(state,label,sessions));
+    sessions.sort((first,second) => compareSessions(first,second,columnSort(state)));
+    const column = byId("column-" + state) || makeColumn(state,label);
+    updateColumn(column,state,sessions);
+    columns.push(column);
     const jump = element("button",`${label} ${sessions.length}`);
     jump.onclick = () => {
       const viewport = byId("board-viewport");
@@ -395,12 +466,15 @@ function render() {
     };
     byId("jump").append(jump);
   }
-  byId("board").replaceChildren(...columns);
+  if (columns.length !== byId("board").children.length ||
+      columns.some((column,index) => byId("board").children[index] !== column)) {
+    byId("board").replaceChildren(...columns);
+  }
   for (const card of byId("board").querySelectorAll(".card")) {
     card.querySelector(".project-tag").open = expandedProjects.has(card.dataset.id);
     if (card.dataset.id === focusedProject) card.querySelector(".project-tag summary").focus({preventScroll:true});
   }
-  for (const column of columns) column.querySelector(".cards").scrollTop = scrollPositions.get(column.dataset.state) || 0;
+  for (const column of columns) restoreScroll(column.querySelector(".cards"),scrollPositions.get(column.dataset.state));
   byId("count").textContent = `当前 ${filtered.length} / 全部 ${data.sessions.length} 条`;
   const health = data.health;
   const archiveStatus = byId("archive-status");

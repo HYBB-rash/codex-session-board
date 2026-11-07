@@ -19,7 +19,7 @@ def build():
     state = group("::state_contract_tests::")
     runtime = group("::runtime_tests::")
     observer = group("test::observer_contract::")
-    store = group("::store_tests::", "manual_save_")
+    store = group("::store_tests::", "manual_save_", "test::column_sort::")
     isolation = group("::isolation_contract_tests::")
     title_store = group("::title_store_tests::")
     title_io = group("title_", "old_ack", "newer_state_before_write", "saved_state_reports")

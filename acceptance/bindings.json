@@ -890,6 +890,7 @@
     "UI-003": [],
     "MCP-001": [
       "test::column_sort::column_sort_app_and_mcp_expose_separate_settings_operation",
+      "test::column_sort::column_sort_real_http_and_stdio_mcp_share_persistent_settings",
       "test::board_io::remote_cards_use_the_same_http_and_mcp_annotations_without_native_writes",
       "test::archive_flow::archive_checks_native_inputs_even_when_local_revision_has_not_changed",
       "test::archive_flow::archive_confirmation_persists_and_stale_observers_cannot_restore_the_card",
