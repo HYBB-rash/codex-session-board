@@ -10,6 +10,14 @@ impl Drop for Mutation<'_> {
 }
 
 impl App {
+    pub(crate) fn native_reader(&self) -> Result<DesktopConnection> {
+        DesktopConnection::connect(
+            &self.config.desktop_socket,
+            Duration::from_secs(self.config.rpc_timeout_seconds),
+            Role::NativeReader,
+        )
+    }
+
     pub(crate) fn thread_lock(&self, identifier: &str) -> Result<Arc<Mutex<()>>> {
         Ok(self
             .thread_operations
@@ -28,12 +36,19 @@ impl App {
     ) -> Result<native_sections::Observation> {
         self.native_generation.fetch_add(1, Ordering::SeqCst);
         let _mutation = Mutation(self);
+        let mut reader = self.native_reader()?;
         let mut writer = SidebarConnection::connect(
             &self.config,
             Duration::from_secs(self.config.rpc_timeout_seconds),
         )?;
-        let result =
-            native_sections::move_checked(&mut writer, &self.config, identifier, expected, state);
+        let result = native_sections::direct::move_checked(
+            &mut reader,
+            &mut writer,
+            &self.config,
+            identifier,
+            expected,
+            state,
+        );
         if let Err(error) = &result
             && error
                 .downcast_ref::<native_sections::UnconfirmedMove>()
@@ -57,26 +72,20 @@ impl App {
             .status_sections
             .get(board_state(state))
             .context("目标原生分区未配置")?;
-        let mut reader = SidebarConnection::reader(
-            &self.config,
-            Duration::from_secs(self.config.rpc_timeout_seconds),
-        )?;
-        let observed = native_sections::read(&mut reader, &self.config, identifier)?;
+        let mut reader = self.native_reader()?;
+        let observed = native_sections::direct::read(&mut reader, &self.config, identifier)?;
         ensure!(observed.version == *target, "原生位置与目标不一致");
         Ok(observed)
     }
 
     pub fn refresh_native(&self) -> Result<()> {
-        let mut reader = SidebarConnection::reader(
-            &self.config,
-            Duration::from_secs(self.config.rpc_timeout_seconds),
-        )?;
+        let mut reader = self.native_reader()?;
         self.read_native(&mut reader)
     }
 
     pub fn read_native(&self, reader: &mut impl Rpc) -> Result<()> {
         let generation = self.native_generation.load(Ordering::SeqCst);
-        let snapshot = native_sections::snapshot(reader, &self.config)?;
+        let snapshot = native_sections::direct::snapshot(reader, &self.config)?;
         let mut unresolved = 0;
         for session in self.store.sessions()? {
             let identifier = session["id"].as_str().context("会话缺少 ID")?;
@@ -87,13 +96,13 @@ impl App {
             if generation != self.native_generation.load(Ordering::SeqCst) {
                 return Ok(());
             }
-            let Ok(observed) = native_sections::lookup(&self.config, &snapshot, identifier) else {
+            let Some(observed) = snapshot.get(identifier) else {
                 unresolved += 1;
                 continue;
             };
-            self.store.cache_native(identifier, &observed)?;
+            self.store.cache_native(identifier, observed)?;
         }
-        self.update_health(json!({"nativeVerified":true,"nativeError":if unresolved==0 {Value::Null}else{json!(format!("{unresolved} 个会话的客户端标识未确认，保留上次原生位置"))},"nativeLastAt":now()}))
+        self.update_health(json!({"nativeVerified":true,"nativeError":if unresolved==0 {Value::Null}else{json!(format!("{unresolved} 个会话的原生位置未读回，保留上次位置"))},"nativeLastAt":now()}))
     }
 
     pub(crate) fn save_native(
@@ -156,11 +165,8 @@ impl App {
     }
 
     pub(crate) fn check_native_title(&self, identifier: &str) -> Result<()> {
-        let mut reader = SidebarConnection::reader(
-            &self.config,
-            Duration::from_secs(self.config.rpc_timeout_seconds),
-        )?;
-        let observed = native_sections::read(&mut reader, &self.config, identifier)?;
+        let mut reader = self.native_reader()?;
+        let observed = native_sections::direct::read(&mut reader, &self.config, identifier)?;
         self.store.cache_native(identifier, &observed)
     }
 }

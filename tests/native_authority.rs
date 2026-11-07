@@ -8,10 +8,10 @@ use serde_json::json;
 const FIRST: &str = "11111111-1111-4111-8111-111111111111";
 #[path = "native_authority/archive.rs"]
 mod archive;
-#[path = "native_authority/faults.rs"]
-mod faults;
 #[path = "native_authority/entrypoints.rs"]
 mod entrypoints;
+#[path = "native_authority/faults.rs"]
+mod faults;
 #[path = "native_authority/runtime.rs"]
 mod runtime;
 #[path = "native_authority/transport.rs"]
@@ -24,20 +24,39 @@ struct NativeSurface {
 
 impl Rpc for NativeSurface {
     fn call(&mut self, method: &str, _: serde_json::Value) -> Result<serde_json::Value> {
-        anyhow::ensure!(method == "list_threads", "read-only native surface");
         anyhow::ensure!(!self.fail, "native disconnected");
-        Ok(json!({"unavailableHosts":[],"sections":[
-            {"sectionId":"review-id","name":"待审阅","itemKeys":if self.section=="review-id"{vec![format!("codex:thread:local:{FIRST}")]}else{vec![]}},
-            {"sectionId":"archive-id","name":"待归档","itemKeys":if self.section=="archive-id"{vec![format!("codex:thread:local:{FIRST}")]}else{vec![]}}
-        ]}))
+        let sections = json!([
+            {"id":"backend:review-id","name":"待审阅","appearance":null},
+            {"id":"backend:archive-id","name":"待归档","appearance":null}
+        ]);
+        match method {
+            "threadSection/list" => Ok(json!({"data":sections})),
+            "thread/list" => Ok(json!({"data":[{"id":FIRST,"section":
+                sections.as_array().unwrap().iter().find(|section|
+                    section["id"] == format!("backend:{}",self.section)).unwrap()
+            }]})),
+            _ => anyhow::bail!("unexpected native method"),
+        }
     }
 }
 
 fn native_app(directory: &std::path::Path) -> Result<App> {
+    let mapping = directory.join("mapping.json");
+    std::fs::write(
+        &mapping,
+        json!({"electron-persisted-atom-state":{
+            "sidebar-custom-sections-v3":{"account":{"sections":[
+                {"id":"review-id","hostSectionIds":{"local":"backend:review-id"}},
+                {"id":"archive-id","hostSectionIds":{"local":"backend:archive-id"}}
+            ]}}
+        }})
+        .to_string(),
+    )?;
     App::new(Config {
         data_dir: directory.into(),
         native_sections: true,
         sync_titles: false,
+        sidebar_state_file: mapping,
         status_sections: [
             ("review".into(), "review-id".into()),
             ("to_archive".into(), "archive-id".into()),
@@ -125,6 +144,40 @@ fn native_inactive_cached_chats_are_hidden_and_cannot_be_moved() -> Result<()> {
             .contains("等待完整原生会话发现")
     );
     assert_eq!(app.store.note(FIRST)?, "");
+    Ok(())
+}
+
+#[test]
+fn missing_direct_snapshot_entries_never_become_unsectioned() -> Result<()> {
+    struct Missing(NativeSurface);
+    impl Rpc for Missing {
+        fn call(&mut self, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+            if method == "thread/list" {
+                return Ok(json!({"data":[]}));
+            }
+            self.0.call(method, params)
+        }
+    }
+    let directory = tempfile::tempdir()?;
+    let app = native_app(directory.path())?;
+    app.discover(&[json!({"id":FIRST})], true)?;
+    app.read_native(&mut NativeSurface {
+        section: "review-id",
+        fail: false,
+    })?;
+    app.read_native(&mut Missing(NativeSurface {
+        section: "review-id",
+        fail: false,
+    }))?;
+    let snapshot = app.snapshot()?;
+    assert_eq!(snapshot["sessions"][0]["sectionVersion"], "review-id");
+    assert_eq!(snapshot["sessions"][0]["state"], "review");
+    assert!(
+        snapshot["health"]["nativeError"]
+            .as_str()
+            .unwrap()
+            .contains("保留")
+    );
     Ok(())
 }
 

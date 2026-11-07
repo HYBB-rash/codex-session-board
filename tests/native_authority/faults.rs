@@ -1,7 +1,7 @@
-use super::transport::{body, BlockingMove, Server};
+use super::transport::{BlockingMove, Server, body};
 use super::*;
 use serde_json::Value;
-use std::sync::{mpsc, Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::time::Duration;
 
 #[test]
@@ -10,17 +10,19 @@ fn remote_rejection_and_local_abort_do_not_commit_notes_or_replay_native_moves()
     let server = Server::new(directory.path())?;
     let app = server.app()?;
     server.surface.lock().unwrap().reject_move = Some(FIRST.into());
-    assert!(app
-        .request("/api/state", Some(&body(&app, "to_archive", "失败备注")?))
-        .is_err());
+    assert!(
+        app.request("/api/state", Some(&body(&app, "to_archive", "失败备注")?))
+            .is_err()
+    );
     assert_eq!(app.store.note(FIRST)?, "");
     assert_eq!(server.surface.lock().unwrap().slots[FIRST], "review");
     server.surface.lock().unwrap().reject_move = None;
     app.request("/api/state", Some(&body(&app, "to_archive", "已确认")?))?;
     app.store.connection()?.execute_batch("CREATE TRIGGER reject_note BEFORE UPDATE ON sessions WHEN NEW.note='rejectcommit' BEGIN SELECT RAISE(ABORT,'injected commit failure'); END;")?;
-    assert!(app
-        .request("/api/state", Some(&body(&app, "review", "rejectcommit")?))
-        .is_err());
+    assert!(
+        app.request("/api/state", Some(&body(&app, "review", "rejectcommit")?))
+            .is_err()
+    );
     assert_eq!(app.store.note(FIRST)?, "已确认");
     assert_eq!(server.surface.lock().unwrap().slots[FIRST], "review");
     app.refresh_native()?;
@@ -57,9 +59,10 @@ fn input_arriving_during_a_native_move_cannot_be_confirmed_by_the_old_save() -> 
     assert_eq!(session["state"], "to_archive");
     assert_eq!(session["followUp"], true);
     assert_eq!(session["note"], "原备注");
-    assert!(app
-        .request("/api/archive", Some(&body(&app, "to_archive", "")?))
-        .is_err());
+    assert!(
+        app.request("/api/archive", Some(&body(&app, "to_archive", "")?))
+            .is_err()
+    );
     Ok(())
 }
 
@@ -74,10 +77,13 @@ struct DelayedRead<'app> {
 
 impl Rpc for DelayedRead<'_> {
     fn call(&mut self, method: &str, _: Value) -> Result<Value> {
-        anyhow::ensure!(method == "list_threads", "read only");
+        if method == "threadSection/list" {
+            return Ok(super::transport::Surface::default().catalog());
+        }
+        anyhow::ensure!(method == "thread/list", "read only");
         self.app
             .request("/api/state", Some(&body(self.app, "to_archive", "新确认")?))?;
-        Ok(self.old.clone())
+        Ok(json!({"data":[{"id":FIRST,"section":self.old}]}))
     }
 }
 
@@ -86,7 +92,7 @@ fn a_late_read_snapshot_cannot_overwrite_a_confirmed_native_save() -> Result<()>
     let directory = tempfile::tempdir()?;
     let server = Server::new(directory.path())?;
     let app = server.app()?;
-    let old = server.surface.lock().unwrap().layout();
+    let old = server.surface.lock().unwrap().backend_section(FIRST);
     app.read_native(&mut DelayedRead { app: &app, old })?;
     assert_eq!(app.snapshot()?["sessions"][0]["state"], "to_archive");
     assert_eq!(app.store.note(FIRST)?, "新确认");

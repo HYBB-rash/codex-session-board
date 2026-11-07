@@ -33,6 +33,10 @@ pub(super) struct Surface {
     pub reject_move: Option<String>,
     pub blocked: Option<BlockingMove>,
     pub read_blocked: Option<BlockingMove>,
+    pub remote_projects: Vec<Value>,
+    pub remote_threads: Vec<Value>,
+    pub remote_disconnected: bool,
+    pub remote_blocked: Option<BlockingMove>,
 }
 
 #[derive(Clone)]
@@ -97,17 +101,40 @@ impl Surface {
         json!({"unavailableHosts":[],"sections":sections})
     }
 
+    fn history(&self, args: &Value) -> Result<Option<Value>> {
+        if self.remote_disconnected {
+            return Ok(None);
+        }
+        assert_eq!(args["source"], "codex");
+        assert_ne!(args["hostId"], "local");
+        let threads: Vec<_> = self
+            .remote_threads
+            .iter()
+            .filter(|thread| thread["hostId"] == args["hostId"])
+            .cloned()
+            .collect();
+        Ok(Some(json!({"threads":threads,"nextCursor":null})))
+    }
+
     fn call(
         &mut self,
         method: &str,
         args: &Value,
         database: &std::path::Path,
     ) -> Result<Option<Value>> {
-        self.calls.push(method.into());
+        self.calls
+            .push(if method == "list_threads" && args["mode"] == "history" {
+                format!("history:{}", args["hostId"].as_str().unwrap())
+            } else {
+                method.into()
+            });
         match method {
-            "list_projects" => Ok(Some(json!({"projects":[]}))),
+            "list_projects" => Ok(Some(json!({"projects":self.remote_projects}))),
+            "list_threads" if args["mode"] == "history" => self.history(args),
             "list_threads" => Ok(Some(self.layout())),
             "move_thread_to_sidebar_section" => {
+                assert_eq!(args["hostId"], "local");
+                assert_eq!(args["source"], "codex");
                 let identifier = args["threadId"].as_str().unwrap_or("");
                 if self.reject_move.as_deref() == Some(identifier) {
                     return Ok(None);
@@ -240,6 +267,18 @@ fn serve(
 }
 
 fn blocking_request(surface: &Surface, params: &Value) -> Option<BlockingMove> {
+    if params["tool"] == "list_projects" {
+        return surface
+            .remote_blocked
+            .clone()
+            .filter(|gate| gate.identifier == "projects");
+    }
+    if params["tool"] == "list_threads" && params["arguments"]["mode"] == "history" {
+        return surface
+            .remote_blocked
+            .clone()
+            .filter(|gate| params["arguments"]["hostId"] == gate.identifier);
+    }
     match params["tool"].as_str().unwrap_or("") {
         "list_threads" => surface.read_blocked.clone(),
         "move_thread_to_sidebar_section" => surface

@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-struct Live {
+pub(super) struct Live {
     path: PathBuf,
     url: String,
 }
@@ -21,7 +21,7 @@ fn cli(path: &Path, action: &str) -> Result<std::process::Output> {
 }
 
 impl Live {
-    fn new(config: &mut Config, directory: &Path) -> Result<Self> {
+    pub(super) fn new(config: &mut Config, directory: &Path) -> Result<Self> {
         let available = std::net::TcpListener::bind("127.0.0.1:0")?;
         config.port = available.local_addr()?.port();
         drop(available);
@@ -39,7 +39,7 @@ impl Live {
         })
     }
 
-    fn snapshot(&self, client: &reqwest::blocking::Client) -> Result<Value> {
+    pub(super) fn snapshot(&self, client: &reqwest::blocking::Client) -> Result<Value> {
         Ok(client
             .get(format!("{}/api/sessions", self.url))
             .send()?
@@ -47,7 +47,7 @@ impl Live {
             .json()?)
     }
 
-    fn ready(&self, client: &reqwest::blocking::Client) -> Result<Value> {
+    pub(super) fn ready(&self, client: &reqwest::blocking::Client) -> Result<Value> {
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             let snapshot = self.snapshot(client)?;
@@ -73,6 +73,15 @@ impl Live {
         client: &reqwest::blocking::Client,
         body: &Value,
     ) -> Result<reqwest::blocking::Response> {
+        self.post_path(client, "/api/state", body)
+    }
+
+    pub(super) fn post_path(
+        &self,
+        client: &reqwest::blocking::Client,
+        path: &str,
+        body: &Value,
+    ) -> Result<reqwest::blocking::Response> {
         let html = client.get(&self.url).send()?.error_for_status()?.text()?;
         let token = html
             .split("const csrf = \"")
@@ -80,7 +89,7 @@ impl Live {
             .and_then(|tail| tail.split('"').next())
             .ok_or_else(|| anyhow::anyhow!("missing CSRF"))?;
         Ok(client
-            .post(format!("{}/api/state", self.url))
+            .post(format!("{}{path}", self.url))
             .header("X-CSRF-Token", token)
             .json(body)
             .send()?)

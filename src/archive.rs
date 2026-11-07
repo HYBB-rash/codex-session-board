@@ -80,11 +80,8 @@ fn verify_section(app: &App, body: &Value) -> Result<()> {
     let expected = body["sectionVersion"]
         .as_str()
         .context("缺少原生位置，请刷新后重试")?;
-    let mut reader = crate::rpc::SidebarConnection::reader(
-        &app.config,
-        Duration::from_secs(app.config.rpc_timeout_seconds),
-    )?;
-    let native = crate::native_sections::read(
+    let mut reader = app.native_reader()?;
+    let native = crate::native_sections::direct::read(
         &mut reader,
         &app.config,
         body["id"].as_str().context("缺少会话 ID")?,

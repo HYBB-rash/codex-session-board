@@ -138,3 +138,36 @@ pub fn snapshot(reader: &mut impl Rpc, config: &Config) -> Result<HashMap<String
         })
         .collect()
 }
+
+pub fn move_checked(
+    reader: &mut impl Rpc,
+    writer: &mut impl Rpc,
+    config: &Config,
+    identifier: &str,
+    expected: &str,
+    state: Option<&str>,
+) -> Result<Observation> {
+    let before = read(reader, config, identifier)?;
+    ensure!(before.version == expected, "原生分区已更新，请刷新后重试");
+    let Some(state) = state else {
+        return Ok(before);
+    };
+    let target = config
+        .status_sections
+        .get(model::board_state(state))
+        .context("目标原生分区未配置")?;
+    if before.version == *target {
+        return Ok(before);
+    }
+    writer
+        .call(
+            "move_thread_to_sidebar_section",
+            json!({
+                "threadId":identifier,"sectionId":target,"source":"codex","hostId":config.host_id
+            }),
+        )
+        .context(UnconfirmedMove)?;
+    let after = read(reader, config, identifier).context(UnconfirmedMove)?;
+    ensure!(after.version == *target, "原生分区写入未确认，请刷新核对");
+    Ok(after)
+}
