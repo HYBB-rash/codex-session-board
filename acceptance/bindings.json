@@ -314,6 +314,7 @@
     ],
     "MANUAL-001": [
       "test::native_authority::archive::a_slow_native_archive_does_not_hold_the_database_lock_for_other_chats",
+      "test::native_authority::archive::native_archive_keeps_its_configured_budget_during_slow_section_verification",
       "test::native_authority::entrypoints::built_binary_preserves_native_position_guards_over_http_and_mcp",
       "lib::codex_session_board::native_sections::tests::native_aliases_confirm_canonical_ids_without_repeating_moves",
       "lib::codex_session_board::native_sections::tests::unresolved_aliases_block_only_unmatched_ids_without_guessing_a_default",

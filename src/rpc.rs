@@ -314,7 +314,7 @@ pub struct DesktopConnection {
 
 impl DesktopConnection {
     pub fn connect(path: &Path, timeout: Duration, role: Role) -> Result<Self> {
-        let budget = if role != Role::Reader {
+        let budget = if role == Role::TitleWriter {
             timeout.min(Duration::from_secs(3))
         } else {
             timeout
@@ -764,7 +764,7 @@ mod tests {
             request_id: 0,
             timeout: Duration::from_secs(1),
             role,
-            title_deadline: (role == Role::TitleWriter).then_some(deadline),
+            title_deadline: (role != Role::Reader).then_some(deadline),
         };
         Ok((
             client,

@@ -64,7 +64,7 @@ fn engine_connection(
     archived: Arc<Mutex<HashSet<String>>>,
     blocked: Arc<Mutex<Option<BlockingMove>>>,
 ) -> Result<()> {
-    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    stream.set_read_timeout(Some(Duration::from_secs(10)))?;
     let mut socket = tungstenite::accept(stream)?;
     while let Ok(message) = socket.read() {
         if message.is_close() {
@@ -115,6 +115,36 @@ fn engine_reply(request: &Value, archived: &Mutex<HashSet<String>>) -> Result<Va
         }
         method => anyhow::bail!("unexpected engine method {method}"),
     })
+}
+
+#[test]
+fn native_archive_keeps_its_configured_budget_during_slow_section_verification() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let mut server = Server::new(directory.path())?;
+    server.config.rpc_timeout_seconds = 6;
+    server.config.desktop_socket = directory.path().join("engine.sock");
+    let engine = Engine::new(&server.config.desktop_socket)?;
+    let app = Arc::new(server.app()?);
+    app.request("/api/state", Some(&body(&app, "to_archive", "保留备注")?))?;
+    let (sender, started) = mpsc::channel();
+    let release = Arc::new((Mutex::new(false), Condvar::new()));
+    server.surface.lock().unwrap().read_blocked = Some(BlockingMove {
+        identifier: FIRST.into(),
+        started: sender,
+        release: Arc::clone(&release),
+    });
+    let request = body(&app, "to_archive", "保留备注")?;
+    let archiving = Arc::clone(&app);
+    let worker = std::thread::spawn(move || archiving.request("/api/archive", Some(&request)));
+    started.recv_timeout(Duration::from_secs(1))?;
+    std::thread::sleep(Duration::from_millis(3200));
+    *release.0.lock().unwrap() = true;
+    release.1.notify_all();
+    worker.join().unwrap()?;
+    assert!(engine.archived.lock().unwrap().contains(FIRST));
+    assert_eq!(app.store.note(FIRST)?, "保留备注");
+    assert!(app.snapshot()?["sessions"].as_array().unwrap().is_empty());
+    Ok(())
 }
 
 #[test]

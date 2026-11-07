@@ -32,6 +32,7 @@ pub(super) struct Surface {
     pub lose_receipt: bool,
     pub reject_move: Option<String>,
     pub blocked: Option<BlockingMove>,
+    pub read_blocked: Option<BlockingMove>,
 }
 
 #[derive(Clone)]
@@ -195,6 +196,17 @@ fn serve(
     })
 }
 
+fn blocking_request(surface: &Surface, params: &Value) -> Option<BlockingMove> {
+    match params["tool"].as_str().unwrap_or("") {
+        "list_threads" => surface.read_blocked.clone(),
+        "move_thread_to_sidebar_section" => surface
+            .blocked
+            .clone()
+            .filter(|blocked| params["arguments"]["threadId"] == blocked.identifier),
+        _ => None,
+    }
+}
+
 fn connection(
     mut stream: UnixStream,
     surface: Arc<Mutex<Surface>>,
@@ -210,10 +222,7 @@ fn connection(
         stream.read_exact(&mut bytes)?;
         let request: Value = serde_json::from_slice(&bytes)?;
         let params = &request["params"];
-        let block = surface.lock().unwrap().blocked.clone().filter(|blocked| {
-            params["tool"] == "move_thread_to_sidebar_section"
-                && params["arguments"]["threadId"] == blocked.identifier
-        });
+        let block = blocking_request(&surface.lock().unwrap(), params);
         wait_for_release(block)?;
         let result = surface.lock().unwrap().call(
             params["tool"].as_str().unwrap_or(""),
