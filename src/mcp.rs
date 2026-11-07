@@ -26,9 +26,10 @@ pub fn tools_for(legacy: bool) -> Value {
         ("board_open", "打开已有会话", true),
         ("board_new", "打开新建会话页", false),
         ("board_new_reset", "确认已核对新建结果", false),
+        ("board_connect", "连接已登记的远程主机", false),
         ("board_refresh", "重新发现", false),
     ] {
-        if legacy && matches!(name, "board_archive" | "board_new_reset") {
+        if legacy && matches!(name, "board_archive" | "board_new_reset" | "board_connect") {
             continue;
         }
         let (properties, required) = schema(name, legacy);
@@ -66,6 +67,7 @@ fn schema(name: &str, legacy: bool) -> (Value, Value) {
             json!(["id", "state", "version", "inputVersion"]),
         ),
         "board_open" => (json!({"id":{"type":"string"}}), json!(["id"])),
+        "board_connect" => (json!({"hostId":{"type":"string"}}), json!(["hostId"])),
         "board_archive" => (
             json!({"id":{"type":"string"},"version":{"type":"integer","minimum":0},
                 "inputVersion":{"type":"integer","minimum":0},"sectionVersion":{"type":["string","null"]}}),
@@ -89,7 +91,7 @@ pub fn resource() -> Value {
     let bridge = include_str!("../assets/app-bridge.js")
         .replace(
             "\"/api/refresh\":\"board_refresh\"",
-            "\"/api/refresh\":\"board_refresh\",\"/api/new\":\"board_new\",\"/api/new/reset\":\"board_new_reset\",\"/api/archive\":\"board_archive\",\"/api/column-sort\":\"board_sort\"",
+            "\"/api/refresh\":\"board_refresh\",\"/api/new\":\"board_new\",\"/api/new/reset\":\"board_new_reset\",\"/api/connect\":\"board_connect\",\"/api/archive\":\"board_archive\",\"/api/column-sort\":\"board_sort\"",
         )
         .replace("</script", "<\\/script");
     let html = include_str!("../index.html")
@@ -116,6 +118,7 @@ pub fn backend(config_path: &Path, name: &str, arguments: &Value) -> Result<Valu
         "board_open" => "/api/open",
         "board_new" => "/api/new",
         "board_new_reset" => "/api/new/reset",
+        "board_connect" => "/api/connect",
         "board_refresh" => "/api/refresh",
         _ => bail!("未知看板工具"),
     };

@@ -570,6 +570,8 @@ function render(resetState = null) {
   for (const column of columns) restoreScroll(column.querySelector(".cards"),scrollPositions.get(column.dataset.state));
   byId("count").textContent = `当前 ${filtered.length} / 全部 ${data.sessions.length} 条`;
   const health = data.health;
+  if (data.legacyMode) byId("foot").textContent =
+    "拖动卡片修改状态，备注随会话保存。“待归档”和“已完成”均为人工状态。新建会话仅打开输入页。";
   const archiveStatus = byId("archive-status");
   archiveStatus.hidden = !health.autoArchiveSeconds;
   if (health.autoArchiveSeconds) {
@@ -601,8 +603,12 @@ function render(resetState = null) {
   }
   const remoteCount = data.sessions.filter(session => session.remote).length;
   if (remoteCount || health.remoteVerified) byId("health").textContent += ` · ${remoteCount} 条远程会话`;
+  if (health.remoteCacheErrors?.length) {
+    byId("health").className = "health error";
+    byId("health").textContent += ` · ${health.remoteCacheErrors.length} 个远程缓存读取失败，需核对连接与数据`;
+  }
   for (const host of health.remoteConnections || []) {
-    const warning = host.runtimeError || host.nativeError || host.nativeStageError ||
+    const warning = host.writeError || host.runtimeError || host.nativeError || host.nativeStageError ||
       (!host.scanComplete ? "分页扫描尚未完成" : null);
     if (warning || !host.runtimeVerified) byId("health").className = "health error";
     byId("health").textContent += ` · ${host.hostLabel || host.hostId}：` +
@@ -618,6 +624,23 @@ function render(resetState = null) {
     byId("health").className = "health error";
     byId("health").textContent += " · 远程读取未完成，保留缓存：" +
       (health.remoteError || failedHosts.map(host => host.hostLabel + "：" + host.error).join("；"));
+  }
+  renderConnectButtons(health);
+}
+function renderConnectButtons(health) {
+  for (const host of health.remoteRegistry || []) {
+    if (host.enabled !== false || data.legacyMode) continue;
+    const connect = element("button",`连接 ${host.hostLabel || host.hostId}`,"row-action");
+    connect.type = "button";
+    connect.onclick = async () => {
+      connect.disabled = true;
+      try {
+        await post("/api/connect",{hostId:host.hostId});
+        await load();
+      } catch (error) { announce(error.message,true); }
+      finally { connect.disabled = false; }
+    };
+    byId("health").append(" ",connect);
   }
 }
 function noteDraft(id, value) {

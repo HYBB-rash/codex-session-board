@@ -268,20 +268,37 @@ impl Binding {
         if self.registry.as_os_str().is_empty() {
             return Ok(());
         }
-        let root = self.path.ancestors().nth(3).context("源记录缺少数据根目录")?;
-        let settings = config::Config { data_dir: root.into(), ..config::Config::default() };
+        let root = self
+            .path
+            .ancestors()
+            .nth(3)
+            .context("源记录缺少数据根目录")?;
+        let settings = config::Config {
+            data_dir: root.into(),
+            ..config::Config::default()
+        };
         for host in super::registered_at(&self.registry)? {
             if host.host_id == self.host_id {
                 continue;
             }
             let path = host.directory(&settings).join("source.json");
-            let Ok(other) = load(&path) else { continue; };
-            let same_data = other.peer.as_ref().zip(record.peer.as_ref())
-                .is_some_and(|(first, second)|
-                    first.uid == second.uid && first.codex_home == second.codex_home);
-            ensure!(other.ssh.hostname != record.ssh.hostname
-                || other.ssh.port != record.ssh.port || !same_data,
-                "多个主机登记使用同一可观测 SSH 用户和 Codex 数据目录；请保留一个登记后再修改会话");
+            let Ok(other) = load(&path) else {
+                continue;
+            };
+            let same_data =
+                other
+                    .peer
+                    .as_ref()
+                    .zip(record.peer.as_ref())
+                    .is_some_and(|(first, second)| {
+                        first.uid == second.uid && first.codex_home == second.codex_home
+                    });
+            ensure!(
+                other.ssh.hostname != record.ssh.hostname
+                    || other.ssh.port != record.ssh.port
+                    || !same_data,
+                "多个主机登记使用同一可观测 SSH 用户和 Codex 数据目录；请保留一个登记后再修改会话"
+            );
         }
         Ok(())
     }
