@@ -55,3 +55,6 @@ fn publish_with(
     }
     result
 }
+
+#[cfg(test)]
+mod tests;

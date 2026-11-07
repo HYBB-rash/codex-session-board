@@ -1083,7 +1083,9 @@
       "lib::codex_session_board::service::tests::registration_supports_actual_ephemeral_port_and_parent_lock",
       "test::board_io::changed_config_or_port_cannot_start_second_service",
       "test::board_io::real_http_persistence_security_and_launcher_reuse",
-      "test::board_io::service_update_rejects_old_build_but_can_verify_and_stop_its_process"
+      "test::board_io::service_update_rejects_old_build_but_can_verify_and_stop_its_process",
+      "lib::codex_session_board::service::migration::tests::snapshots::migration_copies_host_databases_when_the_main_database_is_absent",
+      "lib::codex_session_board::service::migration::tests::snapshots::migration_preserves_root_and_all_host_wal_state_and_only_allowed_sidecars"
     ],
     "SERVICE-001": [
       "lib::codex_session_board::service::tests::data_lock_serializes_independent_open_descriptors",
@@ -1104,7 +1106,9 @@
       "lib::codex_session_board::app::drafts::tests::releasing_uncertain_drafts_requires_confirmation_and_cannot_clear_another_project",
       "lib::codex_session_board::store::drafts::tests::uncertain_drafts_survive_restart_and_cannot_be_retried_as_new_requests",
       "lib::codex_session_board::store::drafts::tests::acknowledged_draft_retries_reuse_the_same_thread_without_overwriting_new_requests",
-      "lib::codex_session_board::remote::instances::tests::remote_instances_reuse_store_preserve_notes_and_reject_reassigned_targets"
+      "lib::codex_session_board::remote::instances::tests::remote_instances_reuse_store_preserve_notes_and_reject_reassigned_targets",
+      "lib::codex_session_board::service::migration::tests::snapshots::migration_copies_host_databases_when_the_main_database_is_absent",
+      "lib::codex_session_board::service::migration::tests::snapshots::migration_preserves_root_and_all_host_wal_state_and_only_allowed_sidecars"
     ],
     "BOUNDARY-001": [
       "test::legacy_mode::legacy_mode_rejects_native_connections_and_timers_before_creating_data",
