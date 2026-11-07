@@ -79,6 +79,7 @@ impl Surface {
     ) -> Result<Option<Value>> {
         self.calls.push(method.into());
         match method {
+            "list_projects" => Ok(Some(json!({"projects":[]}))),
             "list_threads" => Ok(Some(self.layout())),
             "move_thread_to_sidebar_section" => {
                 let identifier = args["threadId"].as_str().unwrap_or("");

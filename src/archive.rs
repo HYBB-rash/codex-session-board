@@ -10,6 +10,7 @@ use std::time::Duration;
 
 pub fn request(app: &App, body: &Value) -> Result<Value> {
     let identifier = body["id"].as_str().context("缺少会话 ID")?;
+    ensure!(!identifier.starts_with("remote:"), "远程会话暂不支持归档");
     let version = body["version"].as_i64().context("缺少状态版本")?;
     let input = body["inputVersion"].as_i64().context("缺少输入版本")?;
     uuid::Uuid::parse_str(identifier).context("无效会话 ID")?;

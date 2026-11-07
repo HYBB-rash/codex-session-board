@@ -16,11 +16,13 @@ use std::sync::{
 use std::time::Duration;
 
 mod native;
+mod remote;
 
 pub struct App {
     pub config: Config,
     pub store: Arc<Store>,
     pub refresh: AtomicBool,
+    pub remote_refresh: AtomicBool,
     pub health: Mutex<Value>,
     pub(crate) projects: Mutex<crate::projects::Catalog>,
     pub(crate) title_lock: Mutex<()>,
@@ -43,6 +45,7 @@ impl App {
             config,
             store,
             refresh: AtomicBool::new(false),
+            remote_refresh: AtomicBool::new(false),
             projects: Mutex::new(crate::projects::Catalog::default()),
             title_lock: Mutex::new(()),
             active_sessions: Mutex::new(None),
@@ -124,8 +127,11 @@ impl App {
             .lock()
             .map_err(|_| anyhow::anyhow!("项目列表锁已损坏"))?;
         projects.annotate(&mut sessions);
+        let mut catalog = serde_json::to_value(&*projects)?;
+        drop(projects);
+        self.append_remote(&mut sessions, &mut catalog)?;
         Ok(
-            json!({"states":states,"sessions":sessions,"projectCatalog":*projects,
+            json!({"states":states,"sessions":sessions,"projectCatalog":catalog,
             "health":self.health.lock().map_err(|_| anyhow::anyhow!("健康状态锁已损坏"))?.clone()}),
         )
     }
@@ -138,12 +144,16 @@ impl App {
             ("/api/new", Some(body)) => self.new_session(body),
             ("/api/open", Some(body)) => {
                 let identifier = body["id"].as_str().context("缺少会话 ID")?;
+                if identifier.starts_with("remote:") {
+                    return self.open_remote(identifier);
+                }
                 ensure!(self.store.contains(identifier)?, "会话不在本地看板中");
                 let url = open_conversation(identifier, &self.config)?;
                 Ok(json!({"ok":true,"url":url}))
             }
             ("/api/refresh", Some(_)) => {
                 self.refresh.store(true, Ordering::Relaxed);
+                self.remote_refresh.store(true, Ordering::Relaxed);
                 Ok(json!({"ok":true}))
             }
             _ => bail!("接口不存在"),
@@ -156,6 +166,10 @@ impl App {
             None => "codex://threads/new".to_string(),
             Some(project) => {
                 let identifier = project.as_str().context("项目 ID 必须是文本")?;
+                ensure!(
+                    !identifier.starts_with("remote:"),
+                    "远程项目暂不支持新建会话"
+                );
                 crate::projects::validate_project(&self.config, identifier)?;
                 let mut url = url::Url::parse("codex://new")?;
                 url.query_pairs_mut().append_pair("projectId", identifier);
@@ -169,6 +183,9 @@ impl App {
     fn save(&self, body: &Value) -> Result<Value> {
         ensure!(body.is_object(), "请求格式无效");
         let identifier = body["id"].as_str().context("缺少会话 ID")?;
+        if identifier.starts_with("remote:") {
+            return self.store.save_remote(body);
+        }
         let state = body.get("state").context("缺少状态")?;
         ensure!(state.is_string() || state.is_null(), "状态格式无效");
         let note = match body.get("note") {

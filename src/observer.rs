@@ -213,7 +213,24 @@ fn project_worker(app: Arc<App>) {
     }
 }
 
+fn remote_worker(app: Arc<App>) {
+    loop {
+        let _ = crate::remote::refresh(&app);
+        let deadline = Instant::now() + Duration::from_secs(app.config.poll_seconds);
+        while Instant::now() < deadline {
+            if app.remote_refresh.swap(false, Ordering::Relaxed) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+}
+
 pub fn start(app: &Arc<App>) {
+    if !app.config.sidebar_socket.as_os_str().is_empty() && !app.config.sidebar_caller.is_empty() {
+        let remote = Arc::clone(app);
+        std::thread::spawn(move || remote_worker(remote));
+    }
     let projects = Arc::clone(app);
     std::thread::spawn(move || project_worker(projects));
     let history = Arc::clone(app);

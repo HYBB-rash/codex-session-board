@@ -830,6 +830,8 @@
       "test::observer_contract::same_phase_runtime_input_rejects_stale_input_version_without_changing_state_version"
     ],
     "NAV-001": [
+      "test::remote_sessions::routes::remote_routes_bypass_local_authority_and_preserve_host_project_identity",
+      "test::remote_sessions::routes::unsupported_remote_actions_and_unknown_ids_fail_before_external_io",
       "test::board_io::host_origin_and_token_are_required_for_mutation",
       "test::board_io::navigation_is_canonical_and_encodes_host_as_one_value",
       "test::board_io::new_session_rejects_stale_projects_without_changing_default_navigation",

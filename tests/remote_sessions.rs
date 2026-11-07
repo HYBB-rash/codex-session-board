@@ -8,6 +8,8 @@ const THREAD: &str = "11111111-1111-4111-8111-111111111111";
 
 #[path = "remote_sessions/discovery.rs"]
 mod discovery;
+#[path = "remote_sessions/routes.rs"]
+mod routes;
 
 fn discover(store: &Store, host: &str, updated: i64) -> Result<()> {
     store.discover_remote(
