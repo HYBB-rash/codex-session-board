@@ -273,6 +273,7 @@
       "test::board_contract::state_contract_tests::test_state_names_and_display_order"
     ],
     "AUTO-006": [
+      "test::native_authority::runtime::pending_stages_survive_service_restart_and_respect_later_native_choices",
       "test::board_contract::runtime_tests::duplicate_flags_are_order_independent_and_leave_audit_and_queue_unchanged",
       "test::board_contract::runtime_tests::empty_turn_identifier_does_not_create_runtime_state_or_title_work",
       "test::board_contract::runtime_tests::irrelevant_or_unidentified_runtime_evidence_does_not_write",

@@ -30,6 +30,52 @@ fn fixture() -> Result<(tempfile::TempDir, Store)> {
     Ok((directory, store))
 }
 
+fn pending_restart_case(kind: &str, phase: &str, target: &str, external: bool) -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let mut store = Store::open(directory.path(), false)?;
+    store.native_sections = true;
+    store.discover(&[json!({"id":FIRST})])?;
+    store.set_state(FIRST, Some("unknown"), "保留备注", 0, Some(0))?;
+    store.cache_native(FIRST, &placed("review"))?;
+    let since = codex_session_board::model::now();
+    let status = json!({"type":kind});
+    let turn = json!({"id":"pending","status":phase,"startedAt":since+1.0,"completedAt":since+2.0});
+    assert!(store.prepare_native_runtime(FIRST, &status, &turn, since)?.is_some());
+    drop(store);
+    let mut store = Store::open(directory.path(), false)?;
+    store.native_sections = true;
+    if external {
+        store.cache_native(FIRST, &placed("to_archive"))?;
+    }
+    let retried = store.prepare_native_runtime(FIRST, &status, &turn, since + 10.0)?;
+    if external {
+        assert!(retried.is_none());
+        assert_eq!(store.sessions()?[0]["state"], "to_archive");
+    } else {
+        let change = retried.expect("已接受但未确认的阶段应跨服务重启保留");
+        store.commit_native_runtime(FIRST, &change, &placed(target))?;
+        assert_eq!(store.sessions()?[0]["state"], target);
+        assert!(store.prepare_native_runtime(FIRST, &status, &turn, since + 10.0)?.is_none());
+    }
+    assert_eq!(store.note(FIRST)?, "保留备注");
+    Ok(())
+}
+
+#[test]
+fn pending_stages_survive_service_restart_and_respect_later_native_choices() -> Result<()> {
+    for (kind, phase, target) in [
+        ("active", "inProgress", "in_progress"),
+        ("idle", "completed", "review"),
+        ("idle", "failed", "blocked"),
+        ("idle", "interrupted", "blocked"),
+    ] {
+        for external in [false, true] {
+            pending_restart_case(kind, phase, target, external)?;
+        }
+    }
+    Ok(())
+}
+
 fn short_automatic_turn() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let mut store = Store::open(directory.path(), false)?;

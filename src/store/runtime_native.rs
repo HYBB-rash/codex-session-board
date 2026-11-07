@@ -35,7 +35,9 @@ fn event(
         "startedAt"
     }]
     .as_f64();
-    let old_baseline = row["runtime_key"].is_null() && time.is_none_or(|time| time < since);
+    let pending = row["runtime_pending_key"] == key;
+    let old_baseline =
+        !pending && row["runtime_key"].is_null() && time.is_none_or(|time| time < since);
     let older_than_choice = terminal(status, turn)
         && row["native_choice_at"]
             .as_f64()
@@ -46,7 +48,7 @@ fn event(
         key,
         old_baseline
             || older_than_choice
-            || preserve_runtime(row, status, turn, Some(since), state),
+            || !pending && preserve_runtime(row, status, turn, Some(since), state),
     ))
 }
 
