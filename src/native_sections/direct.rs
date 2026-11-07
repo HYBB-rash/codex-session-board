@@ -5,7 +5,7 @@ pub struct Catalog {
     logical: HashMap<String, String>,
 }
 
-fn sections(reader: &mut impl Rpc, config: &Config) -> Result<HashMap<String, Value>> {
+fn sections(reader: &mut (impl Rpc + ?Sized), config: &Config) -> Result<HashMap<String, Value>> {
     let mut sections = HashMap::new();
     let mut cursors = HashSet::new();
     let mut cursor = Value::Null;
@@ -70,7 +70,7 @@ fn logical(config: &Config) -> Result<HashMap<String, String>> {
 }
 
 impl Catalog {
-    pub fn load(reader: &mut impl Rpc, config: &Config) -> Result<Self> {
+    pub fn load(reader: &mut (impl Rpc + ?Sized), config: &Config) -> Result<Self> {
         let catalog = Self {
             sections: sections(reader, config)?,
             logical: logical(config)?,

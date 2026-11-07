@@ -42,6 +42,7 @@ impl std::error::Error for RequestError {}
 pub enum Role {
     Reader,
     NativeReader,
+    RemoteObserver,
     TitleWriter,
     ArchiveWriter,
 }
@@ -53,6 +54,10 @@ impl Role {
             Self::NativeReader => matches!(
                 method,
                 "initialize" | "thread/list" | "thread/read" | "threadSection/list"
+            ),
+            Self::RemoteObserver => matches!(
+                method,
+                "initialize" | "thread/list" | "thread/turns/list" | "threadSection/list"
             ),
             Self::TitleWriter => matches!(method, "initialize" | "thread/read" | "thread/name/set"),
             Self::ArchiveWriter => matches!(
@@ -544,7 +549,7 @@ pub fn list_threads(
     Ok((threads, false))
 }
 
-fn thread_list_params(page_size: usize, cursor: Value) -> Value {
+pub(crate) fn thread_list_params(page_size: usize, cursor: Value) -> Value {
     json!({
         "limit": page_size, "cursor": cursor, "sortKey": "updated_at",
         "sortDirection": "desc", "modelProviders": [],

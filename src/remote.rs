@@ -10,6 +10,8 @@ use std::time::Duration;
 
 pub mod hosts;
 mod instances;
+mod scans;
+pub(crate) use scans::scan_runtime_page;
 
 fn projects(reader: &mut dyn Rpc) -> Result<Vec<Value>> {
     let response = reader.call("list_projects", json!({}))?;

@@ -88,9 +88,20 @@ pub fn scan_runtime(
         rpc::list_threads(reader, app.config.page_size, app.config.max_pages)?;
     ensure!(complete, "桌面运行状态分页未完成");
     app.discover(&threads, complete)?;
+    observe_runtime_threads(app, reader, revisions, since, &threads)
+}
+
+pub(crate) fn observe_runtime_threads(
+    app: &App,
+    reader: &mut dyn Rpc,
+    revisions: &mut HashMap<String, String>,
+    since: f64,
+    threads: &[Value],
+) -> Result<()> {
     let mut unreadable = 0;
     let mut native_errors = Vec::new();
-    for thread in &threads {
+    for thread in threads {
+        ensure!(app.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
         let identifier = thread["id"].as_str().context("会话缺少 ID")?;
         let status = &thread["status"];
         let revision = json!([thread["updatedAt"], status]).to_string();
@@ -99,6 +110,7 @@ pub fn scan_runtime(
         }
         match rpc::latest_turn(reader, identifier) {
             Ok(turn) => {
+                ensure!(app.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
                 app.store.observe(identifier, &turn, None)?;
                 if crate::model::runtime_state(status, &turn).is_some() {
                     if let Some(error) = observe_phase(app, identifier, status, &turn, since)? {
@@ -173,7 +185,12 @@ fn runtime_worker(app: Arc<App>) {
                 reader = Some(RuntimeConnection::connect(&app)?);
                 revisions.clear();
             }
-            scan_runtime(
+            let scan = if app.config.proxy_command.is_empty() {
+                scan_runtime
+            } else {
+                crate::remote::scan_runtime_page
+            };
+            scan(
                 &app,
                 reader.as_mut().context("读取器未连接")?,
                 &mut revisions,
@@ -182,7 +199,7 @@ fn runtime_worker(app: Arc<App>) {
         })();
         if let Err(error) = result {
             let _ = app
-                .update_health(json!({"runtimeVerified":false,"runtimeError":error.to_string()}));
+                .update_health(json!({"runtimeVerified":false,"runtimeError":error.to_string(),"scanComplete":false}));
             reader = None;
         }
         std::thread::sleep(Duration::from_secs(app.config.runtime_poll_seconds));
@@ -244,7 +261,7 @@ pub(crate) fn start_host(app: &Arc<App>) {
         let titles = Arc::clone(app);
         std::thread::spawn(move || title_worker(titles));
     }
-    if app.config.native_sections {
+    if app.config.native_sections && app.config.proxy_command.is_empty() {
         let native = Arc::clone(app);
         std::thread::spawn(move || {
             while native.enabled.load(Ordering::SeqCst) {

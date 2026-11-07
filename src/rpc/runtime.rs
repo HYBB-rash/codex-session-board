@@ -77,7 +77,14 @@ impl RuntimeConnection {
             json!({"clockUncertaintySeconds":clock.as_ref().map(|clock| clock.uncertainty)}),
         )?;
         Ok(Self {
-            connection: app.connection(timeout, Role::Reader)?,
+            connection: app.connection(
+                timeout,
+                if app.config.proxy_command.is_empty() {
+                    Role::Reader
+                } else {
+                    Role::RemoteObserver
+                },
+            )?,
             command,
             clock,
             timeout,
@@ -107,6 +114,30 @@ impl Rpc for RuntimeConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remote_observer_cannot_start_resume_rename_move_or_archive() {
+        for method in [
+            "initialize",
+            "thread/list",
+            "thread/turns/list",
+            "threadSection/list",
+        ] {
+            assert!(Role::RemoteObserver.check(method).is_ok());
+        }
+        for method in [
+            "thread/start",
+            "thread/resume",
+            "turn/start",
+            "turn/interrupt",
+            "thread/name/set",
+            "thread/section/move",
+            "thread/archive",
+            "thread/read",
+        ] {
+            assert!(Role::RemoteObserver.check(method).is_err());
+        }
+    }
 
     #[test]
     fn remote_clock_uses_conservative_bounds_and_rejects_unbounded_samples() -> Result<()> {

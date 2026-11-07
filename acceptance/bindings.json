@@ -820,6 +820,9 @@
       "test::board_io::manual_save_preserves_note_when_field_is_omitted"
     ],
     "DISCOVERY-002": [
+      "lib::codex_session_board::remote::scans::tests::expired_server_cursor_restarts_scanning_without_deleting_saved_data",
+      "lib::codex_session_board::remote::scans::tests::remote_pagination_survives_restart_and_bad_pages_do_not_erase_records",
+      "lib::codex_session_board::remote::scans::tests::cross_host_and_invalid_identifiers_are_rejected_atomically",
       "test::remote_sessions::discovery::partial_project_catalog_keeps_cached_hosts_until_removal_is_confirmed",
       "test::remote_sessions::discovery::remote_discovery_paginates_and_isolates_failed_hosts_without_erasing_cached_data",
       "test::remote_sessions::discovery::remote_partial_pages_and_failed_catalogs_preserve_previous_results",
@@ -983,6 +986,7 @@
       "test::board_io::service_update_rejects_old_build_but_can_verify_and_stop_its_process"
     ],
     "BOUNDARY-001": [
+      "lib::codex_session_board::rpc::runtime::tests::remote_observer_cannot_start_resume_rename_move_or_archive",
       "lib::codex_session_board::rpc::pipe::tests::proxy_deadline_applies_to_a_silent_child_and_drop_reaps_it",
       "lib::codex_session_board::rpc::pipe::tests::proxy_stream_preserves_arbitrary_websocket_bytes",
       "test::native_authority::auto_archive::a_remote_archive_choice_does_not_make_the_local_twin_eligible",

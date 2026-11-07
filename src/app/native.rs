@@ -10,6 +10,28 @@ impl Drop for Mutation<'_> {
 }
 
 impl App {
+    pub(crate) fn native_epoch(&self) -> usize {
+        self.native_generation.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn cache_native_page(
+        &self,
+        generation: usize,
+        reader: &mut dyn Rpc,
+        threads: &[Value],
+    ) -> Result<()> {
+        let catalog = native_sections::direct::Catalog::load(reader, &self.config)?;
+        for thread in threads {
+            let identifier = thread["id"].as_str().context("会话缺少 ID")?;
+            let operation = self.thread_lock(identifier)?;
+            let Ok(_guard) = operation.try_lock() else {continue;};
+            ensure!(self.enabled.load(Ordering::SeqCst) && generation == self.native_epoch(),
+                "原生位置观察已过期，请重新读取");
+            self.store.cache_native(identifier, &catalog.observe(&self.config,thread)?)?;
+        }
+        self.update_health(json!({"nativeVerified":true,"nativeError":null,"nativeLastAt":now()}))
+    }
+
     pub(crate) fn native_reader(&self) -> Result<DesktopConnection> {
         self.connection(
             Duration::from_secs(self.config.rpc_timeout_seconds),
@@ -87,6 +109,7 @@ impl App {
     pub fn read_native(&self, reader: &mut impl Rpc) -> Result<()> {
         let generation = self.native_generation.load(Ordering::SeqCst);
         let snapshot = native_sections::direct::snapshot(reader, &self.config)?;
+        ensure!(self.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
         let mut unresolved = 0;
         for session in self.store.sessions()? {
             let identifier = session["id"].as_str().context("会话缺少 ID")?;
