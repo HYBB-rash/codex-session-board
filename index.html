@@ -438,7 +438,7 @@ function makeColumn(state, label) {
   heading.append(element("h2",label),element("span","0","column-count"));
   const [menu,popup] = makeSortControl(state,label);
   heading.append(menu,popup);
-  if (state === "to_archive") {
+  if (state === "to_archive" && !data.legacyMode) {
     const archiveAll = element("button","一键归档","row-action");
     archiveAll.type = "button";
     archiveAll.title = "归档当前筛选下本列中的本机及远程可归档会话，只读记录保留";

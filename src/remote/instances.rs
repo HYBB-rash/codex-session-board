@@ -27,6 +27,7 @@ impl App {
     }
 
     pub(crate) fn refresh_remote_instances(&self) -> Result<()> {
+        ensure!(!self.config.legacy_mode, "六状态兼容模式不连接远程主机");
         let hosts = hosts::registered(&self.config)?;
         let cached = self
             .remotes

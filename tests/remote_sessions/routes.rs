@@ -5,6 +5,7 @@ fn app(directory: &std::path::Path) -> Result<App> {
     App::new(Config {
         data_dir: directory.join("data"),
         native_sections: false,
+        legacy_mode: true,
         sync_titles: true,
         open_command: vec![
             "/bin/sh".into(),

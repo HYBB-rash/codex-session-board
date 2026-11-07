@@ -67,6 +67,12 @@ impl App {
 
     pub(crate) fn annotate_connections(&self, sessions: &mut [Value]) {
         for session in sessions {
+            if !self.config.legacy_mode && session["state"] == "completed" {
+                session["state"] = json!(board_state("completed"));
+            }
+            if self.config.legacy_mode {
+                session["canArchive"] = json!(false);
+            }
             if session["readOnly"] == true
                 || self.config.native_sections && !session["sectionVersion"].is_string()
             {
@@ -78,6 +84,12 @@ impl App {
 
     fn append_managed_remote(&self, sessions: &mut Vec<Value>) -> Result<()> {
         let legacy = sessions.clone();
+        if !self.config.legacy_mode {
+            for row in sessions.iter_mut() {
+                row["readOnly"] = json!(true);
+                row["canArchive"] = json!(false);
+            }
+        }
         let mut reports = Vec::new();
         for remote in self.remote_instances()? {
             let host = &remote.config.host_id;
@@ -125,7 +137,7 @@ impl App {
 
     pub(crate) fn open_remote(&self, identifier: &str) -> Result<Value> {
         let (host, thread) = remote_identity(identifier)?;
-        let remote = if self.config.native_sections {
+        let remote = if !self.config.legacy_mode {
             self.remote_entry(&host)?.1
         } else {
             None

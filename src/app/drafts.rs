@@ -11,6 +11,7 @@ struct Draft<'app> {
 
 impl App {
     pub(crate) fn reset_remote_draft(&self, body: &Value) -> Result<Value> {
+        ensure!(!self.config.legacy_mode, "六状态兼容模式不支持远程新建");
         ensure!(body["confirmed"] == true, "请先在客户端核对新建结果");
         let request = body["requestId"].as_str().context("缺少新建请求 ID")?;
         let record = self.store.draft(request)?;
@@ -26,6 +27,7 @@ impl App {
     }
 
     pub(crate) fn new_remote_session(&self, body: &Value) -> Result<Value> {
+        ensure!(!self.config.legacy_mode, "六状态兼容模式不支持远程新建");
         let request = body["requestId"].as_str().context("缺少新建请求 ID")?;
         ensure!(
             uuid::Uuid::parse_str(request)?.to_string() == request,

@@ -624,6 +624,8 @@ fn mcp_bridge_uses_http_versions_and_reports_pending_title_without_rollback() {
 #[test]
 fn remote_cards_use_the_same_http_and_mcp_annotations_without_native_writes() {
     let mut fixture = Fixture::new(true);
+    fixture.settings["legacy_mode"] = json!(true);
+    fs::write(&fixture.path, fixture.settings.to_string()).unwrap();
     let captured = fixture.capture_opens();
     fixture.populate();
     let store = fixture.app().store;
