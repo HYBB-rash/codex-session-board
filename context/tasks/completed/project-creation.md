@@ -1,5 +1,12 @@
 # 新建项目与加入已有目录
 
+status: cancelled_archived
+closed_at: 2026-11-07
+
+用户明确取消本任务并要求封存。停止功能实现、客户端扩展及部署，
+不再等待客户端扩展范围确认。本记录归档表示任务取消，不表示功能已完成或验收通过。
+既有调研、原生验证项目和证据保留；日常程序未因本任务更新。
+
 owner: codex-project-creation
 execution_mode: serial_write_with_readonly_review
 allowed_write_set: src/, tests/, index.html, assets/, Docs/PROJECT-CREATION.md, acceptance/bindings.json, Cargo.toml, Cargo.lock, plugin.json, .codex-plugin/plugin.json, config.example.json, context/, outputs/project-creation-20261107/, 日常程序及插件部署副本、授权的专用测试项目
@@ -17,5 +24,6 @@ coordinator: codex-project-creation
 
 原生探针已真实登记并独立读回，但现有外部工具受 caller workspace 限制。
 当前会话只允许仓库目录，既有部署 caller 无本机根，无法交付通用本机目录入口。
-需要用户确认是否扩展桌面客户端；最小接口设计见 Docs/PROJECT-CREATION.md，
-后续交接见 context/handoffs/project-creation.md。业务功能及部署尚未开始。
+曾等待用户确认是否扩展桌面客户端，现已取消；
+历史接口设计见 Docs/PROJECT-CREATION.md，交接见 context/handoffs/project-creation.md。
+业务功能及部署没有实施。
