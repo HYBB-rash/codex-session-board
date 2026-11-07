@@ -1,7 +1,7 @@
 # 正式接入远程会话并验收
 
 owner: codex
-execution_mode: coordinated_readonly_workers
+execution_mode: coordinated_isolated_workers
 allowed_write_set: src/, tests/, assets/, examples/, scripts/, Docs/, acceptance/bindings.json, Cargo.toml, Cargo.lock, plugin.json, .codex-plugin/plugin.json, config.example.json, README.md, context/, outputs/remote-parity-integration/
 base_commit: 4187733
 worktree_path: /home/herman/.codex/worktrees/remote-parity-lab/notion-program
