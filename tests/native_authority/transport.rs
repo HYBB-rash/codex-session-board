@@ -46,7 +46,7 @@ pub(super) fn wait_for_release(blocked: Option<BlockingMove>) -> Result<()> {
         blocked.started.send(())?;
         let (lock, signal) = &*blocked.release;
         let _waiting = signal
-            .wait_timeout_while(lock.lock().unwrap(), Duration::from_secs(3), |released| {
+            .wait_timeout_while(lock.lock().unwrap(), Duration::from_secs(10), |released| {
                 !*released
             })
             .unwrap();

@@ -45,7 +45,11 @@ fn native_request(app: &App, identifier: &str, revision: (i64, i64), body: &Valu
 }
 
 fn remote(app: &App, identifier: &str, expected: &Value, body: &Value) -> Result<()> {
-    let timeout = Duration::from_secs(app.config.rpc_timeout_seconds.min(3));
+    let timeout = Duration::from_secs(if app.config.native_sections {
+        app.config.rpc_timeout_seconds
+    } else {
+        app.config.rpc_timeout_seconds.min(3)
+    });
     let mut writer =
         DesktopConnection::connect(&app.config.desktop_socket, timeout, Role::ArchiveWriter)?;
     archive_checked(
@@ -77,7 +81,7 @@ fn verify_section(app: &App, body: &Value) -> Result<()> {
         .context("缺少原生位置，请刷新后重试")?;
     let mut reader = crate::rpc::SidebarConnection::reader(
         &app.config,
-        Duration::from_secs(app.config.rpc_timeout_seconds.min(3)),
+        Duration::from_secs(app.config.rpc_timeout_seconds),
     )?;
     let native = crate::native_sections::read(
         &mut reader,

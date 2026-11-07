@@ -209,6 +209,7 @@ fn native_archive_rejects_external_moves_before_archiving_and_accepts_fresh_conf
 fn a_blocked_move_in_another_chat_does_not_block_native_archive() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let mut server = Server::new(directory.path())?;
+    server.config.rpc_timeout_seconds = 6;
     server.config.desktop_socket = directory.path().join("engine.sock");
     let engine = Engine::new(&server.config.desktop_socket)?;
     let app = Arc::new(server.app()?);
@@ -237,6 +238,7 @@ fn a_blocked_move_in_another_chat_does_not_block_native_archive() -> Result<()> 
         finished_sender.send(archiving.request("/api/archive",Some(&json!({"id":SECOND,"version":1,"inputVersion":0,"sectionVersion":section_id("to_archive")})))).unwrap()
     });
     let result = finished.recv_timeout(Duration::from_secs(1));
+    std::thread::sleep(Duration::from_millis(3200));
     *release.0.lock().unwrap() = true;
     release.1.notify_all();
     first.join().unwrap()?;

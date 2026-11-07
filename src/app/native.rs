@@ -30,7 +30,7 @@ impl App {
         let _mutation = Mutation(self);
         let mut writer = SidebarConnection::connect(
             &self.config,
-            Duration::from_secs(self.config.rpc_timeout_seconds.min(3)),
+            Duration::from_secs(self.config.rpc_timeout_seconds),
         )?;
         let result =
             native_sections::move_checked(&mut writer, &self.config, identifier, expected, state);
@@ -59,7 +59,7 @@ impl App {
             .context("目标原生分区未配置")?;
         let mut reader = SidebarConnection::reader(
             &self.config,
-            Duration::from_secs(self.config.rpc_timeout_seconds.min(3)),
+            Duration::from_secs(self.config.rpc_timeout_seconds),
         )?;
         let observed = native_sections::read(&mut reader, &self.config, identifier)?;
         ensure!(observed.version == *target, "原生位置与目标不一致");
@@ -158,7 +158,7 @@ impl App {
     pub(crate) fn check_native_title(&self, identifier: &str) -> Result<()> {
         let mut reader = SidebarConnection::reader(
             &self.config,
-            Duration::from_secs(self.config.rpc_timeout_seconds.min(3)),
+            Duration::from_secs(self.config.rpc_timeout_seconds),
         )?;
         let observed = native_sections::read(&mut reader, &self.config, identifier)?;
         self.store.cache_native(identifier, &observed)

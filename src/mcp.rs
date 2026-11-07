@@ -94,10 +94,7 @@ pub fn backend(config_path: &Path, name: &str, arguments: &Value) -> Result<Valu
     };
     let running = service::launch(config_path)?;
     let url = running["url"].as_str().context("服务未返回地址")?;
-    let client = reqwest::blocking::Client::builder()
-        .no_proxy()
-        .timeout(Duration::from_secs(8))
-        .build()?;
+    let client = backend_client(config_path)?;
     if name == "board_snapshot" {
         return Ok(client
             .get(format!("{url}{path}"))
@@ -106,6 +103,22 @@ pub fn backend(config_path: &Path, name: &str, arguments: &Value) -> Result<Valu
             .json()?);
     }
     post(&client, url, path, arguments)
+}
+
+fn backend_client(config_path: &Path) -> Result<reqwest::blocking::Client> {
+    let config = config::load(Some(config_path))?;
+    let timeout = if config.native_sections {
+        config
+            .rpc_timeout_seconds
+            .saturating_mul(3)
+            .saturating_add(8)
+    } else {
+        8
+    };
+    Ok(reqwest::blocking::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(timeout))
+        .build()?)
 }
 
 fn post(
