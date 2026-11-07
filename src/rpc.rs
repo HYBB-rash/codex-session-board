@@ -14,6 +14,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tungstenite::{Message, WebSocket};
 
+mod sidebar;
+
 pub trait Rpc {
     fn call(&mut self, method: &str, params: Value) -> Result<Value>;
 }
@@ -419,29 +421,6 @@ pub struct SidebarConnection {
     read_only: bool,
 }
 
-fn sidebar_path(configured: &Path) -> Result<PathBuf> {
-    match configured.canonicalize() {
-        Ok(path) => return Ok(path),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error.into()),
-    }
-    let parent = configured.parent().context("分区连接缺少父目录")?;
-    let candidates = std::fs::read_dir(parent)?
-        .map(|entry| entry.map(|entry| entry.path()))
-        .collect::<io::Result<Vec<_>>>()?
-        .into_iter()
-        .filter(|path| {
-            path.extension()
-                .is_some_and(|extension| extension == "sock")
-        })
-        .collect::<Vec<_>>();
-    ensure!(
-        candidates.len() == 1,
-        "分区连接已更换，无法唯一确定新 socket"
-    );
-    Ok(candidates[0].canonicalize()?)
-}
-
 impl SidebarConnection {
     pub fn reader(config: &crate::config::Config, timeout: Duration) -> Result<Self> {
         let mut connection = Self::connect(config, timeout)?;
@@ -450,23 +429,10 @@ impl SidebarConnection {
     }
 
     pub fn connect(config: &crate::config::Config, timeout: Duration) -> Result<Self> {
-        use std::os::unix::fs::FileTypeExt;
-        let path = sidebar_path(&config.sidebar_socket)?;
-        let metadata = path.metadata()?;
-        let parent = path.parent().context("分区连接缺少父目录")?.metadata()?;
-        let owner = rustix::process::getuid().as_raw();
-        ensure!(
-            metadata.file_type().is_socket()
-                && metadata.uid() == owner
-                && metadata.mode() & 0o7777 == 0o600
-                && parent.uid() == owner
-                && parent.mode() & 0o022 == 0,
-            "分区连接所有者或权限无效"
-        );
         let deadline = deadline_after(timeout)?;
         Ok(Self {
             stream: DeadlineStream {
-                stream: connect_unix(&path, deadline)?,
+                stream: sidebar::connect(&config.sidebar_socket, deadline)?,
                 deadline,
             },
             caller: config.sidebar_caller.clone(),
@@ -706,7 +672,6 @@ mod tests {
         let sandbox = Sandbox::create()?;
         let (path, _listener) = sandbox.listener()?;
         let old = sandbox.0.join("previous.sock");
-        assert_eq!(sidebar_path(&old)?, path);
         let config = crate::config::Config {
             sidebar_socket: old.clone(),
             ..crate::config::Config::default()
@@ -714,8 +679,79 @@ mod tests {
         let _connection = SidebarConnection::connect(&config, Duration::from_millis(100))?;
         fs::set_permissions(&path, Permissions::from_mode(0o666))?;
         assert!(SidebarConnection::connect(&config, Duration::from_millis(100)).is_err());
-        let _another = UnixListener::bind(sandbox.0.join("another.sock"))?;
-        assert!(sidebar_path(&old).is_err());
+        fs::set_permissions(&path, Permissions::from_mode(0o600))?;
+        let another = sandbox.0.join("another.sock");
+        let _another = UnixListener::bind(&another)?;
+        fs::set_permissions(&another, Permissions::from_mode(0o600))?;
+        assert!(SidebarConnection::connect(&config, Duration::from_millis(100)).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn sidebar_recovers_after_crash_with_stale_and_recreated_endpoints() -> Result<()> {
+        let sandbox = Sandbox::create()?;
+        let (old, listener) = sandbox.listener()?;
+        let config = crate::config::Config {
+            sidebar_socket: old.clone(),
+            ..crate::config::Config::default()
+        };
+        drop(listener);
+        assert!(SidebarConnection::connect(&config, Duration::from_millis(100)).is_err());
+        let current = sandbox.0.join("current.sock");
+        let listener = UnixListener::bind(&current)?;
+        fs::set_permissions(&current, Permissions::from_mode(0o600))?;
+        let _client = SidebarConnection::connect(&config, Duration::from_millis(100))?;
+        let (_accepted, _) = listener.accept()?;
+        fs::remove_file(&old)?;
+        let replacement = UnixListener::bind(&old)?;
+        fs::set_permissions(&old, Permissions::from_mode(0o600))?;
+        let _client = SidebarConnection::connect(&config, Duration::from_millis(100))?;
+        let (_accepted, _) = replacement.accept()?;
+        Ok(())
+    }
+
+    #[test]
+    fn sidebar_discovery_keeps_one_deadline_and_rejects_unsafe_successors() -> Result<()> {
+        let sandbox = Sandbox::create()?;
+        let (path, listener) = sandbox.listener()?;
+        let config = crate::config::Config {
+            sidebar_socket: sandbox.0.join("missing.sock"),
+            ..crate::config::Config::default()
+        };
+        fs::set_permissions(&path, Permissions::from_mode(0o666))?;
+        assert!(SidebarConnection::connect(&config, Duration::from_millis(100)).is_err());
+        drop(listener);
+        fs::remove_file(&path)?;
+        fs::write(&path, b"not a socket")?;
+        assert!(SidebarConnection::connect(&config, Duration::from_millis(100)).is_err());
+        let started = Instant::now();
+        assert!(sidebar::connect(&config.sidebar_socket, started).is_err());
+        assert!(started.elapsed() < Duration::from_millis(100));
+        Ok(())
+    }
+
+    #[test]
+    fn sidebar_disconnect_never_replays_a_write_on_another_endpoint() -> Result<()> {
+        let sandbox = Sandbox::create()?;
+        let (path, listener) = sandbox.listener()?;
+        let config = crate::config::Config {
+            sidebar_socket: path,
+            ..crate::config::Config::default()
+        };
+        let mut client = SidebarConnection::connect(&config, Duration::from_millis(100))?;
+        let (accepted, _) = listener.accept()?;
+        drop(accepted);
+        drop(listener);
+        let replacement = sandbox.0.join("replacement.sock");
+        let replacement_listener = UnixListener::bind(&replacement)?;
+        fs::set_permissions(&replacement, Permissions::from_mode(0o600))?;
+        replacement_listener.set_nonblocking(true)?;
+        assert!(client.call("move_thread_to_sidebar_section", json!({})).is_err());
+        assert_eq!(replacement_listener.accept().unwrap_err().kind(), io::ErrorKind::WouldBlock);
+        let _new = SidebarConnection::connect(&config, Duration::from_millis(100))?;
+        let (mut accepted, _) = replacement_listener.accept()?;
+        accepted.set_nonblocking(true)?;
+        assert_eq!(accepted.read(&mut [0; 1]).unwrap_err().kind(), io::ErrorKind::WouldBlock);
         Ok(())
     }
 
