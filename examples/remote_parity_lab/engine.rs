@@ -10,15 +10,25 @@ use codex_session_board::{
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub trait HostRpc: Rpc {
     fn host(&self) -> &str;
+    fn execution_authority(&self) -> bool;
+}
+
+pub struct RuntimeEvidence<'value> {
+    pub generation: u64,
+    pub status: &'value Value,
+    pub turn: &'value Value,
+    pub since: f64,
 }
 
 pub struct Partition {
     pub host: String,
     pub config: Config,
     pub store: Store,
+    pub generation: AtomicU64,
 }
 
 impl Partition {
@@ -40,6 +50,7 @@ impl Partition {
             host: host.into(),
             config,
             store,
+            generation: AtomicU64::new(0),
         })
     }
 
@@ -61,9 +72,27 @@ impl Partition {
 
     pub fn refresh(&self, reader: &mut impl HostRpc, identifier: &str) -> Result<Observation> {
         ensure!(reader.host() == self.host, "Wrong connection host");
+        let generation = self.generation.load(Ordering::SeqCst);
         let observed = native_sections::read(reader, &self.config, identifier)?;
-        self.store.cache_native(identifier, &observed)?;
+        self.cache_snapshot(generation, identifier, &observed)?;
         Ok(observed)
+    }
+
+    pub fn cache_snapshot(
+        &self,
+        generation: u64,
+        identifier: &str,
+        native: &Observation,
+    ) -> Result<()> {
+        ensure!(
+            generation == self.generation.load(Ordering::SeqCst),
+            "Obsolete connection snapshot"
+        );
+        self.store.cache_native(identifier, native)
+    }
+
+    pub fn reconnect(&self) {
+        self.generation.fetch_add(1, Ordering::SeqCst);
     }
 
     pub fn row(&self, identifier: &str) -> Result<Value> {
@@ -109,15 +138,23 @@ impl Partition {
         &self,
         authority: &mut impl HostRpc,
         identifier: &str,
-        status: &Value,
-        turn: &Value,
-        since: f64,
+        evidence: RuntimeEvidence<'_>,
     ) -> Result<()> {
         ensure!(authority.host() == self.host, "Wrong connection host");
-        if let Some(change) = self
-            .store
-            .prepare_native_runtime(identifier, status, turn, since)?
-        {
+        ensure!(
+            authority.execution_authority(),
+            "Execution authority unknown"
+        );
+        ensure!(
+            evidence.generation == self.generation.load(Ordering::SeqCst),
+            "Obsolete runtime evidence"
+        );
+        if let Some(change) = self.store.prepare_native_runtime(
+            identifier,
+            evidence.status,
+            evidence.turn,
+            evidence.since,
+        )? {
             if !self
                 .config
                 .status_sections
@@ -141,6 +178,12 @@ impl Partition {
 
     pub fn archive(&self, target: &mut impl HostRpc, identifier: &str, row: &Value) -> Result<()> {
         ensure!(target.host() == self.host, "Wrong connection host");
+        ensure!(target.execution_authority(), "Execution authority unknown");
+        let native = native_sections::read(target, &self.config, identifier)?;
+        ensure!(
+            native.state == "to_archive" && row["sectionVersion"] == native.version,
+            "Native archive eligibility changed"
+        );
         let revision = revisions(row)?;
         let expected = self.store.prepare_archive(identifier, revision)?;
         archive::archive(target, identifier, self.config.max_pages, &expected)?;

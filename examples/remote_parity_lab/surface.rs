@@ -12,6 +12,7 @@ pub struct Surface {
     pub status: Value,
     pub turn: Value,
     pub archived: bool,
+    pub authoritative: bool,
     pub fail: Option<&'static str>,
     pub lost: Option<&'static str>,
     pub race_title: Option<String>,
@@ -27,6 +28,7 @@ impl Surface {
             status: json!({"type":"idle"}),
             turn: json!({"id":"turn","status":"completed","startedAt":1,"completedAt":2,"items":[]}),
             archived: false,
+            authoritative: true,
             fail: None,
             lost: None,
             race_title: None,
@@ -99,6 +101,10 @@ impl Rpc for Surface {
 impl HostRpc for Surface {
     fn host(&self) -> &str {
         &self.host
+    }
+
+    fn execution_authority(&self) -> bool {
+        self.authoritative
     }
 }
 
