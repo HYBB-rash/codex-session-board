@@ -44,6 +44,7 @@ fn schema(name: &str) -> (Value, Value) {
             json!({
                 "id":{"type":"string"}, "state":{"type":["string","null"]},
                 "note":{"type":"string","maxLength":2000},
+                "sectionVersion":{"type":["string","null"]},
                 "version":{"type":"integer","minimum":0},"inputVersion":{"type":"integer","minimum":0}
             }),
             json!(["id", "state", "version", "inputVersion"]),
@@ -51,7 +52,7 @@ fn schema(name: &str) -> (Value, Value) {
         "board_open" => (json!({"id":{"type":"string"}}), json!(["id"])),
         "board_archive" => (
             json!({"id":{"type":"string"},"version":{"type":"integer","minimum":0},
-                "inputVersion":{"type":"integer","minimum":0}}),
+                "inputVersion":{"type":"integer","minimum":0},"sectionVersion":{"type":["string","null"]}}),
             json!(["id", "version", "inputVersion"]),
         ),
         "board_new" => (json!({"projectId":{"type":"string"}}), json!([])),

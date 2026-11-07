@@ -311,6 +311,8 @@
       "test::board_io::manual_save_preserves_note_when_field_is_omitted"
     ],
     "MANUAL-001": [
+      "test::native_authority::app_external_moves_survive_history_failure_and_restart_without_correction",
+      "test::native_authority::native_endpoint_requires_position_and_validates_notes_before_remote_writes",
       "test::native_authority::runtime::new_stages_apply_once_and_external_moves_survive_repeated_observations",
       "test::native_authority::runtime::failed_stage_is_consumed_when_the_native_position_changes",
       "test::native_authority::runtime::baseline_history_never_overwrites_an_existing_native_selection",

@@ -110,7 +110,7 @@ fn aliases(config: &Config) -> Result<HashMap<String, String>> {
     Ok(aliases)
 }
 
-fn read(reader: &mut impl Rpc, config: &Config, identifier: &str) -> Result<Observation> {
+pub fn read(reader: &mut impl Rpc, config: &Config, identifier: &str) -> Result<Observation> {
     Ok(snapshot(reader, config)?
         .remove(identifier)
         .unwrap_or(observe(config, &Value::Null)?))

@@ -212,7 +212,7 @@ async function archiveSession(session, button) {
   saving = true; button.disabled = true; ++requestSerial;
   announce("正在归档会话…");
   try {
-    await post("/api/archive",{id:session.id,version:session.version,inputVersion:session.inputVersion});
+    await post("/api/archive",{id:session.id,version:session.version,inputVersion:session.inputVersion,sectionVersion:session.sectionVersion});
     data.sessions = data.sessions.filter(row => row.id !== session.id);
     announce("会话已归档。");
   } catch (error) {announce(error.message,true);}
@@ -323,7 +323,7 @@ function render() {
   for (const column of columns) column.querySelector(".cards").scrollTop = scrollPositions.get(column.dataset.state) || 0;
   byId("count").textContent = `当前 ${filtered.length} / 全部 ${data.sessions.length} 条`;
   const health = data.health;
-  byId("health").className = "health" + (health.error || health.runtimeError || health.sectionsError || !health.scanComplete && health.lastScanAt && !health.refreshing ? " error" : "");
+  byId("health").className = "health" + (health.error || health.runtimeError || health.sectionsError || health.nativeError || !health.scanComplete && health.lastScanAt && !health.refreshing ? " error" : "");
   byId("health").textContent = health.error ? `连接异常，已保留本地状态。${health.error}` :
     health.refreshing ? `正在扫描与补读历史，已发现 ${data.sessions.length} 条。` :
     health.lastSuccessAt ? `已发现 ${health.discovered} 条本机会话 · 最近扫描 ${date(health.lastSuccessAt)}${health.scanComplete ? "" : " · 尚有未扫描的分页，请调整扫描上限"}` : "等待首次扫描…";
@@ -331,6 +331,8 @@ function render() {
     health.runtimeVerified ? " · 自动状态已连接" : " · 等待执行状态连接";
   if (health.sectionsEnabled) byId("health").textContent += health.sectionsError ?
     " · 分区同步待重试：" + health.sectionsError : health.sectionsVerified ? " · 状态分区已同步" : " · 状态分区同步中";
+  if (health.nativeSections) byId("health").textContent += health.nativeError ?
+    " · 原生分区暂不可读，显示上次位置：" + health.nativeError : health.nativeVerified ? " · 状态来自原生分区" : " · 等待读取原生分区";
   const catalog = data.projectCatalog;
   if (catalog && catalog.error) {
     byId("health").className = "health error";
@@ -368,7 +370,7 @@ async function load() {
 }
 async function persist(session, state, note) {
   ++requestSerial;
-  const result = await post("/api/state",{id:session.id,state,note,version:session.version,inputVersion:session.inputVersion});
+  const result = await post("/api/state",{id:session.id,state,note,version:session.version,inputVersion:session.inputVersion,sectionVersion:session.sectionVersion});
   data.sessions = data.sessions.map(row => row.id === session.id ? {
     ...row,state:state || row.suggestion,note,manual:state !== null,
     version:session.version+1,followUp:false,titleSyncPending:result.titlePending,titleSyncError:result.titleError

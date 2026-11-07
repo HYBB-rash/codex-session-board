@@ -207,7 +207,15 @@ pub fn start(app: &Arc<App>) {
         let titles = Arc::clone(app);
         std::thread::spawn(move || title_worker(titles));
     }
-    if app.config.sync_sections {
+    if app.config.native_sections {
+        let native = Arc::clone(app);
+        std::thread::spawn(move || loop {
+            if let Err(error) = native.refresh_native() {
+                let _ = native.update_health(json!({"nativeError":error.to_string()}));
+            }
+            std::thread::sleep(Duration::from_secs(native.config.runtime_poll_seconds));
+        });
+    } else if app.config.sync_sections {
         let sections = Arc::clone(app);
         std::thread::spawn(move || {
             loop {

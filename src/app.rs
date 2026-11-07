@@ -7,13 +7,15 @@ use crate::{
 };
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::process::{Command, Stdio};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 use std::time::Duration;
+
+mod native;
 
 pub struct App {
     pub config: Config,
@@ -25,12 +27,17 @@ pub struct App {
     pub(crate) section_lock: Mutex<()>,
     pub(crate) active_sessions: Mutex<Option<HashSet<String>>>,
     pub(crate) section_cursor: AtomicUsize,
+    thread_operations: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    native_generation: AtomicUsize,
 }
 
 impl App {
     pub fn new(config: Config) -> Result<Self> {
-        let store = Arc::new(Store::open(&config.data_dir, config.sync_titles)?);
+        let mut store = Store::open(&config.data_dir, config.sync_titles)?;
+        store.native_sections = config.native_sections;
+        let store = Arc::new(store);
         let sections_enabled = config.sync_sections;
+        let native_sections = config.native_sections;
         Ok(Self {
             config,
             store,
@@ -40,11 +47,14 @@ impl App {
             section_lock: Mutex::new(()),
             active_sessions: Mutex::new(None),
             section_cursor: AtomicUsize::new(0),
+            thread_operations: Mutex::new(HashMap::new()),
+            native_generation: AtomicUsize::new(0),
             health: Mutex::new(json!({
                 "lastScanAt":null,"lastSuccessAt":null,"error":null,"scanComplete":false,
                 "refreshing":false,"discovered":0,"runtimeVerified":false,
                 "runtimeError":"尚未连接桌面运行观察","runtimeLastAt":null,
                 "sectionsEnabled":sections_enabled,"sectionsError":null,"sectionsVerified":false,
+                "nativeSections":native_sections,"nativeVerified":false,"nativeError":null,
             })),
         })
     }
@@ -157,8 +167,21 @@ impl App {
         let input = body["inputVersion"]
             .as_i64()
             .context("缺少输入版本，请刷新并核对后重试")?;
-        self.store
-            .set_state(identifier, state.as_str(), &note, version, Some(input))?;
+        if self.config.native_sections {
+            let expected = body["sectionVersion"]
+                .as_str()
+                .context("缺少原生位置，请刷新后重试")?;
+            self.save_native(
+                identifier,
+                state.as_str(),
+                &note,
+                (version, input),
+                expected,
+            )?;
+        } else {
+            self.store
+                .set_state(identifier, state.as_str(), &note, version, Some(input))?;
+        }
         self.sync_title(identifier)?;
         let sections = self.sync_sections(Some(identifier))?;
         let pending = self.store.pending_titles(Some(identifier))?;
@@ -202,11 +225,25 @@ impl App {
         let Ok(_guard) = self.title_lock.try_lock() else {
             return Ok(());
         };
+        let operation = self.thread_lock(identifier)?;
+        let _thread = self
+            .config
+            .native_sections
+            .then(|| operation.lock())
+            .transpose()
+            .map_err(|_| anyhow::anyhow!("会话操作锁已损坏"))?;
         let jobs = self.store.pending_titles(Some(identifier))?;
         let Some(job) = jobs.first() else {
             return Ok(());
         };
         let version = job["version"].as_i64().context("标题任务版本无效")?;
+        if self.config.native_sections
+            && let Err(error) = self.check_native_title(identifier)
+        {
+            self.store
+                .title_failed(identifier, version, &error.to_string())?;
+            return Ok(());
+        }
         let timeout = Duration::from_secs(self.config.rpc_timeout_seconds.min(3));
         match DesktopConnection::connect(&self.config.desktop_socket, timeout, Role::TitleWriter) {
             Ok(mut writer) => titles::sync(&self.store, &mut writer, identifier),
@@ -223,6 +260,9 @@ impl App {
         turn: &Value,
         since: f64,
     ) -> Result<()> {
+        if self.config.native_sections {
+            return self.observe_native_runtime(identifier, status, turn, since);
+        }
         let before = self.store.state_revision(identifier)?;
         if self
             .store
