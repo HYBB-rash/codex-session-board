@@ -9,8 +9,10 @@ use codex_session_board::{
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 pub trait HostRpc: Rpc {
     fn host(&self) -> &str;
@@ -22,6 +24,7 @@ pub struct RuntimeEvidence<'value> {
     pub status: &'value Value,
     pub turn: &'value Value,
     pub since: f64,
+    pub clock_offset: f64,
 }
 
 pub struct Partition {
@@ -29,6 +32,15 @@ pub struct Partition {
     pub config: Config,
     pub store: Store,
     pub generation: AtomicU64,
+    operations: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+}
+
+struct Mutation<'partition>(&'partition AtomicU64);
+
+impl Drop for Mutation<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
 }
 
 impl Partition {
@@ -51,6 +63,7 @@ impl Partition {
             config,
             store,
             generation: AtomicU64::new(0),
+            operations: Mutex::new(HashMap::new()),
         })
     }
 
@@ -84,6 +97,10 @@ impl Partition {
         identifier: &str,
         native: &Observation,
     ) -> Result<()> {
+        let operation = self.operation(identifier)?;
+        let _guard = operation
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Operation lock poisoned"))?;
         ensure!(
             generation == self.generation.load(Ordering::SeqCst),
             "Obsolete connection snapshot"
@@ -93,6 +110,19 @@ impl Partition {
 
     pub fn reconnect(&self) {
         self.generation.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn operation(&self, identifier: &str) -> Result<Arc<Mutex<()>>> {
+        let mut operations = self
+            .operations
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Lock map poisoned"))?;
+        Ok(operations.entry(identifier.into()).or_default().clone())
+    }
+
+    fn mutation(&self) -> Mutation<'_> {
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        Mutation(&self.generation)
     }
 
     pub fn row(&self, identifier: &str) -> Result<Value> {
@@ -112,12 +142,17 @@ impl Partition {
         expected: &Value,
     ) -> Result<()> {
         ensure!(authority.host() == self.host, "Wrong connection host");
+        let operation = self.operation(identifier)?;
+        let _guard = operation
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Operation lock poisoned"))?;
         let revision = revisions(expected)?;
         self.store
             .validate_state(identifier, Some(state), note, revision)?;
         let section = expected["sectionVersion"]
             .as_str()
             .context("Missing native section")?;
+        let _mutation = self.mutation();
         let confirmed = native_sections::move_checked(
             authority,
             &self.config,
@@ -131,6 +166,10 @@ impl Partition {
 
     pub fn sync_title(&self, target: &mut impl HostRpc, identifier: &str) -> Result<()> {
         ensure!(target.host() == self.host, "Wrong connection host");
+        let operation = self.operation(identifier)?;
+        let _guard = operation
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Operation lock poisoned"))?;
         titles::sync(&self.store, target, identifier)
     }
 
@@ -141,6 +180,10 @@ impl Partition {
         evidence: RuntimeEvidence<'_>,
     ) -> Result<()> {
         ensure!(authority.host() == self.host, "Wrong connection host");
+        let operation = self.operation(identifier)?;
+        let _guard = operation
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Operation lock poisoned"))?;
         ensure!(
             authority.execution_authority(),
             "Execution authority unknown"
@@ -149,38 +192,52 @@ impl Partition {
             evidence.generation == self.generation.load(Ordering::SeqCst),
             "Obsolete runtime evidence"
         );
-        if let Some(change) = self.store.prepare_native_runtime(
-            identifier,
-            evidence.status,
-            evidence.turn,
-            evidence.since,
-        )? {
-            if !self
-                .config
-                .status_sections
-                .values()
-                .any(|section| *section == change.section_version)
-            {
-                return self.store.consume_native_runtime(identifier, &change);
-            }
-            let confirmed = native_sections::move_checked(
-                authority,
-                &self.config,
-                identifier,
-                &change.section_version,
-                Some(change.state),
-            )?;
+        let turn = project_clock(evidence.turn, evidence.clock_offset)?;
+        if let Some(change) =
             self.store
-                .commit_native_runtime(identifier, &change, &confirmed)?;
+                .prepare_native_runtime(identifier, evidence.status, &turn, evidence.since)?
+        {
+            self.apply_runtime(authority, identifier, &change)?;
         }
         Ok(())
     }
 
+    fn apply_runtime(
+        &self,
+        authority: &mut impl HostRpc,
+        identifier: &str,
+        change: &codex_session_board::store::RuntimeChange,
+    ) -> Result<()> {
+        if !self
+            .config
+            .status_sections
+            .values()
+            .any(|section| *section == change.section_version)
+        {
+            return self.store.consume_native_runtime(identifier, change);
+        }
+        let _mutation = self.mutation();
+        let confirmed = native_sections::move_checked(
+            authority,
+            &self.config,
+            identifier,
+            &change.section_version,
+            Some(change.state),
+        )?;
+        self.store
+            .commit_native_runtime(identifier, change, &confirmed)
+    }
+
     pub fn archive(&self, target: &mut impl HostRpc, identifier: &str, row: &Value) -> Result<()> {
         ensure!(target.host() == self.host, "Wrong connection host");
+        let operation = self.operation(identifier)?;
+        let _guard = operation
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Operation lock poisoned"))?;
         ensure!(target.execution_authority(), "Execution authority unknown");
         let revision = revisions(row)?;
         let expected = self.store.prepare_archive(identifier, revision)?;
+        let _mutation = self.mutation();
         if !archive::archived(target, identifier, self.config.max_pages)? {
             let native = native_sections::read(target, &self.config, identifier)?;
             ensure!(
@@ -191,6 +248,19 @@ impl Partition {
         archive::archive(target, identifier, self.config.max_pages, &expected)?;
         self.store.confirm_archive(identifier, revision)
     }
+}
+
+fn project_clock(turn: &Value, offset: f64) -> Result<Value> {
+    ensure!(offset.is_finite(), "Invalid host clock offset");
+    let mut projected = turn.clone();
+    for field in ["startedAt", "completedAt"] {
+        if let Some(time) = turn[field].as_f64() {
+            let adjusted = time + offset;
+            ensure!(adjusted.is_finite(), "Invalid projected timestamp");
+            projected[field] = json!(adjusted);
+        }
+    }
+    Ok(projected)
 }
 
 fn revisions(row: &Value) -> Result<(i64, i64)> {

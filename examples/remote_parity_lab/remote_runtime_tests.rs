@@ -5,6 +5,7 @@ use super::{
 use anyhow::Result;
 use codex_session_board::{model::now, native_sections::Observation};
 use serde_json::{Value, json};
+use std::sync::atomic::Ordering;
 
 fn observe(
     partition: &Partition,
@@ -16,10 +17,11 @@ fn observe(
         surface,
         THREAD,
         RuntimeEvidence {
-            generation: 0,
+            generation: partition.generation.load(Ordering::SeqCst),
             status,
             turn,
             since: 100.0,
+            clock_offset: 0.0,
         },
     )
 }
@@ -114,7 +116,21 @@ fn late_snapshot_and_runtime_from_a_previous_connection_are_rejected() -> Result
     };
     assert!(partition.cache_snapshot(0, THREAD, &old).is_err());
     let turn = json!({"id":"current","status":"inProgress","startedAt":now()+1.0});
-    assert!(observe(&partition, &mut surface, &json!({"type":"active"}), &turn).is_err());
+    assert!(
+        partition
+            .runtime(
+                &mut surface,
+                THREAD,
+                RuntimeEvidence {
+                    generation: 0,
+                    status: &json!({"type":"active"}),
+                    turn: &turn,
+                    since: 100.0,
+                    clock_offset: 0.0
+                }
+            )
+            .is_err()
+    );
     assert_eq!(partition.row(THREAD)?["state"], "unknown");
     assert!(surface.writes.is_empty());
     Ok(())
@@ -185,5 +201,61 @@ fn exposes_cross_host_clock_skew_in_wall_clock_baseline() -> Result<()> {
     observe(&partition, &mut surface, &json!({"type":"active"}), &turn)?;
     assert_eq!(partition.row(THREAD)?["state"], "unknown");
     assert!(surface.writes.is_empty());
+    Ok(())
+}
+
+#[test]
+fn calibrated_host_clock_reuses_existing_rules_without_a_second_state_machine() -> Result<()> {
+    let (_root, partition, mut surface) = fixture("mac")?;
+    let turn = json!({"id":"new-but-clock-behind","status":"inProgress","startedAt":50});
+    partition.runtime(
+        &mut surface,
+        THREAD,
+        RuntimeEvidence {
+            generation: 0,
+            status: &json!({"type":"active"}),
+            turn: &turn,
+            since: 100.0,
+            clock_offset: 100.0,
+        },
+    )?;
+    assert_eq!(partition.row(THREAD)?["state"], "in_progress");
+    Ok(())
+}
+
+#[test]
+fn exposes_aba_moves_without_a_server_revision() -> Result<()> {
+    let (_root, partition, mut surface) = fixture("mac")?;
+    let old = partition.row(THREAD)?;
+    surface.section = "blocked-id".into();
+    surface.section = "unknown-id".into();
+    partition.save(&mut surface, THREAD, "review", "无法发现中间移动", &old)?;
+    assert_eq!(partition.row(THREAD)?["state"], "review");
+    assert_eq!(surface.writes.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn snapshot_started_before_a_successful_save_cannot_overwrite_the_confirmation() -> Result<()> {
+    let (_root, partition, mut surface) = fixture("mac")?;
+    let old_generation = partition.generation.load(Ordering::SeqCst);
+    let old = Observation {
+        state: "unknown".into(),
+        version: "unknown-id".into(),
+    };
+    partition.save(
+        &mut surface,
+        THREAD,
+        "review",
+        "保留新确认",
+        &partition.row(THREAD)?,
+    )?;
+    assert!(
+        partition
+            .cache_snapshot(old_generation, THREAD, &old)
+            .is_err()
+    );
+    assert_eq!(partition.row(THREAD)?["state"], "review");
+    assert_eq!(partition.row(THREAD)?["note"], "保留新确认");
     Ok(())
 }
