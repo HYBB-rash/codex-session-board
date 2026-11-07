@@ -2,14 +2,14 @@
   "schema_version": 1,
   "updated_at": "2026-11-07",
   "current_phase": {
-    "id": "archive-column-actions",
-    "status": "source_verified_live_pending",
+    "id": "archive-column-deployment",
+    "status": "deployed_verified",
     "as_of": "2026-11-07",
-    "summary": "源码 0.1.66 在待归档列提供一键归档，处理当前筛选下全部可归档本机会话，复用单条归档校验，失败项保留并继续处理；卡片调整状态入口已移除，拖动和阻塞原因表单保留。Node VM 与隔离 Chrome 点击、筛选、部分失败、桌面及窄屏验证通过。300 项自动检查通过，完整门禁退出 2，14 项既有外部验收待补，release_ready=false。未部署、未操作真实归档。日常部署仍为 0.1.64，配置、端口、MCP 环境注入及 124 条本地记录人工字段保留；该版本部署时显示 119 条本地和 41 条远程会话，单目标位置读取 p95 10.70 ms、批量 96.25 ms，快照约 5 至 6 ms。"
+    "summary": "日常看板已部署 0.1.67，程序、插件缓存、客户端 MCP 版本和构建一致。真实页面显示待归档列一键归档，卡片调整状态入口为零；桌面与窄屏截图已审阅。批量范围为当前筛选下可归档本机会话，沿用既有校验，失败项保留并继续处理；拖动及阻塞原因表单保留。配置、端口、MCP 环境注入及 126 条既有本地记录人工字段不变。当前显示 101 条本地和 41 条远程会话，本机观察及远程扫描正常，既有单条原生位置缓存提示保留。当前构建 300 项自动检查通过，完整门禁退出 2，14 项外部验收待补，release_ready=false。未执行真实归档，也未为验证修改工作会话。"
   },
   "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md"],
   "known_open_issues": ["一条原生已归档历史记录仍保留本地未确认归档缓存；批量位置读取会提示 1 个缺项，当前看板不显示此记录，未做额外归档或恢复。见 outputs/native-read-deployment-20261107/historical-cache-warning.json。", "新建会话已随 main 部署至 0.1.39；此前仅确认真实点击后客户端选中项目 ID，输入页和第二项目切换尚未实测通过。见 context/handoffs/new-session-project-live-validation.md。", "完整验收缺少其他真实环境证据，release_ready=false；PWA 安装入口实测不能代替全部 31 条验收。", "项目登记与分区读回依赖当前 Codex 客户端内部状态格式，格式改变时需重新核对。", "PWA 安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。", "五状态与归档按钮已部署，网页可见性已验证；真实客户端归档执行仍待专用会话验证。原生取消归档后尚不自动恢复本地已确认归档卡片。"],
-  "last_completed_task": "context/tasks/completed/archive-column-actions.md",
+  "last_completed_task": "context/tasks/completed/deploy-archive-column-actions.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
