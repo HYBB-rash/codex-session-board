@@ -41,6 +41,19 @@ pub(super) struct BlockingMove {
     pub release: Arc<(Mutex<bool>, Condvar)>,
 }
 
+pub(super) fn wait_for_release(blocked: Option<BlockingMove>) -> Result<()> {
+    if let Some(blocked) = blocked {
+        blocked.started.send(())?;
+        let (lock, signal) = &*blocked.release;
+        let _waiting = signal
+            .wait_timeout_while(lock.lock().unwrap(), Duration::from_secs(3), |released| {
+                !*released
+            })
+            .unwrap();
+    }
+    Ok(())
+}
+
 impl Surface {
     pub(super) fn layout(&self) -> Value {
         let sections: Vec<_> = codex_session_board::model::board_states()
@@ -201,15 +214,7 @@ fn connection(
             params["tool"] == "move_thread_to_sidebar_section"
                 && params["arguments"]["threadId"] == blocked.identifier
         });
-        if let Some(blocked) = block {
-            blocked.started.send(())?;
-            let (lock, signal) = &*blocked.release;
-            let _waiting = signal
-                .wait_timeout_while(lock.lock().unwrap(), Duration::from_secs(3), |released| {
-                    !*released
-                })
-                .unwrap();
-        }
+        wait_for_release(block)?;
         let result = surface.lock().unwrap().call(
             params["tool"].as_str().unwrap_or(""),
             &params["arguments"],

@@ -313,6 +313,7 @@
       "test::board_io::manual_save_preserves_note_when_field_is_omitted"
     ],
     "MANUAL-001": [
+      "test::native_authority::archive::a_slow_native_archive_does_not_hold_the_database_lock_for_other_chats",
       "test::native_authority::entrypoints::built_binary_preserves_native_position_guards_over_http_and_mcp",
       "lib::codex_session_board::native_sections::tests::native_aliases_confirm_canonical_ids_without_repeating_moves",
       "lib::codex_session_board::native_sections::tests::unresolved_aliases_block_only_unmatched_ids_without_guessing_a_default",
@@ -708,6 +709,7 @@
       "test::board_io::title_sync_reads_full_fresh_name_and_avoids_duplicate_native_write"
     ],
     "TITLE-005": [
+      "test::native_authority::runtime::baseline_history_never_overwrites_an_existing_native_selection",
       "test::board_contract::title_store_tests::discovery_history_and_initial_old_completion_do_not_bulk_rename",
       "test::board_contract::title_store_tests::enabling_sync_after_disabled_use_does_not_queue_existing_history",
       "test::board_contract::title_store_tests::existing_pending_job_is_refreshed_even_for_old_terminal_snapshot",
@@ -884,7 +886,7 @@
       "lib::codex_session_board::config::tests::invalid_types_and_zero_quotas_are_rejected_before_creating_data",
       "lib::codex_session_board::config::tests::json_publication_does_not_follow_a_replacement_symlink",
       "lib::codex_session_board::config::tests::relative_data_uses_config_directory_and_preserves_order_independence",
-      "lib::codex_session_board::config::tests::section_sync_requires_explicit_unique_complete_destinations",
+      "lib::codex_session_board::config::tests::native_sections_require_explicit_unique_complete_destinations",
       "lib::codex_session_board::config::tests::symlink_data_aliases_resolve_to_the_same_identity"
     ],
     "DATA-002": [

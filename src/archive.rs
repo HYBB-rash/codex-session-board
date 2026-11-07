@@ -24,26 +24,42 @@ pub fn request(app: &App, body: &Value) -> Result<Value> {
         .then(|| app.title_lock.try_lock())
         .transpose()
         .map_err(|_| anyhow::anyhow!("标题同步进行中，请稍后重试归档"))?;
-    let result = app.store.archive(identifier, version, input, |expected| {
-        let timeout = Duration::from_secs(app.config.rpc_timeout_seconds.min(3));
-        let mut writer =
-            DesktopConnection::connect(&app.config.desktop_socket, timeout, Role::ArchiveWriter)?;
-        archive_checked(
-            &mut writer,
-            identifier,
-            app.config.max_pages,
-            expected,
-            || {
-                if app.config.native_sections {
-                    verify_section(app, body)?;
-                }
-                Ok(())
-            },
-        )
-    });
+    let result = if app.config.native_sections {
+        native_request(app, identifier, (version, input), body)
+    } else {
+        app.store.archive(identifier, version, input, |expected| {
+            remote(app, identifier, expected, body)
+        })
+    };
     app.refresh.store(true, Ordering::Relaxed);
     result?;
     Ok(json!({"ok":true,"archived":true}))
+}
+
+fn native_request(app: &App, identifier: &str, revision: (i64, i64), body: &Value) -> Result<()> {
+    let expected = app.store.prepare_archive(identifier, revision)?;
+    remote(app, identifier, &expected, body)?;
+    app.store
+        .confirm_archive(identifier, revision)
+        .context("原生归档后本地确认未完成，请刷新核对")
+}
+
+fn remote(app: &App, identifier: &str, expected: &Value, body: &Value) -> Result<()> {
+    let timeout = Duration::from_secs(app.config.rpc_timeout_seconds.min(3));
+    let mut writer =
+        DesktopConnection::connect(&app.config.desktop_socket, timeout, Role::ArchiveWriter)?;
+    archive_checked(
+        &mut writer,
+        identifier,
+        app.config.max_pages,
+        expected,
+        || {
+            if app.config.native_sections {
+                verify_section(app, body)?;
+            }
+            Ok(())
+        },
+    )
 }
 
 pub fn archive(

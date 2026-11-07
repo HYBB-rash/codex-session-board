@@ -1,8 +1,8 @@
 # Codex 会话看板
 
 本仓库的当前功能是 Codex 会话状态管理。Rust 后端自动发现本机未归档交互会话，
-保存人工状态和备注，观察真实执行阶段，并同步原生会话标题。
-显式开启分区同步后，会话随状态移动到对应的原生侧边栏分区。
+日常模式以 Codex 原生分区读取和更新列状态，本地保留备注和人工确认。
+真实执行阶段直接更新单个会话的原生位置，标题同步可单独配置。
 界面沿用经过原型验证的 HTML 与随包 MCP App SDK。
 
 状态按待判断、进行中、待审阅、已阻塞、待归档排列。
@@ -76,18 +76,18 @@ python3 scripts/verify_acceptance.py --evidence /path/to/evidence.json --report 
 
 ## 状态分区
 
-`sync_sections` 默认关闭。启用时配置 `sidebar_socket`、调用方已有会话
+日常模式开启 `native_sections`，配置 `sidebar_socket`、调用方已有会话
 `sidebar_caller`、客户端全局状态文件 `sidebar_state_file` 和五状态到分区 UUID
 的 `status_sections`。全局状态文件仅用于读取已加载会话的内部别名，不改写它。
 部署机器的 socket、调用方和分区 ID 均保存在外部配置，不写入源码。
-兼容旧配置中的 completed 分区映射，但不再使用它；旧 completed 会话进入待归档分区。
-既有原生“已完成”分区不会被程序自动删除。
+旧 completed 分区仅投影到看板待归档列，不批量迁移或删除原生分区。
 项目本身保留在项目列表；固定等内置入口由客户端维护。
 
-保存人工状态时立即尝试移动，后台按 `runtime_poll_seconds` 对账原生位置。
-标题同步和分区同步独立开关。已有状态在失败和重启后仍用于补偿，
-只移动本轮完整发现的未归档会话，不根据缓存记录恢复已归档会话。
-分区缺失、改名或连接异常会显示待重试，不创建或删除分区。
-本轮正在执行的请求与等待间隔共同决定补偿耗时，轮询间隔不是时限保证。
-验收边界及本次用户授权见 [Docs/STATUS-SECTIONS.md](Docs/STATUS-SECTIONS.md)。
+后台按 `runtime_poll_seconds` 只读刷新原生位置，不将旧本地状态纠正回去。
+人工保存先移动并独立读回，再提交备注和确认；真正的新执行阶段才发起自动移动。
+同阶段重复观察、历史补读和重启不重放旧位置。不同会话的操作按 ID 隔离。
+分区缺失、改名或读取异常保留最后确认快照，不据此猜测新的位置。
+`sync_sections` 已停用，旧配置须改为 `false`；未开启 `native_sections`
+时保留冻结契约的本地兼容模式，不会移动原生分区。
+接口选择、并发边界及验收要求见 [Docs/NATIVE-STATE.md](Docs/NATIVE-STATE.md)。
 五状态与真实归档扩展见 [Docs/ARCHIVING.md](Docs/ARCHIVING.md)。

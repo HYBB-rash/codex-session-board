@@ -82,11 +82,12 @@ impl Config {
         }
         ensure!(!self.host_id.is_empty(), "host_id 必须为非空文本");
         ensure!(!self.data_dir.as_os_str().is_empty(), "data_dir 不得为空");
-        if self.sync_sections || self.native_sections {
-            self.validate_sections()?;
-        }
+        ensure!(
+            !self.sync_sections,
+            "sync_sections 已停用，请配置 native_sections"
+        );
         if self.native_sections {
-            ensure!(!self.sync_sections, "原生状态来源不允许分区同步");
+            self.validate_sections()?;
         }
         for (name, value) in [
             ("poll_seconds", self.poll_seconds as u128),
@@ -411,7 +412,7 @@ mod tests {
     }
 
     #[test]
-    fn section_sync_requires_explicit_unique_complete_destinations() -> Result<()> {
+    fn native_sections_require_explicit_unique_complete_destinations() -> Result<()> {
         let fixture = Fixture::new()?;
         let mut config = Config {
             data_dir: fixture.0.clone(),
@@ -419,6 +420,9 @@ mod tests {
         };
         config.validate()?;
         config.sync_sections = true;
+        assert!(config.validate().is_err());
+        config.sync_sections = false;
+        config.native_sections = true;
         assert!(config.validate().is_err());
         config.sidebar_socket = fixture.0.join("desktop.sock");
         config.sidebar_caller = uuid::Uuid::new_v4().to_string();

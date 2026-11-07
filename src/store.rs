@@ -122,6 +122,34 @@ fn validate_selection(
     Ok(())
 }
 
+fn archive_expected(row: &Value, revision: (i64, i64), native: bool) -> Result<Value> {
+    ensure!(row["archived"] == 0, "会话已归档，请刷新看板");
+    ensure!(row["version"] == revision.0, "状态已更新，请刷新后重试");
+    ensure!(
+        row["input_revision"] == revision.1,
+        "会话有新输入，请刷新并核对后重试"
+    );
+    ensure!(row["needs_review"] == 0, "会话有新输入，请先调整状态确认");
+    ensure!(
+        crate::model::board_state(&effective(row, native)) == "to_archive",
+        "只能归档待归档会话"
+    );
+    Ok(if native {
+        turn_of(row)
+    } else {
+        json!({"id":row["selection_turn"],"userItems":serde_json::from_str::<Value>(text(row,"selection_users"))?})
+    })
+}
+
+fn confirm_archive(database: &Transaction<'_>, identifier: &str) -> Result<()> {
+    database.execute(
+        "UPDATE sessions SET archived=1,version=version+1 WHERE id=?",
+        [identifier],
+    )?;
+    database.execute("DELETE FROM title_updates WHERE thread_id=?", [identifier])?;
+    Ok(())
+}
+
 fn queue_title(
     database: &Transaction<'_>,
     identifier: &str,
@@ -246,29 +274,9 @@ impl Store {
         let mut database = self.connection()?;
         let transaction = database.transaction()?;
         let row = get_row(&transaction, identifier)?;
-        ensure!(row["archived"] == 0, "会话已归档，请刷新看板");
-        ensure!(row["version"] == version, "状态已更新，请刷新后重试");
-        ensure!(
-            row["input_revision"] == input_version,
-            "会话有新输入，请刷新并核对后重试"
-        );
-        ensure!(row["needs_review"] == 0, "会话有新输入，请先调整状态确认");
-        ensure!(
-            crate::model::board_state(&effective(&row, self.native_sections)) == "to_archive",
-            "只能归档待归档会话"
-        );
-        let expected = if self.native_sections {
-            turn_of(&row)
-        } else {
-            json!({"id":row["selection_turn"],
-                "userItems":serde_json::from_str::<Value>(text(&row,"selection_users"))?})
-        };
+        let expected = archive_expected(&row, (version, input_version), self.native_sections)?;
         operation(&expected)?;
-        transaction.execute(
-            "UPDATE sessions SET archived=1,version=version+1 WHERE id=?",
-            [identifier],
-        )?;
-        transaction.execute("DELETE FROM title_updates WHERE thread_id=?", [identifier])?;
+        confirm_archive(&transaction, identifier)?;
         transaction.commit()?;
         Ok(())
     }

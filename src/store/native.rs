@@ -18,6 +18,28 @@ pub(super) fn cache(
 }
 
 impl Store {
+    pub fn prepare_archive(&self, identifier: &str, revision: (i64, i64)) -> Result<Value> {
+        let database = self.connection()?;
+        archive_expected(
+            &get_row(&database, identifier)?,
+            revision,
+            self.native_sections,
+        )
+    }
+
+    pub fn confirm_archive(&self, identifier: &str, revision: (i64, i64)) -> Result<()> {
+        let mut database = self.connection()?;
+        let transaction = database.transaction()?;
+        archive_expected(
+            &get_row(&transaction, identifier)?,
+            revision,
+            self.native_sections,
+        )?;
+        confirm_archive(&transaction, identifier)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn native_version(&self, identifier: &str) -> Result<String> {
         let database = self.connection()?;
         get_row(&database, identifier)?["native_revision"]
