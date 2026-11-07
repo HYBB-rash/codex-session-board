@@ -5,10 +5,13 @@ use serde_json::{Value, json};
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
+mod native;
+
 pub struct Store {
     database: Mutex<Connection>,
     pub sync_titles: bool,
     pub title_epoch: Option<f64>,
+    pub native_sections: bool,
 }
 
 const SCHEMA: &str = "
@@ -70,7 +73,10 @@ fn suggestion(row: &Value) -> (&'static str, &'static str) {
     recommend(&turn_of(row))
 }
 
-fn effective(row: &Value) -> String {
+fn effective(row: &Value, native: bool) -> String {
+    if native {
+        return row["native_state"].as_str().unwrap_or("unknown").into();
+    }
     row["selected_state"]
         .as_str()
         .or_else(|| row["automatic_state"].as_str())
@@ -85,7 +91,41 @@ fn get_row(database: &Connection, identifier: &str) -> Result<Value> {
         .context("会话不存在")
 }
 
-fn queue_title(database: &Transaction<'_>, identifier: &str, enabled: bool) -> Result<()> {
+fn validate_selection(
+    row: &Value,
+    state: Option<&str>,
+    note: &str,
+    revision: (i64, Option<i64>),
+) -> Result<()> {
+    ensure!(
+        state.is_none_or(|state| STATES.iter().any(|item| item.0 == state)),
+        "未知状态"
+    );
+    ensure!(
+        note.chars().count() <= 2000,
+        "备注必须为不超过 2000 字的文本"
+    );
+    ensure!(
+        state != Some("blocked") || !note.trim().is_empty(),
+        "请填写阻塞原因"
+    );
+    ensure!(row["archived"] == 0, "会话已归档，请刷新看板");
+    ensure!(row["version"] == revision.0, "状态已更新，请刷新后重试");
+    ensure!(
+        revision
+            .1
+            .is_none_or(|version| row["input_revision"] == version),
+        "会话有新输入，请刷新并核对后重试"
+    );
+    Ok(())
+}
+
+fn queue_title(
+    database: &Transaction<'_>,
+    identifier: &str,
+    enabled: bool,
+    native: bool,
+) -> Result<()> {
     if !enabled {
         database.execute("DELETE FROM title_updates WHERE thread_id=?", [identifier])?;
         return Ok(());
@@ -95,12 +135,21 @@ fn queue_title(database: &Transaction<'_>, identifier: &str, enabled: bool) -> R
         "INSERT INTO title_updates(thread_id,version,state,requested_at) VALUES (?,?,?,?)
          ON CONFLICT(thread_id) DO UPDATE SET version=excluded.version,state=excluded.state,
          requested_at=excluded.requested_at,attempted_at=NULL,error=NULL",
-        params![identifier, row["version"].as_i64(), effective(&row), now()],
+        params![
+            identifier,
+            row["version"].as_i64(),
+            effective(&row, native),
+            now()
+        ],
     )?;
     Ok(())
 }
 
 impl Store {
+    fn queue_title(&self, database: &Transaction<'_>, identifier: &str) -> Result<()> {
+        queue_title(database, identifier, self.sync_titles, self.native_sections)
+    }
+
     pub fn open(directory: &Path, sync_titles: bool) -> Result<Self> {
         crate::config::create_private_dir(directory)?;
         let database = Connection::open(directory.join("status.sqlite3"))?;
@@ -128,6 +177,7 @@ impl Store {
             database: Mutex::new(database),
             sync_titles,
             title_epoch,
+            native_sections: false,
         })
     }
 
@@ -143,6 +193,8 @@ impl Store {
             ("automatic_state", "TEXT"),
             ("automatic_reason", "TEXT"),
             ("archived", "INTEGER NOT NULL DEFAULT 0"),
+            ("native_state", "TEXT"),
+            ("native_revision", "TEXT"),
         ] {
             if !columns.iter().any(|column| column == name) {
                 database.execute(
@@ -198,11 +250,15 @@ impl Store {
         );
         ensure!(row["needs_review"] == 0, "会话有新输入，请先调整状态确认");
         ensure!(
-            crate::model::board_state(&effective(&row)) == "to_archive",
+            crate::model::board_state(&effective(&row, self.native_sections)) == "to_archive",
             "只能归档待归档会话"
         );
-        let expected = json!({"id":row["selection_turn"],
-            "userItems":serde_json::from_str::<Value>(text(&row,"selection_users"))?});
+        let expected = if self.native_sections {
+            turn_of(&row)
+        } else {
+            json!({"id":row["selection_turn"],
+                "userItems":serde_json::from_str::<Value>(text(&row,"selection_users"))?})
+        };
         operation(&expected)?;
         transaction.execute(
             "UPDATE sessions SET archived=1,version=version+1 WHERE id=?",
@@ -283,28 +339,25 @@ impl Store {
         version: i64,
         input_version: Option<i64>,
     ) -> Result<()> {
-        ensure!(
-            state.is_none_or(|state| STATES.iter().any(|item| item.0 == state)),
-            "未知状态"
-        );
-        ensure!(
-            note.chars().count() <= 2000,
-            "备注必须为不超过 2000 字的文本"
-        );
-        ensure!(
-            state != Some("blocked") || !note.trim().is_empty(),
-            "请填写阻塞原因"
-        );
+        self.set_state_inner(identifier, state, note, (version, input_version), None)
+    }
+
+    fn set_state_inner(
+        &self,
+        identifier: &str,
+        state: Option<&str>,
+        note: &str,
+        revision: (i64, Option<i64>),
+        native: Option<&crate::native_sections::Observation>,
+    ) -> Result<()> {
         let mut database = self.connection()?;
         let transaction = database.transaction()?;
         let row = get_row(&transaction, identifier)?;
-        ensure!(row["archived"] == 0, "会话已归档，请刷新看板");
-        ensure!(row["version"] == version, "状态已更新，请刷新后重试");
-        ensure!(
-            input_version.is_none_or(|version| row["input_revision"] == version),
-            "会话有新输入，请刷新并核对后重试"
-        );
+        validate_selection(&row, state, note, revision)?;
         let turn = turn_of(&row);
+        if let Some(native) = native {
+            native::cache(&transaction, identifier, native)?;
+        }
         transaction.execute(
             "UPDATE sessions SET selected_state=?,note=?,selection_turn=?,selection_users=?,
              selected_at=?,needs_review=0,version=version+1 WHERE id=?",
@@ -321,7 +374,7 @@ impl Store {
             "INSERT INTO changes(thread_id,changed_at,state,note) VALUES (?,?,?,?)",
             params![identifier, now(), state, note.trim()],
         )?;
-        queue_title(&transaction, identifier, self.sync_titles)?;
+        self.queue_title(&transaction, identifier)?;
         transaction.commit()?;
         Ok(())
     }
@@ -419,7 +472,7 @@ impl Store {
             .optional()?
             .is_some();
         if live || pending {
-            queue_title(transaction, identifier, self.sync_titles)?;
+            self.queue_title(transaction, identifier)?;
         }
         Ok((live || pending) && self.sync_titles)
     }
@@ -438,10 +491,14 @@ impl Store {
         let database = self.connection()?;
         let mut statement = database.prepare(
             "SELECT * FROM title_updates WHERE (? IS NULL OR thread_id=?)
+             AND (?=0 OR EXISTS(SELECT 1 FROM sessions WHERE id=thread_id AND native_revision IS NOT NULL))
              ORDER BY attempted_at IS NOT NULL,attempted_at,requested_at",
         )?;
         Ok(statement
-            .query_map(params![identifier, identifier], row_value)?
+            .query_map(
+                params![identifier, identifier, self.native_sections],
+                row_value,
+            )?
             .collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
@@ -449,7 +506,7 @@ impl Store {
         let database = self.connection()?;
         let row = get_row(&database, identifier)?;
         Ok((
-            effective(&row),
+            effective(&row, self.native_sections),
             row["version"].as_i64().context("状态版本无效")?,
         ))
     }
@@ -510,22 +567,23 @@ impl Store {
                     row_value,
                 )
                 .optional()?;
-            result.push(session_value(&row, job.as_ref()));
+            result.push(session_value(&row, job.as_ref(), self.native_sections));
         }
         Ok(result)
     }
 }
 
-fn session_value(row: &Value, job: Option<&Value>) -> Value {
+fn session_value(row: &Value, job: Option<&Value>, native: bool) -> Value {
     let turn = turn_of(row);
     let (suggestion, reason) = suggestion(row);
     let selected = row["selected_state"].is_string();
     json!({
         "id":row["id"], "title":row["title"], "cwd":row["cwd"], "updatedAt":row["updated_at"],
-        "seenAt":row["seen_at"], "observedAt":row["observed_at"], "state":effective(row), "manual":selected,
+        "seenAt":row["seen_at"], "observedAt":row["observed_at"], "state":effective(row,native), "manual":selected,
+        "sectionVersion":if native {row["native_revision"].clone()} else {Value::Null},
         "suggestion":row["automatic_state"].as_str().unwrap_or(suggestion),
-        "reason":row["automatic_reason"].as_str().unwrap_or(reason),
-        "source":if selected {"manual"} else if row["automatic_state"].is_string() {"runtime"} else {"history"},
+        "reason":if native {"状态来自 Codex 原生分区。"}else{row["automatic_reason"].as_str().unwrap_or(reason)},
+        "source":if native {"codex"}else if selected {"manual"} else if row["automatic_state"].is_string() {"runtime"} else {"history"},
         "note":row["note"], "followUp":row["needs_review"]==1, "observationError":row["observation_error"],
         "titleSyncPending":job.is_some(), "titleSyncError":job.map(|job| &job["error"]),
         "turnStatus":turn["status"], "version":row["version"], "inputVersion":row["input_revision"]

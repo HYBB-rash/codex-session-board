@@ -311,6 +311,13 @@
       "test::board_io::manual_save_preserves_note_when_field_is_omitted"
     ],
     "MANUAL-001": [
+      "lib::codex_session_board::native_sections::tests::unmapped_native_sections_are_unknown_and_missing_fields_are_rejected",
+      "lib::codex_session_board::native_sections::tests::catalog_rejects_missing_or_duplicated_section_identifiers",
+      "lib::codex_session_board::native_sections::tests::changed_native_placement_rejects_the_move_before_any_write",
+      "lib::codex_session_board::native_sections::tests::move_reads_back_native_state_and_never_reconciles_other_threads",
+      "lib::codex_session_board::native_sections::tests::unconfirmed_moves_fail_instead_of_creating_a_retry_intent",
+      "test::native_authority::native_cache_wins_over_local_choices_without_erasing_notes_or_confirmation",
+      "test::native_authority::native_confirmations_commit_notes_and_reject_stale_or_invalid_edits",
       "lib::codex_session_board::sections::tests::busy_sidebar_sync_saves_promptly_with_persistent_pending_state",
       "lib::codex_session_board::sections::tests::concurrent_new_state_stays_pending_then_converges",
       "lib::codex_session_board::sections::tests::exhausted_connection_rotates_next_round_past_the_failing_thread",

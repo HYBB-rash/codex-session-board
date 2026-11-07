@@ -1,0 +1,76 @@
+use super::*;
+use crate::native_sections::Observation;
+
+pub(super) fn cache(
+    database: &Transaction<'_>,
+    identifier: &str,
+    native: &Observation,
+) -> Result<()> {
+    ensure!(
+        crate::model::board_states().any(|item| item.0 == native.state),
+        "原生状态无效"
+    );
+    database.execute(
+        "UPDATE sessions SET native_state=?,native_revision=? WHERE id=?",
+        params![native.state, native.version, identifier],
+    )?;
+    Ok(())
+}
+
+impl Store {
+    pub fn native_version(&self, identifier: &str) -> Result<String> {
+        let database = self.connection()?;
+        get_row(&database, identifier)?["native_revision"]
+            .as_str()
+            .map(str::to_owned)
+            .context("尚未确认原生分区，请稍后刷新")
+    }
+
+    pub fn cache_native(&self, identifier: &str, native: &Observation) -> Result<()> {
+        let mut database = self.connection()?;
+        let transaction = database.transaction()?;
+        let row = get_row(&transaction, identifier)?;
+        if row["archived"] == 1
+            || row["native_revision"] == native.version && row["native_state"] == native.state
+        {
+            return Ok(());
+        }
+        cache(&transaction, identifier, native)?;
+        transaction.execute(
+            "UPDATE sessions SET version=version+1 WHERE id=?",
+            [identifier],
+        )?;
+        queue_title(&transaction, identifier, self.sync_titles, true)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn validate_state(
+        &self,
+        identifier: &str,
+        state: Option<&str>,
+        note: &str,
+        revision: (i64, i64),
+    ) -> Result<()> {
+        let database = self.connection()?;
+        let row = get_row(&database, identifier)?;
+        validate_selection(&row, state, note, (revision.0, Some(revision.1)))
+    }
+
+    pub fn set_native_state(
+        &self,
+        identifier: &str,
+        state: Option<&str>,
+        note: &str,
+        revision: (i64, i64),
+        native: &Observation,
+    ) -> Result<()> {
+        self.set_state_inner(
+            identifier,
+            state,
+            note,
+            (revision.0, Some(revision.1)),
+            Some(native),
+        )
+    }
+}
