@@ -1092,7 +1092,16 @@
       "lib::codex_session_board::service::migration::tests::guards::migration_refuses_runtime_lock_symlinks_before_opening_external_files",
       "lib::codex_session_board::service::migration::tests::guards::migration_rejects_configuration_overlapping_database_or_sidecar",
       "lib::codex_session_board::service::migration::tests::guards::migration_rejects_destination_symlinks_including_dangling_configuration",
-      "lib::codex_session_board::service::migration::tests::guards::migration_rejects_source_symlinks_without_following_them"
+      "lib::codex_session_board::service::migration::tests::guards::migration_rejects_source_symlinks_without_following_them",
+      "lib::codex_session_board::service::migration::tests::aliases::migration_accepts_default_configuration_parent_alias_after_cli_resolution",
+      "lib::codex_session_board::service::migration::tests::aliases::migration_accepts_directory_ancestor_aliases_for_missing_targets",
+      "lib::codex_session_board::service::migration::tests::aliases::migration_accepts_relative_configuration_without_changing_current_directory",
+      "lib::codex_session_board::service::migration::tests::aliases::migration_accepts_source_and_destination_root_aliases",
+      "lib::codex_session_board::service::migration::tests::aliases::migration_lock_accepts_data_directory_alias",
+      "lib::codex_session_board::service::migration::tests::aliases::migration_rejects_dangling_destination_root_or_parent_aliases",
+      "lib::codex_session_board::service::migration::tests::aliases::migration_rejects_final_configuration_symlinks_through_parent_alias",
+      "lib::codex_session_board::service::migration::tests::aliases::source_loading_accepts_configuration_and_data_aliases",
+      "lib::codex_session_board::service::migration::tests::aliases::source_loading_rejects_dangling_configuration_or_data_aliases"
     ],
     "SERVICE-001": [
       "lib::codex_session_board::service::tests::data_lock_serializes_independent_open_descriptors",
@@ -1122,7 +1131,16 @@
       "lib::codex_session_board::service::migration::tests::guards::migration_refuses_runtime_lock_symlinks_before_opening_external_files",
       "lib::codex_session_board::service::migration::tests::guards::migration_rejects_configuration_overlapping_database_or_sidecar",
       "lib::codex_session_board::service::migration::tests::guards::migration_rejects_destination_symlinks_including_dangling_configuration",
-      "lib::codex_session_board::service::migration::tests::guards::migration_rejects_source_symlinks_without_following_them"
+      "lib::codex_session_board::service::migration::tests::guards::migration_rejects_source_symlinks_without_following_them",
+      "lib::codex_session_board::service::migration::tests::aliases::migration_accepts_default_configuration_parent_alias_after_cli_resolution",
+      "lib::codex_session_board::service::migration::tests::aliases::migration_accepts_directory_ancestor_aliases_for_missing_targets",
+      "lib::codex_session_board::service::migration::tests::aliases::migration_accepts_relative_configuration_without_changing_current_directory",
+      "lib::codex_session_board::service::migration::tests::aliases::migration_accepts_source_and_destination_root_aliases",
+      "lib::codex_session_board::service::migration::tests::aliases::migration_lock_accepts_data_directory_alias",
+      "lib::codex_session_board::service::migration::tests::aliases::migration_rejects_dangling_destination_root_or_parent_aliases",
+      "lib::codex_session_board::service::migration::tests::aliases::migration_rejects_final_configuration_symlinks_through_parent_alias",
+      "lib::codex_session_board::service::migration::tests::aliases::source_loading_accepts_configuration_and_data_aliases",
+      "lib::codex_session_board::service::migration::tests::aliases::source_loading_rejects_dangling_configuration_or_data_aliases"
     ],
     "BOUNDARY-001": [
       "test::legacy_mode::legacy_mode_rejects_native_connections_and_timers_before_creating_data",
