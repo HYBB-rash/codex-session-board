@@ -2,7 +2,7 @@
 
 owner: Cicero
 execution_mode: isolated_worker
-allowed_write_set: scripts/verify_remote_release.py, acceptance/test_remote_release.py, context/handoffs/remote-release-gate-worker.md
+allowed_write_set: scripts/verify_remote_release.py, acceptance/test_remote_release.py, context/handoffs/remote-release-gate-worker.md, outputs/owned-release-guard/
 base_commit: 10c80203284d3f0fe069d3cb003113cdb26a97f6
 worktree_path: /home/herman/.codex/worktrees/remote-connection-identity/notion-program
 coordinator: codex
@@ -13,3 +13,7 @@ coordinator: codex
 完整 legacy 验收与 native5/remote 专项证据必须绑定同一最终源码和 binary；
 缺失、过期、错误模式、重复案例及任一侧未通过均拒绝完成。
 不修改版本、测试绑定、共享状态或日志，不暂存或提交，不取证真实工作会话。
+
+汇总门禁交付后，顺序制作独有 outputs/owned-release-guard/ 真实验收协议过滤夹具。
+仅离线单元测试；本阶段不连接真实 daemon，不操作 UI 或真实数据。
+所有请求、通知、线程创建回执均先做会话及主机白名单检查，再转发或记录。
