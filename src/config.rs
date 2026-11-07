@@ -27,6 +27,7 @@ pub struct Config {
     pub runtime_poll_seconds: u64,
     pub sync_titles: bool,
     pub sync_sections: bool,
+    pub native_sections: bool,
     pub sidebar_socket: PathBuf,
     pub sidebar_caller: String,
     pub sidebar_state_file: PathBuf,
@@ -59,6 +60,7 @@ impl Default for Config {
             runtime_poll_seconds: 2,
             sync_titles: true,
             sync_sections: false,
+            native_sections: false,
             sidebar_socket: PathBuf::new(),
             sidebar_caller: String::new(),
             sidebar_state_file: PathBuf::new(),
@@ -82,6 +84,18 @@ impl Config {
         ensure!(!self.data_dir.as_os_str().is_empty(), "data_dir 不得为空");
         if self.sync_sections {
             self.validate_sections()?;
+        }
+        if self.native_sections {
+            ensure!(!self.sync_sections, "原生状态来源不允许分区同步");
+            ensure!(self.desktop_socket.is_absolute(), "原生状态需要 desktop_socket");
+            let identifiers: HashSet<_> = self.status_sections.values().collect();
+            ensure!(identifiers.len() == self.status_sections.len(), "状态分区不得重复");
+            for (state, _) in crate::model::board_states() {
+                ensure!(
+                    self.status_sections.get(state).is_some_and(|identifier| uuid::Uuid::parse_str(identifier).is_ok()),
+                    "缺少有效的原生状态分区 {state}"
+                );
+            }
         }
         for (name, value) in [
             ("poll_seconds", self.poll_seconds as u128),

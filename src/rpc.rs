@@ -38,12 +38,13 @@ pub enum Role {
     Reader,
     TitleWriter,
     ArchiveWriter,
+    SectionWriter,
 }
 
 impl Role {
     fn check(self, method: &str) -> Result<()> {
         let allowed = match self {
-            Self::Reader => matches!(method, "initialize" | "thread/list" | "thread/turns/list"),
+            Self::Reader => matches!(method, "initialize" | "thread/list" | "thread/turns/list" | "threadSection/list"),
             Self::TitleWriter => matches!(method, "initialize" | "thread/read" | "thread/name/set"),
             Self::ArchiveWriter => matches!(
                 method,
@@ -53,6 +54,7 @@ impl Role {
                     | "thread/turns/list"
                     | "thread/archive"
             ),
+            Self::SectionWriter => matches!(method, "initialize" | "thread/read" | "thread/section/move"),
         };
         ensure!(allowed, "此 RPC 连接不允许调用 {method}");
         Ok(())
