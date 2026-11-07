@@ -65,19 +65,27 @@ impl Clock {
 
     fn project_metadata(&self, response: &mut Value) -> Result<()> {
         self.validate()?;
+        if let Some(thread) = response.get_mut("thread") {
+            return self.metadata(thread);
+        }
         if let Some(threads) = response["data"].as_array_mut() {
             for thread in threads {
-                for field in ["createdAt", "updatedAt"] {
-                    if !thread[field].is_null() {
-                        let time = thread[field].as_i64().context("远程会话时间格式无效")?;
-                        let local = time as f64 + self.offset;
-                        ensure!(
-                            local.is_finite() && (0.0..=253402300799.0).contains(&local),
-                            "远程会话时间越界"
-                        );
-                        thread[field] = json!(local.round() as i64);
-                    }
-                }
+                self.metadata(thread)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn metadata(&self, thread: &mut Value) -> Result<()> {
+        for field in ["createdAt", "updatedAt"] {
+            if !thread[field].is_null() {
+                let time = thread[field].as_i64().context("远程会话时间格式无效")?;
+                let local = time as f64 + self.offset;
+                ensure!(
+                    local.is_finite() && (0.0..=253402300799.0).contains(&local),
+                    "远程会话时间越界"
+                );
+                thread[field] = json!(local.round() as i64);
             }
         }
         Ok(())
@@ -93,6 +101,21 @@ pub(crate) struct RuntimeConnection {
 
 impl RuntimeConnection {
     pub(crate) fn connect(app: &App) -> Result<Self> {
+        Self::connect_role(
+            app,
+            if app.config.proxy_command.is_empty() {
+                Role::Reader
+            } else {
+                Role::RemoteObserver
+            },
+        )
+    }
+
+    pub(crate) fn draft(app: &App) -> Result<Self> {
+        Self::connect_role(app, Role::DraftWriter)
+    }
+
+    fn connect_role(app: &App, role: Role) -> Result<Self> {
         let timeout = Duration::from_secs(app.config.rpc_timeout_seconds);
         let command = app.config.clock_command.clone();
         ensure!(
@@ -106,14 +129,7 @@ impl RuntimeConnection {
             json!({"clockUncertaintySeconds":clock.as_ref().map(|clock| clock.uncertainty)}),
         )?;
         Ok(Self {
-            connection: app.connection(
-                timeout,
-                if app.config.proxy_command.is_empty() {
-                    Role::Reader
-                } else {
-                    Role::RemoteObserver
-                },
-            )?,
+            connection: app.connection(timeout, role)?,
             command,
             clock,
             timeout,
@@ -136,7 +152,7 @@ impl Rpc for RuntimeConnection {
         {
             clock.project(&mut response)?;
         }
-        if method == "thread/list"
+        if matches!(method, "thread/list" | "thread/start" | "thread/read")
             && let Some(clock) = &self.clock
         {
             clock.project_metadata(&mut response)?;

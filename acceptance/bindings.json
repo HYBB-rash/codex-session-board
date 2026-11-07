@@ -992,6 +992,8 @@
       "test::board_io::service_update_rejects_old_build_but_can_verify_and_stop_its_process"
     ],
     "BOUNDARY-001": [
+      "lib::codex_session_board::app::drafts::tests::lost_empty_draft_receipts_never_replay_thread_start",
+      "lib::codex_session_board::app::drafts::tests::acknowledged_empty_drafts_only_read_the_same_thread_on_retry",
       "lib::codex_session_board::rpc::tests::empty_draft_connections_cannot_send_turns_or_modify_sidebar_sections",
       "lib::codex_session_board::rpc::runtime::tests::remote_observer_cannot_start_resume_rename_move_or_archive",
       "lib::codex_session_board::rpc::pipe::tests::proxy_deadline_applies_to_a_silent_child_and_drop_reaps_it",

@@ -17,6 +17,7 @@ use std::time::Duration;
 
 mod native;
 mod remote;
+mod drafts;
 
 pub struct App {
     pub config: Config,
@@ -200,6 +201,9 @@ impl App {
 
     fn new_session(&self, body: &Value) -> Result<Value> {
         ensure!(body.is_object(), "请求格式无效");
+        if body["projectId"].as_str().is_some_and(|project|project.starts_with("remote:")) {
+            return self.new_remote_session(body);
+        }
         let url = match body.get("projectId") {
             None => "codex://threads/new".to_string(),
             Some(project) => {
