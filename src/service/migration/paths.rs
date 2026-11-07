@@ -4,6 +4,7 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
+pub(super) const SIDECARS: [&str; 2] = ["source.json", "scan-progress.json"];
 const DATABASE_SUFFIXES: [&str; 4] = ["", "-wal", "-shm", "-journal"];
 
 pub(super) fn no_symlinks(path: &Path) -> Result<()> {

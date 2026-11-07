@@ -16,7 +16,8 @@ use std::time::{Duration, Instant};
 
 mod migration;
 
-use migration::import_database;
+#[cfg(test)]
+use migration::{import_database, publish as publish_migration};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -406,18 +407,6 @@ pub fn stop(config_path: &Path) -> Result<Value> {
     }))
 }
 
-fn publish_migration(config_path: &Path, config: &Config, source: &Path) -> Result<bool> {
-    let target = config.data_dir.join("status.sqlite3");
-    let value = serde_json::to_value(config)?;
-    let copied = import_database(source, &target)?;
-    let result = config::write_json(config_path, &value, false);
-    if result.is_err() && copied {
-        fs::remove_file(&target).context("迁移失败且本次新建状态库未能清理")?;
-    }
-    result?;
-    Ok(copied)
-}
-
 pub fn migrate(config_path: &Path, source_config: &Path) -> Result<Value> {
     let config_path = migration::configuration(config_path)?;
     let mut config = migration::load_source(source_config)?;
@@ -430,10 +419,11 @@ pub fn migrate(config_path: &Path, source_config: &Path) -> Result<Value> {
             "目标数据目录仍有受管进程运行，不能迁移"
         );
     }
-    let copied = publish_migration(&config_path, &config, &source)?;
+    let copied = migration::publish(&config_path, &config, &source)?;
     Ok(json!({
         "imported": true, "databaseCopied": copied, "dataDir": config.data_dir,
-        "config": config_path
+        "config": config_path,
+        "snapshotConsistency": "per_database"
     }))
 }
 
