@@ -29,10 +29,19 @@ button:hover{border-color:var(--green)}button.primary{background:var(--green);co
 .column.in_progress{--accent:#678fb3}.column.review{--accent:#c89a43}.column.blocked{--accent:#bc7768}
 .column.to_archive{--accent:#9a82b3}
 .column.drop-target{background:#dfeadc;border-color:var(--green);box-shadow:inset 0 0 0 1px var(--green)}
-.column-heading{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:14px 13px 11px}
-.column-sort{flex-basis:100%;font-size:12px;padding:5px 8px}
-.column h2{font-size:14px;font-weight:600;margin:0}
-.column-count{margin-left:auto;font-size:12px;border-radius:5px;background:#ffffff90;padding:1px 7px;color:#72786c}
+.column-heading{display:flex;align-items:center;gap:6px;padding:12px 10px 11px}
+.column-sort{margin-left:auto;white-space:nowrap;font-size:11px;padding:4px 6px;background:#ffffff90}
+.column-sort[aria-expanded=true]{border-color:var(--green)}
+.sort-caret{margin-left:4px;color:var(--muted)}
+.sort-menu{position:fixed;inset:auto;margin:0;width:174px;max-height:calc(100dvh - 16px);overflow:auto;padding:6px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);box-shadow:0 6px 22px #24282125}
+.sort-menu-title{padding:5px 9px;font-size:11px;color:var(--muted)}
+.sort-option{display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;border:0;border-radius:6px;text-align:left;font-size:12px}
+.sort-option::before{content:"";width:14px;flex-shrink:0}
+.sort-option[aria-checked=true]{background:#e8eee6;color:var(--green)}
+.sort-option[aria-checked=true]::before{content:"✓"}
+.sort-option:focus-visible,.column-sort:focus-visible{outline:2px solid #87a27c;outline-offset:1px}
+.column h2{font-size:14px;font-weight:600;margin:0;white-space:nowrap}
+.column-count{font-size:12px;border-radius:5px;background:#ffffff90;padding:1px 6px;color:#72786c}
 .cards{flex:1;min-height:160px;overflow-y:auto;overscroll-behavior:contain;padding:0 9px 12px;scrollbar-width:thin}
 .card{background:#fff;border:1px solid #dedfd6;border-radius:8px;padding:13px;margin-bottom:9px;box-shadow:0 1px 2px #24282106;cursor:grab;user-select:none}
 .card:hover{border-color:#aebaa7;box-shadow:0 2px 7px #2428210a}
@@ -304,14 +313,75 @@ async function changeColumnSort(state, menu) {
     menu.value = previous.direction;
     announce(error.message,true);
   } finally {
-    menu.sortPreference = {...columnSort(state)};menu.value = menu.sortPreference.direction;
+    menu.sortPreference = null;menu.value = columnSort(state).direction;
     const restoreFocus = document.activeElement === menu || document.activeElement === document.body;
     saving = false;menu.disabled = false;render(changed ? state : null);
     if (restoreFocus) menu.focus({preventScroll:true});
     await load();
-    menu.sortPreference = {...columnSort(state)};menu.value = menu.sortPreference.direction;
   }
 }
+function positionSortMenu(button, popup) {
+  const bounds = button.getBoundingClientRect();
+  popup.style.left = Math.max(8,Math.min(bounds.right - 174,window.innerWidth - 182)) + "px";
+  popup.style.top = Math.max(8,Math.min(bounds.bottom + 6,window.innerHeight - 148)) + "px";
+}
+function makeSortControl(state, label) {
+  const button = element("button",undefined,"column-sort");
+  button.type = "button";button.value = columnSort(state).direction;
+  button.setAttribute("aria-haspopup","menu");button.setAttribute("aria-expanded","false");
+  button.append(element("span",undefined,"sort-label"));
+  const caret = element("span","▾","sort-caret");caret.setAttribute("aria-hidden","true");button.append(caret);
+  const popup = element("div",undefined,"sort-menu");
+  popup.id = "sort-" + state;popup.setAttribute("popover","auto");popup.setAttribute("role","menu");
+  popup.setAttribute("aria-label",label + "排序");button.setAttribute("aria-controls",popup.id);
+  popup.append(element("div","按更新时间","sort-menu-title"));
+  const options = ["desc","asc"].map(direction => {
+    const option = element("button",direction === "desc" ? "新的在前" : "旧的在前","sort-option");
+    option.type = "button";option.tabIndex = -1;option.dataset.direction = direction;
+    option.setAttribute("role","menuitemradio");
+    option.onclick = () => {
+      popup.hidePopover();button.focus({preventScroll:true});
+      if (saving || dragging || byId("editor").open || direction === columnSort(state).direction) return;
+      button.value = direction;
+      changeColumnSort(state,button);
+    };
+    popup.append(option);return option;
+  });
+  button.onclick = () => {
+    if (popup.matches(":popover-open")) {popup.hidePopover();return;}
+    if (saving || dragging || byId("editor").open) return;
+    button.sortPreference = {...columnSort(state)};
+    positionSortMenu(button,popup);popup.showPopover();
+    options.find(option => option.dataset.direction === button.sortPreference.direction).focus({preventScroll:true});
+  };
+  button.onkeydown = event => {
+    if (["ArrowDown","ArrowUp"].includes(event.key)) {event.preventDefault();if (!popup.matches(":popover-open")) button.click();}
+  };
+  popup.onbeforetoggle = event => button.setAttribute("aria-expanded",String(event.newState === "open"));
+  popup.onkeydown = event => {
+    const index = options.indexOf(document.activeElement);
+    if (["ArrowDown","ArrowUp","Home","End"].includes(event.key)) {
+      event.preventDefault();
+      const next = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1
+        : (index + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length;
+      options[next].focus({preventScroll:true});
+    } else if (["Escape","Tab"].includes(event.key)) {
+      if (event.key === "Escape") {event.preventDefault();event.stopPropagation();}
+      popup.hidePopover();button.focus({preventScroll:true});
+    }
+  };
+  popup.onfocusout = () => queueMicrotask(() => {
+    if (popup.matches(":popover-open") && !popup.contains(document.activeElement) && document.activeElement !== button) popup.hidePopover();
+  });
+  return [button,popup];
+}
+function positionOpenSortMenus() {
+  for (const popup of document.querySelectorAll(".sort-menu:popover-open")) {
+    positionSortMenu(popup.parentElement.querySelector(".column-sort"),popup);
+  }
+}
+window.addEventListener("resize",positionOpenSortMenus);
+window.addEventListener("scroll",positionOpenSortMenus,true);
 function captureScroll(cards) {
   const top = cards.scrollTop, bounds = cards.getBoundingClientRect();
   const anchor = top > 0 ? Array.from(cards.querySelectorAll(".card")).find(card =>
@@ -326,7 +396,14 @@ function restoreScroll(cards, position) {
 function updateColumn(column, state, sessions) {
   column.querySelector(".column-count").textContent = String(sessions.length);
   const menu = column.querySelector(".column-sort");
-  if (document.activeElement !== menu) menu.value = columnSort(state).direction;
+  const preference = columnSort(state);
+  menu.value = preference.direction;
+  menu.querySelector(".sort-label").textContent = "更新 " + (preference.direction === "asc" ? "↑" : "↓");
+  menu.setAttribute("aria-label",`${data.states[state]}排序，按更新时间${preference.direction === "asc" ? "旧的在前" : "新的在前"}`);
+  menu.title = "按会话更新时间排列；点击选择顺序，拖入本列后也遵循此顺序";
+  for (const option of column.querySelectorAll(".sort-option")) {
+    option.setAttribute("aria-checked",String(option.dataset.direction === preference.direction));
+  }
   const archiveAll = column.querySelector("[data-archive-all]");
   if (archiveAll) {
     archiveAll.disabled = !sessions.some(session => !session.remote && session.canArchive !== false);
@@ -342,6 +419,8 @@ function makeColumn(state, label) {
   column.setAttribute("aria-label",label);
   const heading = element("div",undefined,"column-heading");
   heading.append(element("h2",label),element("span","0","column-count"));
+  const [menu,popup] = makeSortControl(state,label);
+  heading.append(menu,popup);
   if (state === "to_archive") {
     const archiveAll = element("button","一键归档","row-action");
     archiveAll.type = "button";
@@ -349,15 +428,6 @@ function makeColumn(state, label) {
     archiveAll.dataset.archiveAll = "";
     heading.append(archiveAll);
   }
-  const menu = element("select",undefined,"column-sort");
-  menu.setAttribute("aria-label",label + "排序");
-  menu.title = "按会话更新时间排列；拖入本列后也遵循此顺序";
-  menu.append(new Option("更新时间：新的在前","desc"),new Option("更新时间：旧的在前","asc"));
-  menu.value = columnSort(state).direction;
-  menu.onfocus = () => {menu.sortPreference = {...columnSort(state)};};
-  menu.onchange = () => changeColumnSort(state,menu);
-  menu.onblur = () => {menu.sortPreference = null;menu.value = columnSort(state).direction;};
-  heading.append(menu);
   const cards = element("div",undefined,"cards");
   column.append(heading,cards);
   column.ondragover = event => {
