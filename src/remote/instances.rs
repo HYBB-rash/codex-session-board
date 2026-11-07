@@ -10,8 +10,10 @@ impl App {
         config.host_id = host.host_id.clone();
         config.data_dir = host.directory(&self.config);
         config.proxy_command = host.proxy(&self.config)?;
-        config.clock_command = host.command(&self.config,
-            "python3 -c 'import time; print(time.time(), flush=True)'")?;
+        config.clock_command = host.command(
+            &self.config,
+            "python3 -c 'import time; print(time.time(), flush=True)'",
+        )?;
         let remote = Arc::new(App::new(config)?);
         remote.update_health(json!({"hostLabel":host.display_name}))?;
         let path = remote.config.data_dir.join("source.json");
@@ -28,50 +30,58 @@ impl App {
 
     pub(crate) fn refresh_remote_instances(&self) -> Result<()> {
         let hosts = hosts::registered(&self.config)?;
+        let cached = self
+            .remotes
+            .lock()
+            .map_err(|_| anyhow::anyhow!("主机锁已损坏"))?
+            .clone();
+        for (identifier, remote) in cached {
+            if !hosts
+                .iter()
+                .any(|host| host.host_id == identifier && host.enabled)
+            {
+                remote.deactivate()?;
+            }
+        }
         let mut errors = Vec::new();
         for host in &hosts {
             if let Err(error) = self.attach_remote(host) {
                 errors.push(json!({"hostId":host.host_id,"error":error.to_string()}));
             }
         }
-        let mut remotes = self
-            .remotes
-            .lock()
-            .map_err(|_| anyhow::anyhow!("主机锁已损坏"))?;
-        remotes.retain(|identifier, remote| {
-            let registered = hosts
-                .iter()
-                .any(|host| host.host_id == *identifier && host.enabled);
-            if !registered {
-                remote.enabled.store(false, Ordering::SeqCst);
-            }
-            registered
-        });
-        drop(remotes);
         self.update_health(json!({"remoteConnectionErrors":errors}))
     }
 
     fn attach_remote(&self, host: &Host) -> Result<()> {
-        if !host.enabled {
-            return Ok(());
-        }
-        let mut remotes = self
+        let existing = self
             .remotes
             .lock()
-            .map_err(|_| anyhow::anyhow!("主机锁已损坏"))?;
-        if let Some(remote) = remotes.get(&host.host_id) {
+            .map_err(|_| anyhow::anyhow!("主机锁已损坏"))?
+            .get(&host.host_id)
+            .cloned();
+        if let Some(remote) = existing {
             let matches = remote.config.proxy_command == host.proxy(&self.config)?;
             if !matches {
-                remote.enabled.store(false, Ordering::SeqCst);
+                remote.deactivate()?;
             }
             ensure!(matches, "主机连接身份已改变，需要显式迁移");
             remote.update_health(json!({"hostLabel":host.display_name}))?;
-            return Ok(());
+            if remote.enabled.load(Ordering::SeqCst) || !host.enabled {
+                return Ok(());
+            }
+            remote.deactivate()?;
         }
         let remote = self.build_remote(host)?;
-        observer::start_host(&remote);
-        crate::auto_archive::start(&remote);
-        remotes.insert(host.host_id.clone(), remote);
+        if host.enabled {
+            observer::start_host(&remote);
+            crate::auto_archive::start(&remote);
+        } else {
+            remote.deactivate()?;
+        }
+        self.remotes
+            .lock()
+            .map_err(|_| anyhow::anyhow!("主机锁已损坏"))?
+            .insert(host.host_id.clone(), remote);
         Ok(())
     }
 
@@ -101,6 +111,52 @@ impl App {
 mod tests {
     use super::*;
     use crate::config::Config;
+
+    fn isolated(directory: &std::path::Path, name: &str) -> Result<App> {
+        App::new(Config {
+            data_dir: directory.join(name),
+            sync_titles: false,
+            ..Config::default()
+        })
+    }
+
+    #[test]
+    fn disabling_a_host_drains_its_old_operations_without_blocking_another_host() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let app = Arc::new(isolated(directory.path(), "remote")?);
+        let local = isolated(directory.path(), "local")?;
+        let identifier = uuid::Uuid::new_v4().to_string();
+        for instance in [&*app, &local] {
+            instance
+                .store
+                .discover(&[json!({"id":identifier,"name":"same"})])?;
+        }
+        let operation = app.operation()?;
+        let worker = Arc::clone(&app);
+        let (sender, received) = std::sync::mpsc::channel();
+        let paused = std::thread::spawn(move || sender.send(worker.deactivate()).unwrap());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        while app.enabled.load(Ordering::SeqCst) {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert!(app.operation().is_err());
+        assert!(
+            received
+                .recv_timeout(std::time::Duration::from_millis(20))
+                .is_err()
+        );
+        let body = json!({"id":identifier,"state":"review","note":"local",
+            "version":0,"inputVersion":0});
+        local.request("/api/state", Some(&body))?;
+        assert!(app.request("/api/state", Some(&body)).is_err());
+        assert_eq!(app.store.note(&identifier)?, "");
+        drop(operation);
+        received.recv_timeout(std::time::Duration::from_secs(1))??;
+        paused.join().unwrap();
+        assert_eq!(local.store.note(&identifier)?, "local");
+        Ok(())
+    }
 
     #[test]
     fn remote_instances_reuse_store_preserve_notes_and_reject_reassigned_targets() -> Result<()> {

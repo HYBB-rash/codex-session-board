@@ -110,6 +110,7 @@ pub(crate) fn observe_runtime_threads(
         }
         match rpc::latest_turn(reader, identifier) {
             Ok(turn) => {
+                let _operation = app.operation()?;
                 ensure!(app.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
                 app.store.observe(identifier, &turn, None)?;
                 if crate::model::runtime_state(status, &turn).is_some() {
@@ -210,7 +211,9 @@ fn title_worker(app: Arc<App>) {
     while app.enabled.load(Ordering::SeqCst) {
         if let Ok(jobs) = app.store.pending_titles(None) {
             for job in jobs.iter().take(20) {
-                if let Some(identifier) = job["thread_id"].as_str() {
+                if let Some(identifier) = job["thread_id"].as_str()
+                    && let Ok(_operation) = app.operation()
+                {
                     let _ = app.sync_title(identifier);
                 }
             }

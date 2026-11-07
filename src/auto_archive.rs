@@ -35,6 +35,7 @@ pub fn sweep(app: &App) -> Result<Value> {
         app.refresh_native()?;
     }
     let report = sweep_with(app, |session| archive::request(app, session))?;
+    let _operation = app.operation()?;
     crate::config::write_json(
         &app.config.data_dir.join("auto-archive.json"),
         &report,

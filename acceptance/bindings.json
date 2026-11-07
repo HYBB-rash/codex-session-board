@@ -434,6 +434,7 @@
       "test::observer_contract::same_phase_runtime_input_rejects_stale_input_version_without_changing_state_version"
     ],
     "MANUAL-002": [
+      "lib::codex_session_board::remote::instances::tests::disabling_a_host_drains_its_old_operations_without_blocking_another_host",
       "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation",
       "test::native_authority::transport::external_move_rejects_an_unobserved_stale_save_and_fresh_save_succeeds",
       "test::native_authority::faults::input_arriving_during_a_native_move_cannot_be_confirmed_by_the_old_save",
@@ -820,6 +821,7 @@
       "test::board_io::manual_save_preserves_note_when_field_is_omitted"
     ],
     "DISCOVERY-002": [
+      "lib::codex_session_board::remote::scans::tests::recent_threads_are_observed_while_older_pages_are_still_scanning",
       "lib::codex_session_board::remote::scans::tests::expired_server_cursor_restarts_scanning_without_deleting_saved_data",
       "lib::codex_session_board::remote::scans::tests::remote_pagination_survives_restart_and_bad_pages_do_not_erase_records",
       "lib::codex_session_board::remote::scans::tests::cross_host_and_invalid_identifiers_are_rejected_atomically",

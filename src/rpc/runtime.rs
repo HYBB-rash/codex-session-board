@@ -23,6 +23,7 @@ impl Clock {
                 .iter()
                 .all(|value| value.is_finite())
                 && remote > 0.0
+                && remote <= 253402300799.0
                 && (0.0..=4.0).contains(&elapsed)
                 && ((finished - started) - elapsed).abs() < 0.25,
             "无法确定远程时钟范围，保留人工选择"
@@ -35,18 +36,46 @@ impl Clock {
         })
     }
 
-    fn project(&self, response: &mut Value) -> Result<()> {
+    fn validate(&self) -> Result<()> {
         ensure!(
             (now() - self.local_time - self.sampled.elapsed().as_secs_f64()).abs() < 0.25,
             "本机时钟跳变，需要重新核对远程时钟"
         );
+        Ok(())
+    }
+
+    fn project(&self, response: &mut Value) -> Result<()> {
+        self.validate()?;
         if let Some(turns) = response["data"].as_array_mut() {
             for turn in turns {
                 for field in ["startedAt", "completedAt"] {
                     if let Some(time) = turn[field].as_f64() {
                         let earliest = time + self.offset - self.uncertainty;
-                        ensure!(earliest.is_finite(), "远程时间无效");
+                        ensure!(
+                            earliest.is_finite() && (0.0..=253402300799.0).contains(&earliest),
+                            "远程时间无效"
+                        );
                         turn[field] = json!(earliest);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn project_metadata(&self, response: &mut Value) -> Result<()> {
+        self.validate()?;
+        if let Some(threads) = response["data"].as_array_mut() {
+            for thread in threads {
+                for field in ["createdAt", "updatedAt"] {
+                    if !thread[field].is_null() {
+                        let time = thread[field].as_i64().context("远程会话时间格式无效")?;
+                        let local = time as f64 + self.offset;
+                        ensure!(
+                            local.is_finite() && (0.0..=253402300799.0).contains(&local),
+                            "远程会话时间越界"
+                        );
+                        thread[field] = json!(local.round() as i64);
                     }
                 }
             }
@@ -107,6 +136,11 @@ impl Rpc for RuntimeConnection {
         {
             clock.project(&mut response)?;
         }
+        if method == "thread/list"
+            && let Some(clock) = &self.clock
+        {
+            clock.project_metadata(&mut response)?;
+        }
         Ok(response)
     }
 }
@@ -146,6 +180,10 @@ mod tests {
         clock.project(&mut turn)?;
         assert!((turn["data"][0]["startedAt"].as_f64().unwrap() - 100.0).abs() < 0.001);
         assert!((turn["data"][0]["completedAt"].as_f64().unwrap() - 101.0).abs() < 0.001);
+        let mut thread = json!({"data":[{"createdAt":600,"updatedAt":601}]});
+        clock.project_metadata(&mut thread)?;
+        assert_eq!(thread["data"][0]["createdAt"], 100);
+        assert_eq!(thread["data"][0]["updatedAt"], 101);
         assert!(Clock::bounds(100.0, 102.0, 0.2, 600.1).is_err());
         assert!(Clock::bounds(100.0, 110.0, 10.0, 600.1).is_err());
         assert!(Clock::bounds(100.0, 100.2, 0.2, f64::NAN).is_err());

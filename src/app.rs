@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::process::{Command, Stdio};
 use std::sync::{
-    Arc, Mutex,
+    Arc, Mutex, RwLock, RwLockReadGuard,
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 use std::time::Duration;
@@ -31,6 +31,7 @@ pub struct App {
     native_generation: AtomicUsize,
     pub(crate) enabled: AtomicBool,
     pub(crate) remotes: Mutex<HashMap<String, Arc<App>>>,
+    lifecycle: RwLock<()>,
 }
 
 impl App {
@@ -55,6 +56,7 @@ impl App {
             native_generation: AtomicUsize::new(0),
             enabled: AtomicBool::new(true),
             remotes: Mutex::new(HashMap::new()),
+            lifecycle: RwLock::new(()),
             health: Mutex::new(json!({
                 "lastScanAt":null,"lastSuccessAt":null,"error":null,"scanComplete":false,
                 "refreshing":false,"discovered":0,"runtimeVerified":false,
@@ -63,6 +65,20 @@ impl App {
                 "nativeSections":native_sections,"nativeVerified":false,"nativeError":null,
             })),
         })
+    }
+
+    pub(crate) fn operation(&self) -> Result<RwLockReadGuard<'_, ()>> {
+        ensure!(self.enabled.load(Ordering::SeqCst), "主机连接已停止");
+        let guard = self.lifecycle.read().map_err(|_| anyhow::anyhow!("主机操作锁已损坏"))?;
+        ensure!(self.enabled.load(Ordering::SeqCst), "主机连接已停止");
+        Ok(guard)
+    }
+
+    pub(crate) fn deactivate(&self) -> Result<()> {
+        self.enabled.store(false, Ordering::SeqCst);
+        let _guard = self.lifecycle.write().map_err(|_| anyhow::anyhow!("主机操作锁已损坏"))?;
+        self.update_health(json!({"runtimeVerified":false,"nativeVerified":false,
+            "scanComplete":false,"runtimeError":"主机已断开或登记改变，保留缓存"}))
     }
 
     pub(crate) fn connection(&self, timeout: Duration, role: Role) -> Result<DesktopConnection> {
@@ -202,6 +218,7 @@ impl App {
     }
 
     fn save(&self, body: &Value) -> Result<Value> {
+        let _operation = self.operation()?;
         ensure!(body.is_object(), "请求格式无效");
         let identifier = body["id"].as_str().context("缺少会话 ID")?;
         if identifier.starts_with("remote:") {

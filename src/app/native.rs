@@ -21,6 +21,7 @@ impl App {
         threads: &[Value],
     ) -> Result<()> {
         let catalog = native_sections::direct::Catalog::load(reader, &self.config)?;
+        let _operation = self.operation()?;
         for thread in threads {
             let identifier = thread["id"].as_str().context("会话缺少 ID")?;
             let operation = self.thread_lock(identifier)?;
@@ -109,6 +110,7 @@ impl App {
     pub fn read_native(&self, reader: &mut impl Rpc) -> Result<()> {
         let generation = self.native_generation.load(Ordering::SeqCst);
         let snapshot = native_sections::direct::snapshot(reader, &self.config)?;
+        let _operation = self.operation()?;
         ensure!(self.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
         let mut unresolved = 0;
         for session in self.store.sessions()? {

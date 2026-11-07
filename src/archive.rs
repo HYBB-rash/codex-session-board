@@ -9,6 +9,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 pub fn request(app: &App, body: &Value) -> Result<Value> {
+    let _operation = app.operation()?;
     let identifier = body["id"].as_str().context("缺少会话 ID")?;
     ensure!(!identifier.starts_with("remote:"), "远程会话暂不支持归档");
     let version = body["version"].as_i64().context("缺少状态版本")?;

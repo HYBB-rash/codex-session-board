@@ -251,6 +251,35 @@ mod tests {
     }
 
     #[test]
+    fn recent_threads_are_observed_while_older_pages_are_still_scanning() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let app = App::new(Config {
+            data_dir: directory.path().into(),
+            sync_titles: false,
+            ..Config::default()
+        })?;
+        let identifier = uuid::Uuid::new_v4().to_string();
+        let first = json!({"expected":null,"data":[],"nextCursor":"next"});
+        scan_runtime_page(
+            &app,
+            &mut Page(first),
+            &mut HashMap::new(),
+            crate::model::now(),
+        )?;
+        let page = json!({"expected":"next","data":[],"nextCursor":"older",
+            "head":[{"id":identifier,"name":"新近会话"}]});
+        scan_runtime_page(
+            &app,
+            &mut Page(page),
+            &mut HashMap::new(),
+            crate::model::now(),
+        )?;
+        assert_eq!(app.store.sessions()?[0]["id"], identifier);
+        assert!(app.health.lock().unwrap()["scanComplete"] == false);
+        Ok(())
+    }
+
+    #[test]
     fn expired_server_cursor_restarts_scanning_without_deleting_saved_data() -> Result<()> {
         let directory = tempfile::tempdir()?;
         let app = App::new(Config {
