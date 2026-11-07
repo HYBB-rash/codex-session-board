@@ -315,6 +315,8 @@
       "test::board_io::manual_save_preserves_note_when_field_is_omitted"
     ],
     "MANUAL-001": [
+      "test::column_sort::column_sort_defaults_persistence_and_independent_conflicts",
+      "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions",
       "test::native_authority::remote_isolation::remote_online_disconnected_and_scanning_do_not_delay_local_http_mutations",
       "test::native_authority::missing_direct_snapshot_entries_never_become_unsectioned",
       "test::native_authority::transport::direct_transport_reads_shared_backend_positions_without_sidebar_projection",
@@ -887,6 +889,7 @@
     ],
     "UI-003": [],
     "MCP-001": [
+      "test::column_sort::column_sort_app_and_mcp_expose_separate_settings_operation",
       "test::board_io::remote_cards_use_the_same_http_and_mcp_annotations_without_native_writes",
       "test::archive_flow::archive_checks_native_inputs_even_when_local_revision_has_not_changed",
       "test::archive_flow::archive_confirmation_persists_and_stale_observers_cannot_restore_the_card",

@@ -17,6 +17,7 @@ pub fn tools() -> Value {
         ("board_view", "会话看板", true),
         ("board_snapshot", "读取会话状态", true),
         ("board_update", "确认工作状态", false),
+        ("board_sort", "设置栏目排序", false),
         ("board_archive", "归档待归档会话", false),
         ("board_open", "打开已有会话", true),
         ("board_new", "打开新建会话页", false),
@@ -40,6 +41,13 @@ pub fn tools() -> Value {
 
 fn schema(name: &str) -> (Value, Value) {
     match name {
+        "board_sort" => (
+            json!({"state":{"type":"string","enum":crate::model::board_states().map(|item| item.0).collect::<Vec<_>>()},
+                "field":{"type":"string","enum":["updated_at"]},
+                "direction":{"type":"string","enum":["asc","desc"]},
+                "version":{"type":"integer","minimum":0}}),
+            json!(["state", "field", "direction", "version"]),
+        ),
         "board_update" => (
             json!({
                 "id":{"type":"string"}, "state":{"type":["string","null"]},
@@ -64,7 +72,7 @@ pub fn resource() -> Value {
     let bridge = include_str!("../assets/app-bridge.js")
         .replace(
             "\"/api/refresh\":\"board_refresh\"",
-            "\"/api/refresh\":\"board_refresh\",\"/api/new\":\"board_new\",\"/api/archive\":\"board_archive\"",
+            "\"/api/refresh\":\"board_refresh\",\"/api/new\":\"board_new\",\"/api/archive\":\"board_archive\",\"/api/column-sort\":\"board_sort\"",
         )
         .replace("</script", "<\\/script");
     let html = include_str!("../index.html")
@@ -86,6 +94,7 @@ pub fn backend(config_path: &Path, name: &str, arguments: &Value) -> Result<Valu
     let path = match name {
         "board_snapshot" => "/api/sessions",
         "board_update" => "/api/state",
+        "board_sort" => "/api/column-sort",
         "board_archive" => "/api/archive",
         "board_open" => "/api/open",
         "board_new" => "/api/new",

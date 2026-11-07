@@ -8,6 +8,7 @@ use std::sync::{Mutex, MutexGuard};
 mod native;
 pub mod remote;
 mod runtime_native;
+mod sorting;
 pub use runtime_native::RuntimeChange;
 
 pub struct Store {

@@ -131,7 +131,7 @@ impl App {
         drop(projects);
         self.append_remote(&mut sessions, &mut catalog)?;
         Ok(
-            json!({"states":states,"sessions":sessions,"projectCatalog":catalog,
+            json!({"states":states,"sessions":sessions,"projectCatalog":catalog,"columnSorts":self.store.column_sorts()?,
             "health":self.health.lock().map_err(|_| anyhow::anyhow!("健康状态锁已损坏"))?.clone()}),
         )
     }
@@ -140,6 +140,7 @@ impl App {
         match (path, body) {
             ("/api/sessions", None) => self.snapshot(),
             ("/api/state", Some(body)) => self.save(body),
+            ("/api/column-sort", Some(body)) => self.store.save_column_sort(body),
             ("/api/archive", Some(body)) => crate::archive::request(self, body),
             ("/api/new", Some(body)) => self.new_session(body),
             ("/api/open", Some(body)) => {
