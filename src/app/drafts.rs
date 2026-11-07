@@ -69,8 +69,10 @@ impl App {
         caller: &Config,
         timeout: Duration,
     ) -> Result<Value> {
-        let mut catalog = SidebarConnection::reader(caller, timeout)?;
-        let projects = crate::remote::projects(&mut catalog)?;
+        let projects = crate::remote::project_catalog(caller, || {
+            let mut catalog = SidebarConnection::reader(caller, timeout)?;
+            crate::remote::projects(&mut catalog)
+        })?;
         let project = projects.iter()
             .find(|project| project["id"] == body["projectId"])
             .cloned().context("远程项目已移除，请刷新")?;

@@ -13,7 +13,9 @@ mod cache;
 mod connections;
 mod instances;
 mod scans;
+mod project_registry;
 pub(crate) use scans::scan_runtime_page;
+pub(crate) use project_registry::catalog as project_catalog;
 
 pub(crate) fn projects(reader: &mut dyn Rpc) -> Result<Vec<Value>> {
     let response = reader.call("list_projects", json!({}))?;
@@ -137,7 +139,8 @@ fn scan_scoped(
     connect: &mut impl FnMut() -> Result<Box<dyn Rpc>>,
     allowed: Option<&HashSet<String>>,
 ) -> Result<()> {
-    let catalog = merge_projects(app, projects(connect()?.as_mut())?)?;
+    let fresh = project_catalog(&app.config, || projects(connect()?.as_mut()))?;
+    let catalog = merge_projects(app, fresh)?;
     app.store.cache_remote_projects(&catalog)?;
     let hosts: BTreeMap<_, _> = catalog
         .iter()

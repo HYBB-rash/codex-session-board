@@ -905,7 +905,11 @@
       "lib::codex_session_board::rpc::framing::tests::remote_startup_stall_times_out_and_never_initializes",
       "lib::codex_session_board::rpc::framing::tests::verified_proxy_strips_banner_initializes_and_binds_peer_before_writing",
       "lib::codex_session_board::remote::hosts::source::tests::nonregular_source_records_are_rejected_without_waiting_for_a_pipe_writer",
-      "lib::codex_session_board::remote::instances::identity_gate_tests::remote_auto_archive_requires_its_own_explicit_positive_interval"
+      "lib::codex_session_board::remote::instances::identity_gate_tests::remote_auto_archive_requires_its_own_explicit_positive_interval",
+      "lib::codex_session_board::remote::project_registry::tests::invalid_or_ambiguous_registries_fail_before_fallback",
+      "lib::codex_session_board::remote::project_registry::tests::older_state_without_remote_registry_preserves_the_existing_reader",
+      "lib::codex_session_board::remote::project_registry::tests::registered_projects_do_not_depend_on_git_probes_or_native_tool_availability",
+      "lib::codex_session_board::remote::project_registry::tests::registry_removal_is_read_fresh_and_does_not_resurrect_a_tool_result"
     ],
     "DISCOVERY-002": [
       "lib::codex_session_board::app::remote::tests::managed_cache_merge_keeps_notes_and_archive_tombstones_across_restart",
@@ -1273,7 +1277,11 @@
       "test::legacy_mode::compatibility_tools_and_direct_routes_keep_archive_and_remote_creation_disabled",
       "test::legacy_mode::legacy_six_states_preserve_completed_notes_titles_and_sorting_in_the_current_store",
       "lib::codex_session_board::remote::hosts::source::tests::nonregular_source_records_are_rejected_without_waiting_for_a_pipe_writer",
-      "lib::codex_session_board::remote::instances::identity_gate_tests::remote_auto_archive_requires_its_own_explicit_positive_interval"
+      "lib::codex_session_board::remote::instances::identity_gate_tests::remote_auto_archive_requires_its_own_explicit_positive_interval",
+      "lib::codex_session_board::remote::project_registry::tests::invalid_or_ambiguous_registries_fail_before_fallback",
+      "lib::codex_session_board::remote::project_registry::tests::older_state_without_remote_registry_preserves_the_existing_reader",
+      "lib::codex_session_board::remote::project_registry::tests::registered_projects_do_not_depend_on_git_probes_or_native_tool_availability",
+      "lib::codex_session_board::remote::project_registry::tests::registry_removal_is_read_fresh_and_does_not_resurrect_a_tool_result"
     ],
     "SECURITY-001": [
       "test::native_authority::archive::native_archive_rejects_external_moves_before_archiving_and_accepts_fresh_confirmation",
