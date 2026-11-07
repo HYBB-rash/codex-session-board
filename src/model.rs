@@ -18,9 +18,13 @@ pub fn board_state(state: &str) -> &str {
 }
 
 pub fn board_states() -> impl Iterator<Item = (&'static str, &'static str)> {
+    states_for(false)
+}
+
+pub fn states_for(legacy: bool) -> impl Iterator<Item = (&'static str, &'static str)> {
     STATES
         .into_iter()
-        .filter(|(state, _)| *state != "completed")
+        .filter(move |(state, _)| legacy || *state != "completed")
 }
 
 pub fn runtime_state(status: &Value, turn: &Value) -> Option<(&'static str, &'static str)> {

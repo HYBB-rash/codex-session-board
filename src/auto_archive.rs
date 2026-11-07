@@ -30,6 +30,7 @@ impl Schedule {
 }
 
 pub fn sweep(app: &App) -> Result<Value> {
+    ensure!(!app.config.legacy_mode, "兼容模式不执行真实归档");
     ensure!(app.config.auto_archive_seconds.is_some(), "自动归档未启用");
     if app.config.native_sections {
         app.refresh_native()?;
@@ -69,6 +70,9 @@ fn sweep_with(app: &App, mut operation: impl FnMut(&Value) -> Result<Value>) -> 
 }
 
 pub fn start(app: &Arc<App>) {
+    if app.config.legacy_mode {
+        return;
+    }
     let Some(seconds) = app.config.auto_archive_seconds else {
         return;
     };

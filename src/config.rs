@@ -31,6 +31,7 @@ pub struct Config {
     pub sync_titles: bool,
     pub sync_sections: bool,
     pub native_sections: bool,
+    pub legacy_mode: bool,
     pub sidebar_socket: PathBuf,
     pub sidebar_caller: String,
     pub sidebar_state_file: PathBuf,
@@ -67,6 +68,7 @@ impl Default for Config {
             sync_titles: true,
             sync_sections: false,
             native_sections: false,
+            legacy_mode: false,
             sidebar_socket: PathBuf::new(),
             sidebar_caller: String::new(),
             sidebar_state_file: PathBuf::new(),
@@ -76,7 +78,26 @@ impl Default for Config {
 }
 
 impl Config {
+    pub fn validate_modes(&self) -> Result<()> {
+        ensure!(
+            !self.legacy_mode
+                || !self.native_sections
+                    && self.auto_archive_seconds.is_none()
+                    && self.proxy_command.is_empty()
+                    && self.clock_command.is_empty()
+                    && self.sidebar_socket.as_os_str().is_empty()
+                    && self.host_id == "local",
+            "兼容模式仅支持本机六状态记录，不启用原生分区、远程连接或真实归档"
+        );
+        Ok(())
+    }
+
+    pub fn board_states(&self) -> impl Iterator<Item = (&'static str, &'static str)> {
+        crate::model::states_for(self.legacy_mode)
+    }
+
     pub fn validate(&self) -> Result<()> {
+        self.validate_modes()?;
         ensure!(
             self.auto_archive_seconds.is_none_or(|seconds| seconds > 0),
             "auto_archive_seconds 必须为空或正整数"
@@ -92,7 +113,10 @@ impl Config {
         }
         ensure!(!self.host_id.is_empty(), "host_id 必须为非空文本");
         ensure!(
-            self.proxy_command.iter().chain(&self.clock_command).all(|part| !part.is_empty()),
+            self.proxy_command
+                .iter()
+                .chain(&self.clock_command)
+                .all(|part| !part.is_empty()),
             "代理或时钟命令不得包含空参数"
         );
         ensure!(!self.data_dir.as_os_str().is_empty(), "data_dir 不得为空");

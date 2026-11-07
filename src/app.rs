@@ -1,6 +1,6 @@
 use crate::{
     config::Config,
-    model::{board_state, board_states, now},
+    model::{board_state, now},
     rpc::{DesktopConnection, Role, SidebarConnection},
     store::Store,
     titles,
@@ -37,12 +37,14 @@ pub struct App {
 
 impl App {
     pub fn new(config: Config) -> Result<Self> {
+        config.validate_modes()?;
         ensure!(
             !config.sync_sections,
             "sync_sections 已停用，请配置 native_sections"
         );
         let mut store = Store::open(&config.data_dir, config.sync_titles)?;
         store.native_sections = config.native_sections;
+        store.legacy_mode = config.legacy_mode;
         let store = Arc::new(store);
         let native_sections = config.native_sections;
         Ok(Self {
@@ -130,7 +132,7 @@ impl App {
     }
 
     pub fn snapshot(&self) -> Result<Value> {
-        let states: serde_json::Map<String, Value> = board_states()
+        let states: serde_json::Map<String, Value> = self.config.board_states()
             .map(|(state, label)| (state.to_string(), json!(label)))
             .collect();
         let mut sessions = self.store.sessions()?;
@@ -148,7 +150,7 @@ impl App {
             }
         }
         for session in &mut sessions {
-            if session["state"] == "completed" {
+            if !self.config.legacy_mode && session["state"] == "completed" {
                 session["state"] = json!(board_state("completed"));
             }
         }
@@ -163,6 +165,7 @@ impl App {
         self.annotate_connections(&mut sessions);
         Ok(
             json!({"states":states,"sessions":sessions,"projectCatalog":catalog,"columnSorts":self.store.column_sorts()?,
+            "legacyMode":self.config.legacy_mode,
             "pendingDrafts":self.store.pending_drafts()?,
             "health":self.health.lock().map_err(|_| anyhow::anyhow!("健康状态锁已损坏"))?.clone()}),
         )

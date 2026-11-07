@@ -9,6 +9,10 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 pub fn request(app: &App, body: &Value) -> Result<Value> {
+    ensure!(
+        !app.config.legacy_mode,
+        "兼容模式不执行本机或远程会话的真实归档"
+    );
     let _operation = app.operation()?;
     let identifier = body["id"].as_str().context("缺少会话 ID")?;
     ensure!(!identifier.starts_with("remote:"), "远程会话暂不支持归档");
@@ -52,8 +56,7 @@ fn remote(app: &App, identifier: &str, expected: &Value, body: &Value) -> Result
     } else {
         app.config.rpc_timeout_seconds.min(3)
     });
-    let mut writer =
-        app.connection(timeout, Role::ArchiveWriter)?;
+    let mut writer = app.connection(timeout, Role::ArchiveWriter)?;
     archive_checked(
         &mut writer,
         identifier,

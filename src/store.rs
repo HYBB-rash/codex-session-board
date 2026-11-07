@@ -17,6 +17,7 @@ pub struct Store {
     pub sync_titles: bool,
     pub title_epoch: Option<f64>,
     pub native_sections: bool,
+    pub legacy_mode: bool,
 }
 
 const SCHEMA: &str = "
@@ -212,6 +213,7 @@ impl Store {
             sync_titles,
             title_epoch,
             native_sections: false,
+            legacy_mode: false,
         })
     }
 

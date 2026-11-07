@@ -34,6 +34,7 @@
   ],
   "requirements": {
     "STATE-001": [
+      "test::legacy_mode::legacy_six_states_preserve_completed_notes_titles_and_sorting_in_the_current_store",
       "test::archive_flow::archive_checks_native_inputs_even_when_local_revision_has_not_changed",
       "test::archive_flow::archive_confirmation_persists_and_stale_observers_cannot_restore_the_card",
       "test::archive_flow::archive_lost_ack_keeps_card_and_retry_reads_back_before_another_write",
@@ -995,6 +996,7 @@
       "test::board_io::service_update_rejects_old_build_but_can_verify_and_stop_its_process"
     ],
     "BOUNDARY-001": [
+      "test::legacy_mode::legacy_mode_rejects_native_connections_and_timers_before_creating_data",
       "lib::codex_session_board::app::drafts::tests::lost_empty_draft_receipts_never_replay_thread_start",
       "lib::codex_session_board::app::drafts::tests::acknowledged_empty_drafts_only_read_the_same_thread_on_retry",
       "lib::codex_session_board::rpc::tests::empty_draft_connections_cannot_send_turns_or_modify_sidebar_sections",
