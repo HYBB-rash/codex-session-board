@@ -1,6 +1,7 @@
-use super::{RULES_FILE, Rules, Version, committed};
+use super::{RULES_FILE, Rules, Version, committed, git};
 use anyhow::{Context, Result, ensure};
 use std::path::Path;
+use std::{fs, io};
 
 impl Version {
     fn next_rollover(self) -> Result<Self> {
@@ -53,35 +54,43 @@ fn recorded(root: &Path, commit: &str) -> Result<Rules> {
     Rules::parse(&committed(root, commit, RULES_FILE)?)
 }
 
-pub(super) fn validate_transition(root: &Path, rules: &Rules, parent: Option<&str>) -> Result<()> {
-    let inherited = parent.map(|parent| recorded(root, parent)).transpose()?;
-    let previous = inherited
-        .as_ref()
-        .and_then(|rules| rules.versioning.rollover_after.as_deref());
+pub(super) fn validate_transition(root: &Path, rules: &Rules, parents: &[&str]) -> Result<()> {
     let current = rules.versioning.rollover_after.as_deref();
-    if previous.is_some() {
-        ensure!(current == previous, "不能移动或撤销自动进位规则切换点");
-    } else if current.is_some() {
+    let mut inherited_policy = false;
+    for parent in parents {
+        let inherited = recorded(root, parent)?;
+        if let Some(boundary) = inherited.versioning.rollover_after {
+            ensure!(
+                current == Some(boundary.as_str()),
+                "不能移动或撤销任何父提交已启用的自动进位规则"
+            );
+            inherited_policy = true;
+        }
+    }
+    if !inherited_policy && current.is_some() {
         ensure!(
-            current == parent,
+            current == parents.first().copied(),
             "自动进位切换点必须是直接父提交的完整提交号"
         );
-        ensure!(parent.is_some(), "自动进位切换须有既有提交");
     }
     Ok(())
 }
 
-pub(super) fn validate_merge(root: &Path, rules: &Rules, parents: &[&str]) -> Result<()> {
-    for parent in parents.iter().skip(1) {
-        let inherited = recorded(root, parent)?;
-        if let Some(boundary) = inherited.versioning.rollover_after {
-            ensure!(
-                rules.versioning.rollover_after.as_deref() == Some(boundary.as_str()),
-                "合并提交不能撤销或替换已继承的自动进位规则"
-            );
-        }
+pub(super) fn candidate_parents(root: &Path, tip: &str) -> Result<Vec<String>> {
+    let path = root.join(git(root, &["rev-parse", "--git-path", "MERGE_HEAD"])?.trim());
+    let mut parents = vec![tip.to_string()];
+    match fs::read_to_string(path) {
+        Ok(merges) => parents.extend(merges.lines().map(str::to_string)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
     }
-    Ok(())
+    Ok(parents)
+}
+
+pub(super) fn reachable(root: &Path, parents: &[String]) -> Result<String> {
+    let mut arguments = vec!["rev-list", "--topo-order", "--reverse", "--parents"];
+    arguments.extend(parents.iter().map(String::as_str));
+    git(root, &arguments)
 }
 
 #[cfg(test)]

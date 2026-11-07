@@ -68,7 +68,7 @@ pub fn check(repository: Option<&Path>) -> Result<bool> {
         Err(error) => {
             println!("[未通过] 暂存区版本规则：{error:#}");
             println!(
-                "  核对历史后运行 ./scripts/check --prepare-commit，并重新暂存版本文件及适用的阶段决定。"
+                "  核对历史后运行 ./scripts/check --prepare-commit，并重新暂存版本文件及规则文件。"
             );
             false
         }

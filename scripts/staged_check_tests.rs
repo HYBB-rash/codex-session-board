@@ -53,3 +53,34 @@ fn initial_and_approved_minor_versions_are_checked_from_the_snapshot() -> Result
     assert!(version(exported.path(), root, &rules).is_err());
     Ok(())
 }
+
+#[test]
+fn staged_rollover_uses_only_the_rules_and_versions_in_the_index() -> Result<()> {
+    for stage_rules in [false, true] {
+        let (directory, mut rules) = fixture()?;
+        let root = directory.path();
+        rules.versioning.baseline = "0.1.98".into();
+        rewrite_version(root, "0.1.98")?;
+        fs::write(root.join(RULES_FILE), serde_json::to_vec(&rules)?)?;
+        prepare(root, &mut rules, None)?;
+        commit(root)?;
+        rules.versioning.rollover_after =
+            Some(crate::git(root, &["rev-parse", "HEAD"])?.trim().into());
+        fs::write(root.join(RULES_FILE), serde_json::to_vec(&rules)?)?;
+        prepare(root, &mut rules, None)?;
+        fixture_git(root, &["add", "Cargo.toml", "Cargo.lock"])?;
+        if stage_rules {
+            fixture_git(root, &["add", RULES_FILE])?;
+            rules.versioning.rollover_after = Some("unstaged-invalid-boundary".into());
+            fs::write(root.join(RULES_FILE), serde_json::to_vec(&rules)?)?;
+            rewrite_version(root, "0.9.9")?;
+        }
+        let exported = snapshot(root)?;
+        let staged_rules = Rules::parse(&fs::read_to_string(exported.path().join(RULES_FILE))?)?;
+        assert_eq!(
+            version(exported.path(), root, &staged_rules).is_ok(),
+            stage_rules
+        );
+    }
+    Ok(())
+}

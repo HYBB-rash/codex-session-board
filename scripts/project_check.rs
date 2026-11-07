@@ -230,14 +230,13 @@ fn validate_history(root: &Path, rules: &Rules) -> Result<History> {
     };
     if !head.status.success() {
         ensure!(head.status.code() == Some(1), "无法读取当前 HEAD");
-        version_policy::validate_transition(root, rules, None)?;
+        version_policy::validate_transition(root, rules, &[])?;
         return Ok(history);
     }
     let baseline = history.version;
-    let commits = git(
-        root,
-        &["rev-list", "--topo-order", "--reverse", "--parents", "HEAD"],
-    )?;
+    let tip = String::from_utf8(head.stdout)?.trim().to_string();
+    let parents = version_policy::candidate_parents(root, &tip)?;
+    let commits = version_policy::reachable(root, &parents)?;
     let mut versions = HashMap::new();
     for entry in commits.lines() {
         let mut fields = entry.split_whitespace();
@@ -252,10 +251,10 @@ fn validate_history(root: &Path, rules: &Rules) -> Result<History> {
         versions.insert(commit, version);
         history.count += 1;
     }
-    let tip = String::from_utf8(head.stdout)?.trim().to_string();
     history.version = *versions.get(tip.as_str()).context("缺少 HEAD 的版本")?;
     history.tip = Some(tip);
-    version_policy::validate_transition(root, rules, history.tip.as_deref())?;
+    let parents = parents.iter().map(String::as_str).collect::<Vec<_>>();
+    version_policy::validate_transition(root, rules, &parents)?;
     Ok(history)
 }
 
@@ -277,8 +276,7 @@ fn validate_commit_version(
         "不能修改既有版本基线来绕过历史检查"
     );
     let parent = parents.first().copied();
-    version_policy::validate_transition(root, &recorded, parent)?;
-    version_policy::validate_merge(root, &recorded, parents)?;
+    version_policy::validate_transition(root, &recorded, parents)?;
     recorded.validate_step(parent, previous, version)?;
     Ok(version)
 }
