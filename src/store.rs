@@ -570,6 +570,17 @@ impl Store {
         Ok(())
     }
 
+    pub fn saved_session_ids(&self) -> Result<std::collections::HashSet<String>> {
+        let database = self.connection()?;
+        let mut query = database.prepare("SELECT id FROM sessions")?;
+        Ok(query.query_map([],|row|row.get(0))?.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn has_session(&self, identifier: &str) -> Result<bool> {
+        Ok(self.connection()?.query_row("SELECT EXISTS(SELECT 1 FROM sessions WHERE id=?)",
+            [identifier],|row|row.get(0))?)
+    }
+
     pub fn sessions(&self) -> Result<Vec<Value>> {
         let database = self.connection()?;
         let mut statement = database

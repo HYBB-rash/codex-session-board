@@ -821,6 +821,7 @@
       "test::board_io::manual_save_preserves_note_when_field_is_omitted"
     ],
     "DISCOVERY-002": [
+      "lib::codex_session_board::app::remote::tests::managed_cache_merge_keeps_notes_and_archive_tombstones_across_restart",
       "lib::codex_session_board::remote::scans::tests::recent_threads_are_observed_while_older_pages_are_still_scanning",
       "lib::codex_session_board::remote::scans::tests::expired_server_cursor_restarts_scanning_without_deleting_saved_data",
       "lib::codex_session_board::remote::scans::tests::remote_pagination_survives_restart_and_bad_pages_do_not_erase_records",

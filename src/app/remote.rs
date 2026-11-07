@@ -82,17 +82,14 @@ impl App {
         for remote in self.remote_instances()? {
             let host = &remote.config.host_id;
             let rows = remote.store.sessions()?;
-            let known: HashSet<_> = rows.iter().filter_map(|row| row["id"].as_str()).collect();
+            let known = remote.store.saved_session_ids()?;
             let active = remote
                 .active_sessions
                 .lock()
                 .map_err(|_| anyhow::anyhow!("会话发现锁已损坏"))?;
-            if active.is_some() {
-                sessions.retain(|row| {
-                    row["hostId"] != *host
-                        || !known.contains(row["threadId"].as_str().unwrap_or(""))
-                });
-            }
+            sessions.retain(|row| {
+                row["hostId"] != *host || !known.contains(row["threadId"].as_str().unwrap_or(""))
+            });
             let mut health = remote
                 .health
                 .lock()
@@ -133,8 +130,10 @@ impl App {
         } else {
             None
         };
-        let known = remote.is_some_and(|remote| remote.store.note(&thread).is_ok())
-            || self.store.remote_session(identifier).is_ok();
+        let known = match remote {
+            Some(remote) if remote.store.has_session(&thread)? => remote.store.contains(&thread)?,
+            _ => self.store.remote_session(identifier).is_ok(),
+        };
         ensure!(known, "远程会话不在看板中");
         let url = open_client_url(conversation_url(&thread, &host)?, &self.config)?;
         Ok(json!({"ok":true,"url":url}))
@@ -172,6 +171,82 @@ fn remote_value(host: &str, label: &Value, mut row: Value, legacy: &[Value]) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn managed(directory: &std::path::Path, host: &str, thread: &str) -> Result<Arc<App>> {
+        let app = Arc::new(App::new(Config {
+            data_dir: directory.join(host.replace(':', "-")),
+            host_id: host.into(),
+            sync_titles: false,
+            ..Config::default()
+        })?);
+        app.update_health(json!({"hostLabel":host}))?;
+        app.store
+            .discover(&[json!({"id":thread,"name":"最新标题","updatedAt":2})])?;
+        app.store
+            .set_state(thread, Some("to_archive"), host, 0, Some(0))?;
+        Ok(app)
+    }
+
+    fn managed_root(directory: &std::path::Path, thread: &str) -> Result<App> {
+        let root = App::new(Config {
+            data_dir: directory.join("root"),
+            sync_titles: false,
+            ..Config::default()
+        })?;
+        for host in ["remote:a", "remote:b"] {
+            root.store.discover_remote(
+                host,
+                host,
+                &[json!({"id":thread,
+                "hostId":host,"title":"旧缓存","updatedAt":1})],
+            )?;
+            root.remotes
+                .lock()
+                .unwrap()
+                .insert(host.into(), managed(directory, host, thread)?);
+        }
+        Ok(root)
+    }
+
+    #[test]
+    fn managed_cache_merge_keeps_notes_and_archive_tombstones_across_restart() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let thread = uuid::Uuid::new_v4().to_string();
+        let root = managed_root(directory.path(), &thread)?;
+        let rows = root.snapshot()?["sessions"].as_array().unwrap().clone();
+        assert_eq!(rows.len(), 2);
+        assert!(
+            rows.iter()
+                .all(|row| row["title"] == "最新标题" && row["note"] == row["hostId"])
+        );
+        let first = root.remotes.lock().unwrap()["remote:a"].clone();
+        let row = &first.store.sessions()?[0];
+        first.store.archive(
+            &thread,
+            row["version"].as_i64().unwrap(),
+            row["inputVersion"].as_i64().unwrap(),
+            |_| Ok(()),
+        )?;
+        first.deactivate()?;
+        let reopened = Arc::new(App::new(first.config.clone())?);
+        reopened.deactivate()?;
+        root.remotes
+            .lock()
+            .unwrap()
+            .insert("remote:a".into(), reopened);
+        let rows = root.snapshot()?["sessions"].as_array().unwrap().clone();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["hostId"], "remote:b");
+        assert_eq!(rows[0]["threadId"], thread);
+        assert!(first.store.has_session(&thread)?);
+        assert!(!first.store.contains(&thread)?);
+        assert!(
+            root.store
+                .remote_session(&identity("remote:a", &thread))
+                .is_ok()
+        );
+        Ok(())
+    }
 
     fn offline() -> Result<(tempfile::TempDir, App, String)> {
         let directory = tempfile::tempdir()?;
