@@ -8,6 +8,8 @@ use serde_json::json;
 const FIRST: &str = "11111111-1111-4111-8111-111111111111";
 #[path = "native_authority/archive.rs"]
 mod archive;
+#[path = "native_authority/auto_archive.rs"]
+mod auto_archive;
 #[path = "native_authority/entrypoints.rs"]
 mod entrypoints;
 #[path = "native_authority/faults.rs"]

@@ -66,6 +66,7 @@ textarea{resize:vertical;min-height:90px}.dialog-actions{display:flex;justify-co
   <header><h1>会话看板</h1><button id="refresh">重新发现</button></header>
   <p class="subtitle">点击卡片回到原会话，拖到另一列改变状态。拖入“已阻塞”时填写原因。</p>
   <div id="health" class="health" role="status">正在连接本地会话读取器…</div>
+  <div id="archive-status" class="health" role="status" hidden></div>
   <div class="tools">
     <select id="project-filter" aria-label="选择项目" disabled><option value="all">全部项目</option></select>
     <input id="search" type="search" placeholder="搜索会话名称或项目路径" aria-label="搜索会话" hidden>
@@ -362,6 +363,17 @@ function render() {
   for (const column of columns) column.querySelector(".cards").scrollTop = scrollPositions.get(column.dataset.state) || 0;
   byId("count").textContent = `当前 ${filtered.length} / 全部 ${data.sessions.length} 条`;
   const health = data.health;
+  const archiveStatus = byId("archive-status");
+  archiveStatus.hidden = !health.autoArchiveSeconds;
+  if (health.autoArchiveSeconds) {
+    const last = health.autoArchiveLastRun;
+    const deferred = last?.deferred || [];
+    archiveStatus.className = "health" + (health.autoArchiveError || deferred.length ? " error" : "");
+    archiveStatus.textContent = `每 ${health.autoArchiveSeconds / 60} 分钟自动归档待归档 · 下次 ${date(health.autoArchiveNextAt)}`;
+    if (last) archiveStatus.textContent += ` · 上次 ${date(last.at)}：归档 ${last.archived.length} 条，延后 ${deferred.length} 条`;
+    if (health.autoArchiveError) archiveStatus.textContent += " · 本轮未完成：" + health.autoArchiveError;
+    archiveStatus.title = deferred.map(item => `${item.id}：${item.reason}`).join("\n");
+  }
   byId("health").className = "health" + (health.error || health.runtimeError || health.sectionsError || health.nativeError || health.nativeStageError || !health.scanComplete && health.lastScanAt && !health.refreshing ? " error" : "");
   byId("health").textContent = health.error ? `连接异常，已保留本地状态。${health.error}` :
     health.refreshing ? `正在扫描与补读历史，已发现 ${data.sessions.length} 条。` :

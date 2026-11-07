@@ -119,13 +119,13 @@ fn engine_reply(
             json!({"data":values})
         }
         "threadSection/list" => surface.catalog(),
-        "thread/read" => json!({"thread":{"id":identifier,"status":{"type":"idle"},
+        "thread/read" => json!({"thread":{"id":identifier,"status":{"type":surface.thread_status.as_deref().unwrap_or("idle")},
             "section":surface.backend_section(identifier)}}),
         "thread/turns/list" => {
             if request["params"]["itemsView"] != "summary" {
                 assert_eq!(request["params"]["itemsView"], "full");
             }
-            json!({"data":[]})
+            json!({"data":surface.latest_turn.iter().cloned().collect::<Vec<_>>()})
         }
         "thread/archive" => {
             archived.lock().unwrap().insert(identifier.into());

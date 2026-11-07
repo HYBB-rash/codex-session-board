@@ -946,6 +946,9 @@
       "test::board_io::service_update_rejects_old_build_but_can_verify_and_stop_its_process"
     ],
     "BOUNDARY-001": [
+      "test::native_authority::auto_archive::sweep_verifies_live_input_and_running_status_without_confirming_or_archiving_remote",
+      "test::native_authority::auto_archive::sweep_rechecks_native_position_after_selecting_the_candidate",
+      "test::native_authority::auto_archive::built_service_archives_on_its_timer_and_publishes_the_result_without_an_archive_request",
       "lib::codex_session_board::auto_archive::tests::half_hour_boundaries_wait_on_start_and_do_not_replay_missed_ticks",
       "lib::codex_session_board::auto_archive::tests::sweep_continues_after_failure_and_preserves_state_notes_and_unreviewed_input",
       "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation",

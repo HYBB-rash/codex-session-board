@@ -400,6 +400,7 @@ mod tests {
         let path = fixture.0.join("config.json");
         for invalid in [
             serde_json::json!({"poll_seconds":0}),
+            serde_json::json!({"auto_archive_seconds":0}),
             serde_json::json!({"runtime_poll_seconds":false}),
             serde_json::json!({"rpc_timeout_seconds":-1}),
             serde_json::json!({"port":65536}),
