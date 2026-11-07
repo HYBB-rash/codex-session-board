@@ -14,6 +14,7 @@ def matching(names, *needles):
 
 def build():
     names = inventory(executables())
+    previous = json.loads((ROOT / "acceptance/bindings.json").read_text())
     group = lambda *needles: matching(names, *needles)
     archive = group("test::archive_flow::")
     state = group("::state_contract_tests::")
@@ -74,6 +75,20 @@ def build():
         "DELIVERY-001": ["acceptance.test_gate.PackageTests.test_package_is_reproducible_and_has_only_portable_source"],
         "GATE-001": python_gate + group("example::project_check::", "test::git_hooks::"),
     }
+    additions = {
+        "STATE-001": group("test::legacy_mode::"),
+        "DISCOVERY-001": group("::remote::", "::rpc::framing::"),
+        "DATA-001": group("::remote::hosts::source::"),
+        "DATA-002": group("::service::migration::"),
+        "BOUNDARY-001": group("::rpc::", "::remote::", "test::legacy_mode::"),
+    }
+    for key, values in previous["requirements"].items():
+        for name in values:
+            if name.startswith(("lib::", "bin::", "test::", "example::")) and name not in names:
+                raise ValueError("Previously bound native test disappeared: " + name)
+        mappings[key].extend(values)
+    for key, values in additions.items():
+        mappings[key].extend(values)
     mappings = {key: sorted(set(values)) for key, values in mappings.items()}
     bound = {name for values in mappings.values() for name in values}
     missing = set(names) - bound
@@ -86,10 +101,13 @@ def build():
             "Cargo.toml", "Cargo.lock", "clippy.toml", "project-rules.json", "src", "tests",
             "index.html", "config.example.json", "plugin.json", "mcp.json", ".mcp.json",
             ".codex-plugin", ".agents/plugins", ".githooks", "assets", "skills", "acceptance",
-            "scripts", "AGENTS.md", "README.md", "Docs/*.md",
+            "scripts", "examples", "AGENTS.md", "README.md", "Docs/*.md",
         ],
         "requirements": mappings,
     }
+    bindings["fingerprint_paths"] = list(dict.fromkeys(
+        previous["fingerprint_paths"] + bindings["fingerprint_paths"]
+    ))
     path = ROOT / "acceptance/bindings.json"
     path.write_text(json.dumps(bindings, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps({"native_tests": len(names), "bound_tests": len(bound), "requirements": len(mappings)}))
