@@ -37,7 +37,7 @@ impl Store {
         }
         cache(&transaction, identifier, native)?;
         transaction.execute(
-            "UPDATE sessions SET version=version+1 WHERE id=?",
+            "UPDATE sessions SET version=version+1,runtime_key=COALESCE(runtime_pending_key,runtime_key),runtime_pending_key=NULL WHERE id=?",
             [identifier],
         )?;
         queue_title(&transaction, identifier, self.sync_titles, true)?;

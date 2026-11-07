@@ -6,6 +6,8 @@ use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
 mod native;
+mod runtime_native;
+pub use runtime_native::RuntimeChange;
 
 pub struct Store {
     database: Mutex<Connection>,
@@ -195,6 +197,7 @@ impl Store {
             ("archived", "INTEGER NOT NULL DEFAULT 0"),
             ("native_state", "TEXT"),
             ("native_revision", "TEXT"),
+            ("runtime_pending_key", "TEXT"),
         ] {
             if !columns.iter().any(|column| column == name) {
                 database.execute(
@@ -357,6 +360,7 @@ impl Store {
         let turn = turn_of(&row);
         if let Some(native) = native {
             native::cache(&transaction, identifier, native)?;
+            transaction.execute("UPDATE sessions SET runtime_key=COALESCE(runtime_pending_key,runtime_key),runtime_pending_key=NULL WHERE id=?", [identifier])?;
         }
         transaction.execute(
             "UPDATE sessions SET selected_state=?,note=?,selection_turn=?,selection_users=?,
