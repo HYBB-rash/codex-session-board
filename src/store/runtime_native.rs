@@ -36,11 +36,17 @@ fn event(
     }]
     .as_f64();
     let old_baseline = row["runtime_key"].is_null() && time.is_none_or(|time| time < since);
+    let older_than_choice = terminal(status, turn)
+        && time
+            .zip(row["native_choice_at"].as_f64())
+            .is_some_and(|(end, chosen)| end <= chosen);
     Some((
         state,
         reason,
         key,
-        old_baseline || preserve_runtime(row, status, turn, Some(since), state),
+        old_baseline
+            || older_than_choice
+            || preserve_runtime(row, status, turn, Some(since), state),
     ))
 }
 
@@ -109,7 +115,7 @@ impl Store {
         ensure!(native.state == change.state, "自动阶段原生结果不匹配");
         native::cache(&transaction, identifier, native)?;
         transaction.execute(
-            "UPDATE sessions SET runtime_key=?,runtime_pending_key=NULL,automatic_state=?,automatic_reason=?,selected_state=NULL,version=version+1 WHERE id=?",
+            "UPDATE sessions SET runtime_key=?,runtime_pending_key=NULL,native_choice_at=NULL,automatic_state=?,automatic_reason=?,selected_state=NULL,version=version+1 WHERE id=?",
             params![change.key,change.state,change.reason,identifier])?;
         transaction.execute(
             "INSERT INTO changes(thread_id,changed_at,state,note) VALUES (?,?,?,?)",

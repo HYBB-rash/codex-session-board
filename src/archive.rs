@@ -24,10 +24,6 @@ pub fn request(app: &App, body: &Value) -> Result<Value> {
         .then(|| app.title_lock.try_lock())
         .transpose()
         .map_err(|_| anyhow::anyhow!("标题同步进行中，请稍后重试归档"))?;
-    let _sections = (!app.config.native_sections)
-        .then(|| app.section_lock.try_lock())
-        .transpose()
-        .map_err(|_| anyhow::anyhow!("分区同步进行中，请稍后重试归档"))?;
     let result = app.store.archive(identifier, version, input, |expected| {
         let timeout = Duration::from_secs(app.config.rpc_timeout_seconds.min(3));
         let mut writer =

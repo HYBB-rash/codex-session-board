@@ -35,12 +35,19 @@ impl Store {
         {
             return Ok(());
         }
+        let pending: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM title_updates WHERE thread_id=?)",
+            [identifier],
+            |row| row.get(0),
+        )?;
         cache(&transaction, identifier, native)?;
         transaction.execute(
-            "UPDATE sessions SET version=version+1,runtime_key=COALESCE(runtime_pending_key,runtime_key),runtime_pending_key=NULL WHERE id=?",
-            [identifier],
+            "UPDATE sessions SET native_choice_at=?,version=version+1,runtime_key=COALESCE(runtime_pending_key,runtime_key),runtime_pending_key=NULL WHERE id=?",
+            params![now(),identifier],
         )?;
-        queue_title(&transaction, identifier, self.sync_titles, true)?;
+        if row["native_revision"].is_string() || pending {
+            queue_title(&transaction, identifier, self.sync_titles, true)?;
+        }
         transaction.commit()?;
         Ok(())
     }

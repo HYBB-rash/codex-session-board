@@ -24,19 +24,20 @@ pub struct App {
     pub health: Mutex<Value>,
     pub(crate) projects: Mutex<crate::projects::Catalog>,
     pub(crate) title_lock: Mutex<()>,
-    pub(crate) section_lock: Mutex<()>,
     pub(crate) active_sessions: Mutex<Option<HashSet<String>>>,
-    pub(crate) section_cursor: AtomicUsize,
     thread_operations: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     native_generation: AtomicUsize,
 }
 
 impl App {
     pub fn new(config: Config) -> Result<Self> {
+        ensure!(
+            !config.sync_sections,
+            "sync_sections 已停用，请配置 native_sections"
+        );
         let mut store = Store::open(&config.data_dir, config.sync_titles)?;
         store.native_sections = config.native_sections;
         let store = Arc::new(store);
-        let sections_enabled = config.sync_sections;
         let native_sections = config.native_sections;
         Ok(Self {
             config,
@@ -44,16 +45,14 @@ impl App {
             refresh: AtomicBool::new(false),
             projects: Mutex::new(crate::projects::Catalog::default()),
             title_lock: Mutex::new(()),
-            section_lock: Mutex::new(()),
             active_sessions: Mutex::new(None),
-            section_cursor: AtomicUsize::new(0),
             thread_operations: Mutex::new(HashMap::new()),
             native_generation: AtomicUsize::new(0),
             health: Mutex::new(json!({
                 "lastScanAt":null,"lastSuccessAt":null,"error":null,"scanComplete":false,
                 "refreshing":false,"discovered":0,"runtimeVerified":false,
                 "runtimeError":"尚未连接桌面运行观察","runtimeLastAt":null,
-                "sectionsEnabled":sections_enabled,"sectionsError":null,"sectionsVerified":false,
+                "sectionsEnabled":false,"sectionsError":null,"sectionsVerified":false,
                 "nativeSections":native_sections,"nativeVerified":false,"nativeError":null,
             })),
         })
@@ -196,42 +195,12 @@ impl App {
                 .set_state(identifier, state.as_str(), &note, version, Some(input))?;
         }
         self.sync_title(identifier)?;
-        let sections = self.sync_sections(Some(identifier))?;
         let pending = self.store.pending_titles(Some(identifier))?;
         Ok(
             json!({"ok":true,"titleEnabled":self.store.sync_titles,"titlePending":!pending.is_empty(),
             "titleError":pending.first().map(|job| &job["error"]),
-            "sectionsEnabled":self.config.sync_sections,"sectionsPending":sections["pending"],
-            "sectionsError":sections["error"]}),
+            "sectionsEnabled":false,"sectionsPending":0,"sectionsError":null}),
         )
-    }
-
-    pub fn sync_sections(&self, only: Option<&str>) -> Result<Value> {
-        if !self.config.sync_sections {
-            return Ok(json!({"pending":0,"error":null}));
-        }
-        let Ok(_guard) = self.section_lock.try_lock() else {
-            return Ok(json!({"pending":1,"error":null}));
-        };
-        let timeout = Duration::from_secs(self.config.rpc_timeout_seconds.min(if only.is_some() {
-            3
-        } else {
-            20
-        }));
-        let result =
-            SidebarConnection::connect(&self.config, timeout).and_then(|mut writer| match only {
-                Some(identifier) => crate::sections::move_one(self, &mut writer, identifier),
-                None => Ok(json!({"pending":0,"error":null})),
-            });
-        let report = match result {
-            Ok(report) => report,
-            Err(error) => json!({"pending":1,"error":error.to_string()}),
-        };
-        if only.is_none() {
-            self.update_health(json!({"sectionsVerified":report["pending"] == 0,
-                "sectionsPending":report["pending"],"sectionsError":report["error"]}))?;
-        }
-        Ok(report)
     }
 
     pub fn sync_title(&self, identifier: &str) -> Result<()> {
@@ -276,15 +245,11 @@ impl App {
         if self.config.native_sections {
             return self.observe_native_runtime(identifier, status, turn, since);
         }
-        let before = self.store.state_revision(identifier)?;
         if self
             .store
             .observe_runtime(identifier, status, turn, Some(since))?
         {
             self.sync_title(identifier)?;
-        }
-        if self.store.state_revision(identifier)? != before {
-            self.sync_sections(Some(identifier))?;
         }
         Ok(())
     }

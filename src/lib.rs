@@ -8,7 +8,6 @@ pub mod native_sections;
 pub mod observer;
 pub mod projects;
 pub mod rpc;
-pub mod sections;
 pub mod service;
 pub mod store;
 pub mod titles;

@@ -7,6 +7,13 @@ fn placed(state: &str) -> Observation {
     }
 }
 
+fn late_input_requires_review(store: &Store, mut turn: serde_json::Value) -> Result<()> {
+    turn["userItems"] = json!(["new-user-input"]);
+    store.observe(FIRST, &turn, None)?;
+    assert_eq!(store.sessions()?[0]["followUp"], true);
+    Ok(())
+}
+
 fn fixture() -> Result<(tempfile::TempDir, Store)> {
     let directory = tempfile::tempdir()?;
     let mut store = Store::open(directory.path(), false)?;
@@ -23,8 +30,33 @@ fn fixture() -> Result<(tempfile::TempDir, Store)> {
     Ok((directory, store))
 }
 
+fn short_automatic_turn() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let mut store = Store::open(directory.path(), false)?;
+    store.native_sections = true;
+    store.discover(&[json!({"id":FIRST})])?;
+    store.cache_native(FIRST, &placed("review"))?;
+    store
+        .connection()?
+        .execute("UPDATE sessions SET native_choice_at=100.5", [])?;
+    let active = json!({"type":"active","activeFlags":[]});
+    let turn = json!({"id":"short","status":"inProgress","startedAt":99});
+    let change = store
+        .prepare_native_runtime(FIRST, &active, &turn, 98.0)?
+        .unwrap();
+    store.commit_native_runtime(FIRST, &change, &placed("in_progress"))?;
+    let done = json!({"id":"short","status":"completed","startedAt":99,"completedAt":100});
+    let change = store
+        .prepare_native_runtime(FIRST, &json!({"type":"idle"}), &done, 98.0)?
+        .unwrap();
+    store.commit_native_runtime(FIRST, &change, &placed("review"))?;
+    assert_eq!(store.sessions()?[0]["state"], "review");
+    Ok(())
+}
+
 #[test]
 fn new_stages_apply_once_and_external_moves_survive_repeated_observations() -> Result<()> {
+    short_automatic_turn()?;
     let (_directory, store) = fixture()?;
     let since = codex_session_board::model::now();
     let active = json!({"type":"active","activeFlags":[]});
@@ -57,6 +89,7 @@ fn new_stages_apply_once_and_external_moves_survive_repeated_observations() -> R
             .is_none()
     );
     assert_eq!(store.note(FIRST)?, "备注不变");
+    late_input_requires_review(&store, done)?;
     Ok(())
 }
 
@@ -106,7 +139,7 @@ fn failed_stage_is_consumed_when_the_native_position_changes() -> Result<()> {
 #[test]
 fn baseline_history_never_overwrites_an_existing_native_selection() -> Result<()> {
     let directory = tempfile::tempdir()?;
-    let mut store = Store::open(directory.path(), false)?;
+    let mut store = Store::open(directory.path(), true)?;
     store.native_sections = true;
     store.discover(&[json!({"id":FIRST})])?;
     store.cache_native(
@@ -117,11 +150,28 @@ fn baseline_history_never_overwrites_an_existing_native_selection() -> Result<()
         },
     )?;
     let done = json!({"id":"old-turn","status":"completed","startedAt":1,"completedAt":2});
+    assert!(store.pending_titles(None)?.is_empty());
     assert!(
         store
             .prepare_native_runtime(FIRST, &json!({"type":"idle"}), &done, 3.0)?
             .is_none()
     );
     assert_eq!(store.sessions()?[0]["state"], "to_archive");
+    store.connection()?.execute(
+        "UPDATE sessions SET runtime_key='older-active-phase' WHERE id=?",
+        [FIRST],
+    )?;
+    assert!(
+        store
+            .prepare_native_runtime(FIRST, &json!({"type":"idle"}), &done, 3.0)?
+            .is_none()
+    );
+    assert_eq!(store.sessions()?[0]["state"], "to_archive");
+    store.observe(
+        FIRST,
+        &json!({"id":"new-input","status":"completed","userItems":["late-input"]}),
+        None,
+    )?;
+    assert_eq!(store.sessions()?[0]["followUp"], true);
     Ok(())
 }

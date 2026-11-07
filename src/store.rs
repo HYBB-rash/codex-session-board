@@ -198,6 +198,7 @@ impl Store {
             ("native_state", "TEXT"),
             ("native_revision", "TEXT"),
             ("runtime_pending_key", "TEXT"),
+            ("native_choice_at", "REAL"),
         ] {
             if !columns.iter().any(|column| column == name) {
                 database.execute(
@@ -323,7 +324,9 @@ impl Store {
             let new_input = users(turn)
                 .iter()
                 .any(|user| turn["id"] != previous["id"] || !users(&previous).contains(user));
-            let follow_up = row["needs_review"] == 1 || has_follow_up(&row, turn);
+            let follow_up = row["needs_review"] == 1
+                || has_follow_up(&row, turn, self.native_sections)
+                || self.native_sections && row["native_state"] == "to_archive" && new_input;
             transaction.execute(
                 "UPDATE sessions SET turn_json=?,observed_at=?,attempted_at=?,observed_revision=updated_at,
                  needs_review=?,input_revision=input_revision+?,observation_error=NULL WHERE id=?",
@@ -360,7 +363,7 @@ impl Store {
         let turn = turn_of(&row);
         if let Some(native) = native {
             native::cache(&transaction, identifier, native)?;
-            transaction.execute("UPDATE sessions SET runtime_key=COALESCE(runtime_pending_key,runtime_key),runtime_pending_key=NULL WHERE id=?", [identifier])?;
+            transaction.execute("UPDATE sessions SET native_choice_at=?,runtime_key=COALESCE(runtime_pending_key,runtime_key),runtime_pending_key=NULL WHERE id=?", params![now(),identifier])?;
         }
         transaction.execute(
             "UPDATE sessions SET selected_state=?,note=?,selection_turn=?,selection_users=?,
@@ -594,8 +597,8 @@ fn session_value(row: &Value, job: Option<&Value>, native: bool) -> Value {
     })
 }
 
-fn has_follow_up(row: &Value, turn: &Value) -> bool {
-    if row["selected_state"].is_null() || row["selected_at"].is_null() {
+fn has_follow_up(row: &Value, turn: &Value, native: bool) -> bool {
+    if (!native && row["selected_state"].is_null()) || row["selected_at"].is_null() {
         return false;
     }
     if turn["id"] == row["selection_turn"] {
