@@ -32,11 +32,42 @@ impl App {
             &self.config,
             Duration::from_secs(self.config.rpc_timeout_seconds.min(3)),
         )?;
-        native_sections::move_checked(&mut writer, &self.config, identifier, expected, state)
+        let result =
+            native_sections::move_checked(&mut writer, &self.config, identifier, expected, state);
+        if let Err(error) = &result
+            && error
+                .downcast_ref::<native_sections::UnconfirmedMove>()
+                .is_some()
+        {
+            return self
+                .confirm_native_move(identifier, state)
+                .context("原生移动结果未确认，请刷新核对");
+        }
+        result
+    }
+
+    fn confirm_native_move(
+        &self,
+        identifier: &str,
+        state: Option<&str>,
+    ) -> Result<native_sections::Observation> {
+        let state = state.context("缺少目标原生分区")?;
+        let target = self
+            .config
+            .status_sections
+            .get(board_state(state))
+            .context("目标原生分区未配置")?;
+        let mut reader = SidebarConnection::reader(
+            &self.config,
+            Duration::from_secs(self.config.rpc_timeout_seconds.min(3)),
+        )?;
+        let observed = native_sections::read(&mut reader, &self.config, identifier)?;
+        ensure!(observed.version == *target, "原生位置与目标不一致");
+        Ok(observed)
     }
 
     pub fn refresh_native(&self) -> Result<()> {
-        let mut reader = SidebarConnection::connect(
+        let mut reader = SidebarConnection::reader(
             &self.config,
             Duration::from_secs(self.config.rpc_timeout_seconds),
         )?;
@@ -114,7 +145,7 @@ impl App {
     }
 
     pub(crate) fn check_native_title(&self, identifier: &str) -> Result<()> {
-        let mut reader = SidebarConnection::connect(
+        let mut reader = SidebarConnection::reader(
             &self.config,
             Duration::from_secs(self.config.rpc_timeout_seconds.min(3)),
         )?;

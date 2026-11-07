@@ -1,0 +1,287 @@
+use super::*;
+use serde_json::Value;
+use std::collections::BTreeMap;
+use std::io::{Read, Write};
+use std::os::unix::{
+    fs::PermissionsExt,
+    net::{UnixListener, UnixStream},
+};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
+use std::time::Duration;
+
+pub(super) fn section_id(state: &str) -> String {
+    let suffix = match state {
+        "unknown" => 1,
+        "in_progress" => 2,
+        "review" => 3,
+        "blocked" => 4,
+        _ => 5,
+    };
+    format!("00000000-0000-4000-8000-{suffix:012}")
+}
+
+#[derive(Default)]
+pub(super) struct Surface {
+    pub slots: BTreeMap<String, String>,
+    pub calls: Vec<String>,
+    pub notes_during_move: Vec<String>,
+    pub lose_receipt: bool,
+    pub reject_move: bool,
+}
+
+impl Surface {
+    fn layout(&self) -> Value {
+        let sections: Vec<_> = codex_session_board::model::board_states()
+            .map(|(state, label)| {
+                let members: Vec<_> = self
+                    .slots
+                    .iter()
+                    .filter(|(_, slot)| *slot == state)
+                    .map(|(identifier, _)| format!("codex:thread:local:{identifier}"))
+                    .collect();
+                json!({"sectionId":section_id(state),"name":label,"itemKeys":members})
+            })
+            .collect();
+        json!({"unavailableHosts":[],"sections":sections})
+    }
+
+    fn call(
+        &mut self,
+        method: &str,
+        args: &Value,
+        database: &std::path::Path,
+    ) -> Result<Option<Value>> {
+        self.calls.push(method.into());
+        match method {
+            "list_threads" => Ok(Some(self.layout())),
+            "move_thread_to_sidebar_section" => {
+                if self.reject_move {
+                    return Ok(None);
+                }
+                let identifier = args["threadId"].as_str().unwrap_or("");
+                let state = codex_session_board::model::board_states()
+                    .find(|(state, _)| args["sectionId"] == section_id(state))
+                    .ok_or_else(|| anyhow::anyhow!("unknown section"))?
+                    .0;
+                let connection = rusqlite::Connection::open(database)?;
+                self.notes_during_move.push(connection.query_row(
+                    "SELECT note FROM sessions WHERE id=?",
+                    [identifier],
+                    |row| row.get(0),
+                )?);
+                self.slots.insert(identifier.into(), state.into());
+                if std::mem::take(&mut self.lose_receipt) {
+                    return Ok(None);
+                }
+                Ok(Some(json!({})))
+            }
+            _ => anyhow::bail!("unexpected native method: {method}"),
+        }
+    }
+}
+
+pub(super) struct Server {
+    pub surface: Arc<Mutex<Surface>>,
+    stop: Arc<AtomicBool>,
+    worker: Option<std::thread::JoinHandle<()>>,
+    pub config: Config,
+}
+
+impl Server {
+    pub fn new(directory: &std::path::Path) -> Result<Self> {
+        let socket = directory.join("sidebar.sock");
+        let listener = UnixListener::bind(&socket)?;
+        std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
+        listener.set_nonblocking(true)?;
+        let aliases = directory.join("aliases.json");
+        std::fs::write(
+            &aliases,
+            json!({"electron-persisted-atom-state":{}}).to_string(),
+        )?;
+        let config = Config {
+            data_dir: directory.join("data"),
+            native_sections: true,
+            sync_titles: false,
+            sidebar_socket: socket,
+            sidebar_caller: FIRST.into(),
+            sidebar_state_file: aliases,
+            status_sections: codex_session_board::model::board_states()
+                .map(|(state, _)| (state.into(), section_id(state)))
+                .collect(),
+            rpc_timeout_seconds: 2,
+            desktop_socket: directory.join("unused-desktop.sock"),
+            codex_command: vec!["/bin/false".into()],
+            open_command: vec!["/bin/true".into()],
+            ..Config::default()
+        };
+        config.validate()?;
+        let surface = Arc::new(Mutex::new(Surface::default()));
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker = serve(
+            listener,
+            Arc::clone(&surface),
+            Arc::clone(&stop),
+            config.data_dir.join("status.sqlite3"),
+        );
+        Ok(Self {
+            surface,
+            stop,
+            worker: Some(worker),
+            config,
+        })
+    }
+
+    pub fn app(&self) -> Result<App> {
+        let app = App::new(self.config.clone())?;
+        app.discover(&[json!({"id":FIRST})], true)?;
+        self.surface
+            .lock()
+            .unwrap()
+            .slots
+            .insert(FIRST.into(), "review".into());
+        app.refresh_native()?;
+        Ok(app)
+    }
+}
+
+fn serve(
+    listener: UnixListener,
+    surface: Arc<Mutex<Surface>>,
+    stop: Arc<AtomicBool>,
+    database: std::path::PathBuf,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let mut clients = Vec::new();
+        while !stop.load(Ordering::Relaxed) {
+            if let Ok((stream, _)) = listener.accept() {
+                let surface = Arc::clone(&surface);
+                let database = database.clone();
+                clients.push(std::thread::spawn(move || {
+                    connection(stream, surface, &database)
+                }));
+            } else {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        }
+        for client in clients {
+            client.join().unwrap().unwrap();
+        }
+    })
+}
+
+fn connection(
+    mut stream: UnixStream,
+    surface: Arc<Mutex<Surface>>,
+    database: &std::path::Path,
+) -> Result<()> {
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    loop {
+        let mut size = [0u8; 4];
+        if stream.read_exact(&mut size).is_err() {
+            return Ok(());
+        }
+        let mut bytes = vec![0; u32::from_le_bytes(size) as usize];
+        stream.read_exact(&mut bytes)?;
+        let request: Value = serde_json::from_slice(&bytes)?;
+        let params = &request["params"];
+        let result = surface.lock().unwrap().call(
+            params["tool"].as_str().unwrap_or(""),
+            &params["arguments"],
+            database,
+        )?;
+        let Some(result) = result else { return Ok(()) };
+        let reply = json!({"id":request["id"],"result":{"success":true,"contentItems":[{"type":"inputText","text":result.to_string()}]}});
+        let bytes = serde_json::to_vec(&reply)?;
+        stream.write_all(&(bytes.len() as u32).to_le_bytes())?;
+        stream.write_all(&bytes)?;
+    }
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(worker) = self.worker.take() {
+            worker.join().unwrap();
+        }
+    }
+}
+
+pub(super) fn body(app: &App, state: &str, note: &str) -> Result<Value> {
+    let snapshot = app.snapshot()?;
+    let session = &snapshot["sessions"][0];
+    Ok(
+        json!({"id":FIRST,"state":state,"note":note,"version":session["version"],"inputVersion":session["inputVersion"],"sectionVersion":session["sectionVersion"]}),
+    )
+}
+
+#[test]
+fn native_save_writes_remote_before_committing_notes_and_confirmation() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let server = Server::new(directory.path())?;
+    let app = server.app()?;
+    let request = body(&app, "to_archive", "新备注")?;
+    app.request("/api/state", Some(&request))?;
+    let surface = server.surface.lock().unwrap();
+    assert_eq!(surface.slots[FIRST], "to_archive");
+    assert_eq!(surface.notes_during_move, [""]);
+    assert_eq!(app.store.note(FIRST)?, "新备注");
+    assert_eq!(
+        app.snapshot()?["sessions"][0]["sectionVersion"],
+        section_id("to_archive")
+    );
+    Ok(())
+}
+
+#[test]
+fn external_move_rejects_an_unobserved_stale_save_and_fresh_save_succeeds() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let server = Server::new(directory.path())?;
+    let app = server.app()?;
+    let stale = body(&app, "review", "旧操作")?;
+    server
+        .surface
+        .lock()
+        .unwrap()
+        .slots
+        .insert(FIRST.into(), "to_archive".into());
+    assert!(app.request("/api/state", Some(&stale)).is_err());
+    assert_eq!(app.store.note(FIRST)?, "");
+    assert!(
+        !server
+            .surface
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .any(|method| method == "move_thread_to_sidebar_section")
+    );
+    app.refresh_native()?;
+    app.request("/api/state", Some(&body(&app, "review", "新操作")?))?;
+    assert_eq!(server.surface.lock().unwrap().slots[FIRST], "review");
+    assert_eq!(app.store.note(FIRST)?, "新操作");
+    Ok(())
+}
+
+#[test]
+fn lost_move_receipt_is_read_back_without_replaying_the_move() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let server = Server::new(directory.path())?;
+    let app = server.app()?;
+    server.surface.lock().unwrap().lose_receipt = true;
+    app.request("/api/state", Some(&body(&app, "to_archive", "回执已核对")?))?;
+    let surface = server.surface.lock().unwrap();
+    assert_eq!(
+        surface
+            .calls
+            .iter()
+            .filter(|method| method.as_str() == "move_thread_to_sidebar_section")
+            .count(),
+        1
+    );
+    assert_eq!(surface.slots[FIRST], "to_archive");
+    assert_eq!(app.store.note(FIRST)?, "回执已核对");
+    Ok(())
+}

@@ -9,6 +9,17 @@ pub struct Observation {
     pub version: String,
 }
 
+#[derive(Debug)]
+pub struct UnconfirmedMove;
+
+impl std::fmt::Display for UnconfirmedMove {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("原生移动回执未确认")
+    }
+}
+
+impl std::error::Error for UnconfirmedMove {}
+
 pub fn observe(config: &Config, section: &Value) -> Result<Observation> {
     ensure!(
         section.is_null() || section["sectionId"].is_string(),
@@ -139,8 +150,8 @@ pub fn move_checked(
     reader.call(
         "move_thread_to_sidebar_section",
         json!({"threadId":identifier,"sectionId":section,"source":"codex","hostId":config.host_id}),
-    )?;
-    let after = read(reader, config, identifier)?;
+    ).context(UnconfirmedMove)?;
+    let after = read(reader, config, identifier).context(UnconfirmedMove)?;
     ensure!(after.version == *section, "原生分区写入未确认，请刷新核对");
     Ok(after)
 }

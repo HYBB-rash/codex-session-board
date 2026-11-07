@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use anyhow::Result;
 use codex_session_board::{app::App, config::Config, rpc::Rpc};
 use codex_session_board::{native_sections::Observation, store::Store};
@@ -6,6 +8,8 @@ use serde_json::json;
 const FIRST: &str = "11111111-1111-4111-8111-111111111111";
 #[path = "native_authority/runtime.rs"]
 mod runtime;
+#[path = "native_authority/transport.rs"]
+mod transport;
 
 struct NativeSurface {
     section: &'static str,

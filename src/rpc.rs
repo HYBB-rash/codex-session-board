@@ -411,6 +411,7 @@ pub struct SidebarConnection {
     caller: String,
     host: String,
     request_id: u64,
+    read_only: bool,
 }
 
 fn sidebar_path(configured: &Path) -> Result<PathBuf> {
@@ -437,6 +438,12 @@ fn sidebar_path(configured: &Path) -> Result<PathBuf> {
 }
 
 impl SidebarConnection {
+    pub fn reader(config: &crate::config::Config, timeout: Duration) -> Result<Self> {
+        let mut connection = Self::connect(config, timeout)?;
+        connection.read_only = true;
+        Ok(connection)
+    }
+
     pub fn connect(config: &crate::config::Config, timeout: Duration) -> Result<Self> {
         use std::os::unix::fs::FileTypeExt;
         let path = sidebar_path(&config.sidebar_socket)?;
@@ -460,6 +467,7 @@ impl SidebarConnection {
             caller: config.sidebar_caller.clone(),
             host: config.host_id.clone(),
             request_id: 0,
+            read_only: false,
         })
     }
 
@@ -476,6 +484,7 @@ impl SidebarConnection {
 
 impl Rpc for SidebarConnection {
     fn call(&mut self, method: &str, params: Value) -> Result<Value> {
+        ensure!(!self.read_only || method == "list_threads", "只读分区连接不允许调用 {method}");
         ensure!(
             matches!(method, "list_threads" | "move_thread_to_sidebar_section"),
             "分区连接不允许调用 {method}"
@@ -622,6 +631,7 @@ mod tests {
                 caller: "caller".into(),
                 host: "local".into(),
                 request_id: 0,
+                read_only: false,
             },
             server,
         ))
@@ -660,7 +670,9 @@ mod tests {
     #[test]
     fn sidebar_denies_other_tools_before_io_and_bounds_missing_responses() -> Result<()> {
         let (mut client, mut server) = sidebar_pair()?;
+        client.read_only = true;
         for method in [
+            "move_thread_to_sidebar_section",
             "create_sidebar_section",
             "delete_sidebar_section",
             "send_message_to_thread",
