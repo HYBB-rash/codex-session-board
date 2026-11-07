@@ -313,6 +313,7 @@
       "test::board_io::manual_save_preserves_note_when_field_is_omitted"
     ],
     "MANUAL-001": [
+      "test::native_authority::remote_isolation::remote_online_disconnected_and_scanning_do_not_delay_local_http_mutations",
       "test::native_authority::missing_direct_snapshot_entries_never_become_unsectioned",
       "test::native_authority::transport::direct_transport_reads_shared_backend_positions_without_sidebar_projection",
       "test::native_direct::direct_read_maps_only_the_local_backend_and_never_queries_the_aggregate",

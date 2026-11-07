@@ -12,6 +12,8 @@ mod archive;
 mod entrypoints;
 #[path = "native_authority/faults.rs"]
 mod faults;
+#[path = "native_authority/remote_isolation.rs"]
+mod remote_isolation;
 #[path = "native_authority/runtime.rs"]
 mod runtime;
 #[path = "native_authority/transport.rs"]
