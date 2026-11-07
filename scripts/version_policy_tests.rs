@@ -168,11 +168,12 @@ fn moving_the_boundary_to_a_real_ancestor_or_hiding_invalid_history_fails() -> R
     activate(root, &mut rules)?;
     prepare(root, &mut rules, None)?;
     commit(root)?;
+    let original_boundary = rules.versioning.rollover_after.clone();
     rules.versioning.rollover_after = Some(ancestor.trim().into());
     save(root, &rules)?;
     rewrite_version(root, "0.1.4")?;
     commit(root)?;
-    rules.versioning.rollover_after = Some(git(root, &["rev-parse", "HEAD~1"])?.trim().into());
+    rules.versioning.rollover_after = original_boundary;
     save(root, &rules)?;
     rewrite_version(root, "0.1.5")?;
     commit(root)?;
