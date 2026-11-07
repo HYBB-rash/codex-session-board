@@ -484,9 +484,13 @@ impl SidebarConnection {
 
 impl Rpc for SidebarConnection {
     fn call(&mut self, method: &str, params: Value) -> Result<Value> {
-        ensure!(!self.read_only || method == "list_threads", "只读分区连接不允许调用 {method}");
+        let reading = matches!(method, "list_threads" | "list_projects");
         ensure!(
-            matches!(method, "list_threads" | "move_thread_to_sidebar_section"),
+            !self.read_only || reading,
+            "只读分区连接不允许调用 {method}"
+        );
+        ensure!(
+            reading || method == "move_thread_to_sidebar_section",
             "分区连接不允许调用 {method}"
         );
         self.request_id = self.request_id.checked_add(1).context("分区请求编号耗尽")?;

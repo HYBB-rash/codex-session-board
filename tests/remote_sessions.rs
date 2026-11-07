@@ -6,6 +6,9 @@ use serde_json::json;
 
 const THREAD: &str = "11111111-1111-4111-8111-111111111111";
 
+#[path = "remote_sessions/discovery.rs"]
+mod discovery;
+
 fn discover(store: &Store, host: &str, updated: i64) -> Result<()> {
     store.discover_remote(
         host,

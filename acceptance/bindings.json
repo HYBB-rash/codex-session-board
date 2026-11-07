@@ -779,6 +779,8 @@
       "test::board_io::manual_save_preserves_note_when_field_is_omitted"
     ],
     "DISCOVERY-002": [
+      "test::remote_sessions::discovery::remote_discovery_paginates_and_isolates_failed_hosts_without_erasing_cached_data",
+      "test::remote_sessions::discovery::remote_partial_pages_and_failed_catalogs_preserve_previous_results",
       "test::board_contract::store_tests::discovery_updates_metadata_but_never_removes_missing_records",
       "test::board_contract::store_tests::failed_history_read_preserves_evidence_and_later_success_clears_error",
       "test::board_contract::store_tests::history_input_without_execution_never_claims_a_runtime_start",

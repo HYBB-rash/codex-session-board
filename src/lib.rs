@@ -7,6 +7,7 @@ pub mod model;
 pub mod native_sections;
 pub mod observer;
 pub mod projects;
+pub mod remote;
 pub mod rpc;
 pub mod service;
 pub mod store;
