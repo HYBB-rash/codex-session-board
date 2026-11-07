@@ -15,6 +15,9 @@ impl Rpc for Reader {
             assert_eq!(params["source"], "codex");
             assert_eq!(params["hostId"], response["host"]);
             assert_eq!(params["cursor"], response["cursor"]);
+            if response["cursor"].is_null() {
+                assert!(params.get("cursor").is_none());
+            }
             assert_eq!(params["archived"], false);
         }
         if response["error"] == true {
@@ -42,13 +45,19 @@ fn remote_discovery_paginates_and_isolates_failed_hosts_without_erasing_cached_d
         json!({"method":"list_threads","host":"b","cursor":null,"result":{"threads":[
             {"id":THREAD,"hostId":"b","title":"远程 B","projectId":"project","updatedAt":2}
         ],"nextCursor":"next"}}),
-        json!({"method":"list_threads","host":"b","cursor":"next","result":{"threads":[],"nextCursor":null}}),
+        json!({"method":"list_threads","host":"b","cursor":"next","result":{"threads":[
+            {"id":THREAD,"hostId":"b","title":"重复记录","updatedAt":2}
+        ],"nextCursor":null}}),
     ])));
     remote::scan(&app, &mut || {
         Ok(Box::new(Reader(replies.clone())) as Box<dyn Rpc>)
     })?;
     assert!(replies.lock().unwrap().is_empty());
     assert_eq!(app.store.remote_sessions()?.len(), 2);
+    assert_eq!(
+        app.store.remote_session(&identity("b", THREAD))?["title"],
+        "远程 B"
+    );
     let projects = app.store.remote_projects()?;
     assert_ne!(projects[0]["id"], projects[1]["id"]);
     assert_eq!(
@@ -86,5 +95,47 @@ fn remote_partial_pages_and_failed_catalogs_preserve_previous_results() -> Resul
         .is_err()
     );
     assert_eq!(app.store.remote_projects()?[0]["id"], "cached");
+    Ok(())
+}
+
+#[test]
+fn partial_project_catalog_keeps_cached_hosts_until_removal_is_confirmed() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let state = directory.path().join("state.json");
+    let app = App::new(Config {
+        data_dir: directory.path().join("data"),
+        sidebar_state_file: state.clone(),
+        ..Config::default()
+    })?;
+    app.store.cache_remote_projects(&[json!({
+        "id":identity("mac","project"),"hostId":"mac","hostLabel":"Mac"
+    })])?;
+    let replies = Arc::new(Mutex::new(VecDeque::from([
+        json!({"method":"list_projects","result":{"projects":[]}}),
+        json!({"method":"list_threads","host":"mac","cursor":null,"error":true}),
+    ])));
+    remote::scan(&app, &mut || {
+        Ok(Box::new(Reader(replies.clone())) as Box<dyn Rpc>)
+    })?;
+    assert_eq!(app.store.remote_projects()?.len(), 1);
+    assert_eq!(
+        app.snapshot()?["health"]["remoteHosts"][0]["scanComplete"],
+        false
+    );
+    assert_eq!(app.snapshot()?["health"]["remoteProjectWarning"], true);
+    std::fs::write(state, json!({"remote-projects":[]}).to_string())?;
+    let replies = Arc::new(Mutex::new(VecDeque::from([
+        json!({"method":"list_projects","result":{"projects":[]}}),
+    ])));
+    remote::scan(&app, &mut || {
+        Ok(Box::new(Reader(replies.clone())) as Box<dyn Rpc>)
+    })?;
+    assert!(app.store.remote_projects()?.is_empty());
+    assert!(
+        app.snapshot()?["health"]["remoteHosts"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
     Ok(())
 }

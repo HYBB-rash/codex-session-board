@@ -779,6 +779,7 @@
       "test::board_io::manual_save_preserves_note_when_field_is_omitted"
     ],
     "DISCOVERY-002": [
+      "test::remote_sessions::discovery::partial_project_catalog_keeps_cached_hosts_until_removal_is_confirmed",
       "test::remote_sessions::discovery::remote_discovery_paginates_and_isolates_failed_hosts_without_erasing_cached_data",
       "test::remote_sessions::discovery::remote_partial_pages_and_failed_catalogs_preserve_previous_results",
       "test::board_contract::store_tests::discovery_updates_metadata_but_never_removes_missing_records",
@@ -873,6 +874,7 @@
     ],
     "UI-003": [],
     "MCP-001": [
+      "test::board_io::remote_cards_use_the_same_http_and_mcp_annotations_without_native_writes",
       "test::archive_flow::archive_checks_native_inputs_even_when_local_revision_has_not_changed",
       "test::archive_flow::archive_confirmation_persists_and_stale_observers_cannot_restore_the_card",
       "test::archive_flow::archive_lost_ack_keeps_card_and_retry_reads_back_before_another_write",

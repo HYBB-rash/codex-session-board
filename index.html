@@ -62,7 +62,7 @@ textarea{resize:vertical;min-height:90px}.dialog-actions{display:flex;justify-co
 }
 </style>
 <main class="shell">
-  <div class="eyebrow">CODEX / LOCAL WORKSPACE</div>
+  <div class="eyebrow">CODEX / WORKSPACES</div>
   <header><h1>会话看板</h1><button id="refresh">重新发现</button></header>
   <p class="subtitle">点击卡片回到原会话，拖到另一列改变状态。拖入“已阻塞”时填写原因。</p>
   <div id="health" class="health" role="status">正在连接本地会话读取器…</div>
@@ -80,7 +80,7 @@ textarea{resize:vertical;min-height:90px}.dialog-actions{display:flex;justify-co
   <div class="board-viewport" id="board-viewport" tabindex="0" aria-label="横向滚动查看全部状态列">
     <div class="board" id="board" aria-label="会话状态看板"></div>
   </div>
-  <p class="foot">AI 开始或恢复执行时进入“进行中”，异常暂停进入“已阻塞”，正常结束进入“待审阅”。人工调整保留到下一次执行阶段变化。在“待归档”卡片上点击“归档”会直接归档原会话。</p>
+  <p class="foot">本机会话根据真实执行阶段自动流转，在“待归档”卡片上点击“归档”会直接归档原会话。远程会话的状态和备注由本看板人工维护，暂不支持自动流转、标题同步、新建和归档。</p>
 </main>
 <dialog id="editor">
   <form id="edit-form">
@@ -156,6 +156,7 @@ function makeCard(session) {
   const project = element("div",session.cwd || "未记录项目路径","meta project");
   project.title = session.cwd;
   card.append(title,project);
+  if (session.remote) card.append(element("div",session.hostLabel || session.hostId,"meta"));
   if (session.note) card.append(element("div",session.note,"card-note"));
   if (!session.manual && session.state === "blocked") card.append(element("div",session.reason,"card-note"));
   if (session.followUp) card.append(element("div","有新输入，待复核","follow"));
@@ -164,12 +165,12 @@ function makeCard(session) {
   if (session.titleSyncPending) card.append(element("div",session.titleSyncError ? "状态已保存，标题同步待重试" : "状态已保存，标题正在同步","follow"));
   const footer = element("div",undefined,"card-footer");
   const details = element("div");
-  details.append(element("div",session.manual ? "人工确认" : session.source === "runtime" ? "自动流转" : "历史状态","source"),
+  details.append(element("div",session.remote ? "远程人工管理" : session.manual ? "人工确认" : session.source === "runtime" ? "自动流转" : "历史状态","source"),
     element("time",date(session.updatedAt)));
   const button = element("button","调整状态","row-action");
   button.onclick = () => {if (!saving) openEditor(session.id);};
   footer.append(details,button);
-  if (session.state === "to_archive") {
+  if (session.state === "to_archive" && session.canArchive !== false) {
     const archive = element("button","归档","row-action");
     archive.type = "button";
     archive.title = "直接归档此 Codex 会话";
@@ -208,6 +209,7 @@ async function openSession(id) {
   finally {opening = false;}
 }
 async function archiveSession(session, button) {
+  if (session.canArchive === false) {announce("远程会话暂不支持归档。",true);return;}
   if (saving || dragging || byId("editor").open) return;
   saving = true; button.disabled = true; ++requestSerial;
   announce("正在归档会话…");
@@ -254,23 +256,30 @@ function makeColumn(state, label, sessions) {
 }
 function updateProjectOptions() {
   const catalog = data.projectCatalog || {loaded:false,items:[]};
-  const key = JSON.stringify([catalog.loaded,catalog.items]);
+  const key = JSON.stringify([catalog.loaded,catalog.items,catalog.remoteHosts]);
   if (key === projectOptionsKey) return;
   projectOptionsKey = key;
   const menu = byId("project-filter");
+  const previousHost = menu.selectedOptions[0]?.dataset.hostId;
   const labels = new Map();
   for (const item of catalog.items) labels.set(item.label,(labels.get(item.label) || 0) + 1);
-  menu.replaceChildren(new Option("全部项目","all"),new Option("默认工作区","default"));
+  menu.replaceChildren(new Option("全部项目","all"),new Option("默认工作区 · 本机","default"));
+  for (const host of catalog.remoteHosts || []) {
+    menu.append(new Option("默认工作区 · " + host.hostLabel,"host:" + host.hostId));
+  }
   for (const item of catalog.items) {
     const paths = item.paths.join(" · ");
     const option = new Option(item.label + (labels.get(item.label) > 1 ? " · " + paths : ""),"project:" + item.id);
+    if (item.remote) option.dataset.hostId = item.hostId;
     option.title = paths;
     menu.append(option);
   }
   if (selectedProject.startsWith("project:") &&
       !catalog.items.some(item => "project:" + item.id === selectedProject)) {
-    selectedProject = catalog.loaded ? "default" : "all";
-    announce("项目已移除，已切换到默认工作区。");
+    selectedProject = previousHost
+      ? (catalog.remoteHosts || []).some(host => host.hostId === previousHost) ? "host:" + previousHost : "all"
+      : catalog.loaded ? "default" : "all";
+    announce(previousHost ? "远程项目已移除，保留在该主机范围内查看。" : "项目已移除，已切换到默认工作区。");
   }
   menu.value = selectedProject;
   menu.disabled = !catalog.loaded;
@@ -279,10 +288,12 @@ function visibleSessions() {
   if (filterMode === "search") {
     const query = byId("search").value.trim().toLowerCase();
     return data.sessions.filter(session =>
-      (session.title + " " + session.cwd).toLowerCase().includes(query));
+      (session.title + " " + session.cwd + " " + (session.hostLabel || "")).toLowerCase().includes(query));
   }
   if (selectedProject === "all") return data.sessions;
-  if (selectedProject === "default") return data.sessions.filter(session => session.projectId === null && !session.projectIssue);
+  if (selectedProject === "default") return data.sessions.filter(session => !session.remote && session.projectId === null && !session.projectIssue);
+  if (selectedProject.startsWith("host:")) return data.sessions.filter(session =>
+    session.remote && session.hostId === selectedProject.slice(5) && session.projectId === null);
   return data.sessions.filter(session => "project:" + session.projectId === selectedProject);
 }
 function resetFilterScroll() {
@@ -302,6 +313,8 @@ function toggleFilter() {
 function render() {
   if (dragging || saving || byId("editor").open) return;
   updateProjectOptions();
+  byId("new-session").disabled = remoteNewTarget();
+  byId("new-session").title = remoteNewTarget() ? "远程项目暂不支持新建会话" : "打开新建会话页";
   const scrollPositions = new Map(
     Array.from(document.querySelectorAll(".column")).map(column =>
       [column.dataset.state,column.querySelector(".cards").scrollTop]));
@@ -341,6 +354,15 @@ function render() {
     byId("health").className = "health error";
     byId("health").textContent += " · 有会话项目归属待确认，可在全部项目中查看";
   }
+  const remoteCount = data.sessions.filter(session => session.remote).length;
+  if (remoteCount || health.remoteVerified) byId("health").textContent += ` · ${remoteCount} 条远程会话，状态人工维护`;
+  const failedHosts = (health.remoteHosts || []).filter(host => !host.scanComplete);
+  if (health.remoteProjectWarning) byId("health").textContent += " · 部分远程项目资料未确认，保留上次分类";
+  if (health.remoteError || failedHosts.length) {
+    byId("health").className = "health error";
+    byId("health").textContent += " · 远程读取未完成，保留缓存：" +
+      (health.remoteError || failedHosts.map(host => host.hostLabel + "：" + host.error).join("；"));
+  }
 }
 function noteDraft(id, value) {
   try {
@@ -353,7 +375,7 @@ function noteDraft(id, value) {
 function openEditor(id, state, snapshot) {
   editing = snapshot || data.sessions.find(session => session.id === id);
   if (!editing) return;
-  byId("dialog-title").textContent = editing.title;
+  byId("dialog-title").textContent = editing.title + (editing.remote ? " · " + editing.hostLabel : "");
   byId("state").replaceChildren();
   for (const [value,label] of Object.entries(data.states)) byId("state").append(new Option(label,value));
   byId("state").value = state || editing.state;
@@ -415,9 +437,13 @@ byId("edit-form").onsubmit = async event => {
   }
 };
 byId("cancel").onclick = () => byId("editor").close();
+function remoteNewTarget() {
+  return filterMode === "project" && (selectedProject.startsWith("host:") ||
+    (data.projectCatalog.items || []).some(item => item.remote && selectedProject === "project:" + item.id));
+}
 byId("new-session").onclick = async () => {
   const button = byId("new-session");
-  if (button.disabled) return;
+  if (button.disabled || remoteNewTarget()) return;
   button.disabled = true;
   try {
     const projectId = filterMode === "project" && selectedProject.startsWith("project:")
@@ -425,7 +451,7 @@ byId("new-session").onclick = async () => {
     await post("/api/new",projectId === null ? {} : {projectId});
     announce("已发送新建会话页面打开请求。");
   } catch(error) {announce(error.message,true);}
-  finally {button.disabled = false;}
+  finally {button.disabled = remoteNewTarget();}
 };
 byId("editor").addEventListener("cancel",event => {if (saving) event.preventDefault();});
 byId("editor").addEventListener("close",() => {editing=null;render();load();});

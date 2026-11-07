@@ -622,6 +622,59 @@ fn mcp_bridge_uses_http_versions_and_reports_pending_title_without_rollback() {
 }
 
 #[test]
+fn remote_cards_use_the_same_http_and_mcp_annotations_without_native_writes() {
+    let mut fixture = Fixture::new(true);
+    let captured = fixture.capture_opens();
+    fixture.populate();
+    let store = fixture.app().store;
+    store
+        .discover_remote(
+            "mac & host",
+            "Mac",
+            &[json!({
+                "id":FIRST,"hostId":"mac & host","title":"远程","updatedAt":3
+            })],
+        )
+        .unwrap();
+    let identifier = codex_session_board::store::remote::identity("mac & host", FIRST);
+    let body =
+        json!({"id":identifier,"state":"blocked","note":"远程备注","version":0,"inputVersion":0});
+    let replies = fixture.mcp_calls(&[
+        ("board_update", body.clone()),
+        ("board_update", body),
+        ("board_snapshot", json!({})),
+        ("board_open", json!({"id":identifier})),
+        (
+            "board_archive",
+            json!({"id":identifier,"version":1,"inputVersion":0}),
+        ),
+    ]);
+    check_remote_replies(&replies);
+    let url = fs::read_to_string(captured).unwrap();
+    assert_eq!(
+        url.trim(),
+        app::conversation_url(FIRST, "mac & host").unwrap()
+    );
+    assert!(store.pending_titles(None).unwrap().is_empty());
+    assert_eq!(store.sessions().unwrap().len(), 2);
+    assert!(fixture.cli("stop").status.success());
+    assert_eq!(
+        fixture.app().store.remote_session(&identifier).unwrap()["note"],
+        "远程备注"
+    );
+}
+
+fn check_remote_replies(replies: &[Value]) {
+    assert_eq!(replies[0]["result"]["structuredContent"]["titleEnabled"], false);
+    assert_eq!(replies[1]["result"]["isError"], true);
+    let row = &replies[2]["result"]["structuredContent"]["sessions"][0];
+    assert_eq!(row["note"], "远程备注");
+    assert_eq!(row["state"], "blocked");
+    assert_eq!(row["hostId"], "mac & host");
+    assert_eq!(replies[4]["result"]["isError"], true);
+}
+
+#[test]
 fn mcp_new_session_forwards_optional_project_to_http() {
     let mut fixture = Fixture::new(false);
     fixture.register_projects(&["project-a"]);
