@@ -60,3 +60,23 @@ fn managed_write_gate_requires_initialization_and_preserves_notes_after_home_cha
     );
     Ok(())
 }
+
+#[test]
+fn remote_auto_archive_requires_its_own_explicit_positive_interval() -> Result<()> {
+    let mut fixture = Fixture::new()?;
+    fixture.config.auto_archive_seconds = Some(1800);
+    let (mut root, remote) = managed(&fixture)?;
+    assert_eq!(root.config.auto_archive_seconds, Some(1800));
+    assert_eq!(remote.config.auto_archive_seconds, None);
+    root.config.remote_auto_archive_seconds = Some(900);
+    let enabled = root.build_remote(&fixture.host)?;
+    assert_eq!(enabled.config.auto_archive_seconds, Some(900));
+    assert_eq!(root.config.auto_archive_seconds, Some(1800));
+    root.config.remote_auto_archive_seconds = Some(0);
+    assert!(root.config.validate().is_err());
+    root.config.remote_auto_archive_seconds = Some(900);
+    root.config.legacy_mode = true;
+    root.config.auto_archive_seconds = None;
+    assert!(root.config.validate_modes().is_err());
+    Ok(())
+}

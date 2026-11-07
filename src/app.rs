@@ -32,6 +32,7 @@ pub struct App {
     native_generation: AtomicUsize,
     pub(crate) enabled: AtomicBool,
     pub(crate) remotes: Mutex<HashMap<String, Arc<App>>>,
+    pub(crate) remote_requested: Mutex<HashSet<String>>,
     lifecycle: RwLock<()>,
 }
 
@@ -59,6 +60,7 @@ impl App {
             native_generation: AtomicUsize::new(0),
             enabled: AtomicBool::new(true),
             remotes: Mutex::new(HashMap::new()),
+            remote_requested: Mutex::new(HashSet::new()),
             lifecycle: RwLock::new(()),
             health: Mutex::new(json!({
                 "lastScanAt":null,"lastSuccessAt":null,"error":null,"scanComplete":false,
@@ -183,6 +185,7 @@ impl App {
             ("/api/archive", Some(body)) => crate::archive::request(self, body),
             ("/api/new", Some(body)) => self.new_session(body),
             ("/api/new/reset", Some(body)) => self.reset_remote_draft(body),
+            ("/api/connect", Some(body)) => self.connect_remote(body),
             ("/api/open", Some(body)) => {
                 let identifier = body["id"].as_str().context("缺少会话 ID")?;
                 if identifier.starts_with("remote:") {

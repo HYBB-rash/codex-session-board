@@ -28,7 +28,7 @@ impl App {
 
     pub(crate) fn refresh_remote_instances(&self) -> Result<()> {
         ensure!(!self.config.legacy_mode, "六状态兼容模式不连接远程主机");
-        let hosts = hosts::registered(&self.config)?;
+        let hosts = self.requested_hosts()?;
         let cached = self
             .remotes
             .lock()
@@ -39,7 +39,7 @@ impl App {
                 .iter()
                 .any(|host| host.host_id == identifier && host.enabled)
             {
-                remote.deactivate()?;
+                self.retire_remote(&identifier, &remote)?;
             }
         }
         let mut errors = Vec::new();
@@ -58,7 +58,9 @@ impl App {
         self.update_health(json!({"remoteConnectionErrors":errors,"remoteRegistry":registry}))
     }
 
-    fn attach_remote(&self, host: &Host) -> Result<()> {
+    pub(super) fn attach_remote(&self, host: &Host) -> Result<()> {
+        let operation = self.thread_lock(&format!("connect:{}", host.host_id))?;
+        let _guard = operation.lock().map_err(|_| anyhow::anyhow!("主机连接锁已损坏"))?;
         let existing = self
             .remotes
             .lock()
@@ -114,7 +116,9 @@ impl App {
 
     pub(crate) fn remote_app(&self, host: &str) -> Result<Arc<App>> {
         let (descriptor, remote) = self.remote_entry(host)?;
-        ensure!(descriptor.enabled, "该主机已禁用自动连接，请先在客户端连接");
+        ensure!(descriptor.enabled || self.remote_requested.lock()
+            .map_err(|_| anyhow::anyhow!("连接请求锁已损坏"))?.contains(host),
+            "该主机未自动连接，请在看板中连接");
         let remote = remote.context("远程主机尚未连接，请刷新后重试")?;
         ensure!(remote.enabled.load(Ordering::SeqCst), "远程主机登记已失效");
         Ok(remote)

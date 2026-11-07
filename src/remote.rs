@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::time::Duration;
 
 pub mod hosts;
+mod connections;
 mod instances;
 mod scans;
 pub(crate) use scans::scan_runtime_page;

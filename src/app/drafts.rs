@@ -38,6 +38,7 @@ impl App {
         let timeout = Duration::from_secs(caller.rpc_timeout_seconds);
         let project = self.remote_draft_project(body, &caller, timeout)?;
         let host = project["hostId"].as_str().context("项目缺少主机")?;
+        self.connect_draft_host(host)?;
         let remote = self.remote_app(host)?;
         let _operation = remote.operation()?;
         let operation = remote.thread_lock(&format!("draft:{}", project["nativeId"]))?;
@@ -81,6 +82,15 @@ impl App {
             "新建目标主机不一致"
         );
         Ok(project)
+    }
+
+    fn connect_draft_host(&self, host: &str) -> Result<()> {
+        let (descriptor, _) = self.remote_entry(host)?;
+        if !descriptor.enabled && !self.remote_requested.lock()
+            .map_err(|_| anyhow::anyhow!("连接请求锁已损坏"))?.contains(host) {
+            self.connect_remote(&json!({"hostId":host}))?;
+        }
+        Ok(())
     }
 
     fn finish_remote_draft(

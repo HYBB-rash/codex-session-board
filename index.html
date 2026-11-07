@@ -578,7 +578,7 @@ function render(resetState = null) {
     const last = health.autoArchiveLastRun;
     const deferred = last?.deferred || [];
     archiveStatus.className = "health" + (health.autoArchiveError || deferred.length ? " error" : "");
-    archiveStatus.textContent = `每 ${health.autoArchiveSeconds / 60} 分钟自动归档待归档 · 下次 ${date(health.autoArchiveNextAt)}`;
+    archiveStatus.textContent = `本机每 ${health.autoArchiveSeconds / 60} 分钟自动归档待归档 · 下次 ${date(health.autoArchiveNextAt)}`;
     if (last) archiveStatus.textContent += ` · 上次 ${date(last.at)}：归档 ${last.archived.length} 条，延后 ${deferred.length} 条`;
     if (health.autoArchiveError) archiveStatus.textContent += " · 本轮未完成：" + health.autoArchiveError;
     archiveStatus.title = deferred.map(item => `${item.id}：${item.reason}`).join("\n");
@@ -613,6 +613,8 @@ function render(resetState = null) {
     if (warning || !host.runtimeVerified) byId("health").className = "health error";
     byId("health").textContent += ` · ${host.hostLabel || host.hostId}：` +
       (warning || (host.runtimeVerified ? "自动状态已连接" : "等待执行状态连接"));
+    if (host.autoArchiveSeconds) byId("health").textContent +=
+      `；每 ${host.autoArchiveSeconds / 60} 分钟自动归档，下次 ${date(host.autoArchiveNextAt)}`;
   }
   for (const host of health.remoteConnectionErrors || []) {
     byId("health").className = "health error";
