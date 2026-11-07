@@ -1,11 +1,12 @@
 use super::hosts::{self, Host};
 use crate::{app::App, config, observer};
 use anyhow::{Context, Result, ensure};
-use serde_json::{Value, json};
+use serde_json::json;
 use std::sync::{Arc, atomic::Ordering};
 
 impl App {
     fn build_remote(&self, host: &Host) -> Result<Arc<App>> {
+        host.verify_source(&self.config)?;
         let mut config = self.config.clone();
         config.host_id = host.host_id.clone();
         config.data_dir = host.directory(&self.config);
@@ -18,10 +19,7 @@ impl App {
         remote.update_health(json!({"hostLabel":host.display_name}))?;
         let path = remote.config.data_dir.join("source.json");
         let source = json!({"hostId":host.host_id,"command":remote.config.proxy_command});
-        if path.exists() {
-            let previous: Value = serde_json::from_slice(&std::fs::read(&path)?)?;
-            ensure!(previous == source, "主机连接身份已改变，需要显式迁移");
-        } else {
+        if !path.exists() {
             config::write_json(&path, &source, false)?;
         }
         remote.store.import_remote(&self.store, &host.host_id)?;
@@ -49,7 +47,14 @@ impl App {
                 errors.push(json!({"hostId":host.host_id,"error":error.to_string()}));
             }
         }
-        self.update_health(json!({"remoteConnectionErrors":errors}))
+        let registry: Vec<_> = hosts
+            .iter()
+            .map(|host| {
+                json!({"hostId":host.host_id,
+            "hostLabel":host.display_name,"enabled":host.enabled})
+            })
+            .collect();
+        self.update_health(json!({"remoteConnectionErrors":errors,"remoteRegistry":registry}))
     }
 
     fn attach_remote(&self, host: &Host) -> Result<()> {
@@ -85,23 +90,31 @@ impl App {
         Ok(())
     }
 
-    pub(crate) fn remote_app(&self, host: &str) -> Result<Arc<App>> {
+    pub(crate) fn remote_entry(&self, host: &str) -> Result<(Host, Option<Arc<App>>)> {
         let descriptor = hosts::registered(&self.config)?
             .into_iter()
             .find(|entry| entry.host_id == host)
             .context("主机已移除或未登记")?;
-        ensure!(descriptor.enabled, "该主机已禁用自动连接，请先在客户端连接");
+        descriptor.verify_source(&self.config)?;
         let remote = self
             .remotes
             .lock()
             .map_err(|_| anyhow::anyhow!("主机锁已损坏"))?
             .get(host)
-            .cloned()
-            .context("远程主机尚未连接，请刷新后重试")?;
-        ensure!(
-            remote.config.proxy_command == descriptor.proxy(&self.config)?,
-            "主机连接身份已改变，需要显式迁移"
-        );
+            .cloned();
+        if let Some(remote) = &remote {
+            ensure!(
+                remote.config.proxy_command == descriptor.proxy(&self.config)?,
+                "主机连接身份已改变，需要显式迁移"
+            );
+        }
+        Ok((descriptor, remote))
+    }
+
+    pub(crate) fn remote_app(&self, host: &str) -> Result<Arc<App>> {
+        let (descriptor, remote) = self.remote_entry(host)?;
+        ensure!(descriptor.enabled, "该主机已禁用自动连接，请先在客户端连接");
+        let remote = remote.context("远程主机尚未连接，请刷新后重试")?;
         ensure!(remote.enabled.load(Ordering::SeqCst), "远程主机登记已失效");
         Ok(remote)
     }

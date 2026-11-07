@@ -159,6 +159,7 @@ impl App {
         let mut catalog = serde_json::to_value(&*projects)?;
         drop(projects);
         self.append_remote(&mut sessions, &mut catalog)?;
+        self.annotate_connections(&mut sessions);
         Ok(
             json!({"states":states,"sessions":sessions,"projectCatalog":catalog,"columnSorts":self.store.column_sorts()?,
             "health":self.health.lock().map_err(|_| anyhow::anyhow!("健康状态锁已损坏"))?.clone()}),
@@ -167,7 +168,7 @@ impl App {
 
     pub fn request(&self, path: &str, body: Option<&Value>) -> Result<Value> {
         if self.config.native_sections
-            && matches!(path, "/api/state" | "/api/archive" | "/api/open")
+            && matches!(path, "/api/state" | "/api/archive")
             && let Some(body) = body
             && body["id"].as_str().is_some_and(|id| id.starts_with("remote:"))
         {

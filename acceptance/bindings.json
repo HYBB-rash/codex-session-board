@@ -877,6 +877,8 @@
       "test::observer_contract::same_phase_runtime_input_rejects_stale_input_version_without_changing_state_version"
     ],
     "NAV-001": [
+      "lib::codex_session_board::app::remote::tests::opening_a_known_offline_chat_does_not_require_connecting_or_enable_writes",
+      "lib::codex_session_board::app::remote::tests::old_chat_navigation_rejects_reassigned_hosts_before_opening_the_client",
       "test::remote_sessions::routes::remote_routes_bypass_local_authority_and_preserve_host_project_identity",
       "test::remote_sessions::routes::unsupported_remote_actions_and_unknown_ids_fail_before_external_io",
       "test::board_io::host_origin_and_token_are_required_for_mutation",

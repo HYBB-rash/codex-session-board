@@ -190,7 +190,7 @@ function makeProjectTag(session) {
 function makeCard(session) {
   const card = element("article",undefined,"card");
   card.dataset.id = session.id;
-  card.draggable = true;
+  card.draggable = !session.readOnly;
   card.setAttribute("aria-label",session.title);
   const title = element("button",session.title,"title card-title");
   title.type = "button";
@@ -203,15 +203,16 @@ function makeCard(session) {
   if (session.note) card.append(element("div",session.note,"card-note"));
   if (!session.manual && session.state === "blocked") card.append(element("div",session.reason,"card-note"));
   if (session.followUp) card.append(element("div","有新输入，待复核","follow"));
+  if (session.readOnly) card.append(element("div","当前只读，保留上次记录","follow"));
   if (session.observationError) card.append(element("div","历史读取失败，保留原状态","follow"));
   if (session.projectIssue) card.append(element("div","项目归属待确认","follow"));
   if (session.titleSyncPending) card.append(element("div",session.titleSyncError ? "状态已保存，标题同步待重试" : "状态已保存，标题正在同步","follow"));
   const footer = element("div",undefined,"card-footer");
   const details = element("div");
-  details.append(element("div",session.remote ? "远程人工管理" : session.manual ? "人工确认" : session.source === "runtime" ? "自动流转" : "历史状态","source"),
+  details.append(element("div",session.manual ? "人工确认" : session.source === "runtime" ? "自动流转" : session.source === "codex" ? "原生状态" : "历史状态","source"),
     element("time",date(session.updatedAt)));
   footer.append(details);
-  if (session.state === "to_archive" && session.canArchive !== false) {
+  if (session.state === "to_archive" && session.canArchive !== false && !session.readOnly) {
     const archive = element("button",session.followUp ? "确认待归档" : "归档","row-action");
     archive.type = "button";
     archive.title = session.followUp ? "请先打开会话核对输入；确认仅保存待归档状态，不执行归档" : "直接归档此 Codex 会话";
@@ -223,7 +224,7 @@ function makeCard(session) {
     if (!event.target.closest("button,a,input,select,textarea,details")) openSession(session.id);
   };
   card.ondragstart = event => {
-    if (saving || byId("editor").open) {event.preventDefault();return;}
+    if (saving || session.readOnly || byId("editor").open) {event.preventDefault();return;}
     dragging = {...session};
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain",session.id);
@@ -263,8 +264,8 @@ async function confirmArchiveInputs(session, button) {
 }
 async function archiveSessions(sessions, button) {
   if (saving || dragging || byId("editor").open) return;
-  const targets = sessions.filter(session => session.state === "to_archive" && !session.remote && session.canArchive !== false);
-  if (!targets.length) {announce("当前列没有可归档的本机会话。");return;}
+  const targets = sessions.filter(session => session.state === "to_archive" && !session.readOnly && session.canArchive !== false);
+  if (!targets.length) {announce("当前列没有可归档的会话。");return;}
   saving = true; button.disabled = true; ++requestSerial;
   let archived = 0;
   const failures = [];
@@ -406,7 +407,7 @@ function updateColumn(column, state, sessions) {
   }
   const archiveAll = column.querySelector("[data-archive-all]");
   if (archiveAll) {
-    archiveAll.disabled = !sessions.some(session => !session.remote && session.canArchive !== false);
+    archiveAll.disabled = !sessions.some(session => !session.readOnly && session.canArchive !== false);
     archiveAll.onclick = () => archiveSessions(sessions,archiveAll);
   }
   const cards = column.querySelector(".cards");
@@ -579,7 +580,18 @@ function render(resetState = null) {
     byId("health").textContent += " · 有会话项目归属待确认，可在全部项目中查看";
   }
   const remoteCount = data.sessions.filter(session => session.remote).length;
-  if (remoteCount || health.remoteVerified) byId("health").textContent += ` · ${remoteCount} 条远程会话，状态人工维护`;
+  if (remoteCount || health.remoteVerified) byId("health").textContent += ` · ${remoteCount} 条远程会话`;
+  for (const host of health.remoteConnections || []) {
+    const warning = host.runtimeError || host.nativeError || host.nativeStageError ||
+      (!host.scanComplete ? "分页扫描尚未完成" : null);
+    if (warning || !host.runtimeVerified) byId("health").className = "health error";
+    byId("health").textContent += ` · ${host.hostLabel || host.hostId}：` +
+      (warning || (host.runtimeVerified ? "自动状态已连接" : "等待执行状态连接"));
+  }
+  for (const host of health.remoteConnectionErrors || []) {
+    byId("health").className = "health error";
+    byId("health").textContent += ` · ${host.hostId}：${host.error}`;
+  }
   const failedHosts = (health.remoteHosts || []).filter(host => !host.scanComplete);
   if (health.remoteProjectWarning) byId("health").textContent += " · 部分远程项目资料未确认，保留上次分类";
   if (health.remoteError || failedHosts.length) {

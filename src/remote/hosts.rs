@@ -44,6 +44,19 @@ pub fn registered(config: &Config) -> Result<Vec<Host>> {
 }
 
 impl Host {
+    pub fn verify_source(&self, config: &Config) -> Result<()> {
+        let path = self.directory(config).join("source.json");
+        if path.exists() {
+            let previous: Value = serde_json::from_slice(&std::fs::read(path)?)?;
+            ensure!(
+                previous
+                    == serde_json::json!({"hostId":self.host_id,"command":self.proxy(config)?}),
+                "主机连接身份已改变，需要显式迁移"
+            );
+        }
+        Ok(())
+    }
+
     pub fn command(&self, config: &Config, operation: &str) -> Result<Vec<String>> {
         let target = self
             .alias
