@@ -14,6 +14,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tungstenite::{Message, WebSocket};
 
+mod pipe;
+
 mod sidebar;
 
 pub trait Rpc {
@@ -128,6 +130,7 @@ fn response_result(message: Value, request_id: u64, method: &str) -> Result<Opti
         .context("RPC 回执缺少 result")
 }
 
+#[derive(Debug)]
 struct ManagedChild(Child);
 
 impl Drop for ManagedChild {
@@ -291,7 +294,7 @@ fn connect_unix(path: &Path, deadline: Instant) -> Result<UnixStream> {
 
 #[derive(Debug)]
 struct DeadlineStream {
-    stream: UnixStream,
+    stream: pipe::Transport,
     deadline: Instant,
 }
 
@@ -328,8 +331,27 @@ impl DesktopConnection {
         };
         let deadline = deadline_after(budget)?;
         let socket = connect_unix(&verified_socket(path)?, deadline)?;
+        Self::handshake(socket.into(), timeout, role, deadline)
+    }
+
+    pub fn proxy(command: &[String], timeout: Duration, role: Role) -> Result<Self> {
+        let budget = if role == Role::TitleWriter {
+            timeout.min(Duration::from_secs(3))
+        } else {
+            timeout
+        };
+        let deadline = deadline_after(budget)?;
+        Self::handshake(pipe::Transport::proxy(command)?, timeout, role, deadline)
+    }
+
+    fn handshake(
+        transport: pipe::Transport,
+        timeout: Duration,
+        role: Role,
+        deadline: Instant,
+    ) -> Result<Self> {
         let stream = DeadlineStream {
-            stream: socket,
+            stream: transport,
             deadline,
         };
         let (connection, _) = tungstenite::client("ws://localhost/rpc", stream)
@@ -344,7 +366,8 @@ impl DesktopConnection {
         reader.call(
             "initialize",
             json!({
-                "clientInfo": {"name": "session_board_runtime", "version": "0.2.5"}
+                "clientInfo": {"name": "session_board_runtime", "version": env!("CARGO_PKG_VERSION")},
+                "capabilities": {"experimentalApi": true}
             }),
         )?;
         reader.send_json(&json!({"method": "initialized"}), reader.call_deadline()?)?;
@@ -432,7 +455,7 @@ impl SidebarConnection {
         let deadline = deadline_after(timeout)?;
         Ok(Self {
             stream: DeadlineStream {
-                stream: sidebar::connect(&config.sidebar_socket, deadline)?,
+                stream: sidebar::connect(&config.sidebar_socket, deadline)?.into(),
                 deadline,
             },
             caller: config.sidebar_caller.clone(),
@@ -600,7 +623,7 @@ mod tests {
         Ok((
             SidebarConnection {
                 stream: DeadlineStream {
-                    stream: client,
+                    stream: client.into(),
                     deadline: deadline_after(Duration::from_millis(300))?,
                 },
                 caller: "caller".into(),
@@ -798,7 +821,7 @@ mod tests {
         let deadline = deadline_after(Duration::from_secs(1))?;
         let connection = WebSocket::from_raw_socket(
             DeadlineStream {
-                stream: client,
+                stream: client.into(),
                 deadline,
             },
             WebSocketRole::Client,

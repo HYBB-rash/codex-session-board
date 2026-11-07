@@ -978,6 +978,8 @@
       "test::board_io::service_update_rejects_old_build_but_can_verify_and_stop_its_process"
     ],
     "BOUNDARY-001": [
+      "lib::codex_session_board::rpc::pipe::tests::proxy_deadline_applies_to_a_silent_child_and_drop_reaps_it",
+      "lib::codex_session_board::rpc::pipe::tests::proxy_stream_preserves_arbitrary_websocket_bytes",
       "test::native_authority::auto_archive::a_remote_archive_choice_does_not_make_the_local_twin_eligible",
       "test::native_authority::auto_archive::sweep_verifies_live_input_and_running_status_without_confirming_or_archiving_remote",
       "test::native_authority::auto_archive::sweep_rechecks_native_position_after_selecting_the_candidate",
