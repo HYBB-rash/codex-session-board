@@ -136,6 +136,16 @@ impl App {
         else {
             return Ok(());
         };
+        let default =
+            ["unsectioned", "chats", "threads"].contains(&change.section_version.as_str());
+        let managed = self
+            .config
+            .status_sections
+            .values()
+            .any(|identifier| *identifier == change.section_version);
+        if !default && !managed {
+            return self.store.consume_native_runtime(identifier, &change);
+        }
         let confirmed =
             self.move_native(identifier, &change.section_version, Some(change.state))?;
         self.store

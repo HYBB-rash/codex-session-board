@@ -45,6 +45,13 @@ fn event(
 }
 
 impl Store {
+    pub fn consume_native_runtime(&self, identifier: &str, change: &RuntimeChange) -> Result<()> {
+        self.connection()?.execute(
+            "UPDATE sessions SET runtime_key=?,runtime_pending_key=NULL WHERE id=? AND version=? AND runtime_pending_key=?",
+            params![change.key,identifier,change.version,change.key])?;
+        Ok(())
+    }
+
     pub fn prepare_native_runtime(
         &self,
         identifier: &str,

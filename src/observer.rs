@@ -89,6 +89,7 @@ pub fn scan_runtime(
     ensure!(complete, "桌面运行状态分页未完成");
     app.discover(&threads, complete)?;
     let mut unreadable = 0;
+    let mut native_errors = Vec::new();
     for thread in &threads {
         let identifier = thread["id"].as_str().context("会话缺少 ID")?;
         let status = &thread["status"];
@@ -100,7 +101,10 @@ pub fn scan_runtime(
             Ok(turn) => {
                 app.store.observe(identifier, &turn, None)?;
                 if crate::model::runtime_state(status, &turn).is_some() {
-                    app.observe_runtime(identifier, status, &turn, since)?;
+                    if let Some(error) = observe_phase(app, identifier, status, &turn, since)? {
+                        native_errors.push(error);
+                        continue;
+                    }
                     revisions.insert(identifier.to_string(), revision);
                 }
             }
@@ -109,7 +113,22 @@ pub fn scan_runtime(
         }
     }
     app.update_health(json!({"runtimeVerified":true,"runtimeLastAt":now(),
+        "nativeStageError":if native_errors.is_empty() {Value::Null}else{json!(native_errors.join("; "))},
         "runtimeError":if unreadable > 0 { json!(format!("{unreadable} 个会话的执行状态暂不可读")) } else {Value::Null}}))
+}
+
+fn observe_phase(
+    app: &App,
+    identifier: &str,
+    status: &Value,
+    turn: &Value,
+    since: f64,
+) -> Result<Option<String>> {
+    match app.observe_runtime(identifier, status, turn, since) {
+        Ok(()) => Ok(None),
+        Err(error) if app.config.native_sections => Ok(Some(error.to_string())),
+        Err(error) => Err(error),
+    }
 }
 
 fn pause(app: &App, seconds: u64) {
@@ -209,11 +228,13 @@ pub fn start(app: &Arc<App>) {
     }
     if app.config.native_sections {
         let native = Arc::clone(app);
-        std::thread::spawn(move || loop {
-            if let Err(error) = native.refresh_native() {
-                let _ = native.update_health(json!({"nativeError":error.to_string()}));
+        std::thread::spawn(move || {
+            loop {
+                if let Err(error) = native.refresh_native() {
+                    let _ = native.update_health(json!({"nativeError":error.to_string()}));
+                }
+                std::thread::sleep(Duration::from_secs(native.config.runtime_poll_seconds));
             }
-            std::thread::sleep(Duration::from_secs(native.config.runtime_poll_seconds));
         });
     } else if app.config.sync_sections {
         let sections = Arc::clone(app);

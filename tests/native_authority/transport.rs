@@ -30,7 +30,7 @@ pub(super) struct Surface {
     pub calls: Vec<String>,
     pub notes_during_move: Vec<String>,
     pub lose_receipt: bool,
-    pub reject_move: bool,
+    pub reject_move: Option<String>,
     pub blocked: Option<BlockingMove>,
 }
 
@@ -42,7 +42,7 @@ pub(super) struct BlockingMove {
 }
 
 impl Surface {
-    fn layout(&self) -> Value {
+    pub(super) fn layout(&self) -> Value {
         let sections: Vec<_> = codex_session_board::model::board_states()
             .map(|(state, label)| {
                 let members: Vec<_> = self
@@ -67,10 +67,10 @@ impl Surface {
         match method {
             "list_threads" => Ok(Some(self.layout())),
             "move_thread_to_sidebar_section" => {
-                if self.reject_move {
+                let identifier = args["threadId"].as_str().unwrap_or("");
+                if self.reject_move.as_deref() == Some(identifier) {
                     return Ok(None);
                 }
-                let identifier = args["threadId"].as_str().unwrap_or("");
                 let state = codex_session_board::model::board_states()
                     .find(|(state, _)| args["sectionId"] == section_id(state))
                     .ok_or_else(|| anyhow::anyhow!("unknown section"))?

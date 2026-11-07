@@ -6,12 +6,14 @@ use codex_session_board::{native_sections::Observation, store::Store};
 use serde_json::json;
 
 const FIRST: &str = "11111111-1111-4111-8111-111111111111";
+#[path = "native_authority/archive.rs"]
+mod archive;
+#[path = "native_authority/faults.rs"]
+mod faults;
 #[path = "native_authority/runtime.rs"]
 mod runtime;
 #[path = "native_authority/transport.rs"]
 mod transport;
-#[path = "native_authority/archive.rs"]
-mod archive;
 
 struct NativeSurface {
     section: &'static str,
@@ -98,6 +100,29 @@ fn native_endpoint_requires_position_and_validates_notes_before_remote_writes() 
     );
     assert_eq!(app.store.note(FIRST)?, "");
     assert_eq!(app.snapshot()?["sessions"][0]["state"], "review");
+    Ok(())
+}
+
+#[test]
+fn native_inactive_cached_chats_are_hidden_and_cannot_be_moved() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let app = native_app(directory.path())?;
+    app.discover(&[json!({"id":FIRST})], true)?;
+    let mut native = NativeSurface {
+        section: "review-id",
+        fail: false,
+    };
+    app.read_native(&mut native)?;
+    app.discover(&[], true)?;
+    assert!(app.snapshot()?["sessions"].as_array().unwrap().is_empty());
+    let request = json!({"id":FIRST,"state":"to_archive","note":"不应保存","version":1,"inputVersion":0,"sectionVersion":"review-id"});
+    assert!(
+        app.request("/api/state", Some(&request))
+            .unwrap_err()
+            .to_string()
+            .contains("等待完整原生会话发现")
+    );
+    assert_eq!(app.store.note(FIRST)?, "");
     Ok(())
 }
 

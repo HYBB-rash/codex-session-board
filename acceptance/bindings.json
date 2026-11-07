@@ -311,6 +311,12 @@
       "test::board_io::manual_save_preserves_note_when_field_is_omitted"
     ],
     "MANUAL-001": [
+      "test::native_authority::native_inactive_cached_chats_are_hidden_and_cannot_be_moved",
+      "test::native_authority::faults::remote_rejection_and_local_abort_do_not_commit_notes_or_replay_native_moves",
+      "test::native_authority::faults::input_arriving_during_a_native_move_cannot_be_confirmed_by_the_old_save",
+      "test::native_authority::faults::one_failed_native_stage_does_not_starve_a_later_chat",
+      "test::native_authority::faults::pinned_or_unmanaged_native_sections_are_not_moved_by_automatic_stages",
+      "test::native_authority::faults::a_late_read_snapshot_cannot_overwrite_a_confirmed_native_save",
       "test::native_authority::archive::native_archive_rejects_external_moves_before_archiving_and_accepts_fresh_confirmation",
       "test::native_authority::archive::a_blocked_move_in_another_chat_does_not_block_native_archive",
       "test::native_authority::transport::native_save_writes_remote_before_committing_notes_and_confirmation",
