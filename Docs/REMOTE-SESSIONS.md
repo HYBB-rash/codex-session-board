@@ -24,11 +24,13 @@ context/STATE.yaml、当前完整验收报告及专项报告为准。
 旧 `auto_archive_seconds` 仍只控制本机；远程定时归档另由
 `remote_auto_archive_seconds` 显式启用，默认关闭，不扩大既有自动归档范围。
 
-远程空会话针对已登记的远程项目：直接创建无输入的持久会话，
+远程空会话针对已登记的远程项目：以非 ephemeral 模式请求无输入会话，
 随后通过客户端登记项目并验证 host、项目、cwd 和工作区根。
 请求先持久登记，丢回执不会自动重复 thread/start。
 未确认结果保持 pending；恢复或释放前需要实际核对客户端。
 此功能不创建项目，不启动模型回合。
+看板持久保存请求与返回 ID；这不等于原生空会话已生成 rollout，
+也不能代替客户端输入页、续写及 daemon 重启后的真实验证。
 
 ## 连接、身份与缓存
 
@@ -42,6 +44,9 @@ context/STATE.yaml、当前完整验收报告及专项报告为准。
 代理关闭时清理看板拥有的进程组，不停止用户 daemon。
 远端需要 Python 3、可用的 codex app-server proxy 和正常 SSH 身份认证。
 代理、时钟及实际 initialize 必须指向同一数据来源。
+客户端已有连接不代表新 CLI SSH 连接能立即签名；实际预检曾在本机
+Agent 等待确认时超时。此时保留缓存，不绕过 Agent 锁。
+测试的临时认证不能代替生产默认 SSH 路径验收，也不写入正式配置。
 
 source.json 的版本 2 记录 hostId、有效 SSH 主机/用户/端口、
 远端 UID、物理 HOME、物理与声明的 CODEX_HOME。

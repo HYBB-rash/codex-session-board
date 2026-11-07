@@ -2,7 +2,7 @@
 
 owner: Cicero
 execution_mode: isolated_worker
-allowed_write_set: scripts/verify_remote_release.py, acceptance/test_remote_release.py, context/handoffs/remote-release-gate-worker.md, outputs/owned-release-guard/
+allowed_write_set: scripts/verify_remote_release.py, acceptance/test_remote_release.py, context/handoffs/remote-release-gate-worker.md, outputs/owned-release-guard/, outputs/legacy-external-runner/
 base_commit: 10c80203284d3f0fe069d3cb003113cdb26a97f6
 worktree_path: /home/herman/.codex/worktrees/remote-connection-identity/notion-program
 coordinator: codex
@@ -17,3 +17,10 @@ coordinator: codex
 汇总门禁交付后，顺序制作独有 outputs/owned-release-guard/ 真实验收协议过滤夹具。
 仅离线单元测试；本阶段不连接真实 daemon，不操作 UI 或真实数据。
 所有请求、通知、线程创建回执均先做会话及主机白名单检查，再转发或记录。
+
+过滤夹具已交付；真实接线修订后，协调者解包复核 64 项离线测试通过。
+下一阶段制作可重复执行的 legacy 外部验收驱动，并用独有 CODEX_HOME、
+临时工作目录、loopback 确定性模型端点和专有实际 daemon 试跑。
+仅操作该隔离环境中的测试会话、进程和配置，不连接或改动默认 daemon、
+真实 SSH、生产数据、用户凭据及客户端界面。不替代目标客户端 UI 证据。
+驱动接受实际看板 binary 路径，不复用旧 binary 签收最终版本。
