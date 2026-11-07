@@ -37,9 +37,9 @@ fn event(
     .as_f64();
     let old_baseline = row["runtime_key"].is_null() && time.is_none_or(|time| time < since);
     let older_than_choice = terminal(status, turn)
-        && time
-            .zip(row["native_choice_at"].as_f64())
-            .is_some_and(|(end, chosen)| end <= chosen);
+        && row["native_choice_at"]
+            .as_f64()
+            .is_some_and(|chosen| time.is_none_or(|end| end <= chosen));
     Some((
         state,
         reason,

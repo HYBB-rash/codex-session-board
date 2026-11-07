@@ -1,7 +1,7 @@
-use super::transport::{BlockingMove, Server, body};
+use super::transport::{body, BlockingMove, Server};
 use super::*;
 use serde_json::Value;
-use std::sync::{Arc, Condvar, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::time::Duration;
 
 #[test]
@@ -10,19 +10,17 @@ fn remote_rejection_and_local_abort_do_not_commit_notes_or_replay_native_moves()
     let server = Server::new(directory.path())?;
     let app = server.app()?;
     server.surface.lock().unwrap().reject_move = Some(FIRST.into());
-    assert!(
-        app.request("/api/state", Some(&body(&app, "to_archive", "失败备注")?))
-            .is_err()
-    );
+    assert!(app
+        .request("/api/state", Some(&body(&app, "to_archive", "失败备注")?))
+        .is_err());
     assert_eq!(app.store.note(FIRST)?, "");
     assert_eq!(server.surface.lock().unwrap().slots[FIRST], "review");
     server.surface.lock().unwrap().reject_move = None;
     app.request("/api/state", Some(&body(&app, "to_archive", "已确认")?))?;
     app.store.connection()?.execute_batch("CREATE TRIGGER reject_note BEFORE UPDATE ON sessions WHEN NEW.note='rejectcommit' BEGIN SELECT RAISE(ABORT,'injected commit failure'); END;")?;
-    assert!(
-        app.request("/api/state", Some(&body(&app, "review", "rejectcommit")?))
-            .is_err()
-    );
+    assert!(app
+        .request("/api/state", Some(&body(&app, "review", "rejectcommit")?))
+        .is_err());
     assert_eq!(app.store.note(FIRST)?, "已确认");
     assert_eq!(server.surface.lock().unwrap().slots[FIRST], "review");
     app.refresh_native()?;
@@ -59,10 +57,9 @@ fn input_arriving_during_a_native_move_cannot_be_confirmed_by_the_old_save() -> 
     assert_eq!(session["state"], "to_archive");
     assert_eq!(session["followUp"], true);
     assert_eq!(session["note"], "原备注");
-    assert!(
-        app.request("/api/archive", Some(&body(&app, "to_archive", "")?))
-            .is_err()
-    );
+    assert!(app
+        .request("/api/archive", Some(&body(&app, "to_archive", "")?))
+        .is_err());
     Ok(())
 }
 
@@ -115,6 +112,7 @@ fn one_failed_native_stage_does_not_starve_a_later_chat() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let server = Server::new(directory.path())?;
     let app = server.app()?;
+    app.request("/api/state", Some(&body(&app, "review", "保留备注")?))?;
     let second = "22222222-2222-4222-8222-222222222222";
     app.discover(&[json!({"id":FIRST}), json!({"id":second})], true)?;
     server
@@ -138,6 +136,50 @@ fn one_failed_native_stage_does_not_starve_a_later_chat() -> Result<()> {
     assert!(!revisions.contains_key(FIRST));
     assert!(revisions.contains_key(second));
     assert!(app.snapshot()?["health"]["nativeStageError"].is_string());
+    verify_failed_stage_after_external_choice(&app, &server, since, &mut revisions)?;
+    Ok(())
+}
+
+fn native_move_count(server: &Server) -> usize {
+    server
+        .surface
+        .lock()
+        .unwrap()
+        .calls
+        .iter()
+        .filter(|method| method.as_str() == "move_thread_to_sidebar_section")
+        .count()
+}
+
+fn verify_failed_stage_after_external_choice(
+    app: &App,
+    server: &Server,
+    since: f64,
+    revisions: &mut std::collections::HashMap<String, String>,
+) -> Result<()> {
+    let moves = native_move_count(server);
+    server
+        .surface
+        .lock()
+        .unwrap()
+        .slots
+        .insert(FIRST.into(), "to_archive".into());
+    codex_session_board::observer::scan_runtime(app, &mut Runtime { since }, revisions, since)?;
+    assert_eq!(native_move_count(server), moves);
+    app.refresh_native()?;
+    codex_session_board::observer::scan_runtime(app, &mut Runtime { since }, revisions, since)?;
+    assert_eq!(native_move_count(server), moves);
+    let restarted = App::new(server.config.clone())?;
+    restarted.refresh_native()?;
+    codex_session_board::observer::scan_runtime(
+        &restarted,
+        &mut Runtime { since },
+        &mut Default::default(),
+        since,
+    )?;
+    assert_eq!(native_move_count(server), moves);
+    assert_eq!(server.surface.lock().unwrap().slots[FIRST], "to_archive");
+    assert_eq!(restarted.store.note(FIRST)?, "保留备注");
     Ok(())
 }
 

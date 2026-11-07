@@ -62,10 +62,13 @@ impl Store {
             [identifier],
             |row| row.get(0),
         )?;
+        let unconfirmed_input = native.state == "to_archive"
+            && row["selected_at"].is_null()
+            && !users(&turn_of(&row)).is_empty();
         cache(&transaction, identifier, native)?;
         transaction.execute(
-            "UPDATE sessions SET native_choice_at=?,version=version+1,runtime_key=COALESCE(runtime_pending_key,runtime_key),runtime_pending_key=NULL WHERE id=?",
-            params![now(),identifier],
+            "UPDATE sessions SET native_choice_at=?,needs_review=CASE WHEN ? THEN 1 ELSE needs_review END,version=version+1,runtime_key=COALESCE(runtime_pending_key,runtime_key),runtime_pending_key=NULL WHERE id=?",
+            params![now(),unconfirmed_input,identifier],
         )?;
         if row["native_revision"].is_string() || pending {
             queue_title(&transaction, identifier, self.sync_titles, true)?;

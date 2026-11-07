@@ -342,6 +342,14 @@ function render() {
     byId("health").textContent += " · 有会话项目归属待确认，可在全部项目中查看";
   }
 }
+function noteDraft(id, value) {
+  try {
+    const key = "failed-note:"+id;
+    if (value === undefined) return sessionStorage.getItem(key);
+    if (value === null) {sessionStorage.removeItem(key);return null;}
+    sessionStorage.setItem(key,value);return value;
+  } catch {return null;}
+}
 function openEditor(id, state, snapshot) {
   editing = snapshot || data.sessions.find(session => session.id === id);
   if (!editing) return;
@@ -349,9 +357,10 @@ function openEditor(id, state, snapshot) {
   byId("state").replaceChildren();
   for (const [value,label] of Object.entries(data.states)) byId("state").append(new Option(label,value));
   byId("state").value = state || editing.state;
-  byId("note").value = editing.note;
+  const draft = noteDraft(id);
+  byId("note").value = draft === null ? editing.note : draft;
   byId("reason").textContent = editing.reason;
-  byId("notice").textContent = "";
+  byId("notice").textContent = draft === null ? "" : "已恢复上次未保存的备注，请核对当前状态后保存。";
   byId("editor").showModal();
 }
 async function load() {
@@ -394,8 +403,12 @@ byId("edit-form").onsubmit = async event => {
   saving = true; byId("save").disabled = true; byId("cancel").disabled = true;
   try {
     const result = await persist(editing,byId("state").value === "auto" ? null : byId("state").value,byId("note").value);
+    noteDraft(editing.id,null);
     byId("editor").close(); announce("状态已保存。" + syncNotice(result));
-  } catch(error) {byId("notice").textContent = error.message;}
+  } catch(error) {
+    const retained = noteDraft(editing.id,byId("note").value) !== null;
+    byId("notice").textContent = error.message + (retained ? " 备注草稿已保留，刷新后重新打开可继续编辑。" : " 备注仍在编辑框中，请保留后重新核对。");
+  }
   finally {
     saving = false;byId("save").disabled = false;byId("cancel").disabled = false;
     render();await load();

@@ -65,29 +65,24 @@ fn new_stages_apply_once_and_external_moves_survive_repeated_observations() -> R
         .prepare_native_runtime(FIRST, &active, &turn, since)?
         .unwrap();
     store.commit_native_runtime(FIRST, &change, &placed("in_progress"))?;
-    assert!(
-        store
-            .prepare_native_runtime(FIRST, &active, &turn, since)?
-            .is_none()
-    );
+    assert!(store
+        .prepare_native_runtime(FIRST, &active, &turn, since)?
+        .is_none());
     store.cache_native(FIRST, &placed("to_archive"))?;
-    assert!(
-        store
-            .prepare_native_runtime(FIRST, &active, &turn, since)?
-            .is_none()
-    );
+    assert!(store
+        .prepare_native_runtime(FIRST, &active, &turn, since)?
+        .is_none());
     assert_eq!(store.sessions()?[0]["state"], "to_archive");
+    missing_terminal_time_preserves_choice(&store)?;
     let done =
         json!({"id":"turn","status":"completed","startedAt":since+1.0,"completedAt":since+2.0});
     let change = store
         .prepare_native_runtime(FIRST, &json!({"type":"idle"}), &done, since)?
         .unwrap();
     store.commit_native_runtime(FIRST, &change, &placed("review"))?;
-    assert!(
-        store
-            .prepare_native_runtime(FIRST, &json!({"type":"idle"}), &done, since)?
-            .is_none()
-    );
+    assert!(store
+        .prepare_native_runtime(FIRST, &json!({"type":"idle"}), &done, since)?
+        .is_none());
     assert_eq!(store.note(FIRST)?, "备注不变");
     late_input_requires_review(&store, done)?;
     Ok(())
@@ -102,11 +97,9 @@ fn failed_stage_is_consumed_when_the_native_position_changes() -> Result<()> {
     let pending = store
         .prepare_native_runtime(FIRST, &active, &turn, since)?
         .unwrap();
-    assert!(
-        store
-            .prepare_native_runtime(FIRST, &active, &turn, since)?
-            .is_some()
-    );
+    assert!(store
+        .prepare_native_runtime(FIRST, &active, &turn, since)?
+        .is_some());
     store.cache_native(
         FIRST,
         &Observation {
@@ -114,23 +107,19 @@ fn failed_stage_is_consumed_when_the_native_position_changes() -> Result<()> {
             version: "archive-id".into(),
         },
     )?;
-    assert!(
-        store
-            .prepare_native_runtime(FIRST, &active, &turn, since)?
-            .is_none()
-    );
-    assert!(
-        store
-            .commit_native_runtime(
-                FIRST,
-                &pending,
-                &Observation {
-                    state: "in_progress".into(),
-                    version: "active-id".into()
-                }
-            )
-            .is_err()
-    );
+    assert!(store
+        .prepare_native_runtime(FIRST, &active, &turn, since)?
+        .is_none());
+    assert!(store
+        .commit_native_runtime(
+            FIRST,
+            &pending,
+            &Observation {
+                state: "in_progress".into(),
+                version: "active-id".into()
+            }
+        )
+        .is_err());
     assert_eq!(store.sessions()?[0]["state"], "to_archive");
     assert_eq!(store.note(FIRST)?, "备注不变");
     Ok(())
@@ -138,6 +127,7 @@ fn failed_stage_is_consumed_when_the_native_position_changes() -> Result<()> {
 
 #[test]
 fn baseline_history_never_overwrites_an_existing_native_selection() -> Result<()> {
+    input_before_native_refresh_still_requires_confirmation()?;
     let directory = tempfile::tempdir()?;
     let mut store = Store::open(directory.path(), true)?;
     store.native_sections = true;
@@ -151,21 +141,17 @@ fn baseline_history_never_overwrites_an_existing_native_selection() -> Result<()
     )?;
     let done = json!({"id":"old-turn","status":"completed","startedAt":1,"completedAt":2});
     assert!(store.pending_titles(None)?.is_empty());
-    assert!(
-        store
-            .prepare_native_runtime(FIRST, &json!({"type":"idle"}), &done, 3.0)?
-            .is_none()
-    );
+    assert!(store
+        .prepare_native_runtime(FIRST, &json!({"type":"idle"}), &done, 3.0)?
+        .is_none());
     assert_eq!(store.sessions()?[0]["state"], "to_archive");
     store.connection()?.execute(
         "UPDATE sessions SET runtime_key='older-active-phase' WHERE id=?",
         [FIRST],
     )?;
-    assert!(
-        store
-            .prepare_native_runtime(FIRST, &json!({"type":"idle"}), &done, 3.0)?
-            .is_none()
-    );
+    assert!(store
+        .prepare_native_runtime(FIRST, &json!({"type":"idle"}), &done, 3.0)?
+        .is_none());
     assert_eq!(store.sessions()?[0]["state"], "to_archive");
     store.observe(
         FIRST,
@@ -173,5 +159,59 @@ fn baseline_history_never_overwrites_an_existing_native_selection() -> Result<()
         None,
     )?;
     assert_eq!(store.sessions()?[0]["followUp"], true);
+    Ok(())
+}
+
+fn missing_terminal_time_preserves_choice(store: &Store) -> Result<()> {
+    for completion in [None, Some(serde_json::Value::Null)] {
+        store.connection()?.execute(
+            "UPDATE sessions SET runtime_key='older-active-phase' WHERE id=?",
+            [FIRST],
+        )?;
+        let mut done = json!({"id":"old-turn","status":"completed","startedAt":1});
+        if let Some(completion) = completion {
+            done["completedAt"] = completion;
+        }
+        assert!(store
+            .prepare_native_runtime(FIRST, &json!({"type":"idle"}), &done, 3.0)?
+            .is_none());
+        assert_eq!(store.sessions()?[0]["state"], "to_archive");
+    }
+    Ok(())
+}
+
+fn input_before_native_refresh_still_requires_confirmation() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let app = native_app(directory.path())?;
+    app.discover(&[json!({"id":FIRST})], true)?;
+    let mut native = NativeSurface {
+        section: "review-id",
+        fail: false,
+    };
+    app.store
+        .observe(FIRST, &json!({"id":"turn","userItems":["u1"]}), None)?;
+    app.read_native(&mut native)?;
+    native.section = "archive-id";
+    let input = json!({"id":"turn","userItems":["u1","u2"]});
+    app.store.observe(FIRST, &input, None)?;
+    assert_eq!(app.store.sessions()?[0]["followUp"], false);
+    app.read_native(&mut native)?;
+    app.store.observe(FIRST, &input, None)?;
+    let row = &app.store.sessions()?[0];
+    assert_eq!(row["followUp"], true);
+    assert!(app
+        .store
+        .prepare_archive(
+            FIRST,
+            (
+                row["version"].as_i64().unwrap(),
+                row["inputVersion"].as_i64().unwrap()
+            )
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("新输入"));
+    let restarted = native_app(directory.path())?;
+    assert_eq!(restarted.store.sessions()?[0]["followUp"], true);
     Ok(())
 }
