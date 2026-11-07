@@ -8,3 +8,11 @@ fn main() {
 #[cfg(test)]
 #[path = "remote_parity_lab/host_isolation_tests.rs"]
 mod host_isolation_tests;
+
+#[cfg(test)]
+#[path = "remote_parity_lab/surface.rs"]
+mod surface;
+
+#[cfg(test)]
+#[path = "remote_parity_lab/remote_title_tests.rs"]
+mod remote_title_tests;

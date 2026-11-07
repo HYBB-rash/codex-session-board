@@ -11,6 +11,10 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
+pub trait HostRpc: Rpc {
+    fn host(&self) -> &str;
+}
+
 pub struct Partition {
     pub host: String,
     pub config: Config,
@@ -55,7 +59,8 @@ impl Partition {
         self.store.discover(&threads)
     }
 
-    pub fn refresh(&self, reader: &mut impl Rpc, identifier: &str) -> Result<Observation> {
+    pub fn refresh(&self, reader: &mut impl HostRpc, identifier: &str) -> Result<Observation> {
+        ensure!(reader.host() == self.host, "Wrong connection host");
         let observed = native_sections::read(reader, &self.config, identifier)?;
         self.store.cache_native(identifier, &observed)?;
         Ok(observed)
@@ -71,12 +76,13 @@ impl Partition {
 
     pub fn save(
         &self,
-        authority: &mut impl Rpc,
+        authority: &mut impl HostRpc,
         identifier: &str,
         state: &str,
         note: &str,
         expected: &Value,
     ) -> Result<()> {
+        ensure!(authority.host() == self.host, "Wrong connection host");
         let revision = revisions(expected)?;
         self.store
             .validate_state(identifier, Some(state), note, revision)?;
@@ -94,18 +100,20 @@ impl Partition {
             .set_native_state(identifier, Some(state), note, revision, &confirmed)
     }
 
-    pub fn sync_title(&self, target: &mut impl Rpc, identifier: &str) -> Result<()> {
+    pub fn sync_title(&self, target: &mut impl HostRpc, identifier: &str) -> Result<()> {
+        ensure!(target.host() == self.host, "Wrong connection host");
         titles::sync(&self.store, target, identifier)
     }
 
     pub fn runtime(
         &self,
-        authority: &mut impl Rpc,
+        authority: &mut impl HostRpc,
         identifier: &str,
         status: &Value,
         turn: &Value,
         since: f64,
     ) -> Result<()> {
+        ensure!(authority.host() == self.host, "Wrong connection host");
         if let Some(change) = self
             .store
             .prepare_native_runtime(identifier, status, turn, since)?
@@ -131,7 +139,8 @@ impl Partition {
         Ok(())
     }
 
-    pub fn archive(&self, target: &mut impl Rpc, identifier: &str, row: &Value) -> Result<()> {
+    pub fn archive(&self, target: &mut impl HostRpc, identifier: &str, row: &Value) -> Result<()> {
+        ensure!(target.host() == self.host, "Wrong connection host");
         let revision = revisions(row)?;
         let expected = self.store.prepare_archive(identifier, revision)?;
         archive::archive(target, identifier, self.config.max_pages, &expected)?;

@@ -577,6 +577,12 @@
       "test::observer_contract::same_phase_runtime_input_rejects_stale_input_version_without_changing_state_version"
     ],
     "TITLE-001": [
+      "example::remote_parity_lab::remote_title_tests::latest_complete_title_survives_truncated_discovery_and_repeated_sync",
+      "example::remote_parity_lab::remote_title_tests::lost_title_receipt_survives_restart_and_readback_avoids_duplicate_write",
+      "example::remote_parity_lab::remote_title_tests::delayed_old_receipt_cannot_delete_a_newer_title_intent",
+      "example::remote_parity_lab::remote_title_tests::metadata_updates_do_not_become_new_user_input",
+      "example::remote_parity_lab::remote_title_tests::exposes_title_overwrite_between_read_and_unconditional_write",
+      "example::remote_parity_lab::remote_title_tests::incorrect_connection_host_is_rejected_before_any_write",
       "lib::codex_session_board::app::tests::busy_title_sync_does_not_wait_for_background_batch",
       "lib::codex_session_board::rpc::tests::title_budget_never_exceeds_three_seconds",
       "lib::codex_session_board::rpc::tests::title_deadline_bounds_a_full_unix_listener_queue",
