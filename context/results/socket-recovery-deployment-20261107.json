@@ -1,0 +1,23 @@
+{
+  "source_commit": "a44bf20",
+  "deployed_version": "0.1.76",
+  "build": "40db051d6b227788a53491c4757da636fdd786f86bc615154a8b595fba59b223",
+  "evidence": "outputs/socket-recovery-deployment-20261107/",
+  "config_bytes_preserved": true,
+  "mcp_environment_preserved": true,
+  "local_manual_records_preserved": 130,
+  "remote_manual_records_preserved": 41,
+  "settings_records_preserved": 1,
+  "daily_marketplace_cache_running_builds_equal": true,
+  "http_plugin_mcp_versions_equal": true,
+  "real_board_sigkill_and_managed_launch_passed": true,
+  "service_auto_respawn_tested": false,
+  "live_pending_at_restart": false,
+  "live_socket_rotation_with_refused_old_path_passed": true,
+  "socket_rotation_recovery_seconds": 5.539539575576782,
+  "release_native_tests_passed": 26,
+  "browser_periodic_refresh_passed": true,
+  "real_desktop_crash_restart_tested": false,
+  "live_automatic_new_stage_after_socket_interruption_tested": false,
+  "release_ready": false
+}

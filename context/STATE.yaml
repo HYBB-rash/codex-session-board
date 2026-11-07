@@ -3,9 +3,9 @@
   "updated_at": "2026-11-07",
   "current_phase": {
     "id": "socket-recovery",
-    "status": "implemented_pending_deployment",
+    "status": "deployed_pending_desktop_crash_validation",
     "as_of": "2026-11-07",
-    "summary": "客户端中断恢复源码候选为 0.1.76，三步代码提交和验证记录分别保存。首选 socket 不存在或拒绝连接时重新发现唯一可连接端点，重核权限和对端用户，共用超时且不重放写入。已接受阶段跨服务重启保留，同轮新阶段可替代旧 pending；延迟读回先确认旧目标，再处理当前阶段，外部不同位置仍保留。26 项原生权威测试、严格 Clippy及代码提交钩子通过。0.1.76 独立只读实例使用真实失效旧 socket 自动读回 41 条远程会话。完整门禁 316 项自动检查通过，17 条需求通过、14 条既有外部验收缺证，退出 2，release_ready=false。证据位于 outputs/socket-recovery-20261107/。日常运行仍是 0.1.72，本任务未部署或修改日常配置、数据与真实会话，任务保持待部署及外部验收。"
+    "summary": "用户授权后已将 a44bf20 的精确 0.1.76 部署到日常看板，HTTP、插件、MCP 版本一致，日常程序、marketplace、缓存及运行进程四处构建哈希一致。配置字节、MCP 环境、本地 130 条与远程 41 条记录的备注、人工状态和确认锚点及设置均保留。日常看板经真实 SIGKILL 后由受管 launch 重启，约 1 秒恢复健康；未安装进程自动拉起机制。真实桌面 socket 原路径保留拒绝连接文件、监听端点换代的故障注入中，看板 PID 不变，约 5.54 秒恢复读取，原路径已恢复。release 模式 26 项原生权威测试通过，浏览器显示及周期刷新通过。此阶段没有强退桌面客户端，没有验证日常环境中断后的新阶段自动移列，不将地址换代注入当作完整桌面闪退验收。桌面强退会结束当前 app-server 和验收轮次，后续需独立编排与观察进程接管。完整门禁沿用精确 0.1.76 的 316 项自动通过、17 条通过和 14 条外部待证据，release_ready=false。部署证据位于 outputs/socket-recovery-deployment-20261107/。后续 0.1.77 仅为部署记录提交，不替换运行的 0.1.76。"
   },
   "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery.md"],
   "known_open_issues": ["一条原生已归档历史记录仍保留本地未确认归档缓存；批量位置读取会提示 1 个缺项，当前看板不显示此记录，未做额外归档或恢复。见 outputs/native-read-deployment-20261107/historical-cache-warning.json。", "新建会话已随 main 部署至 0.1.39；此前仅确认真实点击后客户端选中项目 ID，输入页和第二项目切换尚未实测通过。见 context/handoffs/new-session-project-live-validation.md。", "完整验收缺少其他真实环境证据，release_ready=false；PWA 安装入口实测不能代替全部 31 条验收。", "项目登记与分区读回依赖当前 Codex 客户端内部状态格式，格式改变时需重新核对。", "PWA 安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。", "五状态与归档按钮已部署，网页可见性已验证；真实客户端归档执行仍待专用会话验证。原生取消归档后尚不自动恢复本地已确认归档卡片。"],
