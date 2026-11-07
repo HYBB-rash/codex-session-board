@@ -167,7 +167,7 @@ fn runtime_worker(app: Arc<App>) {
     let mut reader: Option<DesktopConnection> = None;
     let mut revisions = HashMap::new();
     let since = now();
-    loop {
+    while app.enabled.load(Ordering::SeqCst) {
         let result = (|| {
             if reader.is_none() {
                 reader = Some(app.connection(
@@ -193,7 +193,7 @@ fn runtime_worker(app: Arc<App>) {
 }
 
 fn title_worker(app: Arc<App>) {
-    loop {
+    while app.enabled.load(Ordering::SeqCst) {
         if let Ok(jobs) = app.store.pending_titles(None) {
             for job in jobs.iter().take(20) {
                 if let Some(identifier) = job["thread_id"].as_str() {
@@ -235,7 +235,11 @@ pub fn start(app: &Arc<App>) {
     std::thread::spawn(move || project_worker(projects));
     let history = Arc::clone(app);
     std::thread::spawn(move || history_worker(history));
-    if !app.config.desktop_socket.as_os_str().is_empty() {
+    start_host(app);
+}
+
+pub(crate) fn start_host(app: &Arc<App>) {
+    if !app.config.desktop_socket.as_os_str().is_empty() || !app.config.proxy_command.is_empty() {
         let runtime = Arc::clone(app);
         std::thread::spawn(move || runtime_worker(runtime));
     }
@@ -246,7 +250,7 @@ pub fn start(app: &Arc<App>) {
     if app.config.native_sections {
         let native = Arc::clone(app);
         std::thread::spawn(move || {
-            loop {
+            while native.enabled.load(Ordering::SeqCst) {
                 if let Err(error) = native.refresh_native() {
                     let _ = native.update_health(json!({"nativeError":error.to_string()}));
                 }

@@ -4,7 +4,7 @@ use codex_session_board::{app::App, config::Config};
 fn app(directory: &std::path::Path) -> Result<App> {
     App::new(Config {
         data_dir: directory.join("data"),
-        native_sections: true,
+        native_sections: false,
         sync_titles: true,
         open_command: vec![
             "/bin/sh".into(),

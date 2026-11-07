@@ -17,6 +17,26 @@ pub fn identity(host: &str, thread: &str) -> String {
 }
 
 impl Store {
+    pub fn import_remote(&self, source: &Store, host: &str) -> Result<()> {
+        let mut database = self.connection()?;
+        let transaction = database.transaction()?;
+        let imported: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM settings WHERE key='legacy_remote_import')",
+            [], |row| row.get(0),
+        )?;
+        if imported {
+            return Ok(());
+        }
+        for row in source.remote_sessions()?.iter().filter(|row| row["hostId"] == host) {
+            import_row(&transaction, source, row)?;
+        }
+        transaction.execute(
+            "INSERT INTO settings(key,value) VALUES ('legacy_remote_import','1')", [],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub(super) fn upgrade_remote(database: &Connection) -> Result<()> {
         database.execute_batch(REMOTE_SCHEMA)?;
         Ok(())
@@ -148,4 +168,29 @@ impl Store {
         transaction.commit()?;
         Ok(json!({"ok":true,"titleEnabled":false,"titlePending":false,"sectionsEnabled":false}))
     }
+}
+
+fn import_row(transaction: &Transaction<'_>, source: &Store, row: &Value) -> Result<()> {
+    let identifier = row["threadId"].as_str().context("旧会话缺少 ID")?;
+    transaction.execute(
+        "INSERT INTO sessions(id,title,cwd,updated_at,seen_at,note,selected_state,version,needs_review)
+         VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
+        params![identifier,text(row,"title"),text(row,"cwd"),row["updatedAt"].as_i64().unwrap_or(0),
+            now(),text(row,"note"),if row["manual"]==true {row["state"].as_str()} else {None},row["version"].as_i64().unwrap_or(0),
+            row["manual"]==true],
+    )?;
+    let source = source.connection()?;
+    let mut history = source.prepare(
+        "SELECT changed_at,state,note FROM changes WHERE thread_id=? ORDER BY changed_at"
+    )?;
+    for entry in history.query_map([text(row,"id")], |entry| {
+        Ok((entry.get::<_,f64>(0)?,entry.get::<_,String>(1)?,entry.get::<_,String>(2)?))
+    })? {
+        let (at, state, note) = entry?;
+        transaction.execute(
+            "INSERT INTO changes(thread_id,changed_at,state,note) VALUES (?,?,?,?)",
+            params![identifier,at,state,note],
+        )?;
+    }
+    Ok(())
 }

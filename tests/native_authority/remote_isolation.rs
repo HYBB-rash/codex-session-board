@@ -111,18 +111,19 @@ fn actions(live: &Live, client: &Client, before: &Value) -> Result<Value> {
         &update(row(before, SECOND), "to_archive", ""),
     )?;
     let remote_id = identity("mac", FIRST);
-    let remote = timed_post(
-        live,
-        client,
-        "/api/state",
-        &update(row(before, &remote_id), "blocked", "offline-safe note"),
-    )?;
+    let rejected_at = Instant::now();
+    let rejected = live.post_path(client, "/api/state",
+        &update(row(before, &remote_id), "review", "unverified native write"))?;
+    assert_eq!(rejected.status(), reqwest::StatusCode::BAD_REQUEST);
+    let rejection: Value = rejected.json()?;
+    assert!(rejection.to_string().contains("主机"));
+    let remote = rejected_at.elapsed().as_secs_f64() * 1000.0;
     let after = live.snapshot(client)?;
     check_after(live, client, before, &after)?;
     let elapsed = started.elapsed().as_secs_f64() * 1000.0;
     anyhow::ensure!(elapsed < 1000.0, "foreground requests took {elapsed} ms");
     Ok(json!({"localStateMs":state,"localArchiveMs":archive,
-        "remoteSaveMs":remote,"foregroundTotalMs":elapsed}))
+        "remoteRejectedMs":remote,"foregroundTotalMs":elapsed}))
 }
 
 fn check_after(live: &Live, client: &Client, before: &Value, after: &Value) -> Result<()> {
@@ -131,6 +132,7 @@ fn check_after(live: &Live, client: &Client, before: &Value, after: &Value) -> R
     assert_eq!(row(after, FIRST)["state"], "to_archive");
     assert_eq!(row(after, &remote_id)["note"], "offline-safe note");
     assert_eq!(row(after, &remote_id)["state"], "blocked");
+    assert_eq!(row(after, &remote_id), row(before, &remote_id));
     assert_eq!(row(after, &identity("other", FIRST))["version"], 0);
     assert_eq!(row(after, &identity("other", FIRST))["note"], "");
     assert_eq!(row(after, &identity("mac", SECOND))["state"], "unknown");
@@ -196,6 +198,13 @@ fn launch(server: &mut Server, directory: &std::path::Path) -> Result<Live> {
     server.config.runtime_poll_seconds = 60;
     setup_remote(server);
     let app = server.app()?;
+    for host in ["mac", "other"] {
+        let threads = server.surface.lock().unwrap().remote_threads.iter()
+            .filter(|thread| thread["hostId"] == host).cloned().collect::<Vec<_>>();
+        app.store.discover_remote(host,host,&threads)?;
+    }
+    app.store.save_remote(&json!({"id":identity("mac",FIRST),"state":"blocked",
+        "note":"offline-safe note","version":0,"inputVersion":0}))?;
     app.discover(&[json!({"id":FIRST}), json!({"id":SECOND})], true)?;
     app.refresh_native()?;
     drop(app);

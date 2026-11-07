@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::time::Duration;
 
 pub mod hosts;
+mod instances;
 
 fn projects(reader: &mut dyn Rpc) -> Result<Vec<Value>> {
     let response = reader.call("list_projects", json!({}))?;
@@ -149,12 +150,12 @@ pub fn scan(app: &App, connect: &mut impl FnMut() -> Result<Box<dyn Rpc>>) -> Re
 }
 
 pub fn refresh(app: &App) -> Result<()> {
-    let result = scan(app, &mut || {
+    let result = app.refresh_remote_instances().and_then(|()| scan(app, &mut || {
         Ok(Box::new(SidebarConnection::reader(
             &app.config,
             Duration::from_secs(app.config.rpc_timeout_seconds),
         )?) as Box<dyn Rpc>)
-    });
+    }));
     if let Err(error) = &result {
         app.update_health(json!({"remoteVerified":false,"remoteError":error.to_string()}))?;
     }

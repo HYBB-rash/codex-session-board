@@ -30,6 +30,7 @@ pub struct App {
     thread_operations: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     native_generation: AtomicUsize,
     pub(crate) enabled: AtomicBool,
+    pub(crate) remotes: Mutex<HashMap<String, Arc<App>>>,
 }
 
 impl App {
@@ -53,6 +54,7 @@ impl App {
             thread_operations: Mutex::new(HashMap::new()),
             native_generation: AtomicUsize::new(0),
             enabled: AtomicBool::new(true),
+            remotes: Mutex::new(HashMap::new()),
             health: Mutex::new(json!({
                 "lastScanAt":null,"lastSuccessAt":null,"error":null,"scanComplete":false,
                 "refreshing":false,"discovered":0,"runtimeVerified":false,
@@ -148,6 +150,13 @@ impl App {
     }
 
     pub fn request(&self, path: &str, body: Option<&Value>) -> Result<Value> {
+        if self.config.native_sections
+            && matches!(path, "/api/state" | "/api/archive" | "/api/open")
+            && let Some(body) = body
+            && body["id"].as_str().is_some_and(|id| id.starts_with("remote:"))
+        {
+            return self.route_remote(path, body);
+        }
         match (path, body) {
             ("/api/sessions", None) => self.snapshot(),
             ("/api/state", Some(body)) => self.save(body),
