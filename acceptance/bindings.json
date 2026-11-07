@@ -313,6 +313,9 @@
       "test::board_io::manual_save_preserves_note_when_field_is_omitted"
     ],
     "MANUAL-001": [
+      "test::native_direct::direct_read_maps_only_the_local_backend_and_never_queries_the_aggregate",
+      "test::native_direct::direct_read_rejects_ambiguous_missing_renamed_and_wrong_host_mappings",
+      "test::native_direct::direct_snapshot_rejects_partial_pages_and_malformed_target_results",
       "test::remote_sessions::remote_identity_and_manual_data_survive_refresh_restart_without_touching_local",
       "test::remote_sessions::remote_validation_is_atomic_and_rejects_cross_host_data",
       "test::native_authority::archive::a_slow_native_archive_does_not_hold_the_database_lock_for_other_chats",
@@ -933,6 +936,7 @@
       "test::board_io::service_update_rejects_old_build_but_can_verify_and_stop_its_process"
     ],
     "BOUNDARY-001": [
+      "lib::codex_session_board::rpc::tests::native_reader_rejects_writes_and_keeps_the_history_reader_boundary",
       "test::native_authority::entrypoints::built_binary_preserves_native_position_guards_over_http_and_mcp",
       "test::native_authority::archive::a_blocked_move_in_another_chat_does_not_block_native_archive",
       "lib::codex_session_board::rpc::tests::archive_role_rejects_other_writes_before_io",

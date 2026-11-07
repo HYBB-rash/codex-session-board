@@ -36,6 +36,7 @@ impl std::error::Error for RequestError {}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Role {
     Reader,
+    NativeReader,
     TitleWriter,
     ArchiveWriter,
 }
@@ -44,6 +45,10 @@ impl Role {
     fn check(self, method: &str) -> Result<()> {
         let allowed = match self {
             Self::Reader => matches!(method, "initialize" | "thread/list" | "thread/turns/list"),
+            Self::NativeReader => matches!(
+                method,
+                "initialize" | "thread/list" | "thread/read" | "threadSection/list"
+            ),
             Self::TitleWriter => matches!(method, "initialize" | "thread/read" | "thread/name/set"),
             Self::ArchiveWriter => matches!(
                 method,
@@ -332,7 +337,7 @@ impl DesktopConnection {
             request_id: 0,
             timeout,
             role,
-            title_deadline: (role != Role::Reader).then_some(deadline),
+            title_deadline: matches!(role, Role::TitleWriter | Role::ArchiveWriter).then_some(deadline),
         };
         reader.call(
             "initialize",
@@ -954,6 +959,21 @@ mod tests {
             }
             worker.join().map_err(|_| anyhow!("模拟服务异常"))??;
         }
+        Ok(())
+    }
+
+    #[test]
+    fn native_reader_rejects_writes_and_keeps_the_history_reader_boundary() -> Result<()> {
+        for method in ["initialize", "thread/list", "thread/read", "threadSection/list"] {
+            Role::NativeReader.check(method)?;
+        }
+        let (mut connection, _server) = local_connection(Role::NativeReader)?;
+        for method in ["thread/archive", "thread/name/set", "threadSection/move", "turn/start"] {
+            assert!(connection.call(method, json!({})).is_err());
+        }
+        assert_eq!(connection.request_id, 0);
+        assert!(Role::Reader.check("thread/read").is_err());
+        assert!(Role::Reader.check("threadSection/list").is_err());
         Ok(())
     }
 

@@ -3,6 +3,8 @@ use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 
+pub mod direct;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Observation {
     pub state: String,
