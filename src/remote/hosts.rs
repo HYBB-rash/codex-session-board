@@ -5,6 +5,9 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
+#[path = "connection_source.rs"]
+pub mod source;
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Host {
@@ -23,7 +26,11 @@ fn enabled() -> bool {
 }
 
 pub fn registered(config: &Config) -> Result<Vec<Host>> {
-    let state: Value = serde_json::from_slice(&std::fs::read(&config.sidebar_state_file)?)?;
+    registered_at(&config.sidebar_state_file)
+}
+
+pub(crate) fn registered_at(path: &std::path::Path) -> Result<Vec<Host>> {
+    let state: Value = serde_json::from_slice(&std::fs::read(path)?)?;
     let mut hosts: Vec<Host> = serde_json::from_value(
         state["codex-managed-remote-connections"]
             .as_array()
@@ -45,41 +52,37 @@ pub fn registered(config: &Config) -> Result<Vec<Host>> {
 
 impl Host {
     pub fn verify_source(&self, config: &Config) -> Result<()> {
-        let path = self.directory(config).join("source.json");
-        if path.exists() {
-            let previous: Value = serde_json::from_slice(&std::fs::read(path)?)?;
-            ensure!(
-                previous
-                    == serde_json::json!({"hostId":self.host_id,"command":self.proxy(config)?}),
-                "主机连接身份已改变，需要显式迁移"
-            );
-        }
-        Ok(())
+        source::verify_existing(self, config)
     }
 
-    pub fn command(&self, config: &Config, operation: &str) -> Result<Vec<String>> {
+    pub(crate) fn ssh(&self, config: &Config) -> Result<Vec<String>> {
+        self.ssh_with(&config.ssh_command, config.rpc_timeout_seconds)
+    }
+
+    pub(crate) fn ssh_with(&self, program: &[String], timeout_seconds: u64) -> Result<Vec<String>> {
         let target = self
             .alias
             .as_deref()
-            .or(self.hostname.as_deref())
-            .filter(|value| !value.is_empty())
+            .filter(|value| !value.trim().is_empty())
+            .or(self.hostname.as_deref().filter(|value| !value.trim().is_empty()))
             .context("主机没有 SSH 连接信息")?;
         ensure!(
             !target.starts_with('-') && !target.chars().any(char::is_control),
             "SSH 目标无效"
         );
-        let mut command = vec![
-            "ssh".into(),
+        let mut command = program.to_vec();
+        ensure!(!command.is_empty() && command.iter().all(|part| !part.is_empty()), "SSH 命令无效");
+        command.extend([
             "-T".into(),
             "-o".into(),
             "BatchMode=yes".into(),
             "-o".into(),
-            format!("ConnectTimeout={}", config.rpc_timeout_seconds.min(10)),
+            format!("ConnectTimeout={}", timeout_seconds.min(10)),
             "-o".into(),
             "ServerAliveInterval=15".into(),
             "-o".into(),
             "ServerAliveCountMax=2".into(),
-        ];
+        ]);
         if let Some(port) = self.ssh_port {
             ensure!(port != 0, "SSH 端口无效");
             command.extend(["-p".into(), port.to_string()]);
@@ -88,7 +91,13 @@ impl Host {
             ensure!(!identity.is_empty(), "SSH 身份路径为空");
             command.extend(["-i".into(), identity.clone()]);
         }
-        command.extend(["--".into(), target.into(), operation.into()]);
+        command.extend(["--".into(), target.into()]);
+        Ok(command)
+    }
+
+    pub fn command(&self, config: &Config, operation: &str) -> Result<Vec<String>> {
+        let mut command = self.ssh(config)?;
+        command.push(crate::rpc::login::wrap(operation)?);
         Ok(command)
     }
 

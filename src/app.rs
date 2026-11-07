@@ -17,6 +17,7 @@ use std::time::Duration;
 
 mod native;
 mod remote;
+mod remote_snapshot;
 mod drafts;
 
 pub struct App {
@@ -90,7 +91,9 @@ impl App {
         ensure!(self.enabled.load(Ordering::SeqCst), "主机登记已改变，请刷新核对");
         ensure!(!self.config.legacy_mode || !matches!(role, Role::DraftWriter | Role::ArchiveWriter),
             "六状态兼容模式不允许创建或归档远程会话");
-        if self.config.proxy_command.is_empty() {
+        if let Some(binding) = &self.config.remote_binding {
+            DesktopConnection::remote(binding, timeout, role)
+        } else if self.config.proxy_command.is_empty() {
             DesktopConnection::connect(&self.config.desktop_socket, timeout, role)
         } else {
             DesktopConnection::proxy(&self.config.proxy_command, timeout, role)
@@ -136,6 +139,7 @@ impl App {
     }
 
     pub fn snapshot(&self) -> Result<Value> {
+        self.load_remote_cache()?;
         let states: serde_json::Map<String, Value> = self.config.board_states()
             .map(|(state, label)| (state.to_string(), json!(label)))
             .collect();

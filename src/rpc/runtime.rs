@@ -6,15 +6,26 @@ struct Clock {
     uncertainty: f64,
     sampled: Instant,
     local_time: f64,
+    peer: Option<Peer>,
 }
 
 impl Clock {
-    fn sample(command: &[String], timeout: Duration) -> Result<Self> {
+    fn sample_bound(command: &[String], timeout: Duration, binding: Option<&Binding>) -> Result<Self> {
         let started = now();
         let elapsed = Instant::now();
-        let remote = pipe::first_line(command, timeout)?.parse::<f64>()?;
+        let (line, peer) = match binding {
+            Some(binding) => {
+                let deadline = deadline_after(timeout.min(Duration::from_secs(4)))?;
+                let (line, peer) = framing::clock(binding, deadline)?;
+                (line, Some(peer))
+            }
+            None => (pipe::first_line(command, timeout)?, None),
+        };
+        let remote = line.parse::<f64>()?;
         let finished = now();
-        Self::bounds(started, finished, elapsed.elapsed().as_secs_f64(), remote)
+        let mut clock = Self::bounds(started, finished, elapsed.elapsed().as_secs_f64(), remote)?;
+        clock.peer = peer;
+        Ok(clock)
     }
 
     fn bounds(started: f64, finished: f64, elapsed: f64, remote: f64) -> Result<Self> {
@@ -33,6 +44,7 @@ impl Clock {
             uncertainty: elapsed / 2.0,
             sampled: Instant::now(),
             local_time: now(),
+            peer: None,
         })
     }
 
@@ -97,6 +109,7 @@ pub(crate) struct RuntimeConnection {
     command: Vec<String>,
     clock: Option<Clock>,
     timeout: Duration,
+    binding: Option<Binding>,
 }
 
 impl RuntimeConnection {
@@ -123,16 +136,20 @@ impl RuntimeConnection {
             "远程执行观察缺少时钟探针"
         );
         let clock = (!command.is_empty())
-            .then(|| Clock::sample(&command, timeout))
+            .then(|| Clock::sample_bound(&command, timeout, app.config.remote_binding.as_ref()))
             .transpose()?;
         app.update_health(
             json!({"clockUncertaintySeconds":clock.as_ref().map(|clock| clock.uncertainty)}),
         )?;
+        let connection = app.connection(timeout, role)?;
+        ensure!(clock.as_ref().and_then(|clock| clock.peer.as_ref()) == connection.peer.as_ref(),
+            "时钟与代理进程的远端身份不匹配");
         Ok(Self {
-            connection: app.connection(timeout, role)?,
+            connection,
             command,
             clock,
             timeout,
+            binding: app.config.remote_binding.clone(),
         })
     }
 }
@@ -144,7 +161,8 @@ impl Rpc for RuntimeConnection {
             .as_ref()
             .is_some_and(|clock| clock.sampled.elapsed() > Duration::from_secs(30))
         {
-            self.clock = Some(Clock::sample(&self.command, self.timeout)?);
+            self.clock = Some(Clock::sample_bound(
+                &self.command, self.timeout, self.binding.as_ref())?);
         }
         let mut response = self.connection.call(method, params)?;
         if method == "thread/turns/list"
@@ -221,6 +239,15 @@ mod tests {
             Duration::from_secs(2),
         )?;
         assert_eq!(value, "123.25");
+        Ok(())
+    }
+
+    #[test]
+    fn clock_four_second_limit_and_half_rtt_uncertainty_remain_exact() -> Result<()> {
+        let clock = Clock::bounds(100.0, 104.0, 4.0, 600.0)?;
+        assert_eq!(clock.uncertainty, 2.0);
+        assert!(Clock::bounds(100.0, 104.000001, 4.000001, 600.0).is_err());
+        assert!(Clock::bounds(100.0, 104.25, 4.0, 600.0).is_err());
         Ok(())
     }
 }

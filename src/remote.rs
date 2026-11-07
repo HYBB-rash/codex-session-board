@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::time::Duration;
 
 pub mod hosts;
+mod cache;
 mod connections;
 mod instances;
 mod scans;
@@ -128,6 +129,14 @@ pub fn scan_host(app: &App, reader: &mut dyn Rpc, host: &str, label: &str) -> Re
 }
 
 pub fn scan(app: &App, connect: &mut impl FnMut() -> Result<Box<dyn Rpc>>) -> Result<()> {
+    scan_scoped(app, connect, None)
+}
+
+fn scan_scoped(
+    app: &App,
+    connect: &mut impl FnMut() -> Result<Box<dyn Rpc>>,
+    allowed: Option<&HashSet<String>>,
+) -> Result<()> {
     let catalog = merge_projects(app, projects(connect()?.as_mut())?)?;
     app.store.cache_remote_projects(&catalog)?;
     let hosts: BTreeMap<_, _> = catalog
@@ -141,6 +150,11 @@ pub fn scan(app: &App, connect: &mut impl FnMut() -> Result<Box<dyn Rpc>>) -> Re
         .collect();
     let mut reports = Vec::new();
     for (host, label) in hosts {
+        if allowed.is_some_and(|hosts| !hosts.contains(host)) {
+            reports.push(json!({"hostId":host,"hostLabel":label,"scanComplete":false,
+                "connectionRequired":true,"error":"尚未连接，保留缓存"}));
+            continue;
+        }
         let result = connect().and_then(|mut reader| scan_host(app, reader.as_mut(), host, label));
         reports.push(
             json!({"hostId":host,"hostLabel":label,"scanComplete":result.is_ok(),
@@ -153,12 +167,19 @@ pub fn scan(app: &App, connect: &mut impl FnMut() -> Result<Box<dyn Rpc>>) -> Re
 }
 
 pub fn refresh(app: &App) -> Result<()> {
-    let result = app.refresh_remote_instances().and_then(|()| scan(app, &mut || {
-        Ok(Box::new(SidebarConnection::reader(
-            &app.config,
-            Duration::from_secs(app.config.rpc_timeout_seconds),
-        )?) as Box<dyn Rpc>)
-    }));
+    let result = (|| {
+        app.refresh_remote_instances()?;
+        let allowed = app.remotes.lock().map_err(|_| anyhow::anyhow!("主机锁已损坏"))?
+            .iter().filter(|(_, remote)| remote.enabled.load(std::sync::atomic::Ordering::SeqCst)
+                && remote.config.remote_binding.as_ref()
+                    .is_none_or(|binding| binding.require_confirmed().is_ok()))
+            .map(|(host, _)| host.clone()).collect();
+        scan_scoped(app, &mut || {
+            Ok(Box::new(SidebarConnection::reader(
+                &app.config, Duration::from_secs(app.config.rpc_timeout_seconds),
+            )?) as Box<dyn Rpc>)
+        }, Some(&allowed))
+    })();
     if let Err(error) = &result {
         app.update_health(json!({"remoteVerified":false,"remoteError":error.to_string()}))?;
     }

@@ -1,5 +1,5 @@
 use super::hosts::{self, Host};
-use crate::{app::App, config, observer};
+use crate::{app::App, observer};
 use anyhow::{Context, Result, ensure};
 use serde_json::json;
 use std::sync::{Arc, atomic::Ordering};
@@ -10,24 +10,22 @@ impl App {
         let mut config = self.config.clone();
         config.host_id = host.host_id.clone();
         config.data_dir = host.directory(&self.config);
+        config.auto_archive_seconds = self.config.remote_auto_archive_seconds;
         config.proxy_command = host.proxy(&self.config)?;
         config.clock_command = host.command(
             &self.config,
             "python3 -c 'import time; print(time.time(), flush=True)'",
         )?;
+        config.remote_binding = Some(hosts::source::Binding::prepare(host, &self.config)?);
         let remote = Arc::new(App::new(config)?);
         remote.update_health(json!({"hostLabel":host.display_name}))?;
-        let path = remote.config.data_dir.join("source.json");
-        let source = json!({"hostId":host.host_id,"command":remote.config.proxy_command});
-        if !path.exists() {
-            config::write_json(&path, &source, false)?;
-        }
         remote.store.import_remote(&self.store, &host.host_id)?;
         Ok(remote)
     }
 
     pub(crate) fn refresh_remote_instances(&self) -> Result<()> {
         ensure!(!self.config.legacy_mode, "六状态兼容模式不连接远程主机");
+        self.load_remote_cache()?;
         let hosts = self.requested_hosts()?;
         let cached = self
             .remotes
@@ -68,13 +66,16 @@ impl App {
             .get(&host.host_id)
             .cloned();
         if let Some(remote) = existing {
+            if let Err(error) = host.verify_source(&self.config) {
+                remote.deactivate()?;
+                return Err(error);
+            }
             let matches = remote.config.proxy_command == host.proxy(&self.config)?;
             if !matches {
                 remote.deactivate()?;
             }
-            ensure!(matches, "主机连接身份已改变，需要显式迁移");
             remote.update_health(json!({"hostLabel":host.display_name}))?;
-            if remote.enabled.load(Ordering::SeqCst) || !host.enabled {
+            if matches && (remote.enabled.load(Ordering::SeqCst) || !host.enabled) {
                 return Ok(());
             }
             remote.deactivate()?;
@@ -105,12 +106,6 @@ impl App {
             .map_err(|_| anyhow::anyhow!("主机锁已损坏"))?
             .get(host)
             .cloned();
-        if let Some(remote) = &remote {
-            ensure!(
-                remote.config.proxy_command == descriptor.proxy(&self.config)?,
-                "主机连接身份已改变，需要显式迁移"
-            );
-        }
         Ok((descriptor, remote))
     }
 
@@ -121,6 +116,11 @@ impl App {
             "该主机未自动连接，请在看板中连接");
         let remote = remote.context("远程主机尚未连接，请刷新后重试")?;
         ensure!(remote.enabled.load(Ordering::SeqCst), "远程主机登记已失效");
+        if let Some(binding) = &remote.config.remote_binding {
+            crate::rpc::framing::guard(binding,
+                std::time::Duration::from_secs(self.config.rpc_timeout_seconds))
+                .map_err(|error| anyhow::anyhow!("远程主机来源核验失败：{error:#}"))?;
+        }
         Ok(remote)
     }
 }
@@ -178,10 +178,12 @@ mod tests {
 
     #[test]
     fn remote_instances_reuse_store_preserve_notes_and_reject_reassigned_targets() -> Result<()> {
+        let fixture = crate::rpc::identity_fixture::Fixture::new()?;
         let directory = tempfile::tempdir()?;
         let app = App::new(Config {
             data_dir: directory.path().into(),
             sync_titles: false,
+            ssh_command: fixture.config.ssh_command.clone(),
             ..Config::default()
         })?;
         let identifier = uuid::Uuid::new_v4().to_string();
@@ -211,7 +213,12 @@ mod tests {
         );
         host.hostname = Some("other".into());
         host.alias = None;
+        fixture.update("hostname", json!("other"))?;
         assert!(app.build_remote(&host).is_err());
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "connection_gate_tests.rs"]
+mod identity_gate_tests;

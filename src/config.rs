@@ -16,6 +16,9 @@ pub struct Config {
     pub codex_command: Vec<String>,
     pub proxy_command: Vec<String>,
     pub clock_command: Vec<String>,
+    pub ssh_command: Vec<String>,
+    #[serde(skip)]
+    pub remote_binding: Option<crate::remote::hosts::source::Binding>,
     pub data_dir: PathBuf,
     pub port: u16,
     pub poll_seconds: u64,
@@ -28,6 +31,7 @@ pub struct Config {
     pub desktop_socket: PathBuf,
     pub runtime_poll_seconds: u64,
     pub auto_archive_seconds: Option<u64>,
+    pub remote_auto_archive_seconds: Option<u64>,
     pub sync_titles: bool,
     pub sync_sections: bool,
     pub native_sections: bool,
@@ -44,6 +48,8 @@ impl Default for Config {
             codex_command: vec!["codex".into(), "app-server".into(), "--stdio".into()],
             proxy_command: Vec::new(),
             clock_command: Vec::new(),
+            ssh_command: vec!["ssh".into()],
+            remote_binding: None,
             data_dir: PathBuf::new(),
             port: 8767,
             poll_seconds: 30,
@@ -65,6 +71,7 @@ impl Default for Config {
                 .unwrap_or_default(),
             runtime_poll_seconds: 2,
             auto_archive_seconds: None,
+            remote_auto_archive_seconds: None,
             sync_titles: true,
             sync_sections: false,
             native_sections: false,
@@ -83,8 +90,10 @@ impl Config {
             !self.legacy_mode
                 || !self.native_sections
                     && self.auto_archive_seconds.is_none()
+                    && self.remote_auto_archive_seconds.is_none()
                     && self.proxy_command.is_empty()
                     && self.clock_command.is_empty()
+                && self.remote_binding.is_none()
                     && self.sidebar_socket.as_os_str().is_empty()
                     && self.host_id == "local",
             "兼容模式仅支持本机六状态记录，不启用原生分区、远程连接或真实归档"
@@ -98,19 +107,8 @@ impl Config {
 
     pub fn validate(&self) -> Result<()> {
         self.validate_modes()?;
-        ensure!(
-            self.auto_archive_seconds.is_none_or(|seconds| seconds > 0),
-            "auto_archive_seconds 必须为空或正整数"
-        );
-        for (name, command) in [
-            ("codex_command", &self.codex_command),
-            ("open_command", &self.open_command),
-        ] {
-            ensure!(
-                !command.is_empty() && command.iter().all(|part| !part.is_empty()),
-                "{name} 必须是非空命令参数数组"
-            );
-        }
+        self.validate_commands()?;
+        self.validate_archiving()?;
         ensure!(!self.host_id.is_empty(), "host_id 必须为非空文本");
         ensure!(
             self.proxy_command
@@ -136,6 +134,29 @@ impl Config {
             ("runtime_poll_seconds", self.runtime_poll_seconds as u128),
         ] {
             ensure!(value > 0, "{name} 必须为正整数");
+        }
+        Ok(())
+    }
+
+    fn validate_commands(&self) -> Result<()> {
+        for (name, command) in [
+            ("codex_command", &self.codex_command),
+            ("open_command", &self.open_command),
+            ("ssh_command", &self.ssh_command),
+        ] {
+            ensure!(!command.is_empty() && command.iter().all(|part| !part.is_empty()),
+                "{name} 必须是非空命令参数数组");
+        }
+        Ok(())
+    }
+
+    fn validate_archiving(&self) -> Result<()> {
+        for (name, interval) in [
+            ("auto_archive_seconds", self.auto_archive_seconds),
+            ("remote_auto_archive_seconds", self.remote_auto_archive_seconds),
+        ] {
+            ensure!(interval.is_none_or(|seconds| seconds > 0),
+                "{name} 必须为空或正整数");
         }
         Ok(())
     }

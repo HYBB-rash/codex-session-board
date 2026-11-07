@@ -9,6 +9,10 @@ use std::time::{Duration, Instant};
 const SECOND: &str = "22222222-2222-4222-8222-222222222222";
 type Client = reqwest::blocking::Client;
 
+#[path = "remote_fixture.rs"]
+mod remote_fixture;
+use remote_fixture::RemoteFixture;
+
 struct Gate(Arc<(Mutex<bool>, Condvar)>);
 
 impl Drop for Gate {
@@ -36,11 +40,12 @@ fn wait_remote(live: &Live, client: &Client, complete: bool, after: Option<f64>)
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         let snapshot = live.snapshot(client)?;
-        if snapshot["health"]["remoteHosts"]
-            .as_array()
-            .is_some_and(|hosts| {
-                hosts.len() == 2 && hosts.iter().all(|host| host["scanComplete"] == complete)
-            })
+        if managed_ready(&snapshot)
+            && snapshot["health"]["remoteHosts"]
+                .as_array()
+                .is_some_and(|hosts| {
+                    hosts.len() == 2 && hosts.iter().all(|host| host["scanComplete"] == complete)
+                })
             && after.is_none_or(|previous| {
                 snapshot["health"]["remoteLastAt"].as_f64().unwrap_or(0.0) > previous
             })
@@ -51,8 +56,35 @@ fn wait_remote(live: &Live, client: &Client, complete: bool, after: Option<f64>)
             Instant::now() < deadline,
             "remote scan did not reach expected state"
         );
+        live.post_path(client, "/api/refresh", &json!({}))?
+            .error_for_status()?;
         std::thread::sleep(Duration::from_millis(20));
     }
+}
+
+fn managed_ready(snapshot: &Value) -> bool {
+    snapshot["health"]["remoteConnections"]
+        .as_array()
+        .is_some_and(|connections| {
+            connections.len() == 2
+                && ["mac", "other"].iter().all(|host| {
+                    connections.iter().any(|connection| {
+                        connection["hostId"] == *host
+                            && connection["nativeVerified"] == true
+                            && connection["runtimeVerified"] == true
+                            && connection["scanComplete"] == true
+                            && connection["writeError"].is_null()
+                    }) && [FIRST, SECOND].iter().all(|thread| {
+                        snapshot["sessions"].as_array().unwrap().iter().any(|row| {
+                            row["id"] == identity(host, thread)
+                                && row["readOnly"] == false
+                                && row["sectionVersion"]
+                                    .as_str()
+                                    .is_some_and(|value| !value.is_empty())
+                        })
+                    })
+                })
+        })
 }
 
 fn setup_remote(server: &Server) {
@@ -96,8 +128,9 @@ fn timed_post(live: &Live, client: &Client, path: &str, body: &Value) -> Result<
     Ok(started.elapsed().as_secs_f64() * 1000.0)
 }
 
-fn actions(live: &Live, client: &Client, before: &Value) -> Result<Value> {
+fn actions(live: &Live, client: &Client, before: &Value, remotes: &RemoteFixture) -> Result<Value> {
     let started = Instant::now();
+    let _pause = remotes.pause()?;
     let state = timed_post(
         live,
         client,
@@ -112,8 +145,11 @@ fn actions(live: &Live, client: &Client, before: &Value) -> Result<Value> {
     )?;
     let remote_id = identity("mac", FIRST);
     let rejected_at = Instant::now();
-    let rejected = live.post_path(client, "/api/state",
-        &update(row(before, &remote_id), "review", "unverified native write"))?;
+    let rejected = live.post_path(
+        client,
+        "/api/state",
+        &update(row(before, &remote_id), "review", "unverified native write"),
+    )?;
     assert_eq!(rejected.status(), reqwest::StatusCode::BAD_REQUEST);
     let rejection: Value = rejected.json()?;
     assert!(rejection.to_string().contains("主机"));
@@ -192,21 +228,34 @@ fn restart_offline(
     Ok(())
 }
 
-fn launch(server: &mut Server, directory: &std::path::Path) -> Result<Live> {
+fn launch(
+    server: &mut Server,
+    directory: &std::path::Path,
+    remotes: &RemoteFixture,
+) -> Result<Live> {
     server.config.rpc_timeout_seconds = 6;
     server.config.poll_seconds = 60;
     server.config.runtime_poll_seconds = 60;
     setup_remote(server);
     let app = server.app()?;
     for host in ["mac", "other"] {
-        let threads = server.surface.lock().unwrap().remote_threads.iter()
-            .filter(|thread| thread["hostId"] == host).cloned().collect::<Vec<_>>();
-        app.store.discover_remote(host,host,&threads)?;
+        let threads = server
+            .surface
+            .lock()
+            .unwrap()
+            .remote_threads
+            .iter()
+            .filter(|thread| thread["hostId"] == host)
+            .cloned()
+            .collect::<Vec<_>>();
+        app.store.discover_remote(host, host, &threads)?;
     }
-    app.store.save_remote(&json!({"id":identity("mac",FIRST),"state":"blocked",
+    app.store
+        .save_remote(&json!({"id":identity("mac",FIRST),"state":"blocked",
         "note":"offline-safe note","version":0,"inputVersion":0}))?;
     app.discover(&[json!({"id":FIRST}), json!({"id":SECOND})], true)?;
     app.refresh_native()?;
+    remotes.seed_native_cache(&server.config, &app.store)?;
     drop(app);
     Live::new(&mut server.config, directory)
 }
@@ -253,20 +302,23 @@ fn prepare_mode(server: &Server, live: &Live, client: &Client, mode: &str) -> Re
 fn scenario(mode: &str) -> Result<Value> {
     let directory = tempfile::tempdir()?;
     let mut server = Server::new(directory.path())?;
-    let live = launch(&mut server, directory.path())?;
+    let remotes = RemoteFixture::new(&mut server, directory.path())?;
+    let live = launch(&mut server, directory.path(), &remotes)?;
     let client = Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(3))
         .build()?;
     live.ready(&client)?;
     wait_remote(&live, &client, true, None)?;
+    remotes.assert_managed(&server.config)?;
     let gate = prepare_mode(&server, &live, &client, mode)?;
     server.surface.lock().unwrap().calls.clear();
     let snapshot_started = Instant::now();
     let before = live.snapshot(&client)?;
     let snapshot_ms = snapshot_started.elapsed().as_secs_f64() * 1000.0;
     anyhow::ensure!(snapshot_ms < 1000.0, "snapshot waited for the remote scan");
-    let mut report = actions(&live, &client, &before)?;
+    let mut report = actions(&live, &client, &before, &remotes)?;
+    remotes.assert_isolated()?;
     report["scenario"] = json!(mode);
     report["remoteBudgetMs"] = json!(6000);
     report["snapshotMs"] = json!(snapshot_ms);

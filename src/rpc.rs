@@ -1,3 +1,4 @@
+use crate::remote::hosts::source::{Binding, Peer};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use rustix::io::Errno;
 use rustix::net::{AddressFamily, SocketAddrUnix, SocketFlags, SocketType};
@@ -14,6 +15,13 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tungstenite::{Message, WebSocket};
 
+pub(crate) mod capture;
+pub(crate) mod framing;
+mod forwarding;
+#[cfg(test)]
+#[path = "rpc/connection_identity_fixture.rs"]
+pub(crate) mod identity_fixture;
+pub(crate) mod login;
 mod pipe;
 pub(crate) mod runtime;
 
@@ -76,7 +84,7 @@ impl Role {
     }
 }
 
-fn deadline_after(timeout: Duration) -> Result<Instant> {
+pub(crate) fn deadline_after(timeout: Duration) -> Result<Instant> {
     ensure!(!timeout.is_zero(), "RPC 超时必须大于零");
     Instant::now().checked_add(timeout).context("RPC 超时过大")
 }
@@ -328,6 +336,8 @@ pub struct DesktopConnection {
     timeout: Duration,
     role: Role,
     title_deadline: Option<Instant>,
+    remote_binding: Option<Binding>,
+    peer: Option<Peer>,
 }
 
 impl DesktopConnection {
@@ -358,6 +368,16 @@ impl DesktopConnection {
         role: Role,
         deadline: Instant,
     ) -> Result<Self> {
+        Self::handshake_bound(transport, timeout, role, deadline, None)
+    }
+
+    fn handshake_bound(
+        transport: pipe::Transport,
+        timeout: Duration,
+        role: Role,
+        deadline: Instant,
+        source: Option<(&Binding, &Peer)>,
+    ) -> Result<Self> {
         let stream = DeadlineStream {
             stream: transport,
             deadline,
@@ -369,18 +389,30 @@ impl DesktopConnection {
             request_id: 0,
             timeout,
             role,
-            title_deadline: matches!(role, Role::TitleWriter | Role::ArchiveWriter)
-                .then_some(deadline),
+            title_deadline: Some(deadline),
+            remote_binding: None,
+            peer: None,
         };
-        reader.call(
+        reader.initialize(source)?;
+        reader.title_deadline =
+            matches!(role, Role::TitleWriter | Role::ArchiveWriter).then_some(deadline);
+        Ok(reader)
+    }
+
+    fn initialize(&mut self, source: Option<(&Binding, &Peer)>) -> Result<()> {
+        let response = self.call(
             "initialize",
             json!({
                 "clientInfo": {"name": "session_board_runtime", "version": env!("CARGO_PKG_VERSION")},
                 "capabilities": {"experimentalApi": true}
             }),
         )?;
-        reader.send_json(&json!({"method": "initialized"}), reader.call_deadline()?)?;
-        Ok(reader)
+        if let Some((binding, peer)) = source {
+            peer.initialize(&response)?;
+            binding.confirm(peer, self.call_deadline()?)?;
+        }
+        self.send_json(&json!({"method": "initialized"}), self.call_deadline()?)?;
+        Ok(())
     }
 
     fn call_deadline(&self) -> Result<Instant> {
@@ -419,6 +451,12 @@ impl Rpc for DesktopConnection {
     fn call(&mut self, method: &str, params: Value) -> Result<Value> {
         self.role.check(method)?;
         let deadline = self.call_deadline()?;
+        if matches!(method, "thread/start" | "thread/name/set" | "thread/archive")
+            && let Some(binding) = &self.remote_binding
+        {
+            binding.require_confirmed()?;
+            framing::verify_current(binding, deadline)?;
+        }
         self.request_id = self.request_id.checked_add(1).context("RPC 请求编号耗尽")?;
         self.send_json(
             &json!({"id": self.request_id, "method": method, "params": params}),
@@ -452,6 +490,7 @@ pub struct SidebarConnection {
     request_id: u64,
     read_only: bool,
     project_only: bool,
+    origin: Option<forwarding::Guard>,
 }
 
 impl SidebarConnection {
@@ -479,6 +518,7 @@ impl SidebarConnection {
             request_id: 0,
             read_only: false,
             project_only: false,
+            origin: Some(forwarding::Guard::new(config)),
         })
     }
 
@@ -513,6 +553,11 @@ impl SidebarConnection {
 impl Rpc for SidebarConnection {
     fn call(&mut self, method: &str, params: Value) -> Result<Value> {
         self.check(method)?;
+        if matches!(method, "move_thread_to_sidebar_section" | "move_thread_to_project")
+            && let Some(origin) = &self.origin
+        {
+            origin.verify(&params, self.stream.deadline)?;
+        }
         self.request_id = self.request_id.checked_add(1).context("分区请求编号耗尽")?;
         let request = json!({"jsonrpc":"2.0","id":self.request_id,"method":"tools/call",
             "params":{"namespace":"codex_app","tool":method,"arguments":params,
@@ -657,6 +702,7 @@ mod tests {
                 request_id: 0,
                 read_only: false,
                 project_only: false,
+                origin: None,
             },
             server,
         ))
@@ -833,7 +879,8 @@ mod tests {
             io::ErrorKind::WouldBlock
         );
         let _new = SidebarConnection::connect(&config, Duration::from_millis(100))?;
-        let (mut accepted, _) = replacement_listener.accept()?;
+        let accept_deadline = deadline_after(Duration::from_millis(100))?;
+        let (mut accepted, _) = deadline_io(accept_deadline, || replacement_listener.accept())?;
         accepted.set_nonblocking(true)?;
         assert_eq!(
             accepted.read(&mut [0; 1]).unwrap_err().kind(),
@@ -856,7 +903,7 @@ mod tests {
             static NEXT: AtomicU64 = AtomicU64::new(0);
             let identifier = NEXT.fetch_add(1, Ordering::Relaxed);
             let path =
-                std::env::temp_dir().join(format!("board-rpc-{}-{identifier}", std::process::id()));
+                std::env::temp_dir().join(format!("r{}-{identifier:x}", std::process::id()));
             fs::create_dir(&path)?;
             let sandbox = Self(path);
             fs::set_permissions(&sandbox.0, Permissions::from_mode(0o700))?;
@@ -897,6 +944,8 @@ mod tests {
             timeout: Duration::from_secs(1),
             role,
             title_deadline: (role != Role::Reader).then_some(deadline),
+            remote_binding: None,
+            peer: None,
         };
         Ok((
             client,

@@ -92,35 +92,9 @@ impl App {
         }
         let mut reports = Vec::new();
         for remote in self.remote_instances()? {
-            let host = &remote.config.host_id;
-            let rows = remote.store.sessions()?;
-            let known = remote.store.saved_session_ids()?;
-            let active = remote
-                .active_sessions
-                .lock()
-                .map_err(|_| anyhow::anyhow!("会话发现锁已损坏"))?;
-            sessions.retain(|row| {
-                row["hostId"] != *host || !known.contains(row["threadId"].as_str().unwrap_or(""))
-            });
-            let mut health = remote
-                .health
-                .lock()
-                .map_err(|_| anyhow::anyhow!("健康状态锁已损坏"))?
-                .clone();
-            for row in rows {
-                if active
-                    .as_ref()
-                    .is_some_and(|active| !active.contains(row["id"].as_str().unwrap_or("")))
-                {
-                    continue;
-                }
-                let mut row = remote_value(host, &health["hostLabel"], row, &legacy)?;
-                row["readOnly"] = json!(!remote.enabled.load(Ordering::SeqCst));
-                sessions.retain(|previous| previous["id"] != row["id"]);
-                sessions.push(row);
-            }
-            health["hostId"] = json!(host);
-            reports.push(health);
+            reports.push(self.append_managed_host(&remote, sessions, &legacy)
+                .unwrap_or_else(|error| json!({"hostId":remote.config.host_id,
+                    "runtimeVerified":false,"runtimeError":error.to_string()})));
         }
         self.update_health(json!({"remoteConnections":reports}))
     }
@@ -165,7 +139,7 @@ fn remote_identity(identifier: &str) -> Result<(String, String)> {
     Ok((fields[1].clone(), fields[2].clone()))
 }
 
-fn remote_value(host: &str, label: &Value, mut row: Value, legacy: &[Value]) -> Result<Value> {
+pub(super) fn remote_value(host: &str, label: &Value, mut row: Value, legacy: &[Value]) -> Result<Value> {
     let thread = row["id"].as_str().context("远程会话缺少 ID")?.to_owned();
     let identifier = identity(host, &thread);
     let cached = legacy.iter().find(|row| row["id"] == identifier);
