@@ -311,6 +311,8 @@
       "test::board_io::manual_save_preserves_note_when_field_is_omitted"
     ],
     "MANUAL-001": [
+      "test::native_authority::archive::native_archive_rejects_external_moves_before_archiving_and_accepts_fresh_confirmation",
+      "test::native_authority::archive::a_blocked_move_in_another_chat_does_not_block_native_archive",
       "test::native_authority::transport::native_save_writes_remote_before_committing_notes_and_confirmation",
       "test::native_authority::transport::external_move_rejects_an_unobserved_stale_save_and_fresh_save_succeeds",
       "test::native_authority::transport::lost_move_receipt_is_read_back_without_replaying_the_move",

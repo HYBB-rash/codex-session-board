@@ -10,6 +10,8 @@ const FIRST: &str = "11111111-1111-4111-8111-111111111111";
 mod runtime;
 #[path = "native_authority/transport.rs"]
 mod transport;
+#[path = "native_authority/archive.rs"]
+mod archive;
 
 struct NativeSurface {
     section: &'static str,

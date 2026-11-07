@@ -13,19 +13,37 @@ pub fn request(app: &App, body: &Value) -> Result<Value> {
     let version = body["version"].as_i64().context("缺少状态版本")?;
     let input = body["inputVersion"].as_i64().context("缺少输入版本")?;
     uuid::Uuid::parse_str(identifier).context("无效会话 ID")?;
-    let _titles = app
-        .title_lock
-        .try_lock()
+    let operation = app.thread_lock(identifier)?;
+    let _thread = app
+        .config
+        .native_sections
+        .then(|| operation.lock())
+        .transpose()
+        .map_err(|_| anyhow::anyhow!("会话操作锁已损坏"))?;
+    let _titles = (!app.config.native_sections)
+        .then(|| app.title_lock.try_lock())
+        .transpose()
         .map_err(|_| anyhow::anyhow!("标题同步进行中，请稍后重试归档"))?;
-    let _sections = app
-        .section_lock
-        .try_lock()
+    let _sections = (!app.config.native_sections)
+        .then(|| app.section_lock.try_lock())
+        .transpose()
         .map_err(|_| anyhow::anyhow!("分区同步进行中，请稍后重试归档"))?;
     let result = app.store.archive(identifier, version, input, |expected| {
         let timeout = Duration::from_secs(app.config.rpc_timeout_seconds.min(3));
         let mut writer =
             DesktopConnection::connect(&app.config.desktop_socket, timeout, Role::ArchiveWriter)?;
-        archive(&mut writer, identifier, app.config.max_pages, expected)
+        archive_checked(
+            &mut writer,
+            identifier,
+            app.config.max_pages,
+            expected,
+            || {
+                if app.config.native_sections {
+                    verify_section(app, body)?;
+                }
+                Ok(())
+            },
+        )
     });
     app.refresh.store(true, Ordering::Relaxed);
     result?;
@@ -38,9 +56,40 @@ pub fn archive(
     max_pages: usize,
     expected: &Value,
 ) -> Result<()> {
+    archive_checked(writer, identifier, max_pages, expected, || Ok(()))
+}
+
+fn verify_section(app: &App, body: &Value) -> Result<()> {
+    let expected = body["sectionVersion"]
+        .as_str()
+        .context("缺少原生位置，请刷新后重试")?;
+    let mut reader = crate::rpc::SidebarConnection::reader(
+        &app.config,
+        Duration::from_secs(app.config.rpc_timeout_seconds.min(3)),
+    )?;
+    let native = crate::native_sections::read(
+        &mut reader,
+        &app.config,
+        body["id"].as_str().context("缺少会话 ID")?,
+    )?;
+    ensure!(
+        native.version == expected && native.state == "to_archive",
+        "原生分区已更新，请刷新并重新确认待归档"
+    );
+    Ok(())
+}
+
+fn archive_checked(
+    writer: &mut dyn Rpc,
+    identifier: &str,
+    max_pages: usize,
+    expected: &Value,
+    eligibility: impl FnOnce() -> Result<()>,
+) -> Result<()> {
     if archived(writer, identifier, max_pages)? {
         return Ok(());
     }
+    eligibility()?;
     let response = writer.call(
         "thread/read",
         json!({"threadId":identifier,"includeTurns":false}),
@@ -66,7 +115,7 @@ fn verify_input(writer: &mut dyn Rpc, identifier: &str, expected: &Value) -> Res
     let result = writer.call(
         "thread/turns/list",
         json!({
-            "threadId":identifier,"limit":1,"sortDirection":"desc","itemsView":"summary"
+            "threadId":identifier,"limit":1,"sortDirection":"desc","itemsView":"full"
         }),
     )?;
     let turns = result["data"].as_array().context("无法核对原生最新输入")?;

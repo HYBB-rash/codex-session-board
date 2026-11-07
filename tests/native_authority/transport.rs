@@ -7,8 +7,9 @@ use std::os::unix::{
     net::{UnixListener, UnixStream},
 };
 use std::sync::{
-    Arc, Mutex,
+    Arc, Condvar, Mutex,
     atomic::{AtomicBool, Ordering},
+    mpsc::Sender,
 };
 use std::time::Duration;
 
@@ -30,6 +31,14 @@ pub(super) struct Surface {
     pub notes_during_move: Vec<String>,
     pub lose_receipt: bool,
     pub reject_move: bool,
+    pub blocked: Option<BlockingMove>,
+}
+
+#[derive(Clone)]
+pub(super) struct BlockingMove {
+    pub identifier: String,
+    pub started: Sender<()>,
+    pub release: Arc<(Mutex<bool>, Condvar)>,
 }
 
 impl Surface {
@@ -92,6 +101,7 @@ pub(super) struct Server {
 
 impl Server {
     pub fn new(directory: &std::path::Path) -> Result<Self> {
+        std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700))?;
         let socket = directory.join("sidebar.sock");
         let listener = UnixListener::bind(&socket)?;
         std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
@@ -187,6 +197,19 @@ fn connection(
         stream.read_exact(&mut bytes)?;
         let request: Value = serde_json::from_slice(&bytes)?;
         let params = &request["params"];
+        let block = surface.lock().unwrap().blocked.clone().filter(|blocked| {
+            params["tool"] == "move_thread_to_sidebar_section"
+                && params["arguments"]["threadId"] == blocked.identifier
+        });
+        if let Some(blocked) = block {
+            blocked.started.send(())?;
+            let (lock, signal) = &*blocked.release;
+            let _waiting = signal
+                .wait_timeout_while(lock.lock().unwrap(), Duration::from_secs(3), |released| {
+                    !*released
+                })
+                .unwrap();
+        }
         let result = surface.lock().unwrap().call(
             params["tool"].as_str().unwrap_or(""),
             &params["arguments"],

@@ -102,6 +102,19 @@ impl App {
             .map(|(state, label)| (state.to_string(), json!(label)))
             .collect();
         let mut sessions = self.store.sessions()?;
+        if self.config.native_sections {
+            let active = self
+                .active_sessions
+                .lock()
+                .map_err(|_| anyhow::anyhow!("会话发现锁已损坏"))?;
+            if let Some(active) = active.as_ref() {
+                sessions.retain(|session| {
+                    session["id"]
+                        .as_str()
+                        .is_some_and(|identifier| active.contains(identifier))
+                });
+            }
+        }
         for session in &mut sessions {
             if session["state"] == "completed" {
                 session["state"] = json!(board_state("completed"));
