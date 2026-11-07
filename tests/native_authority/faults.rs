@@ -157,6 +157,50 @@ fn native_move_count(server: &Server) -> usize {
         .count()
 }
 
+fn delayed_automatic_confirmation(external: bool, background_first: bool, restart: bool) -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let server = Server::new(directory.path())?;
+    let app = server.app()?;
+    let since = codex_session_board::model::now() - 10.0;
+    let active = json!({"type":"active"});
+    let running = json!({"id":"lost-ack","status":"inProgress","startedAt":since+1.0});
+    assert!(app.store.prepare_native_runtime(FIRST, &active, &running, since)?.is_some());
+    let target = if external { "to_archive" } else { "in_progress" };
+    server.surface.lock().unwrap().slots.insert(FIRST.into(), target.into());
+    let app = if restart {
+        drop(app);
+        App::new(server.config.clone())?
+    } else {
+        app
+    };
+    if background_first {
+        app.refresh_native()?;
+    }
+    let done = json!({"id":"lost-ack","status":"completed","startedAt":since+1.0,"completedAt":since+2.0});
+    let observed_since = if restart { since + 20.0 } else { since };
+    app.observe_runtime(FIRST, &json!({"type":"idle"}), &done, observed_since)?;
+    let expected = if external { "to_archive" } else { "review" };
+    assert_eq!(server.surface.lock().unwrap().slots[FIRST], expected);
+    assert_eq!(native_move_count(&server), usize::from(!external));
+    app.refresh_native()?;
+    assert_eq!(app.snapshot()?["sessions"][0]["state"], expected);
+    app.observe_runtime(FIRST, &json!({"type":"idle"}), &done, observed_since)?;
+    assert_eq!(native_move_count(&server), usize::from(!external));
+    Ok(())
+}
+
+#[test]
+fn delayed_automatic_readback_does_not_hide_completion_or_overwrite_external_moves() -> Result<()> {
+    for external in [false, true] {
+        for background_first in [false, true] {
+            for restart in [false, true] {
+                delayed_automatic_confirmation(external, background_first, restart)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn verify_failed_stage_after_external_choice(
     app: &App,
     server: &Server,

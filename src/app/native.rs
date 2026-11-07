@@ -140,6 +140,9 @@ impl App {
         let guard = operation
             .lock()
             .map_err(|_| anyhow::anyhow!("会话操作锁已损坏"))?;
+        if self.store.has_pending_native_runtime(identifier)? {
+            self.check_native_title(identifier)?;
+        }
         let Some(change) = self
             .store
             .prepare_native_runtime(identifier, status, turn, since)?

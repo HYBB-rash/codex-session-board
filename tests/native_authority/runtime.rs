@@ -63,6 +63,7 @@ fn pending_restart_case(kind: &str, phase: &str, target: &str, external: bool) -
 
 #[test]
 fn pending_stages_survive_service_restart_and_respect_later_native_choices() -> Result<()> {
+    pending_new_phase_after_restart()?;
     for (kind, phase, target) in [
         ("active", "inProgress", "in_progress"),
         ("idle", "completed", "review"),
@@ -73,6 +74,28 @@ fn pending_stages_survive_service_restart_and_respect_later_native_choices() -> 
             pending_restart_case(kind, phase, target, external)?;
         }
     }
+    Ok(())
+}
+
+fn pending_new_phase_after_restart() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let mut store = Store::open(directory.path(), false)?;
+    store.native_sections = true;
+    store.discover(&[json!({"id":FIRST})])?;
+    store.cache_native(FIRST, &placed("review"))?;
+    let since = codex_session_board::model::now();
+    let active = json!({"type":"active"});
+    let running = json!({"id":"pending","status":"inProgress","startedAt":since+1.0});
+    assert!(store.prepare_native_runtime(FIRST, &active, &running, since)?.is_some());
+    drop(store);
+    let mut store = Store::open(directory.path(), false)?;
+    store.native_sections = true;
+    let failed = json!({"id":"pending","status":"failed","startedAt":since+1.0,"completedAt":since+2.0});
+    let change = store
+        .prepare_native_runtime(FIRST, &json!({"type":"idle"}), &failed, since+10.0)?
+        .expect("断连期间同轮的新阶段应取代尚未落地的旧阶段");
+    store.commit_native_runtime(FIRST, &change, &placed("blocked"))?;
+    assert_eq!(store.sessions()?[0]["state"], "blocked");
     Ok(())
 }
 

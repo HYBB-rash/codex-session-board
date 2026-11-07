@@ -17,6 +17,35 @@ pub(super) fn cache(
     Ok(())
 }
 
+fn record_observation(
+    database: &Transaction<'_>,
+    identifier: &str,
+    row: &Value,
+    native: &Observation,
+) -> Result<()> {
+    let confirmed = super::runtime_native::pending(row)?
+        .is_some_and(|key| key[1] == native.state);
+    let unconfirmed_input = native.state == "to_archive"
+        && row["selected_at"].is_null()
+        && !users(&turn_of(row)).is_empty();
+    cache(database, identifier, native)?;
+    database.execute(
+        "UPDATE sessions SET native_choice_at=?,needs_review=CASE WHEN ? THEN 1 ELSE needs_review END,
+         version=version+1,runtime_key=COALESCE(runtime_pending_key,runtime_key),runtime_pending_key=NULL,
+         selected_state=CASE WHEN ? THEN NULL ELSE selected_state END,
+         automatic_state=CASE WHEN ? THEN ? ELSE automatic_state END,
+         automatic_reason=CASE WHEN ? THEN '自动阶段目标已在原生位置确认。' ELSE automatic_reason END WHERE id=?",
+        params![if confirmed {None} else {Some(now())},unconfirmed_input,confirmed,confirmed,native.state,confirmed,identifier],
+    )?;
+    if confirmed {
+        database.execute(
+            "INSERT INTO changes(thread_id,changed_at,state,note) VALUES (?,?,?,?)",
+            params![identifier,now(),native.state,"自动阶段目标已在原生位置确认。"],
+        )?;
+    }
+    Ok(())
+}
+
 impl Store {
     pub fn prepare_archive(&self, identifier: &str, revision: (i64, i64)) -> Result<Value> {
         let database = self.connection()?;
@@ -62,14 +91,7 @@ impl Store {
             [identifier],
             |row| row.get(0),
         )?;
-        let unconfirmed_input = native.state == "to_archive"
-            && row["selected_at"].is_null()
-            && !users(&turn_of(&row)).is_empty();
-        cache(&transaction, identifier, native)?;
-        transaction.execute(
-            "UPDATE sessions SET native_choice_at=?,needs_review=CASE WHEN ? THEN 1 ELSE needs_review END,version=version+1,runtime_key=COALESCE(runtime_pending_key,runtime_key),runtime_pending_key=NULL WHERE id=?",
-            params![now(),unconfirmed_input,identifier],
-        )?;
+        record_observation(&transaction, identifier, &row, native)?;
         if row["native_revision"].is_string() || pending {
             queue_title(&transaction, identifier, self.sync_titles, true)?;
         }

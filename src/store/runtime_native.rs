@@ -9,11 +9,19 @@ pub struct RuntimeChange {
     pub section_version: String,
 }
 
+pub(super) fn pending(row: &Value) -> Result<Option<Value>> {
+    Ok(row["runtime_pending_key"]
+        .as_str()
+        .map(serde_json::from_str::<Value>)
+        .transpose()?)
+}
+
 fn event(
     row: &Value,
     status: &Value,
     turn: &Value,
     since: f64,
+    pending: bool,
 ) -> Option<(&'static str, &'static str, String, bool)> {
     let (state, reason) = runtime_state(status, turn)?;
     let identifier = turn["id"].as_str().filter(|value| !value.is_empty())?;
@@ -35,7 +43,6 @@ fn event(
         "startedAt"
     }]
     .as_f64();
-    let pending = row["runtime_pending_key"] == key;
     let old_baseline =
         !pending && row["runtime_key"].is_null() && time.is_none_or(|time| time < since);
     let older_than_choice = terminal(status, turn)
@@ -53,6 +60,14 @@ fn event(
 }
 
 impl Store {
+    pub fn has_pending_native_runtime(&self, identifier: &str) -> Result<bool> {
+        Ok(self.connection()?.query_row(
+            "SELECT runtime_pending_key IS NOT NULL FROM sessions WHERE id=?",
+            [identifier],
+            |row| row.get(0),
+        )?)
+    }
+
     pub fn consume_native_runtime(&self, identifier: &str, change: &RuntimeChange) -> Result<()> {
         self.connection()?.execute(
             "UPDATE sessions SET runtime_key=?,runtime_pending_key=NULL WHERE id=? AND version=? AND runtime_pending_key=?",
@@ -70,7 +85,8 @@ impl Store {
         let mut database = self.connection()?;
         let transaction = database.transaction()?;
         let row = get_row(&transaction, identifier)?;
-        let Some((state, reason, key, preserve)) = event(&row, status, turn, since) else {
+        let pending = pending(&row)?.is_some_and(|key| key[0] == turn["id"]);
+        let Some((state, reason, key, preserve)) = event(&row, status, turn, since, pending) else {
             return Ok(None);
         };
         if preserve {
