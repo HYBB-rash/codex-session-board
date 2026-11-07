@@ -163,6 +163,7 @@ impl App {
         self.annotate_connections(&mut sessions);
         Ok(
             json!({"states":states,"sessions":sessions,"projectCatalog":catalog,"columnSorts":self.store.column_sorts()?,
+            "pendingDrafts":self.store.pending_drafts()?,
             "health":self.health.lock().map_err(|_| anyhow::anyhow!("健康状态锁已损坏"))?.clone()}),
         )
     }
@@ -181,6 +182,7 @@ impl App {
             ("/api/column-sort", Some(body)) => self.store.save_column_sort(body),
             ("/api/archive", Some(body)) => crate::archive::request(self, body),
             ("/api/new", Some(body)) => self.new_session(body),
+            ("/api/new/reset", Some(body)) => self.reset_remote_draft(body),
             ("/api/open", Some(body)) => {
                 let identifier = body["id"].as_str().context("缺少会话 ID")?;
                 if identifier.starts_with("remote:") {

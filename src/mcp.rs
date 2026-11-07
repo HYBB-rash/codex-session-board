@@ -21,6 +21,7 @@ pub fn tools() -> Value {
         ("board_archive", "归档待归档会话", false),
         ("board_open", "打开已有会话", true),
         ("board_new", "打开新建会话页", false),
+        ("board_new_reset", "确认已核对新建结果", false),
         ("board_refresh", "重新发现", false),
     ] {
         let (properties, required) = schema(name);
@@ -63,7 +64,16 @@ fn schema(name: &str) -> (Value, Value) {
                 "inputVersion":{"type":"integer","minimum":0},"sectionVersion":{"type":["string","null"]}}),
             json!(["id", "version", "inputVersion"]),
         ),
-        "board_new" => (json!({"projectId":{"type":"string"}}), json!([])),
+        "board_new" => (
+            json!({"projectId":{"type":"string"},"requestId":{"type":"string"},
+            "hostId":{"type":"string"}}),
+            json!([]),
+        ),
+        "board_new_reset" => (
+            json!({"projectId":{"type":"string"},
+            "requestId":{"type":"string"},"confirmed":{"type":"boolean","const":true}}),
+            json!(["projectId", "requestId", "confirmed"]),
+        ),
         _ => (json!({}), json!([])),
     }
 }
@@ -72,7 +82,7 @@ pub fn resource() -> Value {
     let bridge = include_str!("../assets/app-bridge.js")
         .replace(
             "\"/api/refresh\":\"board_refresh\"",
-            "\"/api/refresh\":\"board_refresh\",\"/api/new\":\"board_new\",\"/api/archive\":\"board_archive\",\"/api/column-sort\":\"board_sort\"",
+            "\"/api/refresh\":\"board_refresh\",\"/api/new\":\"board_new\",\"/api/new/reset\":\"board_new_reset\",\"/api/archive\":\"board_archive\",\"/api/column-sort\":\"board_sort\"",
         )
         .replace("</script", "<\\/script");
     let html = include_str!("../index.html")
@@ -98,6 +108,7 @@ pub fn backend(config_path: &Path, name: &str, arguments: &Value) -> Result<Valu
         "board_archive" => "/api/archive",
         "board_open" => "/api/open",
         "board_new" => "/api/new",
+        "board_new_reset" => "/api/new/reset",
         "board_refresh" => "/api/refresh",
         _ => bail!("未知看板工具"),
     };
@@ -116,11 +127,11 @@ pub fn backend(config_path: &Path, name: &str, arguments: &Value) -> Result<Valu
 
 fn backend_client(config_path: &Path) -> Result<reqwest::blocking::Client> {
     let config = config::load(Some(config_path))?;
-    let timeout = if config.native_sections {
+    let timeout = if !config.sidebar_socket.as_os_str().is_empty() {
         config
             .rpc_timeout_seconds
-            .saturating_mul(3)
-            .saturating_add(8)
+            .saturating_mul(5)
+            .saturating_add(10)
     } else {
         8
     };

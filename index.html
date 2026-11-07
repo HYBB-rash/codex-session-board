@@ -69,7 +69,7 @@ button:hover{border-color:var(--green)}button.primary{background:var(--green);co
 dialog{border:1px solid var(--line);border-radius:14px;padding:28px;width:min(540px,calc(100vw - 32px));box-shadow:0 20px 90px #24282125;background:#fff;color:var(--ink)}
 dialog::backdrop{background:#20271e55}dialog h2{font-size:20px;margin:0 0 8px}.dialog-title{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
 label{display:block;margin:20px 0 7px;font-size:13px}select,textarea{width:100%;border:1px solid var(--line);border-radius:7px;background:#fafaf7;padding:10px}
-textarea{resize:vertical;min-height:90px}.dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}.reason{font-size:13px;color:var(--muted);margin-top:14px}
+textarea{resize:vertical;min-height:90px}.dialog-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-top:22px}.reason{font-size:13px;color:var(--muted);margin-top:14px}
 .notice{color:#a04530;min-height:22px;font-size:13px;margin-top:10px}
 @media(max-width:800px){
   .shell{padding:22px 16px}.tools{flex-wrap:wrap}.count{margin-left:0}h1{font-size:27px}
@@ -97,7 +97,7 @@ textarea{resize:vertical;min-height:90px}.dialog-actions{display:flex;justify-co
   <div class="board-viewport" id="board-viewport" tabindex="0" aria-label="横向滚动查看全部状态列">
     <div class="board" id="board" aria-label="会话状态看板"></div>
   </div>
-  <p class="foot">拖动卡片修改状态。“待归档”列的一键归档会归档当前筛选下该列中的全部本机会话，也可以逐张点击归档。远程会话暂不支持自动流转、标题同步、新建和归档。</p>
+  <p class="foot" id="foot">拖动卡片修改状态。“待归档”列的一键归档处理当前筛选下本机和远程主机中的可归档会话，也可以逐张归档。只读记录不会归档。新建会话只打开输入页，不发送输入。</p>
 </main>
 <dialog id="editor">
   <form id="edit-form">
@@ -110,12 +110,28 @@ textarea{resize:vertical;min-height:90px}.dialog-actions{display:flex;justify-co
     <div class="dialog-actions"><button type="button" id="cancel">取消</button><button type="submit" id="save" class="primary">保存状态</button></div>
   </form>
 </dialog>
+<dialog id="new-target" aria-labelledby="new-target-title">
+  <form id="new-target-form">
+    <h2 id="new-target-title">选择远程项目</h2>
+    <label for="new-project">在这个项目中打开新会话</label><select id="new-project" required></select>
+    <p class="reason">使用客户端中已登记的项目。不会发送输入。</p>
+    <div class="dialog-actions"><button type="button" id="new-target-cancel">取消</button><button type="submit" class="primary">打开新会话</button></div>
+  </form>
+</dialog>
+<dialog id="draft-recovery" aria-labelledby="draft-recovery-title">
+  <h2 id="draft-recovery-title">核对新建结果</h2>
+  <p id="draft-message" class="reason"></p>
+  <p class="reason">请先在客户端检查是否已经出现新会话。重试会继续处理同一次新建；重新新建会保留此前可能已经创建的会话。</p>
+  <div class="dialog-actions"><button type="button" id="draft-later">稍后处理</button><button type="button" id="draft-retry">重试打开</button><button type="button" id="draft-restart">已核对，重新新建</button></div>
+</dialog>
 <script>
 const csrf = "__CSRF_TOKEN__";
 let data = {states:{},sessions:[],health:{},projectCatalog:{loaded:false,items:[]}}, editing = null, dragging = null;
 let saving = false, requestSerial = 0, dragPoint = null, scrollFrame = null;
 let opening = false, suppressOpenUntil = 0;
 let filterMode = "project", selectedProject = "all", projectOptionsKey = "";
+let creating = false, recoveringDraft = null;
+const draftRequests = new Map();
 const byId = id => document.getElementById(id);
 const date = value => value ? new Date(value * 1000).toLocaleString("zh-CN",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "尚未读取";
 function element(tag, text, className) {
@@ -425,7 +441,7 @@ function makeColumn(state, label) {
   if (state === "to_archive") {
     const archiveAll = element("button","一键归档","row-action");
     archiveAll.type = "button";
-    archiveAll.title = "归档当前筛选下本列中的全部本机会话，远程会话保留";
+    archiveAll.title = "归档当前筛选下本列中的本机及远程可归档会话，只读记录保留";
     archiveAll.dataset.archiveAll = "";
     heading.append(archiveAll);
   }
@@ -480,6 +496,10 @@ function updateProjectOptions() {
       : catalog.loaded ? "default" : "all";
     announce(previousHost ? "远程项目已移除，保留在该主机范围内查看。" : "项目已移除，已切换到默认工作区。");
   }
+  if (!Array.from(menu.options).some(option => option.value === selectedProject)) {
+    selectedProject = "all";
+    announce("主机已移除，已切换到全部项目。");
+  }
   menu.value = selectedProject;
   menu.disabled = !catalog.loaded;
 }
@@ -515,8 +535,8 @@ function toggleFilter() {
 function render(resetState = null) {
   if (dragging || saving || byId("editor").open) return;
   updateProjectOptions();
-  byId("new-session").disabled = remoteNewTarget();
-  byId("new-session").title = remoteNewTarget() ? "远程项目暂不支持新建会话" : "打开新建会话页";
+  byId("new-session").disabled = creating;
+  byId("new-session").title = "打开新建会话页，不发送输入";
   const scrollPositions = new Map(
     Array.from(document.querySelectorAll(".column")).map(column =>
       [column.dataset.state,column.dataset.state === resetState ? null : captureScroll(column.querySelector(".cards"))]));
@@ -611,6 +631,7 @@ function noteDraft(id, value) {
 function openEditor(id, state, snapshot) {
   editing = snapshot || data.sessions.find(session => session.id === id);
   if (!editing) return;
+  if (editing.readOnly) {editing=null;announce("当前只读，请先恢复该主机的连接。",true);return;}
   byId("dialog-title").textContent = editing.title + (editing.remote ? " · " + editing.hostLabel : "");
   byId("state").replaceChildren();
   for (const [value,label] of Object.entries(data.states)) byId("state").append(new Option(label,value));
@@ -622,12 +643,14 @@ function openEditor(id, state, snapshot) {
   byId("editor").showModal();
 }
 async function load() {
-  if (dragging || saving || byId("editor").open) return;
+  if (dragging || saving || creating || byId("editor").open) return;
   const serial = ++requestSerial;
   try {
     const result = await request("/api/sessions");
     if (serial !== requestSerial || dragging || saving || byId("editor").open) return;
-    data = result; render();
+    data = result;
+    for (const draft of data.pendingDrafts || []) draftRequests.set(draft.project,draft.requestId);
+    render();
   } catch (error) {
     if (serial !== requestSerial) return;
     byId("health").className = "health error";
@@ -673,21 +696,66 @@ byId("edit-form").onsubmit = async event => {
   }
 };
 byId("cancel").onclick = () => byId("editor").close();
-function remoteNewTarget() {
-  return filterMode === "project" && (selectedProject.startsWith("host:") ||
-    (data.projectCatalog.items || []).some(item => item.remote && selectedProject === "project:" + item.id));
-}
-byId("new-session").onclick = async () => {
+async function createSession(projectId) {
   const button = byId("new-session");
-  if (button.disabled || remoteNewTarget()) return;
-  button.disabled = true;
+  if (creating || dragging || saving || byId("editor").open) return;
+  const remote = data.projectCatalog.items.find(item => item.id === projectId)?.remote;
+  const body = projectId === null ? {} : {projectId};
+  if (remote) {
+    body.requestId = draftRequests.get(projectId) || crypto.randomUUID();
+    draftRequests.set(projectId,body.requestId);
+  }
+  creating = true;button.disabled = true;++requestSerial;
   try {
-    const projectId = filterMode === "project" && selectedProject.startsWith("project:")
-      ? selectedProject.slice("project:".length) : null;
-    await post("/api/new",projectId === null ? {} : {projectId});
-    announce("已发送新建会话页面打开请求。");
+    const result = await post("/api/new",body);
+    if (result.pending) {
+      recoveringDraft = {projectId,requestId:result.requestId || body.requestId};
+      draftRequests.set(projectId,recoveringDraft.requestId);
+      byId("draft-message").textContent = result.error;
+      byId("draft-recovery").showModal();
+      return;
+    }
+    draftRequests.delete(projectId);
+    announce(remote ? "已打开远程新会话，尚未发送输入。" : "已发送新建会话页面打开请求。");
   } catch(error) {announce(error.message,true);}
-  finally {button.disabled = remoteNewTarget();}
+  finally {creating=false;button.disabled=false;await load();}
+}
+byId("new-session").onclick = () => {
+  if (creating || dragging || saving || byId("editor").open) return;
+  if (filterMode === "project" && selectedProject.startsWith("host:")) {
+    const host = selectedProject.slice(5);
+    const projects = data.projectCatalog.items.filter(item => item.remote && item.hostId === host);
+    if (!projects.length) {announce("此主机暂无已登记项目，请先在客户端登记项目。",true);return;}
+    byId("new-project").replaceChildren(...projects.map(item => new Option(projectLabel(item),item.id)));
+    byId("new-target").showModal();
+    return;
+  }
+  createSession(filterMode === "project" && selectedProject.startsWith("project:")
+    ? selectedProject.slice("project:".length) : null);
+};
+byId("new-target-cancel").onclick = () => byId("new-target").close();
+byId("new-target-form").onsubmit = event => {
+  event.preventDefault();
+  const project = byId("new-project").value;
+  byId("new-target").close();
+  createSession(project);
+};
+byId("draft-later").onclick = () => byId("draft-recovery").close();
+byId("draft-retry").onclick = () => {
+  byId("draft-recovery").close();
+  createSession(recoveringDraft.projectId);
+};
+byId("draft-restart").onclick = async () => {
+  const draft = {...recoveringDraft}, button = byId("draft-restart");
+  button.disabled=true;creating=true;++requestSerial;
+  try {
+    await post("/api/new/reset",{...draft,confirmed:true});
+    draftRequests.delete(draft.projectId);
+    byId("draft-recovery").close();
+    creating=false;
+    await createSession(draft.projectId);
+  } catch(error) {byId("draft-message").textContent=error.message;}
+  finally {creating=false;button.disabled=false;}
 };
 byId("editor").addEventListener("cancel",event => {if (saving) event.preventDefault();});
 byId("editor").addEventListener("close",() => {editing=null;render();load();});

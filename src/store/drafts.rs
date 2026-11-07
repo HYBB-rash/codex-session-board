@@ -1,6 +1,26 @@
 use super::*;
 
 impl Store {
+    pub fn draft(&self, request: &str) -> Result<Value> {
+        let database = self.connection()?;
+        draft_record(&database, request)?.context("新建请求不存在")
+    }
+
+    pub fn pending_drafts(&self) -> Result<Vec<Value>> {
+        let database = self.connection()?;
+        let mut query = database.prepare(
+            "SELECT requests.value FROM settings pending JOIN settings requests
+             ON requests.key='draft_request:'||pending.value
+             WHERE pending.key GLOB 'draft_pending:*' ORDER BY pending.key",
+        )?;
+        let rows = query
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        rows.into_iter()
+            .map(|row| serde_json::from_str(&row).map_err(Into::into))
+            .collect()
+    }
+
     pub fn draft_begin(&self, project: &str, request: &str) -> Result<(Value, bool)> {
         ensure!(
             uuid::Uuid::parse_str(request)?.to_string() == request,

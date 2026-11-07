@@ -111,3 +111,53 @@ fn acknowledged_empty_drafts_only_read_the_same_thread_on_retry() -> Result<()> 
     );
     Ok(())
 }
+
+#[test]
+fn releasing_uncertain_drafts_requires_confirmation_and_cannot_clear_another_project() -> Result<()>
+{
+    let (_directory, app) = isolated()?;
+    let request = uuid::Uuid::new_v4().to_string();
+    app.store.draft_begin("remote:project", &request)?;
+    assert_eq!(app.snapshot()?["pendingDrafts"][0]["requestId"], request);
+    for body in [
+        json!({"projectId":"remote:project","requestId":request}),
+        json!({"projectId":"other","requestId":request,"confirmed":true}),
+    ] {
+        assert!(app.request("/api/new/reset", Some(&body)).is_err());
+    }
+    assert_eq!(app.store.draft(&request)?["stage"], "starting");
+    app.request(
+        "/api/new/reset",
+        Some(&json!({"projectId":"remote:project",
+        "requestId":request,"confirmed":true})),
+    )?;
+    assert!(
+        app.snapshot()?["pendingDrafts"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(app.store.draft(&request)?["stage"], "abandoned");
+    assert!(app.store.sessions()?.is_empty());
+    assert!(app.store.pending_titles(None)?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn project_confirmation_handles_implicit_membership_but_rejects_ambiguous_or_foreign_hosts() {
+    let project = json!({"nativeId":"project","hostId":"remote:a","paths":["/remote/root"]});
+    let thread = json!({"id":"thread","cwd":"/remote/root"});
+    assert!(project_bound(&json!({}),&project,&thread,true));
+    assert!(!project_bound(&json!({}),&project,&thread,false));
+    let mut state = json!({"thread-project-assignments":{"thread":{
+        "projectKind":"remote","projectId":"project","hostId":"remote:a"}}});
+    assert!(project_bound(&state,&project,&thread,false));
+    state["thread-project-membership-host-ids"] = json!({"thread":"remote:other"});
+    assert!(!project_bound(&state,&project,&thread,true));
+    state["thread-project-membership-host-ids"]["thread"] = json!("remote:a");
+    assert!(project_bound(&state,&project,&thread,true));
+    state["thread-project-assignments"]["thread"]["hostId"] = json!("remote:other");
+    assert!(!project_bound(&state,&project,&thread,true));
+    assert!(!unique_project_root(&[project.clone(),project.clone()],&project));
+    assert!(unique_project_root(std::slice::from_ref(&project),&project));
+}

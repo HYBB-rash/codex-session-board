@@ -10,6 +10,21 @@ struct Draft<'app> {
 }
 
 impl App {
+    pub(crate) fn reset_remote_draft(&self, body: &Value) -> Result<Value> {
+        ensure!(body["confirmed"] == true, "请先在客户端核对新建结果");
+        let request = body["requestId"].as_str().context("缺少新建请求 ID")?;
+        let record = self.store.draft(request)?;
+        ensure!(record["project"] == body["projectId"], "新建请求项目不一致");
+        match record["stage"].as_str() {
+            Some("starting" | "created") => {
+                self.store.draft_update(request, None, "abandoned")?;
+            }
+            Some("complete" | "abandoned") => {}
+            _ => bail!("新建请求状态异常"),
+        }
+        Ok(json!({"ok":true}))
+    }
+
     pub(crate) fn new_remote_session(&self, body: &Value) -> Result<Value> {
         let request = body["requestId"].as_str().context("缺少新建请求 ID")?;
         ensure!(
@@ -28,7 +43,6 @@ impl App {
             .lock()
             .map_err(|_| anyhow::anyhow!("新建会话锁已损坏"))?;
         let mut reader = RuntimeConnection::draft(&remote)?;
-        let mut writer = SidebarConnection::project_writer(&caller, timeout)?;
         let (record, fresh) = self
             .store
             .draft_begin(project["id"].as_str().context("项目 ID 无效")?, request)?;
@@ -39,7 +53,7 @@ impl App {
             request: request.into(),
             fresh,
         };
-        match self.finish_remote_draft(&draft, &mut reader, &mut writer) {
+        match self.finish_remote_draft(&draft, &mut reader, &caller) {
             Ok(result) => Ok(result),
             Err(error) => Ok(json!({"ok":false,"pending":true,"requestId":request,
                 "error":format!("{error:#}")})),
@@ -53,10 +67,12 @@ impl App {
         timeout: Duration,
     ) -> Result<Value> {
         let mut catalog = SidebarConnection::reader(caller, timeout)?;
-        let project = crate::remote::projects(&mut catalog)?
-            .into_iter()
+        let projects = crate::remote::projects(&mut catalog)?;
+        let project = projects.iter()
             .find(|project| project["id"] == body["projectId"])
-            .context("远程项目已移除，请刷新")?;
+            .cloned().context("远程项目已移除，请刷新")?;
+        ensure!(unique_project_root(&projects,&project),
+            "此主机有多个项目使用同一目录，无法安全确定新建归属，请先在客户端区分项目目录");
         draft_params(&project)?;
         ensure!(
             body["hostId"].is_null() || body["hostId"] == project["hostId"],
@@ -69,7 +85,7 @@ impl App {
         &self,
         draft: &Draft<'_>,
         reader: &mut dyn Rpc,
-        writer: &mut dyn Rpc,
+        caller: &Config,
     ) -> Result<Value> {
         ensure!(
             draft.record["stage"] != "abandoned",
@@ -78,13 +94,7 @@ impl App {
         let thread = draft.thread(&self.store, reader)?;
         let identifier = thread["id"].as_str().context("新建会话缺少 ID")?;
         if draft.record["stage"] != "complete" {
-            writer.call(
-                "move_thread_to_project",
-                json!({"threadId":identifier,
-                "source":"codex","hostId":draft.remote.config.host_id,
-                "projectId":draft.project["nativeId"]}),
-            )?;
-            confirm_project(&self.config, &draft.project, identifier)?;
+            move_draft_project(draft,reader,caller,identifier)?;
             self.cache_draft(draft, &thread)?;
             self.store.draft_update(&draft.request, None, "complete")?;
         }
@@ -112,6 +122,22 @@ impl App {
         self.remote_refresh.store(true, Ordering::Relaxed);
         Ok(())
     }
+}
+
+fn move_draft_project(draft: &Draft<'_>, reader: &mut dyn Rpc, caller: &Config,
+    identifier: &str) -> Result<()> {
+    let mut writer = SidebarConnection::project_writer(caller,
+        Duration::from_secs(caller.rpc_timeout_seconds))?;
+    let moved = writer.call("move_thread_to_project",json!({"threadId":identifier,
+        "source":"codex","hostId":draft.remote.config.host_id,
+        "projectId":draft.project["nativeId"]}))?;
+    ensure!(moved["source"]=="codex" && moved["hostId"]==draft.remote.config.host_id
+        && moved["threadId"]==identifier && moved["projectId"]==draft.project["nativeId"],
+        "原生新建项目回执目标不一致");
+    let current = reader.call("thread/read",json!({"threadId":identifier,
+        "includeTurns":false}))?["thread"].clone();
+    ensure!(current["id"]==identifier,"新建会话读回 ID 不一致");
+    confirm_project(caller,&draft.project,&current)
 }
 
 impl Draft<'_> {
@@ -165,16 +191,36 @@ fn draft_params(project: &Value) -> Result<Value> {
     Ok(json!({"cwd":paths[0],"runtimeWorkspaceRoots":paths,"ephemeral":false}))
 }
 
-fn confirm_project(config: &Config, project: &Value, thread: &str) -> Result<()> {
+fn unique_project_root(projects: &[Value], target: &Value) -> bool {
+    projects.iter().filter(|project|project["hostId"]==target["hostId"]
+        && project["paths"]==target["paths"]).count()==1
+}
+
+fn project_bound(state: &Value, project: &Value, thread: &Value, unique: bool) -> bool {
+    let identifier = thread["id"].as_str().unwrap_or("");
+    let indexed = &state["thread-project-membership-host-ids"][identifier];
+    if !indexed.is_null() && *indexed!=project["hostId"] {return false;}
+    let assignment = &state["thread-project-assignments"][identifier];
+    if assignment.is_object() {
+        return assignment["projectKind"]=="remote" && assignment["projectId"]==project["nativeId"]
+            && (assignment["hostId"]==project["hostId"]
+                || assignment["hostId"].is_null() && *indexed==project["hostId"]);
+    }
+    assignment.is_null() && unique && thread["cwd"]==project["paths"][0]
+}
+
+fn confirm_project(config: &Config, project: &Value, thread: &Value) -> Result<()> {
+    ensure!(thread["cwd"]==project["paths"][0],"新建会话目录与目标项目不一致");
+    let mut reader = SidebarConnection::reader(config,Duration::from_secs(config.rpc_timeout_seconds))?;
+    let fresh = crate::remote::projects(&mut reader)?;
+    ensure!(fresh.iter().any(|current| current["id"]==project["id"]
+        && current["paths"]==project["paths"]),"新建期间项目已改变，请在客户端核对");
+    let unique = unique_project_root(&fresh,project);
     let deadline =
         std::time::Instant::now() + Duration::from_secs(config.rpc_timeout_seconds.min(4));
     loop {
         let state: Value = serde_json::from_slice(&std::fs::read(&config.sidebar_state_file)?)?;
-        let assignment = &state["thread-project-assignments"][thread];
-        if assignment["projectKind"] == "remote"
-            && assignment["projectId"] == project["nativeId"]
-            && state["thread-project-membership-host-ids"][thread] == project["hostId"]
-        {
+        if project_bound(&state,project,thread,unique) {
             return Ok(());
         }
         ensure!(
