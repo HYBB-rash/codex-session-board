@@ -236,13 +236,5 @@ pub fn start(app: &Arc<App>) {
                 std::thread::sleep(Duration::from_secs(native.config.runtime_poll_seconds));
             }
         });
-    } else if app.config.sync_sections {
-        let sections = Arc::clone(app);
-        std::thread::spawn(move || {
-            loop {
-                let _ = sections.sync_sections(None);
-                std::thread::sleep(Duration::from_secs(sections.config.runtime_poll_seconds));
-            }
-        });
     }
 }

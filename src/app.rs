@@ -221,7 +221,7 @@ impl App {
         let result =
             SidebarConnection::connect(&self.config, timeout).and_then(|mut writer| match only {
                 Some(identifier) => crate::sections::move_one(self, &mut writer, identifier),
-                None => crate::sections::reconcile(self, &mut writer, None),
+                None => Ok(json!({"pending":0,"error":null})),
             });
         let report = match result {
             Ok(report) => report,
