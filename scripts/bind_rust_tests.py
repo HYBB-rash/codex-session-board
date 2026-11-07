@@ -1,11 +1,14 @@
 import json
 import sys
+import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT))
 from rust_adapter import executables, inventory
+from acceptance.unittest_adapter import test_identifiers
 
 
 def matching(names, *needles):
@@ -29,19 +32,10 @@ def build():
     service = group("::service::tests::", "changed_config_or_port", "real_http_persistence", "service_update")
     mcp = group("native_resource", "real_stdio_mcp", "saved_state_reports", "mcp_bridge_")
     security = group("host_origin", "navigation_is_canonical", "open_accepts", "real_http_persistence", "real_http_pwa")
-    python_gate = [
-        "acceptance.test_gate.GateTests." + name
-        for name in (
-            "test_automatic_success_does_not_claim_release_completion",
-            "test_missing_or_duplicate_bindings_and_results_cannot_pass",
-            "test_skipped_checks_and_nonzero_adapter_exit_cannot_pass",
-            "test_missing_test_selector_is_an_error_instead_of_an_empty_pass",
-            "test_live_evidence_requires_current_build_and_valid_artifacts",
-            "test_changed_contract_baseline_requires_an_explicit_update",
-            "test_adapter_checks_the_target_instead_of_its_own_project",
-            "test_report_cannot_overwrite_evidence_artifacts_or_verified_inputs",
-        )
-    ]
+    suite = unittest.defaultTestLoader.discover(str(ROOT / "acceptance"), top_level_dir=str(ROOT))
+    python_names = list(test_identifiers(suite))
+    package_prefix = "acceptance.test_gate.PackageTests."
+    python_gate = sorted(name for name in python_names if not name.startswith(package_prefix))
     mappings = {
         "STATE-001": state + archive,
         "AUTO-001": runtime + state + observer,
@@ -72,7 +66,7 @@ def build():
         "BOUNDARY-001": rpc + security + archive + group("disabled_title"),
         "SECURITY-001": security + store + archive,
         "HEALTH-001": observer,
-        "DELIVERY-001": ["acceptance.test_gate.PackageTests.test_package_is_reproducible_and_has_only_portable_source"],
+        "DELIVERY-001": sorted(name for name in python_names if name.startswith(package_prefix)),
         "GATE-001": python_gate + group("example::project_check::", "test::git_hooks::"),
     }
     additions = {
@@ -89,7 +83,8 @@ def build():
         mappings[key].extend(values)
     for key, values in additions.items():
         mappings[key].extend(values)
-    mappings = {key: sorted(set(values)) for key, values in mappings.items()}
+    mappings = {key: list(dict.fromkeys(previous["requirements"][key] + values))
+                for key, values in mappings.items()}
     bound = {name for values in mappings.values() for name in values}
     missing = set(names) - bound
     if missing:

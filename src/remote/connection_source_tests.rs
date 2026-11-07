@@ -3,6 +3,29 @@ use crate::rpc::identity_fixture::Fixture;
 use serde_json::json;
 
 #[test]
+fn nonregular_source_records_are_rejected_without_waiting_for_a_pipe_writer() -> Result<()> {
+    use std::os::unix::fs::FileTypeExt;
+    let directory = tempfile::tempdir()?;
+    let fifo = directory.path().join("source.json");
+    ensure!(std::process::Command::new("mkfifo").arg(&fifo).status()?.success(),
+        "无法建立源记录类型测试");
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let path = fifo.clone();
+    let worker = std::thread::spawn(move || {
+        let _ = sender.send(load(&path).is_err());
+    });
+    let result = receiver.recv_timeout(Duration::from_secs(1));
+    if result.is_err() {
+        drop(std::fs::OpenOptions::new().read(true).write(true).open(&fifo)?);
+    }
+    worker.join().unwrap();
+    assert!(result?);
+    assert!(std::fs::symlink_metadata(fifo)?.file_type().is_fifo());
+    assert!(load(directory.path()).unwrap_err().to_string().contains("普通文件"));
+    Ok(())
+}
+
+#[test]
 fn ssh_identity_keeps_only_effective_hostname_user_port_and_rejects_ambiguity() -> Result<()> {
     let parsed = Endpoint::parse(
         b"hostname mac\nuser remote\nport 2222\nidentityfile SENSITIVE\nproxycommand SECRET\n",

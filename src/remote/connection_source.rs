@@ -113,8 +113,8 @@ pub struct Binding {
 
 fn load(path: &Path) -> Result<Record> {
     ensure!(
-        !std::fs::symlink_metadata(path)?.file_type().is_symlink(),
-        "源记录不能是符号链接"
+        std::fs::symlink_metadata(path)?.is_file(),
+        "源记录必须是普通文件，不能是符号链接或管道"
     );
     let mut bytes = Vec::new();
     std::fs::File::open(path)?
