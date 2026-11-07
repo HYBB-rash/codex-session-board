@@ -101,3 +101,26 @@ fn legacy_mode_rejects_native_connections_and_timers_before_creating_data() -> R
     );
     Ok(())
 }
+
+#[test]
+fn compatibility_tools_and_direct_routes_keep_archive_and_remote_creation_disabled() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let app = App::new(config(directory.path()))?;
+    let tools = codex_session_board::mcp::tools_for(true);
+    let entries = tools["tools"].as_array().context("缺少工具清单")?;
+    assert!(!entries.iter().any(|tool| matches!(tool["name"].as_str(),
+        Some("board_archive" | "board_new_reset"))));
+    let sort = entries.iter().find(|tool| tool["name"] == "board_sort").context("缺少排序")?;
+    assert!(sort["inputSchema"]["properties"]["state"]["enum"]
+        .as_array().context("缺少状态枚举")?.contains(&json!("completed")));
+    let modern = codex_session_board::mcp::tools();
+    assert!(modern["tools"].as_array().context("缺少工具")?
+        .iter().any(|tool| tool["name"] == "board_archive"));
+    for path in ["/api/archive", "/api/new/reset"] {
+        assert!(app.request(path, Some(&json!({}))).is_err());
+    }
+    assert!(app.request("/api/new",
+        Some(&json!({"projectId":"remote:test","requestId":uuid::Uuid::new_v4()}))).is_err());
+    assert!(app.store.pending_drafts()?.is_empty());
+    Ok(())
+}

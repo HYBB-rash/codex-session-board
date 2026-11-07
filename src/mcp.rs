@@ -10,6 +10,10 @@ pub const RESOURCE: &str = "ui://session-board/index.html";
 pub const MIME: &str = "text/html;profile=mcp-app";
 
 pub fn tools() -> Value {
+    tools_for(false)
+}
+
+pub fn tools_for(legacy: bool) -> Value {
     let mut tools = Vec::new();
     let icon =
         base64::engine::general_purpose::STANDARD.encode(include_bytes!("../assets/board.svg"));
@@ -24,7 +28,10 @@ pub fn tools() -> Value {
         ("board_new_reset", "确认已核对新建结果", false),
         ("board_refresh", "重新发现", false),
     ] {
-        let (properties, required) = schema(name);
+        if legacy && matches!(name, "board_archive" | "board_new_reset") {
+            continue;
+        }
+        let (properties, required) = schema(name, legacy);
         let meta = if name == "board_view" {
             json!({"ui":{"resourceUri":RESOURCE,"visibility":["app","model"]},
                 "openai/ui":{"entrypoints":[{"type":"global"}]}})
@@ -40,10 +47,10 @@ pub fn tools() -> Value {
     json!({"tools":tools})
 }
 
-fn schema(name: &str) -> (Value, Value) {
+fn schema(name: &str, legacy: bool) -> (Value, Value) {
     match name {
         "board_sort" => (
-            json!({"state":{"type":"string","enum":crate::model::board_states().map(|item| item.0).collect::<Vec<_>>()},
+            json!({"state":{"type":"string","enum":crate::model::states_for(legacy).map(|item| item.0).collect::<Vec<_>>()},
                 "field":{"type":"string","enum":["updated_at"]},
                 "direction":{"type":"string","enum":["asc","desc"]},
                 "version":{"type":"integer","minimum":0}}),
@@ -175,10 +182,14 @@ pub fn dispatch(method: &str, params: &Value, path: &Path) -> Result<Value> {
             json!({"protocolVersion":params["protocolVersion"].as_str().unwrap_or("2025-06-18"),
             "capabilities":{"tools":{},"resources":{}},
             "serverInfo":{"name":"codex-session-board","version":env!("CARGO_PKG_VERSION")},
-            "instructions":"本地会话看板。不发送消息或执行任务。归档按钮或显式启用的定时配置可归档本机待归档会话。"}),
+            "instructions":"会话看板。不发送消息或执行任务。功能取决于配置模式和主机连接状态；已连接的本地与远程会话共用状态、标题及归档逻辑。"}),
         ),
         "ping" => Ok(json!({})),
-        "tools/list" => Ok(tools()),
+        "tools/list" => {
+            let legacy = path.try_exists()?.then(|| config::load(Some(path)))
+                .transpose()?.is_some_and(|config| config.legacy_mode);
+            Ok(tools_for(legacy))
+        }
         "resources/list" => {
             Ok(json!({"resources":[{"uri":RESOURCE,"name":"会话看板","mimeType":MIME}]}))
         }
