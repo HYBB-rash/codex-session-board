@@ -34,6 +34,21 @@ fn remote_candidate(app: &App) -> Result<Value> {
 }
 
 #[test]
+fn a_remote_archive_choice_does_not_make_the_local_twin_eligible() -> Result<()> {
+    let (_directory, _server, engine, app) = prepared()?;
+    app.request("/api/state", Some(&body(&app, "review", "本地待审阅")?))?;
+    let remote = remote_candidate(&app)?;
+    assert!(sweep(&app)?["archived"].as_array().unwrap().is_empty());
+    assert!(engine.archived.lock().unwrap().is_empty());
+    assert_eq!(app.store.sessions()?[0]["state"], "review");
+    assert_eq!(
+        app.store.remote_session(remote["id"].as_str().unwrap())?,
+        remote
+    );
+    Ok(())
+}
+
+#[test]
 fn sweep_verifies_live_input_and_running_status_without_confirming_or_archiving_remote()
 -> Result<()> {
     let (_directory, server, engine, app) = prepared()?;
@@ -104,6 +119,12 @@ fn sweep_rechecks_native_position_after_selecting_the_candidate() -> Result<()> 
     began?;
     let report = worker.join().unwrap()?;
     assert_eq!(report["deferred"].as_array().unwrap().len(), 1);
+    assert!(
+        report["deferred"][0]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("原生分区已更新")
+    );
     assert!(engine.archived.lock().unwrap().is_empty());
     assert_eq!(app.store.note(FIRST)?, "保留备注");
     assert_eq!(app.store.sessions()?.len(), 1);

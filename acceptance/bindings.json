@@ -946,6 +946,7 @@
       "test::board_io::service_update_rejects_old_build_but_can_verify_and_stop_its_process"
     ],
     "BOUNDARY-001": [
+      "test::native_authority::auto_archive::a_remote_archive_choice_does_not_make_the_local_twin_eligible",
       "test::native_authority::auto_archive::sweep_verifies_live_input_and_running_status_without_confirming_or_archiving_remote",
       "test::native_authority::auto_archive::sweep_rechecks_native_position_after_selecting_the_candidate",
       "test::native_authority::auto_archive::built_service_archives_on_its_timer_and_publishes_the_result_without_an_archive_request",

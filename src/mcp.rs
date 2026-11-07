@@ -155,7 +155,7 @@ pub fn dispatch(method: &str, params: &Value, path: &Path) -> Result<Value> {
             json!({"protocolVersion":params["protocolVersion"].as_str().unwrap_or("2025-06-18"),
             "capabilities":{"tools":{},"resources":{}},
             "serverInfo":{"name":"codex-session-board","version":env!("CARGO_PKG_VERSION")},
-            "instructions":"本地会话看板。不发送消息或执行任务。仅显式归档按钮归档待归档会话。"}),
+            "instructions":"本地会话看板。不发送消息或执行任务。归档按钮或显式启用的定时配置可归档本机待归档会话。"}),
         ),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(tools()),
