@@ -2,7 +2,6 @@ use crate::config::{self, Config};
 use anyhow::{Context, Result, bail, ensure};
 use fs2::FileExt;
 use reqwest::blocking::Client;
-use rusqlite::{Connection, OpenFlags, backup::Backup};
 use rustix::process::{Pid, PidfdFlags, Signal, pidfd_open, pidfd_send_signal};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -14,6 +13,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
+
+mod migration;
+
+use migration::import_database;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -403,35 +406,6 @@ pub fn stop(config_path: &Path) -> Result<Value> {
     }))
 }
 
-fn copy_database(source: &Path, target: &Path) -> Result<()> {
-    let source = Connection::open_with_flags(
-        source,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )?;
-    let mut target = Connection::open(target)?;
-    let backup = Backup::new(&source, &mut target)?;
-    backup.run_to_completion(128, Duration::from_millis(10), None)?;
-    Ok(())
-}
-
-fn import_database(source: &Path, target: &Path) -> Result<bool> {
-    ensure!(!target.try_exists()?, "目标状态库已经存在，不会覆盖");
-    if !source.try_exists()? {
-        return Ok(false);
-    }
-    let reserved = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(target)?;
-    drop(reserved);
-    if let Err(error) = copy_database(source, target) {
-        let _ = fs::remove_file(target);
-        return Err(error);
-    }
-    Ok(true)
-}
-
 fn publish_migration(config_path: &Path, config: &Config, source: &Path) -> Result<bool> {
     let target = config.data_dir.join("status.sqlite3");
     let value = serde_json::to_value(config)?;
@@ -445,28 +419,28 @@ fn publish_migration(config_path: &Path, config: &Config, source: &Path) -> Resu
 }
 
 pub fn migrate(config_path: &Path, source_config: &Path) -> Result<Value> {
-    ensure!(!config_path.try_exists()?, "目标配置已经存在，不会覆盖");
-    let mut config = config::load(Some(source_config))?;
+    let config_path = migration::configuration(config_path)?;
+    let mut config = migration::load_source(source_config)?;
     let source = config.data_dir.join("status.sqlite3");
-    let (_, destination) = config::default_paths()?;
-    config.data_dir = destination;
-    let _lock = lock_data(&config.data_dir)?;
+    config.data_dir = config::default_paths()?.1;
+    let _lock = migration::lock(&config.data_dir)?;
     if let Some(record) = read_record(&config.data_dir)? {
         ensure!(
             !verify_record(&record)?,
             "目标数据目录仍有受管进程运行，不能迁移"
         );
     }
-    let copied = publish_migration(config_path, &config, &source)?;
+    let copied = publish_migration(&config_path, &config, &source)?;
     Ok(json!({
         "imported": true, "databaseCopied": copied, "dataDir": config.data_dir,
-        "config": config::resolve_path(config_path)?
+        "config": config_path
     }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::Connection;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     struct Fixture(PathBuf);
