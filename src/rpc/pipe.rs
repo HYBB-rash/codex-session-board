@@ -47,6 +47,10 @@ pub(crate) fn first_line(command: &[String], timeout: Duration) -> Result<String
         stream: Transport::proxy(command)?,
         deadline,
     };
+    line(&mut stream)
+}
+
+pub(super) fn line(stream: &mut impl Read) -> Result<String> {
     let mut line = Vec::new();
     loop {
         ensure!(line.len() < 256, "时钟探针响应过长");
