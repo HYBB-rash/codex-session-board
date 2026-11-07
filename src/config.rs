@@ -82,20 +82,11 @@ impl Config {
         }
         ensure!(!self.host_id.is_empty(), "host_id 必须为非空文本");
         ensure!(!self.data_dir.as_os_str().is_empty(), "data_dir 不得为空");
-        if self.sync_sections {
+        if self.sync_sections || self.native_sections {
             self.validate_sections()?;
         }
         if self.native_sections {
             ensure!(!self.sync_sections, "原生状态来源不允许分区同步");
-            ensure!(self.desktop_socket.is_absolute(), "原生状态需要 desktop_socket");
-            let identifiers: HashSet<_> = self.status_sections.values().collect();
-            ensure!(identifiers.len() == self.status_sections.len(), "状态分区不得重复");
-            for (state, _) in crate::model::board_states() {
-                ensure!(
-                    self.status_sections.get(state).is_some_and(|identifier| uuid::Uuid::parse_str(identifier).is_ok()),
-                    "缺少有效的原生状态分区 {state}"
-                );
-            }
         }
         for (name, value) in [
             ("poll_seconds", self.poll_seconds as u128),

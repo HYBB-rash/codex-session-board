@@ -1,7 +1,7 @@
 use crate::{config::Config, model, rpc::Rpc};
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Observation {
@@ -9,72 +9,111 @@ pub struct Observation {
     pub version: String,
 }
 
-pub fn observe(config: &Config, thread: &Value) -> Result<Observation> {
-    let section = thread.get("section").context("原生响应缺少分区字段")?;
+pub fn observe(config: &Config, section: &Value) -> Result<Observation> {
     ensure!(
-        section.is_null() || section["id"].is_string(),
+        section.is_null() || section["sectionId"].is_string(),
         "原生分区格式无效"
     );
     let state = config
         .status_sections
         .iter()
-        .find(|(_, identifier)| section["id"].as_str() == Some(identifier.as_str()))
+        .find(|(_, identifier)| section["sectionId"].as_str() == Some(identifier.as_str()))
         .map(|(state, _)| model::board_state(state))
         .unwrap_or("unknown");
     Ok(Observation {
         state: state.into(),
-        version: json!([section["id"], thread["sectionEnteredAt"]]).to_string(),
+        version: section["sectionId"]
+            .as_str()
+            .unwrap_or("unsectioned")
+            .into(),
     })
 }
 
-pub fn verify_catalog(reader: &mut impl Rpc, config: &Config) -> Result<()> {
-    let mut catalog = Vec::new();
-    let mut cursor = Value::Null;
-    let mut seen = HashSet::new();
-    for _ in 0..config.max_pages {
-        let result = reader.call(
-            "threadSection/list",
-            json!({"limit":config.page_size,"cursor":cursor}),
-        )?;
-        catalog.extend(
-            result["data"]
-                .as_array()
-                .context("原生分区目录无效")?
-                .iter()
-                .cloned(),
-        );
-        cursor = result["nextCursor"].clone();
-        if cursor.is_null() {
-            for (state, identifier) in &config.status_sections {
-                let label = model::STATES
-                    .iter()
-                    .find(|item| item.0 == state)
-                    .context("未知状态分区")?
-                    .1;
-                ensure!(
-                    catalog
-                        .iter()
-                        .any(|section| section["id"] == *identifier && section["name"] == label),
-                    "原生分区 ID 或名称不匹配：{label}"
-                );
-            }
-            return Ok(());
-        }
+pub fn snapshot(reader: &mut impl Rpc, config: &Config) -> Result<HashMap<String, Observation>> {
+    let result = reader.call("list_threads", json!({"limit":1}))?;
+    ensure!(
+        result["unavailableHosts"]
+            .as_array()
+            .is_some_and(|hosts| !hosts.iter().any(|host| host == &config.host_id)),
+        "原生分区主机不可用"
+    );
+    let catalog = result["sections"].as_array().context("原生分区目录无效")?;
+    validate_catalog(config, catalog)?;
+    collect(config, catalog)
+}
+
+fn validate_catalog(config: &Config, catalog: &[Value]) -> Result<()> {
+    for (state, identifier) in &config.status_sections {
+        let label = model::STATES
+            .iter()
+            .find(|item| item.0 == state)
+            .context("未知状态分区")?
+            .1;
+        let matches: Vec<_> = catalog
+            .iter()
+            .filter(|section| section["sectionId"] == *identifier)
+            .collect();
         ensure!(
-            cursor.is_string() && seen.insert(cursor.to_string()),
-            "原生分区分页游标无效"
+            matches.len() == 1 && matches[0]["name"] == label,
+            "原生分区 ID 或名称不匹配：{label}"
         );
     }
-    anyhow::bail!("原生分区目录未完整读取")
+    Ok(())
+}
+
+fn collect(config: &Config, catalog: &[Value]) -> Result<HashMap<String, Observation>> {
+    let aliases = aliases(config)?;
+    let prefix = format!("codex:thread:{}:", config.host_id);
+    let mut observed = HashMap::new();
+    let mut seen = HashSet::new();
+    for section in catalog {
+        let observation = observe(config, section)?;
+        ensure!(seen.insert(observation.version.clone()), "原生分区 ID 重复");
+        for item in section["itemKeys"].as_array().context("原生分区成员无效")? {
+            let key = item.as_str().context("原生成员标识无效")?;
+            let Some(identifier) = key.strip_prefix(&prefix) else {
+                continue;
+            };
+            let canonical = aliases
+                .get(identifier)
+                .map(String::as_str)
+                .unwrap_or(identifier);
+            ensure!(
+                observed
+                    .insert(canonical.into(), observation.clone())
+                    .is_none(),
+                "会话出现在多个原生分区"
+            );
+        }
+    }
+    Ok(observed)
+}
+
+fn aliases(config: &Config) -> Result<HashMap<String, String>> {
+    if config.sidebar_state_file.as_os_str().is_empty() {
+        return Ok(HashMap::new());
+    }
+    let state: Value = serde_json::from_reader(std::fs::File::open(&config.sidebar_state_file)?)?;
+    let atoms = state["electron-persisted-atom-state"]
+        .as_object()
+        .context("客户端别名数据无效")?;
+    let mut aliases = HashMap::new();
+    for (key, value) in atoms {
+        if let Some(identifier) = key.strip_prefix("thread-client-id-v1:local%3A") {
+            let alias = value.as_str().context("客户端会话别名无效")?;
+            ensure!(
+                aliases.insert(alias.into(), identifier.into()).is_none(),
+                "客户端别名存在冲突"
+            );
+        }
+    }
+    Ok(aliases)
 }
 
 fn read(reader: &mut impl Rpc, config: &Config, identifier: &str) -> Result<Observation> {
-    let result = reader.call(
-        "thread/read",
-        json!({"threadId":identifier,"includeTurns":false}),
-    )?;
-    ensure!(result["thread"]["id"] == identifier, "原生会话身份不匹配");
-    observe(config, &result["thread"])
+    Ok(snapshot(reader, config)?
+        .remove(identifier)
+        .unwrap_or(observe(config, &Value::Null)?))
 }
 
 pub fn move_checked(
@@ -94,15 +133,15 @@ pub fn move_checked(
         .status_sections
         .get(state)
         .context("目标原生分区未配置")?;
-    if before.state == state {
+    if before.version == *section {
         return Ok(before);
     }
     reader.call(
-        "thread/section/move",
-        json!({"threadId":identifier,"sectionId":section}),
+        "move_thread_to_sidebar_section",
+        json!({"threadId":identifier,"sectionId":section,"source":"codex","hostId":config.host_id}),
     )?;
     let after = read(reader, config, identifier)?;
-    ensure!(after.state == state, "原生分区写入未确认，请刷新核对");
+    ensure!(after.version == *section, "原生分区写入未确认，请刷新核对");
     Ok(after)
 }
 
@@ -133,17 +172,21 @@ mod tests {
         }
     }
 
-    fn thread(section: &str, entered: i64) -> Value {
-        json!({"id":"thread","section":{"id":section},"sectionEnteredAt":entered})
+    fn thread(section: &str, _: i64) -> Value {
+        json!({"sectionId":section})
+    }
+
+    fn response(section: &str) -> Value {
+        json!({"unavailableHosts":[],"sections":[
+            {"sectionId":"review-id","name":"待审阅","itemKeys":if section=="review-id" {vec!["codex:thread:local:thread"]}else{vec![]}},
+            {"sectionId":"archive-id","name":"待归档","itemKeys":if section=="archive-id" {vec!["codex:thread:local:thread"]}else{vec![]}}
+        ]})
     }
 
     #[test]
     fn unmapped_native_sections_are_unknown_and_missing_fields_are_rejected() -> Result<()> {
         assert_eq!(observe(&config(), &thread("pinned", 1))?.state, "unknown");
-        assert_eq!(
-            observe(&config(), &json!({"section":null}))?.state,
-            "unknown"
-        );
+        assert_eq!(observe(&config(), &Value::Null)?.state, "unknown");
         assert!(observe(&config(), &json!({})).is_err());
         Ok(())
     }
@@ -151,7 +194,7 @@ mod tests {
     #[test]
     fn changed_native_placement_rejects_the_move_before_any_write() -> Result<()> {
         let mut desktop = Desktop {
-            replies: [json!({"thread":thread("review-id",2)})].into(),
+            replies: [response("archive-id")].into(),
             methods: vec![],
         };
         let expected = observe(&config(), &thread("review-id", 1))?;
@@ -165,19 +208,14 @@ mod tests {
             )
             .is_err()
         );
-        assert_eq!(desktop.methods, ["thread/read"]);
+        assert_eq!(desktop.methods, ["list_threads"]);
         Ok(())
     }
 
     #[test]
     fn move_reads_back_native_state_and_never_reconciles_other_threads() -> Result<()> {
         let mut desktop = Desktop {
-            replies: [
-                json!({"thread":thread("review-id",1)}),
-                json!({}),
-                json!({"thread":thread("archive-id",2)}),
-            ]
-            .into(),
+            replies: [response("review-id"), json!({}), response("archive-id")].into(),
             methods: vec![],
         };
         let expected = observe(&config(), &thread("review-id", 1))?;
@@ -194,7 +232,11 @@ mod tests {
         );
         assert_eq!(
             desktop.methods,
-            ["thread/read", "thread/section/move", "thread/read"]
+            [
+                "list_threads",
+                "move_thread_to_sidebar_section",
+                "list_threads"
+            ]
         );
         Ok(())
     }
@@ -202,12 +244,7 @@ mod tests {
     #[test]
     fn unconfirmed_moves_fail_instead_of_creating_a_retry_intent() -> Result<()> {
         let mut desktop = Desktop {
-            replies: [
-                json!({"thread":thread("review-id",1)}),
-                json!({}),
-                json!({"thread":thread("review-id",1)}),
-            ]
-            .into(),
+            replies: [response("review-id"), json!({}), response("review-id")].into(),
             methods: vec![],
         };
         let expected = observe(&config(), &thread("review-id", 1))?;
@@ -225,17 +262,16 @@ mod tests {
     }
 
     #[test]
-    fn catalog_rejects_ui_layer_identifiers_and_repeated_cursors() {
+    fn catalog_rejects_missing_or_duplicated_section_identifiers() {
         let mut desktop = Desktop {
-            replies: [json!({"data":[{"id":"ui-layer-id","name":"待审阅"}]})].into(),
+            replies: [json!({"unavailableHosts":[],"sections":[]})].into(),
             methods: vec![],
         };
-        assert!(verify_catalog(&mut desktop, &config()).is_err());
-        desktop.replies = [
-            json!({"data":[],"nextCursor":"same"}),
-            json!({"data":[],"nextCursor":"same"}),
-        ]
-        .into();
-        assert!(verify_catalog(&mut desktop, &config()).is_err());
+        assert!(snapshot(&mut desktop, &config()).is_err());
+        let mut duplicate = response("review-id");
+        let repeated = duplicate["sections"][0].clone();
+        duplicate["sections"].as_array_mut().unwrap().push(repeated);
+        desktop.replies = [duplicate].into();
+        assert!(snapshot(&mut desktop, &config()).is_err());
     }
 }
