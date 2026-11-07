@@ -256,6 +256,45 @@ fn archive_unverifiable_native_input_never_reaches_the_write() {
 }
 
 #[test]
+fn archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let store = Store::open(directory.path(), false)?;
+    populate(&store, "to_archive")?;
+    store.observe(FIRST, &json!({"id":"old","userItems":["original"]}), None)?;
+    store.set_state(FIRST, Some("to_archive"), "保留备注", 1, Some(1))?;
+    let complete = native_turn("old", &["original", "same-turn-followup"]);
+    let mut reader = Native {
+        replies: VecDeque::from([json!({"data":[complete.clone()]})]),
+        ..Native::default()
+    };
+    let observed = codex_session_board::rpc::latest_turn(&mut reader, FIRST)?;
+    assert_eq!(reader.calls[0].1["itemsView"], "full");
+    assert_eq!(observed["userItems"].as_array().unwrap().len(), 2);
+    store.observe(FIRST, &observed, None)?;
+    assert_eq!(store.sessions()?[0]["followUp"], true);
+    assert_eq!(store.sessions()?[0]["inputVersion"], 2);
+    assert!(
+        store
+            .archive(FIRST, 2, 2, |_| panic!("unconfirmed recovered input"))
+            .is_err()
+    );
+    assert!(
+        store
+            .set_state(FIRST, Some("to_archive"), "保留备注", 2, Some(1))
+            .is_err()
+    );
+    store.set_state(FIRST, Some("to_archive"), "保留备注", 2, Some(2))?;
+    assert_eq!(store.sessions()?[0]["followUp"], false);
+    let mut writer = native();
+    writer.replies[2] = json!({"data":[complete]});
+    store.archive(FIRST, 3, 2, |expected| {
+        archive::archive(&mut writer, FIRST, 10, expected)
+    })?;
+    assert_archived(&store)?;
+    Ok(())
+}
+
+#[test]
 fn archive_rejects_malformed_user_items_even_when_other_inputs_match() {
     for identifier in [Value::Null, json!(1), json!("")] {
         let mut turn = native_turn("old", &["original"]);

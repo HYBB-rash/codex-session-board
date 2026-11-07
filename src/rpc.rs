@@ -584,7 +584,7 @@ pub fn latest_turn(reader: &mut dyn Rpc, id: &str) -> Result<Value> {
     let result = reader.call(
         "thread/turns/list",
         json!({
-            "threadId": id, "limit": 1, "sortDirection": "desc", "itemsView": "summary"
+            "threadId": id, "limit": 1, "sortDirection": "desc", "itemsView": "full"
         }),
     )?;
     match result.get("data") {
@@ -860,7 +860,7 @@ mod tests {
             (
                 "thread/turns/list".to_owned(),
                 json!({
-                    "threadId": "conversation", "limit": 1, "sortDirection": "desc", "itemsView": "summary"
+                    "threadId": "conversation", "limit": 1, "sortDirection": "desc", "itemsView": "full"
                 })
             )
         );

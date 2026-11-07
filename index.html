@@ -169,10 +169,10 @@ function makeCard(session) {
     element("time",date(session.updatedAt)));
   footer.append(details);
   if (session.state === "to_archive" && session.canArchive !== false) {
-    const archive = element("button","归档","row-action");
+    const archive = element("button",session.followUp ? "确认待归档" : "归档","row-action");
     archive.type = "button";
-    archive.title = "直接归档此 Codex 会话";
-    archive.onclick = () => archiveSession(session,archive);
+    archive.title = session.followUp ? "请先打开会话核对输入；确认仅保存待归档状态，不执行归档" : "直接归档此 Codex 会话";
+    archive.onclick = () => session.followUp ? confirmArchiveInputs(session,archive) : archiveSession(session,archive);
     footer.append(archive);
   }
   card.append(footer);
@@ -208,6 +208,15 @@ async function openSession(id) {
 }
 async function archiveSession(session, button) {
   return archiveSessions([session],button);
+}
+async function confirmArchiveInputs(session, button) {
+  if (saving || dragging || byId("editor").open) return;
+  saving = true;button.disabled = true;
+  try {
+    await persist(session,"to_archive",session.note);
+    announce("已确认待归档。现在可以点击归档或一键归档。");
+  } catch (error) {announce(error.message,true);}
+  finally {saving = false;button.disabled = false;render();await load();}
 }
 async function archiveSessions(sessions, button) {
   if (saving || dragging || byId("editor").open) return;

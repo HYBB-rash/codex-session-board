@@ -415,6 +415,7 @@
       "test::observer_contract::same_phase_runtime_input_rejects_stale_input_version_without_changing_state_version"
     ],
     "MANUAL-002": [
+      "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation",
       "test::native_authority::transport::external_move_rejects_an_unobserved_stale_save_and_fresh_save_succeeds",
       "test::native_authority::faults::input_arriving_during_a_native_move_cannot_be_confirmed_by_the_old_save",
       "test::native_authority::archive::native_archive_rejects_external_moves_before_archiving_and_accepts_fresh_confirmation",
@@ -494,6 +495,7 @@
       "test::observer_contract::same_phase_runtime_input_rejects_stale_input_version_without_changing_state_version"
     ],
     "MANUAL-003": [
+      "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation",
       "test::archive_flow::archive_checks_native_inputs_even_when_local_revision_has_not_changed",
       "test::archive_flow::archive_confirmation_persists_and_stale_observers_cannot_restore_the_card",
       "test::archive_flow::archive_lost_ack_keeps_card_and_retry_reads_back_before_another_write",
@@ -939,6 +941,7 @@
       "test::board_io::service_update_rejects_old_build_but_can_verify_and_stop_its_process"
     ],
     "BOUNDARY-001": [
+      "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation",
       "lib::codex_session_board::rpc::tests::native_reader_rejects_writes_and_keeps_the_history_reader_boundary",
       "test::native_authority::entrypoints::built_binary_preserves_native_position_guards_over_http_and_mcp",
       "test::native_authority::archive::a_blocked_move_in_another_chat_does_not_block_native_archive",

@@ -130,7 +130,7 @@ fn archive_expected(row: &Value, revision: (i64, i64), native: bool) -> Result<V
         row["input_revision"] == revision.1,
         "会话有新输入，请刷新并核对后重试"
     );
-    ensure!(row["needs_review"] == 0, "会话有新输入，请先调整状态确认");
+    ensure!(row["needs_review"] == 0, "会话有新输入，请核对后点击卡片上的“确认待归档”");
     ensure!(
         crate::model::board_state(&effective(row, native)) == "to_archive",
         "只能归档待归档会话"

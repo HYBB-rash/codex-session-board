@@ -207,7 +207,7 @@ fn assert_read_contract(reader: &FakeRpc, page_size: usize) {
                 *params,
                 json!({
                     "threadId": params["threadId"], "limit": 1,
-                    "sortDirection": "desc", "itemsView": "summary",
+                    "sortDirection": "desc", "itemsView": "full",
                 })
             ),
             _ => panic!("unexpected observer method: {method}"),
