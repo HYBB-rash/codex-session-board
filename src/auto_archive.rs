@@ -74,7 +74,7 @@ pub fn start(app: &Arc<App>) {
     let app = Arc::clone(app);
     std::thread::spawn(move || {
         let mut schedule = Schedule::new(seconds, now());
-        loop {
+        while app.enabled.load(std::sync::atomic::Ordering::SeqCst) {
             let result = app.update_health(json!({
                 "autoArchiveSeconds":seconds,"autoArchiveNextAt":schedule.next
             }));

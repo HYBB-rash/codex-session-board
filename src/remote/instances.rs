@@ -10,6 +10,8 @@ impl App {
         config.host_id = host.host_id.clone();
         config.data_dir = host.directory(&self.config);
         config.proxy_command = host.proxy(&self.config)?;
+        config.clock_command = host.command(&self.config,
+            "python3 -c 'import time; print(time.time(), flush=True)'")?;
         let remote = Arc::new(App::new(config)?);
         remote.update_health(json!({"hostLabel":host.display_name}))?;
         let path = remote.config.data_dir.join("source.json");

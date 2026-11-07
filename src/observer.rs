@@ -1,7 +1,7 @@
 use crate::{
     app::App,
     model::now,
-    rpc::{self, DesktopConnection, RequestError, Role, Rpc, StdioReader},
+    rpc::{self, RequestError, Rpc, StdioReader, runtime::RuntimeConnection},
 };
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
@@ -164,16 +164,13 @@ fn history_worker(app: Arc<App>) {
 }
 
 fn runtime_worker(app: Arc<App>) {
-    let mut reader: Option<DesktopConnection> = None;
+    let mut reader: Option<RuntimeConnection> = None;
     let mut revisions = HashMap::new();
     let since = now();
     while app.enabled.load(Ordering::SeqCst) {
         let result = (|| {
             if reader.is_none() {
-                reader = Some(app.connection(
-                    Duration::from_secs(app.config.rpc_timeout_seconds),
-                    Role::Reader,
-                )?);
+                reader = Some(RuntimeConnection::connect(&app)?);
                 revisions.clear();
             }
             scan_runtime(

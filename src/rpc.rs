@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 use tungstenite::{Message, WebSocket};
 
 mod pipe;
+pub(crate) mod runtime;
 
 mod sidebar;
 

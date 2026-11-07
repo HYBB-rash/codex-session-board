@@ -41,6 +41,24 @@ impl Transport {
     }
 }
 
+pub(crate) fn first_line(command: &[String], timeout: Duration) -> Result<String> {
+    let deadline = deadline_after(timeout)?;
+    let mut stream = DeadlineStream {
+        stream: Transport::proxy(command)?,
+        deadline,
+    };
+    let mut line = Vec::new();
+    loop {
+        ensure!(line.len() < 256, "时钟探针响应过长");
+        let mut byte = [0];
+        stream.read_exact(&mut byte)?;
+        if byte[0] == b'\n' {
+            return Ok(String::from_utf8(line)?);
+        }
+        line.push(byte[0]);
+    }
+}
+
 impl From<UnixStream> for Transport {
     fn from(stream: UnixStream) -> Self {
         Self::Unix(stream)

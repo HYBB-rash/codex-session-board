@@ -15,6 +15,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub struct Config {
     pub codex_command: Vec<String>,
     pub proxy_command: Vec<String>,
+    pub clock_command: Vec<String>,
     pub data_dir: PathBuf,
     pub port: u16,
     pub poll_seconds: u64,
@@ -41,6 +42,7 @@ impl Default for Config {
         Self {
             codex_command: vec!["codex".into(), "app-server".into(), "--stdio".into()],
             proxy_command: Vec::new(),
+            clock_command: Vec::new(),
             data_dir: PathBuf::new(),
             port: 8767,
             poll_seconds: 30,
@@ -90,8 +92,8 @@ impl Config {
         }
         ensure!(!self.host_id.is_empty(), "host_id 必须为非空文本");
         ensure!(
-            self.proxy_command.iter().all(|part| !part.is_empty()),
-            "proxy_command 不得包含空参数"
+            self.proxy_command.iter().chain(&self.clock_command).all(|part| !part.is_empty()),
+            "代理或时钟命令不得包含空参数"
         );
         ensure!(!self.data_dir.as_os_str().is_empty(), "data_dir 不得为空");
         ensure!(
