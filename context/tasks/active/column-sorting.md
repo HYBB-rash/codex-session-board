@@ -2,7 +2,7 @@
 
 owner: codex-column-sorting
 execution_mode: serial_write
-allowed_write_set: src/store.rs, src/store/sorting.rs, src/app.rs, src/mcp.rs, index.html, tests/, acceptance/bindings.json, Cargo.toml, Cargo.lock, plugin.json, .codex-plugin/plugin.json, Docs/COLUMN-SORTING.md, context/, outputs/column-sorting-20261107/, 日常二进制与既有插件部署副本
+allowed_write_set: src/store.rs, src/store/sorting.rs, src/app.rs, src/mcp.rs, index.html, tests/, scripts/bind_rust_tests.py, acceptance/bindings.json, Cargo.toml, Cargo.lock, plugin.json, .codex-plugin/plugin.json, Docs/COLUMN-SORTING.md, context/, outputs/column-sorting-20261107/, 日常二进制与既有插件部署副本
 base_commit: abfa090
 worktree_path: /home/herman/文档/notion-program
 coordinator: codex-column-sorting
@@ -18,3 +18,6 @@ coordinator: codex-column-sorting
 后端设置及三项回归已提交 9e9e174，版本 0.1.83。
 界面加入各栏独立下拉框、统一排序比较、未知时间后置与稳定身份决胜。
 保留栏头控件和阅读位置，主动换序回到该列顶部。正在验证并准备部署。
+界面及真实 HTTP/MCP 回归已提交 dcd2452，版本 0.1.84。
+独立审查确认刷新、冲突、失败回退、拖动和窄屏行为；修复回包抢走搜索焦点。
+隔离浏览器验证默认值、单栏设置、空列、筛选、搜索、刷新持久化及滚动位置。

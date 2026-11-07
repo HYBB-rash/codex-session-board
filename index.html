@@ -305,7 +305,9 @@ async function changeColumnSort(state, menu) {
     announce(error.message,true);
   } finally {
     menu.sortPreference = {...columnSort(state)};menu.value = menu.sortPreference.direction;
-    saving = false;menu.disabled = false;render(changed ? state : null);menu.focus({preventScroll:true});
+    const restoreFocus = document.activeElement === menu || document.activeElement === document.body;
+    saving = false;menu.disabled = false;render(changed ? state : null);
+    if (restoreFocus) menu.focus({preventScroll:true});
     await load();
     menu.sortPreference = {...columnSort(state)};menu.value = menu.sortPreference.direction;
   }
