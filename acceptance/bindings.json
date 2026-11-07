@@ -1085,7 +1085,14 @@
       "test::board_io::real_http_persistence_security_and_launcher_reuse",
       "test::board_io::service_update_rejects_old_build_but_can_verify_and_stop_its_process",
       "lib::codex_session_board::service::migration::tests::snapshots::migration_copies_host_databases_when_the_main_database_is_absent",
-      "lib::codex_session_board::service::migration::tests::snapshots::migration_preserves_root_and_all_host_wal_state_and_only_allowed_sidecars"
+      "lib::codex_session_board::service::migration::tests::snapshots::migration_preserves_root_and_all_host_wal_state_and_only_allowed_sidecars",
+      "lib::codex_session_board::service::migration::tests::guards::migration_refuses_existing_configuration_before_creating_destination",
+      "lib::codex_session_board::service::migration::tests::guards::migration_refuses_existing_root_or_host_data_before_publication",
+      "lib::codex_session_board::service::migration::tests::guards::migration_refuses_existing_sqlite_sidecars",
+      "lib::codex_session_board::service::migration::tests::guards::migration_refuses_runtime_lock_symlinks_before_opening_external_files",
+      "lib::codex_session_board::service::migration::tests::guards::migration_rejects_configuration_overlapping_database_or_sidecar",
+      "lib::codex_session_board::service::migration::tests::guards::migration_rejects_destination_symlinks_including_dangling_configuration",
+      "lib::codex_session_board::service::migration::tests::guards::migration_rejects_source_symlinks_without_following_them"
     ],
     "SERVICE-001": [
       "lib::codex_session_board::service::tests::data_lock_serializes_independent_open_descriptors",
@@ -1108,7 +1115,14 @@
       "lib::codex_session_board::store::drafts::tests::acknowledged_draft_retries_reuse_the_same_thread_without_overwriting_new_requests",
       "lib::codex_session_board::remote::instances::tests::remote_instances_reuse_store_preserve_notes_and_reject_reassigned_targets",
       "lib::codex_session_board::service::migration::tests::snapshots::migration_copies_host_databases_when_the_main_database_is_absent",
-      "lib::codex_session_board::service::migration::tests::snapshots::migration_preserves_root_and_all_host_wal_state_and_only_allowed_sidecars"
+      "lib::codex_session_board::service::migration::tests::snapshots::migration_preserves_root_and_all_host_wal_state_and_only_allowed_sidecars",
+      "lib::codex_session_board::service::migration::tests::guards::migration_refuses_existing_configuration_before_creating_destination",
+      "lib::codex_session_board::service::migration::tests::guards::migration_refuses_existing_root_or_host_data_before_publication",
+      "lib::codex_session_board::service::migration::tests::guards::migration_refuses_existing_sqlite_sidecars",
+      "lib::codex_session_board::service::migration::tests::guards::migration_refuses_runtime_lock_symlinks_before_opening_external_files",
+      "lib::codex_session_board::service::migration::tests::guards::migration_rejects_configuration_overlapping_database_or_sidecar",
+      "lib::codex_session_board::service::migration::tests::guards::migration_rejects_destination_symlinks_including_dangling_configuration",
+      "lib::codex_session_board::service::migration::tests::guards::migration_rejects_source_symlinks_without_following_them"
     ],
     "BOUNDARY-001": [
       "test::legacy_mode::legacy_mode_rejects_native_connections_and_timers_before_creating_data",
