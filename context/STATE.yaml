@@ -5,11 +5,11 @@
     "id": "remote-parity-integration",
     "status": "in_progress",
     "as_of": "2026-11-08",
-    "summary": "用户已授权正式接入并完成验收。协调工作树接入共享业务实例、代理传输、校时、分页、原生映射与远程空会话；尚未部署。迁移与连接身份各有独立写入工作树，协调者统一登记、整合和验收。实验结论与证据继续保留，不能代替当前实现的完整验收。"
+    "summary": "共享业务实例、来源核验、代理传输、手工连接、校时、分页、原生映射及远程空会话已整合。旧本机定时配置不扩大到远程。迁移工作者待切最终基线分步提交，门禁工作者制作专用会话协议过滤器。当前生产仍为 0.1.87，尚未部署；客户端系统锁屏，真实 GUI 验收待解锁。实验或自动测试不代替完整验收。"
   },
-  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/remote-parity-integration.md", "context/tasks/active/remote-data-migration-worker.md", "context/tasks/active/remote-connection-identity-worker.md", "context/tasks/active/remote-release-gate-worker.md"],
+  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/remote-parity-integration.md", "context/tasks/active/remote-data-migration-worker.md", "context/tasks/active/remote-release-gate-worker.md"],
   "known_open_issues": ["一条原生已归档历史记录仍保留本地未确认归档缓存；批量位置读取会提示 1 个缺项，当前看板不显示此记录，未做额外归档或恢复。见 outputs/native-read-deployment-20261107/historical-cache-warning.json。", "新建会话已随 main 部署至 0.1.39；此前仅确认真实点击后客户端选中项目 ID，输入页和第二项目切换尚未实测通过。见 context/handoffs/new-session-project-live-validation.md。", "完整验收缺少其他真实环境证据，release_ready=false；PWA 安装入口实测不能代替全部 31 条验收。", "项目登记与分区读回依赖当前 Codex 客户端内部状态格式，格式改变时需重新核对。", "PWA 安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。", "五状态与归档按钮已部署，网页可见性已验证；真实客户端归档执行仍待专用会话验证。原生取消归档后尚不自动恢复本地已确认归档卡片。"],
-  "last_completed_task": "context/tasks/completed/remote-parity-lab.md",
+  "last_completed_task": "context/tasks/completed/remote-connection-identity-worker.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",

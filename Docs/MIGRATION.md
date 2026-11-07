@@ -28,6 +28,19 @@ cargo run --locked --offline -- --config /path/to/new/config.json migrate --sour
 原配置和原库保留。目标数据库存在时拒绝覆盖。程序更新不把配置或数据写入插件缓存。
 部署前应核对当前服务，服务身份或构建不匹配时显式停止旧服务后再启动。
 
+远程接入后，迁移同时枚举根库与磁盘上的全部 remote-hosts 子库，
+包括已经禁用或移除登记的主机。SQLite Backup 包含已提交的 WAL，
+只额外保留来源身份与分页进度，不复制锁、socket、进程记录或凭据。
+源库、侧车和目标冲突先检查，配置最后发布，正常失败只回滚本次创建项。
+每库快照各自一致，不构成跨库同一时刻的事务；需要统一时点时先协调暂停写入方。
+进程被杀或掉电后的遗留不能靠覆盖重试，应先审阅备份与目标。
+
+旧本机 auto_archive_seconds 不自动启用远程归档，
+remote_auto_archive_seconds 默认 null。冻结六状态需显式 legacy_mode=true，
+与日常原生五状态分别验收，不能用兼容模式或旧安装包签收新路径。
+完整 release 与原生/远程汇总的源码指纹和 executable SHA256 必须相同。
+build-plugin 使用实际 CARGO_TARGET_DIR 的新构建，避免打包另一路径的旧二进制。
+
 当前仓库仍使用原 `scripts/check`、注释限制、Clippy 和 Git 钩子。
 开发改动尚未提交时，工作区干净检查会失败，不可用忽略文件或重置工作区掩盖。
 Agent 自主按每次最多 13 文件、400 行和每次提交自动进位规则分步提交。
