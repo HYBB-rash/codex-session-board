@@ -2,12 +2,12 @@
   "schema_version": 1,
   "updated_at": "2026-11-07",
   "current_phase": {
-    "id": "compact-column-sort",
-    "status": "deployed_pending_user_acceptance",
+    "id": "project-creation-native-probe",
+    "status": "pending_client_extension_decision",
     "as_of": "2026-11-07",
-    "summary": "用户选定草图 A，0.1.87 已部署标题同排的“更新 ↓/↑”标签与浮层菜单，等待用户验收。菜单支持点外关闭、键盘操作，轮询保留展开和焦点；当前规则再次点击只关闭，保留阅读位置。修复保存后的延迟刷新清除新菜单版本快照的竞态，沿用后端独立保存和冲突保护。326 项自动检查、301 项比较及滚动检查、18 项焦点及重开菜单检查通过；真实浏览器验证菜单、保存、刷新、并发拒绝、断网及窄屏。HTTP、插件缓存和 MCP 均为 0.1.87，四处程序哈希一致。配置和 MCP 环境逐字节保留，135 本地、42 远程人工字段及 3 条设置保留，栏目偏好字段、方向和版本不变。既有 1800 秒归档配置与单条位置缺项提示保留。完整冻结门禁仍为 17 条通过、14 条外部待证据，退出 2、release_ready=false。证据及回滚见 outputs/compact-sort-20261107/。"
+    "summary": "新建项目任务完成真实原生登记探针，Desktop ID、server 映射和运行中看板目录三处读回成功，专用目录没有 Git，未发送消息。原生确认等待使调用超时后登记仍完成，未重复提交。现有 create_project 受真实 caller workspace 限制，当前会话只有仓库根，既有部署 caller 无本机根，不能交付通用本机目录入口。最小客户端 bridge 契约及证据见 Docs/PROJECT-CREATION.md 和 outputs/project-creation-20261107/，等待确认是否扩展桌面客户端。业务入口尚未实现或部署。日常看板保持此前 0.1.87 栏目排序版本，完整冻结门禁仍为 release_ready=false；既有待验收项保留。"
   },
-  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md"],
+  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/project-creation.md"],
   "known_open_issues": ["一条原生已归档历史记录仍保留本地未确认归档缓存；批量位置读取会提示 1 个缺项，当前看板不显示此记录，未做额外归档或恢复。见 outputs/native-read-deployment-20261107/historical-cache-warning.json。", "新建会话已随 main 部署至 0.1.39；此前仅确认真实点击后客户端选中项目 ID，输入页和第二项目切换尚未实测通过。见 context/handoffs/new-session-project-live-validation.md。", "完整验收缺少其他真实环境证据，release_ready=false；PWA 安装入口实测不能代替全部 31 条验收。", "项目登记与分区读回依赖当前 Codex 客户端内部状态格式，格式改变时需重新核对。", "PWA 安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。", "五状态与归档按钮已部署，网页可见性已验证；真实客户端归档执行仍待专用会话验证。原生取消归档后尚不自动恢复本地已确认归档卡片。"],
   "last_completed_task": "context/tasks/completed/compact-column-sort.md",
   "disclosure": {
