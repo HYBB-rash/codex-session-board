@@ -6,6 +6,7 @@ use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
 mod native;
+pub mod remote;
 mod runtime_native;
 pub use runtime_native::RuntimeChange;
 
@@ -186,6 +187,7 @@ impl Store {
         database.busy_timeout(std::time::Duration::from_secs(3))?;
         database.execute_batch(SCHEMA)?;
         Self::upgrade(&database)?;
+        Self::upgrade_remote(&database)?;
         let title_epoch = if sync_titles {
             database.execute(
                 "INSERT OR IGNORE INTO settings(key,value) VALUES ('title_sync_started_at',?)",
