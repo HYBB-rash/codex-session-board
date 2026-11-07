@@ -167,9 +167,7 @@ function makeCard(session) {
   const details = element("div");
   details.append(element("div",session.remote ? "远程人工管理" : session.manual ? "人工确认" : session.source === "runtime" ? "自动流转" : "历史状态","source"),
     element("time",date(session.updatedAt)));
-  const button = element("button","调整状态","row-action");
-  button.onclick = () => {if (!saving) openEditor(session.id);};
-  footer.append(details,button);
+  footer.append(details);
   if (session.state === "to_archive" && session.canArchive !== false) {
     const archive = element("button","归档","row-action");
     archive.type = "button";
