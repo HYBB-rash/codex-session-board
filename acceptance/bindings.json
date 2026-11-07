@@ -753,6 +753,11 @@
       "test::board_contract::title_store_tests::title_activation_epoch_survives_restart_and_catches_new_completed_turn"
     ],
     "DISCOVERY-001": [
+      "example::remote_parity_lab::remote_discovery_tests::catalog_failure_or_last_project_removal_does_not_erase_known_hosts",
+      "example::remote_parity_lab::remote_discovery_tests::next_page_progress_survives_process_restart",
+      "example::remote_parity_lab::remote_discovery_tests::failure_keeps_progress_and_does_not_prevent_another_host_page",
+      "example::remote_parity_lab::remote_discovery_tests::duplicate_cursor_and_cross_host_page_fail_without_erasing_prior_data",
+      "example::remote_parity_lab::remote_discovery_tests::batch_scope_is_frozen_and_project_ids_are_scoped_by_host",
       "lib::codex_session_board::projects::tests::broken_worktree_metadata_retains_previous_membership_until_a_complete_resolution",
       "lib::codex_session_board::projects::tests::canonical_paths_match_symlinks_and_missing_directories_lexically",
       "lib::codex_session_board::projects::tests::directory_membership_tracks_removal_and_readdition_without_mutating_saved_fields",

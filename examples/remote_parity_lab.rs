@@ -1,6 +1,9 @@
 #[path = "remote_parity_lab/engine.rs"]
 pub mod engine;
 
+#[path = "remote_parity_lab/discovery.rs"]
+pub mod discovery;
+
 fn main() {
     println!("Run cargo test --example remote_parity_lab --locked --offline");
 }
@@ -24,3 +27,7 @@ mod remote_runtime_tests;
 #[cfg(test)]
 #[path = "remote_parity_lab/remote_archive_tests.rs"]
 mod remote_archive_tests;
+
+#[cfg(test)]
+#[path = "remote_parity_lab/remote_discovery_tests.rs"]
+mod remote_discovery_tests;
