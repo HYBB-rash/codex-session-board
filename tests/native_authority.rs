@@ -10,6 +10,8 @@ const FIRST: &str = "11111111-1111-4111-8111-111111111111";
 mod archive;
 #[path = "native_authority/faults.rs"]
 mod faults;
+#[path = "native_authority/entrypoints.rs"]
+mod entrypoints;
 #[path = "native_authority/runtime.rs"]
 mod runtime;
 #[path = "native_authority/transport.rs"]

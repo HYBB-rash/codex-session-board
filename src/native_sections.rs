@@ -111,6 +111,7 @@ fn aliases(config: &Config) -> Result<HashMap<String, String>> {
     let mut aliases = HashMap::new();
     for (key, value) in atoms {
         if let Some(identifier) = key.strip_prefix("thread-client-id-v1:local%3A") {
+            uuid::Uuid::parse_str(identifier).context("客户端会话标识无效")?;
             let alias = value.as_str().context("客户端会话别名无效")?;
             ensure!(
                 aliases.insert(alias.into(), identifier.into()).is_none(),
@@ -122,9 +123,24 @@ fn aliases(config: &Config) -> Result<HashMap<String, String>> {
 }
 
 pub fn read(reader: &mut impl Rpc, config: &Config, identifier: &str) -> Result<Observation> {
-    Ok(snapshot(reader, config)?
-        .remove(identifier)
-        .unwrap_or(observe(config, &Value::Null)?))
+    lookup(config, &snapshot(reader, config)?, identifier)
+}
+
+pub fn lookup(
+    config: &Config,
+    snapshot: &HashMap<String, Observation>,
+    identifier: &str,
+) -> Result<Observation> {
+    if let Some(observed) = snapshot.get(identifier) {
+        return Ok(observed.clone());
+    }
+    ensure!(
+        !snapshot
+            .keys()
+            .any(|key| key.starts_with("client-new-thread:")),
+        "客户端别名尚未确认，保留上次原生位置"
+    );
+    observe(config, &Value::Null)
 }
 
 pub fn move_checked(
@@ -284,5 +300,92 @@ mod tests {
         duplicate["sections"].as_array_mut().unwrap().push(repeated);
         desktop.replies = [duplicate].into();
         assert!(snapshot(&mut desktop, &config()).is_err());
+        let mut renamed = response("review-id");
+        renamed["sections"][0]["name"] = json!("其他名称");
+        desktop.replies = [renamed].into();
+        assert!(snapshot(&mut desktop, &config()).is_err());
+    }
+
+    fn aliased(section: &str) -> Value {
+        let mut result = response(section);
+        for entry in result["sections"].as_array_mut().unwrap() {
+            for member in entry["itemKeys"].as_array_mut().unwrap() {
+                *member = json!("codex:thread:local:client-new-thread:alias");
+            }
+        }
+        result
+    }
+
+    fn alias_config(identifier: &str) -> Result<(tempfile::TempDir, Config)> {
+        let directory = tempfile::tempdir()?;
+        let mut config = config();
+        config.sidebar_state_file = directory.path().join("aliases.json");
+        let mut atoms = serde_json::Map::new();
+        atoms.insert(
+            format!("thread-client-id-v1:local%3A{identifier}"),
+            json!("client-new-thread:alias"),
+        );
+        std::fs::write(
+            &config.sidebar_state_file,
+            json!({"electron-persisted-atom-state":atoms}).to_string(),
+        )?;
+        Ok((directory, config))
+    }
+
+    #[test]
+    fn native_aliases_confirm_canonical_ids_without_repeating_moves() -> Result<()> {
+        let identifier = "11111111-1111-4111-8111-111111111111";
+        let (_directory, config) = alias_config(identifier)?;
+        let mut desktop = Desktop {
+            replies: [
+                aliased("review-id"),
+                json!({}),
+                aliased("archive-id"),
+                aliased("archive-id"),
+            ]
+            .into(),
+            methods: vec![],
+        };
+        let after = move_checked(
+            &mut desktop,
+            &config,
+            identifier,
+            "review-id",
+            Some("to_archive"),
+        )?;
+        move_checked(
+            &mut desktop,
+            &config,
+            identifier,
+            &after.version,
+            Some("to_archive"),
+        )?;
+        assert_eq!(
+            desktop.methods,
+            [
+                "list_threads",
+                "move_thread_to_sidebar_section",
+                "list_threads",
+                "list_threads"
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn unresolved_aliases_block_only_unmatched_ids_without_guessing_a_default() -> Result<()> {
+        let mut reply = aliased("review-id");
+        reply["sections"][0]["itemKeys"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!("codex:thread:local:known"));
+        let mut desktop = Desktop {
+            replies: [reply.clone(), reply].into(),
+            methods: vec![],
+        };
+        assert!(read(&mut desktop, &config(), "unmatched").is_err());
+        assert_eq!(read(&mut desktop, &config(), "known")?.state, "review");
+        assert_eq!(desktop.methods, ["list_threads", "list_threads"]);
+        Ok(())
     }
 }

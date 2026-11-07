@@ -76,8 +76,8 @@ impl App {
 
     pub fn read_native(&self, reader: &mut impl Rpc) -> Result<()> {
         let generation = self.native_generation.load(Ordering::SeqCst);
-        let mut snapshot = native_sections::snapshot(reader, &self.config)?;
-        let unassigned = native_sections::observe(&self.config, &Value::Null)?;
+        let snapshot = native_sections::snapshot(reader, &self.config)?;
+        let mut unresolved = 0;
         for session in self.store.sessions()? {
             let identifier = session["id"].as_str().context("会话缺少 ID")?;
             let operation = self.thread_lock(identifier)?;
@@ -87,12 +87,13 @@ impl App {
             if generation != self.native_generation.load(Ordering::SeqCst) {
                 return Ok(());
             }
-            let observed = snapshot
-                .remove(identifier)
-                .unwrap_or_else(|| unassigned.clone());
+            let Ok(observed) = native_sections::lookup(&self.config, &snapshot, identifier) else {
+                unresolved += 1;
+                continue;
+            };
             self.store.cache_native(identifier, &observed)?;
         }
-        self.update_health(json!({"nativeVerified":true,"nativeError":null,"nativeLastAt":now()}))
+        self.update_health(json!({"nativeVerified":true,"nativeError":if unresolved==0 {Value::Null}else{json!(format!("{unresolved} 个会话的客户端标识未确认，保留上次原生位置"))},"nativeLastAt":now()}))
     }
 
     pub(crate) fn save_native(
