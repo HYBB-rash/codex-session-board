@@ -2,14 +2,14 @@
   "schema_version": 1,
   "updated_at": "2026-11-07",
   "current_phase": {
-    "id": "project-creation-native-probe",
-    "status": "cancelled_archived",
+    "id": "remote-parity-evaluation",
+    "status": "evaluated_not_deployed",
     "as_of": "2026-11-07",
-    "summary": "用户于 2026-11-07 明确取消并封存新建项目与加入已有目录任务，不再实现功能、扩展桌面客户端或部署。本任务仅完成原生登记验证，业务入口未实现，不表示功能验收通过。调研、专用原生验证项目和 outputs/project-creation-20261107/ 证据保留，历史设计见 Docs/PROJECT-CREATION.md。任务已从活动清单移出，日常部署未因本任务更新，既有产品验收结论及无关活动任务保持。"
+    "summary": "隔离工作树完成远程功能等价原型及维护评估，未合并、推送或部署。33 项定向测试包含参考模型 520 条边、1417 个比较步骤；真实隔离代理完成 14 项基础检查，四个已安装 CLI 版本各通过 11 项故障检查及审批状态观察。334 项自动检查通过；完整门禁退出 2，14 项外部验收仍缺证，release_ready=false。增量维护成本中等，核心规则可复用；连接、客户端映射及迁移仍需正式接入。跨客户端无修订号竞争、完整 UI、物理故障及长期负载保留边界。报告见 Docs/REMOTE-PARITY-LAB.md，原始证据保留于本工作树 outputs/remote-parity-lab/。日常服务及工作会话未修改。"
   },
-  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/remote-parity-lab.md"],
+  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md"],
   "known_open_issues": ["一条原生已归档历史记录仍保留本地未确认归档缓存；批量位置读取会提示 1 个缺项，当前看板不显示此记录，未做额外归档或恢复。见 outputs/native-read-deployment-20261107/historical-cache-warning.json。", "新建会话已随 main 部署至 0.1.39；此前仅确认真实点击后客户端选中项目 ID，输入页和第二项目切换尚未实测通过。见 context/handoffs/new-session-project-live-validation.md。", "完整验收缺少其他真实环境证据，release_ready=false；PWA 安装入口实测不能代替全部 31 条验收。", "项目登记与分区读回依赖当前 Codex 客户端内部状态格式，格式改变时需重新核对。", "PWA 安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。", "五状态与归档按钮已部署，网页可见性已验证；真实客户端归档执行仍待专用会话验证。原生取消归档后尚不自动恢复本地已确认归档卡片。"],
-  "last_completed_task": "context/tasks/completed/project-creation.md",
+  "last_completed_task": "context/tasks/completed/remote-parity-lab.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",

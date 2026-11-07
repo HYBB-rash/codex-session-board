@@ -31,3 +31,7 @@ mod remote_archive_tests;
 #[cfg(test)]
 #[path = "remote_parity_lab/remote_discovery_tests.rs"]
 mod remote_discovery_tests;
+
+#[cfg(test)]
+#[path = "remote_parity_lab/model_replay_tests.rs"]
+mod model_replay_tests;

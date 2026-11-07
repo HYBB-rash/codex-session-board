@@ -146,6 +146,7 @@ impl Partition {
         let _guard = operation
             .lock()
             .map_err(|_| anyhow::anyhow!("Operation lock poisoned"))?;
+        let state = codex_session_board::model::board_state(state);
         let revision = revisions(expected)?;
         self.store
             .validate_state(identifier, Some(state), note, revision)?;

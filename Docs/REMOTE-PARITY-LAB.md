@@ -24,8 +24,11 @@ native_sections、titles 和 archive。另有独立故障模型与测试。
 
 ## 已执行的验证
 
-Rust 原型入口为 `examples/remote_parity_lab.rs`，32 项测试通过。
+Rust 原型入口为 `examples/remote_parity_lab.rs`，33 项测试通过。
 测试使用真实 Store、状态处理、标题队列和归档校验，通过受控 RPC 注入故障。
+其中一项将冻结参考模型的 40 个状态、520 条边经主机适配器和原生移列重放，
+实际比较 1417 个步骤的状态、人工标志、备注及版本增量。
+旧 completed 动作按当前五列规则投影到待归档，没有删改参考模型。
 其中标题竞争、未校准时钟和分区 ABA 三项是限制反例。
 它们通过仅表示反例可复现，不表示已获得强一致保证。
 
@@ -67,6 +70,38 @@ active writer 拒绝只在所测版本得到确认，不能代替客户端的资
 `938a66fcba17857505569fb8ea8962e32ab25a0800a8fba2fdc39f130239c3d1`。
 基础实测 evidence SHA256：
 `2677cfe7b58c1894c3b110ae82a50f266419bc13933685c661fda94a5638d738`。
+
+## 真实故障与版本回归
+
+另有四个已安装版本的隔离故障实验，每版 11 项核心检查及审批观察通过：
+
+| CLI 版本 | proxy 重连 | 强制终止后重启 | 审批等待与恢复 |
+| --- | --- | --- | --- |
+| 0.167.0 | 通过 | 通过 | 通过 |
+| 0.166.0 | 通过 | 通过 | 通过 |
+| 0.166.0-alpha.5.1 | 通过 | 通过 | 通过 |
+| 0.163.0-alpha.11 | 通过 | 通过 | 通过 |
+
+重连时保持 HTTP 屏障，A 仍在执行。断开再建立 B 后，B 看到相同 thread、
+turn、标题和分区，没有发送隐式 turn/start。
+重启时先发送 SIGTERM，四秒未退出后使用 SIGKILL。
+因此这是强制终止后的恢复验证，不是优雅停机通过。
+新连接保留标题、分区和完整用户输入；旧轮为 notLoaded / interrupted。
+显式 thread/resume 后会话为 idle，旧轮仍为 interrupted；显式新轮可完成。
+看板应如实显示中断，不自动恢复模型任务。
+
+观察连接 B 实际读到 waitingOnApproval。发起连接 A 回复后，B 读到等待标记清除，
+随后正常 idle。仅在实验目录内写入无害标记，观察连接没有代为批准。
+未验证审批跨重启保存或重放，正式看板也不新增代批能力。
+
+证据位于 `outputs/remote-parity-lab/fault-proxy/`，每个 verified-* 目录均保留
+不可变脚本快照、evidence.json 和原始 RPC。summary.json 索引全部版本，
+final-cleanup-audit.json 确认无远端目录、实验进程或转发监听残留。
+故障脚本 SHA256：
+`a289ab88a2a7b90628b027c956f9b3a79293bd8d26b05b025fe3c5c20c9bf1e7`。
+旧安装包装器曾因 exec 改变 argv 触发身份保护，已保留失败和安全清理记录，
+随后使用原生二进制复测通过。正式看板只拥有其 SSH/proxy 子进程，
+不应接管、升级或停止客户端管理的用户 daemon。
 
 ## 风险逐项判定
 
@@ -122,7 +157,7 @@ active writer 拒绝只在所测版本得到确认，不能代替客户端的资
 
 日常升级的最小回归应包含握手、双 proxy 同实例、审批标记、完整输入、
 标题幂等、归档拒绝、丢回执、重连和持久数据恢复。
-本次仅测试一个实际版本，不承诺任意客户端和 CLI 版本均兼容。
+已测试四个具体 CLI 版本，不承诺任意客户端和 CLI 版本均兼容。
 桌面 UI、新建远程输入页、远程项目多根目录和工作树仍需专项验收。
 这些是正式接入前的明确工作项，不能拿本实验通过代替。
 
@@ -134,6 +169,7 @@ active writer 拒绝只在所测版本得到确认，不能代替客户端的资
 cargo test --locked --offline --example remote_parity_lab
 cargo clippy --all-targets --locked --offline -- -D warnings
 python3 outputs/remote-parity-lab/live-proxy/remote_parity.py --host HOST --codex CODEX_PATH
+python3 outputs/remote-parity-lab/fault-proxy/fault_parity.py --host HOST --codex CODEX_PATH --source-script outputs/remote-parity-lab/live-proxy/remote_parity.py
 python3 scripts/verify_acceptance.py --report outputs/remote-parity-lab/acceptance.json
 sh scripts/verify_context.sh
 ./scripts/check
@@ -143,3 +179,5 @@ sh scripts/verify_context.sh
 输出目录保留原始证据与脚本，属于运行数据，不进入源码分发包。
 31 条冻结需求、参考模型和锁未改变；新增测试已绑定并纳入源码指纹。
 原型测试不能替代既有 14 项外部验收缺证，发布判定以当前构建完整门禁为准。
+物理断网、主机掉电、磁盘损坏、真实账号鉴权故障和长期高负载未实测；
+不能把连接中断及进程强制终止的结果扩张为所有灾难恢复保证。
