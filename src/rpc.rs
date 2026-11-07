@@ -43,6 +43,7 @@ pub enum Role {
     Reader,
     NativeReader,
     RemoteObserver,
+    DraftWriter,
     TitleWriter,
     ArchiveWriter,
 }
@@ -59,6 +60,7 @@ impl Role {
                 method,
                 "initialize" | "thread/list" | "thread/turns/list" | "threadSection/list"
             ),
+            Self::DraftWriter => matches!(method, "initialize" | "thread/start" | "thread/read"),
             Self::TitleWriter => matches!(method, "initialize" | "thread/read" | "thread/name/set"),
             Self::ArchiveWriter => matches!(
                 method,
@@ -367,7 +369,8 @@ impl DesktopConnection {
             request_id: 0,
             timeout,
             role,
-            title_deadline: matches!(role, Role::TitleWriter | Role::ArchiveWriter).then_some(deadline),
+            title_deadline: matches!(role, Role::TitleWriter | Role::ArchiveWriter)
+                .then_some(deadline),
         };
         reader.call(
             "initialize",
@@ -448,9 +451,16 @@ pub struct SidebarConnection {
     host: String,
     request_id: u64,
     read_only: bool,
+    project_only: bool,
 }
 
 impl SidebarConnection {
+    pub fn project_writer(config: &crate::config::Config, timeout: Duration) -> Result<Self> {
+        let mut connection = Self::connect(config, timeout)?;
+        connection.project_only = true;
+        Ok(connection)
+    }
+
     pub fn reader(config: &crate::config::Config, timeout: Duration) -> Result<Self> {
         let mut connection = Self::connect(config, timeout)?;
         connection.read_only = true;
@@ -468,6 +478,7 @@ impl SidebarConnection {
             host: config.host_id.clone(),
             request_id: 0,
             read_only: false,
+            project_only: false,
         })
     }
 
@@ -480,19 +491,28 @@ impl SidebarConnection {
         self.stream.read_exact(&mut bytes)?;
         Ok(serde_json::from_slice(&bytes)?)
     }
-}
-
-impl Rpc for SidebarConnection {
-    fn call(&mut self, method: &str, params: Value) -> Result<Value> {
+    fn check(&self, method: &str) -> Result<()> {
         let reading = matches!(method, "list_threads" | "list_projects");
         ensure!(
             !self.read_only || reading,
             "只读分区连接不允许调用 {method}"
         );
         ensure!(
-            reading || method == "move_thread_to_sidebar_section",
+            reading
+                || if self.project_only {
+                    method == "move_thread_to_project"
+                } else {
+                    method == "move_thread_to_sidebar_section"
+                },
             "分区连接不允许调用 {method}"
         );
+        Ok(())
+    }
+}
+
+impl Rpc for SidebarConnection {
+    fn call(&mut self, method: &str, params: Value) -> Result<Value> {
+        self.check(method)?;
         self.request_id = self.request_id.checked_add(1).context("分区请求编号耗尽")?;
         let request = json!({"jsonrpc":"2.0","id":self.request_id,"method":"tools/call",
             "params":{"namespace":"codex_app","tool":method,"arguments":params,
@@ -636,6 +656,7 @@ mod tests {
                 host: "local".into(),
                 request_id: 0,
                 read_only: false,
+                project_only: false,
             },
             server,
         ))
@@ -693,6 +714,33 @@ mod tests {
         let started = Instant::now();
         assert!(client.call("list_threads", json!({})).is_err());
         assert!(started.elapsed() < Duration::from_millis(150));
+        Ok(())
+    }
+
+    #[test]
+    fn empty_draft_connections_cannot_send_turns_or_modify_sidebar_sections() -> Result<()> {
+        for method in ["initialize", "thread/start", "thread/read"] {
+            Role::DraftWriter.check(method)?;
+        }
+        let (mut client, mut server) = sidebar_pair()?;
+        client.project_only = true;
+        client.check("move_thread_to_project")?;
+        for method in [
+            "turn/start",
+            "turn/resume",
+            "send_message_to_thread",
+            "thread/archive",
+            "thread/name/set",
+            "move_thread_to_sidebar_section",
+        ] {
+            assert!(Role::DraftWriter.check(method).is_err());
+            assert!(client.call(method, json!({})).is_err());
+        }
+        server.set_nonblocking(true)?;
+        assert_eq!(
+            server.read(&mut [0; 1]).unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
         Ok(())
     }
 
@@ -775,12 +823,22 @@ mod tests {
         let replacement_listener = UnixListener::bind(&replacement)?;
         fs::set_permissions(&replacement, Permissions::from_mode(0o600))?;
         replacement_listener.set_nonblocking(true)?;
-        assert!(client.call("move_thread_to_sidebar_section", json!({})).is_err());
-        assert_eq!(replacement_listener.accept().unwrap_err().kind(), io::ErrorKind::WouldBlock);
+        assert!(
+            client
+                .call("move_thread_to_sidebar_section", json!({}))
+                .is_err()
+        );
+        assert_eq!(
+            replacement_listener.accept().unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
         let _new = SidebarConnection::connect(&config, Duration::from_millis(100))?;
         let (mut accepted, _) = replacement_listener.accept()?;
         accepted.set_nonblocking(true)?;
-        assert_eq!(accepted.read(&mut [0; 1]).unwrap_err().kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(
+            accepted.read(&mut [0; 1]).unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
         Ok(())
     }
 
@@ -1029,11 +1087,21 @@ mod tests {
 
     #[test]
     fn native_reader_rejects_writes_and_keeps_the_history_reader_boundary() -> Result<()> {
-        for method in ["initialize", "thread/list", "thread/read", "threadSection/list"] {
+        for method in [
+            "initialize",
+            "thread/list",
+            "thread/read",
+            "threadSection/list",
+        ] {
             Role::NativeReader.check(method)?;
         }
         let (mut connection, _server) = local_connection(Role::NativeReader)?;
-        for method in ["thread/archive", "thread/name/set", "threadSection/move", "turn/start"] {
+        for method in [
+            "thread/archive",
+            "thread/name/set",
+            "threadSection/move",
+            "turn/start",
+        ] {
             assert!(connection.call(method, json!({})).is_err());
         }
         assert_eq!(connection.request_id, 0);

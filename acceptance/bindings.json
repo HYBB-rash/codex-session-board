@@ -955,6 +955,8 @@
       "lib::codex_session_board::config::tests::symlink_data_aliases_resolve_to_the_same_identity"
     ],
     "DATA-002": [
+      "lib::codex_session_board::store::drafts::tests::uncertain_drafts_survive_restart_and_cannot_be_retried_as_new_requests",
+      "lib::codex_session_board::store::drafts::tests::acknowledged_draft_retries_reuse_the_same_thread_without_overwriting_new_requests",
       "lib::codex_session_board::remote::instances::tests::remote_instances_reuse_store_preserve_notes_and_reject_reassigned_targets",
       "lib::codex_session_board::service::tests::data_lock_serializes_independent_open_descriptors",
       "lib::codex_session_board::service::tests::existing_database_is_preserved_even_when_source_is_absent",
@@ -990,6 +992,7 @@
       "test::board_io::service_update_rejects_old_build_but_can_verify_and_stop_its_process"
     ],
     "BOUNDARY-001": [
+      "lib::codex_session_board::rpc::tests::empty_draft_connections_cannot_send_turns_or_modify_sidebar_sections",
       "lib::codex_session_board::rpc::runtime::tests::remote_observer_cannot_start_resume_rename_move_or_archive",
       "lib::codex_session_board::rpc::pipe::tests::proxy_deadline_applies_to_a_silent_child_and_drop_reaps_it",
       "lib::codex_session_board::rpc::pipe::tests::proxy_stream_preserves_arbitrary_websocket_bytes",

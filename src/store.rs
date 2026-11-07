@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
+mod drafts;
 mod native;
 pub mod remote;
 mod runtime_native;
