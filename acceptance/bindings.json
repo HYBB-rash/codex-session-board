@@ -1101,7 +1101,12 @@
       "lib::codex_session_board::service::migration::tests::aliases::migration_rejects_dangling_destination_root_or_parent_aliases",
       "lib::codex_session_board::service::migration::tests::aliases::migration_rejects_final_configuration_symlinks_through_parent_alias",
       "lib::codex_session_board::service::migration::tests::aliases::source_loading_accepts_configuration_and_data_aliases",
-      "lib::codex_session_board::service::migration::tests::aliases::source_loading_rejects_dangling_configuration_or_data_aliases"
+      "lib::codex_session_board::service::migration::tests::aliases::source_loading_rejects_dangling_configuration_or_data_aliases",
+      "lib::codex_session_board::service::migration::tests::rollback::configuration_failure_rolls_back_installed_files_and_preserves_external_additions",
+      "lib::codex_session_board::service::migration::tests::rollback::configuration_race_preserves_external_files_and_symlinks",
+      "lib::codex_session_board::service::migration::tests::rollback::installation_refuses_concurrent_target_entries_and_preserves_them",
+      "lib::codex_session_board::service::migration::tests::rollback::rollback_preserves_files_replaced_by_another_writer",
+      "lib::codex_session_board::service::migration::tests::rollback::second_host_backup_failure_cleans_staging_and_allows_retry"
     ],
     "SERVICE-001": [
       "lib::codex_session_board::service::tests::data_lock_serializes_independent_open_descriptors",
@@ -1140,7 +1145,12 @@
       "lib::codex_session_board::service::migration::tests::aliases::migration_rejects_dangling_destination_root_or_parent_aliases",
       "lib::codex_session_board::service::migration::tests::aliases::migration_rejects_final_configuration_symlinks_through_parent_alias",
       "lib::codex_session_board::service::migration::tests::aliases::source_loading_accepts_configuration_and_data_aliases",
-      "lib::codex_session_board::service::migration::tests::aliases::source_loading_rejects_dangling_configuration_or_data_aliases"
+      "lib::codex_session_board::service::migration::tests::aliases::source_loading_rejects_dangling_configuration_or_data_aliases",
+      "lib::codex_session_board::service::migration::tests::rollback::configuration_failure_rolls_back_installed_files_and_preserves_external_additions",
+      "lib::codex_session_board::service::migration::tests::rollback::configuration_race_preserves_external_files_and_symlinks",
+      "lib::codex_session_board::service::migration::tests::rollback::installation_refuses_concurrent_target_entries_and_preserves_them",
+      "lib::codex_session_board::service::migration::tests::rollback::rollback_preserves_files_replaced_by_another_writer",
+      "lib::codex_session_board::service::migration::tests::rollback::second_host_backup_failure_cleans_staging_and_allows_retry"
     ],
     "BOUNDARY-001": [
       "test::legacy_mode::legacy_mode_rejects_native_connections_and_timers_before_creating_data",
