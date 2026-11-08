@@ -24,7 +24,7 @@ button:hover{border-color:var(--green)}button.primary{background:var(--green);co
 .jump{display:flex;gap:7px;overflow-x:auto;padding:0 0 12px}
 .jump button{white-space:nowrap;font-size:12px;padding:5px 10px;background:transparent}
 .board-viewport{overflow-x:auto;padding-bottom:12px;border-radius:12px}
-.board{display:grid;grid-template-columns:repeat(5,minmax(250px,1fr));gap:12px;min-width:1310px}
+.board{display:grid;grid-template-columns:repeat(var(--columns,5),minmax(250px,1fr));gap:12px;min-width:calc(var(--columns,5)*262px)}
 .column{--accent:#8b9183;display:flex;flex-direction:column;height:calc(100dvh - 315px);min-height:350px;background:#ebece5;border:1px solid #dfe1d7;border-top:3px solid var(--accent);border-radius:10px;transition:background .15s,border-color .15s}
 .column.in_progress{--accent:#678fb3}.column.review{--accent:#c89a43}.column.blocked{--accent:#bc7768}
 .column.to_archive{--accent:#9a82b3}
@@ -73,7 +73,7 @@ textarea{resize:vertical;min-height:90px}.dialog-actions{display:flex;justify-co
 .notice{color:#a04530;min-height:22px;font-size:13px;margin-top:10px}
 @media(max-width:800px){
   .shell{padding:22px 16px}.tools{flex-wrap:wrap}.count{margin-left:0}h1{font-size:27px}
-  .board{grid-template-columns:repeat(5,270px);min-width:1400px}.column{height:calc(100dvh - 350px)}
+  .board{grid-template-columns:repeat(var(--columns,5),270px);min-width:calc(var(--columns,5)*280px)}.column{height:calc(100dvh - 350px)}
   .subtitle{font-size:13px}.health{font-size:12px}
 }
 </style>
@@ -433,6 +433,7 @@ function updateColumn(column, state, sessions) {
 function makeColumn(state, label) {
   const column = element("section",undefined,"column " + state);
   column.dataset.state = state; column.id = "column-" + state;
+  column.dataset.mode = data.legacyMode ? "legacy" : "native";
   column.setAttribute("aria-label",label);
   const heading = element("div",undefined,"column-heading");
   heading.append(element("h2",label),element("span","0","column-count"));
@@ -545,11 +546,14 @@ function render(resetState = null) {
   const focusedProject = document.activeElement?.closest(".project-tag")?.closest(".card")?.dataset.id;
   const filtered = visibleSessions();
   const columns = [];
+  const mode = data.legacyMode ? "legacy" : "native";
+  byId("board").style.setProperty("--columns",Object.keys(data.states).length);
   byId("jump").replaceChildren();
   for (const [state,label] of Object.entries(data.states)) {
     const sessions = filtered.filter(session => session.state === state);
     sessions.sort((first,second) => compareSessions(first,second,columnSort(state)));
-    const column = byId("column-" + state) || makeColumn(state,label);
+    const current = byId("column-" + state);
+    const column = current?.dataset.mode === mode ? current : makeColumn(state,label);
     updateColumn(column,state,sessions);
     columns.push(column);
     const jump = element("button",`${label} ${sessions.length}`);
