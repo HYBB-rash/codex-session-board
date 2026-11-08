@@ -350,6 +350,8 @@
       "test::native_direct::direct_read_maps_only_the_local_backend_and_never_queries_the_aggregate",
       "test::native_direct::direct_read_rejects_ambiguous_missing_renamed_and_wrong_host_mappings",
       "test::native_direct::direct_snapshot_rejects_partial_pages_and_malformed_target_results",
+      "test::native_direct::remote_first_move_waits_for_the_real_mapping_without_repeating_the_write",
+      "test::native_direct::expired_native_confirmation_does_not_replay_or_accept_a_different_position",
       "test::remote_sessions::remote_identity_and_manual_data_survive_refresh_restart_without_touching_local",
       "test::remote_sessions::remote_validation_is_atomic_and_rejects_cross_host_data",
       "test::native_authority::archive::a_slow_native_archive_does_not_hold_the_database_lock_for_other_chats",

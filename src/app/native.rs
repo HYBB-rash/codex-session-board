@@ -97,9 +97,7 @@ impl App {
             .get(board_state(state))
             .context("目标原生分区未配置")?;
         let mut reader = self.native_reader()?;
-        let observed = native_sections::direct::read(&mut reader, &self.config, identifier)?;
-        ensure!(observed.version == *target, "原生位置与目标不一致");
-        Ok(observed)
+        native_sections::direct::confirm_move(&mut reader, &self.config, identifier, target)
     }
 
     pub fn refresh_native(&self) -> Result<()> {

@@ -171,7 +171,25 @@ pub fn move_checked(
             }),
         )
         .context(UnconfirmedMove)?;
-    let after = read(reader, config, identifier).context(UnconfirmedMove)?;
-    ensure!(after.version == *target, "原生分区写入未确认，请刷新核对");
-    Ok(after)
+    confirm_move(reader, config, identifier, target)
+}
+
+pub(crate) fn confirm_move(
+    reader: &mut impl Rpc,
+    config: &Config,
+    identifier: &str,
+    target: &str,
+) -> Result<Observation> {
+    let deadline = std::time::Instant::now()
+        + std::time::Duration::from_secs(config.rpc_timeout_seconds.min(4));
+    loop {
+        let result = read(reader, config, identifier).and_then(|observed| {
+            ensure!(observed.version == target, "原生分区写入未确认，请刷新核对");
+            Ok(observed)
+        });
+        if result.is_ok() || std::time::Instant::now() >= deadline {
+            return result;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
 }
