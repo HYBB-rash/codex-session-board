@@ -225,8 +225,11 @@ fn project_bound(state: &Value, project: &Value, thread: &Value, unique: bool) -
 
 fn confirm_project(config: &Config, project: &Value, thread: &Value) -> Result<()> {
     ensure!(thread["cwd"]==project["paths"][0],"新建会话目录与目标项目不一致");
-    let mut reader = SidebarConnection::reader(config,Duration::from_secs(config.rpc_timeout_seconds))?;
-    let fresh = crate::remote::projects(&mut reader)?;
+    let fresh = crate::remote::project_catalog(config, || {
+        let mut reader = SidebarConnection::reader(config,
+            Duration::from_secs(config.rpc_timeout_seconds))?;
+        crate::remote::projects(&mut reader)
+    })?;
     ensure!(fresh.iter().any(|current| current["id"]==project["id"]
         && current["paths"]==project["paths"]),"新建期间项目已改变，请在客户端核对");
     let unique = unique_project_root(&fresh,project);

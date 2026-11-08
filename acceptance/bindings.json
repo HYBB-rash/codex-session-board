@@ -1281,7 +1281,10 @@
       "lib::codex_session_board::remote::project_registry::tests::invalid_or_ambiguous_registries_fail_before_fallback",
       "lib::codex_session_board::remote::project_registry::tests::older_state_without_remote_registry_preserves_the_existing_reader",
       "lib::codex_session_board::remote::project_registry::tests::registered_projects_do_not_depend_on_git_probes_or_native_tool_availability",
-      "lib::codex_session_board::remote::project_registry::tests::registry_removal_is_read_fresh_and_does_not_resurrect_a_tool_result"
+      "lib::codex_session_board::remote::project_registry::tests::registry_removal_is_read_fresh_and_does_not_resurrect_a_tool_result",
+      "lib::codex_session_board::app::drafts::tests::project_confirmation_handles_implicit_membership_but_rejects_ambiguous_or_foreign_hosts",
+      "lib::codex_session_board::app::drafts::tests::project_confirmation_uses_the_same_registry_without_optional_git_probes",
+      "lib::codex_session_board::app::drafts::tests::releasing_uncertain_drafts_requires_confirmation_and_cannot_clear_another_project"
     ],
     "SECURITY-001": [
       "test::native_authority::archive::native_archive_rejects_external_moves_before_archiving_and_accepts_fresh_confirmation",

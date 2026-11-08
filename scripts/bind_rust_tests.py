@@ -74,7 +74,7 @@ def build():
         "DISCOVERY-001": group("::remote::", "::rpc::framing::"),
         "DATA-001": group("::remote::hosts::source::"),
         "DATA-002": group("::service::migration::"),
-        "BOUNDARY-001": group("::rpc::", "::remote::", "test::legacy_mode::"),
+        "BOUNDARY-001": group("::rpc::", "::remote::", "::app::drafts::tests::", "test::legacy_mode::"),
     }
     for key, values in previous["requirements"].items():
         for name in values:

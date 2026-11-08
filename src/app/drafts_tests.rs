@@ -6,6 +6,29 @@ struct Reader {
     calls: Vec<(String, Value)>,
 }
 
+#[test]
+fn project_confirmation_uses_the_same_registry_without_optional_git_probes() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("state.json");
+    let registry = json!({"remote-projects":[{
+        "id":"project","hostId":"remote:host","label":"项目","remotePath":"/remote/project"
+    }]});
+    std::fs::write(&path, serde_json::to_vec(&registry)?)?;
+    let config = Config {
+        sidebar_state_file: path.clone(),
+        sidebar_socket: directory.path().join("does-not-exist.sock"),
+        ..Config::default()
+    };
+    let projects = crate::remote::project_catalog(&config, || panic!("unexpected fallback"))?;
+    let thread = json!({"id":uuid::Uuid::new_v4().to_string(),"cwd":"/remote/project"});
+    confirm_project(&config, &projects[0], &thread)?;
+    let mut changed = registry;
+    changed["remote-projects"][0]["remotePath"] = json!("/changed");
+    std::fs::write(path, serde_json::to_vec(&changed)?)?;
+    assert!(confirm_project(&config, &projects[0], &thread).is_err());
+    Ok(())
+}
+
 fn isolated() -> Result<(tempfile::TempDir, App)> {
     let directory = tempfile::tempdir()?;
     let app = App::new(Config {
