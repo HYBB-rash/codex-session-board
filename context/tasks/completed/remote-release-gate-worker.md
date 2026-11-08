@@ -1,4 +1,4 @@
-# 原生与远程扩展验收汇总
+# 原生与远程扩展验收汇总，2026-11-09 已交付
 
 owner: Cicero
 execution_mode: isolated_worker
@@ -24,3 +24,10 @@ coordinator: codex
 仅操作该隔离环境中的测试会话、进程和配置，不连接或改动默认 daemon、
 真实 SSH、生产数据、用户凭据及客户端界面。不替代目标客户端 UI 证据。
 驱动接受实际看板 binary 路径，不复用旧 binary 签收最终版本。
+
+汇总器、受限协议夹具和真实CLI隔离驱动已集成；最终v0.2.38冻结31项与
+原生/远程16项由协调者实跑、独立内容复核及原汇总器闭环。
+实际最终报告为
+`outputs/remote-parity-integration/release-assembly-0.2.38-final-v2/remote-release-final.json`，
+退出0、37条记录全部通过、release_ready=true。此结论不扩大已记录的环境边界。
+worker未修改共享状态，任务归档及登记由协调者完成。
