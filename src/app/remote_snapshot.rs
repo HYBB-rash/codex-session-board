@@ -35,6 +35,7 @@ impl App {
             if active
                 .as_ref()
                 .is_some_and(|active| !active.contains(row["id"].as_str().unwrap_or("")))
+                && row["sectionVersion"].is_string()
             {
                 continue;
             }
@@ -47,3 +48,7 @@ impl App {
         Ok(health)
     }
 }
+
+#[cfg(test)]
+#[path = "remote_snapshot_tests.rs"]
+mod tests;

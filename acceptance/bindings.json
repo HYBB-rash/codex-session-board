@@ -918,6 +918,10 @@
       "lib::codex_session_board::remote::project_registry::tests::registry_removal_is_read_fresh_and_does_not_resurrect_a_tool_result"
     ],
     "DISCOVERY-002": [
+      "lib::codex_session_board::app::remote_snapshot::tests::unpublished_empty_chat_survives_complete_scan_and_restart_as_read_only",
+      "lib::codex_session_board::app::remote_snapshot::tests::published_chat_uses_confirmed_position_and_existing_missing_record_filter",
+      "lib::codex_session_board::app::remote_snapshot::tests::archived_unpublished_chat_never_reappears_from_the_root_cache",
+      "lib::codex_session_board::app::remote_snapshot::tests::disabled_host_keeps_unpublished_cache_without_enabling_operations",
       "lib::codex_session_board::app::remote::tests::managed_cache_merge_keeps_notes_and_archive_tombstones_across_restart",
       "lib::codex_session_board::remote::scans::tests::recent_threads_are_observed_while_older_pages_are_still_scanning",
       "lib::codex_session_board::remote::scans::tests::expired_server_cursor_restarts_scanning_without_deleting_saved_data",

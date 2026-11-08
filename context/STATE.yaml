@@ -5,7 +5,7 @@
     "id": "remote-parity-integration",
     "status": "in_progress",
     "as_of": "2026-11-08",
-    "summary": "v0.2.36 的 474 项自动验收及实际 CLI 隔离驱动 19 项通过，冻结完整门禁仍有 7 项待验证。用户完成人工拖拽后，实际 SQLite、写入审计及独立远程读回确认两次移列、保留备注和单个已完成回合，未保存要求的新原因。继续六状态原生界面补验时发现固定五列导致第六列换行，以及切换模式复用列残留归档按钮。v0.2.37 改为按状态数排版并按模式重建列，须用新指纹和二进制重新取证。仅发送过此前明确允许的一条真实模型消息；生产仍为 0.1.87，未切换，release_ready=false。"
+    "summary": "v0.2.37 的 474 项自动验收、真实 CLI 隔离驱动 19 项和 Native 五类健康提示已核对，旧记录封存，专用插件与进程已停止。实际 M1 零输入新建、丢回执重试及重启均为同一持久 ID，但看板完整扫描会过滤空会话。v0.2.38 保留尚未确认原生位置的缓存并沿用只读保护，补充重启、原生位置确认、归档墓碑及停用回归。新指纹的完整门禁、真实交互和远程专项仍待验收。仅发送过此前明确允许的一条真实模型消息；生产仍为 0.1.87，未切换，release_ready=false。"
   },
   "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/remote-parity-integration.md", "context/tasks/active/remote-release-gate-worker.md"],
   "known_open_issues": ["一条原生已归档历史记录仍保留本地未确认归档缓存；批量位置读取会提示 1 个缺项，当前看板不显示此记录，未做额外归档或恢复。见 outputs/native-read-deployment-20261107/historical-cache-warning.json。", "新建会话已随 main 部署至 0.1.39；此前仅确认真实点击后客户端选中项目 ID，输入页和第二项目切换尚未实测通过。见 context/handoffs/new-session-project-live-validation.md。", "完整验收缺少其他真实环境证据，release_ready=false；PWA 安装入口实测不能代替全部 31 条验收。", "项目登记与分区读回依赖当前 Codex 客户端内部状态格式，格式改变时需重新核对。", "PWA 安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。", "五状态与归档按钮已部署，网页可见性已验证；真实客户端归档执行仍待专用会话验证。原生取消归档后尚不自动恢复本地已确认归档卡片。"],
