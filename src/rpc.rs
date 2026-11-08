@@ -68,7 +68,9 @@ impl Role {
                 method,
                 "initialize" | "thread/list" | "thread/turns/list" | "threadSection/list"
             ),
-            Self::DraftWriter => matches!(method, "initialize" | "thread/start" | "thread/read"),
+            Self::DraftWriter => matches!(
+                method, "initialize" | "thread/start" | "thread/read" | "thread/name/set"
+            ),
             Self::TitleWriter => matches!(method, "initialize" | "thread/read" | "thread/name/set"),
             Self::ArchiveWriter => matches!(
                 method,
@@ -765,7 +767,7 @@ mod tests {
 
     #[test]
     fn empty_draft_connections_cannot_send_turns_or_modify_sidebar_sections() -> Result<()> {
-        for method in ["initialize", "thread/start", "thread/read"] {
+        for method in ["initialize", "thread/start", "thread/read", "thread/name/set"] {
             Role::DraftWriter.check(method)?;
         }
         let (mut client, mut server) = sidebar_pair()?;
@@ -776,12 +778,12 @@ mod tests {
             "turn/resume",
             "send_message_to_thread",
             "thread/archive",
-            "thread/name/set",
             "move_thread_to_sidebar_section",
         ] {
             assert!(Role::DraftWriter.check(method).is_err());
             assert!(client.call(method, json!({})).is_err());
         }
+        assert!(client.call("thread/name/set", json!({})).is_err());
         server.set_nonblocking(true)?;
         assert_eq!(
             server.read(&mut [0; 1]).unwrap_err().kind(),

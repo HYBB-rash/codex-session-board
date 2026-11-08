@@ -157,14 +157,7 @@ fn move_draft_project(draft: &Draft<'_>, reader: &mut dyn Rpc, caller: &Config,
 impl Draft<'_> {
     fn thread(&self, store: &Store, reader: &mut dyn Rpc) -> Result<Value> {
         let thread = if self.fresh {
-            let result = reader.call("thread/start", draft_params(&self.project)?)?;
-            let thread = result["thread"].clone();
-            store.draft_update(
-                &self.request,
-                Some(thread["id"].as_str().context("新建回执缺少会话 ID")?),
-                "created",
-            )?;
-            thread
+            self.start(store, reader)?
         } else {
             let identifier = self.record["threadId"]
                 .as_str()
@@ -180,17 +173,34 @@ impl Draft<'_> {
             ensure!(thread["id"] == identifier, "新建会话读回 ID 不一致");
             thread
         };
-        ensure!(thread["id"].is_string(), "会话读回缺少 ID");
-        ensure!(
-            thread["status"]["type"] != "active",
-            "会话正在执行，请在客户端核对"
-        );
-        ensure!(
-            thread["turns"].as_array().is_none_or(Vec::is_empty),
-            "该会话已有执行记录，请在客户端核对后继续"
-        );
+        empty_thread(&thread)?;
         Ok(thread)
     }
+
+    fn start(&self, store: &Store, reader: &mut dyn Rpc) -> Result<Value> {
+        let thread = reader.call("thread/start", draft_params(&self.project)?)?["thread"].clone();
+        let identifier = thread["id"].as_str().context("新建回执缺少会话 ID")?;
+        ensure!(uuid::Uuid::parse_str(identifier)?.to_string()==identifier,"新建会话 ID 无效");
+        store.draft_update(&self.request, Some(identifier), "created")?;
+        empty_thread(&thread)?;
+        ensure!(thread["cwd"]==self.project["paths"][0],"新建会话目录不一致");
+        ensure!(thread["historyMode"]=="legacy","空会话历史模式尚不支持安全读回");
+        let name = thread["name"].as_str().filter(|name| !name.is_empty()).unwrap_or("新会话");
+        reader.call("thread/name/set",json!({"threadId":identifier,"name":name}))?;
+        let current = reader.call("thread/read",json!({
+            "threadId":identifier,"includeTurns":true}))?["thread"].clone();
+        ensure!(current["id"]==identifier && current["name"]==name,
+            "初始标题尚未确认，请在客户端核对");
+        Ok(current)
+    }
+}
+
+fn empty_thread(thread: &Value) -> Result<()> {
+    ensure!(thread["id"].is_string(), "会话读回缺少 ID");
+    ensure!(thread["status"]["type"] != "active", "会话正在执行，请在客户端核对");
+    ensure!(thread["turns"].as_array().is_some_and(Vec::is_empty),
+        "会话执行记录未确认为空，请在客户端核对后继续");
+    Ok(())
 }
 
 fn draft_params(project: &Value) -> Result<Value> {
@@ -202,7 +212,8 @@ fn draft_params(project: &Value) -> Result<Value> {
                 .all(|path| path.as_str().is_some_and(|path| path.starts_with('/'))),
         "远程项目路径必须为绝对路径"
     );
-    Ok(json!({"cwd":paths[0],"runtimeWorkspaceRoots":paths,"ephemeral":false}))
+    Ok(json!({"cwd":paths[0],"runtimeWorkspaceRoots":paths,
+        "ephemeral":false,"historyMode":"legacy"}))
 }
 
 fn unique_project_root(projects: &[Value], target: &Value) -> bool {

@@ -657,7 +657,8 @@
       "test::board_io::title_failure_persists_and_lost_ack_is_reconciled",
       "test::board_io::title_malformed_native_response_preserves_pending_job_without_rename",
       "test::board_io::title_prefixes_are_idempotent_and_preserve_other_text",
-      "test::board_io::title_sync_reads_full_fresh_name_and_avoids_duplicate_native_write"
+      "test::board_io::title_sync_reads_full_fresh_name_and_avoids_duplicate_native_write",
+      "lib::codex_session_board::app::drafts::tests::lost_initial_title_receipts_keep_the_created_id_without_replaying_creation"
     ],
     "TITLE-002": [
       "lib::codex_session_board::app::tests::busy_title_sync_does_not_wait_for_background_batch",
@@ -698,7 +699,8 @@
       "example::remote_parity_lab::remote_title_tests::incorrect_connection_host_is_rejected_before_any_write",
       "example::remote_parity_lab::remote_title_tests::latest_complete_title_survives_truncated_discovery_and_repeated_sync",
       "example::remote_parity_lab::remote_title_tests::lost_title_receipt_survives_restart_and_readback_avoids_duplicate_write",
-      "example::remote_parity_lab::remote_title_tests::metadata_updates_do_not_become_new_user_input"
+      "example::remote_parity_lab::remote_title_tests::metadata_updates_do_not_become_new_user_input",
+      "lib::codex_session_board::app::drafts::tests::lost_initial_title_receipts_keep_the_created_id_without_replaying_creation"
     ],
     "TITLE-003": [
       "lib::codex_session_board::app::tests::busy_title_sync_does_not_wait_for_background_batch",
@@ -743,7 +745,8 @@
       "example::remote_parity_lab::remote_title_tests::incorrect_connection_host_is_rejected_before_any_write",
       "example::remote_parity_lab::remote_title_tests::latest_complete_title_survives_truncated_discovery_and_repeated_sync",
       "example::remote_parity_lab::remote_title_tests::lost_title_receipt_survives_restart_and_readback_avoids_duplicate_write",
-      "example::remote_parity_lab::remote_title_tests::metadata_updates_do_not_become_new_user_input"
+      "example::remote_parity_lab::remote_title_tests::metadata_updates_do_not_become_new_user_input",
+      "lib::codex_session_board::app::drafts::tests::lost_initial_title_receipts_keep_the_created_id_without_replaying_creation"
     ],
     "TITLE-004": [
       "lib::codex_session_board::app::tests::busy_title_sync_does_not_wait_for_background_batch",
@@ -784,7 +787,8 @@
       "example::remote_parity_lab::remote_title_tests::incorrect_connection_host_is_rejected_before_any_write",
       "example::remote_parity_lab::remote_title_tests::latest_complete_title_survives_truncated_discovery_and_repeated_sync",
       "example::remote_parity_lab::remote_title_tests::lost_title_receipt_survives_restart_and_readback_avoids_duplicate_write",
-      "example::remote_parity_lab::remote_title_tests::metadata_updates_do_not_become_new_user_input"
+      "example::remote_parity_lab::remote_title_tests::metadata_updates_do_not_become_new_user_input",
+      "lib::codex_session_board::app::drafts::tests::lost_initial_title_receipts_keep_the_created_id_without_replaying_creation"
     ],
     "TITLE-005": [
       "test::native_authority::runtime::baseline_history_never_overwrites_an_existing_native_selection",
@@ -1284,7 +1288,9 @@
       "lib::codex_session_board::remote::project_registry::tests::registry_removal_is_read_fresh_and_does_not_resurrect_a_tool_result",
       "lib::codex_session_board::app::drafts::tests::project_confirmation_handles_implicit_membership_but_rejects_ambiguous_or_foreign_hosts",
       "lib::codex_session_board::app::drafts::tests::project_confirmation_uses_the_same_registry_without_optional_git_probes",
-      "lib::codex_session_board::app::drafts::tests::releasing_uncertain_drafts_requires_confirmation_and_cannot_clear_another_project"
+      "lib::codex_session_board::app::drafts::tests::releasing_uncertain_drafts_requires_confirmation_and_cannot_clear_another_project",
+      "lib::codex_session_board::app::drafts::tests::initial_draft_readback_rejects_new_turns_and_unconfirmed_history",
+      "lib::codex_session_board::app::drafts::tests::lost_initial_title_receipts_keep_the_created_id_without_replaying_creation"
     ],
     "SECURITY-001": [
       "test::native_authority::archive::native_archive_rejects_external_moves_before_archiving_and_accepts_fresh_confirmation",

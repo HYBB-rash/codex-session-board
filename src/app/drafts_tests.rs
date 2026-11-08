@@ -99,7 +99,10 @@ fn acknowledged_empty_drafts_only_read_the_same_thread_on_retry() -> Result<()> 
     let wrong = uuid::Uuid::new_v4().to_string();
     let mut reader = Reader {
         responses: VecDeque::from([
-            Ok(json!({"thread":{"id":identifier,"turns":[]}})),
+            Ok(json!({"thread":{"id":identifier,"turns":[],
+                "cwd":"/remote/root","historyMode":"legacy"}})),
+            Ok(json!({})),
+            Ok(json!({"thread":{"id":identifier,"name":"新会话","turns":[]}})),
             Ok(json!({"thread":{"id":wrong,"turns":[]}})),
             Ok(json!({"thread":{"id":identifier,"turns":[{"id":"user-turn"}]}})),
             Ok(json!({"thread":{"id":identifier,"turns":[]}})),
@@ -123,15 +126,58 @@ fn acknowledged_empty_drafts_only_read_the_same_thread_on_retry() -> Result<()> 
     );
     assert_eq!(
         reader.methods(),
-        ["thread/start", "thread/read", "thread/read", "thread/read"]
+        ["thread/start", "thread/name/set", "thread/read",
+            "thread/read", "thread/read", "thread/read"]
     );
-    assert!(
-        reader
-            .calls
-            .iter()
-            .skip(1)
-            .all(|call| call.1["threadId"] == identifier && call.1["includeTurns"] == true)
-    );
+    assert!(reader.calls.iter().skip(2)
+        .all(|call| call.1["threadId"] == identifier && call.1["includeTurns"] == true));
+    Ok(())
+}
+
+#[test]
+fn lost_initial_title_receipts_keep_the_created_id_without_replaying_creation() -> Result<()> {
+    let (_directory, app) = isolated()?;
+    let request = uuid::Uuid::new_v4().to_string();
+    let identifier = uuid::Uuid::new_v4().to_string();
+    let mut reader = Reader {
+        responses: VecDeque::from([
+            Ok(json!({"thread":{"id":identifier,"turns":[],
+                "cwd":"/remote/root","historyMode":"legacy"}})),
+            Err(anyhow::anyhow!("初始标题回执丢失")),
+            Ok(json!({"thread":{"id":identifier,"name":"已确认空会话","turns":[]}})),
+        ]),
+        calls: Vec::new(),
+    };
+    assert!(draft(&app,&request)?.thread(&app.store,&mut reader).is_err());
+    assert_eq!(app.store.draft(&request)?["threadId"],identifier);
+    assert_eq!(draft(&app,&request)?.thread(&app.store,&mut reader)?["id"],identifier);
+    assert_eq!(reader.methods(),["thread/start","thread/name/set","thread/read"]);
+    assert_eq!(reader.calls[0].1["historyMode"],"legacy");
+    assert_eq!(reader.calls[1].1,json!({"threadId":identifier,"name":"新会话"}));
+    Ok(())
+}
+
+#[test]
+fn initial_draft_readback_rejects_new_turns_and_unconfirmed_history() -> Result<()> {
+    for (history, turns) in [("legacy",json!([{"id":"new-turn"}])),
+        ("paginated",json!([]))] {
+        let (_directory,app) = isolated()?;
+        let request = uuid::Uuid::new_v4().to_string();
+        let identifier = uuid::Uuid::new_v4().to_string();
+        let mut reader = Reader {
+            responses: VecDeque::from([
+                Ok(json!({"thread":{"id":identifier,"turns":[],
+                    "cwd":"/remote/root","historyMode":history}})),
+                Ok(json!({})),
+                Ok(json!({"thread":{"id":identifier,"name":"新会话","turns":turns}})),
+            ]),
+            calls: Vec::new(),
+        };
+        assert!(draft(&app,&request)?.thread(&app.store,&mut reader).is_err());
+        assert_eq!(app.store.draft(&request)?["stage"],"created");
+        assert!(!reader.methods().contains(&"turn/start"));
+        if history!="legacy" {assert_eq!(reader.methods(),["thread/start"]);}
+    }
     Ok(())
 }
 

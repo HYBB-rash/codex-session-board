@@ -5,11 +5,11 @@
     "id": "remote-parity-integration",
     "status": "in_progress",
     "as_of": "2026-11-08",
-    "summary": "共享业务、来源核验、传输、手工连接、校时、分页、原生映射及远程空会话已接线。全主机数据库迁移六提交已整合至 b99199b。真实 MacBook 只读接入已核验 runtime/native 来源，未转发任何写入。专用过滤夹具解包后 64 项测试通过；门禁工作者继续隔离 legacy 实际执行驱动。旧本机定时配置不扩大到远程。生产仍为 0.1.87，未部署；系统锁屏，真实 GUI 和完整发布验收待完成。"
+    "summary": "v0.2.35 已接入共享业务、来源核验、分主机存储与全主机迁移。472 项自动测试通过；实际 CLI 隔离驱动 18 通过、3 待验证。修复仅 start 的空会话不持久问题：两实际 CLI 命名后冷恢复通过；实际 Mac 上仅创建一个新空会话，HTTP/MCP 同请求未重复创建，项目回执及连接关闭后的 Native 独立读回通过，未启动模型。专用过滤夹具 71 项通过。生产数据独立迁移演练逻辑校验通过，原服务未变。生产仍为 0.1.87，未部署；系统锁屏，真实输入页、活跃远程状态/标题/归档、默认 SSH 路径及完整发布验收仍待完成，release_ready=false。"
   },
-  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/remote-parity-integration.md", "context/tasks/active/remote-release-gate-worker.md", "context/tasks/active/remote-empty-route-inspection.md"],
+  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/remote-parity-integration.md", "context/tasks/active/remote-release-gate-worker.md"],
   "known_open_issues": ["一条原生已归档历史记录仍保留本地未确认归档缓存；批量位置读取会提示 1 个缺项，当前看板不显示此记录，未做额外归档或恢复。见 outputs/native-read-deployment-20261107/historical-cache-warning.json。", "新建会话已随 main 部署至 0.1.39；此前仅确认真实点击后客户端选中项目 ID，输入页和第二项目切换尚未实测通过。见 context/handoffs/new-session-project-live-validation.md。", "完整验收缺少其他真实环境证据，release_ready=false；PWA 安装入口实测不能代替全部 31 条验收。", "项目登记与分区读回依赖当前 Codex 客户端内部状态格式，格式改变时需重新核对。", "PWA 安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。", "五状态与归档按钮已部署，网页可见性已验证；真实客户端归档执行仍待专用会话验证。原生取消归档后尚不自动恢复本地已确认归档卡片。"],
-  "last_completed_task": "context/tasks/completed/remote-data-migration-worker.md",
+  "last_completed_task": "context/tasks/completed/remote-empty-route-inspection.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
