@@ -807,6 +807,9 @@
       "test::board_contract::title_store_tests::title_activation_epoch_survives_restart_and_catches_new_completed_turn"
     ],
     "DISCOVERY-001": [
+      "lib::codex_session_board::rpc::sidebar::tests::directory_migration_recovers_in_both_directions_with_missing_original_directory",
+      "lib::codex_session_board::rpc::sidebar::tests::directory_migration_preserves_live_preferred_endpoint",
+      "lib::codex_session_board::rpc::sidebar::tests::directory_migration_rejects_multiple_live_endpoints_across_both_directories",
       "example::remote_parity_lab::remote_discovery_tests::catalog_failure_or_last_project_removal_does_not_erase_known_hosts",
       "example::remote_parity_lab::remote_discovery_tests::next_page_progress_survives_process_restart",
       "example::remote_parity_lab::remote_discovery_tests::failure_keeps_progress_and_does_not_prevent_another_host_page",
@@ -1167,6 +1170,15 @@
       "lib::codex_session_board::service::migration::tests::rollback::second_host_backup_failure_cleans_staging_and_allows_retry"
     ],
     "BOUNDARY-001": [
+      "lib::codex_session_board::rpc::sidebar::tests::directory_migration_rejects_unsafe_second_directory_after_finding_live_candidate",
+      "lib::codex_session_board::rpc::sidebar::tests::directory_migration_times_out_on_second_directory_without_sending_rpc_frames",
+      "lib::codex_session_board::rpc::sidebar::tests::directory_migration_expands_only_exact_standard_names",
+      "lib::codex_session_board::rpc::sidebar::tests::directory_migration_recovers_in_both_directions_with_missing_original_directory",
+      "lib::codex_session_board::rpc::sidebar::tests::directory_migration_preserves_live_preferred_endpoint",
+      "lib::codex_session_board::rpc::sidebar::tests::directory_migration_rejects_multiple_live_endpoints_across_both_directories",
+      "lib::codex_session_board::rpc::sidebar::tests::directory_migration_rechecks_directory_and_socket_permissions",
+      "lib::codex_session_board::rpc::sidebar::tests::directory_migration_ignores_other_users_and_preserves_custom_directory_scope",
+      "lib::codex_session_board::rpc::sidebar::tests::directory_migration_preserves_deadline_and_rejects_symlink_directory",
       "test::legacy_mode::legacy_mode_rejects_native_connections_and_timers_before_creating_data",
       "lib::codex_session_board::app::drafts::tests::lost_empty_draft_receipts_never_replay_thread_start",
       "lib::codex_session_board::app::drafts::tests::acknowledged_empty_drafts_only_read_the_same_thread_on_retry",
