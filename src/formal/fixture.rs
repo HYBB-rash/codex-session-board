@@ -8,7 +8,7 @@ pub(super) const ID: &str = "session-1";
 
 pub(super) struct Stored {
     pub(super) native_state: Option<String>,
-    pub(super) native_revision: Option<String>,
+    pub(super) native_section: Option<String>,
     pub(super) runtime_key: Option<String>,
     pub(super) pending_key: Option<String>,
     pub(super) selected_state: Option<String>,
@@ -43,7 +43,7 @@ fn clear(store: &Store) -> Result<()> {
 
 fn write_session(store: &Store, session: Session) -> Result<()> {
     store.connection()?.execute(
-        "UPDATE sessions SET native_state=?2,native_revision=?3,runtime_key=?4,runtime_pending_key=?5,
+        "UPDATE sessions SET native_state=?2,native_section=?3,runtime_key=?4,runtime_pending_key=?5,
          selected_state=?6,selected_at=?7,native_choice_at=?8,note=?9,needs_review=?10,archived=?11,
          version=1,input_revision=0,turn_json=?12,selection_turn=?13,selection_users=?14 WHERE id=?1",
         rusqlite::params![
@@ -123,7 +123,7 @@ pub(super) fn project(store: &Store) -> Result<Session> {
         phase: phase_of(stored.runtime_key.as_deref())?,
         pending: phase_of(stored.pending_key.as_deref())?,
         manual: stored.selected_state.is_some(),
-        seat: seat_of(stored.native_revision.as_deref())?,
+        seat: seat_of(stored.native_section.as_deref())?,
         review: stored.review == 1,
         anchor: stored.selected_at.is_some(),
         archived: stored.archived == 1,
@@ -134,7 +134,7 @@ pub(super) fn load(store: &Store) -> Result<Stored> {
     store
         .connection()?
         .query_row(
-            "SELECT native_state,native_revision,runtime_key,runtime_pending_key,selected_state,selected_at,native_choice_at,note,needs_review,archived,version,input_revision,turn_json FROM sessions WHERE id=?1",
+            "SELECT native_state,native_section,runtime_key,runtime_pending_key,selected_state,selected_at,native_choice_at,note,needs_review,archived,version,input_revision,turn_json FROM sessions WHERE id=?1",
             [ID],
             read_stored,
         )
@@ -144,7 +144,7 @@ pub(super) fn load(store: &Store) -> Result<Stored> {
 fn read_stored(row: &Row<'_>) -> rusqlite::Result<Stored> {
     Ok(Stored {
         native_state: row.get(0)?,
-        native_revision: row.get(1)?,
+        native_section: row.get(1)?,
         runtime_key: row.get(2)?,
         pending_key: row.get(3)?,
         selected_state: row.get(4)?,

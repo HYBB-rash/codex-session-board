@@ -141,7 +141,7 @@ impl Store {
             reason,
             key,
             version: row["version"].as_i64().context("状态版本无效")?,
-            section_version: row["native_revision"]
+            section_version: row["native_section"]
                 .as_str()
                 .context("等待确认原生分区")?
                 .into(),

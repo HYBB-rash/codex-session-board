@@ -94,7 +94,7 @@ fn assignments(write: &DailyWrite<'_>) -> (Vec<String>, Vec<SqlValue>) {
     let mut values = Vec::new();
     if let Some(column) = write.column {
         push(&mut sql, &mut values, "native_state", SqlValue::Text(column.state.clone()));
-        push(&mut sql, &mut values, "native_revision", SqlValue::Text(column.version.clone()));
+        push(&mut sql, &mut values, "native_section", SqlValue::Text(column.version.clone()));
     }
     match &write.pending {
         Pending::Keep => {}
@@ -242,7 +242,7 @@ impl Store {
 
     pub fn native_version(&self, identifier: &str) -> Result<String> {
         let database = self.connection()?;
-        get_row(&database, identifier)?["native_revision"]
+        get_row(&database, identifier)?["native_section"]
             .as_str()
             .map(str::to_owned)
             .context("尚未确认原生分区，请稍后刷新")
@@ -273,7 +273,7 @@ impl Store {
         let transaction = database.transaction()?;
         let row = get_row(&transaction, identifier)?;
         if row["archived"] == 1
-            || row["native_revision"] == native.version && row["native_state"] == native.state
+            || row["native_section"] == native.version && row["native_state"] == native.state
         {
             return Ok(());
         }
@@ -283,7 +283,7 @@ impl Store {
             |row| row.get(0),
         )?;
         record_observation(&transaction, identifier, &row, native)?;
-        if row["native_revision"].is_string() || pending {
+        if row["native_section"].is_string() || pending {
             queue_title(&transaction, identifier, self.sync_titles, true)?;
         }
         transaction.commit()?;

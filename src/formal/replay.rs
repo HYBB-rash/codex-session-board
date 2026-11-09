@@ -78,7 +78,7 @@ fn read(store: &Store, seat: Seat, column: Column) -> Result<()> {
 
 fn edit(store: &Store, column: Column, stale: bool) -> Result<()> {
     let stored = load(store)?;
-    if stored.native_revision.is_none() {
+    if stored.native_section.is_none() {
         return Ok(());
     }
     let version = if stale { 0 } else { stored.version };
@@ -108,7 +108,7 @@ fn seen(column: Column) -> Observation {
 }
 
 fn runtime(store: &Store, phase: Phase, when: When) -> Result<()> {
-    let seat = seat_of(load(store)?.native_revision.as_deref())?;
+    let seat = seat_of(load(store)?.native_section.as_deref())?;
     match prepare(store, phase, when) {
         Err(_) if seat == Seat::Unread => Ok(()),
         Err(error) => Err(error),
@@ -131,7 +131,7 @@ fn finish(store: &Store, change: &RuntimeChange) -> Result<()> {
 
 fn lost(store: &Store, phase: Phase) -> Result<()> {
     let stored = load(store)?;
-    let seat = seat_of(stored.native_revision.as_deref())?;
+    let seat = seat_of(stored.native_section.as_deref())?;
     if stored.archived == 1 {
         ensure!(
             prepare(store, phase, When::Fresh)?.is_none(),

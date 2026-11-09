@@ -34,7 +34,7 @@ fn seed_sessions(database: &Connection, index: usize) -> Result<()> {
         "INSERT INTO sessions
          (id,title,cwd,updated_at,seen_at,note,selected_state,version,input_revision,
           selection_turn,selection_users,selected_at,needs_review,native_state,
-          native_revision,runtime_pending_key)
+          native_section,runtime_pending_key)
          VALUES ('active','标题','/project',9,10,?,'to_archive',12,7,
           'turn','[\"first\",\"latest\"]',8,1,'to_archive','section-version','pending-phase')",
         [format!("主机 {index} 的最新备注")],

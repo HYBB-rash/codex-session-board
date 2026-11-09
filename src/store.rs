@@ -239,6 +239,7 @@ impl Store {
     }
 
     fn upgrade(database: &Connection) -> Result<()> {
+        Self::rename_native_section(database)?;
         let mut statement = database.prepare("PRAGMA table_info(sessions)")?;
         let columns = statement
             .query_map([], |row| row.get::<_, String>(1))?
@@ -251,7 +252,7 @@ impl Store {
             ("automatic_reason", "TEXT"),
             ("archived", "INTEGER NOT NULL DEFAULT 0"),
             ("native_state", "TEXT"),
-            ("native_revision", "TEXT"),
+            ("native_section", "TEXT"),
             ("runtime_pending_key", "TEXT"),
             ("native_choice_at", "REAL"),
         ] {
@@ -261,6 +262,22 @@ impl Store {
                     [],
                 )?;
             }
+        }
+        Ok(())
+    }
+
+    fn rename_native_section(database: &Connection) -> Result<()> {
+        let mut statement = database.prepare("PRAGMA table_info(sessions)")?;
+        let columns = statement
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        if columns.iter().any(|column| column == "native_revision")
+            && columns.iter().all(|column| column != "native_section")
+        {
+            database.execute(
+                "ALTER TABLE sessions RENAME COLUMN native_revision TO native_section",
+                [],
+            )?;
         }
         Ok(())
     }
@@ -419,7 +436,7 @@ impl Store {
         note: &str,
         turn: &Value,
     ) -> Result<()> {
-        ensure!(row["native_revision"].is_string(), "缺少原生位置，请刷新后重试");
+        ensure!(row["native_section"].is_string(), "缺少原生位置，请刷新后重试");
         let placed = now();
         let users = serde_json::to_string(&users(turn))?;
         native::write_daily(
@@ -577,7 +594,7 @@ impl Store {
         let database = self.connection()?;
         let mut statement = database.prepare(
             "SELECT * FROM title_updates WHERE (? IS NULL OR thread_id=?)
-             AND (?=0 OR EXISTS(SELECT 1 FROM sessions WHERE id=thread_id AND native_revision IS NOT NULL))
+             AND (?=0 OR EXISTS(SELECT 1 FROM sessions WHERE id=thread_id AND native_section IS NOT NULL))
              ORDER BY attempted_at IS NOT NULL,attempted_at,requested_at",
         )?;
         Ok(statement
@@ -677,7 +694,7 @@ fn session_value(row: &Value, job: Option<&Value>, native: bool) -> Value {
     json!({
         "id":row["id"], "title":row["title"], "cwd":row["cwd"], "updatedAt":row["updated_at"],
         "seenAt":row["seen_at"], "observedAt":row["observed_at"], "state":effective(row,native), "manual":selected,
-        "sectionVersion":if native {row["native_revision"].clone()} else {Value::Null},
+        "sectionVersion":if native {row["native_section"].clone()} else {Value::Null},
         "suggestion":row["automatic_state"].as_str().unwrap_or(suggestion),
         "reason":if native {"状态来自 Codex 原生分区。"}else{row["automatic_reason"].as_str().unwrap_or(reason)},
         "source":if native {"codex"}else if selected {"manual"} else if row["automatic_state"].is_string() {"runtime"} else {"history"},

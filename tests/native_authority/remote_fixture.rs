@@ -204,7 +204,7 @@ impl RemoteFixture {
             store.import_remote(source, identifier)?;
             for (thread, state) in [(FIRST, "blocked"), (SECOND, "unknown")] {
                 store.connection()?.execute(
-                    "UPDATE sessions SET native_state=?,native_revision=? WHERE id=?",
+                    "UPDATE sessions SET native_state=?,native_section=? WHERE id=?",
                     rusqlite::params![state, section_id(state), thread],
                 )?;
             }

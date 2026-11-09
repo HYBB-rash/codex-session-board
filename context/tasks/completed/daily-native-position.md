@@ -14,7 +14,7 @@ coordinator: cursor
 日常路径换列、放置时间、待确认移动和归档清除，都经过 `write_daily`。旧本地模式的选择写入留在 `save_selection`。
 重放仍是 1077 个状态、37 个事件、39849 条边。
 
-`version` 是本地行计数，`input_revision` 是本地输入计数，`native_revision` 是上次读到的分区标识。
+`version` 是本地行计数，`input_revision` 是本地输入计数，`native_section` 是上次读到的分区标识。旧列 `native_revision` 在打开数据库时改名。
 侧栏没有分区修订号，移走再移回认不出来。没有补一套侧栏条件写。
 
 活动列表完整、会话只在原生归档列表里时，不再计为未读回位置，本地行不改。
