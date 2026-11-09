@@ -85,13 +85,6 @@ pub enum Seat {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Title {
-    Idle,
-    Pending,
-    Failed,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum When {
     Same,
     Fresh,
@@ -105,11 +98,8 @@ pub struct Session {
     pub pending: Option<Phase>,
     pub manual: bool,
     pub seat: Seat,
-    pub title: Title,
     pub review: bool,
     pub anchor: bool,
-    pub choice: bool,
-    pub note: bool,
     pub archived: bool,
 }
 
@@ -121,11 +111,8 @@ impl Session {
             pending: None,
             manual: false,
             seat: Seat::Unread,
-            title: Title::Idle,
             review: false,
             anchor: false,
-            choice: false,
-            note: false,
             archived: false,
         }
     }
@@ -140,8 +127,6 @@ pub enum Event {
     Runtime(Phase, When),
     Lost(Phase),
     Input,
-    TitleOk,
-    TitleFail,
     Archive,
     StaleArchive,
     View,
@@ -164,8 +149,6 @@ pub fn events() -> Vec<Event> {
     }
     events.extend([
         Event::Input,
-        Event::TitleOk,
-        Event::TitleFail,
         Event::Archive,
         Event::StaleArchive,
         Event::View,
@@ -183,8 +166,6 @@ pub fn step(session: Session, event: Event) -> Session {
         Event::Runtime(phase, when) => runtime(session, phase, when),
         Event::Lost(phase) => lost(session, phase),
         Event::Input => input(session),
-        Event::TitleOk => title_ok(session),
-        Event::TitleFail => title_fail(session),
         Event::Archive => archive(session),
         Event::StaleManual(_)
         | Event::StaleArchive
@@ -196,7 +177,7 @@ pub fn step(session: Session, event: Event) -> Session {
 
 fn preserves(session: Session, phase: Phase, when: When) -> bool {
     when == When::Old
-        && (session.phase.is_none() || phase.terminal() && (session.choice || session.manual))
+        && (session.phase.is_none() || phase.terminal() && session.manual)
 }
 
 fn runtime(session: Session, phase: Phase, when: When) -> Session {
@@ -231,8 +212,6 @@ fn commit(session: Session, phase: Phase) -> Session {
     next.pending = None;
     next.column = phase.column();
     next.manual = false;
-    next.choice = false;
-    next.title = Title::Pending;
     next.seat = Seat::Movable;
     next
 }
@@ -262,10 +241,6 @@ fn read(session: Session, seat: Seat, column: Column) -> Session {
     next.column = column;
     if confirmed {
         next.manual = false;
-        next.choice = false;
-    }
-    if confirmed || session.seat != Seat::Unread || session.title != Title::Idle {
-        next.title = Title::Pending;
     }
     next
 }
@@ -283,12 +258,7 @@ fn manual(session: Session, column: Column) -> Session {
     next.seat = Seat::Movable;
     next.manual = true;
     next.anchor = true;
-    next.choice = true;
     next.review = false;
-    next.title = Title::Pending;
-    if column == Column::Blocked {
-        next.note = true;
-    }
     next
 }
 
@@ -303,22 +273,6 @@ fn input(session: Session) -> Session {
     next
 }
 
-fn title_ok(session: Session) -> Session {
-    let mut next = session;
-    if session.title != Title::Idle {
-        next.title = Title::Idle;
-    }
-    next
-}
-
-fn title_fail(session: Session) -> Session {
-    let mut next = session;
-    if session.title == Title::Pending {
-        next.title = Title::Failed;
-    }
-    next
-}
-
 fn archive(session: Session) -> Session {
     if session.archived
         || session.review
@@ -329,14 +283,12 @@ fn archive(session: Session) -> Session {
     }
     let mut next = session;
     next.archived = true;
-    next.title = Title::Idle;
     next.pending = None;
     next
 }
 
 pub fn invariant(session: Session) -> Result<()> {
     ensure!(!session.manual || session.anchor, "人工选择缺少确认锚点");
-    ensure!(!session.choice || session.manual, "选择时间不是人工挪列留下的");
     ensure!(
         !session.archived || session.pending.is_none(),
         "已归档会话仍有待确认阶段"
@@ -349,12 +301,9 @@ pub fn invariant(session: Session) -> Result<()> {
         ensure!(
             session.column == Column::Unknown
                 && session.pending.is_none()
-                && session.title == Title::Idle
                 && !session.manual
                 && !session.review
                 && !session.anchor
-                && !session.choice
-                && !session.note
                 && !session.archived,
             "未读会话带有分区读回才会产生的标记"
         );

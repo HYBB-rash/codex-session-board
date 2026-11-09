@@ -59,8 +59,6 @@ fn apply(store: &Store, event: Event) -> Result<()> {
         Event::Runtime(phase, when) => runtime(store, phase, when),
         Event::Lost(phase) => lost(store, phase),
         Event::Input => input(store),
-        Event::TitleOk => title(store, true),
-        Event::TitleFail => title(store, false),
         Event::Archive => archive(store, false),
         Event::StaleArchive => archive(store, true),
         Event::View => view(store),
@@ -204,16 +202,6 @@ fn input(store: &Store) -> Result<()> {
 fn view(store: &Store) -> Result<()> {
     let turn: Value = serde_json::from_str(&load(store)?.turn_json)?;
     store.observe(ID, &turn, None)
-}
-
-fn title(store: &Store, synced: bool) -> Result<()> {
-    let version = load(store)?.version;
-    if synced {
-        store.title_synced(ID, version, "[待审阅] 会话")?;
-        Ok(())
-    } else {
-        store.title_failed(ID, version, "失败")
-    }
 }
 
 fn archive(store: &Store, stale: bool) -> Result<()> {

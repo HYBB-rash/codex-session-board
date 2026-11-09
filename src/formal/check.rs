@@ -6,14 +6,14 @@ pub fn transition(before: Session, event: Event, after: Session) -> Result<()> {
     lost_keeps_column(before, event, after)?;
     fresh_rules(before, event, after)?;
     old_baseline(before, event, after)?;
-    choice_comes_from_manual(before, event, after)
+    placed_by_hand(before, event, after)
 }
 
-fn choice_comes_from_manual(before: Session, event: Event, after: Session) -> Result<()> {
+fn placed_by_hand(before: Session, event: Event, after: Session) -> Result<()> {
     let chosen = matches!(event, Event::Manual(_));
     ensure!(
-        !after.choice || before.choice || chosen,
-        "读回或阶段写入制造了选择时间"
+        !after.manual || before.manual || chosen,
+        "读回或阶段写入制造了人工选择"
     );
     Ok(())
 }

@@ -1,7 +1,7 @@
-use super::session::{Column, Phase, Seat, Session, Title};
+use super::session::{Column, Phase, Seat, Session};
 use crate::store::Store;
 use anyhow::{Context, Result, ensure};
-use rusqlite::{OptionalExtension, Row};
+use rusqlite::Row;
 use serde_json::{Value, json};
 
 pub(super) const ID: &str = "session-1";
@@ -26,7 +26,6 @@ pub(super) fn install(store: &Store, session: Session) -> Result<()> {
     clear(store)?;
     store.discover(&[json!({"id":ID,"name":"会话","cwd":"/work","updatedAt":1})])?;
     write_session(store, session)?;
-    write_title(store, session)?;
     ensure!(
         project(store)? == session,
         "夹具没有还原 {session:?}，实际 {:?}",
@@ -55,8 +54,12 @@ fn write_session(store: &Store, session: Session) -> Result<()> {
             session.pending.map(|phase| key("pend", phase)),
             session.manual.then_some(session.column.as_str()),
             session.anchor.then_some(50.0),
-            session.choice.then_some(80.0),
-            if session.note { "记" } else { "" },
+            session.manual.then_some(80.0),
+            if session.manual && session.column == Column::Blocked {
+                "记"
+            } else {
+                ""
+            },
             i64::from(session.review),
             i64::from(session.archived),
             anchor_turn(session.anchor),
@@ -72,19 +75,6 @@ fn native_state(session: Session) -> Option<&'static str> {
         Seat::Unread => None,
         Seat::Movable | Seat::Custom => Some(session.column.as_str()),
     }
-}
-
-fn write_title(store: &Store, session: Session) -> Result<()> {
-    let error = match session.title {
-        Title::Idle => return Ok(()),
-        Title::Pending => None,
-        Title::Failed => Some("失败"),
-    };
-    store.connection()?.execute(
-        "INSERT INTO title_updates(thread_id,version,state,requested_at,error) VALUES (?,?,?,?,?)",
-        rusqlite::params![ID, 1, session.column.as_str(), 1.0, error],
-    )?;
-    Ok(())
 }
 
 fn anchor_turn(anchor: bool) -> String {
@@ -134,11 +124,8 @@ pub(super) fn project(store: &Store) -> Result<Session> {
         pending: phase_of(stored.pending_key.as_deref())?,
         manual: stored.selected_state.is_some(),
         seat: seat_of(stored.native_revision.as_deref())?,
-        title: title_of(store)?,
         review: stored.review == 1,
         anchor: stored.selected_at.is_some(),
-        choice: stored.choice_at.is_some(),
-        note: !stored.note.trim().is_empty(),
         archived: stored.archived == 1,
     })
 }
@@ -206,22 +193,6 @@ fn state_phase(state: &str) -> Result<Phase> {
     })
 }
 
-fn title_of(store: &Store) -> Result<Title> {
-    let error: Option<Option<String>> = store
-        .connection()?
-        .query_row(
-            "SELECT error FROM title_updates WHERE thread_id=?1",
-            [ID],
-            |row| row.get(0),
-        )
-        .optional()?;
-    Ok(match error {
-        None => Title::Idle,
-        Some(None) => Title::Pending,
-        Some(Some(_)) => Title::Failed,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::{install, load};
@@ -230,7 +201,7 @@ mod tests {
     #[test]
     fn every_reachable_session_roundtrips_through_sqlite() {
         let states = crate::formal::explore::reachable().unwrap();
-        assert_eq!(states.len(), 5242);
+        assert_eq!(states.len(), 1077);
         let mut store = Store::open_memory(true).unwrap();
         store.native_sections = true;
         for session in states {
@@ -239,6 +210,9 @@ mod tests {
             assert_eq!(stored.version, 1);
             assert_eq!(stored.input_revision, 0);
             assert!(!stored.turn_json.is_empty());
+            assert_eq!(stored.choice_at.is_some(), session.manual);
+            let blocked = session.manual && session.column == crate::formal::session::Column::Blocked;
+            assert_eq!(!stored.note.trim().is_empty(), blocked);
         }
     }
 }
