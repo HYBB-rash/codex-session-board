@@ -217,6 +217,21 @@ impl Store {
         })
     }
 
+    #[cfg(test)]
+    pub fn open_memory(sync_titles: bool) -> Result<Self> {
+        let database = Connection::open_in_memory()?;
+        database.execute_batch(SCHEMA)?;
+        Self::upgrade(&database)?;
+        Self::upgrade_remote(&database)?;
+        Ok(Self {
+            database: Mutex::new(database),
+            sync_titles,
+            title_epoch: None,
+            native_sections: false,
+            legacy_mode: false,
+        })
+    }
+
     fn upgrade(database: &Connection) -> Result<()> {
         let mut statement = database.prepare("PRAGMA table_info(sessions)")?;
         let columns = statement
