@@ -67,6 +67,29 @@ fn old_event_keeps_card(
     !pending_turn && (no_phase && before_observation || before_placement)
 }
 
+fn keep_phase(database: &rusqlite::Transaction<'_>, identifier: &str, key: &str) -> Result<()> {
+    native::write_daily(
+        database,
+        identifier,
+        &native::DailyWrite {
+            pending: native::Pending::Clear,
+            phase: native::Phase::Set(key),
+            ..native::DailyWrite::default()
+        },
+    )
+}
+
+fn queue_move(database: &rusqlite::Transaction<'_>, identifier: &str, key: &str) -> Result<()> {
+    native::write_daily(
+        database,
+        identifier,
+        &native::DailyWrite {
+            pending: native::Pending::Set(key),
+            ..native::DailyWrite::default()
+        },
+    )
+}
+
 impl Store {
     pub fn has_pending_native_runtime(&self, identifier: &str) -> Result<bool> {
         Ok(self.connection()?.query_row(
@@ -77,9 +100,20 @@ impl Store {
     }
 
     pub fn consume_native_runtime(&self, identifier: &str, change: &RuntimeChange) -> Result<()> {
-        self.connection()?.execute(
-            "UPDATE sessions SET runtime_key=?,runtime_pending_key=NULL WHERE id=? AND version=? AND runtime_pending_key=?",
-            params![change.key,identifier,change.version,change.key])?;
+        let mut database = self.connection()?;
+        let transaction = database.transaction()?;
+        native::write_daily(
+            &transaction,
+            identifier,
+            &native::DailyWrite {
+                pending: native::Pending::Clear,
+                phase: native::Phase::Set(&change.key),
+                expect_version: Some(change.version),
+                expect_pending: Some(&change.key),
+                ..native::DailyWrite::default()
+            },
+        )?;
+        transaction.commit()?;
         Ok(())
     }
 
@@ -98,10 +132,7 @@ impl Store {
             return Ok(None);
         };
         if preserve {
-            transaction.execute(
-                "UPDATE sessions SET runtime_key=?,runtime_pending_key=NULL WHERE id=?",
-                params![key, identifier],
-            )?;
+            keep_phase(&transaction, identifier, &key)?;
             transaction.commit()?;
             return Ok(None);
         }
@@ -115,10 +146,7 @@ impl Store {
                 .context("等待确认原生分区")?
                 .into(),
         };
-        transaction.execute(
-            "UPDATE sessions SET runtime_pending_key=? WHERE id=?",
-            params![change.key, identifier],
-        )?;
+        queue_move(&transaction, identifier, &change.key)?;
         transaction.commit()?;
         Ok(Some(change))
     }
@@ -139,10 +167,20 @@ impl Store {
             "自动阶段已过期，请重新读取原生状态"
         );
         ensure!(native.state == change.state, "自动阶段原生结果不匹配");
-        native::cache(&transaction, identifier, native)?;
-        transaction.execute(
-            "UPDATE sessions SET runtime_key=?,runtime_pending_key=NULL,native_choice_at=NULL,automatic_state=?,automatic_reason=?,selected_state=NULL,version=version+1 WHERE id=?",
-            params![change.key,change.state,change.reason,identifier])?;
+        native::write_daily(
+            &transaction,
+            identifier,
+            &native::DailyWrite {
+                column: Some(native),
+                pending: native::Pending::Clear,
+                choice: native::Choice::Clear,
+                phase: native::Phase::Set(&change.key),
+                clear_selected: true,
+                automatic: Some((change.state, change.reason)),
+                bump_version: true,
+                ..native::DailyWrite::default()
+            },
+        )?;
         transaction.execute(
             "INSERT INTO changes(thread_id,changed_at,state,note) VALUES (?,?,?,?)",
             params![identifier, now(), change.state, change.reason],

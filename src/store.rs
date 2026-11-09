@@ -146,9 +146,15 @@ fn archive_expected(row: &Value, revision: (i64, i64), native: bool) -> Result<V
 }
 
 fn confirm_archive(database: &Transaction<'_>, identifier: &str) -> Result<()> {
-    database.execute(
-        "UPDATE sessions SET archived=1,version=version+1,runtime_pending_key=NULL WHERE id=?",
-        [identifier],
+    native::write_daily(
+        database,
+        identifier,
+        &native::DailyWrite {
+            pending: native::Pending::Clear,
+            archive: true,
+            bump_version: true,
+            ..native::DailyWrite::default()
+        },
     )?;
     database.execute("DELETE FROM title_updates WHERE thread_id=?", [identifier])?;
     Ok(())
@@ -391,31 +397,71 @@ impl Store {
         validate_selection(&row, state, note, revision)?;
         let turn = turn_of(&row);
         if let Some(native) = native {
-            ensure!(
-                row["native_revision"].is_string(),
-                "缺少原生位置，请刷新后重试"
-            );
-            native::cache(&transaction, identifier, native)?;
-            transaction.execute("UPDATE sessions SET native_choice_at=?,runtime_key=COALESCE(runtime_pending_key,runtime_key),runtime_pending_key=NULL WHERE id=?", params![now(),identifier])?;
+            Self::place_native(&transaction, identifier, &row, native, state, note, &turn)?;
+        } else {
+            Self::save_selection(&transaction, identifier, state, note, &turn)?;
         }
-        transaction.execute(
-            "UPDATE sessions SET selected_state=?,note=?,selection_turn=?,selection_users=?,
-             selected_at=?,needs_review=0,version=version+1 WHERE id=?",
-            params![
-                state,
-                note.trim(),
-                turn["id"].as_str(),
-                serde_json::to_string(&users(&turn))?,
-                now(),
-                identifier
-            ],
-        )?;
         transaction.execute(
             "INSERT INTO changes(thread_id,changed_at,state,note) VALUES (?,?,?,?)",
             params![identifier, now(), state, note.trim()],
         )?;
         self.queue_title(&transaction, identifier)?;
         transaction.commit()?;
+        Ok(())
+    }
+
+    fn place_native(
+        database: &Transaction<'_>,
+        identifier: &str,
+        row: &Value,
+        native: &crate::native_sections::Observation,
+        state: Option<&str>,
+        note: &str,
+        turn: &Value,
+    ) -> Result<()> {
+        ensure!(row["native_revision"].is_string(), "缺少原生位置，请刷新后重试");
+        let placed = now();
+        let users = serde_json::to_string(&users(turn))?;
+        native::write_daily(
+            database,
+            identifier,
+            &native::DailyWrite {
+                column: Some(native),
+                pending: native::Pending::Clear,
+                choice: native::Choice::Stamp(placed),
+                phase: native::Phase::Coalesce,
+                bump_version: true,
+                placement: Some(native::Placement {
+                    state,
+                    note: note.trim(),
+                    turn: turn["id"].as_str(),
+                    users: &users,
+                    at: placed,
+                }),
+                ..native::DailyWrite::default()
+            },
+        )
+    }
+
+    fn save_selection(
+        database: &Transaction<'_>,
+        identifier: &str,
+        state: Option<&str>,
+        note: &str,
+        turn: &Value,
+    ) -> Result<()> {
+        database.execute(
+            "UPDATE sessions SET selected_state=?,note=?,selection_turn=?,selection_users=?,
+             selected_at=?,needs_review=0,version=version+1 WHERE id=?",
+            params![
+                state,
+                note.trim(),
+                turn["id"].as_str(),
+                serde_json::to_string(&users(turn))?,
+                now(),
+                identifier
+            ],
+        )?;
         Ok(())
     }
 
