@@ -1,16 +1,20 @@
 mod check;
 mod explore;
 mod fixture;
+mod replay;
 mod session;
 
 #[cfg(test)]
 mod tests {
-    use super::{explore, session};
+    use super::{explore, replay, session};
 
     #[test]
-    fn native_session_control_reaches_5922_states() {
+    fn native_session_control_matches_the_store_on_every_reachable_edge() {
         let states = explore::reachable().unwrap();
-        assert_eq!(states.len(), 5922);
+        let edges = replay::conform(&states).unwrap();
+        replay::store_can_write_before_a_section_is_cached().unwrap();
         assert_eq!(session::events().len(), 39);
+        assert_eq!(states.len(), 5922);
+        assert_eq!(edges, 230_958);
     }
 }
