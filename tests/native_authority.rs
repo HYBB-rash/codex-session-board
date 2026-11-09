@@ -186,6 +186,91 @@ fn missing_direct_snapshot_entries_never_become_unsectioned() -> Result<()> {
 }
 
 #[test]
+fn native_archive_list_absence_keeps_position_without_an_unread_error() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let app = native_app(directory.path())?;
+    app.discover(&[json!({"id":FIRST})], true)?;
+    let mut surface = Listed { active: true };
+    app.read_native(&mut surface)?;
+    let cached = app.snapshot()?;
+    surface.active = false;
+    app.read_native(&mut surface)?;
+    let again = app.snapshot()?;
+    assert_eq!(again["sessions"][0]["state"], cached["sessions"][0]["state"]);
+    assert_eq!(
+        again["sessions"][0]["sectionVersion"],
+        cached["sessions"][0]["sectionVersion"]
+    );
+    assert!(again["health"]["nativeError"].is_null());
+    Ok(())
+}
+
+struct Listed {
+    active: bool,
+}
+
+impl Rpc for Listed {
+    fn call(&mut self, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+        let sections = json!([
+            {"id":"backend:review-id","name":"待审阅","appearance":null},
+            {"id":"backend:archive-id","name":"待归档","appearance":null}
+        ]);
+        match method {
+            "threadSection/list" => Ok(json!({"data":sections})),
+            "thread/list" if params["archived"].as_bool() == Some(true) => {
+                Ok(json!({"data":[{"id":FIRST}]}))
+            }
+            "thread/list" if self.active => Ok(json!({"data":[{"id":FIRST,"section":
+                sections.as_array().unwrap().iter().find(|section|
+                    section["id"] == "backend:review-id").unwrap()
+            }]})),
+            "thread/list" => Ok(json!({"data":[]})),
+            _ => anyhow::bail!("unexpected native method"),
+        }
+    }
+}
+
+#[test]
+fn native_unarchive_restores_the_confirmed_card_and_keeps_the_note() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let app = native_app(directory.path())?;
+    app.discover(&[json!({"id":FIRST})], true)?;
+    let mut native = NativeSurface {
+        section: "archive-id",
+        fail: false,
+    };
+    app.read_native(&mut native)?;
+    let (version, input, _) = session_clocks(&app.store)?;
+    app.store.set_native_state(
+        FIRST,
+        Some("to_archive"),
+        "留下备注",
+        (version, input),
+        &Observation {
+            state: "to_archive".into(),
+            version: "archive-id".into(),
+        },
+    )?;
+    let (version, input, choice) = session_clocks(&app.store)?;
+    app.store.confirm_archive(FIRST, (version, input))?;
+    assert!(app.snapshot()?["sessions"].as_array().unwrap().is_empty());
+    app.read_native(&mut native)?;
+    let restored = &app.snapshot()?["sessions"][0];
+    assert_eq!(restored["note"], "留下备注");
+    assert_eq!(restored["state"], "to_archive");
+    assert_eq!(session_clocks(&app.store)?.2, choice);
+    Ok(())
+}
+
+fn session_clocks(store: &Store) -> Result<(i64, i64, Option<f64>)> {
+    Ok(store.connection()?.query_row(
+        "SELECT version,input_revision,native_choice_at FROM sessions WHERE id=?",
+        [FIRST],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?)
+}
+
+#[test]
 fn native_cache_wins_over_local_choices_without_erasing_notes_or_confirmation() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let mut store = Store::open(directory.path(), false)?;

@@ -37,6 +37,7 @@ pub(super) struct DailyWrite<'a> {
     pub automatic: Option<(&'a str, &'a str)>,
     pub needs_review: Option<i64>,
     pub archive: bool,
+    pub unarchive: bool,
     pub bump_version: bool,
     pub placement: Option<Placement<'a>>,
     pub expect_version: Option<i64>,
@@ -54,6 +55,7 @@ impl<'a> Default for DailyWrite<'a> {
             automatic: None,
             needs_review: None,
             archive: false,
+            unarchive: false,
             bump_version: false,
             placement: None,
             expect_version: None,
@@ -112,6 +114,9 @@ fn assignments(write: &DailyWrite<'_>) -> (Vec<String>, Vec<SqlValue>) {
     selection(&mut sql, &mut values, write);
     if write.archive {
         sql.push("archived=1".into());
+    }
+    if write.unarchive {
+        sql.push("archived=0".into());
     }
     if write.bump_version {
         sql.push("version=version+1".into());
@@ -197,7 +202,18 @@ fn record_observation(
     row: &Value,
     native: &Observation,
 ) -> Result<()> {
-    let write = observed_write(row, native)?;
+    apply_observation(database, identifier, row, native, false)
+}
+
+fn apply_observation(
+    database: &Transaction<'_>,
+    identifier: &str,
+    row: &Value,
+    native: &Observation,
+    unarchive: bool,
+) -> Result<()> {
+    let mut write = observed_write(row, native)?;
+    write.unarchive = unarchive;
     let confirmed = write.clear_selected;
     write_daily(database, identifier, &write)?;
     if confirmed {
@@ -230,6 +246,26 @@ impl Store {
             .as_str()
             .map(str::to_owned)
             .context("尚未确认原生分区，请稍后刷新")
+    }
+
+    pub fn archived_ids(&self) -> Result<Vec<String>> {
+        let database = self.connection()?;
+        let mut query = database.prepare("SELECT id FROM sessions WHERE archived=1")?;
+        Ok(query
+            .query_map([], |row| row.get(0))?
+            .collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn restore_native(&self, identifier: &str, native: &Observation) -> Result<()> {
+        let mut database = self.connection()?;
+        let transaction = database.transaction()?;
+        let row = get_row(&transaction, identifier)?;
+        if row["archived"] != 1 {
+            return Ok(());
+        }
+        apply_observation(&transaction, identifier, &row, native, true)?;
+        transaction.commit()?;
+        Ok(())
     }
 
     pub fn cache_native(&self, identifier: &str, native: &Observation) -> Result<()> {

@@ -130,6 +130,13 @@ pub fn read(reader: &mut impl Rpc, config: &Config, identifier: &str) -> Result<
     catalog.observe(config, thread)
 }
 
+pub fn archived_ids(reader: &mut impl Rpc, config: &Config) -> Result<HashSet<String>> {
+    let (identifiers, complete) =
+        crate::rpc::archived_thread_ids(reader, config.page_size, config.max_pages)?;
+    ensure!(complete, "原生归档列表扫描未完成");
+    Ok(identifiers)
+}
+
 pub fn snapshot(reader: &mut impl Rpc, config: &Config) -> Result<HashMap<String, Observation>> {
     let catalog = Catalog::load(reader, config)?;
     let (threads, complete) = crate::rpc::list_threads(reader, config.page_size, config.max_pages)?;

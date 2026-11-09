@@ -110,6 +110,19 @@ impl App {
         let snapshot = native_sections::direct::snapshot(reader, &self.config)?;
         let _operation = self.operation()?;
         ensure!(self.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
+        let Some(unresolved) = self.import_native(generation, reader, &snapshot)? else {
+            return Ok(());
+        };
+        self.update_health(json!({"nativeVerified":true,"nativeError":if unresolved==0 {Value::Null}else{json!(format!("{unresolved} 个会话的原生位置未读回，保留上次位置"))},"nativeLastAt":now()}))
+    }
+
+    fn import_native(
+        &self,
+        generation: usize,
+        reader: &mut impl Rpc,
+        snapshot: &std::collections::HashMap<String, native_sections::Observation>,
+    ) -> Result<Option<usize>> {
+        let archived = self.archived_native_ids(reader, snapshot)?;
         let mut unresolved = 0;
         for session in self.store.sessions()? {
             let identifier = session["id"].as_str().context("会话缺少 ID")?;
@@ -118,15 +131,49 @@ impl App {
                 continue;
             };
             if generation != self.native_generation.load(Ordering::SeqCst) {
-                return Ok(());
+                return Ok(None);
             }
-            let Some(observed) = snapshot.get(identifier) else {
+            if let Some(observed) = snapshot.get(identifier) {
+                self.store.cache_native(identifier, observed)?;
+            } else if !archived.contains(identifier) {
                 unresolved += 1;
+            }
+        }
+        self.restore_visible(snapshot)?;
+        Ok(Some(unresolved))
+    }
+
+    fn archived_native_ids(
+        &self,
+        reader: &mut impl Rpc,
+        snapshot: &std::collections::HashMap<String, native_sections::Observation>,
+    ) -> Result<std::collections::HashSet<String>> {
+        let missing = self.store.sessions()?.into_iter().any(|session| {
+            session["id"]
+                .as_str()
+                .is_some_and(|identifier| !snapshot.contains_key(identifier))
+        });
+        if !missing {
+            return Ok(std::collections::HashSet::new());
+        }
+        native_sections::direct::archived_ids(reader, &self.config)
+    }
+
+    fn restore_visible(
+        &self,
+        snapshot: &std::collections::HashMap<String, native_sections::Observation>,
+    ) -> Result<()> {
+        for identifier in self.store.archived_ids()? {
+            let Some(observed) = snapshot.get(&identifier) else {
                 continue;
             };
-            self.store.cache_native(identifier, observed)?;
+            let operation = self.thread_lock(&identifier)?;
+            let Ok(_guard) = operation.try_lock() else {
+                continue;
+            };
+            self.store.restore_native(&identifier, observed)?;
         }
-        self.update_health(json!({"nativeVerified":true,"nativeError":if unresolved==0 {Value::Null}else{json!(format!("{unresolved} 个会话的原生位置未读回，保留上次位置"))},"nativeLastAt":now()}))
+        Ok(())
     }
 
     pub(crate) fn save_native(

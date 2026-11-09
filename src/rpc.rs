@@ -596,12 +596,40 @@ pub fn list_threads(
     page_size: usize,
     max_pages: usize,
 ) -> Result<(Vec<Value>, bool)> {
+    collect_threads(reader, page_size, max_pages, false)
+}
+
+pub fn archived_thread_ids(
+    reader: &mut dyn Rpc,
+    page_size: usize,
+    max_pages: usize,
+) -> Result<(HashSet<String>, bool)> {
+    let (threads, complete) = collect_threads(reader, page_size, max_pages, true)?;
+    Ok((
+        threads
+            .iter()
+            .filter_map(|thread| thread["id"].as_str().map(str::to_owned))
+            .collect(),
+        complete,
+    ))
+}
+
+fn collect_threads(
+    reader: &mut dyn Rpc,
+    page_size: usize,
+    max_pages: usize,
+    archived: bool,
+) -> Result<(Vec<Value>, bool)> {
     let mut threads = Vec::new();
     let mut identifiers = HashSet::new();
     let mut cursors = HashSet::new();
     let mut cursor = Value::Null;
     for _ in 0..max_pages {
-        let result = reader.call("thread/list", thread_list_params(page_size, cursor))?;
+        let mut params = thread_list_params(page_size, cursor);
+        if archived {
+            params["archived"] = json!(true);
+        }
+        let result = reader.call("thread/list", params)?;
         append_threads(&result, &mut identifiers, &mut threads)?;
         cursor = result.get("nextCursor").cloned().unwrap_or(Value::Null);
         if cursor.is_null() || cursor.as_str() == Some("") {
