@@ -37,26 +37,34 @@ fn event(
     if row["archived"] == 1 || row["runtime_key"] == key {
         return None;
     }
+    Some((
+        state,
+        reason,
+        key,
+        old_event_keeps_card(row, status, turn, since, pending),
+    ))
+}
+
+fn old_event_keeps_card(
+    row: &Value,
+    status: &Value,
+    turn: &Value,
+    since: f64,
+    pending_turn: bool,
+) -> bool {
     let time = turn[if terminal(status, turn) {
         "completedAt"
     } else {
         "startedAt"
     }]
     .as_f64();
-    let old_baseline =
-        !pending && row["runtime_key"].is_null() && time.is_none_or(|time| time < since);
-    let older_than_choice = terminal(status, turn)
+    let no_phase = row["runtime_key"].is_null();
+    let before_observation = time.is_none_or(|time| time < since);
+    let before_placement = terminal(status, turn)
         && row["native_choice_at"]
             .as_f64()
-            .is_some_and(|chosen| time.is_none_or(|end| end <= chosen));
-    Some((
-        state,
-        reason,
-        key,
-        old_baseline
-            || older_than_choice
-            || !pending && preserve_runtime(row, status, turn, Some(since), state),
-    ))
+            .is_some_and(|placed| time.is_none_or(|end| end <= placed));
+    !pending_turn && (no_phase && before_observation || before_placement)
 }
 
 impl Store {
