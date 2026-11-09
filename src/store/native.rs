@@ -30,12 +30,13 @@ fn record_observation(
         && !users(&turn_of(row)).is_empty();
     cache(database, identifier, native)?;
     database.execute(
-        "UPDATE sessions SET native_choice_at=?,needs_review=CASE WHEN ? THEN 1 ELSE needs_review END,
+        "UPDATE sessions SET native_choice_at=CASE WHEN ? THEN NULL ELSE native_choice_at END,
+         needs_review=CASE WHEN ? THEN 1 ELSE needs_review END,
          version=version+1,runtime_key=COALESCE(runtime_pending_key,runtime_key),runtime_pending_key=NULL,
          selected_state=CASE WHEN ? THEN NULL ELSE selected_state END,
          automatic_state=CASE WHEN ? THEN ? ELSE automatic_state END,
          automatic_reason=CASE WHEN ? THEN '自动阶段目标已在原生位置确认。' ELSE automatic_reason END WHERE id=?",
-        params![if confirmed {None} else {Some(now())},unconfirmed_input,confirmed,confirmed,native.state,confirmed,identifier],
+        params![confirmed,unconfirmed_input,confirmed,confirmed,native.state,confirmed,identifier],
     )?;
     if confirmed {
         database.execute(

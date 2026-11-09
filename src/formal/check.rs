@@ -5,7 +5,17 @@ pub fn transition(before: Session, event: Event, after: Session) -> Result<()> {
     identity_events(before, event, after)?;
     lost_keeps_column(before, event, after)?;
     fresh_rules(before, event, after)?;
-    old_baseline(before, event, after)
+    old_baseline(before, event, after)?;
+    choice_comes_from_manual(before, event, after)
+}
+
+fn choice_comes_from_manual(before: Session, event: Event, after: Session) -> Result<()> {
+    let chosen = matches!(event, Event::Manual(_));
+    ensure!(
+        !after.choice || before.choice || chosen,
+        "读回或阶段写入制造了选择时间"
+    );
+    Ok(())
 }
 
 fn identity_events(before: Session, event: Event, after: Session) -> Result<()> {

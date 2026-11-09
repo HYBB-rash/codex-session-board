@@ -194,6 +194,20 @@ fn failed_stage_is_consumed_when_the_native_position_changes() -> Result<()> {
     Ok(())
 }
 
+fn choose_column(store: &Store, state: &str, note: &str) -> Result<()> {
+    let row = &store.sessions()?[0];
+    store.set_native_state(
+        FIRST,
+        Some(state),
+        note,
+        (
+            row["version"].as_i64().unwrap(),
+            row["inputVersion"].as_i64().unwrap(),
+        ),
+        &placed(state),
+    )
+}
+
 #[test]
 fn baseline_history_never_overwrites_an_existing_native_selection() -> Result<()> {
     input_before_native_refresh_still_requires_confirmation()?;
@@ -214,6 +228,7 @@ fn baseline_history_never_overwrites_an_existing_native_selection() -> Result<()
         .prepare_native_runtime(FIRST, &json!({"type":"idle"}), &done, 3.0)?
         .is_none());
     assert_eq!(store.sessions()?[0]["state"], "to_archive");
+    choose_column(&store, "to_archive", "")?;
     store.connection()?.execute(
         "UPDATE sessions SET runtime_key='older-active-phase' WHERE id=?",
         [FIRST],
@@ -232,6 +247,7 @@ fn baseline_history_never_overwrites_an_existing_native_selection() -> Result<()
 }
 
 fn missing_terminal_time_preserves_choice(store: &Store) -> Result<()> {
+    choose_column(store, "to_archive", "备注不变")?;
     for completion in [None, Some(serde_json::Value::Null)] {
         store.connection()?.execute(
             "UPDATE sessions SET runtime_key='older-active-phase' WHERE id=?",

@@ -263,8 +263,6 @@ fn read(session: Session, seat: Seat, column: Column) -> Session {
     if confirmed {
         next.manual = false;
         next.choice = false;
-    } else {
-        next.choice = true;
     }
     if confirmed || session.seat != Seat::Unread || session.title != Title::Idle {
         next.title = Title::Pending;
@@ -332,11 +330,17 @@ fn archive(session: Session) -> Session {
     let mut next = session;
     next.archived = true;
     next.title = Title::Idle;
+    next.pending = None;
     next
 }
 
 pub fn invariant(session: Session) -> Result<()> {
     ensure!(!session.manual || session.anchor, "人工选择缺少确认锚点");
+    ensure!(!session.choice || session.manual, "选择时间不是人工挪列留下的");
+    ensure!(
+        !session.archived || session.pending.is_none(),
+        "已归档会话仍有待确认阶段"
+    );
     ensure!(
         session.pending.is_none() || session.seat == Seat::Movable,
         "未确认阶段出现在不可移动的位置"

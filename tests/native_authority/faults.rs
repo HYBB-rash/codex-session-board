@@ -179,18 +179,17 @@ fn delayed_automatic_confirmation(external: bool, background_first: bool, restar
     let done = json!({"id":"lost-ack","status":"completed","startedAt":since+1.0,"completedAt":since+2.0});
     let observed_since = if restart { since + 20.0 } else { since };
     app.observe_runtime(FIRST, &json!({"type":"idle"}), &done, observed_since)?;
-    let expected = if external { "to_archive" } else { "review" };
-    assert_eq!(server.surface.lock().unwrap().slots[FIRST], expected);
-    assert_eq!(native_move_count(&server), usize::from(!external));
+    assert_eq!(server.surface.lock().unwrap().slots[FIRST], "review");
+    assert_eq!(native_move_count(&server), 1);
     app.refresh_native()?;
-    assert_eq!(app.snapshot()?["sessions"][0]["state"], expected);
+    assert_eq!(app.snapshot()?["sessions"][0]["state"], "review");
     app.observe_runtime(FIRST, &json!({"type":"idle"}), &done, observed_since)?;
-    assert_eq!(native_move_count(&server), usize::from(!external));
+    assert_eq!(native_move_count(&server), 1);
     Ok(())
 }
 
 #[test]
-fn delayed_automatic_readback_does_not_hide_completion_or_overwrite_external_moves() -> Result<()> {
+fn delayed_completion_still_moves_after_an_unconfirmed_external_position() -> Result<()> {
     for external in [false, true] {
         for background_first in [false, true] {
             for restart in [false, true] {

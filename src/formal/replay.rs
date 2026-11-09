@@ -25,11 +25,11 @@ pub fn conform(states: &[Session]) -> Result<usize> {
     Ok(edges)
 }
 
-pub fn store_can_write_before_a_section_is_cached() -> Result<()> {
+pub fn store_refuses_a_column_before_a_section_is_cached() -> Result<()> {
     let mut store = Store::open_memory(true)?;
     store.native_sections = true;
     install(&store, Session::initial())?;
-    store.set_native_state(
+    let refused = store.set_native_state(
         ID,
         Some("review"),
         "",
@@ -38,10 +38,14 @@ pub fn store_can_write_before_a_section_is_cached() -> Result<()> {
             state: "review".into(),
             version: "open".into(),
         },
-    )?;
+    );
+    match refused {
+        Err(error) => ensure!(error.to_string().contains("缺少原生位置"), "{error}"),
+        Ok(()) => anyhow::bail!("未读会话被直接写成有列"),
+    }
     ensure!(
-        project(&store)?.seat == Seat::Movable,
-        "直接写库没有落下原生列"
+        project(&store)?.seat == Seat::Unread && project(&store)?.column == Column::Unknown,
+        "拒绝写入后未读会话带上了列"
     );
     Ok(())
 }

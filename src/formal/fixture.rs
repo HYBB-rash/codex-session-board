@@ -230,7 +230,7 @@ mod tests {
     #[test]
     fn every_reachable_session_roundtrips_through_sqlite() {
         let states = crate::formal::explore::reachable().unwrap();
-        assert_eq!(states.len(), 5922);
+        assert_eq!(states.len(), 5242);
         let mut store = Store::open_memory(true).unwrap();
         store.native_sections = true;
         for session in states {

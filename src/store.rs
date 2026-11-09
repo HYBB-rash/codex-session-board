@@ -147,7 +147,7 @@ fn archive_expected(row: &Value, revision: (i64, i64), native: bool) -> Result<V
 
 fn confirm_archive(database: &Transaction<'_>, identifier: &str) -> Result<()> {
     database.execute(
-        "UPDATE sessions SET archived=1,version=version+1 WHERE id=?",
+        "UPDATE sessions SET archived=1,version=version+1,runtime_pending_key=NULL WHERE id=?",
         [identifier],
     )?;
     database.execute("DELETE FROM title_updates WHERE thread_id=?", [identifier])?;
@@ -391,6 +391,10 @@ impl Store {
         validate_selection(&row, state, note, revision)?;
         let turn = turn_of(&row);
         if let Some(native) = native {
+            ensure!(
+                row["native_revision"].is_string(),
+                "缺少原生位置，请刷新后重试"
+            );
             native::cache(&transaction, identifier, native)?;
             transaction.execute("UPDATE sessions SET native_choice_at=?,runtime_key=COALESCE(runtime_pending_key,runtime_key),runtime_pending_key=NULL WHERE id=?", params![now(),identifier])?;
         }
