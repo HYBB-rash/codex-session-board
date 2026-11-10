@@ -5,7 +5,7 @@ use std::{
     fs,
     io::Write,
     path::Path,
-    process::{Command, Stdio},
+    process::{Child, Command, Stdio},
 };
 
 #[test]
@@ -77,7 +77,7 @@ fn column_sort_rejects_invalid_requests_without_touching_sessions() -> Result<()
     Ok(())
 }
 
-fn start_fixture(path: &Path) -> Result<Value> {
+fn start_fixture(path: &Path) -> Result<(Value, Child)> {
     let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
     drop(listener);
@@ -88,18 +88,20 @@ fn start_fixture(path: &Path) -> Result<Value> {
         "auto_archive_seconds":null})
         .to_string(),
     )?;
-    let binary = env!("CARGO_BIN_EXE_codex-session-board");
-    let started = Command::new(binary)
+    let mut child = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
         .arg("--config")
         .arg(path)
-        .arg("launch")
-        .output()?;
-    anyhow::ensure!(
-        started.status.success(),
-        "{}",
-        String::from_utf8_lossy(&started.stderr)
-    );
-    Ok(serde_json::from_slice(&started.stdout)?)
+        .arg("serve")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("看板没有输出"))?;
+    let mut line = String::new();
+    std::io::BufRead::read_line(&mut std::io::BufReader::new(stdout), &mut line)?;
+    Ok((serde_json::from_str(line.trim())?, child))
 }
 
 fn mcp_sort_roundtrip(path: &Path, change: &Value) -> Result<()> {
@@ -159,7 +161,7 @@ fn check_transport(path: &Path, running: &Value) -> Result<()> {
 fn column_sort_real_http_and_stdio_mcp_share_persistent_settings() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("config.json");
-    let running = start_fixture(&path)?;
+    let (running, mut child) = start_fixture(&path)?;
     let checks = check_transport(&path, &running);
     let stopped = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
         .arg("--config")
@@ -168,6 +170,7 @@ fn column_sort_real_http_and_stdio_mcp_share_persistent_settings() -> Result<()>
         .output();
     checks?;
     assert!(stopped?.status.success());
+    let _ = child.wait();
     let reopened = Store::open(&directory.path().join("data"), false)?;
     assert_eq!(reopened.column_sorts()?["review"]["direction"], "asc");
     Ok(())

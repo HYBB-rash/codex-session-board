@@ -4,10 +4,10 @@ use anyhow::{Result, bail};
 use codex_session_board::{app, config, http, mcp, observer, rpc::Rpc, titles};
 use serde_json::{Value, json};
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::sync::Arc;
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tempfile::TempDir;
 
@@ -18,6 +18,7 @@ struct Fixture {
     _directory: TempDir,
     path: PathBuf,
     settings: Value,
+    server: Mutex<Option<Child>>,
 }
 
 impl Fixture {
@@ -34,6 +35,7 @@ impl Fixture {
             _directory: directory,
             path,
             settings,
+            server: Mutex::new(None),
         }
     }
 
@@ -101,13 +103,33 @@ impl Fixture {
     }
 
     fn launch(&self) -> Value {
-        let output = self.cli("launch");
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        serde_json::from_slice(&output.stdout).unwrap()
+        let mut slot = self.server.lock().unwrap();
+        if slot.is_some() {
+            let output = self.cli("serve");
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return serde_json::from_slice(&output.stdout).unwrap();
+        }
+        let mut child = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
+            .args(["--config", self.path.to_str().unwrap(), "serve"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut line = String::new();
+        BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        let value: Value = serde_json::from_str(line.trim()).unwrap_or_else(|_| {
+            let mut error = String::new();
+            let _ = std::io::Read::read_to_string(child.stderr.as_mut().unwrap(), &mut error);
+            panic!("{error}");
+        });
+        *slot = Some(child);
+        value
     }
 
     fn populate(&self) {
@@ -125,6 +147,9 @@ impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = fs::write(&self.path, self.settings.to_string());
         let _ = self.cli("stop");
+        if let Some(mut child) = self.server.lock().unwrap().take() {
+            let _ = child.wait();
+        }
     }
 }
 
@@ -901,11 +926,11 @@ fn changed_config_or_port_cannot_start_second_service() {
     let mut altered = fixture.settings.clone();
     altered["host_id"] = json!("changed");
     fs::write(&fixture.path, altered.to_string()).unwrap();
-    assert!(!fixture.cli("launch").status.success());
+    assert!(!fixture.cli("serve").status.success());
     altered = fixture.settings.clone();
     altered["port"] = json!(1);
     fs::write(&fixture.path, altered.to_string()).unwrap();
-    assert!(!fixture.cli("launch").status.success());
+    assert!(!fixture.cli("serve").status.success());
 }
 
 #[test]
@@ -920,12 +945,15 @@ fn service_update_rejects_old_build_but_can_verify_and_stop_its_process() {
             .output()
             .unwrap()
     };
-    let launched = invoke("launch");
-    assert!(
-        launched.status.success(),
-        "{}",
-        String::from_utf8_lossy(&launched.stderr)
-    );
+    let mut child = Command::new(&executable)
+        .args(["--config", fixture.path.to_str().unwrap(), "serve"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
+    assert!(serde_json::from_str::<Value>(line.trim()).is_ok(), "{line}");
     fs::copy(&executable, &replacement).unwrap();
     fs::OpenOptions::new()
         .append(true)
@@ -934,7 +962,7 @@ fn service_update_rejects_old_build_but_can_verify_and_stop_its_process() {
         .write_all(b"controlled build variation")
         .unwrap();
     fs::rename(&replacement, &executable).unwrap();
-    let duplicate = invoke("launch");
+    let duplicate = invoke("serve");
     assert!(!duplicate.status.success());
     assert!(String::from_utf8_lossy(&duplicate.stderr).contains("版本"));
     let stopped = invoke("stop");
@@ -943,6 +971,7 @@ fn service_update_rejects_old_build_but_can_verify_and_stop_its_process() {
         "{}",
         String::from_utf8_lossy(&stopped.stderr)
     );
+    let _ = child.wait();
 }
 
 #[test]

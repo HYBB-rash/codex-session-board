@@ -1,11 +1,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use codex_session_board::{app::App, config, http, mcp, observer, service};
-use std::path::PathBuf;
-use std::sync::Arc;
-
-#[path = "managed_launch.rs"]
-mod managed_launch;
+use codex_session_board::{config, http, mcp, observer, service};
+use serde_json::{Value, json};
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(about = "Codex 本地会话看板", version)]
@@ -19,7 +16,6 @@ struct Cli {
 #[derive(Subcommand)]
 enum Action {
     Serve,
-    Launch,
     Stop,
     Mcp,
     Scan,
@@ -37,11 +33,6 @@ fn main() -> Result<()> {
         Action::Mcp => mcp::serve(Some(path)),
         Action::Serve => serve(path),
         Action::Scan => scan(path),
-        Action::Launch => {
-            config::initialize_config(path, &defaults.1)?;
-            println!("{}", managed_launch::launch(path)?);
-            Ok(())
-        }
         Action::Stop => {
             println!("{}", service::stop(path)?);
             Ok(())
@@ -53,24 +44,32 @@ fn main() -> Result<()> {
     }
 }
 
-fn serve(path: &std::path::Path) -> Result<()> {
-    let (default_path, data) = config::default_paths()?;
-    if path == default_path {
-        config::initialize_config(path, &data)?;
+fn serve(path: &Path) -> Result<()> {
+    match service::open(path)? {
+        service::OpenedBoard::Reused { url, config } => {
+            println!("{}", board_status(&url, false, &config));
+            Ok(())
+        }
+        service::OpenedBoard::Owned(board) => {
+            println!("{}", board_status(&board.url, true, &board.config));
+            std::io::Write::flush(&mut std::io::stdout())?;
+            http::run(board.server, board.port, board.app)
+        }
     }
-    let config = config::load(Some(path))?;
-    let (server, port) = http::bind(config.port)?;
-    let app = Arc::new(App::new(config)?);
-    service::register(&app.config, port)?;
-    observer::start(&app);
-    println!("http://127.0.0.1:{port}");
-    std::io::Write::flush(&mut std::io::stdout())?;
-    http::run(server, port, app)
 }
 
-fn scan(path: &std::path::Path) -> Result<()> {
+fn board_status(url: &str, started: bool, config: &Path) -> Value {
+    json!({
+        "url": url,
+        "running": true,
+        "started": started,
+        "config": config
+    })
+}
+
+fn scan(path: &Path) -> Result<()> {
     let config = config::load(Some(path))?;
-    let app = App::new(config)?;
+    let app = codex_session_board::app::App::new(config)?;
     let mut reader = codex_session_board::rpc::StdioReader::connect(
         &app.config.codex_command,
         std::time::Duration::from_secs(app.config.rpc_timeout_seconds),

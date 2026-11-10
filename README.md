@@ -19,12 +19,13 @@
 ```bash
 cargo build --locked --offline
 cargo run --locked --offline -- --help
-cargo run --locked --offline -- launch
+cargo run --locked --offline -- serve
 ```
 
 首次启动使用 XDG 配置和数据目录。配置示例见 `config.example.json`，
 自定义部署使用 `--config /path/to/config.json`。
-`serve` 前台运行，`launch` 复用或启动匹配服务，`stop` 核验身份并等待实际退出。
+`serve` 在当前进程监听。已有相同数据目录、配置和构建的服务时，它直接退出，不另起进程。
+`stop` 核验身份并等待实际退出。`mcp` 在插件进程内提供同一份看板。
 `mcp` 提供 stdio MCP App，`scan` 执行一次发现，`migrate --source-config PATH`
 使用 SQLite 备份导入旧原型，保留原库并拒绝覆盖目标。
 
@@ -62,7 +63,7 @@ python3 scripts/verify_acceptance.py --evidence /path/to/evidence.json --report 
 
 ## 安装为应用
 
-使用 Chrome 或 Edge 打开本机 `launch` 返回的网页地址。
+使用 Chrome 或 Edge 打开本机 `serve` 打印的网页地址。
 浏览器允许安装时，工具栏会显示“安装应用”；也可使用浏览器菜单中的安装入口。
 安装后从系统应用列表打开“Codex 会话看板”，会使用独立窗口。
 浏览器取消安装后仍可从菜单重新安装，原生 Codex 内嵌看板不提供此按钮。

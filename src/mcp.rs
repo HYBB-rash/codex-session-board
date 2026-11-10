@@ -1,11 +1,10 @@
-use crate::{app::App, config, http, observer, service};
+use crate::{config, http, service};
 use anyhow::{Context, Result, bail, ensure};
 use base64::Engine;
 use serde_json::{Value, json};
-use std::io::{BufRead, ErrorKind, Write};
-use std::net::TcpListener;
+use std::io::{BufRead, Write};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -151,31 +150,16 @@ fn board_url(config_path: &Path) -> Result<String> {
 }
 
 fn open_board(config_path: &Path) -> Result<String> {
-    let config = config::load(Some(config_path))?;
-    ensure!(config.port > 0, "看板需要固定端口");
-    let url = format!("http://127.0.0.1:{}", config.port);
-    if !port_free(config.port)? {
-        return Ok(url);
-    }
-    let (server, port) = http::bind(config.port)?;
-    let app = Arc::new(App::new(config)?);
-    service::register(&app.config, port)?;
-    observer::start(&app);
-    thread::spawn(move || {
-        let _ = http::run(server, port, app);
-    });
-    wait_ready(&url)?;
-    Ok(url)
-}
-
-fn port_free(port: u16) -> Result<bool> {
-    match TcpListener::bind(("127.0.0.1", port)) {
-        Ok(listener) => {
-            drop(listener);
-            Ok(true)
+    match service::open(config_path)? {
+        service::OpenedBoard::Reused { url, .. } => Ok(url),
+        service::OpenedBoard::Owned(board) => {
+            let url = board.url.clone();
+            thread::spawn(move || {
+                let _ = http::run(board.server, board.port, board.app);
+            });
+            wait_ready(&url)?;
+            Ok(url)
         }
-        Err(error) if error.kind() == ErrorKind::AddrInUse => Ok(false),
-        Err(error) => Err(error.into()),
     }
 }
 

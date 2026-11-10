@@ -1,3 +1,4 @@
+use crate::app::App;
 use crate::config::{self, Config};
 use anyhow::{Context, Result, bail, ensure};
 use fs2::FileExt;
@@ -9,7 +10,9 @@ use std::fs::{self, File, OpenOptions};
 use std::io::ErrorKind;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::thread;
+use tiny_http::Server;
 use std::time::{Duration, Instant};
 
 mod migration;
@@ -56,7 +59,7 @@ fn lock_file(data: &Path) -> Result<File> {
         .open(data.join("launch.lock"))?)
 }
 
-pub fn lock_data(data: &Path) -> Result<File> {
+fn lock_data(data: &Path) -> Result<File> {
     let file = lock_file(data)?;
     file.lock_exclusive()?;
     Ok(file)
@@ -127,7 +130,7 @@ fn loopback_url(url: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn probe(url: &str) -> Result<Option<Value>> {
+fn probe(url: &str) -> Result<Option<Value>> {
     loopback_url(url)?;
     let client = Client::builder()
         .no_proxy()
@@ -228,7 +231,7 @@ fn verify_record(record: &ServerRecord) -> Result<bool> {
     }
 }
 
-pub fn verify_info(value: &Value, config: &Config, pid: Option<u32>) -> Result<()> {
+fn verify_info(value: &Value, config: &Config, pid: Option<u32>) -> Result<()> {
     ensure!(
         value["app"] == "codex-session-board" && value["dataDir"] == json!(config.data_dir),
         "端口或启动记录属于其他服务或数据目录"
@@ -242,7 +245,7 @@ pub fn verify_info(value: &Value, config: &Config, pid: Option<u32>) -> Result<(
     Ok(())
 }
 
-pub fn verify_version(value: &Value, config: &Config, build: &str) -> Result<()> {
+fn verify_version(value: &Value, config: &Config, build: &str) -> Result<()> {
     ensure!(value["build"] == build, "已有其他版本看板运行，请先 stop");
     ensure!(
         value["configId"] == config::config_id(config)?,
@@ -259,7 +262,7 @@ fn save_record(data: &Path, record: &ServerRecord) -> Result<()> {
     )
 }
 
-pub fn matching_record(config: &Config, url: &str, build: &str) -> Result<bool> {
+fn matching_record(config: &Config, url: &str, build: &str) -> Result<bool> {
     let Some(record) = read_record(&config.data_dir)? else {
         return Ok(false);
     };
@@ -276,7 +279,7 @@ pub fn matching_record(config: &Config, url: &str, build: &str) -> Result<bool> 
     Ok(true)
 }
 
-pub fn adopt_running(config: &Config, url: &str, build: &str) -> Result<bool> {
+fn adopt_running(config: &Config, url: &str, build: &str) -> Result<bool> {
     let Some(value) = probe(url)? else {
         return Ok(false);
     };
@@ -298,18 +301,6 @@ pub fn adopt_running(config: &Config, url: &str, build: &str) -> Result<bool> {
         },
     )?;
     Ok(true)
-}
-
-pub fn save_started_process(config: &Config, pid: u32, url: &str) -> Result<()> {
-    let identity = process_identity(pid)?.context("看板启动后立即退出")?;
-    save_record(
-        &config.data_dir,
-        &ServerRecord {
-            pid,
-            url: url.into(),
-            identity,
-        },
-    )
 }
 
 fn stop_record(record: &ServerRecord, config: &Config) -> Result<bool> {
@@ -334,6 +325,44 @@ fn stop_record(record: &ServerRecord, config: &Config) -> Result<bool> {
         thread::sleep(Duration::from_millis(100));
     }
     bail!("服务进程退出尚未确认")
+}
+
+pub struct OwnedBoard {
+    pub url: String,
+    pub config: PathBuf,
+    pub server: Server,
+    pub port: u16,
+    pub app: Arc<App>,
+}
+
+pub enum OpenedBoard {
+    Reused { url: String, config: PathBuf },
+    Owned(OwnedBoard),
+}
+
+pub fn open(config_path: &Path) -> Result<OpenedBoard> {
+    let (_, default_data) = config::default_paths()?;
+    config::initialize_config(config_path, &default_data)?;
+    let loaded = config::load(Some(config_path))?;
+    ensure!(loaded.port > 0, "看板需要固定端口");
+    let _lock = lock_data(&loaded.data_dir)?;
+    let url = format!("http://127.0.0.1:{}", loaded.port);
+    let build = config::build_id()?;
+    let config = config::resolve_path(config_path)?;
+    if matching_record(&loaded, &url, &build)? || adopt_running(&loaded, &url, &build)? {
+        return Ok(OpenedBoard::Reused { url, config });
+    }
+    let (server, port) = crate::http::bind(loaded.port)?;
+    let app = Arc::new(App::new(loaded)?);
+    register_locked(&app.config, port)?;
+    crate::observer::start(&app);
+    Ok(OpenedBoard::Owned(OwnedBoard {
+        url: format!("http://127.0.0.1:{port}"),
+        config,
+        server,
+        port,
+        app,
+    }))
 }
 
 pub fn stop(config_path: &Path) -> Result<Value> {

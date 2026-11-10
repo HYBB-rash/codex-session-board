@@ -28,14 +28,10 @@ fn plugin_cannot_start_board(root: &Path) -> Result<(), String> {
             .to_string_lossy()
             .replace('\\', "/");
         let text = fs::read_to_string(&path).map_err(|error| error.to_string())?;
-        if name != "main.rs" && text.contains("managed_launch") {
-            return Err(format!("{name} 把后台启动放进了库"));
-        }
-        if name == "managed_launch.rs" {
-            continue;
-        }
-        if name != "rpc/capture.rs" && compact(&text).contains("process_group(0)") {
-            return Err(format!("{name} 把进程放进了新的进程组"));
+        if text.contains("managed_launch")
+            || (name != "rpc/capture.rs" && text.contains("process_group(0)"))
+        {
+            return Err(format!("{name} 会把看板放进新的进程组"));
         }
         if text.contains(".arg(\"serve\")") || text.contains(".args([\"serve\"])") {
             return Err(format!("{name} 会再启动 serve"));
@@ -57,10 +53,6 @@ fn mcp_arm(main: &str) -> Result<String, String> {
         .find(',')
         .ok_or_else(|| "插件入口写坏了".to_string())?;
     Ok(rest[..end].trim().to_string())
-}
-
-fn compact(text: &str) -> String {
-    text.chars().filter(|item| !item.is_whitespace()).collect()
 }
 
 fn collect(dir: &Path, files: &mut Vec<std::path::PathBuf>) -> Result<(), String> {

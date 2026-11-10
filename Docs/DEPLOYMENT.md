@@ -20,7 +20,7 @@ MCP 命令和工作目录使用插件根目录下的相对路径。
 随后调用 `config/mcpServer/reload`，再独立核对插件 ID、版本及工具加载错误。
 正在执行的旧会话可能仍绑定原 MCP 实例，验收使用重新加载后创建的专用会话及全局入口。
 
-配置默认在 XDG 配置目录，数据默认在 XDG 数据目录。首次 `launch` 初始化配置；
+配置默认在 XDG 配置目录，数据默认在 XDG 数据目录。首次 `serve` 初始化配置；
 可以先复制 `config.example.json` 至独立位置，再用 `--config PATH`。
 `open_command` 是客户端命令参数数组，最后追加 `codex://threads/…` 链接。
 桌面 socket 可以使用进程环境中的 `CODEX_LINUX_APP_SERVER_BRIDGE_SOCKET`，
@@ -34,13 +34,14 @@ MCP 命令和工作目录使用插件根目录下的相对路径。
 已有配置或目标数据库会触发拒绝覆盖，具体步骤见 `Docs/MIGRATION.md`。
 
 ```bash
-bin/codex-session-board launch
+bin/codex-session-board serve
 bin/codex-session-board stop
 ```
 
-启动器只复用相同数据目录、配置和构建的服务。
+`serve` 在当前进程监听，只复用相同数据目录、配置和构建的服务。
+插件的 `mcp` 使用同一规则，不另起进程。
 变更配置、端口或二进制后，先 `stop` 再启动。
-活进程暂时不可访问时拒绝重复启动，停止时核对 PID、启动时间和可执行文件身份。
+活进程暂时不可访问时拒绝再开一份。`stop` 核对 PID、启动时间和可执行文件身份。
 
 源码迁移包：
 

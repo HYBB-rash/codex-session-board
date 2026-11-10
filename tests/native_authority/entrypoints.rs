@@ -4,14 +4,15 @@ use super::{
     transport::{Server, section_id},
 };
 use serde_json::Value;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 pub(super) struct Live {
     path: PathBuf,
     url: String,
+    child: Option<Child>,
 }
 
 fn cli(path: &Path, action: &str) -> Result<std::process::Output> {
@@ -27,15 +28,23 @@ impl Live {
         drop(available);
         let path = directory.join("config.json");
         std::fs::write(&path, serde_json::to_vec(&*config)?)?;
-        let result = cli(&path, "launch")?;
-        anyhow::ensure!(
-            result.status.success(),
-            "{}",
-            String::from_utf8_lossy(&result.stderr)
-        );
+        let mut child = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
+            .args(["--config", path.to_str().unwrap(), "serve"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("看板没有输出"))?;
+        let mut line = String::new();
+        BufReader::new(stdout).read_line(&mut line)?;
+        let started: Value = serde_json::from_str(line.trim())?;
+        anyhow::ensure!(started["started"] == true, "{line}");
         Ok(Self {
             path,
             url: format!("http://127.0.0.1:{}", config.port),
+            child: Some(child),
         })
     }
 
@@ -115,6 +124,9 @@ impl Live {
 impl Drop for Live {
     fn drop(&mut self) {
         let _ = cli(&self.path, "stop");
+        if let Some(mut child) = self.child.take() {
+            let _ = child.wait();
+        }
     }
 }
 
