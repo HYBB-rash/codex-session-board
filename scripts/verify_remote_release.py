@@ -172,7 +172,27 @@ def legacy_report(manifest, path, contract, bindings, contract_sha, build_sha, m
     return results
 
 
-def mode_records(manifest, path, binary_sha):
+def section_preflight(mode, config, path, binary_sha, states):
+    bindings = config["status_sections"]
+    require(set(bindings) == {state for state, _ in states},
+            "Native mode must bind exactly the active five states")
+    identifiers = list(bindings.values())
+    require(len(set(identifiers)) == len(identifiers)
+            and all(str(uuid.UUID(value)) == value for value in identifiers),
+            "Invalid or duplicate native section ID")
+    receipt = read(referenced_path(path, mode["section_preflight"]))
+    require(receipt["nativeCatalogVerified"] is True
+            and receipt["app"] == "codex-session-board"
+            and receipt["build"] == binary_sha and receipt["configId"] == mode["configId"]
+            and receipt["hostId"] == config["host_id"]
+            and receipt["dataDir"] == config["data_dir"],
+            "Section preflight does not match the candidate")
+    require(receipt["bindings"] == [
+        {"state": state, "label": label, "sectionId": bindings[state]}
+        for state, label in states], "Section preflight has inconsistent active bindings")
+
+
+def mode_records(manifest, path, binary_sha, states):
     modes = index(manifest["modes"], MODES, "mode")
     identities = set()
     directories = set()
@@ -188,6 +208,8 @@ def mode_records(manifest, path, binary_sha):
         if name == "legacy":
             require(config["clock_command"] == [] and config["sidebar_socket"] == ""
                     and config["auto_archive_seconds"] is None, "Unsafe legacy mode")
+        else:
+            section_preflight(mode, config, path, binary_sha, states)
         directory = Path(config["data_dir"])
         require(directory.is_absolute() and directory.resolve() == directory,
                 "Use resolved effective configs")
@@ -270,7 +292,8 @@ def verify(root, manifest_path, binary):
             and manifest["binary"]["sha256"] == binary_sha, "Final binary mismatch")
     inputs = {**manifest, "artifacts": list(references(manifest))}
     results = [evidence_result("inputs", inputs, manifest, manifest_path, contract_sha, build_sha)]
-    modes = mode_records(manifest, manifest_path, binary_sha)
+    states = [item for item in contract["states"] if item[0] != "completed"]
+    modes = mode_records(manifest, manifest_path, binary_sha, states)
     results.extend(legacy_report(manifest, manifest_path, contract, bindings,
                                  contract_sha, build_sha, modes))
     for name, mode in modes.items():

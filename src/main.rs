@@ -23,6 +23,11 @@ enum Action {
         #[arg(long)]
         source_config: PathBuf,
     },
+    MigrateSections {
+        #[arg(long)]
+        output: PathBuf,
+    },
+    CheckSections,
 }
 
 fn main() -> Result<()> {
@@ -39,6 +44,14 @@ fn main() -> Result<()> {
         }
         Action::Migrate { source_config } => {
             println!("{}", service::migrate(path, &source_config)?);
+            Ok(())
+        }
+        Action::MigrateSections { output } => {
+            println!("{}", config::migrate_sections(path, &output)?);
+            Ok(())
+        }
+        Action::CheckSections => {
+            println!("{}", codex_session_board::preflight::sections(path)?);
             Ok(())
         }
     }

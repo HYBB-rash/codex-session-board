@@ -7,6 +7,7 @@ pub mod mcp;
 pub mod model;
 pub mod native_sections;
 pub mod observer;
+pub mod preflight;
 pub mod projects;
 pub mod remote;
 pub mod rpc;

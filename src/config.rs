@@ -11,6 +11,8 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 mod sections;
+mod section_migration;
+pub use section_migration::migrate_sections;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]

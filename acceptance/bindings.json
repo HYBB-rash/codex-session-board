@@ -1087,6 +1087,8 @@
       "lib::codex_session_board::remote::hosts::source::tests::nonregular_source_records_are_rejected_without_waiting_for_a_pipe_writer"
     ],
     "DATA-002": [
+      "test::section_config::section_migration_preserves_source_data_and_unrelated_configuration",
+      "test::section_config::section_migration_refuses_missing_active_bindings_and_legacy_mode",
       "lib::codex_session_board::app::drafts::tests::releasing_uncertain_drafts_requires_confirmation_and_cannot_clear_another_project",
       "lib::codex_session_board::store::drafts::tests::uncertain_drafts_survive_restart_and_cannot_be_retried_as_new_requests",
       "lib::codex_session_board::store::drafts::tests::acknowledged_draft_retries_reuse_the_same_thread_without_overwriting_new_requests",
@@ -1400,6 +1402,7 @@
       "acceptance.test_gate.PackageTests.test_package_is_reproducible_and_has_only_portable_source"
     ],
     "GATE-001": [
+      "acceptance.test_remote_release.RemoteReleaseTests.test_native_preflight_rejects_retired_missing_duplicate_and_stale_bindings",
       "acceptance.test_gate.GateTests.test_adapter_checks_the_target_instead_of_its_own_project",
       "acceptance.test_gate.GateTests.test_automatic_success_does_not_claim_release_completion",
       "acceptance.test_gate.GateTests.test_changed_contract_baseline_requires_an_explicit_update",

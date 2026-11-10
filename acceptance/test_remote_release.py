@@ -105,12 +105,20 @@ class RemoteReleaseTests(unittest.TestCase):
                   "sidebar_state_file": str(self.base / registry["path"]),
                   "sync_sections": False, "auto_archive_seconds": None,
                   "data_dir": str(self.base / name)}
+        states = [item for item in self.contract["states"] if item[0] != "completed"]
+        config["status_sections"] = {
+            state: f"00000000-0000-4000-8000-{index:012}" for index, (state, _) in enumerate(states)}
         config_id = gate.json_digest(config)[:16]
         info = {"app": "codex-session-board", "build": self.binary_sha,
                 "configId": config_id, "dataDir": config["data_dir"], "pid": 123, "version": "fixture"}
+        preflight = self.artifact(f"{name}-section-preflight.json", {
+            **info, "hostId": "local", "nativeCatalogVerified": True,
+            "bindings": [{"state": state, "label": label, "sectionId": config["status_sections"][state]}
+                         for state, label in states]})
         return {**self.record(), "id": name, "configId": config_id,
                 "config": self.artifact(f"{name}-config.json", config),
                 "info": self.artifact(f"{name}-info.json", info),
+                **({"section_preflight": preflight} if name != "legacy" else {}),
                 **({"hostId": HOST, "registry": registry} if name == "remote" else {})}
 
     def config_id(self, name):
@@ -281,6 +289,28 @@ class RemoteReleaseTests(unittest.TestCase):
         native = next(mode for mode in self.manifest["modes"] if mode["id"] == "native5")
         self.change_artifact(native["config"], lambda config: config.update(legacy_mode=True))
         self.reject()
+
+    def test_native_preflight_rejects_retired_missing_duplicate_and_stale_bindings(self):
+        mode = next(mode for mode in self.manifest["modes"] if mode["id"] == "native5")
+        original = gate.read(self.base / mode["config"]["path"])
+        states = [item for item in self.contract["states"] if item[0] != "completed"]
+        gate.section_preflight(mode, original, self.path, self.binary_sha, states)
+        for fault in ("retired", "missing", "duplicate", "invalid"):
+            config = copy.deepcopy(original)
+            bindings = config["status_sections"]
+            if fault == "retired":
+                bindings["completed"] = "00000000-0000-4000-8000-999999999999"
+            elif fault == "missing":
+                bindings.pop("review")
+            elif fault == "duplicate":
+                bindings["review"] = bindings["blocked"]
+            else:
+                bindings["review"] = "invalid"
+            with self.subTest(fault=fault), self.assertRaises(ValueError):
+                gate.section_preflight(mode, config, self.path, self.binary_sha, states)
+        self.change_artifact(mode["section_preflight"], lambda receipt: receipt.update(configId="stale"))
+        with self.assertRaises(ValueError):
+            gate.section_preflight(mode, original, self.path, self.binary_sha, states)
 
     def test_missing_modes_wrong_runtime_identity_and_disabled_target_are_rejected(self):
         original = copy.deepcopy(self.manifest)
