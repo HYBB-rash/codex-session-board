@@ -229,7 +229,7 @@ pub fn default_paths() -> Result<(PathBuf, PathBuf)> {
     Ok((resolve_path(&config)?, resolve_path(&data)?))
 }
 
-pub(crate) fn resolve_path(path: &Path) -> Result<PathBuf> {
+pub fn resolve_path(path: &Path) -> Result<PathBuf> {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
     } else {

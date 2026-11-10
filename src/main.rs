@@ -4,6 +4,9 @@ use codex_session_board::{app::App, config, http, mcp, observer, service};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[path = "managed_launch.rs"]
+mod managed_launch;
+
 #[derive(Parser)]
 #[command(about = "Codex 本地会话看板", version)]
 struct Cli {
@@ -36,7 +39,7 @@ fn main() -> Result<()> {
         Action::Scan => scan(path),
         Action::Launch => {
             config::initialize_config(path, &defaults.1)?;
-            println!("{}", service::launch(path)?);
+            println!("{}", managed_launch::launch(path)?);
             Ok(())
         }
         Action::Stop => {

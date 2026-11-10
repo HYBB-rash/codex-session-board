@@ -2,24 +2,24 @@
 
 ## 决定
 
-插件进程就是看板。它跟随 CodeHost（拉起这个插件的 Codex 进程）启动和退出，不再拉起一个脱离插件的服务进程。
+插件进程就是看板。它跟随 CodeHost（拉起这个插件的 Codex 进程）启动和退出。脱离插件的服务进程不由插件拉起。
 
-会话状态留在数据库里。会话控制的形式化模型不包含进程寿命，改这条决定时不改那套状态。
+会话状态留在数据库里。会话控制的形式化模型不包含进程寿命。
 
 ## 理由
 
 看板原先由插件调用 `service::launch`，再把 `serve` 放进新的进程组。CodeHost 关掉或重载插件之后，那个进程还在。Codex 安装器会把插件缓存目录整棵换掉，启动记录里的程序路径就对不上，侧栏拒绝读取。
 
-没有用户需求要求 CodeHost 退出后看板继续扫描或自动归档。本机执行状态来自 Codex 自己的连接，桌面不在，后台也看不到新的执行。
+没有用户需求要求 CodeHost 退出后看板继续扫描或自动归档。本机执行状态来自 Codex 自己的连接。桌面不在时，后台也看不到新的执行。
 
 ## 未采纳的做法
 
-保留常驻进程，只在纸条里去掉文件夹路径。进程仍然比插件活得久，下一次换目录还会错。
+把这条限制写进 `AGENTS.md`。那只在读过规则的人遵守时才生效。
 
-把 `service::launch` 留在插件调用链上，只在提交测试里检查。Agent 写需求时 `cargo build` 不会马上失败。
+只在 `build.rs` 里搜索 `service::launch` 这几个字，同时把 `main.rs` 整份放行。插件入口仍和启动函数在同一个编译单元里，换个写法就能编过。
 
 ## 后果
 
-`build.rs` 在编译时检查 `src`。除了 `main.rs` 的 `launch` 子命令和 `service.rs` 里的实现，任何文件调用 `service::launch`、再执行 `serve`，或在 `rpc/capture.rs` 与 `service.rs` 之外使用 `process_group(0)`，编译失败。
+`spawn_service` 和 `launch` 在 `src/managed_launch.rs`。这个文件只由二进制的 `src/main.rs` 引入。库代码调用它时，编译器报错，因为库里没有这个模块。
 
-插件工具在本进程内监听端口。端口已被占用时直接使用该端口，不再派生子进程。`codex-session-board launch` 仍是旧的受管服务入口，插件不得调用，无关任务不要改写它。
+`codex-session-board launch` 仍从 `main.rs` 的 `Launch` 分支进入。`Action::Mcp` 分支只调用 `mcp::serve`。`build.rs` 在这里对不上就停止编译。库里的其他文件再写 `.arg("serve")`、用当前程序拉起子进程，或在 `rpc/capture.rs` 之外使用 `process_group(0)`，同样停止编译。
