@@ -34,6 +34,7 @@
   ],
   "requirements": {
     "STATE-001": [
+      "lib::codex_session_board::formal::tests::native_session_control_matches_the_store_on_every_reachable_edge",
       "test::legacy_mode::compatibility_tools_and_direct_routes_keep_archive_and_remote_creation_disabled",
       "test::legacy_mode::legacy_six_states_preserve_completed_notes_titles_and_sorting_in_the_current_store",
       "test::archive_flow::archive_checks_native_inputs_even_when_local_revision_has_not_changed",
@@ -296,7 +297,7 @@
     "AUTO-006": [
       "lib::codex_session_board::rpc::runtime::tests::remote_clock_uses_conservative_bounds_and_rejects_unbounded_samples",
       "lib::codex_session_board::rpc::runtime::tests::runtime_clock_probe_is_bounded_and_reaps_the_owned_child",
-      "test::native_authority::faults::delayed_automatic_readback_does_not_hide_completion_or_overwrite_external_moves",
+      "test::native_authority::faults::delayed_completion_still_moves_after_an_unconfirmed_external_position",
       "test::native_authority::runtime::pending_stages_survive_service_restart_and_respect_later_native_choices",
       "test::board_contract::runtime_tests::duplicate_flags_are_order_independent_and_leave_audit_and_queue_unchanged",
       "test::board_contract::runtime_tests::empty_turn_identifier_does_not_create_runtime_state_or_title_work",
@@ -342,6 +343,8 @@
       "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions"
     ],
     "MANUAL-001": [
+      "lib::codex_session_board::formal::fixture::tests::every_reachable_session_roundtrips_through_sqlite",
+      "test::native_authority::native_unarchive_restores_the_confirmed_card_and_keeps_the_note",
       "test::column_sort::column_sort_defaults_persistence_and_independent_conflicts",
       "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions",
       "test::native_authority::remote_isolation::remote_online_disconnected_and_scanning_do_not_delay_local_http_mutations",
@@ -921,6 +924,7 @@
       "lib::codex_session_board::remote::project_registry::tests::registry_removal_is_read_fresh_and_does_not_resurrect_a_tool_result"
     ],
     "DISCOVERY-002": [
+      "test::native_authority::native_archive_list_absence_keeps_position_without_an_unread_error",
       "lib::codex_session_board::app::remote_snapshot::tests::unpublished_empty_chat_survives_complete_scan_and_restart_as_read_only",
       "lib::codex_session_board::app::remote_snapshot::tests::published_chat_uses_confirmed_position_and_existing_missing_record_filter",
       "lib::codex_session_board::app::remote_snapshot::tests::archived_unpublished_chat_never_reappears_from_the_root_cache",
@@ -1170,6 +1174,9 @@
       "lib::codex_session_board::service::migration::tests::rollback::second_host_backup_failure_cleans_staging_and_allows_retry"
     ],
     "BOUNDARY-001": [
+      "lib::codex_session_board::formal::tests::remote_draft_stages_match_the_store_on_every_edge",
+      "lib::codex_session_board::remote::connections::tests::explicit_request_waits_until_a_connection_exists",
+      "lib::codex_session_board::remote::connections::tests::failed_manual_connection_stops_when_auto_connect_is_off",
       "lib::codex_session_board::rpc::sidebar::tests::directory_migration_rejects_unsafe_second_directory_after_finding_live_candidate",
       "lib::codex_session_board::rpc::sidebar::tests::directory_migration_times_out_on_second_directory_without_sending_rpc_frames",
       "lib::codex_session_board::rpc::sidebar::tests::directory_migration_expands_only_exact_standard_names",
@@ -1355,6 +1362,12 @@
       "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation"
     ],
     "HEALTH-001": [
+      "lib::codex_session_board::observer::tests::oversized_turn_blocks_only_that_session_until_it_changes",
+      "test::board_io::saved_state_reports_pending_title_without_rollback",
+      "lib::codex_session_board::rpc::unavailable::tests::missing_desktop_socket_explains_recovery_and_preserves_the_cause",
+      "lib::codex_session_board::rpc::unavailable::tests::refused_desktop_socket_has_the_same_recovery_without_hiding_security_errors",
+      "lib::codex_session_board::rpc::unavailable::tests::missing_sidebar_socket_explains_recovery_and_rediscovery_still_works",
+      "lib::codex_session_board::rpc::unavailable::tests::unrelated_io_failures_do_not_suggest_restarting_codex",
       "test::observer_contract::active_thread_metadata_with_terminal_summary_does_not_invent_execution",
       "test::observer_contract::changed_quota_keeps_backfill_budget_under_repeated_request_timeouts",
       "test::observer_contract::empty_history_discovery_keeps_cached_manual_session",

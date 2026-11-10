@@ -134,7 +134,11 @@ pub(crate) fn observe_runtime_threads(
     for thread in threads {
         match observe_one(app, reader, revisions, since, thread)? {
             Seen::Unread => unreadable += 1,
-            Seen::Phase(error) => native_errors.push(error),
+            Seen::Phase(error) => {
+                if !native_errors.contains(&error) {
+                    native_errors.push(error);
+                }
+            }
             Seen::Saved(identifier, revision) => {
                 revisions.insert(identifier, revision);
             }

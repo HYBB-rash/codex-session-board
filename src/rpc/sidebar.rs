@@ -1,21 +1,10 @@
 use super::*;
+use super::unavailable::{Unavailable, stale};
 use std::os::unix::fs::FileTypeExt;
 
 #[cfg(all(test, target_os = "linux"))]
 #[path = "sidebar_tests.rs"]
 mod tests;
-
-fn stale(error: &anyhow::Error) -> bool {
-    error
-        .downcast_ref::<Errno>()
-        .is_some_and(|error| matches!(*error, Errno::CONNREFUSED | Errno::NOENT))
-        || error.downcast_ref::<io::Error>().is_some_and(|error| {
-            matches!(
-                error.kind(),
-                io::ErrorKind::ConnectionRefused | io::ErrorKind::NotFound
-            )
-        })
-}
 
 fn endpoint(path: &Path, deadline: Instant) -> Result<UnixStream> {
     remaining(deadline)?;
@@ -105,7 +94,10 @@ fn discover(configured: &Path, deadline: Instant) -> Result<UnixStream> {
         }
     }
     remaining(deadline)?;
-    connected.context("客户端分区连接暂不可用，等待客户端恢复后自动重试")
+    connected.ok_or_else(|| {
+        anyhow!("未发现可用的侧栏连接：{}", configured.display())
+            .context(Unavailable::Sidebar)
+    })
 }
 
 pub(super) fn connect(configured: &Path, deadline: Instant) -> Result<UnixStream> {

@@ -26,6 +26,7 @@ mod pipe;
 pub(crate) mod runtime;
 
 mod sidebar;
+mod unavailable;
 
 pub trait Rpc {
     fn call(&mut self, method: &str, params: Value) -> Result<Value>;
@@ -256,7 +257,9 @@ impl Rpc for StdioReader {
 
 fn verified_socket(path: &Path) -> Result<PathBuf> {
     use std::os::unix::fs::FileTypeExt;
-    let target = path.canonicalize().context("桌面 socket 不存在")?;
+    let target = path
+        .canonicalize()
+        .with_context(|| format!("无法读取桌面连接入口：{}", path.display()))?;
     let endpoint = target.metadata()?;
     let parent = target
         .parent()
@@ -350,7 +353,9 @@ impl DesktopConnection {
             timeout
         };
         let deadline = deadline_after(budget)?;
-        let socket = connect_unix(&verified_socket(path)?, deadline)?;
+        let socket = verified_socket(path)
+            .and_then(|path| connect_unix(&path, deadline))
+            .map_err(|error| unavailable::explain(error, unavailable::Unavailable::Desktop))?;
         Self::handshake(socket.into(), timeout, role, deadline)
     }
 

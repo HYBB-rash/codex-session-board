@@ -361,7 +361,9 @@ fn persistent_title_failures_rotate_behind_unattempted_jobs() {
 
 #[test]
 fn saved_state_reports_pending_title_without_rollback() {
-    let fixture = Fixture::new(true);
+    let mut fixture = Fixture::new(true);
+    fixture.settings["desktop_socket"] = json!(fixture._directory.path().join("missing.sock"));
+    fs::write(&fixture.path, fixture.settings.to_string()).unwrap();
     fixture.populate();
     let app = fixture.app();
     let result = app
@@ -374,6 +376,8 @@ fn saved_state_reports_pending_title_without_rollback() {
         .unwrap();
     assert_eq!(result["ok"], true);
     assert_eq!(result["titlePending"], true);
+    assert!(result["titleError"].as_str().unwrap().contains("完整退出并重新打开 Codex"));
+    assert!(!result["titleError"].as_str().unwrap().contains("os error"));
     let row = &app.store.sessions().unwrap()[0];
     assert_eq!(row["state"], "review");
     assert_eq!(row["note"], "已保存");

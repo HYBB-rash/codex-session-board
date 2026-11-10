@@ -59,7 +59,7 @@ impl App {
         match self.finish_remote_draft(&draft, &mut reader, &caller) {
             Ok(result) => Ok(result),
             Err(error) => Ok(json!({"ok":false,"pending":true,"requestId":request,
-                "error":format!("{error:#}")})),
+                "error":error.to_string()})),
         }
     }
 

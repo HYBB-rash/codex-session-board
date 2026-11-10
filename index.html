@@ -20,7 +20,7 @@ button.primary:hover{background:var(--ink);opacity:.86}
 .shell{height:100dvh;display:flex;flex-direction:column;min-height:0;padding:16px 20px 12px}
 .page-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:2px 0 8px}
 h1{font-size:18px;font-weight:600;margin:0}
-.header-actions{display:flex;align-items:center;gap:8px}
+.header-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;min-width:0}
 #new-session{white-space:nowrap}
 .health{margin:0 0 8px;padding:0;background:transparent;border:0;color:var(--muted);font-size:12px}
 .health.error{background:transparent;border:0;color:var(--danger)}
@@ -104,6 +104,7 @@ textarea{resize:vertical;min-height:90px}
   <header class="page-header">
     <h1>会话</h1>
     <div class="header-actions">
+      <button id="connection-help" class="quiet" type="button">连接帮助</button>
       <button id="refresh" class="quiet" type="button">刷新</button>
       <button id="new-session" class="primary" type="button">＋ 新建会话</button>
     </div>
@@ -151,6 +152,18 @@ textarea{resize:vertical;min-height:90px}
   <p id="draft-message" class="reason"></p>
   <p class="reason">请先在客户端检查是否已经出现新会话。重试会继续处理同一次新建；重新新建会保留此前可能已经创建的会话。</p>
   <div class="dialog-actions"><button type="button" id="draft-later">稍后处理</button><button type="button" id="draft-retry">重试打开</button><button type="button" id="draft-restart">已核对，重新新建</button></div>
+</dialog>
+<dialog id="connection-recovery" aria-labelledby="connection-recovery-title">
+  <h2 id="connection-recovery-title">恢复 Codex 连接</h2>
+  <p>连接不可用时，执行状态或侧栏位置可能暂时无法更新。请先保留未保存的输入和备注。</p>
+  <ol>
+    <li>等待正在运行的任务结束。退出 Codex 可能中断任务。</li>
+    <li>从 Codex 菜单或系统托盘选择“退出”，然后重新打开 Codex。仅关闭窗口可能没有退出客户端。</li>
+    <li>重新打开看板，点击“重新检查连接”，并查看上方连接状态是否恢复。</li>
+  </ol>
+  <p>如果仍未恢复，请核对客户端是否启动、插件连接配置是否正确，再向维护者提供错误信息。</p>
+  <p class="reason">远程主机连接异常时，请检查对应主机和连接；重启本机 Codex 不保证能恢复远程连接。</p>
+  <div class="dialog-actions"><button id="connection-close" type="button">关闭</button><button id="connection-recheck" class="primary" type="button">重新检查连接</button></div>
 </dialog>
 <script>
 const csrf = "__CSRF_TOKEN__";
@@ -250,7 +263,7 @@ function makeCard(session) {
   if (session.readOnly) card.append(element("div","当前只读，保留上次记录","follow"));
   if (session.observationError) card.append(element("div","历史读取失败，保留原状态","follow"));
   if (session.projectIssue) card.append(element("div","项目归属待确认","follow"));
-  if (session.titleSyncPending) card.append(element("div",session.titleSyncError ? "状态已保存，标题同步待重试" : "状态已保存，标题正在同步","follow"));
+  if (session.titleSyncPending) card.append(element("div",session.titleSyncError ? "状态已保存，标题同步待重试：" + session.titleSyncError : "状态已保存，标题正在同步","follow"));
   const footer = element("div",undefined,"card-footer");
   const details = element("div");
   details.append(element("div",session.manual ? "人工确认" : session.source === "runtime" ? "自动流转" : session.source === "codex" ? "原生状态" : "历史状态","source"),
@@ -625,10 +638,10 @@ function render(resetState = null) {
   byId("health").textContent = health.error ? `连接异常，已保留本地状态。${health.error}` :
     health.refreshing ? `正在扫描与补读历史，已发现 ${data.sessions.length} 条。` :
     health.lastSuccessAt ? `已发现 ${health.discovered} 条本机会话 · 最近扫描 ${date(health.lastSuccessAt)}${health.scanComplete ? "" : " · 尚有未扫描的分页，请调整扫描上限"}` : "等待首次扫描…";
-  byId("health").textContent += health.runtimeError ? " · " + (health.runtimeVerified ? health.runtimeError : "执行状态连接异常，保留原状态") :
-    health.runtimeVerified ? " · 自动状态已连接" : " · 等待执行状态连接";
+  byId("health").textContent += health.runtimeError ? " · " + (health.runtimeVerified ? health.runtimeError : "执行状态读取暂停，保留原状态：" + health.runtimeError) :
+    health.runtimeVerified ? (health.nativeStageError ? " · 执行状态可读" : " · 自动状态已连接") : " · 等待执行状态连接";
   if (health.nativeSections) byId("health").textContent += health.nativeError ?
-    " · 原生分区暂不可读，显示上次位置：" + health.nativeError : health.nativeVerified ? " · 状态来自原生分区" : " · 等待读取原生分区";
+    " · 原生分区暂不可读，显示上次位置" + (health.nativeError === health.runtimeError ? "" : "：" + health.nativeError) : health.nativeVerified ? " · 状态来自原生分区" : " · 等待读取原生分区";
   if (health.nativeStageError) byId("health").textContent += " · 自动状态更新待重试：" + health.nativeStageError;
   const catalog = data.projectCatalog;
   if (catalog && catalog.error) {
@@ -646,14 +659,18 @@ function render(resetState = null) {
     byId("health").textContent += ` · ${health.remoteCacheErrors.length} 个远程缓存读取失败，需核对连接与数据`;
   }
   for (const host of health.remoteConnections || []) {
-    const warning = host.writeError || host.runtimeError || host.nativeError || host.nativeStageError;
+    const warning = [...new Set([host.writeError,host.runtimeError,host.nativeError,host.nativeStageError].filter(Boolean))].join("；");
     const label = host.hostLabel || host.hostId;
-    if (warning) byId("health").textContent += ` · ${label}：${warning}`;
+    if (warning) {
+      byId("health").className = "health error";
+      byId("health").textContent += ` · ${label}：${warning}`;
+    }
     else if (host.runtimeVerified) byId("health").textContent += ` · ${label}：自动状态已连接`;
     if (host.autoArchiveSeconds) byId("health").textContent +=
       `；每 ${host.autoArchiveSeconds / 60} 分钟自动归档，下次 ${date(host.autoArchiveNextAt)}`;
   }
   for (const host of health.remoteConnectionErrors || []) {
+    byId("health").className = "health error";
     byId("health").textContent += ` · ${host.hostId}：${host.error}`;
   }
   if (health.remoteProjectWarning) byId("health").textContent += " · 部分远程项目资料未确认，保留上次分类";
@@ -726,7 +743,7 @@ async function persist(session, state, note) {
   return result;
 }
 function syncNotice(result) {
-  return result.titleEnabled ? result.titlePending ? "标题同步待重试。" : "标题已同步。" : "";
+  return result.titleEnabled ? result.titlePending ? "标题同步待重试。" + (result.titleError || "") : "标题已同步。" : "";
 }
 async function moveCard(session, state) {
   saving = true;
@@ -821,6 +838,19 @@ byId("editor").addEventListener("close",() => {editing=null;render();load();});
 byId("refresh").onclick = async () => {
   try {await post("/api/refresh",{}); await load();}
   catch(error) {byId("health").textContent = error.message;}
+};
+byId("connection-help").onclick = () => byId("connection-recovery").showModal();
+byId("connection-close").onclick = () => byId("connection-recovery").close();
+byId("connection-recheck").onclick = async () => {
+  const button = byId("connection-recheck");
+  button.disabled = true;
+  try {
+    await post("/api/refresh",{});
+    await load();
+    byId("connection-recovery").close();
+    announce("已请求重新检查连接，请查看上方连接状态。");
+  } catch(error) {announce(error.message,true);}
+  finally {button.disabled=false;}
 };
 byId("search").oninput = () => {resetFilterScroll();render();};
 byId("filter-toggle").onclick = toggleFilter;
