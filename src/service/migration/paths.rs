@@ -1,5 +1,6 @@
 use crate::config::{self, Config};
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
+use fs2::FileExt;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -65,7 +66,14 @@ pub(super) fn source_file(path: &Path) -> Result<bool> {
 pub(in crate::service) fn lock(data: &Path) -> Result<std::fs::File> {
     let data = config::resolve_path(data)?;
     source_file(&data.join("launch.lock"))?;
-    super::super::lock_data(&data)
+    let file = super::super::lock_file(&data)?;
+    match file.try_lock_exclusive() {
+        Ok(()) => Ok(file),
+        Err(error) if error.kind() == ErrorKind::WouldBlock => {
+            bail!("目标数据目录仍有受管进程运行，不能迁移")
+        }
+        Err(error) => Err(error.into()),
+    }
 }
 
 pub(in crate::service) fn load_source(path: &Path) -> Result<Config> {

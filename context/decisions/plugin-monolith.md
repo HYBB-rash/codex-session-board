@@ -22,4 +22,6 @@
 
 `service::open` 是唯一的打开方式。匹配的数据目录、配置和构建已经在运行时，调用方直接使用它。否则当前进程自己监听。`serve` 和插件的 `mcp` 都走这里。没有子进程，也没有 `launch` 子命令。
 
-`build.rs` 拒绝源码里再出现 `managed_launch`、`.arg("serve")`、用当前程序拉起子进程，以及 `rpc/capture.rs` 以外的 `process_group(0)`。插件入口仍然只能是 `mcp::serve`。
+看板不读写 `server.json`。复用和停止都问配置里的端口。`/api/info` 对得上数据目录、配置和构建，就用那一份。数据目录锁被占用而端口没有响应时，不另起一份，也不把停止说成已经成功。停止核对 HTTP 报出的 PID 和该进程的启动时间，用 pidfd 发信号，等到进程实际退出。不比较程序路径、设备号和 inode。
+
+`build.rs` 拒绝源码里再出现 `managed_launch`、`.arg("serve")`、用当前程序拉起子进程、`rpc/capture.rs` 以外的 `process_group(0)`，以及生产代码里的 `server.json`。插件入口仍然只能是 `mcp::serve`。

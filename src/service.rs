@@ -41,6 +41,7 @@ fn lock_file(data: &Path) -> Result<File> {
         .open(data.join("launch.lock"))?)
 }
 
+#[cfg(test)]
 fn lock_data(data: &Path) -> Result<File> {
     let file = lock_file(data)?;
     file.lock_exclusive()?;

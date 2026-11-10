@@ -28,16 +28,23 @@ fn plugin_cannot_start_board(root: &Path) -> Result<(), String> {
             .to_string_lossy()
             .replace('\\', "/");
         let text = fs::read_to_string(&path).map_err(|error| error.to_string())?;
-        if text.contains("managed_launch")
-            || (name != "rpc/capture.rs" && text.contains("process_group(0)"))
+        let source = text
+            .split_once("mod tests")
+            .map(|(before, _)| before)
+            .unwrap_or(&text);
+        if source.contains("managed_launch")
+            || (name != "rpc/capture.rs" && source.contains("process_group(0)"))
         {
             return Err(format!("{name} 会把看板放进新的进程组"));
         }
-        if text.contains(".arg(\"serve\")") || text.contains(".args([\"serve\"])") {
+        if source.contains(".arg(\"serve\")") || source.contains(".args([\"serve\"])") {
             return Err(format!("{name} 会再启动 serve"));
         }
-        if text.contains("Command::new") && text.contains("current_exe") {
+        if source.contains("Command::new") && source.contains("current_exe") {
             return Err(format!("{name} 会拉起另一个看板进程"));
+        }
+        if source.contains("server.json") && !name.starts_with("service/migration/tests/") {
+            return Err(format!("{name} 读写了启动记录文件"));
         }
     }
     Ok(())
@@ -49,9 +56,7 @@ fn mcp_arm(main: &str) -> Result<String, String> {
         .find(marker)
         .ok_or_else(|| "main.rs 缺少插件入口".to_string())?;
     let rest = main[start + marker.len()..].trim_start();
-    let end = rest
-        .find(',')
-        .ok_or_else(|| "插件入口写坏了".to_string())?;
+    let end = rest.find(',').ok_or_else(|| "插件入口写坏了".to_string())?;
     Ok(rest[..end].trim().to_string())
 }
 
