@@ -20,3 +20,7 @@
 另备份源码差异、Git 历史、全部 outputs 和必要 target 原始记录，并逐文件核对 SHA256：
 `/home/herman/.local/share/codex-session-board/worktree-archives/20261111/`。
 两处当前开发/验收工作区及九处完成情况不明的历史实验工作区均未移除。
+
+本次 archive_worktree 返回主工作区保护错误，未移除工作树。
+handoff_thread 明确禁止调用会话迁移自己；不能在当前执行中完成迁回主检出。
+剩余清理已建立独立任务及交接，不将已上线的 UI 修复与尚未完成的归档混为完成。

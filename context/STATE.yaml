@@ -2,12 +2,12 @@
   "schema_version": 1,
   "updated_at": "2026-11-11",
   "current_phase": {
-    "id": "ui-stable-columns-20261111",
-    "status": "completed",
+    "id": "ui-worktree-cleanup-20261111",
+    "status": "awaiting_handoff",
     "as_of": "2026-11-11",
-    "summary": "看板长内容与项目筛选列宽回归已修复，经2caa1c6合并并部署0.2.82。20组浏览器回归、500项自动验收和上线真实页面筛选往返通过，五库原会话与备注及配置核对保留。14项全局外部验收仍待补；本任务收尾后归档专用worktree，保留其他活动任务工作区。"
+    "summary": "UI修复已合并并部署0.2.82，20组浏览器回归、500项自动验收及上线布局核对通过，14项全局外部证据仍待补。本次worktree归档被Codex主工作区保护拒绝；当前会话不能自行handoff，需先移回主检出后再归档。源码、发布和验收材料已保全，其他活动任务工作区保留。"
   },
-  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md"],
+  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/ui-worktree-cleanup-20261111.md"],
   "known_open_issues": [
     "0.2.79连接异常和恢复指导已实现，任务仍待发布验收；缺少真实客户端退出重启恢复及完整外部证据，未部署。续作见context/handoffs/socket-recovery-guidance-20261111.md。",
     "2026-11-11项目筛选列宽回归已修复并上线v0.2.82：更正标题nowrap及看板min-content；20组真实浏览器回归与正式页面159/5条会话筛选往返保持等宽。完整验收500项自动通过，14项全局真实环境证据仍待补，release_ready=false。见context/tasks/completed/ui-stable-columns-20261111.md。",

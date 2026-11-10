@@ -66,3 +66,8 @@ Clippy、完整提交钩子测试、项目检查和上下文检查通过。
 位于 `/home/herman/.local/share/codex-session-board/worktree-archives/20261111/`。
 remote-restore-acceptance、state-section-consistency 仍在工作，九个历史 notion-exp-* 缺少完成及所有权证据，
 均保持原样。没有推送代码，没有归档或删除其他聊天。
+
+实际归档调用被 Codex 拒绝：`The task's primary checkout cannot be removed.`。
+当前任务不能自行 handoff，因此本次 worktree 尚未移除，没有绕过主工作区保护。
+修复、合并、发布与验证已完成；剩余清理独立登记于
+`context/tasks/active/ui-worktree-cleanup-20261111.md`，交接说明位于对应 handoff。
