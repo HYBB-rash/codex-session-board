@@ -43,20 +43,10 @@ fn logical(config: &Config) -> Result<HashMap<String, String>> {
     let accounts = state["electron-persisted-atom-state"]["sidebar-custom-sections-v3"]
         .as_object()
         .context("客户端分区映射无效")?;
-    let candidates: Vec<_> = accounts
-        .values()
-        .filter_map(|account| account["sections"].as_array())
-        .filter(|entries| {
-            config
-                .status_sections
-                .values()
-                .all(|identifier| entries.iter().any(|entry| entry["id"] == *identifier))
-        })
-        .collect();
-    ensure!(candidates.len() == 1, "无法唯一确定原生分区所属账号");
+    let entries = account_sections(config, accounts)?;
     let mut logical = HashMap::new();
     let mut identifiers = HashSet::new();
-    for entry in candidates[0] {
+    for entry in entries {
         let identifier = entry["id"].as_str().context("逻辑分区缺少 ID")?;
         ensure!(identifiers.insert(identifier), "逻辑分区 ID 重复");
         if let Some(backend) = entry["hostSectionIds"][&config.host_id].as_str() {
@@ -67,6 +57,35 @@ fn logical(config: &Config) -> Result<HashMap<String, String>> {
         }
     }
     Ok(logical)
+}
+
+fn account_sections<'a>(
+    config: &Config,
+    accounts: &'a serde_json::Map<String, Value>,
+) -> Result<&'a Vec<Value>> {
+    let candidates: Vec<_> = accounts
+        .values()
+        .filter_map(|account| account["sections"].as_array())
+        .filter(|entries| {
+            config
+                .section_bindings()
+                .all(|(_, _, identifier)| entries.iter().any(|entry| entry["id"] == identifier))
+        })
+        .collect();
+    ensure!(!candidates.is_empty(), "未找到匹配账号；缺少状态分区：{}", missing(config, accounts));
+    ensure!(candidates.len() == 1, "{} 个账号同时匹配状态分区，请核对账号和分区 ID", candidates.len());
+    Ok(candidates[0])
+}
+
+fn missing(config: &Config, accounts: &serde_json::Map<String, Value>) -> String {
+    accounts.values().filter_map(|account| account["sections"].as_array())
+        .map(|entries| config.section_bindings()
+            .filter(|(_, _, id)| !entries.iter().any(|entry| entry["id"] == *id))
+            .map(|(_, label, _)| label).collect::<Vec<_>>())
+        .min_by_key(Vec::len)
+        .filter(|labels| !labels.is_empty())
+        .map(|labels| labels.join("、"))
+        .unwrap_or_else(|| "客户端没有可读取的账号分区记录".into())
 }
 
 impl Catalog {
@@ -80,22 +99,17 @@ impl Catalog {
     }
 
     fn validate(&self, config: &Config) -> Result<()> {
-        for (state, identifier) in &config.status_sections {
+        for (_, label, identifier) in config.section_bindings() {
             let backend = self
                 .logical
                 .iter()
-                .find(|(_, logical)| *logical == identifier)
+                .find(|(_, logical)| logical.as_str() == identifier)
                 .map(|(backend, _)| backend);
             if config.host_id != "local" && backend.is_none() {
                 continue;
             }
             let backend = backend.context("状态分区缺少主机映射")?;
             let section = self.sections.get(backend).context("原生分区已移除")?;
-            let label = model::STATES
-                .iter()
-                .find(|item| item.0 == state)
-                .context("未知状态分区")?
-                .1;
             ensure!(section["name"] == label, "原生分区名称不匹配：{label}");
         }
         Ok(())
@@ -163,11 +177,8 @@ pub fn move_checked(
     let Some(state) = state else {
         return Ok(before);
     };
-    let target = config
-        .status_sections
-        .get(model::board_state(state))
-        .context("目标原生分区未配置")?;
-    if before.version == *target {
+    let target = config.section_target(state)?;
+    if before.version == target {
         return Ok(before);
     }
     writer

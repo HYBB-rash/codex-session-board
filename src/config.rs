@@ -2,13 +2,15 @@ use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::env;
 use std::fs::{self, DirBuilder, OpenOptions};
 use std::io::{Read, Write};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+
+mod sections;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
@@ -171,36 +173,6 @@ impl Config {
         Ok(())
     }
 
-    fn validate_sections(&self) -> Result<()> {
-        ensure!(
-            self.sidebar_state_file.is_absolute(),
-            "sidebar_state_file 必须为绝对路径"
-        );
-        ensure!(
-            uuid::Uuid::parse_str(&self.sidebar_caller).is_ok(),
-            "sidebar_caller 必须为会话 ID"
-        );
-        ensure!(
-            self.sidebar_socket.is_absolute(),
-            "sidebar_socket 必须为绝对路径"
-        );
-        ensure!(
-            self.status_sections
-                .keys()
-                .all(|state| crate::model::STATES.iter().any(|item| item.0 == state)),
-            "包含未知状态分区"
-        );
-        let mut identifiers = HashSet::new();
-        for (state, _) in crate::model::board_states() {
-            let identifier = self.status_sections.get(state).context("缺少状态分区")?;
-            ensure!(
-                uuid::Uuid::parse_str(identifier).is_ok(),
-                "状态分区 ID 无效"
-            );
-            ensure!(identifiers.insert(identifier), "状态分区不得重复");
-        }
-        Ok(())
-    }
 }
 
 fn environment_path(name: &str) -> Option<PathBuf> {
@@ -501,7 +473,7 @@ mod tests {
             .iter()
             .map(|(state, _)| (state.to_string(), uuid::Uuid::new_v4().to_string()))
             .collect();
-        config.validate()?;
+        assert!(config.validate().is_err());
         let duplicate = config.status_sections["unknown"].clone();
         config.status_sections.remove("completed");
         config.validate()?;

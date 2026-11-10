@@ -61,7 +61,8 @@ fn schema(name: &str, legacy: bool) -> (Value, Value) {
         ),
         "board_update" => (
             json!({
-                "id":{"type":"string"}, "state":{"type":["string","null"]},
+                "id":{"type":"string"}, "state":{"type":["string","null"],
+                    "enum":crate::model::states_for(legacy).map(|item| json!(item.0)).chain([Value::Null]).collect::<Vec<_>>()},
                 "note":{"type":"string","maxLength":2000},
                 "sectionVersion":{"type":["string","null"]},
                 "version":{"type":"integer","minimum":0},"inputVersion":{"type":"integer","minimum":0}

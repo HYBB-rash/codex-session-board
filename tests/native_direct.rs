@@ -57,6 +57,17 @@ fn reader(section: Value) -> Reader {
 }
 
 #[test]
+fn retired_mapping_never_changes_the_effective_native_dependencies() -> Result<()> {
+    let (_directory, mut config, _) = setup()?;
+    config.status_sections.insert("completed".into(), "deleted-section".into());
+    assert_eq!(config.section_bindings().count(), 1);
+    assert!(config.section_target("completed").is_err());
+    let observed = direct::read(&mut reader(section()), &config, THREAD)?;
+    assert_eq!(observed.state, "review");
+    Ok(())
+}
+
+#[test]
 fn direct_read_maps_only_the_local_backend_and_never_queries_the_aggregate() -> Result<()> {
     let (_directory, config, _) = setup()?;
     let mut source = reader(section());

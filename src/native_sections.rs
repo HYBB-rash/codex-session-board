@@ -1,4 +1,4 @@
-use crate::{config::Config, model, rpc::Rpc};
+use crate::{config::Config, rpc::Rpc};
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -28,10 +28,9 @@ pub fn observe(config: &Config, section: &Value) -> Result<Observation> {
         "原生分区格式无效"
     );
     let state = config
-        .status_sections
-        .iter()
-        .find(|(_, identifier)| section["sectionId"].as_str() == Some(identifier.as_str()))
-        .map(|(state, _)| model::board_state(state))
+        .section_bindings()
+        .find(|(_, _, identifier)| section["sectionId"].as_str() == Some(*identifier))
+        .map(|(state, _, _)| state)
         .unwrap_or("unknown");
     Ok(Observation {
         state: state.into(),
@@ -56,12 +55,7 @@ pub fn snapshot(reader: &mut impl Rpc, config: &Config) -> Result<HashMap<String
 }
 
 fn validate_catalog(config: &Config, catalog: &[Value]) -> Result<()> {
-    for (state, identifier) in &config.status_sections {
-        let label = model::STATES
-            .iter()
-            .find(|item| item.0 == state)
-            .context("未知状态分区")?
-            .1;
+    for (_, label, identifier) in config.section_bindings() {
         let matches: Vec<_> = catalog
             .iter()
             .filter(|section| section["sectionId"] == *identifier)
@@ -157,11 +151,7 @@ pub fn move_checked(
     let Some(state) = state else {
         return Ok(before);
     };
-    let state = model::board_state(state);
-    let section = config
-        .status_sections
-        .get(state)
-        .context("目标原生分区未配置")?;
+    let section = config.section_target(state)?;
     if before.version == *section {
         return Ok(before);
     }

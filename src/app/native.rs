@@ -91,11 +91,7 @@ impl App {
         state: Option<&str>,
     ) -> Result<native_sections::Observation> {
         let state = state.context("缺少目标原生分区")?;
-        let target = self
-            .config
-            .status_sections
-            .get(board_state(state))
-            .context("目标原生分区未配置")?;
+        let target = self.config.section_target(state)?;
         let mut reader = self.native_reader()?;
         native_sections::direct::confirm_move(&mut reader, &self.config, identifier, target)
     }
@@ -224,9 +220,8 @@ impl App {
             ["unsectioned", "chats", "threads"].contains(&change.section_version.as_str());
         let managed = self
             .config
-            .status_sections
-            .values()
-            .any(|identifier| *identifier == change.section_version);
+            .section_bindings()
+            .any(|(_, _, identifier)| identifier == change.section_version);
         if !default && !managed {
             return self.store.consume_native_runtime(identifier, &change);
         }

@@ -34,6 +34,7 @@
   ],
   "requirements": {
     "STATE-001": [
+      "test::native_direct::retired_mapping_never_changes_the_effective_native_dependencies",
       "lib::codex_session_board::formal::tests::native_session_control_matches_the_store_on_every_reachable_edge",
       "test::legacy_mode::compatibility_tools_and_direct_routes_keep_archive_and_remote_creation_disabled",
       "test::legacy_mode::legacy_six_states_preserve_completed_notes_titles_and_sorting_in_the_current_store",
