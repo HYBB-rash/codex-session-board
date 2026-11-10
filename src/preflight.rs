@@ -7,8 +7,8 @@ pub fn sections(path: &Path) -> Result<Value> {
     let config = config::load(Some(path))?;
     ensure!(config.native_sections && config.host_id == "local",
         "分区预检要求本机原生五状态根配置");
-    let mut reader = DesktopConnection::connect(
-        &config.desktop_socket, Duration::from_secs(config.rpc_timeout_seconds), Role::NativeReader
+    let mut reader = DesktopConnection::configured(
+        &config, Duration::from_secs(config.rpc_timeout_seconds), Role::NativeReader
     )?;
     Catalog::load(&mut reader, &config)?;
     let bindings: Vec<_> = config.section_bindings()

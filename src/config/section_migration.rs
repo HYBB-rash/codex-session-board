@@ -11,8 +11,14 @@ pub fn migrate_sections(source: &Path, target: &Path) -> Result<Value> {
     let bytes = std::fs::read(&source)?;
     let mut value: Value = serde_json::from_slice(&bytes)?;
     let removed = retire(&mut value)?;
-    let data = value.get("data_dir").and_then(Value::as_str);
-    let data = data.map(std::path::PathBuf::from).unwrap_or(default_paths()?.1);
+    let data = match value.get("data_dir") {
+        Some(value) => {
+            let text = value.as_str().context("data_dir 必须为非空路径文本")?;
+            ensure!(!text.is_empty(), "data_dir 必须为非空路径文本");
+            std::path::PathBuf::from(text)
+        }
+        None => default_paths()?.1,
+    };
     let data = resolve_path(&source.parent().context("配置缺少父目录")?.join(data))?;
     value["data_dir"] = json!(data);
     let config: Config = serde_json::from_value(value.clone())?;

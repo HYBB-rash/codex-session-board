@@ -346,6 +346,16 @@ pub struct DesktopConnection {
 }
 
 impl DesktopConnection {
+    pub fn configured(config: &crate::config::Config, timeout: Duration, role: Role) -> Result<Self> {
+        if let Some(binding) = &config.remote_binding {
+            Self::remote(binding, timeout, role)
+        } else if config.proxy_command.is_empty() {
+            Self::connect(&config.desktop_socket, timeout, role)
+        } else {
+            Self::proxy(&config.proxy_command, timeout, role)
+        }
+    }
+
     pub fn connect(path: &Path, timeout: Duration, role: Role) -> Result<Self> {
         let budget = if role == Role::TitleWriter {
             timeout.min(Duration::from_secs(3))

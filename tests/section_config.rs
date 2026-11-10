@@ -42,6 +42,15 @@ fn section_migration_preserves_source_data_and_unrelated_configuration() -> Resu
     assert!(config::migrate_sections(&source, &target).is_err());
     assert_eq!(config::load(Some(&target))?.status_sections, loaded.status_sections);
     assert!(config::migrate_sections(&source, &source).is_err());
+    let marker = directory.path().join("proxy-selected");
+    let mut proxy = published;
+    proxy["proxy_command"] = json!(["python3", "-c",
+        "import pathlib,sys; pathlib.Path(sys.argv[1]).write_text('selected')", marker]);
+    let path = directory.path().join("proxy.json");
+    std::fs::write(&path, proxy.to_string())?;
+    assert!(codex_session_board::preflight::sections(&path).is_err());
+    assert!(marker.exists());
+    assert!(!loaded.data_dir.exists());
     Ok(())
 }
 
@@ -50,11 +59,13 @@ fn section_migration_refuses_missing_active_bindings_and_legacy_mode() -> Result
     let directory = tempfile::tempdir()?;
     let source = source(directory.path())?;
     let original: Value = serde_json::from_slice(&std::fs::read(&source)?)?;
-    for mode in ["missing", "legacy", "duplicate"] {
+    for mode in ["missing", "legacy", "duplicate", "invalid-data", "empty-data"] {
         let mut value = original.clone();
         match mode {
             "missing" => { value["status_sections"].as_object_mut().unwrap().remove("review"); }
             "legacy" => { value["legacy_mode"] = json!(true); }
+            "invalid-data" => { value["data_dir"] = Value::Null; }
+            "empty-data" => { value["data_dir"] = json!(""); }
             _ => { value["status_sections"]["review"] = value["status_sections"]["blocked"].clone(); }
         }
         std::fs::write(&source, value.to_string())?;

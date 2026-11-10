@@ -108,8 +108,8 @@ impl Catalog {
             if config.host_id != "local" && backend.is_none() {
                 continue;
             }
-            let backend = backend.context("状态分区缺少主机映射")?;
-            let section = self.sections.get(backend).context("原生分区已移除")?;
+            let backend = backend.with_context(|| format!("状态分区缺少主机映射：{label}"))?;
+            let section = self.sections.get(backend).with_context(|| format!("原生分区已移除：{label}"))?;
             ensure!(section["name"] == label, "原生分区名称不匹配：{label}");
         }
         Ok(())

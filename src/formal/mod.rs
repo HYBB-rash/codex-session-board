@@ -4,10 +4,22 @@ mod explore;
 mod fixture;
 mod replay;
 mod session;
+mod section_model;
+mod section_fixture;
+mod sections;
 
 #[cfg(test)]
 mod tests {
-    use super::{draft, explore, replay, session};
+    use super::{draft, explore, replay, session, sections};
+
+    #[test]
+    fn section_configuration_and_native_resolution_conform_to_the_independent_model() {
+        assert_eq!(sections::configurations().unwrap(), 1152);
+        assert_eq!(sections::accounts().unwrap(), 4096);
+        assert_eq!(sections::permutations().unwrap(), 600);
+        assert_eq!(sections::faults().unwrap(), 30);
+        sections::surfaces().unwrap();
+    }
 
     #[test]
     fn native_session_control_matches_the_store_on_every_reachable_edge() {

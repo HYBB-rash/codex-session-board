@@ -91,13 +91,7 @@ impl App {
         ensure!(self.enabled.load(Ordering::SeqCst), "主机登记已改变，请刷新核对");
         ensure!(!self.config.legacy_mode || !matches!(role, Role::DraftWriter | Role::ArchiveWriter),
             "六状态兼容模式不允许创建或归档远程会话");
-        if let Some(binding) = &self.config.remote_binding {
-            DesktopConnection::remote(binding, timeout, role)
-        } else if self.config.proxy_command.is_empty() {
-            DesktopConnection::connect(&self.config.desktop_socket, timeout, role)
-        } else {
-            DesktopConnection::proxy(&self.config.proxy_command, timeout, role)
-        }
+        DesktopConnection::configured(&self.config, timeout, role)
     }
 
     pub fn update_health(&self, updates: Value) -> Result<()> {
