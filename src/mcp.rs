@@ -1,10 +1,13 @@
-use crate::{config, service};
+use crate::{app::App, config, http, observer, service};
 use anyhow::{Context, Result, bail, ensure};
 use base64::Engine;
 use serde_json::{Value, json};
-use std::io::{BufRead, Write};
+use std::io::{BufRead, ErrorKind, Write};
+use std::net::TcpListener;
 use std::path::Path;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 
 pub const RESOURCE: &str = "ui://session-board/index.html";
 pub const MIME: &str = "text/html;profile=mcp-app";
@@ -122,8 +125,7 @@ pub fn backend(config_path: &Path, name: &str, arguments: &Value) -> Result<Valu
         "board_refresh" => "/api/refresh",
         _ => bail!("未知看板工具"),
     };
-    let running = service::launch(config_path)?;
-    let url = running["url"].as_str().context("服务未返回地址")?;
+    let url = board_url(config_path)?;
     let client = backend_client(config_path)?;
     if name == "board_snapshot" {
         return Ok(client
@@ -132,7 +134,69 @@ pub fn backend(config_path: &Path, name: &str, arguments: &Value) -> Result<Valu
             .error_for_status()?
             .json()?);
     }
-    post(&client, url, path, arguments)
+    post(&client, &url, path, arguments)
+}
+
+fn board_url(config_path: &Path) -> Result<String> {
+    static SLOT: Mutex<Option<String>> = Mutex::new(None);
+    let mut slot = SLOT
+        .lock()
+        .map_err(|_| anyhow::anyhow!("看板启动锁已损坏"))?;
+    if let Some(url) = slot.clone() {
+        return Ok(url);
+    }
+    let url = open_board(config_path)?;
+    *slot = Some(url.clone());
+    Ok(url)
+}
+
+fn open_board(config_path: &Path) -> Result<String> {
+    let config = config::load(Some(config_path))?;
+    ensure!(config.port > 0, "看板需要固定端口");
+    let url = format!("http://127.0.0.1:{}", config.port);
+    if !port_free(config.port)? {
+        return Ok(url);
+    }
+    let (server, port) = http::bind(config.port)?;
+    let app = Arc::new(App::new(config)?);
+    service::register(&app.config, port)?;
+    observer::start(&app);
+    thread::spawn(move || {
+        let _ = http::run(server, port, app);
+    });
+    wait_ready(&url)?;
+    Ok(url)
+}
+
+fn port_free(port: u16) -> Result<bool> {
+    match TcpListener::bind(("127.0.0.1", port)) {
+        Ok(listener) => {
+            drop(listener);
+            Ok(true)
+        }
+        Err(error) if error.kind() == ErrorKind::AddrInUse => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn wait_ready(url: &str) -> Result<()> {
+    let client = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_millis(200))
+        .build()?;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let info = format!("{url}/api/info");
+    while Instant::now() < deadline {
+        let ready = client
+            .get(&info)
+            .send()
+            .is_ok_and(|response| response.status().is_success());
+        if ready {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    bail!("看板尚未在插件进程内就绪")
 }
 
 fn backend_client(config_path: &Path) -> Result<reqwest::blocking::Client> {
