@@ -307,3 +307,27 @@ endpoint 不存在时说明需要服务端恢复入口，不以持续重试暗�
 两项隔离复现可用 `python3 outputs/socket-lifecycle-report-20261111/isolated-repro.py` 重跑。
 脚本只操作自己创建的临时目录，不运行真实清理器，不修改正式 socket；需要系统已有的 find 和 fuser。
 官方 main 快照的来源为 `https://raw.githubusercontent.com/openai/codex/main/codex-rs/app-server-transport/src/transport/unix_socket.rs` 和 `https://raw.githubusercontent.com/openai/codex/main/codex-rs/uds/src/daemon_directory.rs`，未记录提交 SHA，不能冒充安装版本的精确源码。
+
+## 13. 后续实施：替换清理程序
+
+2026-11-11 用户进一步授权删除两套自定义 timer，改用系统清理程序，每十五分钟检查一次，/tmp 老化门槛为四小时。
+本节是报告完成后的实际变更，前文“未修改”的描述保留其调查当时的含义。
+
+已删除以下六个文件及两个启用链接，未保留旧单元或脚本的备份：
+
+- 用户级 `~/.config/systemd/user/tmp-autoclean.timer`、`tmp-autoclean.service` 和 `~/.local/bin/tmp-autoclean.sh`。
+- 系统级 `/etc/systemd/system/tmp-autoclean.timer`、`tmp-autoclean.service` 和 `/usr/local/bin/tmp-autoclean.sh`。
+- 两个管理器对应的 `timers.target.wants/tmp-autoclean.timer` 链接。
+
+两个管理器查询旧单元均为 `LoadState=not-found`、`ActiveState=inactive`，匹配 unit 文件数均为零。
+保留系统原生 `systemd-tmpfiles-clean.service`，不修改供应商单元和清理程序。
+`/etc/tmpfiles.d/tmp.conf` 覆盖 `/tmp` 的老化门槛为 `4h`，保留 `/var/tmp` 的 `30d`。
+`/etc/systemd/system/systemd-tmpfiles-clean.timer.d/override.conf` 清空继承调度，再设开机十五分钟及每次启动服务后十五分钟，精度一分钟。
+四小时是系统默认时间戳和保护规则下的老化门槛，不是整目录到时强删；活 socket 等仍由系统清理规则保护。
+
+03:04:19–03:04:20 首次实际清理成功，`Result=success`、`ExecMainStatus=0`，下一次调度为 03:19:19，时区 Asia/Shanghai。
+隔离测试使用极短门槛触发相同老化代码，确认普通过期文件删除、活 socket 路径保留，且全新连接和收发成功。
+桌面 PID 2505572 与 authority PID 2506017 及启动时间未变，未重启客户端。
+执行脚本、配置、原文件校验和、预演和核对结果位于 `outputs/system-tmp-cleanup-20261111/`，未纳入 Git。
+
+本次完成清理策略替换。已经丢失的分区 socket、owner 重绑和完整生命周期验收仍待处理，不能宣称看板故障或整个长期方案已完成。
