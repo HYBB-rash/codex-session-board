@@ -91,6 +91,37 @@ pub fn scan_runtime(
     observe_runtime_threads(app, reader, revisions, since, &threads)
 }
 
+enum Seen {
+    Same,
+    Unread,
+    Phase(String),
+    Saved(String, String),
+}
+
+pub(crate) fn frame_too_large(error: &anyhow::Error) -> bool {
+    error.to_string().contains("Message too long")
+}
+
+fn limit_note(updated_at: i64) -> String {
+    format!("轮次响应超过单帧上限:{updated_at}")
+}
+
+fn frame_blocked(note: Option<&str>, updated_at: i64) -> bool {
+    note.and_then(|note| note.strip_prefix("轮次响应超过单帧上限:"))
+        .and_then(|value| value.parse().ok())
+        == Some(updated_at)
+}
+
+fn runtime_pause(app: &App, error: &anyhow::Error) -> bool {
+    if frame_too_large(error) {
+        return false;
+    }
+    let _ = app.update_health(
+        json!({"runtimeVerified":false,"runtimeError":error.to_string(),"scanComplete":false}),
+    );
+    true
+}
+
 pub(crate) fn observe_runtime_threads(
     app: &App,
     reader: &mut dyn Rpc,
@@ -101,33 +132,71 @@ pub(crate) fn observe_runtime_threads(
     let mut unreadable = 0;
     let mut native_errors = Vec::new();
     for thread in threads {
-        ensure!(app.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
-        let identifier = thread["id"].as_str().context("会话缺少 ID")?;
-        let status = &thread["status"];
-        let revision = json!([thread["updatedAt"], status]).to_string();
-        if status["type"] != "active" && revisions.get(identifier) == Some(&revision) {
-            continue;
-        }
-        match rpc::latest_turn(reader, identifier) {
-            Ok(turn) => {
-                let _operation = app.operation()?;
-                ensure!(app.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
-                app.store.observe(identifier, &turn, None)?;
-                if crate::model::runtime_state(status, &turn).is_some() {
-                    if let Some(error) = observe_phase(app, identifier, status, &turn, since)? {
-                        native_errors.push(error);
-                        continue;
-                    }
-                    revisions.insert(identifier.to_string(), revision);
-                }
+        match observe_one(app, reader, revisions, since, thread)? {
+            Seen::Unread => unreadable += 1,
+            Seen::Phase(error) => native_errors.push(error),
+            Seen::Saved(identifier, revision) => {
+                revisions.insert(identifier, revision);
             }
-            Err(error) if error.downcast_ref::<RequestError>().is_some() => unreadable += 1,
-            Err(error) => return Err(error),
+            Seen::Same => {}
         }
     }
     app.update_health(json!({"runtimeVerified":true,"runtimeLastAt":now(),
         "nativeStageError":if native_errors.is_empty() {Value::Null}else{json!(native_errors.join("; "))},
         "runtimeError":if unreadable > 0 { json!(format!("{unreadable} 个会话的执行状态暂不可读")) } else {Value::Null}}))
+}
+
+fn observe_one(
+    app: &App,
+    reader: &mut dyn Rpc,
+    revisions: &HashMap<String, String>,
+    since: f64,
+    thread: &Value,
+) -> Result<Seen> {
+    ensure!(app.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
+    let identifier = thread["id"].as_str().context("会话缺少 ID")?;
+    let updated_at = thread["updatedAt"].as_i64().unwrap_or(0);
+    if frame_blocked(
+        app.store.observation_error(identifier)?.as_deref(),
+        updated_at,
+    ) {
+        return Ok(Seen::Same);
+    }
+    let status = &thread["status"];
+    let revision = json!([thread["updatedAt"], status]).to_string();
+    if status["type"] != "active" && revisions.get(identifier) == Some(&revision) {
+        return Ok(Seen::Same);
+    }
+    match rpc::latest_turn(reader, identifier) {
+        Ok(turn) => apply_observed_turn(app, identifier, status, &turn, since, revision),
+        Err(error) if error.downcast_ref::<RequestError>().is_some() => Ok(Seen::Unread),
+        Err(error) if frame_too_large(&error) => {
+            app.store
+                .observe(identifier, &json!({}), Some(&limit_note(updated_at)))?;
+            Err(error)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn apply_observed_turn(
+    app: &App,
+    identifier: &str,
+    status: &Value,
+    turn: &Value,
+    since: f64,
+    revision: String,
+) -> Result<Seen> {
+    let _operation = app.operation()?;
+    ensure!(app.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
+    app.store.observe(identifier, turn, None)?;
+    if crate::model::runtime_state(status, turn).is_none() {
+        return Ok(Seen::Same);
+    }
+    if let Some(error) = observe_phase(app, identifier, status, turn, since)? {
+        return Ok(Seen::Phase(error));
+    }
+    Ok(Seen::Saved(identifier.to_owned(), revision))
 }
 
 fn observe_phase(
@@ -199,9 +268,15 @@ fn runtime_worker(app: Arc<App>) {
             )
         })();
         if let Err(error) = result {
-            let _ = app
-                .update_health(json!({"runtimeVerified":false,"runtimeError":error.to_string(),"scanComplete":false}));
             reader = None;
+            let pause = runtime_pause(&app, &error);
+            if !frame_too_large(&error) && !app.config.remote_retry {
+                break;
+            }
+            if pause {
+                std::thread::sleep(Duration::from_secs(app.config.runtime_poll_seconds));
+            }
+            continue;
         }
         std::thread::sleep(Duration::from_secs(app.config.runtime_poll_seconds));
     }
@@ -274,5 +349,63 @@ pub(crate) fn start_host(app: &Arc<App>) {
                 std::thread::sleep(Duration::from_secs(native.config.runtime_poll_seconds));
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    struct Script {
+        calls: Vec<String>,
+    }
+
+    impl Rpc for Script {
+        fn call(&mut self, _method: &str, params: Value) -> Result<Value> {
+            let identifier = params["threadId"].as_str().unwrap_or_default().to_string();
+            self.calls.push(identifier.clone());
+            if identifier == "fat" {
+                anyhow::bail!("Space limit exceeded: Message too long: 30 > 16");
+            }
+            Ok(json!({"data":[{"id":"turn","status":"completed","items":[]}]}))
+        }
+    }
+
+    fn thread(identifier: &str, updated_at: i64) -> Value {
+        json!({"id":identifier,"updatedAt":updated_at,"status":{"type":"idle"},"name":identifier})
+    }
+
+    #[test]
+    fn oversized_turn_blocks_only_that_session_until_it_changes() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let app = App::new(Config {
+            data_dir: directory.path().join("data"),
+            sync_titles: false,
+            native_sections: false,
+            ..Config::default()
+        })?;
+        let threads = vec![thread("fat", 5), thread("thin", 6)];
+        app.store.discover(&threads)?;
+        let mut revisions = HashMap::new();
+        let mut reader = Script { calls: Vec::new() };
+        let error = observe_runtime_threads(&app, &mut reader, &mut revisions, 0.0, &threads)
+            .err()
+            .context("应当因超限失败")?;
+        assert!(frame_too_large(&error), "{error:#}");
+        let note = app
+            .store
+            .observation_error("fat")?
+            .context("缺少超限记录")?;
+        assert!(note.contains('5'));
+        reader.calls.clear();
+        observe_runtime_threads(&app, &mut reader, &mut revisions, 0.0, &threads)?;
+        assert_eq!(reader.calls, ["thin"]);
+        let health = app
+            .health
+            .lock()
+            .map_err(|_| anyhow::anyhow!("健康状态锁已损坏"))?;
+        assert_eq!(health["runtimeVerified"], true);
+        Ok(())
     }
 }

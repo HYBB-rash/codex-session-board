@@ -133,7 +133,10 @@ fn archive_expected(row: &Value, revision: (i64, i64), native: bool) -> Result<V
         row["input_revision"] == revision.1,
         "会话有新输入，请刷新并核对后重试"
     );
-    ensure!(row["needs_review"] == 0, "会话有新输入，请核对后点击卡片上的“确认待归档”");
+    ensure!(
+        row["needs_review"] == 0,
+        "会话有新输入，请核对后点击卡片上的“确认待归档”"
+    );
     ensure!(
         crate::model::board_state(&effective(row, native)) == "to_archive",
         "只能归档待归档会话"
@@ -389,6 +392,15 @@ impl Store {
         Ok(())
     }
 
+    pub fn observation_error(&self, identifier: &str) -> Result<Option<String>> {
+        let value = self.connection()?.query_row(
+            "SELECT observation_error FROM sessions WHERE id=?",
+            [identifier],
+            |row| row.get(0),
+        )?;
+        Ok(value)
+    }
+
     pub fn set_state(
         &self,
         identifier: &str,
@@ -436,7 +448,10 @@ impl Store {
         note: &str,
         turn: &Value,
     ) -> Result<()> {
-        ensure!(row["native_section"].is_string(), "缺少原生位置，请刷新后重试");
+        ensure!(
+            row["native_section"].is_string(),
+            "缺少原生位置，请刷新后重试"
+        );
         let placed = now();
         let users = serde_json::to_string(&users(turn))?;
         native::write_daily(
@@ -657,12 +672,17 @@ impl Store {
     pub fn saved_session_ids(&self) -> Result<std::collections::HashSet<String>> {
         let database = self.connection()?;
         let mut query = database.prepare("SELECT id FROM sessions")?;
-        Ok(query.query_map([],|row|row.get(0))?.collect::<rusqlite::Result<_>>()?)
+        Ok(query
+            .query_map([], |row| row.get(0))?
+            .collect::<rusqlite::Result<_>>()?)
     }
 
     pub fn has_session(&self, identifier: &str) -> Result<bool> {
-        Ok(self.connection()?.query_row("SELECT EXISTS(SELECT 1 FROM sessions WHERE id=?)",
-            [identifier],|row|row.get(0))?)
+        Ok(self.connection()?.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sessions WHERE id=?)",
+            [identifier],
+            |row| row.get(0),
+        )?)
     }
 
     pub fn sessions(&self) -> Result<Vec<Value>> {

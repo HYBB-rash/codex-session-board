@@ -8,14 +8,14 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashSet};
 use std::time::Duration;
 
-pub mod hosts;
 mod cache;
 mod connections;
+pub mod hosts;
 mod instances;
-mod scans;
 mod project_registry;
-pub(crate) use scans::scan_runtime_page;
+mod scans;
 pub(crate) use project_registry::catalog as project_catalog;
+pub(crate) use scans::scan_runtime_page;
 
 pub(crate) fn projects(reader: &mut dyn Rpc) -> Result<Vec<Value>> {
     let response = reader.call("list_projects", json!({}))?;
@@ -153,7 +153,10 @@ fn scan_scoped(
         .collect();
     let mut reports = Vec::new();
     for (host, label) in hosts {
-        if allowed.is_some_and(|hosts| !hosts.contains(host)) {
+        if allowed.is_some_and(|connected| connected.contains(host)) {
+            continue;
+        }
+        if allowed.is_some() {
             reports.push(json!({"hostId":host,"hostLabel":label,"scanComplete":false,
                 "connectionRequired":true,"error":"尚未连接，保留缓存"}));
             continue;
@@ -172,16 +175,31 @@ fn scan_scoped(
 pub fn refresh(app: &App) -> Result<()> {
     let result = (|| {
         app.refresh_remote_instances()?;
-        let allowed = app.remotes.lock().map_err(|_| anyhow::anyhow!("主机锁已损坏"))?
-            .iter().filter(|(_, remote)| remote.enabled.load(std::sync::atomic::Ordering::SeqCst)
-                && remote.config.remote_binding.as_ref()
-                    .is_none_or(|binding| binding.require_confirmed().is_ok()))
-            .map(|(host, _)| host.clone()).collect();
-        scan_scoped(app, &mut || {
-            Ok(Box::new(SidebarConnection::reader(
-                &app.config, Duration::from_secs(app.config.rpc_timeout_seconds),
-            )?) as Box<dyn Rpc>)
-        }, Some(&allowed))
+        let allowed = app
+            .remotes
+            .lock()
+            .map_err(|_| anyhow::anyhow!("主机锁已损坏"))?
+            .iter()
+            .filter(|(_, remote)| {
+                remote.enabled.load(std::sync::atomic::Ordering::SeqCst)
+                    && remote
+                        .config
+                        .remote_binding
+                        .as_ref()
+                        .is_none_or(|binding| binding.require_confirmed().is_ok())
+            })
+            .map(|(host, _)| host.clone())
+            .collect();
+        scan_scoped(
+            app,
+            &mut || {
+                Ok(Box::new(SidebarConnection::reader(
+                    &app.config,
+                    Duration::from_secs(app.config.rpc_timeout_seconds),
+                )?) as Box<dyn Rpc>)
+            },
+            Some(&allowed),
+        )
     })();
     if let Err(error) = &result {
         app.update_health(json!({"remoteVerified":false,"remoteError":error.to_string()}))?;

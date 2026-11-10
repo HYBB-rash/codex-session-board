@@ -612,24 +612,20 @@ function render(resetState = null) {
     byId("health").textContent += ` · ${health.remoteCacheErrors.length} 个远程缓存读取失败，需核对连接与数据`;
   }
   for (const host of health.remoteConnections || []) {
-    const warning = host.writeError || host.runtimeError || host.nativeError || host.nativeStageError ||
-      (!host.scanComplete ? "分页扫描尚未完成" : null);
-    if (warning || !host.runtimeVerified) byId("health").className = "health error";
-    byId("health").textContent += ` · ${host.hostLabel || host.hostId}：` +
-      (warning || (host.runtimeVerified ? "自动状态已连接" : "等待执行状态连接"));
+    const warning = host.writeError || host.runtimeError || host.nativeError || host.nativeStageError;
+    const label = host.hostLabel || host.hostId;
+    if (warning) byId("health").textContent += ` · ${label}：${warning}`;
+    else if (host.runtimeVerified) byId("health").textContent += ` · ${label}：自动状态已连接`;
     if (host.autoArchiveSeconds) byId("health").textContent +=
       `；每 ${host.autoArchiveSeconds / 60} 分钟自动归档，下次 ${date(host.autoArchiveNextAt)}`;
   }
   for (const host of health.remoteConnectionErrors || []) {
-    byId("health").className = "health error";
     byId("health").textContent += ` · ${host.hostId}：${host.error}`;
   }
-  const failedHosts = (health.remoteHosts || []).filter(host => !host.scanComplete);
   if (health.remoteProjectWarning) byId("health").textContent += " · 部分远程项目资料未确认，保留上次分类";
-  if (health.remoteError || failedHosts.length) {
+  if (health.remoteError) {
     byId("health").className = "health error";
-    byId("health").textContent += " · 远程读取未完成，保留缓存：" +
-      (health.remoteError || failedHosts.map(host => host.hostLabel + "：" + host.error).join("；"));
+    byId("health").textContent += " · 远程项目读取未完成：" + health.remoteError;
   }
   renderConnectButtons(health);
 }
