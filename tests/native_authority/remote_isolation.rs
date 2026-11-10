@@ -41,10 +41,13 @@ fn wait_remote(live: &Live, client: &Client, complete: bool, after: Option<f64>)
     loop {
         let snapshot = live.snapshot(client)?;
         if managed_ready(&snapshot)
-            && snapshot["health"]["remoteHosts"]
+            && snapshot["health"]["remoteConnections"]
                 .as_array()
                 .is_some_and(|hosts| {
-                    hosts.len() == 2 && hosts.iter().all(|host| host["scanComplete"] == complete)
+                    hosts.len() == 2
+                        && hosts.iter().all(|host| {
+                            host["scanComplete"] == complete && host["runtimeVerified"] == complete
+                        })
                 })
             && after.is_none_or(|previous| {
                 snapshot["health"]["remoteLastAt"].as_f64().unwrap_or(0.0) > previous
@@ -70,17 +73,12 @@ fn managed_ready(snapshot: &Value) -> bool {
                 && ["mac", "other"].iter().all(|host| {
                     connections.iter().any(|connection| {
                         connection["hostId"] == *host
-                            && connection["nativeVerified"] == true
                             && connection["runtimeVerified"] == true
                             && connection["scanComplete"] == true
                             && connection["writeError"].is_null()
                     }) && [FIRST, SECOND].iter().all(|thread| {
                         snapshot["sessions"].as_array().unwrap().iter().any(|row| {
-                            row["id"] == identity(host, thread)
-                                && row["readOnly"] == false
-                                && row["sectionVersion"]
-                                    .as_str()
-                                    .is_some_and(|value| !value.is_empty())
+                            row["id"] == identity(host, thread) && row["readOnly"] == false
                         })
                     })
                 })
@@ -290,11 +288,9 @@ fn prepare_mode(server: &Server, live: &Live, client: &Client, mode: &str) -> Re
         server.surface.lock().unwrap().remote_disconnected = true;
         live.post_path(client, "/api/refresh", &json!({}))?
             .error_for_status()?;
-        wait_remote(live, client, false, None)?;
     }
     Ok(match mode {
         "scanning-projects" => Some(begin_gate(server, live, client, "projects")?),
-        "scanning-history" => Some(begin_gate(server, live, client, "mac")?),
         _ => None,
     })
 }

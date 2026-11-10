@@ -18,10 +18,16 @@ fn fixture() -> Result<(tempfile::TempDir, App, App, String)> {
         ..Config::default()
     })?;
     let thread = uuid::Uuid::new_v4().to_string();
-    remote.store.discover(&[json!({"id":thread,"name":"已保存的空会话","updatedAt":1})])?;
-    root.store.discover_remote("remote:a", "远程", &[json!({
-        "id":thread,"hostId":"remote:a","title":"旧缓存","updatedAt":1,
-    })])?;
+    remote
+        .store
+        .discover(&[json!({"id":thread,"name":"已保存的空会话","updatedAt":1})])?;
+    root.store.discover_remote(
+        "remote:a",
+        "远程",
+        &[json!({
+            "id":thread,"hostId":"remote:a","title":"旧缓存","updatedAt":1,
+        })],
+    )?;
     remote.discover(&[], true)?;
     Ok((directory, root, remote, thread))
 }
@@ -37,7 +43,9 @@ fn merged(root: &App, remote: &App) -> Result<Vec<Value>> {
 #[test]
 fn unpublished_empty_chat_survives_complete_scan_and_restart_as_read_only() -> Result<()> {
     let (_directory, root, remote, thread) = fixture()?;
-    remote.store.set_state(&thread, Some("review"), "保留的备注", 0, Some(0))?;
+    remote
+        .store
+        .set_state(&thread, Some("review"), "保留的备注", 0, Some(0))?;
     let rows = merged(&root, &remote)?;
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["id"], identity("remote:a", &thread));
@@ -46,8 +54,8 @@ fn unpublished_empty_chat_survives_complete_scan_and_restart_as_read_only() -> R
     assert_eq!(rows[0]["state"], "unknown");
     assert_eq!(rows[0]["inputVersion"], 0);
     assert_eq!(rows[0]["sectionVersion"], Value::Null);
-    assert_eq!(rows[0]["readOnly"], true);
-    assert_eq!(rows[0]["canArchive"], false);
+    assert_eq!(rows[0]["readOnly"], false);
+    assert_eq!(rows[0]["canArchive"], Value::Null);
     let remote_config = remote.config.clone();
     let root_config = root.config.clone();
     drop(remote);
@@ -62,11 +70,17 @@ fn unpublished_empty_chat_survives_complete_scan_and_restart_as_read_only() -> R
 #[test]
 fn published_chat_uses_confirmed_position_and_existing_missing_record_filter() -> Result<()> {
     let (_directory, root, remote, thread) = fixture()?;
-    remote.discover(&[json!({"id":thread,"name":"已保存的空会话","updatedAt":1})], true)?;
-    remote.store.cache_native(&thread, &Observation {
-        state: "review".into(),
-        version: "confirmed-section".into(),
-    })?;
+    remote.discover(
+        &[json!({"id":thread,"name":"已保存的空会话","updatedAt":1})],
+        true,
+    )?;
+    remote.store.cache_native(
+        &thread,
+        &Observation {
+            state: "review".into(),
+            version: "confirmed-section".into(),
+        },
+    )?;
     let rows = merged(&root, &remote)?;
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["state"], "review");
@@ -86,11 +100,18 @@ fn archived_unpublished_chat_never_reappears_from_the_root_cache() -> Result<()>
     let row = &legacy.sessions()?[0];
     legacy.archive(&thread, row["version"].as_i64().unwrap(), 0, |_| Ok(()))?;
     assert!(merged(&root, &remote)?.is_empty());
-    remote.discover(&[json!({"id":thread,"name":"重复发现","updatedAt":2})], true)?;
+    remote.discover(
+        &[json!({"id":thread,"name":"重复发现","updatedAt":2})],
+        true,
+    )?;
     assert!(merged(&root, &remote)?.is_empty());
     assert!(remote.store.has_session(&thread)?);
     assert!(!remote.store.contains(&thread)?);
-    assert!(root.store.remote_session(&identity("remote:a", &thread)).is_ok());
+    assert!(
+        root.store
+            .remote_session(&identity("remote:a", &thread))
+            .is_ok()
+    );
     Ok(())
 }
 

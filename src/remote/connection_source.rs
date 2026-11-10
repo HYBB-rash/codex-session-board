@@ -387,6 +387,7 @@ pub(crate) fn cached_host(directory: &Path, settings: &config::Config) -> Result
         alias: None,
         identity: None,
         enabled: false,
+        auto_connect: false,
     };
     ensure!(
         host.directory(settings) == directory,

@@ -234,12 +234,7 @@ impl RemoteFixture {
                 );
             }
             let calls = surface.lock().unwrap();
-            for method in [
-                "initialize",
-                "thread/list",
-                "threadSection/list",
-                "thread/turns/list",
-            ] {
+            for method in ["initialize", "thread/list", "thread/turns/list"] {
                 assert!(
                     calls.calls.iter().any(|call| call == method),
                     "{host}: {method}"

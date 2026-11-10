@@ -19,6 +19,8 @@ pub struct Config {
     pub ssh_command: Vec<String>,
     #[serde(skip)]
     pub remote_binding: Option<crate::remote::hosts::source::Binding>,
+    #[serde(skip)]
+    pub remote_retry: bool,
     pub data_dir: PathBuf,
     pub port: u16,
     pub poll_seconds: u64,
@@ -50,6 +52,7 @@ impl Default for Config {
             clock_command: Vec::new(),
             ssh_command: vec!["ssh".into()],
             remote_binding: None,
+            remote_retry: true,
             data_dir: PathBuf::new(),
             port: 8767,
             poll_seconds: 30,
@@ -93,7 +96,7 @@ impl Config {
                     && self.remote_auto_archive_seconds.is_none()
                     && self.proxy_command.is_empty()
                     && self.clock_command.is_empty()
-                && self.remote_binding.is_none()
+                    && self.remote_binding.is_none()
                     && self.sidebar_socket.as_os_str().is_empty()
                     && self.host_id == "local",
             "兼容模式仅支持本机六状态记录，不启用原生分区、远程连接或真实归档"
@@ -144,8 +147,10 @@ impl Config {
             ("open_command", &self.open_command),
             ("ssh_command", &self.ssh_command),
         ] {
-            ensure!(!command.is_empty() && command.iter().all(|part| !part.is_empty()),
-                "{name} 必须是非空命令参数数组");
+            ensure!(
+                !command.is_empty() && command.iter().all(|part| !part.is_empty()),
+                "{name} 必须是非空命令参数数组"
+            );
         }
         Ok(())
     }
@@ -153,10 +158,15 @@ impl Config {
     fn validate_archiving(&self) -> Result<()> {
         for (name, interval) in [
             ("auto_archive_seconds", self.auto_archive_seconds),
-            ("remote_auto_archive_seconds", self.remote_auto_archive_seconds),
+            (
+                "remote_auto_archive_seconds",
+                self.remote_auto_archive_seconds,
+            ),
         ] {
-            ensure!(interval.is_none_or(|seconds| seconds > 0),
-                "{name} 必须为空或正整数");
+            ensure!(
+                interval.is_none_or(|seconds| seconds > 0),
+                "{name} 必须为空或正整数"
+            );
         }
         Ok(())
     }

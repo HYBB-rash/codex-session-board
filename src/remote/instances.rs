@@ -11,6 +11,8 @@ impl App {
         config.host_id = host.host_id.clone();
         config.data_dir = host.directory(&self.config);
         config.auto_archive_seconds = self.config.remote_auto_archive_seconds;
+        config.native_sections = false;
+        config.remote_retry = host.auto_connect;
         config.proxy_command = host.proxy(&self.config)?;
         config.clock_command = host.command(
             &self.config,
@@ -58,7 +60,9 @@ impl App {
 
     pub(super) fn attach_remote(&self, host: &Host) -> Result<()> {
         let operation = self.thread_lock(&format!("connect:{}", host.host_id))?;
-        let _guard = operation.lock().map_err(|_| anyhow::anyhow!("主机连接锁已损坏"))?;
+        let _guard = operation
+            .lock()
+            .map_err(|_| anyhow::anyhow!("主机连接锁已损坏"))?;
         let existing = self
             .remotes
             .lock()
@@ -111,15 +115,23 @@ impl App {
 
     pub(crate) fn remote_app(&self, host: &str) -> Result<Arc<App>> {
         let (descriptor, remote) = self.remote_entry(host)?;
-        ensure!(descriptor.enabled || self.remote_requested.lock()
-            .map_err(|_| anyhow::anyhow!("连接请求锁已损坏"))?.contains(host),
-            "该主机未自动连接，请在看板中连接");
+        ensure!(
+            descriptor.enabled
+                || self
+                    .remote_requested
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("连接请求锁已损坏"))?
+                    .contains(host),
+            "该主机未自动连接，请在看板中连接"
+        );
         let remote = remote.context("远程主机尚未连接，请刷新后重试")?;
         ensure!(remote.enabled.load(Ordering::SeqCst), "远程主机登记已失效");
         if let Some(binding) = &remote.config.remote_binding {
-            crate::rpc::framing::guard(binding,
-                std::time::Duration::from_secs(self.config.rpc_timeout_seconds))
-                .map_err(|error| anyhow::anyhow!("远程主机来源核验失败：{error:#}"))?;
+            crate::rpc::framing::guard(
+                binding,
+                std::time::Duration::from_secs(self.config.rpc_timeout_seconds),
+            )
+            .map_err(|error| anyhow::anyhow!("远程主机来源核验失败：{error:#}"))?;
         }
         Ok(remote)
     }

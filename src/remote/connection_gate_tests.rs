@@ -68,6 +68,8 @@ fn remote_auto_archive_requires_its_own_explicit_positive_interval() -> Result<(
     let (mut root, remote) = managed(&fixture)?;
     assert_eq!(root.config.auto_archive_seconds, Some(1800));
     assert_eq!(remote.config.auto_archive_seconds, None);
+    assert!(!remote.config.native_sections);
+    assert_eq!(remote.config.remote_retry, fixture.host.auto_connect);
     root.config.remote_auto_archive_seconds = Some(900);
     let enabled = root.build_remote(&fixture.host)?;
     assert_eq!(enabled.config.auto_archive_seconds, Some(900));

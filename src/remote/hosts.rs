@@ -19,6 +19,8 @@ pub struct Host {
     pub identity: Option<String>,
     #[serde(default = "enabled")]
     pub enabled: bool,
+    #[serde(default)]
+    pub auto_connect: bool,
 }
 
 fn enabled() -> bool {
@@ -45,7 +47,9 @@ pub(crate) fn registered_at(path: &std::path::Path) -> Result<Vec<Host>> {
             "远程主机 ID 无效"
         );
         ensure!(identifiers.insert(&host.host_id), "远程主机 ID 重复");
-        host.enabled = state["remote-connection-auto-connect-by-host-id"][&host.host_id] != false;
+        host.auto_connect =
+            state["remote-connection-auto-connect-by-host-id"][&host.host_id] != false;
+        host.enabled = host.auto_connect;
     }
     Ok(hosts)
 }
@@ -64,14 +68,20 @@ impl Host {
             .alias
             .as_deref()
             .filter(|value| !value.trim().is_empty())
-            .or(self.hostname.as_deref().filter(|value| !value.trim().is_empty()))
+            .or(self
+                .hostname
+                .as_deref()
+                .filter(|value| !value.trim().is_empty()))
             .context("主机没有 SSH 连接信息")?;
         ensure!(
             !target.starts_with('-') && !target.chars().any(char::is_control),
             "SSH 目标无效"
         );
         let mut command = program.to_vec();
-        ensure!(!command.is_empty() && command.iter().all(|part| !part.is_empty()), "SSH 命令无效");
+        ensure!(
+            !command.is_empty() && command.iter().all(|part| !part.is_empty()),
+            "SSH 命令无效"
+        );
         command.extend([
             "-T".into(),
             "-o".into(),

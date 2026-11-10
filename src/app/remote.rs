@@ -73,6 +73,12 @@ impl App {
             if self.config.legacy_mode {
                 session["canArchive"] = json!(false);
             }
+            if session["remote"] == true {
+                if session["readOnly"] == true {
+                    session["canArchive"] = json!(false);
+                }
+                continue;
+            }
             if session["readOnly"] == true
                 || self.config.native_sections && !session["sectionVersion"].is_string()
             {
@@ -92,9 +98,13 @@ impl App {
         }
         let mut reports = Vec::new();
         for remote in self.remote_instances()? {
-            reports.push(self.append_managed_host(&remote, sessions, &legacy)
-                .unwrap_or_else(|error| json!({"hostId":remote.config.host_id,
-                    "runtimeVerified":false,"runtimeError":error.to_string()})));
+            reports.push(
+                self.append_managed_host(&remote, sessions, &legacy)
+                    .unwrap_or_else(|error| {
+                        json!({"hostId":remote.config.host_id,
+                    "runtimeVerified":false,"runtimeError":error.to_string()})
+                    }),
+            );
         }
         self.update_health(json!({"remoteConnections":reports}))
     }
@@ -139,7 +149,12 @@ fn remote_identity(identifier: &str) -> Result<(String, String)> {
     Ok((fields[1].clone(), fields[2].clone()))
 }
 
-pub(super) fn remote_value(host: &str, label: &Value, mut row: Value, legacy: &[Value]) -> Result<Value> {
+pub(super) fn remote_value(
+    host: &str,
+    label: &Value,
+    mut row: Value,
+    legacy: &[Value],
+) -> Result<Value> {
     let thread = row["id"].as_str().context("远程会话缺少 ID")?.to_owned();
     let identifier = identity(host, &thread);
     let cached = legacy.iter().find(|row| row["id"] == identifier);
