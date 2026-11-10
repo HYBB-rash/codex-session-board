@@ -11,6 +11,7 @@
   "fingerprint_paths": [
     "Cargo.toml",
     "Cargo.lock",
+    "build.rs",
     "clippy.toml",
     "project-rules.json",
     "src",
@@ -1402,6 +1403,7 @@
       "test::observer_contract::same_phase_runtime_input_rejects_stale_input_version_without_changing_state_version"
     ],
     "DELIVERY-001": [
+      "acceptance.test_gate.PackageTests.test_package_requires_the_fingerprinted_build_gate_and_preserves_its_rejection",
       "acceptance.test_gate.PackageTests.test_package_is_reproducible_and_has_only_portable_source"
     ],
     "GATE-001": [

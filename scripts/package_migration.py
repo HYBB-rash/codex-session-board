@@ -9,12 +9,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PATTERNS = (
-    "Cargo.toml", "Cargo.lock", "clippy.toml", "project-rules.json",
+    "Cargo.toml", "Cargo.lock", "build.rs", "clippy.toml", "project-rules.json",
     "src/**/*.rs", "tests/**/*.rs", "examples/**/*.rs", "index.html", "config.example.json",
     "plugin.json", "mcp.json", ".mcp.json", ".codex-plugin/plugin.json",
     ".agents/plugins/marketplace.json", ".gitignore", ".githooks/*",
     "AGENTS.md", "README.md", "Docs/*.md", "assets/*", "skills/**/*",
-    "scripts/*.py", "scripts/*.rs", "scripts/check", "scripts/install-git-hooks",
+    "scripts/*.py", "scripts/*.rs", "scripts/*.mjs", "scripts/check", "scripts/install-git-hooks",
     "scripts/build-plugin", "scripts/verify_context.sh", "context/**/*.md", "context/*.yaml",
     "acceptance/*.py", "acceptance/*.json", "acceptance/*.md",
 )
@@ -32,7 +32,7 @@ def package_contents(root):
             path.resolve().relative_to(root.resolve())
             contents[path.relative_to(root).as_posix()] = path.read_bytes()
     required = (
-        "src/main.rs", "src/store.rs", "src/mcp.rs", "Cargo.lock", "Docs/MIGRATION.md",
+        "src/main.rs", "src/store.rs", "src/mcp.rs", "Cargo.lock", "build.rs", "Docs/MIGRATION.md",
         "acceptance/requirements.json", "acceptance/model.py",
         "acceptance/bindings.json", "acceptance/contract.lock.json",
         "acceptance/README.md", "assets/app-bridge.js", "context/PROJECT.yaml",

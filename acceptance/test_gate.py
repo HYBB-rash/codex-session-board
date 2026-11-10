@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import tomllib
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -217,7 +218,49 @@ class PackageTests(unittest.TestCase):
             self.assertIn("src/store.rs", files)
             self.assertIn("src/main.rs", files)
             self.assertIn("Cargo.lock", files)
+            self.assertIn("build.rs", files)
+            for script in ROOT.glob("scripts/*.mjs"):
+                self.assertIn(script.relative_to(ROOT).as_posix(), files)
             self.assertIn("scripts/rust_adapter.py", files)
             self.assertIn("Docs/MIGRATION.md", files)
             self.assertNotIn("main.py", files)
             self.assertNotIn("data", {Path(name).parts[0] for name in files})
+
+    def test_package_requires_the_fingerprinted_build_gate_and_preserves_its_rejection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            package = directory / "source.tar.gz"
+            build_package(ROOT, package)
+            with tarfile.open(package) as archive:
+                archive.extractall(directory, filter="data")
+            source = directory / "codex-session-board"
+            manifest = tomllib.loads((source / "Cargo.toml").read_text())
+            self.assertEqual(manifest["package"]["build"], "build.rs")
+            patterns = json.loads((source / "acceptance/bindings.json").read_text())["fingerprint_paths"]
+            self.assertIn("build.rs", patterns)
+            before = fingerprint(source, patterns)
+            gate = source / "build.rs"
+            gate.write_bytes(gate.read_bytes() + b"\n")
+            self.assertNotEqual(fingerprint(source, patterns), before)
+            executable = directory / "build-gate"
+            compiled = subprocess.run(
+                ["rustc", str(gate), "-o", str(executable)],
+                capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            accepted = subprocess.run(
+                [str(executable)], cwd=source, capture_output=True, text=True, timeout=10,
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+            entry = source / "src/main.rs"
+            original = entry.read_text()
+            self.assertIn("mcp::serve(Some(path))", original)
+            entry.write_text(original.replace("mcp::serve(Some(path))", "mcp::serve(None)"))
+            rejected = subprocess.run(
+                [str(executable)], cwd=source, capture_output=True, text=True, timeout=10,
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("插件入口只能调用", rejected.stderr)
+            gate.unlink()
+            with self.assertRaisesRegex(ValueError, "Missing a required migration file"):
+                build_package(source, directory / "missing.tar.gz")
