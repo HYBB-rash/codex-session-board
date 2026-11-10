@@ -4,94 +4,122 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>会话状态 · Codex</title>
 <style>
-:root{color-scheme:light;--paper:#f4f3ef;--ink:#242821;--muted:#74796f;--line:#dedfd7;--green:#32694b}
-*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.55 system-ui,"Noto Sans CJK SC",sans-serif}
-button,input,select,textarea{font:inherit}button{cursor:pointer}button:disabled{opacity:.5;cursor:wait}
-.shell{max-width:1900px;margin:auto;padding:28px 24px 32px}
-.eyebrow{font-size:12px;letter-spacing:.12em;color:var(--green);margin-bottom:12px}
-header{display:flex;justify-content:space-between;align-items:center;gap:20px}h1{font-size:32px;letter-spacing:-1px;margin:0;font-weight:650}
-.subtitle{color:var(--muted);margin:8px 0 18px;max-width:900px}
-button{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 15px;color:var(--ink)}
-button:hover{border-color:var(--green)}button.primary{background:var(--green);color:#fff;border-color:var(--green)}
-.health{padding:11px 14px;background:#e8eee6;color:#3d6248;border:1px solid #d5dfd0;border-radius:8px;font-size:13px}
-.health.error{background:#f6e9df;border-color:#e7cbb5;color:#7d4b27}
-.health strong{font-weight:600}
-.tools{display:flex;gap:12px;align-items:center;margin:18px 0 14px}
-.tools input[type=search],.tools select{flex:1;width:auto;max-width:480px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 13px;min-width:140px}
-.count{font-size:13px;color:var(--muted);margin-left:auto;white-space:nowrap}
-.navigation{display:flex;align-items:flex-start;gap:12px}.navigation .jump{flex:1;min-width:0}
+:root{color-scheme:light;--bg:#fff;--subtle:#f5f5f5;--ink:#202020;--muted:#6b6b6b;--line:#e6e6e6;--danger:#b42318;--warning:#b54708}
+*{box-sizing:border-box}[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans CJK SC",sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+button{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 11px;cursor:pointer;white-space:nowrap}
+button:hover{background:var(--subtle)}
+button:disabled{opacity:.5;cursor:default}
+button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #202020;outline-offset:1px}
+button.quiet{border-color:transparent;background:transparent;color:var(--muted)}
+button.quiet:hover{background:var(--subtle);color:var(--ink)}
+button.primary{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:600}
+button.primary:hover{background:var(--ink);opacity:.86}
+.shell{height:100dvh;display:flex;flex-direction:column;min-height:0;padding:16px 20px 12px}
+.page-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:2px 0 8px}
+h1{font-size:18px;font-weight:600;margin:0}
+.header-actions{display:flex;align-items:center;gap:8px}
 #new-session{white-space:nowrap}
-.jump{display:flex;gap:7px;overflow-x:auto;padding:0 0 12px}
-.jump button{white-space:nowrap;font-size:12px;padding:5px 10px;background:transparent}
-.board-viewport{overflow-x:auto;padding-bottom:12px;border-radius:12px}
-.board{display:grid;grid-template-columns:repeat(var(--columns,5),minmax(250px,1fr));gap:12px;min-width:calc(var(--columns,5)*262px)}
-.column{--accent:#8b9183;display:flex;flex-direction:column;height:calc(100dvh - 315px);min-height:350px;background:#ebece5;border:1px solid #dfe1d7;border-top:3px solid var(--accent);border-radius:10px;transition:background .15s,border-color .15s}
-.column.in_progress{--accent:#678fb3}.column.review{--accent:#c89a43}.column.blocked{--accent:#bc7768}
-.column.to_archive{--accent:#9a82b3}
-.column.drop-target{background:#dfeadc;border-color:var(--green);box-shadow:inset 0 0 0 1px var(--green)}
-.column-heading{display:flex;align-items:center;gap:6px;padding:12px 10px 11px}
-.column-sort{margin-left:auto;white-space:nowrap;font-size:11px;padding:4px 6px;background:#ffffff90}
-.column-sort[aria-expanded=true]{border-color:var(--green)}
+.health{margin:0 0 8px;padding:0;background:transparent;border:0;color:var(--muted);font-size:12px}
+.health.error{background:transparent;border:0;color:var(--danger)}
+.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 8px}
+.filters{display:flex;align-items:center;gap:8px;min-width:0;margin-left:auto}
+.filter-field{display:grid;grid-template-columns:auto minmax(140px,220px);align-items:center;gap:8px;color:var(--muted);font-size:11px}
+.filter-field:has(select[hidden]){display:none}
+select,input[type=search]{height:32px;border:1px solid var(--line);border-radius:8px;background:var(--subtle);padding:0 10px}
+input[type=search]{width:180px}
+.count{font-size:12px;color:var(--muted);white-space:nowrap}
+.jump{display:flex;gap:2px;min-width:0;overflow-x:auto}
+.jump button{border:0;background:transparent;color:var(--muted);white-space:nowrap;font-size:12px;font-weight:600;padding:6px 10px}
+.jump button:hover{background:var(--subtle);color:var(--ink)}
+.feedback{min-height:0;margin:0 0 6px;font-size:12px;color:var(--ink)}.feedback:empty{display:none}.feedback.error{color:var(--danger)}
+.board-viewport{flex:1;min-height:0;overflow-x:auto;overflow-y:hidden;padding-bottom:6px}
+.board{display:flex;gap:12px;height:100%;min-width:min-content}
+.column{--accent:#8a8a8a;flex:1 0 240px;min-width:0;display:flex;flex-direction:column;height:100%;background:color-mix(in srgb,var(--subtle) 78%,transparent);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.column.unknown{--accent:#3b82f6}.column.in_progress{--accent:#202020}.column.review{--accent:#d97706}
+.column.blocked{--accent:#c45c4a}.column.to_archive{--accent:#7c6a9a}.column.completed{--accent:#202020}
+.column.drop-target{background:#f3f3f3;border-color:#bdbdbd;box-shadow:inset 0 0 0 1px #20202022}
+.column-heading{display:flex;align-items:center;gap:6px;padding:9px 12px;border-bottom:1px solid var(--line);background:color-mix(in srgb,#fff 72%,transparent)}
+.column h2{display:flex;align-items:center;gap:7px;margin:0;font-size:12px;font-weight:650;white-space:nowrap}
+.column h2::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none}
+.column.in_progress h2::before,.column.completed h2::before{box-shadow:0 0 0 3px #20202014}
+.column-count{margin-left:auto;min-width:20px;padding:1px 6px;border-radius:10px;background:#e8e8e8;color:var(--muted);font-size:11px;text-align:center}
+.column-sort{padding:3px 6px;border-color:transparent;background:transparent;color:var(--muted);white-space:nowrap;font-size:11px}
+.column-sort[aria-expanded=true]{background:var(--subtle);color:var(--ink)}
 .sort-caret{margin-left:4px;color:var(--muted)}
-.sort-menu{position:fixed;inset:auto;margin:0;width:174px;max-height:calc(100dvh - 16px);overflow:auto;padding:6px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);box-shadow:0 6px 22px #24282125}
+.sort-menu{position:fixed;inset:auto;width:174px;max-height:calc(100dvh - 16px);margin:0;overflow:auto;padding:6px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);box-shadow:0 12px 36px #00000020}
 .sort-menu-title{padding:5px 9px;font-size:11px;color:var(--muted)}
-.sort-option{display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;border:0;border-radius:6px;text-align:left;font-size:12px}
-.sort-option::before{content:"";width:14px;flex-shrink:0}
-.sort-option[aria-checked=true]{background:#e8eee6;color:var(--green)}
+.sort-option{display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;border:0;border-radius:6px;background:transparent;text-align:left;font-size:12px}
+.sort-option::before{content:"";width:14px;flex:none}
+.sort-option[aria-checked=true]{background:var(--subtle)}
 .sort-option[aria-checked=true]::before{content:"✓"}
-.sort-option:focus-visible,.column-sort:focus-visible{outline:2px solid #87a27c;outline-offset:1px}
-.column h2{font-size:14px;font-weight:600;margin:0;white-space:nowrap}
-.column-count{font-size:12px;border-radius:5px;background:#ffffff90;padding:1px 6px;color:#72786c}
-.cards{flex:1;min-height:160px;overflow-y:auto;overscroll-behavior:contain;padding:0 9px 12px;scrollbar-width:thin}
-.card{background:#fff;border:1px solid #dedfd6;border-radius:8px;padding:13px;margin-bottom:9px;box-shadow:0 1px 2px #24282106;cursor:grab;user-select:none}
-.card:hover{border-color:#aebaa7;box-shadow:0 2px 7px #2428210a}
-.card:focus-within{outline:2px solid #87a27c;outline-offset:1px}.card.drag-source{opacity:.35}
-.title{font-size:13px;font-weight:550;word-break:break-word;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.card-title{width:100%;text-align:left;border:0;border-radius:0;padding:0;background:none;cursor:pointer;color:var(--ink)}
-.card-title:hover{color:var(--green);text-decoration:underline}
-.meta{font-size:11px;color:var(--muted);margin-top:7px;overflow-wrap:anywhere}
-.project{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.project-tag{margin-top:8px;min-width:0;font-size:11px}
-.project-tag summary{display:block;width:fit-content;max-width:100%;padding:2px 8px;border:1px solid #d5dfd0;border-radius:5px;background:#edf2e9;color:#42613d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.cards{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;overflow-y:auto;overscroll-behavior:contain;padding:8px;scrollbar-width:thin}
+.card{margin:0;padding:9px;border:1px solid var(--line);border-radius:9px;background:#fff;cursor:grab;user-select:none}
+.card:hover{border-color:#c8c8c8}
+.card:focus-within{outline:2px solid #202020;outline-offset:1px}.card.drag-source{opacity:.35}
+.title{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:12px;font-weight:650;line-height:1.45;word-break:break-word}
+.card-title{width:100%;padding:0;border:0;border-radius:0;background:none;color:var(--ink);text-align:left}
+.card-title:hover{background:none;color:inherit}
+.meta{margin-top:6px;overflow-wrap:anywhere;color:var(--muted);font-size:11px}
+.project{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.project-tag{min-width:0;margin-top:8px;font-size:11px}
+.project-tag summary{display:block;width:fit-content;max-width:100%;padding:2px 6px;overflow:hidden;border:0;border-radius:10px;background:var(--subtle);color:var(--muted);font-weight:600;white-space:nowrap;text-overflow:ellipsis;cursor:pointer}
 .project-tag summary::-webkit-details-marker{display:none}
-.project-tag summary:focus-visible{outline:2px solid #87a27c;outline-offset:2px}
-.project-tag.pending summary{background:#f8efdf;border-color:#e7d2ac;color:#855d21}
+.project-tag.pending summary{background:#f8efdf;color:#9a6700}
 .project-info{margin-top:5px;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere;user-select:text}
-.card-note{font-size:12px;color:#646b5b;margin-top:10px;white-space:pre-wrap;overflow-wrap:anywhere}
-.source{font-size:11px;color:var(--muted)}.follow{color:#a06c22;font-size:12px;margin-top:7px}
-.card-footer{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px}
-.card-footer time{font-size:11px;color:var(--muted)}
-.row-action{white-space:nowrap;font-size:11px;padding:4px 7px;background:#fafaf7}
-.empty-column{border:1px dashed #cdd1c4;border-radius:8px;color:#92998a;text-align:center;padding:28px 12px;font-size:12px;margin-top:3px}
-.drag-active .empty-column{border-color:#a7b79e;color:#5f7854}
-.foot{font-size:12px;color:var(--muted);margin:12px 0 0}
-.feedback{font-size:13px;min-height:24px;color:var(--green);margin:7px 0}.feedback.error{color:#a04530}
-dialog{border:1px solid var(--line);border-radius:14px;padding:28px;width:min(540px,calc(100vw - 32px));box-shadow:0 20px 90px #24282125;background:#fff;color:var(--ink)}
-dialog::backdrop{background:#20271e55}dialog h2{font-size:20px;margin:0 0 8px}.dialog-title{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
-label{display:block;margin:20px 0 7px;font-size:13px}select,textarea{width:100%;border:1px solid var(--line);border-radius:7px;background:#fafaf7;padding:10px}
-textarea{resize:vertical;min-height:90px}.dialog-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-top:22px}.reason{font-size:13px;color:var(--muted);margin-top:14px}
-.notice{color:#a04530;min-height:22px;font-size:13px;margin-top:10px}
+.card-note{margin-top:8px;color:#5c5c5c;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.source{display:inline-flex;align-items:center;min-height:19px;padding:2px 6px;border-radius:10px;background:var(--subtle);color:var(--muted);font-size:10px;font-weight:600}
+.follow{margin-top:6px;color:var(--warning);font-size:12px}
+.card-footer{display:flex;align-items:center;gap:8px;margin-top:8px}
+.card-footer time{color:var(--muted);font-size:11px}
+.card-actions{display:flex;gap:2px;margin-left:auto}
+.row-action{min-height:25px;padding:0 7px;border-color:transparent;background:transparent;color:var(--muted);font-size:11px;font-weight:650;white-space:nowrap}
+.row-action:hover{border-color:transparent;background:var(--subtle);color:var(--ink)}
+.empty-column{display:grid;place-items:center;min-height:74px;margin:0;padding:16px 12px;border:1px dashed var(--line);border-radius:10px;color:#a3a3a3;font-size:12px;text-align:center}
+.drag-active .empty-column{border-color:#bdbdbd;color:var(--muted)}
+.foot{margin:8px 0 0;color:var(--muted);font-size:11px}
+dialog{width:min(520px,calc(100vw - 32px));max-height:80dvh;overflow:auto;padding:20px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);box-shadow:0 12px 36px #00000020}
+dialog::backdrop{background:#2020204d}dialog h2{margin:0 0 8px;font-size:15px;font-weight:600}
+.dialog-title{overflow-wrap:anywhere;color:var(--muted);font-size:12px}
+dialog label{display:block;margin:16px 0 6px;color:var(--muted);font-size:12px}
+dialog select,dialog textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--subtle)}
+textarea{resize:vertical;min-height:90px}
+.dialog-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:16px}
+.reason{margin-top:12px;color:var(--muted);font-size:12px}
+.notice{min-height:18px;margin-top:8px;color:var(--danger);font-size:12px}
 @media(max-width:800px){
-  .shell{padding:22px 16px}.tools{flex-wrap:wrap}.count{margin-left:0}h1{font-size:27px}
-  .board{grid-template-columns:repeat(var(--columns,5),270px);min-width:calc(var(--columns,5)*280px)}.column{height:calc(100dvh - 350px)}
-  .subtitle{font-size:13px}.health{font-size:12px}
+  .shell{padding:14px 12px 10px}
+  .page-header,.toolbar{flex-wrap:wrap}
+  .toolbar{align-items:stretch}
+  .filters{flex:1 1 280px;flex-wrap:wrap;margin-left:0}
+  .jump{flex:1 1 220px}
+  .filter-field{width:100%;grid-template-columns:auto minmax(0,1fr)}
+  input[type=search]{flex:1 1 140px;width:auto;min-width:0}
+  .column{flex-basis:270px}
 }
 </style>
 <main class="shell">
-  <div class="eyebrow">CODEX / WORKSPACES</div>
-  <header><h1>会话看板</h1><button id="refresh">重新发现</button></header>
-  <p class="subtitle">点击卡片回到原会话，拖到另一列改变状态。拖入“已阻塞”时填写原因。</p>
+  <header class="page-header">
+    <h1>会话</h1>
+    <div class="header-actions">
+      <button id="refresh" class="quiet" type="button">刷新</button>
+      <button id="new-session" class="primary" type="button">＋ 新建会话</button>
+    </div>
+  </header>
   <div id="health" class="health" role="status">正在连接本地会话读取器…</div>
   <div id="archive-status" class="health" role="status" hidden></div>
-  <div class="tools">
-    <select id="project-filter" aria-label="选择项目" disabled><option value="all">全部项目</option></select>
-    <input id="search" type="search" placeholder="搜索会话、项目名称或路径" aria-label="搜索会话、项目名称或路径" hidden>
-    <button id="filter-toggle" type="button" aria-controls="project-filter search" aria-pressed="false">搜索会话</button>
-    <span id="count" class="count"></span>
-  </div>
-  <div class="navigation">
+  <div class="toolbar">
     <nav class="jump" id="jump" aria-label="跳转到状态列"></nav>
-    <button id="new-session" class="primary" type="button">＋ 新建会话</button>
+    <div class="filters">
+      <div class="filter-field"><span>项目</span>
+        <select id="project-filter" aria-label="选择项目" disabled><option value="all">全部项目</option></select>
+      </div>
+      <input id="search" type="search" placeholder="搜索会话…" aria-label="搜索会话、项目名称或路径" hidden>
+      <button id="filter-toggle" class="quiet" type="button" aria-controls="project-filter search" aria-pressed="false">搜索会话</button>
+      <span id="count" class="count"></span>
+    </div>
   </div>
   <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
   <div class="board-viewport" id="board-viewport" tabindex="0" aria-label="横向滚动查看全部状态列">
@@ -227,14 +255,20 @@ function makeCard(session) {
   const details = element("div");
   details.append(element("div",session.manual ? "人工确认" : session.source === "runtime" ? "自动流转" : session.source === "codex" ? "原生状态" : "历史状态","source"),
     element("time",date(session.updatedAt)));
-  footer.append(details);
+  const actions = element("div",undefined,"card-actions");
+  const open = element("button","打开原会话","row-action");
+  open.type = "button";
+  open.title = "打开会话：" + session.title;
+  open.onclick = () => openSession(session.id);
+  actions.append(open);
   if (session.state === "to_archive" && session.canArchive !== false && !session.readOnly) {
     const archive = element("button",session.followUp ? "确认待归档" : "归档","row-action");
     archive.type = "button";
     archive.title = session.followUp ? "请先打开会话核对输入；确认仅保存待归档状态，不执行归档" : "直接归档此 Codex 会话";
     archive.onclick = () => session.followUp ? confirmArchiveInputs(session,archive) : archiveSession(session,archive);
-    footer.append(archive);
+    actions.append(archive);
   }
+  footer.append(details,actions);
   card.append(footer);
   card.onclick = event => {
     if (!event.target.closest("button,a,input,select,textarea,details")) openSession(session.id);
@@ -428,7 +462,7 @@ function updateColumn(column, state, sessions) {
   }
   const cards = column.querySelector(".cards");
   cards.replaceChildren(...sessions.map(makeCard));
-  if (!sessions.length) cards.append(element("div","拖动卡片到这里","empty-column"));
+  if (!sessions.length) cards.append(element("div","暂无会话","empty-column"));
 }
 function makeColumn(state, label) {
   const column = element("section",undefined,"column " + state);
