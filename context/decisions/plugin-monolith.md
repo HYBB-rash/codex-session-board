@@ -20,6 +20,6 @@
 
 ## 后果
 
-`spawn_service` 和 `launch` 在 `src/managed_launch.rs`。这个文件只由二进制的 `src/main.rs` 引入。库代码调用它时，编译器报错，因为库里没有这个模块。
+`service::open` 是唯一的打开方式。匹配的数据目录、配置和构建已经在运行时，调用方直接使用它。否则当前进程自己监听。`serve` 和插件的 `mcp` 都走这里。没有子进程，也没有 `launch` 子命令。
 
-`codex-session-board launch` 仍从 `main.rs` 的 `Launch` 分支进入。`Action::Mcp` 分支只调用 `mcp::serve`。`build.rs` 在这里对不上就停止编译。库里的其他文件再写 `.arg("serve")`、用当前程序拉起子进程，或在 `rpc/capture.rs` 之外使用 `process_group(0)`，同样停止编译。
+`build.rs` 拒绝源码里再出现 `managed_launch`、`.arg("serve")`、用当前程序拉起子进程，以及 `rpc/capture.rs` 以外的 `process_group(0)`。插件入口仍然只能是 `mcp::serve`。
