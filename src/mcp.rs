@@ -1,4 +1,4 @@
-use crate::{config, http, service};
+use crate::{config, service};
 use anyhow::{Context, Result, bail, ensure};
 use base64::Engine;
 use serde_json::{Value, json};
@@ -155,7 +155,7 @@ fn open_board(config_path: &Path) -> Result<String> {
         service::OpenedBoard::Owned(board) => {
             let url = board.url.clone();
             thread::spawn(move || {
-                let _ = http::run(board.server, board.port, board.app);
+                let _ = board.run();
             });
             wait_ready(&url)?;
             Ok(url)

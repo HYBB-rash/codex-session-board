@@ -4,38 +4,20 @@ use anyhow::{Context, Result, bail, ensure};
 use fs2::FileExt;
 use reqwest::blocking::Client;
 use rustix::process::{Pid, PidfdFlags, Signal, pidfd_open, pidfd_send_signal};
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::fs::{self, File, OpenOptions};
 use std::io::ErrorKind;
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
-use tiny_http::Server;
 use std::time::{Duration, Instant};
+use tiny_http::Server;
 
 mod migration;
 
 #[cfg(test)]
 use migration::{import_database, publish as publish_migration};
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ProcessIdentity {
-    start_time: u64,
-    exe: PathBuf,
-    device: u64,
-    inode: u64,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct ServerRecord {
-    pid: u32,
-    url: String,
-    #[serde(flatten)]
-    identity: ProcessIdentity,
-}
 
 pub fn info(config: &Config) -> Result<Value> {
     Ok(json!({
@@ -63,55 +45,6 @@ fn lock_data(data: &Path) -> Result<File> {
     let file = lock_file(data)?;
     file.lock_exclusive()?;
     Ok(file)
-}
-
-pub fn register(config: &Config, port: u16) -> Result<()> {
-    ensure!(port > 0, "注册需要服务实际监听端口");
-    let file = lock_file(&config.data_dir)?;
-    match file.try_lock_exclusive() {
-        Ok(()) => register_locked(config, port),
-        Err(error) if error.kind() == ErrorKind::WouldBlock => {
-            await_parent_registration(config, port)
-        }
-        Err(error) => Err(error.into()),
-    }
-}
-
-fn register_locked(config: &Config, port: u16) -> Result<()> {
-    let pid = std::process::id();
-    if let Some(record) = read_record(&config.data_dir)? {
-        ensure!(
-            !verify_record(&record)? || record.pid == pid,
-            "同一数据目录已有受管进程运行"
-        );
-    }
-    let identity = process_identity(pid)?.context("无法核验当前服务进程")?;
-    save_record(
-        &config.data_dir,
-        &ServerRecord {
-            pid,
-            url: format!("http://127.0.0.1:{port}"),
-            identity,
-        },
-    )
-}
-
-fn await_parent_registration(config: &Config, port: u16) -> Result<()> {
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while Instant::now() < deadline {
-        if let Some(record) = read_record(&config.data_dir)?
-            && record.pid == std::process::id()
-            && verify_record(&record)?
-        {
-            ensure!(
-                record.url == format!("http://127.0.0.1:{port}"),
-                "启动器记录端口与实际监听端口不一致"
-            );
-            return Ok(());
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
-    bail!("启动锁被占用且未找到当前进程的父启动器记录")
 }
 
 fn loopback_url(url: &str) -> Result<()> {
@@ -163,83 +96,25 @@ fn stat_identity(stat: &str) -> Result<Option<u64>> {
     Ok(Some(values.get(19).context("缺少进程启动时间")?.parse()?))
 }
 
-fn process_identity(pid: u32) -> Result<Option<ProcessIdentity>> {
-    ensure!(pid > 0, "无效受管进程 PID");
-    let directory = PathBuf::from(format!("/proc/{pid}"));
-    let stat = match fs::read_to_string(directory.join("stat")) {
+fn process_start(pid: u32) -> Result<Option<u64>> {
+    ensure!(pid > 0, "无效进程 PID");
+    let stat = match fs::read_to_string(format!("/proc/{pid}/stat")) {
         Ok(stat) => stat,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error.into()),
     };
-    let Some(start_time) = stat_identity(&stat)? else {
-        return Ok(None);
-    };
-    let result = read_executable_identity(&directory, start_time);
-    match result {
-        Err(error)
-            if error
-                .downcast_ref::<std::io::Error>()
-                .is_some_and(|error| error.kind() == ErrorKind::NotFound) =>
-        {
-            Ok(None)
-        }
-        result => result.map(Some),
-    }
-}
-
-fn read_executable_identity(directory: &Path, start_time: u64) -> Result<ProcessIdentity> {
-    let executable = directory.join("exe");
-    let metadata = fs::metadata(&executable)?;
-    let path = fs::read_link(&executable)?;
-    let path_text = path.to_string_lossy();
-    let exe = PathBuf::from(path_text.strip_suffix(" (deleted)").unwrap_or(&path_text));
-    let after = fs::read_to_string(directory.join("stat"))?;
-    ensure!(
-        stat_identity(&after)? == Some(start_time),
-        "读取期间进程身份改变"
-    );
-    Ok(ProcessIdentity {
-        start_time,
-        exe,
-        device: metadata.dev(),
-        inode: metadata.ino(),
-    })
-}
-
-fn read_record(data: &Path) -> Result<Option<ServerRecord>> {
-    let bytes = match fs::read(data.join("server.json")) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error.into()),
-    };
-    let record: ServerRecord =
-        serde_json::from_slice(&bytes).context("无法核验启动记录；旧版记录须先用旧启动器停止")?;
-    loopback_url(&record.url)?;
-    Ok(Some(record))
-}
-
-fn verify_record(record: &ServerRecord) -> Result<bool> {
-    match process_identity(record.pid)? {
-        None => Ok(false),
-        Some(identity) => {
-            ensure!(
-                identity == record.identity,
-                "PID 已复用或进程身份改变，不会操作它"
-            );
-            Ok(true)
-        }
-    }
+    stat_identity(&stat)
 }
 
 fn verify_info(value: &Value, config: &Config, pid: Option<u32>) -> Result<()> {
     ensure!(
         value["app"] == "codex-session-board" && value["dataDir"] == json!(config.data_dir),
-        "端口或启动记录属于其他服务或数据目录"
+        "端口上的服务属于其他看板或数据目录"
     );
     if let Some(pid) = pid {
         ensure!(
             value["pid"].as_u64() == Some(u64::from(pid)),
-            "服务 PID 与启动记录不一致"
+            "服务 PID 已改变"
         );
     }
     Ok(())
@@ -254,73 +129,54 @@ fn verify_version(value: &Value, config: &Config, build: &str) -> Result<()> {
     Ok(())
 }
 
-fn save_record(data: &Path, record: &ServerRecord) -> Result<()> {
-    config::write_json(
-        &data.join("server.json"),
-        &serde_json::to_value(record)?,
-        true,
-    )
-}
-
-fn matching_record(config: &Config, url: &str, build: &str) -> Result<bool> {
-    let Some(record) = read_record(&config.data_dir)? else {
-        return Ok(false);
-    };
-    if !verify_record(&record)? {
-        return Ok(false);
-    }
-    let value = probe(&record.url)?.context("受管进程仍存活但暂不可访问，不会重复启动")?;
-    verify_info(&value, config, Some(record.pid))?;
-    ensure!(
-        record.url.trim_end_matches('/') == url,
-        "同一状态库仍有服务运行，请先 stop 再更换端口"
-    );
-    verify_version(&value, config, build)?;
-    Ok(true)
-}
-
-fn adopt_running(config: &Config, url: &str, build: &str) -> Result<bool> {
+fn running(config: &Config, url: &str) -> Result<bool> {
     let Some(value) = probe(url)? else {
         return Ok(false);
     };
     verify_info(&value, config, None)?;
-    verify_version(&value, config, build)?;
-    let pid = u32::try_from(value["pid"].as_u64().context("服务未提供有效 PID")?)?;
-    let identity = process_identity(pid)?.context("HTTP 服务所报进程未存活")?;
-    let executable = fs::metadata(std::env::current_exe()?)?;
-    ensure!(
-        identity.device == executable.dev() && identity.inode == executable.ino(),
-        "HTTP 服务所报进程不是当前可执行程序"
-    );
-    save_record(
-        &config.data_dir,
-        &ServerRecord {
-            pid,
-            url: url.into(),
-            identity,
-        },
-    )?;
+    verify_version(&value, config, &config::build_id()?)?;
     Ok(true)
 }
 
-fn stop_record(record: &ServerRecord, config: &Config) -> Result<bool> {
-    if !verify_record(record)? {
-        return Ok(false);
+fn classify(config: &Config, lock: &File) -> Result<bool> {
+    ensure!(config.port > 0, "看板需要固定端口");
+    let occupied = match lock.try_lock_exclusive() {
+        Ok(()) => false,
+        Err(error) if error.kind() == ErrorKind::WouldBlock => true,
+        Err(error) => return Err(error.into()),
+    };
+    if running(config, &format!("http://127.0.0.1:{}", config.port))? {
+        return Ok(true);
     }
-    let pid = Pid::from_raw(i32::try_from(record.pid)?).context("无效进程 PID")?;
-    let descriptor =
-        pidfd_open(pid, PidfdFlags::empty()).context("无法取得受管进程 pidfd，不会发送信号")?;
-    let value = probe(&record.url)?.context("受管进程仍存活但无法核验服务身份")?;
-    verify_info(&value, config, Some(record.pid))?;
-    ensure!(verify_record(record)?, "受管进程在核验期间退出");
+    if occupied {
+        bail!("同一数据目录已有看板仍存活，但端口暂不可访问，不会重复启动");
+    }
+    Ok(false)
+}
+
+fn confirm_process(pid: u32, start: u64) -> Result<()> {
+    ensure!(process_start(pid)? == Some(start), "PID 已复用，不会操作它");
+    Ok(())
+}
+
+fn stop_verified(pid: u32, start: u64, url: &str, config: &Config) -> Result<()> {
+    confirm_process(pid, start)?;
+    let descriptor = pidfd_open(
+        Pid::from_raw(i32::try_from(pid)?).context("无效进程 PID")?,
+        PidfdFlags::empty(),
+    )
+    .context("无法取得进程 pidfd，不会发送信号")?;
+    let value = probe(url)?.context("进程仍存活但无法核验服务身份")?;
+    verify_info(&value, config, Some(pid))?;
+    confirm_process(pid, start)?;
     pidfd_send_signal(&descriptor, Signal::INT)?;
     let timeout = config.rpc_timeout_seconds.saturating_add(10);
     let deadline = Instant::now()
         .checked_add(Duration::from_secs(timeout))
         .context("停止等待时间过大")?;
     while Instant::now() < deadline {
-        if !verify_record(record)? {
-            return Ok(true);
+        if process_start(pid)? != Some(start) {
+            return Ok(());
         }
         thread::sleep(Duration::from_millis(100));
     }
@@ -333,6 +189,14 @@ pub struct OwnedBoard {
     pub server: Server,
     pub port: u16,
     pub app: Arc<App>,
+    lock: File,
+}
+
+impl OwnedBoard {
+    pub fn run(self) -> Result<()> {
+        let _lock = self.lock;
+        crate::http::run(self.server, self.port, self.app)
+    }
 }
 
 pub enum OpenedBoard {
@@ -345,31 +209,52 @@ pub fn open(config_path: &Path) -> Result<OpenedBoard> {
     config::initialize_config(config_path, &default_data)?;
     let loaded = config::load(Some(config_path))?;
     ensure!(loaded.port > 0, "看板需要固定端口");
-    let _lock = lock_data(&loaded.data_dir)?;
     let url = format!("http://127.0.0.1:{}", loaded.port);
-    let build = config::build_id()?;
-    let config = config::resolve_path(config_path)?;
-    if matching_record(&loaded, &url, &build)? || adopt_running(&loaded, &url, &build)? {
-        return Ok(OpenedBoard::Reused { url, config });
+    let resolved = config::resolve_path(config_path)?;
+    let lock = lock_file(&loaded.data_dir)?;
+    if classify(&loaded, &lock)? {
+        return Ok(OpenedBoard::Reused {
+            url,
+            config: resolved,
+        });
     }
-    let (server, port) = crate::http::bind(loaded.port)?;
+    config::build_id()?;
+    let (server, port) = crate::http::bind(loaded.port)
+        .map_err(|error| anyhow::anyhow!("端口暂不可访问，不会重复启动：{error}"))?;
     let app = Arc::new(App::new(loaded)?);
-    register_locked(&app.config, port)?;
     crate::observer::start(&app);
     Ok(OpenedBoard::Owned(OwnedBoard {
         url: format!("http://127.0.0.1:{port}"),
-        config,
+        config: resolved,
         server,
         port,
         app,
+        lock,
     }))
 }
 
 pub fn stop(config_path: &Path) -> Result<Value> {
     let config = config::load(Some(config_path))?;
-    let _lock = lock_data(&config.data_dir)?;
-    let record = read_record(&config.data_dir)?.context("没有找到本启动器创建的服务记录")?;
-    let stopped = stop_record(&record, &config)?;
+    ensure!(config.port > 0, "看板需要固定端口");
+    let url = format!("http://127.0.0.1:{}", config.port);
+    let lock = lock_file(&config.data_dir)?;
+    let occupied = match lock.try_lock_exclusive() {
+        Ok(()) => false,
+        Err(error) if error.kind() == ErrorKind::WouldBlock => true,
+        Err(error) => return Err(error.into()),
+    };
+    let stopped = match probe(&url)? {
+        Some(value) => {
+            verify_info(&value, &config, None)?;
+            let pid = u32::try_from(value["pid"].as_u64().context("服务未提供有效 PID")?)
+                .context("服务未提供有效 PID")?;
+            let start = process_start(pid)?.context("HTTP 所报进程未存活")?;
+            stop_verified(pid, start, &url, &config)?;
+            true
+        }
+        None if occupied => bail!("数据目录上的看板仍存活，但配置端口没有响应"),
+        None => false,
+    };
     Ok(json!({
         "running": false, "stopped": stopped,
         "config": config::resolve_path(config_path)?
@@ -382,12 +267,6 @@ pub fn migrate(config_path: &Path, source_config: &Path) -> Result<Value> {
     let source = config.data_dir.join("status.sqlite3");
     config.data_dir = config::default_paths()?.1;
     let _lock = migration::lock(&config.data_dir)?;
-    if let Some(record) = read_record(&config.data_dir)? {
-        ensure!(
-            !verify_record(&record)?,
-            "目标数据目录仍有受管进程运行，不能迁移"
-        );
-    }
     let copied = migration::publish(&config_path, &config, &source)?;
     Ok(json!({
         "imported": true, "databaseCopied": copied, "dataDir": config.data_dir,
@@ -428,12 +307,12 @@ mod tests {
     }
 
     fn fixture_server(
+        port: u16,
         value: Value,
         requests: usize,
-    ) -> Result<(u16, thread::JoinHandle<Result<()>>)> {
-        let server = tiny_http::Server::http("127.0.0.1:0")
+    ) -> Result<thread::JoinHandle<Result<()>>> {
+        let server = tiny_http::Server::http(("127.0.0.1", port))
             .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-        let port = server.server_addr().to_ip().context("缺少监听端口")?.port();
         let handle = thread::spawn(move || {
             for _ in 0..requests {
                 let request = server
@@ -444,7 +323,7 @@ mod tests {
             }
             Ok(())
         });
-        Ok((port, handle))
+        Ok(handle)
     }
 
     fn join_server(handle: thread::JoinHandle<Result<()>>) -> Result<()> {
@@ -485,18 +364,22 @@ mod tests {
         Ok(())
     }
 
+    fn classify_only(config: &Config) -> Result<bool> {
+        classify(config, &lock_file(&config.data_dir)?)
+    }
+
     #[test]
     fn mismatched_process_identity_is_rejected_before_network_or_signals() -> Result<()> {
         let pid = std::process::id();
-        let mut identity = process_identity(pid)?.context("测试进程应当存活")?;
-        identity.start_time += 1;
-        let record = ServerRecord {
+        let start = process_start(pid)?.context("测试进程应当存活")?;
+        let error = stop_verified(
             pid,
-            url: "http://127.0.0.1:1".into(),
-            identity,
-        };
-        assert!(verify_record(&record).is_err());
-        assert!(stop_record(&record, &fixture_config(Path::new("/unused"))).is_err());
+            start + 1,
+            "http://127.0.0.1:1",
+            &fixture_config(Path::new("/unused")),
+        )
+        .expect_err("身份不符不能发信号");
+        assert!(error.to_string().contains("PID 已复用"));
         Ok(())
     }
 
@@ -517,34 +400,32 @@ mod tests {
     #[test]
     fn legacy_or_forged_records_are_not_silently_replaced() -> Result<()> {
         let fixture = Fixture::new()?;
+        let mut config = fixture_config(&fixture.0);
+        let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+        config.port = listener.local_addr()?.port();
+        drop(listener);
+        let path = fixture.0.join("server.json");
         let value = json!({"pid":123,"url":"http://127.0.0.1:8767"});
-        config::write_json(&fixture.0.join("server.json"), &value, false)?;
-        assert!(read_record(&fixture.0).is_err());
-        assert_eq!(
-            serde_json::from_slice::<Value>(&fs::read(fixture.0.join("server.json"))?)?,
-            value
-        );
+        config::write_json(&path, &value, false)?;
+        assert!(!classify_only(&config)?);
+        assert_eq!(serde_json::from_slice::<Value>(&fs::read(&path)?)?, value);
         Ok(())
     }
 
     #[test]
     fn matching_service_reuses_verified_identity_and_rejects_port_change() -> Result<()> {
         let fixture = Fixture::new()?;
-        let config = fixture_config(&fixture.0);
-        let (port, server) = fixture_server(info(&config)?, 2)?;
-        let url = format!("http://127.0.0.1:{port}");
-        let identity = process_identity(std::process::id())?.context("测试进程应当存活")?;
-        save_record(
-            &fixture.0,
-            &ServerRecord {
-                pid: std::process::id(),
-                url: url.clone(),
-                identity,
-            },
-        )?;
-        let build = config::build_id()?;
-        assert!(matching_record(&config, &url, &build)?);
-        assert!(matching_record(&config, "http://127.0.0.1:1", &build).is_err());
+        let mut config = fixture_config(&fixture.0);
+        let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+        let port = listener.local_addr()?.port();
+        drop(listener);
+        config.port = port;
+        let server = fixture_server(port, info(&config)?, 1)?;
+        assert!(classify_only(&config)?);
+        let _held = lock_data(&fixture.0)?;
+        config.port = 1;
+        let error = classify_only(&config).expect_err("更换端口不能另起一份");
+        assert!(error.to_string().contains("仍存活"));
         join_server(server)?;
         Ok(())
     }
@@ -552,21 +433,13 @@ mod tests {
     #[test]
     fn live_inaccessible_process_cannot_be_launched_again() -> Result<()> {
         let fixture = Fixture::new()?;
-        let config = fixture_config(&fixture.0);
+        let mut config = fixture_config(&fixture.0);
         let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
-        let url = format!("http://127.0.0.1:{}", listener.local_addr()?.port());
-        let identity = process_identity(std::process::id())?.context("测试进程应当存活")?;
-        save_record(
-            &fixture.0,
-            &ServerRecord {
-                pid: std::process::id(),
-                url: url.clone(),
-                identity,
-            },
-        )?;
-        let error = matching_record(&config, &url, &config::build_id()?)
-            .expect_err("HTTP 无响应必须阻止重复启动");
+        config.port = listener.local_addr()?.port();
+        let _held = lock_data(&fixture.0)?;
+        let error = classify_only(&config).expect_err("HTTP 无响应必须阻止重复启动");
         assert!(error.to_string().contains("仍存活"));
+        assert!(!fixture.0.join("server.json").exists());
         Ok(())
     }
 
@@ -574,16 +447,14 @@ mod tests {
     fn registration_supports_actual_ephemeral_port_and_parent_lock() -> Result<()> {
         let fixture = Fixture::new()?;
         let mut config = fixture_config(&fixture.0);
-        config.port = 0;
         let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
-        let port = listener.local_addr()?.port();
-        register(&config, port)?;
-        let record = read_record(&fixture.0)?.context("缺少注册记录")?;
-        assert_eq!(record.url, format!("http://127.0.0.1:{port}"));
-        assert!(verify_record(&record)?);
-        let _parent = lock_data(&fixture.0)?;
-        register(&config, port)?;
-        assert!(register(&config, 0).is_err());
+        config.port = listener.local_addr()?.port();
+        let parent = lock_data(&fixture.0)?;
+        let error = classify_only(&config).expect_err("父进程占着锁时不能再监听");
+        assert!(error.to_string().contains("仍存活"));
+        drop(parent);
+        config.port = 0;
+        assert!(classify_only(&config).is_err());
         Ok(())
     }
 

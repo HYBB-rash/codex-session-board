@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use codex_session_board::{config, http, mcp, observer, service};
+use codex_session_board::{config, mcp, observer, service};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
@@ -53,7 +53,7 @@ fn serve(path: &Path) -> Result<()> {
         service::OpenedBoard::Owned(board) => {
             println!("{}", board_status(&board.url, true, &board.config));
             std::io::Write::flush(&mut std::io::stdout())?;
-            http::run(board.server, board.port, board.app)
+            board.run()
         }
     }
 }
