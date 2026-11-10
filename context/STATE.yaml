@@ -2,14 +2,17 @@
   "schema_version": 1,
   "updated_at": "2026-11-11",
   "current_phase": {
-    "id": "runtime-status-investigation-20261111",
+    "id": "ui-layout-investigation-20261111",
     "status": "completed",
     "as_of": "2026-11-11",
-    "summary": "已确认正式 v0.2.73 上运行会话仍停在待审阅。实时 active 和 in_progress pending 均存在，客户端分区写入 socket 路径及两个发现目录不存在，移列失败并报 nativeStageError。未修改生产，现场尚未恢复，不宣称 release_ready。"
+    "summary": "已复现项目筛选导致列宽在约559px与277px间变化。正式HTTP与MCP页面同源；根因是11月10日bd02af3改版引入的按钮nowrap、看板min-content及Flex分配。单张长标题也可触发，隔离覆盖换行和容器最小宽度可恢复。仅完成调查，未修复或部署，不宣称release_ready。"
   },
   "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md"],
-  "known_open_issues": ["正式进程已是 v0.2.63。完整活动列表里没有、但出现在原生归档列表中的会话不再计为未读回位置，本地行不改。这次启动时桌面 socket 文件不在，本机 nativeError 为桌面 socket 不存在，4 个缺项有没有消失还没有在一次成功读回里核对。未改用户会话备注。v0.2.38两张已归档M1验收卡的迁移缓存已依据新鲜归档列表单独补确认。", "新建会话旧任务的第二项目输入页验收仍单独保留；本次M1已登记项目新建和同UUID首轮闭环不代签此前已取消的新建项目任务。", "v0.2.38完整31条及16项已通过。v0.2.63 已换上 18767。M1 已按运行状态分列。bb macbook 这次握手是 unexpected end of file，超限轮次隔离还没有在这次连接里走到。两台 Hermes 自动连接保持关闭。未扩大专用验收写入范围。", "项目登记与分区读回依赖当前Codex客户端内部状态格式，格式改变时需重新核对；旧userMessage ID重编号会保守增加inputVersion，旧表单可能需刷新。", "PWA安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。", "本机和M1专用会话真实归档已通过。正式进程已是 v0.2.63，原生侧栏取消归档后，下一次本机位置读回会恢复本地已确认卡片并保留备注。这次启动还没有完成一次本机位置读回。旧库含热日志时，迁移前须在私有副本执行SQLite标准恢复，保留原始数据库与日志。"],
-  "last_completed_task": "context/tasks/completed/runtime-status-investigation-20261111.md",
+  "known_open_issues": [
+    "2026-11-11已确认正式v0.2.73的布局回归：长标题经按钮nowrap与看板min-content撑宽全部列，项目筛选会改变列宽。隔离浏览器已定位原因，尚未修改或部署修复。见context/tasks/completed/ui-layout-investigation-20261111.md。",
+    "2026-11-11已确认正式v0.2.73的分区写入socket及发现目录不存在，运行会话已排入in_progress pending但仍停在待审阅。生产环境未恢复，见context/tasks/completed/runtime-status-investigation-20261111.md。",
+    "正式进程已是 v0.2.63。完整活动列表里没有、但出现在原生归档列表中的会话不再计为未读回位置，本地行不改。这次启动时桌面 socket 文件不在，本机 nativeError 为桌面 socket 不存在，4 个缺项有没有消失还没有在一次成功读回里核对。未改用户会话备注。v0.2.38两张已归档M1验收卡的迁移缓存已依据新鲜归档列表单独补确认。", "新建会话旧任务的第二项目输入页验收仍单独保留；本次M1已登记项目新建和同UUID首轮闭环不代签此前已取消的新建项目任务。", "v0.2.38完整31条及16项已通过。v0.2.63 已换上 18767。M1 已按运行状态分列。bb macbook 这次握手是 unexpected end of file，超限轮次隔离还没有在这次连接里走到。两台 Hermes 自动连接保持关闭。未扩大专用验收写入范围。", "项目登记与分区读回依赖当前Codex客户端内部状态格式，格式改变时需重新核对；旧userMessage ID重编号会保守增加inputVersion，旧表单可能需刷新。", "PWA安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。", "本机和M1专用会话真实归档已通过。正式进程已是 v0.2.63，原生侧栏取消归档后，下一次本机位置读回会恢复本地已确认卡片并保留备注。这次启动还没有完成一次本机位置读回。旧库含热日志时，迁移前须在私有副本执行SQLite标准恢复，保留原始数据库与日志。"],
+  "last_completed_task": "context/tasks/completed/ui-layout-investigation-20261111.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
