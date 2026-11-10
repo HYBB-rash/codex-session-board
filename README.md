@@ -43,6 +43,10 @@ python3 scripts/verify_acceptance.py --evidence /path/to/evidence.json --report 
 
 验收使用指定会话交付的 acceptance-v1，31 条需求与独立模型保持原始 SHA256。
 业务测试调用 Rust 实现；Python 仅用于独立验收工具和参考模型。
+浏览器布局回归还需 Node.js 22 或更新版本及 Chrome/Chromium。
+可通过 `CODEX_BOARD_BROWSER` 指定浏览器可执行文件。
+单独运行 `node scripts/check-ui-layout.mjs /tmp/session-board-layout`，
+会使用合成数据验证五/六列、长内容、项目筛选、搜索和窄屏滚动，并保存测量与截图。
 自动检查通过不能替代原生 Codex 界面实测。完整验收退出 0 且
 `release_ready=true` 才达到开发完成标准；远程接入还需同一最终构建通过
 `scripts/verify_remote_release.py` 的五状态与远程专项。连接和可靠性边界见

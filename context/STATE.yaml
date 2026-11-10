@@ -2,12 +2,12 @@
   "schema_version": 1,
   "updated_at": "2026-11-11",
   "current_phase": {
-    "id": "socket-recovery-guidance-20261111",
-    "status": "pending_validation",
+    "id": "ui-stable-columns-20261111",
+    "status": "in_progress",
     "as_of": "2026-11-11",
-    "summary": "0.2.79已实现本地连接易懂异常、恢复步骤和重新检查按钮，专项及浏览器正反场景通过。完整验收退出2：499/499自动测试通过，14条外部证据待补，release_ready=false。未退出或重启Codex，正式仍0.2.73，任务保持待验证。"
+    "summary": "隔离worktree已改正看板最小宽度与标题按钮换行。20组真实浏览器回归和Rust专项通过，同一回归对旧页面失败。正在提交、合并及准备部署；保留主线其他任务与正式配置数据。"
   },
-  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/state-section-consistency-implementation-20261111.md"],
+  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/state-section-consistency-implementation-20261111.md", "context/tasks/active/ui-stable-columns-20261111.md"],
   "known_open_issues": [
     "0.2.79连接异常和恢复指导已实现，任务仍待发布验收；缺少真实客户端退出重启恢复及完整外部证据，未部署。续作见context/handoffs/socket-recovery-guidance-20261111.md。",
     "2026-11-11已确认正式v0.2.73的布局回归：长标题经按钮nowrap与看板min-content撑宽全部列，项目筛选会改变列宽。隔离浏览器已定位原因，尚未修改或部署修复。见context/tasks/completed/ui-layout-investigation-20261111.md。",
