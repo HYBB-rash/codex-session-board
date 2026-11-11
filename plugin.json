@@ -1,5 +1,5 @@
 {
   "name": "codex-session-board",
-  "version": "0.3.13",
+  "version": "0.3.14",
   "description": "Rust Codex 会话看板"
 }
