@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 
 pub const THREAD: &str = "11111111-1111-4111-8111-111111111111";
 
+#[derive(Clone, Debug, PartialEq)]
 pub struct Surface {
     pub host: String,
     pub title: String,
@@ -110,9 +111,14 @@ impl HostRpc for Surface {
 
 pub fn fixture(host: &str) -> Result<(tempfile::TempDir, Partition, Surface)> {
     let directory = tempfile::tempdir()?;
-    let partition = Partition::open(directory.path(), host)?;
+    let (partition, surface) = fixture_in(directory.path(), host)?;
+    Ok((directory, partition, surface))
+}
+
+pub fn fixture_in(directory: &std::path::Path, host: &str) -> Result<(Partition, Surface)> {
+    let partition = Partition::open(directory, host)?;
     partition.discover(host, &[seed(host, THREAD)])?;
     let mut surface = Surface::new(host);
     partition.refresh(&mut surface, THREAD)?;
-    Ok((directory, partition, surface))
+    Ok((partition, surface))
 }

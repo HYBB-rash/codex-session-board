@@ -7,9 +7,14 @@ use rusqlite::types::ValueRef;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
+#[path = "support/model_database.rs"]
+mod model_database;
+#[path = "support/model_replay.rs"]
+mod model_replay;
+use model_replay::{ReplayCounts, TraceDatabase};
 
 const PYTHON_MODEL: &str = r#"
 import json
@@ -904,9 +909,8 @@ fn model_step(store: &Store, event: &str, clock: f64) {
     }
 }
 
-fn replay_model_trace(trace: &Value) -> usize {
-    let directory = tempfile::tempdir().unwrap();
-    let mut store = Store::open(directory.path(), false).unwrap();
+fn initial_model_store(directory: &Path) -> Store {
+    let store = Store::open(directory, false).unwrap();
     store
         .discover(&[json!({
             "id": "contract-thread", "name": "验收会话",
@@ -930,12 +934,33 @@ fn replay_model_trace(trace: &Value) -> usize {
             "state": "in_progress", "manual": false, "note": "", "version": 1,
         })
     );
+    assert_eq!(store.sessions().unwrap()[0]["inputVersion"], 1);
+    store
+}
+
+fn complete_snapshot(store: &Store) -> model_database::Snapshot {
+    let database = store.connection().unwrap();
+    model_database::snapshot(&database).unwrap()
+}
+
+fn trace_database(directory: &Path) -> TraceDatabase {
+    let store = Store::open(directory, false).unwrap();
+    let database = store.connection().unwrap();
+    TraceDatabase::capture(&database, directory).unwrap()
+}
+
+fn replay_model_trace(directory: &Path, trace: &Value) -> ReplayCounts {
+    let mut store = initial_model_store(directory);
+    let mut counts = ReplayCounts::default();
     let steps = trace["steps"].as_array().unwrap();
     for (index, step) in steps.iter().enumerate() {
         let event = step["event"].as_str().unwrap();
+        let before = matches!(event, "restart" | "view").then(|| complete_snapshot(&store));
         if event == "restart" {
+            model_database::mark_restart(&store.connection().unwrap()).unwrap();
             drop(store);
-            store = Store::open(directory.path(), false).unwrap();
+            store = Store::open(directory, false).unwrap();
+            assert!(!model_database::restart_marker_exists(&store.connection().unwrap()).unwrap());
         } else {
             model_step(&store, event, 1000.0 + 10.0 * (index + 1) as f64);
         }
@@ -944,8 +969,13 @@ fn replay_model_trace(trace: &Value) -> usize {
             step["expected"],
             "trace={trace}, step={index}"
         );
+        if let Some(before) = before {
+            assert_eq!(complete_snapshot(&store), before, "{event}");
+        }
+        counts.record(event);
     }
-    steps.len()
+    counts.traces = 1;
+    counts
 }
 
 mod state_contract_tests {
@@ -1016,7 +1046,9 @@ mod state_contract_tests {
             .map(|trace| trace["origin"].to_string())
             .collect();
         assert_eq!(origins.len(), 40);
-        let mut actions = 0;
+        let directory = tempfile::tempdir().unwrap();
+        let database = trace_database(directory.path());
+        let mut counts = ReplayCounts::default();
         for origin in &origins {
             let expected_origin: Value = serde_json::from_str(origin).unwrap();
             let events: BTreeSet<_> = traces
@@ -1027,10 +1059,47 @@ mod state_contract_tests {
             assert_eq!(events.len(), 13);
         }
         for trace in traces {
-            actions += replay_model_trace(trace);
+            database.reset().unwrap();
+            counts += replay_model_trace(directory.path(), trace);
         }
-        assert!(actions >= 520);
-        eprintln!("frozen model: 40 reachable states, 520 edges, {actions} actions compared");
+        database.reset().unwrap();
+        assert!(counts.steps >= 520);
+        assert_eq!(counts, ReplayCounts { traces: 520, steps: 1417, restarts: 40, views: 40 });
+        eprintln!("frozen model: 40 reachable states, 520 edges, {} actions compared", counts.steps);
+    }
+
+    #[test]
+    fn model_trace_reset_clears_all_tables_and_rejects_changed_schema() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::open(directory.path(), true).unwrap();
+        let database = TraceDatabase::capture(&store.connection().unwrap(), directory.path()).unwrap();
+        model_database::mark_restart(&store.connection().unwrap()).unwrap();
+        assert!(model_database::restart_marker_exists(&store.connection().unwrap()).unwrap());
+        store.connection().unwrap().execute_batch(
+            "INSERT INTO sessions(id,title,cwd,updated_at,seen_at) VALUES('noise','noise','',0,0);
+             INSERT INTO changes(thread_id,changed_at,state,note) VALUES('noise',0,'review','noise');
+             INSERT INTO title_updates(thread_id,version,state,requested_at) VALUES('noise',1,'review',0);
+             UPDATE settings SET value='-12345' WHERE key='title_sync_started_at';
+             INSERT INTO remote_sessions(id,host_id,thread_id,host_label,title,cwd,updated_at)
+                 VALUES('noise','host','thread','host','noise','',0);
+             INSERT INTO remote_projects(id,value) VALUES('noise','{}');"
+        ).unwrap();
+        assert!(complete_snapshot(&store).tables.values().all(|rows| !rows.is_empty()));
+        drop(store);
+        database.reset().unwrap();
+        let store = Store::open(directory.path(), true).unwrap();
+        assert!(!model_database::restart_marker_exists(&store.connection().unwrap()).unwrap());
+        assert!(store.title_epoch.is_some());
+        assert_ne!(store.title_epoch, Some(-12345.0));
+        store.connection().unwrap().execute_batch(
+            "CREATE TRIGGER noise AFTER UPDATE ON sessions
+             BEGIN UPDATE sessions SET note='noise' WHERE id=new.id; END;"
+        ).unwrap();
+        let before = complete_snapshot(&store);
+        drop(store);
+        assert!(database.reset().unwrap_err().to_string().contains("schema"));
+        let connection = rusqlite::Connection::open(directory.path().join("status.sqlite3")).unwrap();
+        assert_eq!(model_database::snapshot(&connection).unwrap(), before);
     }
 }
 
