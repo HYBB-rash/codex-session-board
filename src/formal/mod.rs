@@ -3,9 +3,11 @@ mod draft;
 mod explore;
 mod fixture;
 mod paths;
+mod persistence;
 mod replay;
 mod records;
 mod session;
+mod time;
 mod versions;
 
 #[cfg(test)]
