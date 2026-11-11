@@ -1484,6 +1484,9 @@
       "lib::codex_session_board::remote::connections::tests::failed_manual_connection_stops_when_auto_connect_is_off"
     ],
     "DELIVERY-001": [
+      "acceptance.test_update_delivery.UpdateDeliveryTests.test_cache_provenance_requires_the_native_git_revision_even_without_a_cache_marker",
+      "acceptance.test_update_delivery.UpdateDeliveryTests.test_install_uses_the_verified_git_snapshot_without_a_second_marketplace_refresh",
+      "acceptance.test_update_delivery.UpdateDeliveryTests.test_reload_targets_the_installed_mcp_without_global_skill_discovery",
       "acceptance.test_delivery.DeliveryTests.test_portable_source_archive_preserves_the_complete_implementation_fingerprint",
       "acceptance.test_delivery.DeliveryTests.test_package_hashes_bind_assets_binary_and_version",
       "acceptance.test_delivery.DeliveryTests.test_extra_files_and_symlinks_cannot_enter_a_release",

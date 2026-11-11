@@ -64,18 +64,24 @@ def install_market(codex, repository, reference):
                        check=True, stdout=subprocess.DEVNULL)
     subprocess.run([codex, "plugin", "marketplace", "add", repository, "--ref", reference, "--json"],
                    check=True, stdout=subprocess.DEVNULL)
-    subprocess.run([codex, "plugin", "marketplace", "upgrade", MARKET, "--json"],
-                   check=True, stdout=subprocess.DEVNULL)
     subprocess.run([codex, "plugin", "add", f"codex-session-board@{MARKET}", "--json"],
                    check=True, stdout=subprocess.DEVNULL)
 
 
-def cached_package(version, revision):
+def cached_package(codex, version, revision):
+    markets = json.loads(command([codex, "plugin", "marketplace", "list", "--json"]))
+    selected = [item for item in markets["marketplaces"] if item["name"] == MARKET]
+    if len(selected) != 1 or selected[0].get("marketplaceSource", {}).get("sourceType") != "git":
+        raise ValueError("Installed marketplace is not the expected native Git snapshot")
+    if command(["git", "rev-parse", "HEAD"], Path(selected[0]["root"])) != revision:
+        raise ValueError("Native marketplace Git revision differs from the fetched release")
     home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
     package = home / "plugins/cache" / MARKET / "codex-session-board" / version
-    metadata = json.loads((package / ".codex-marketplace-install.json").read_text())
-    if metadata.get("source_type") != "git" or metadata.get("revision") != revision:
-        raise ValueError("Installed plugin Git revision differs from the fetched release")
+    metadata_path = package / ".codex-marketplace-install.json"
+    if metadata_path.exists():
+        metadata = json.loads(metadata_path.read_text())
+        if metadata.get("source_type") != "git" or metadata.get("revision") != revision:
+            raise ValueError("Installed plugin Git revision differs from the fetched release")
     return verify_package(package, installed=True)
 
 
@@ -148,8 +154,8 @@ def update(repository, channel, revision, config_path, state, codex, reload=True
                 "phase": "installing", "package": str(directory), "backup": str(backup_path),
                 "reference": reference, "config": str(config_path),
             }, indent=2) + "\n")
-            install_market(codex, repository, reference)
-            cached = cached_package(manifest["version"], source_revision)
+            install_market(codex, repository, source_revision)
+            cached = cached_package(codex, manifest["version"], source_revision)
             if cached != manifest:
                 raise ValueError("Installed plugin cache differs from fetched release")
             result = activate(directory, config_path, state, codex, reload, data, backup_path)

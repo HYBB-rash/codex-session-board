@@ -57,7 +57,6 @@ def reload_plugins(codex, directory, version):
             request(1, "initialize", {"clientInfo": {"name": "session_board_update", "version": "1"},
                                      "capabilities": {"experimentalApi": True}})
             connection.send(json.dumps({"method": "initialized"}))
-            request(2, "skills/list", {"cwds": [str(directory)], "forceReload": True})
             request(3, "config/mcpServer/reload", None)
             return verify_loaded(request, version)
         finally:
