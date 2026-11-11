@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "version": "0.2.98",
+  "version": "0.3.11",
   "target": "x86_64-unknown-linux-gnu",
-  "source_commit": "459ea448b0ba350ccca1e0d6fed3a497d6f24604",
+  "source_commit": "ec9d830d8df72f86e2662297c616f6299e5fb78b",
   "contract_sha256": "83c5da84132391106a372c423eaa01c11dc7a1306864d669d8c70bbc21534449",
-  "build_sha256": "d1ab4e7b7fe915c06a21f9cd62efcbf4bac29d40e379b67e1cc0857a2a5cbaff",
+  "build_sha256": "7e4af0293385185b5128d27176c9b6a6c1a1663ce4f517de86e141b40ade2a2e",
   "files": {
     ".agents/plugins/marketplace.json": "f4a6622cc875c6e4857666e6e73ad2ab3c4a170323da4131deffa3b5280cb671",
-    ".codex-plugin/plugin.json": "961b35093a91c281e0685323be8c00d6209521c0156d1ad2999a67ec5c0726ad",
+    ".codex-plugin/plugin.json": "ea505737e4d9db48ae078126337b3417f5da3960e49f914d8faacf4d7a6b95de",
     ".mcp.json": "294bd4e6158076bf7831c2a1b98c4b351409904c0ca1be0b55ed8520fa514861",
     "assets/app-bridge.js": "5d4d7c4be09127032369ff3f309a4d112302830642cbbf08706fa28244490ed0",
     "assets/app-bridge.js.LEGAL.txt": "99845957be48d02957ee10e67e4ec7737d6c750de20016f6f6f6de91871be8da",
@@ -16,12 +16,12 @@
     "assets/pwa.js": "f7cea52d3f8a5f73033f2a2eeece37ca1406cf2b5c9c9d0f10667a8a3ec671f7",
     "assets/sw.js": "42aa35a4286ed0e09f2a9e020b57e47ed2a06853831a9e3cff285766e52bf4eb",
     "assets/third-party-licenses.txt": "b54e0492ec95c9882816f02c96a0ce4875b5e4fb148347fe20aa82aec8ef3df2",
-    "bin/codex-session-board": "792c03cacb1dda42d859d0b61bcba847e76d1fb26a81068998b38a9e87c1cad4",
+    "bin/codex-session-board": "3b9cf3c5a62d7e1e2b598b856c60267b42bc0e7ccfaf3b4a626e47221c672e62",
     "bin/run-plugin": "a1579d2e06a2e919ad4a5222ab787153f6c8415f181f41bdfe4b8876eac4eafe",
     "index.html": "9d427f2d8ff3ce77a726b65b97fbe8d09c9421214461a482a484bcae4f9fe252",
     "mcp.json": "a629b93820e492a616c74895ffbbbd179ffca6e7b6e83bde4a6685d30b741be7",
-    "plugin.json": "b424d5c1f60ca025bf1584691dd06f3071f83836312fa824bb424359d9adf9eb",
+    "plugin.json": "47cfc4b70412dd8f18bf39321c44310afd1cc879ef08118e749c1318a4bc6b09",
     "skills/open-session-board/SKILL.md": "155eacabee4f6f7de180109876f605fada402c1c40ce653af6765795ff7bcce8"
   },
-  "binary_sha256": "792c03cacb1dda42d859d0b61bcba847e76d1fb26a81068998b38a9e87c1cad4"
+  "binary_sha256": "3b9cf3c5a62d7e1e2b598b856c60267b42bc0e7ccfaf3b4a626e47221c672e62"
 }
