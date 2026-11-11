@@ -2,7 +2,7 @@
 
 owner: codex
 execution_mode: isolated_write
-allowed_write_set: src/, tests/, scripts/, Docs/, .github/, .agents/plugins/, Cargo.toml, Cargo.lock, plugin.json, .codex-plugin/plugin.json, acceptance/bindings.json, context/
+allowed_write_set: src/, tests/, scripts/, Docs/, README.md, requirements-delivery.txt, .github/, .agents/plugins/, Cargo.toml, Cargo.lock, plugin.json, .codex-plugin/plugin.json, acceptance/bindings.json, acceptance/test_delivery.py, acceptance/test_update_delivery.py, context/
 base_commit: f9c68da06de85bc2f7e739f5df9e638d8f480d3e
 worktree_path: /home/herman/文档/codex-session-board-migration-20261111
 coordinator: codex-mac-migration
@@ -27,12 +27,28 @@ Fedora 原检出仍有独立形式化任务进行；本任务使用独立 clone�
 ## 现场
 
 - 2026-11-11：SSH 已验证 MacBookPro、hongyong、arm64、zsh。
-- Mac 既有 Rust 1.78.0，正在升级；已有 Git、Python、Codex 与独立 Agent 签名器。
-- Fedora GitHub 已登录 HYBB-rash；Mac GitHub 登录失效，禁止复制 Fedora 凭据。
-- 原检出无远端；创建私有源码仓库并以 Git bundle 完成首次迁移。
+- Mac Rust 已从 1.78.0 升级到 1.99.1，安装 Clippy、rustfmt，缓存锁定依赖。
+- Mac GitHub CLI 登录失效；已有 SSH 身份现已通过 GitHub 真实取包，无凭据跨机复制。
+- 私有仓库 HYBB-rash/codex-session-board 已创建，首次完整历史与上下文由 bundle 迁移。
 - 已从实际部署回执核对 0.2.92 源码 f9c68da，并采用其完整后继作为实现基线。
   原主检出的形式化任务仍独立保存，不以旧主检出覆盖已部署功能。
 - 合并用户委托的跳转故障修复：来源聊天 01a1ca2b-5173-7383-ad1f-806fb9c6f253。
   服务可能继承已删除的 worktree cwd；客户端子进程必须设置稳定工作目录。
   安装、更新与回退须同时验证路径、cwd、实际版本和真实跳转。
   旧正式 data_dir 位于历史 release 内，禁止随 release 清理删除。
+
+## 已验证与续作
+
+- 732MB 迁移材料、五工作区快照、133 份项目聊天及额外清理保全材料已抵达 Mac；
+  归档 SHA 和逐文件 SHA 已核对。聊天作为历史材料保留，不混入实时会话索引。
+- 原部署 f9c68da 与统一 main 4641088 分步合入，保留双方历史和验收映射。
+  其他正在开发的形式化提交仅归档保全，不冒充已交付 main。
+- Mac 原生 socket、身份核验停止、旧构建停止和删除 cwd 后导航已有测试。
+- GitHub 0.2.98 Mac 候选实际安装、服务身份和 MCP 重载均成功；
+  Linux 隔离安装与固定 Git SHA 回退已成功，原生产服务未切换。
+- 用户提供的新 Agent 签名器已检查，直接调用系统 ssh-keygen；
+  远端 Git 认证也独立通过，未登记新 GitHub 密钥。
+- 最终源码推送、CI、升级回退及配置数据保留结果继续写入 handoff 指定的运行回执。
+- 完整业务验收仍须真实目标环境证据，不能以候选交付或自动检查代签。
+
+续作入口：`context/handoffs/mac-development-release-20261111.md`。

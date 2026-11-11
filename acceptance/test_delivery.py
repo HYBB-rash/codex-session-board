@@ -86,3 +86,9 @@ class DeliveryTests(unittest.TestCase):
                 with patch.object(publish_plugin, "verify", return_value=({"release_ready": False}, 2)):
                     with self.assertRaisesRegex(ValueError, "has not passed"):
                         publish_plugin.authorize(self.package, "stable", self.root / "evidence.json", self.root)
+        with patch.object(publish_plugin, "command", side_effect=["a" * 40, ""]):
+            with patch.object(publish_plugin, "fingerprint", return_value="b" * 64):
+                with patch.object(publish_plugin, "verify", return_value=({"release_ready": True}, 0)):
+                    self.assertEqual(
+                        publish_plugin.authorize(self.package, "stable", self.root / "evidence.json", self.root),
+                        self.manifest)

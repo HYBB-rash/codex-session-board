@@ -27,6 +27,11 @@ Mac 访问 GitHub 使用已有 SSH 身份和 `ssh.github.com:443`；
 已由原来受信任的 GitHub 主机密钥核对并记录该端点。
 SSH agent 拒绝签名属于认证失败，须在 Mac 的凭据管理器中允许 Git 访问。
 Fedora 的私钥与 GitHub 凭据没有复制到 Mac。
+认证恢复后已实际从 GitHub 安装 Mac 0.2.98 候选，并读回服务及 MCP 版本。
+本机 Agent 提交和标签使用 `~/.local/bin/agent-git`，
+包装器直接调用 `/usr/bin/ssh-keygen`；提交签名与远端 SSH 认证分别验证。
+普通 Git 身份保持原设置。GitHub 的 Verified 徽标另需账号登记签名公钥，
+不作为这次取包和运行验证的前提。
 
 ## 日常开发
 
