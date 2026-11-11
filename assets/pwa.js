@@ -1,12 +1,7 @@
 (() => {
   if (!window.isSecureContext || window.top !== window) return;
   const installed = window.matchMedia("(display-mode: standalone)");
-  const button = document.createElement("button");
-  button.id = "install-app";
-  button.type = "button";
-  button.textContent = "安装应用";
-  button.hidden = true;
-  document.querySelector(".tools").append(button);
+  const button = document.getElementById("install-app");
   let installPrompt = null;
   const feedback = message => {
     const node = document.getElementById("feedback");

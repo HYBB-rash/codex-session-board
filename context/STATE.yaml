@@ -5,7 +5,7 @@
     "id": "remote-final-integration-20261111",
     "status": "in_progress",
     "as_of": "2026-11-11",
-    "summary": "88整合基底检查已通过。准备89接入远端归档恢复基础与8项原始回归，并整合S已提交5571ff4的Chrome清理重试和绑定生成器预算修正；保留Main布局、五绑定、迁移/预检及交付规则。持续恢复告警、observer防护、PWA与门禁尚待合入，当前不是最终候选。门禁工作者已在独立remote-final-gate分支从88实现SHA/报告防覆盖和原9反例。本机两专用卡仍由另一任务占用，不写；M1最新另一任务记录SSH拒绝，桌面host client及真实drag待验，实际执行前重测。未部署，最后核对生产82；下方63/73仅历史观察。"
+    "summary": "89恢复基础与8回归、S5571ff4脚本修正已提交，完整钩子与check/context通过。准备90合入跨页/重启/断线持久告警、未确认归档记录不读超大轮次、3补充回归、PWA静态安装按钮和host.error展示；保留Main列宽修复、S分区规则与全部原断言。90尚待测试和提交，门禁独立分支仍待合并，当前不是最终候选。本机A/B仍由另一任务占用，不写；刚核对M1 SSH成功，桌面read_thread仍host unavailable，原生drag不支持。未部署，最后生产82；旧83只保留历史部分实测，下方63/73仅旧观察。"
   },
   "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/state-section-consistency-implementation-20261111.md", "context/tasks/active/ui-worktree-cleanup-20261111.md", "context/tasks/active/remote-final-integration-20261111.md"],
   "known_open_issues": [

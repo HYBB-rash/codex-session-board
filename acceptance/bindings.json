@@ -462,7 +462,10 @@
       "lib::codex_session_board::remote::scans::restore_tests::archived_pagination_requires_completion_and_rejects_repeated_cursors",
       "lib::codex_session_board::remote::scans::restore_tests::a_newer_archive_cannot_be_undone_by_an_inflight_restoration_scan",
       "lib::codex_session_board::remote::scans::restore_tests::a_retired_source_cannot_restore_cards_after_its_reply_arrives",
-      "lib::codex_session_board::remote::scans::restore_tests::identical_remote_identifiers_keep_independent_archive_history"
+      "lib::codex_session_board::remote::scans::restore_tests::identical_remote_identifiers_keep_independent_archive_history",
+      "lib::codex_session_board::remote::scans::restore_tests::restoration_warnings_reach_root_and_survive_unrelated_pages_restart_and_expired_cursor",
+      "lib::codex_session_board::remote::scans::restore_tests::restoration_warning_is_durable_when_a_later_runtime_read_disconnects",
+      "lib::codex_session_board::remote::scans::restore_tests::unconfirmed_archived_cards_do_not_fetch_potentially_oversized_turns"
     ],
     "MANUAL-002": [
       "lib::codex_session_board::remote::instances::tests::disabling_a_host_drains_its_old_operations_without_blocking_another_host",

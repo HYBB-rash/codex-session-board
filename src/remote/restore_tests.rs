@@ -8,9 +8,11 @@ const SECOND: &str = "22222222-2222-4222-8222-222222222222";
 struct Surface<'a> {
     app: &'a App,
     active: Vec<Value>,
+    active_pages: VecDeque<Value>,
     pages: VecDeque<Value>,
     archive_queries: usize,
     action: Option<fn(&App) -> Result<()>>,
+    turn_error: bool,
 }
 
 impl<'a> Surface<'a> {
@@ -18,9 +20,11 @@ impl<'a> Surface<'a> {
         Self {
             app,
             active: active.iter().map(|id| json!({"id":id})).collect(),
+            active_pages: VecDeque::new(),
             pages: pages.into(),
             archive_queries: 0,
             action: None,
+            turn_error: false,
         }
     }
 
@@ -43,7 +47,14 @@ impl Rpc for Surface<'_> {
                 }
                 Ok(page)
             }
-            "thread/list" => Ok(json!({"data":self.active})),
+            "thread/list" => {
+                let page = self.active_pages.pop_front().unwrap_or_else(|| json!({"data":self.active}));
+                if page["error"].is_object() {
+                    return Err(rpc::RequestError { method: method.into(), details: page["error"].clone() }.into());
+                }
+                Ok(page)
+            }
+            "thread/turns/list" if self.turn_error => anyhow::bail!("Message too long"),
             "thread/turns/list" => Ok(json!({"data":[]})),
             _ => anyhow::bail!("意外的写入请求：{method}"),
         }
@@ -188,6 +199,7 @@ fn a_retired_source_cannot_restore_cards_after_its_reply_arrives() -> Result<()>
     assert!(reader.scan().is_err());
     assert!(!app.store.contains(FIRST)?);
     assert_eq!(app.store.archived_revisions()?[FIRST], 2);
+    assert!(!app.config.data_dir.join("scan-progress.json").exists());
     Ok(())
 }
 
@@ -205,5 +217,93 @@ fn identical_remote_identifiers_keep_independent_archive_history() -> Result<()>
     assert!(first.store.contains(FIRST)?);
     assert!(!second.store.contains(FIRST)?);
     assert_eq!(second.store.archived_revisions()?[FIRST], 2);
+    Ok(())
+}
+
+fn pending_restoration(directory: &std::path::Path) -> Result<Config> {
+    let source = std::sync::Arc::new(app(&directory.join("remote"))?);
+    archive(&source)?;
+    let config = source.config.clone();
+    let root = App::new(Config {
+        data_dir: directory.join("root"),
+        ..Config::default()
+    })?;
+    root.remotes.lock().unwrap().insert("remote:a".into(), source.clone());
+    let mut reader = Surface::new(&source, &[], vec![json!({"error":true})]);
+    reader.active_pages = [
+        json!({"data":[],"nextCursor":"middle"}),
+        json!({"data":[{"id":FIRST}],"nextCursor":"tail"}),
+        json!({"data":[]}),
+    ].into();
+    reader.scan()?;
+    reader.scan()?;
+    assert!(root.snapshot()?["health"]["remoteConnections"][0]["error"]
+        .as_str().unwrap().contains("归档恢复待核对"));
+    reader.active_pages = [
+        json!({"data":[],"nextCursor":"last"}),
+        json!({"data":[]}),
+    ].into();
+    reader.pages.push_back(json!({"data":[]}));
+    reader.scan()?;
+    assert!(root.snapshot()?["health"]["remoteConnections"][0]["error"].is_string());
+    Ok(config)
+}
+
+#[test]
+fn restoration_warnings_reach_root_and_survive_unrelated_pages_restart_and_expired_cursor() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let reopened = App::new(pending_restoration(directory.path())?)?;
+    let mut reader = Surface::new(&reopened, &[], vec![]);
+    reader.active_pages = [json!({"error":{"message":"Invalid cursor"}})].into();
+    assert!(reader.scan().is_err());
+    let progress = Progress::load(&reopened)?;
+    assert!(progress.cursor.is_none());
+    assert!(progress.restoration_errors.contains_key(FIRST));
+    reader.pages.push_back(json!({"data":[]}));
+    reader.scan()?;
+    assert!(!reopened.store.contains(FIRST)?);
+    assert!(reopened.health.lock().unwrap()["error"].is_string());
+    assert!(Progress::load(&reopened)?.restoration_errors.contains_key(FIRST));
+    reader.pages.push_back(json!({"data":[{"id":FIRST}]}));
+    reader.scan()?;
+    assert!(!reopened.store.contains(FIRST)?);
+    assert!(reopened.health.lock().unwrap()["error"].is_null());
+    assert!(Progress::load(&reopened)?.restoration_errors.is_empty());
+    Ok(())
+}
+
+#[test]
+fn restoration_warning_is_durable_when_a_later_runtime_read_disconnects() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let app = app(directory.path())?;
+    archive(&app)?;
+    let mut reader = Surface::new(&app, &[FIRST, SECOND], vec![json!({"error":true})]);
+    reader.turn_error = true;
+    assert!(reader.scan().is_err());
+    let progress = Progress::load(&app)?;
+    assert!(progress.cursor.is_none());
+    assert!(progress.restoration_errors.contains_key(FIRST));
+    assert!(!app.store.contains(FIRST)?);
+    drop(reader);
+    let config = app.config.clone();
+    drop(app);
+    let reopened = App::new(config)?;
+    Surface::new(&reopened, &[], vec![json!({"data":[]})]).scan()?;
+    assert!(reopened.health.lock().unwrap()["error"].is_string());
+    assert!(!reopened.store.contains(FIRST)?);
+    Ok(())
+}
+
+#[test]
+fn unconfirmed_archived_cards_do_not_fetch_potentially_oversized_turns() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let app = app(directory.path())?;
+    archive(&app)?;
+    let mut reader = Surface::new(&app, &[FIRST], vec![json!({"error":true})]);
+    reader.turn_error = true;
+    reader.scan()?;
+    assert!(!app.store.contains(FIRST)?);
+    assert!(app.health.lock().unwrap()["error"].is_string());
+    assert_eq!(app.health.lock().unwrap()["runtimeVerified"], true);
     Ok(())
 }

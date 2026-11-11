@@ -159,6 +159,9 @@ fn observe_one(
 ) -> Result<Seen> {
     ensure!(app.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
     let identifier = thread["id"].as_str().context("会话缺少 ID")?;
+    if !app.store.contains(identifier)? {
+        return Ok(Seen::Same);
+    }
     let updated_at = thread["updatedAt"].as_i64().unwrap_or(0);
     if frame_blocked(
         app.store.observation_error(identifier)?.as_deref(),

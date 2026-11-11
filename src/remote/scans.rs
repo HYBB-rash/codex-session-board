@@ -6,7 +6,7 @@ use crate::{
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::atomic::Ordering;
 
 #[derive(Default, Serialize, Deserialize)]
@@ -14,9 +14,29 @@ struct Progress {
     cursor: Option<String>,
     cursors: BTreeSet<String>,
     identifiers: BTreeSet<String>,
+    #[serde(default)]
+    restoration_errors: BTreeMap<String, String>,
 }
 
 impl Progress {
+    fn save(&self, app: &App) -> Result<()> {
+        let _operation = app.operation()?;
+        config::write_json(
+            &app.config.data_dir.join("scan-progress.json"),
+            &serde_json::to_value(self)?,
+            true,
+        )
+    }
+
+    fn preserve_restoration(&self, app: &App) -> Result<()> {
+        let mut saved = Self::load(app)?;
+        if saved.restoration_errors != self.restoration_errors {
+            saved.restoration_errors = self.restoration_errors.clone();
+            saved.save(app)?;
+        }
+        Ok(())
+    }
+
     fn load(app: &App) -> Result<Self> {
         let path = app.config.data_dir.join("scan-progress.json");
         match std::fs::read(&path) {
@@ -43,11 +63,10 @@ impl Progress {
                         .contains("cursor")
                 })
         {
-            config::write_json(
-                &app.config.data_dir.join("scan-progress.json"),
-                &serde_json::to_value(Self::default())?,
-                true,
-            )?;
+            Self {
+                restoration_errors: self.restoration_errors.clone(),
+                ..Self::default()
+            }.save(app)?;
             return Err(anyhow::anyhow!(
                 "远程分页游标已失效，下轮从首页重读：{error}"
             ));
@@ -73,6 +92,33 @@ impl Progress {
                 .map(|thread| thread["id"].as_str().unwrap_or("").to_owned()),
         );
         Ok(self.cursor.is_none())
+    }
+
+    fn reconcile_restoration(
+        &mut self,
+        app: &App,
+        reader: &mut dyn Rpc,
+        entries: &[Value],
+        archived: &HashMap<String, i64>,
+    ) -> Option<String> {
+        self.restoration_errors.retain(|identifier, _| archived.contains_key(identifier));
+        let candidates: Vec<_> = entries.iter().filter_map(|entry| {
+            let identifier = entry["id"].as_str()?;
+            Some((identifier.to_owned(), *archived.get(identifier)?))
+        }).collect();
+        if let Err(error) = restore_active(app, reader, &candidates, &mut self.restoration_errors) {
+            let message = format!("归档恢复待核对：{error}");
+            for pending in self.restoration_errors.values_mut() {
+                *pending = message.clone();
+            }
+            for (identifier, _) in candidates {
+                self.restoration_errors.insert(identifier, message.clone());
+            }
+        }
+        (!self.restoration_errors.is_empty()).then(|| {
+            self.restoration_errors.values().cloned().collect::<BTreeSet<_>>()
+                .into_iter().collect::<Vec<_>>().join("; ")
+        })
     }
 }
 
@@ -115,17 +161,10 @@ fn merge_head(app: &App, reader: &mut dyn Rpc, entries: &mut Vec<Value>) -> Resu
 fn restore_active(
     app: &App,
     reader: &mut dyn Rpc,
-    entries: &[Value],
-    archived: &HashMap<String, i64>,
+    candidates: &[(String, i64)],
+    pending: &mut BTreeMap<String, String>,
 ) -> Result<()> {
-    let candidates: Vec<_> = entries
-        .iter()
-        .filter_map(|entry| {
-            let identifier = entry["id"].as_str()?;
-            Some((identifier, *archived.get(identifier)?))
-        })
-        .collect();
-    if candidates.is_empty() {
+    if candidates.is_empty() && pending.is_empty() {
         return Ok(());
     }
     let (listed, complete) =
@@ -137,11 +176,13 @@ fn restore_active(
         .filter_map(|entry| entry["id"].as_str())
         .collect();
     let _operation = app.operation()?;
+    pending.retain(|identifier, _| !still_archived.contains(identifier.as_str()));
     for (identifier, version) in candidates {
         ensure!(app.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
-        if !still_archived.contains(identifier) {
-            app.store.restore_confirmed_active(identifier, version)?;
+        if !still_archived.contains(identifier.as_str()) {
+            app.store.restore_confirmed_active(identifier, *version)?;
         }
+        pending.remove(identifier);
     }
     Ok(())
 }
@@ -171,23 +212,22 @@ pub(crate) fn scan_runtime_page(
     if app.config.native_sections {
         app.cache_native_page(generation, reader, &entries)?;
     }
-    let restoration_error = restore_active(app, reader, &entries, &archived)
-        .err()
-        .map(|error| format!("归档恢复待核对：{error}"));
-    observer::observe_runtime_threads(app, reader, revisions, since, &entries)?;
+    let restoration_error = progress.reconcile_restoration(app, reader, &entries, &archived);
+    let observed = observer::observe_runtime_threads(app, reader, revisions, since, &entries);
+    progress.preserve_restoration(app)?;
+    observed?;
     let count = progress.identifiers.len();
     if complete {
         *app.active_sessions
             .lock()
             .map_err(|_| anyhow::anyhow!("会话发现锁已损坏"))? =
             Some(progress.identifiers.into_iter().collect());
-        progress = Progress::default();
+        progress = Progress {
+            restoration_errors: progress.restoration_errors,
+            ..Progress::default()
+        };
     }
-    config::write_json(
-        &app.config.data_dir.join("scan-progress.json"),
-        &serde_json::to_value(progress)?,
-        true,
-    )?;
+    progress.save(app)?;
     app.update_health(json!({"scanComplete":complete,"discovered":count,"lastSuccessAt":crate::model::now(),"error":restoration_error}))
 }
 

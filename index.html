@@ -106,6 +106,7 @@ textarea{resize:vertical;min-height:90px}
     <div class="header-actions">
       <button id="connection-help" class="quiet" type="button">连接帮助</button>
       <button id="refresh" class="quiet" type="button">刷新</button>
+      <button id="install-app" class="quiet" type="button" hidden>安装应用</button>
       <button id="new-session" class="primary" type="button">＋ 新建会话</button>
     </div>
   </header>
@@ -659,7 +660,7 @@ function render(resetState = null) {
     byId("health").textContent += ` · ${health.remoteCacheErrors.length} 个远程缓存读取失败，需核对连接与数据`;
   }
   for (const host of health.remoteConnections || []) {
-    const warning = [...new Set([host.writeError,host.runtimeError,host.nativeError,host.nativeStageError].filter(Boolean))].join("；");
+    const warning = [...new Set([host.writeError,host.error,host.runtimeError,host.nativeError,host.nativeStageError].filter(Boolean))].join("；");
     const label = host.hostLabel || host.hostId;
     if (warning) {
       byId("health").className = "health error";
