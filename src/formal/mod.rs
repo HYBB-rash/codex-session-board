@@ -2,6 +2,8 @@ mod check;
 mod draft;
 mod explore;
 mod fixture;
+#[path = "../../tests/support/model_database.rs"]
+mod model_database;
 mod paths;
 mod persistence;
 mod replay;

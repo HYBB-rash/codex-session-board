@@ -58,8 +58,8 @@ fn archive_rechecks_prepared_versions_and_commits_only_fresh_confirmation() -> R
     assert!(row.pending_key.is_none());
     assert_eq!(store.note(ID)?, "保留备注");
     let after = snapshot(&store)?;
-    assert_eq!(after["changes"], before["changes"]);
-    assert!(after["title_updates"].is_empty());
+    assert_eq!(after.tables["changes"], before.tables["changes"]);
+    assert!(after.tables["title_updates"].is_empty());
     assert!(store.sessions()?.is_empty());
     reject_archive(&store, revisions(&store)?, "已归档")
 }
