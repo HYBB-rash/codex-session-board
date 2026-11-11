@@ -91,9 +91,9 @@ def build():
         raise ValueError("Native tests without a requirement mapping: " + repr(sorted(missing)))
     bindings = {
         "schema_version": 1, "implementation": "Rust Codex session board",
-        "adapter": {"command": ["{python}", "scripts/rust_adapter.py"], "timeout_seconds": 600},
+        "adapter": {"command": ["{python}", "scripts/rust_adapter.py"], "timeout_seconds": 1800},
         "fingerprint_paths": [
-            "Cargo.toml", "Cargo.lock", "clippy.toml", "project-rules.json", "src", "tests",
+            "Cargo.toml", "Cargo.lock", "build.rs", "clippy.toml", "project-rules.json", "src", "tests",
             "index.html", "config.example.json", "plugin.json", "mcp.json", ".mcp.json",
             ".codex-plugin", ".agents/plugins", ".githooks", "assets", "skills", "acceptance",
             "scripts", "examples", "AGENTS.md", "README.md", "Docs/*.md",

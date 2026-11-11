@@ -6,7 +6,7 @@
       "{python}",
       "scripts/rust_adapter.py"
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 1800
   },
   "fingerprint_paths": [
     "Cargo.toml",

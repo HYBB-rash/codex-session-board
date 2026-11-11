@@ -5,9 +5,9 @@
     "id": "state-section-consistency-implementation-20261111",
     "status": "pending_validation",
     "as_of": "2026-11-11",
-    "summary": "五状态有效绑定、严格校验、显式迁移、只读预检和独立有限模型已实现并通过提交检查。已整合主线布局与部署收尾；候选86的真实五分区保存、完整标题与旧动作投影通过，需用最终87重新取证并完成全量验收。正式仍为0.2.82和六映射配置，尚未切换本修复。"
+    "summary": "五状态绑定、迁移、预检及独立有限模型已实现。87本机五状态、标题、冲突拒绝、恢复及MCP实测通过，隔离真实CLI协议19项通过。完整串行验收两次被600秒外层预算中断，88保持断言并调为1800秒后重测。M1最新SSH连接拒绝；真实UI及完整31条/16项仍待验证。正式0.2.82尚未迁移本修复。"
   },
-  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/state-section-consistency-implementation-20261111.md"],
+  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/state-section-consistency-implementation-20261111.md", "context/tasks/active/ui-worktree-cleanup-20261111.md"],
   "known_open_issues": [
     "0.2.79连接异常和恢复指导已实现，任务仍待发布验收；缺少真实客户端退出重启恢复及完整外部证据，未部署。续作见context/handoffs/socket-recovery-guidance-20261111.md。",
     "2026-11-11项目筛选列宽回归已修复并上线v0.2.82：更正标题nowrap及看板min-content；20组真实浏览器回归与正式页面159/5条会话筛选往返保持等宽。完整验收500项自动通过，14项全局真实环境证据仍待补，release_ready=false。见context/tasks/completed/ui-stable-columns-20261111.md。",
