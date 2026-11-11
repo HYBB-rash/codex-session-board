@@ -1,7 +1,8 @@
+use super::check::rejection;
 use super::fixture::{ID, load};
 use crate::native_sections::Observation;
 use crate::store::Store;
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 
 pub(super) fn snapshot(store: &Store) -> Result<super::model_database::Snapshot> {
@@ -39,10 +40,7 @@ pub(super) fn rejected<Returned>(
     store: &Store, reason: &str, operation: impl FnOnce() -> Result<Returned>,
 ) -> Result<()> {
     let before = snapshot(store)?;
-    match operation() {
-        Ok(_) => bail!("应拒绝的操作返回成功: {reason}"),
-        Err(error) => ensure!(error.to_string().contains(reason), "错误原因不匹配: {error}"),
-    }
+    rejection(operation(), reason)?;
     ensure!(snapshot(store)? == before, "拒绝操作改变了持久数据: {reason}");
     Ok(())
 }

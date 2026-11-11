@@ -1,6 +1,6 @@
 use super::check::rejection;
 use super::fixture::{ID, Stored, flags, install, load, project, revision, seat_of, turn_id};
-use super::session::{Column, Event, Phase, Seat, Session, When, events, step, version_delta};
+use super::session::{Column, Event, Phase, Seat, Session, When, events, preserves, step, version_delta};
 use crate::native_sections::Observation;
 use crate::store::{RuntimeChange, Store};
 use anyhow::{Context, Result, ensure};
@@ -116,13 +116,20 @@ fn seen(column: Column) -> Observation {
 }
 
 fn runtime(store: &Store, phase: Phase, when: When) -> Result<()> {
-    let seat = seat_of(load(store)?.native_section.as_deref())?;
-    match prepare(store, phase, when) {
-        Err(error) if seat == Seat::Unread => rejection::<()>(Err(error), "等待确认原生分区"),
-        Err(error) => Err(error),
-        Ok(None) => Ok(()),
-        Ok(Some(change)) if seat == Seat::Custom => store.consume_native_runtime(ID, &change),
-        Ok(Some(change)) => finish(store, &change),
+    let before = project(store)?;
+    let result = prepare(store, phase, when);
+    if before.archived || when == When::Same || preserves(before, phase, when) {
+        ensure!(result?.is_none(), "应保留原位置的阶段返回了移动请求");
+        return Ok(());
+    }
+    if before.seat == Seat::Unread {
+        return rejection(result, "等待确认原生分区");
+    }
+    let change = result?.context("新阶段没有返回待确认请求")?;
+    if before.seat == Seat::Custom {
+        store.consume_native_runtime(ID, &change)
+    } else {
+        finish(store, &change)
     }
 }
 
@@ -198,11 +205,14 @@ fn prepare(store: &Store, phase: Phase, when: When) -> Result<Option<RuntimeChan
 fn retry(store: &Store, phase: Phase) -> Result<()> {
     let stored = load(store)?;
     let Some(turn) = turn_id(stored.pending_key.as_deref())? else { return Ok(()); };
+    let before = project(store)?;
     let (status, body) = evidence(phase, &turn, 1.0e12);
-    if let Some(change) = store.prepare_native_runtime(ID, &status, &body, 1.0e12 + 1.0)? {
-        finish(store, &change)?;
+    let change = store.prepare_native_runtime(ID, &status, &body, 1.0e12 + 1.0)?;
+    if before.pending_same_turn && before.phase == Some(phase) {
+        ensure!(change.is_none(), "重复已确认阶段生成了重试请求");
+        return Ok(());
     }
-    Ok(())
+    finish(store, &change.context("重试没有返回待确认请求")?)
 }
 
 fn evidence(phase: Phase, turn: &str, time: f64) -> (Value, Value) {

@@ -13,20 +13,22 @@ fn reject_archive(store: &Store, version: (i64, i64), reason: &str) -> Result<()
 fn archive_guards_independently_reject_versions_review_and_wrong_columns() -> Result<()> {
     let store = start()?;
     store.cache_native(ID, &position("review"))?;
-    reject_archive(&store, revisions(&store)?, "只能归档")?;
+    reject_archive(&store, revisions(&store)?, "只能归档待归档会话")?;
     select(&store, "to_archive")?;
     let original = revisions(&store)?;
     select(&store, "to_archive")?;
-    reject_archive(&store, original, "状态已更新")?;
+    reject_archive(&store, original, "状态已更新，请刷新后重试")?;
     observe(&store, "new", &["u1"])?;
     select(&store, "to_archive")?;
     assert_eq!(load(&store)?.review, 0);
-    reject_archive(&store, (revisions(&store)?.0, original.1), "新输入")?;
+    let input_conflict = "会话有新输入，请刷新并核对后重试";
+    reject_archive(&store, (revisions(&store)?.0, original.1), input_conflict)?;
     observe(&store, "new", &["u1", "u2"])?;
-    reject_archive(&store, revisions(&store)?, "确认待归档")?;
+    let needs_review = "会话有新输入，请核对后点击卡片上的“确认待归档”";
+    reject_archive(&store, revisions(&store)?, needs_review)?;
     select(&store, "to_archive")?;
     store.confirm_archive(ID, revisions(&store)?)?;
-    reject_archive(&store, revisions(&store)?, "已归档")
+    reject_archive(&store, revisions(&store)?, "会话已归档，请刷新看板")
 }
 
 #[test]
@@ -40,11 +42,11 @@ fn archive_rechecks_prepared_versions_and_commits_only_fresh_confirmation() -> R
     assert_eq!(store.prepare_archive(ID, prepared)?, expected);
     assert_eq!(snapshot(&store)?, before);
     select(&store, "to_archive")?;
-    rejected(&store, "状态已更新", || store.confirm_archive(ID, prepared))?;
+    rejected(&store, "状态已更新，请刷新后重试", || store.confirm_archive(ID, prepared))?;
     let prepared = revisions(&store)?;
     assert_eq!(store.prepare_archive(ID, prepared)?, expected);
     observe(&store, "new", &["u1", "u2"])?;
-    rejected(&store, "新输入", || store.confirm_archive(ID, prepared))?;
+    rejected(&store, "会话有新输入，请刷新并核对后重试", || store.confirm_archive(ID, prepared))?;
     select(&store, "to_archive")?;
     let active = json!({"type":"active"});
     let running = json!({"id":"pending","status":"inProgress","startedAt":1.0e12});
@@ -61,5 +63,5 @@ fn archive_rechecks_prepared_versions_and_commits_only_fresh_confirmation() -> R
     assert_eq!(after.tables["changes"], before.tables["changes"]);
     assert!(after.tables["title_updates"].is_empty());
     assert!(store.sessions()?.is_empty());
-    reject_archive(&store, revisions(&store)?, "已归档")
+    reject_archive(&store, revisions(&store)?, "会话已归档，请刷新看板")
 }
