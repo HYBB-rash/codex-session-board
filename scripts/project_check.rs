@@ -42,7 +42,7 @@ struct Cli {
         help = "从指定 Git 仓库读取既有注释基线，检查当前目录中的暂存快照"
     )]
     baseline_repository: Option<PathBuf>,
-    #[arg(long, help = "准备下一次提交的版本，同步 Cargo.toml 和 Cargo.lock")]
+    #[arg(long, help = "准备下一次提交的版本，同步 Cargo 和插件版本")]
     prepare_commit: bool,
     #[arg(
         long,
@@ -468,6 +468,7 @@ fn prepare(root: &Path, rules: &mut Rules, decision: Option<&str>) -> Result<Ver
     let target = prepare_target(&history, rules, current, decision)?;
     let manifest_span = version_span(&manifest, "[package]", None)?;
     let lock_span = version_span(&lockfile, "[[package]]", Some(&name))?;
+    let plugins = version_policy::plugin_versions(root, target)?;
     manifest.replace_range(manifest_span, &target.to_string());
     lockfile.replace_range(lock_span, &target.to_string());
     if decision.is_some() {
@@ -478,7 +479,10 @@ fn prepare(root: &Path, rules: &mut Rules, decision: Option<&str>) -> Result<Ver
     }
     fs::write(manifest_path, manifest)?;
     fs::write(lock_path, lockfile)?;
-    println!("已准备 v{target}，并同步 Cargo.toml 与 Cargo.lock；重复准备不会重复加号。");
+    for (path, contents) in plugins {
+        fs::write(path, contents)?;
+    }
+    println!("已准备 v{target}，并同步 Cargo 与已有插件版本；重复准备不会重复加号。");
     println!("尚未暂存或提交。检查差异并提交后，重新运行 ./scripts/check。");
     Ok(target)
 }

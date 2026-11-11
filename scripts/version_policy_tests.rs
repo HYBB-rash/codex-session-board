@@ -81,6 +81,35 @@ fn preparation_is_idempotent_and_manual_release_is_rejected() -> Result<()> {
 }
 
 #[test]
+fn preparation_synchronizes_plugin_versions_and_rejects_partial_manifests() -> Result<()> {
+    let (directory, mut rules) = fixture()?;
+    let root = directory.path();
+    fs::create_dir(root.join(".codex-plugin"))?;
+    for relative in ["plugin.json", ".codex-plugin/plugin.json"] {
+        fs::write(
+            root.join(relative),
+            r#"{"name":"sample","version":"0.1.0","custom":{"preserved":true}}"#,
+        )?;
+    }
+    assert_eq!(prepare(root, &mut rules, None)?.to_string(), "0.1.1");
+    for relative in ["plugin.json", ".codex-plugin/plugin.json"] {
+        let manifest: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(root.join(relative))?)?;
+        assert_eq!(manifest["version"], "0.1.1");
+        assert_eq!(manifest["custom"]["preserved"], true);
+    }
+    let manifest = fs::read(root.join("Cargo.toml"))?;
+    let plugin = fs::read(root.join("plugin.json"))?;
+    prepare(root, &mut rules, None)?;
+    assert_eq!(plugin, fs::read(root.join("plugin.json"))?);
+    fs::remove_file(root.join(".codex-plugin/plugin.json"))?;
+    assert!(prepare(root, &mut rules, None).is_err());
+    assert_eq!(manifest, fs::read(root.join("Cargo.toml"))?);
+    assert_eq!(plugin, fs::read(root.join("plugin.json"))?);
+    Ok(())
+}
+
+#[test]
 fn boundary_cannot_move_disappear_or_authorize_skipped_versions() -> Result<()> {
     for invalid in [None, Some("wrong"), Some("0.3.0")] {
         let (directory, mut rules) = fixture()?;

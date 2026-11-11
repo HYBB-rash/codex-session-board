@@ -93,6 +93,32 @@ pub(super) fn reachable(root: &Path, parents: &[String]) -> Result<String> {
     git(root, &arguments)
 }
 
+pub(super) fn plugin_versions(
+    root: &Path,
+    target: Version,
+) -> Result<Vec<(std::path::PathBuf, String)>> {
+    let mut prepared = Vec::new();
+    for relative in ["plugin.json", ".codex-plugin/plugin.json"] {
+        let path = root.join(relative);
+        let text = match fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.into()),
+        };
+        let mut manifest: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&text).with_context(|| format!("{relative} 无法解析"))?;
+        let version = manifest.get_mut("version").context("插件缺少 version")?;
+        Version::parse(version.as_str().context("插件 version 必须是字符串")?)?;
+        *version = serde_json::Value::String(target.to_string());
+        prepared.push((path, format!("{}\n", serde_json::to_string_pretty(&manifest)?)));
+    }
+    ensure!(
+        prepared.is_empty() || prepared.len() == 2,
+        "plugin.json 与 .codex-plugin/plugin.json 必须同时存在"
+    );
+    Ok(prepared)
+}
+
 #[cfg(test)]
 #[path = "version_policy_tests.rs"]
 mod tests;
