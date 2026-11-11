@@ -1,6 +1,14 @@
 use super::session::{Event, Seat, Session, When};
 use anyhow::{Result, ensure};
 
+pub(super) fn rejection<Output>(result: Result<Output>, expected: &str) -> Result<()> {
+    match result {
+        Err(error) if error.chain().count() == 1 && error.to_string() == expected => Ok(()),
+        Err(error) => Err(error),
+        Ok(_) => anyhow::bail!("应拒绝的操作返回成功: {expected}"),
+    }
+}
+
 pub fn transition(before: Session, event: Event, after: Session) -> Result<()> {
     identity_events(before, event, after)?;
     lost_keeps_column(before, event, after)?;

@@ -25,6 +25,25 @@ fn follow(store: &Store, expected: &mut Session, events: &[Event]) -> Result<()>
 }
 
 #[test]
+fn unread_runtime_rejection_preserves_the_entire_database() -> Result<()> {
+    unread_rejection(Event::Runtime(Phase::Running, When::Fresh))
+}
+
+#[test]
+fn unread_lost_ack_rejection_preserves_the_entire_database() -> Result<()> {
+    unread_rejection(Event::Lost(Phase::Running))?;
+    unread_rejection(Event::LostSameTurn(Phase::Running))
+}
+
+fn unread_rejection(event: Event) -> Result<()> {
+    let (store, _) = start()?;
+    let before = super::records::snapshot(&store)?;
+    super::replay::apply(&store, event)?;
+    assert_eq!(super::records::snapshot(&store)?, before);
+    Ok(())
+}
+
+#[test]
 fn input_history_and_reconfirmation_follow_real_continuous_paths() -> Result<()> {
     let (store, mut expected) = start()?;
     follow(&store, &mut expected, &[

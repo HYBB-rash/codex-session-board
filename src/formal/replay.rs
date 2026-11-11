@@ -1,4 +1,5 @@
-use super::fixture::{ID, flags, install, load, project, revision, seat_of, turn_id};
+use super::check::rejection;
+use super::fixture::{ID, Stored, flags, install, load, project, revision, seat_of, turn_id};
 use super::session::{Column, Event, Phase, Seat, Session, When, events, step, version_delta};
 use crate::native_sections::Observation;
 use crate::store::{RuntimeChange, Store};
@@ -44,10 +45,7 @@ pub fn store_refuses_a_column_before_a_section_is_cached() -> Result<()> {
             version: "open".into(),
         },
     );
-    match refused {
-        Err(error) => ensure!(error.to_string().contains("缺少原生位置"), "{error}"),
-        Ok(()) => anyhow::bail!("未读会话被直接写成有列"),
-    }
+    rejection(refused, "缺少原生位置，请刷新后重试")?;
     ensure!(
         project(&store)?.seat == Seat::Unread && project(&store)?.column == Column::Unknown,
         "拒绝写入后未读会话带上了列"
@@ -101,6 +99,10 @@ fn edit(store: &Store, column: Column, stale: bool) -> Result<()> {
     let accepts = !stale && stored.archived == 0 && stored.native_section.is_some();
     ensure!(result.is_ok() == accepts, "人工选择返回结果错误: {result:?}");
     if !accepts {
+        let reason = if stored.archived == 1 { "会话已归档，请刷新看板" }
+            else if stale { "状态已更新，请刷新后重试" }
+            else { "缺少原生位置，请刷新后重试" };
+        rejection(result, reason)?;
         ensure!(load(store)? == stored, "拒绝人工选择后持久记录改变");
     }
     Ok(())
@@ -116,7 +118,7 @@ fn seen(column: Column) -> Observation {
 fn runtime(store: &Store, phase: Phase, when: When) -> Result<()> {
     let seat = seat_of(load(store)?.native_section.as_deref())?;
     match prepare(store, phase, when) {
-        Err(_) if seat == Seat::Unread => Ok(()),
+        Err(error) if seat == Seat::Unread => rejection::<()>(Err(error), "等待确认原生分区"),
         Err(error) => Err(error),
         Ok(None) => Ok(()),
         Ok(Some(change)) if seat == Seat::Custom => store.consume_native_runtime(ID, &change),
@@ -146,11 +148,7 @@ fn lost(store: &Store, phase: Phase, same_turn: bool) -> Result<()> {
         return Ok(());
     }
     if seat == Seat::Unread {
-        ensure!(
-            prepare(store, phase, When::Fresh).is_err(),
-            "未读会话开始了自动移动"
-        );
-        return Ok(());
+        return rejection(prepare(store, phase, When::Fresh), "等待确认原生分区");
     }
     if seat != Seat::Movable {
         return Ok(());
@@ -256,12 +254,22 @@ fn archive(store: &Store, stale: bool) -> Result<()> {
     if let Ok(turn) = prepared {
         ensure!(turn == serde_json::from_str::<Value>(&stored.turn_json)?,
             "归档准备返回了错误的输入依据");
+    } else {
+        rejection(prepared, archive_refusal(&stored, stale))?;
     }
     ensure!(load(store)? == stored, "归档准备修改了持久记录");
     let result = store.confirm_archive(ID, (version, stored.input_revision));
     ensure!(result.is_ok() == accepts, "归档确认返回结果错误: {result:?}");
     if !accepts {
+        rejection(result, archive_refusal(&stored, stale))?;
         ensure!(load(store)? == stored, "拒绝归档后持久记录改变");
     }
     Ok(())
+}
+
+fn archive_refusal(stored: &Stored, stale: bool) -> &'static str {
+    if stored.archived == 1 { "会话已归档，请刷新看板" }
+    else if stale { "状态已更新，请刷新后重试" }
+    else if stored.review == 1 { "会话有新输入，请核对后点击卡片上的“确认待归档”" }
+    else { "只能归档待归档会话" }
 }
