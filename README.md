@@ -32,6 +32,8 @@ cargo run --locked --offline -- serve
 构建插件运行 `bash scripts/build-plugin`，插件清单指向生成的 Rust 二进制。
 迁移说明见 [Docs/MIGRATION.md](Docs/MIGRATION.md)，
 验收规范见 [acceptance/README.md](acceptance/README.md)。
+Mac 开发与上下文迁移见 [Docs/MAC-DEVELOPMENT.md](Docs/MAC-DEVELOPMENT.md)，
+双平台构建、GitHub 发布、更新和回退见 [Docs/DEPLOYMENT.md](Docs/DEPLOYMENT.md)。
 
 ```bash
 cargo clippy --all-targets --locked --offline -- -D warnings
