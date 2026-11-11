@@ -67,7 +67,8 @@ def build():
         "BOUNDARY-001": rpc + security + archive + group("disabled_title"),
         "SECURITY-001": security + store + archive,
         "HEALTH-001": observer,
-        "DELIVERY-001": sorted(name for name in python_names if name.startswith(package_prefix)),
+        "DELIVERY-001": sorted(name for name in python_names if name.startswith(
+            (package_prefix, "acceptance.test_delivery."))),
         "GATE-001": python_gate + group("example::project_check::", "test::git_hooks::"),
     }
     additions = {
@@ -97,7 +98,7 @@ def build():
             "Cargo.toml", "Cargo.lock", "build.rs", "clippy.toml", "project-rules.json", "src", "tests",
             "index.html", "config.example.json", "plugin.json", "mcp.json", ".mcp.json",
             ".codex-plugin", ".agents/plugins", ".githooks", ".github", "assets", "skills", "acceptance",
-            "scripts", "examples", "AGENTS.md", "README.md", "Docs/*.md",
+            "scripts", "examples", "AGENTS.md", "README.md", "Docs/*.md", "requirements-delivery.txt",
         ],
         "requirements": mappings,
     }

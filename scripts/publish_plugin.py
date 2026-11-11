@@ -44,6 +44,9 @@ def publish(repository, package, channel, evidence=None):
         if existing:
             subprocess.run(["git", "fetch", "-q", "origin", reference], cwd=checkout, check=True)
             subprocess.run(["git", "checkout", "-q", "--detach", "FETCH_HEAD"], cwd=checkout, check=True)
+            previous = verify_package(checkout)
+            if tuple(map(int, previous["version"].split("."))) > tuple(map(int, manifest["version"].split("."))):
+                raise ValueError("Cannot downgrade a release channel; use a pinned consumer rollback")
             for path in checkout.iterdir():
                 if path.name != ".git":
                     shutil.rmtree(path) if path.is_dir() else path.unlink()

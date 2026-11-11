@@ -32,7 +32,8 @@
     "AGENTS.md",
     "README.md",
     "Docs/*.md",
-    ".github"
+    ".github",
+    "requirements-delivery.txt"
   ],
   "requirements": {
     "STATE-001": [
@@ -1462,7 +1463,10 @@
       "acceptance.test_delivery.DeliveryTests.test_package_hashes_bind_assets_binary_and_version",
       "acceptance.test_delivery.DeliveryTests.test_extra_files_and_symlinks_cannot_enter_a_release",
       "acceptance.test_gate.PackageTests.test_package_requires_the_fingerprinted_build_gate_and_preserves_its_rejection",
-      "acceptance.test_gate.PackageTests.test_package_is_reproducible_and_has_only_portable_source"
+      "acceptance.test_gate.PackageTests.test_package_is_reproducible_and_has_only_portable_source",
+      "acceptance.test_delivery.DeliveryTests.test_native_cache_metadata_is_excluded_only_for_installed_packages",
+      "acceptance.test_delivery.DeliveryTests.test_source_fingerprint_changes_reject_publication",
+      "acceptance.test_delivery.DeliveryTests.test_stable_requires_full_gate_even_for_valid_candidate"
     ],
     "GATE-001": [
       "acceptance.test_delivery.DeliveryTests.test_package_hashes_bind_assets_binary_and_version",
@@ -1595,7 +1599,8 @@
       "acceptance.test_remote_release.RemoteReleaseTests.test_wrong_mode_flags_config_identity_or_runtime_build_is_rejected",
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_backup_preserves_committed_wal_notes_and_all_host_databases",
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_wrong_architecture_is_rejected_before_stopping_or_installing",
-      "acceptance.test_update_delivery.UpdateDeliveryTests.test_reload_does_not_accept_an_old_mcp_after_cache_update"
+      "acceptance.test_update_delivery.UpdateDeliveryTests.test_reload_does_not_accept_an_old_mcp_after_cache_update",
+      "acceptance.test_delivery.DeliveryTests.test_native_cache_metadata_is_excluded_only_for_installed_packages"
     ]
   }
 }

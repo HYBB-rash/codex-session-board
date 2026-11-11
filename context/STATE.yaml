@@ -5,13 +5,13 @@
     "id": "remote-final-integration-20261111",
     "status": "in_progress",
     "as_of": "2026-11-11",
-    "summary": "91已冻结8225fd7，529首次全验528过1个timer观察失败，原失败保留。92测试同步保留8秒/lastRun/原断言；提交钩子另见MCP titlePending Null，原回执不足未定因。并行复查第11组发现另一case端口占用及析构poison二次panic；前10组全过不清除原失败。92以共用端口租约和持有子进程guard修复3个fixture，默认并行的board_io/native_authority/column_sort合计64项通过，待完整钩子及重新冻结。src业务文件相对91未改。91浏览器23项、五绑定只读迁移演练通过，均非完整签收。P未启动、新真实消息0；A/B仍占用，11:04桌面查询M1仍Unavailable且根因未定，SSH可达不代替桌面连接。未部署，生产仍82；旧83及下方63/73均为历史观察。"
+    "summary": "最终候选92已冻结f9c68da，正常钩子/check/context通过；独立target完整529项自动检查全过，release_ready=false/exit2，原失败保留。23浏览器组件与19私有CLI运行检查通过，不签native/PWA或空输入页。S已09:21释放本机A/B，当前L独占，两卡取消归档；B手工状态、中文备注、重复刷新、过期/空原因拒绝及canonical标题读回已过。独立L插件已官方安装，未全局reload；正确工具检索未返回新L，插件URI被浏览器协议安全规则拒绝，原生输入接口超时。M1一次正常daemon start后只读Peer握手同实例通过，注册项目及实目录已核实，但App尚未列出H项目。P为5私有chat/6start/9fakeHTTP/0真实provider；本候选N/R真实输入0，旧额度不重置。新R使用独立配置和执行记录，不沿用旧入口。未部署，生产仍82；完整31/16及真实界面待验，旧83及下方63/73为历史观察。"
   },
   "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/state-section-consistency-implementation-20261111.md", "context/tasks/active/ui-worktree-cleanup-20261111.md", "context/tasks/active/remote-final-integration-20261111.md"],
   "known_open_issues": [
-    "91共529，首次全验timer失败及92首次钩子MCP失败均保留。后续并行组证实另一case存在端口占用和析构二次panic；不追认原MCP Null同因。92共用租约/子进程清理及timer同步修复，64项默认并行通过，待完整钩子和冻结；保留冻结需求、模型、锁及原断言。",
-    "旧验收插件命名空间现在指向分区任务的88及其私有配置；不覆盖、不调用其MCP别名。final将另用本会话唯一命名空间。旧83原构建包二进制SHA仍为c7e4f4aaeeed4fc7e8026a9186b6dd44c6ccb73e2918aaf8f8d915279176385c。",
-    "本机两专用卡仍由分区验收占用，不同时更新。M1 SSH可达，11:04桌面查询仍Unavailable，当前根因未确定；旧client-not-found日志不代表当前失败。Linux CUA无drag，不把合成事件或URI接收当实际验收；直接SSH与桌面工具依赖仍分别核对。",
+    "92已固定FP/binary/config并通过529项自动检查；91 timer、92原MCP Null及首次共享target路径失败均保留，不改原断言、冻结需求/模型/锁或以旧构建签新实现。release_ready仍false，完整31/16及内容审阅待完成。",
+    "旧验收别名仍指向S88，不覆盖、不调用。final L已用独立session-board-final-01a1b4de-l官方安装，仅本机A/B；生产82和旧缓存前后未变。新的board_view尚未在正确名称检索中返回；浏览器禁止codex协议入口，不绕过或全局reload。",
+    "本机A/B已明确释放且L正在使用；结束L前恢复本轮改动并核验，N不能并发写。M1正常daemon连接、Peer和注册目录已核实，当前App接口仍未列H项目，根因未定。真实native界面、系统PWA、创建桥和N/R2仍待验；IAB、合成事件及URI形式不代签。",
     "Main清理任务因当前主工作区保护待handoff；保留其任务卡和材料，不归档其工作树或承载83证据的旧树。正式配置迁移与最终部署须等同一候选完整31/16及内容审阅通过。",
     "0.2.79连接异常和恢复指导已实现，任务仍待发布验收；缺少真实客户端退出重启恢复及完整外部证据，未部署。续作见context/handoffs/socket-recovery-guidance-20261111.md。",
     "2026-11-11项目筛选列宽回归已修复并上线v0.2.82：更正标题nowrap及看板min-content；20组真实浏览器回归与正式页面159/5条会话筛选往返保持等宽。完整验收500项自动通过，14项全局真实环境证据仍待补，release_ready=false。见context/tasks/completed/ui-stable-columns-20261111.md。",
