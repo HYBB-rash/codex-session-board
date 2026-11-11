@@ -107,6 +107,46 @@ local owned为空，不写本机A/B。远端B保持对照，外部写仅A及唯�
 R2目标及新空UUID须真实创建/独立读回后另冻结v4新批次；不虚构UUID或启用旧账本。
 继续前读取新R目录实际execution/清理记录，只有静态配置不算启动或验收。
 
+## 本轮R实测与唯一空会话
+
+R-full01按新seal e5b5aadbd3a0e0605e93c0721e9310f7d2c7fbbe1ccb4ceaa8a27d7673115c54
+于15:36一次allocate/init；17源码及12binding核对，原23文件封存保留。
+shortroot=/run/user/1000/sbf-01a1b4de-r92-full01；Root port19287/config8616db9f6c1ac3ab。
+guard3628747、mirror3628974；board03=3688596，前两次自有board已核对身份停止。
+具体PID/starttime/argv SHA以run内process/exit收据为准，不据本段直接kill。
+
+R run=N/scoped-runtime92-R-full01：
+title-retry01两阶段exit0；失败队列实际落盘，停止后仍在，同配置重连故障仍开，
+清故障后只有只读SQL/独立canonical读回，后台自行补偿，完整名字和emoji保留。
+archive-restore01实际exit0：MCP改状态/标题，正常产品归档，外部取消归档；
+只读归档列表证据失败时隐藏A并保存待核对错误，恢复后人工状态/备注/input保留。
+B仍归档、原名字及1轮签名不变；A仍5轮，无新增模型输入。
+R-full92-final-observation01确认M1 0.167.1的OS身份前后相同，Main/S clean且HEAD未变。
+
+唯一requestId=bc132b75-1927-419e-ab81-ee0e1116e629，grant已consumed；
+createdOwned=01a1c9a1-3762-7600-a2ca-1cdb8cc2a278，实际legacy、绝对rollout路径、0turn。
+重启前后独立读取成功；新名字为“🧪｜远端专用验收 0.2.92（空会话）”。
+final-canonical-state01记录其未出现在active/archived列表；不冒称原生侧栏可见。
+Native move_thread_to_project报H Unavailable，Root stage=created、pending同requestId。
+wait及HTTP/MCP成功回执断言真实exit1原样保留；后台create计数仍1、模型0、越界写0。
+same-id-raw-pending01有完整原始错误；不能把未重复创建签成完整NEW-LOST-ACK通过。
+桌面H恢复后只重放原intent，不点新建、不改requestId、不reset/reinit，不另建空会话。
+
+当前R故障={}；A保留本轮to_archive/manual及中文备注、原标题加emoji，仍未归档；
+B未改；新UUID保留。L两卡仍未归档且B保留progress/备注；两实例均未cleanup。
+真实模型N/R2仍0；R2只在实际新UUID基础上准备，模型Store独立且create_grants=[]。
+旧真实账本/83/S材料不重置、不覆写。最终结束实例前按各自基线恢复实际改动。
+
+## 当前迁移包
+
+原source92归档缺根PACKAGE-MANIFEST的审阅结果保留，未改旧包/F/实际插件。
+复用F原package_migration.py生成N/delivery92-migration-package01独立补充包，
+archive SHA a7920d50bcbad84dfbb269017d28ec5224bab645542a6ee082039fef8bda9c34；
+当前manifest覆盖351文件，新解包352文件，185输入FP仍701d，context实际exit0。
+新源根为该目录unpacked/codex-session-board；最终31及完整529从此根实际执行，
+用新独立target，strict16 binary仍指向F原c521，不能用元数据94载荷或旧F报告冒充。
+后续准确CLI见该目录final-release-commands-not-run.txt；该运行尚未执行。
+
 ## 接续与部署门禁
 
 先完成真实入口/系统PWA与N/R controller及UI绑定，再启受限真实输入批次；
