@@ -177,7 +177,7 @@ pub fn step(session: Session, event: Event) -> Session {
     }
 }
 
-fn preserves(session: Session, phase: Phase, when: When) -> bool {
+pub(super) fn preserves(session: Session, phase: Phase, when: When) -> bool {
     session.phase.is_none() && matches!(when, When::Old | When::BeforeObservation)
         || phase.terminal() && session.manual && matches!(when, When::Old | When::BeforeChoice)
 }
