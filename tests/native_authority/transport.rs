@@ -193,8 +193,8 @@ impl Server {
                 .collect(),
             rpc_timeout_seconds: 2,
             desktop_socket: directory.join("desktop.sock"),
-            codex_command: vec!["/bin/false".into()],
-            open_command: vec!["/bin/true".into()],
+            codex_command: vec!["/usr/bin/false".into()],
+            open_command: vec!["/usr/bin/true".into()],
             ..Config::default()
         };
         config.validate()?;

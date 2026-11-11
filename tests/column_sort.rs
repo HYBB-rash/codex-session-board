@@ -86,7 +86,7 @@ fn start_fixture(path: &Path) -> Result<(Value, ChildGuard)> {
     fs::write(
         path,
         json!({"data_dir":"data","port":port.port,"sync_titles":false,
-        "codex_command":["/bin/false"],"desktop_socket":"","sidebar_socket":"",
+        "codex_command":["/usr/bin/false"],"desktop_socket":"","sidebar_socket":"",
         "auto_archive_seconds":null})
         .to_string(),
     )?;

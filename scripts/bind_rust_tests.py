@@ -60,9 +60,10 @@ def build():
         "UI-002": store,
         "UI-003": [],
         "MCP-001": mcp + archive,
-        "DATA-001": configuration + group("open_and_new", "open_reports"),
+        "DATA-001": configuration + group("open_and_new", "open_reports") + matching(
+            python_names, "test_backup_preserves_committed_wal"),
         "DATA-002": service,
-        "SERVICE-001": service,
+        "SERVICE-001": service + matching(python_names, "test_wrong_architecture_is_rejected"),
         "BOUNDARY-001": rpc + security + archive + group("disabled_title"),
         "SECURITY-001": security + store + archive,
         "HEALTH-001": observer,

@@ -32,7 +32,7 @@ impl Fixture {
         let path = directory.path().join("config.json");
         let port = PortLease::acquire().unwrap();
         let settings = json!({"data_dir":"data","port":port.port,"sync_titles":sync,
-            "desktop_socket":"","codex_command":["/bin/false"],"open_command":["/bin/true"],
+            "desktop_socket":"","codex_command":["/usr/bin/false"],"open_command":["/usr/bin/true"],
             "poll_seconds":1,"rpc_timeout_seconds":1,"runtime_poll_seconds":1});
         fs::write(&path, settings.to_string()).unwrap();
         Self {
@@ -995,10 +995,11 @@ fn service_update_rejects_old_build_but_can_verify_and_stop_its_process() {
 fn install_test_binary(source: &std::path::Path, destination: &std::path::Path, variation: bool) {
     let script = r#"import shutil,sys,subprocess
 shutil.copy2(sys.argv[1],sys.argv[2])
-if sys.argv[3]=='true':
+if sys.argv[3]=='true' and sys.platform!='darwin':
     with open(sys.argv[2],'ab') as output: output.write(b'controlled build variation')
 if sys.platform=='darwin':
-    subprocess.run(['/usr/bin/codesign','--force','--sign','-',sys.argv[2]],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+    identifier='board-test-variation' if sys.argv[3]=='true' else 'board-test-baseline'
+    subprocess.run(['/usr/bin/codesign','--force','--sign','-','--identifier',identifier,sys.argv[2]],check=True,stdout=subprocess.DEVNULL)
 "#;
     assert!(Command::new("python3")
         .args(["-c", script])
@@ -1026,7 +1027,7 @@ fn open_accepts_only_known_uuid_and_preserves_all_state() {
     assert_eq!(app.store.sessions().unwrap(), before);
     assert!(app.request("/api/new", None).is_err());
     let mut failing_config = app.config.clone();
-    failing_config.open_command = vec!["/bin/false".into()];
+    failing_config.open_command = vec!["/usr/bin/false".into()];
     let failing_app = app::App::new(failing_config).unwrap();
     assert!(failing_app.request("/api/new", Some(&json!({}))).is_err());
 }
