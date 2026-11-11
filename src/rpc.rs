@@ -629,7 +629,7 @@ pub fn archived_thread_ids(
     ))
 }
 
-fn collect_threads(
+pub(crate) fn collect_threads(
     reader: &mut dyn Rpc,
     page_size: usize,
     max_pages: usize,

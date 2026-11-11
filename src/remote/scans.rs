@@ -112,6 +112,40 @@ fn merge_head(app: &App, reader: &mut dyn Rpc, entries: &mut Vec<Value>) -> Resu
     Ok(())
 }
 
+fn restore_active(
+    app: &App,
+    reader: &mut dyn Rpc,
+    entries: &[Value],
+    archived: &HashMap<String, i64>,
+) -> Result<()> {
+    let candidates: Vec<_> = entries
+        .iter()
+        .filter_map(|entry| {
+            let identifier = entry["id"].as_str()?;
+            Some((identifier, *archived.get(identifier)?))
+        })
+        .collect();
+    if candidates.is_empty() {
+        return Ok(());
+    }
+    let (listed, complete) =
+        rpc::collect_threads(reader, app.config.page_size, app.config.max_pages, true)?;
+    ensure!(complete, "远程归档列表尚未完整读取");
+    let confirmed = threads(&json!({"data":listed}), &app.config.host_id)?;
+    let still_archived: HashSet<_> = confirmed
+        .iter()
+        .filter_map(|entry| entry["id"].as_str())
+        .collect();
+    let _operation = app.operation()?;
+    for (identifier, version) in candidates {
+        ensure!(app.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
+        if !still_archived.contains(identifier) {
+            app.store.restore_confirmed_active(identifier, version)?;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn scan_runtime_page(
     app: &App,
     reader: &mut dyn Rpc,
@@ -119,6 +153,11 @@ pub(crate) fn scan_runtime_page(
     since: f64,
 ) -> Result<()> {
     let mut progress = Progress::load(app)?;
+    let archived = if app.config.native_sections {
+        HashMap::new()
+    } else {
+        app.store.archived_revisions()?
+    };
     let generation = app.native_epoch();
     let continued = progress.cursor.is_some();
     let response = progress.page(app, reader)?;
@@ -132,6 +171,9 @@ pub(crate) fn scan_runtime_page(
     if app.config.native_sections {
         app.cache_native_page(generation, reader, &entries)?;
     }
+    let restoration_error = restore_active(app, reader, &entries, &archived)
+        .err()
+        .map(|error| format!("归档恢复待核对：{error}"));
     observer::observe_runtime_threads(app, reader, revisions, since, &entries)?;
     let count = progress.identifiers.len();
     if complete {
@@ -146,8 +188,12 @@ pub(crate) fn scan_runtime_page(
         &serde_json::to_value(progress)?,
         true,
     )?;
-    app.update_health(json!({"scanComplete":complete,"discovered":count,"lastSuccessAt":crate::model::now(),"error":null}))
+    app.update_health(json!({"scanComplete":complete,"discovered":count,"lastSuccessAt":crate::model::now(),"error":restoration_error}))
 }
+
+#[cfg(test)]
+#[path = "restore_tests.rs"]
+mod restore_tests;
 
 #[cfg(test)]
 mod tests {

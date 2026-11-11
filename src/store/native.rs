@@ -256,6 +256,35 @@ impl Store {
             .collect::<rusqlite::Result<_>>()?)
     }
 
+    pub(crate) fn archived_revisions(&self) -> Result<std::collections::HashMap<String, i64>> {
+        let database = self.connection()?;
+        let mut query = database.prepare("SELECT id,version FROM sessions WHERE archived=1")?;
+        Ok(query
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub(crate) fn restore_confirmed_active(&self, identifier: &str, version: i64) -> Result<()> {
+        let mut database = self.connection()?;
+        let transaction = database.transaction()?;
+        let row = get_row(&transaction, identifier)?;
+        if row["archived"] != 1 || row["version"] != version {
+            return Ok(());
+        }
+        write_daily(
+            &transaction,
+            identifier,
+            &DailyWrite {
+                unarchive: true,
+                bump_version: true,
+                expect_version: Some(version),
+                ..DailyWrite::default()
+            },
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn restore_native(&self, identifier: &str, native: &Observation) -> Result<()> {
         let mut database = self.connection()?;
         let transaction = database.transaction()?;
