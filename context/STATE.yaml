@@ -5,14 +5,14 @@
     "id": "remote-final-integration-20261111",
     "status": "in_progress",
     "as_of": "2026-11-11",
-    "summary": "最终载荷仍为f9c68da候选92，94仅记录实测。529项自动检查全过，完整release仍exit2/release_ready=false；旧失败保留。L独占已释放的本机A/B，B状态备注与标题通过；Native入口和系统PWA未验，插件协议入口被工具拒绝。R-full01已按e5b5封存一次init，同config8616实际完成A标题失败队列持久化、重启后纯后台补偿、完整emoji、MCP状态标题、真实归档及外部取消归档保守恢复，B保持原归档/标题/轮次。M1现0.167.1，OS前后同实例；唯一创建已消费，同bc132请求/实际新UUID01a1c9a1-3762-7600-a2ca-1cdb8cc2a278，重启前后独立读回legacy/0turn。HTTP/MCP重试未重复创建，但Native桥仍报H Unavailable，draft=created，整项未过。P为5私有chat/6start/9fakeHTTP；N/R2真实模型输入0，旧额度不重置。原packager已生成92补充迁移包及351文件manifest，新解包FP不变/context过，完整529/31须从新根实际跑。未清理专用实例，未部署，生产仍82；见最新handoff与journal。"
+    "summary": "按用户最新先上线并登记遗留指令，正式HTTP与插件均已部署冻结0.2.92/c521，95仅记录发布。端口18767、原dataDir、五状态配置bd6978fc9a03aaa1；旧82已核验停止，五库一致备份及原ID/备注保留核对通过，本机runtime/native正常，正式原生面板显示163条。新解包根529自动项全过，完整release仍exit2/release_ready=false，strict16未签，旧失败保留。M1原生连接、离线远端状态误显、bb握手EOF登记遗留；完整UI/PWA/N/R2继续待验。专用L/R board及guard已停止，数据/额度保留，基线恢复未完成。R已实测标题重试与保守取消归档恢复；唯一创建bc132/UUID01a1c9a1-3762-7600-a2ca-1cdb8cc2a278仍created/pending，N/R2真实输入0，不重置额度或重建。详见Docs/RELEASE-0.2.92-KNOWN-ISSUES-20261111.md及最新handoff。"
   },
   "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/state-section-consistency-implementation-20261111.md", "context/tasks/active/ui-worktree-cleanup-20261111.md", "context/tasks/active/remote-final-integration-20261111.md"],
   "known_open_issues": [
-    "92已固定FP/binary/config并通过529项自动检查；91 timer、92原MCP Null及首次共享target路径失败均保留，不改原断言、冻结需求/模型/锁或以旧构建签新实现。release_ready仍false，完整31/16及内容审阅待完成。",
-    "旧验收别名仍指向S88，不覆盖、不调用。final L已用独立session-board-final-01a1b4de-l官方安装，仅本机A/B；生产82和旧缓存前后未变。新的board_view尚未在正确名称检索中返回；浏览器禁止codex协议入口，不绕过或全局reload。",
-    "L正在使用本机A/B，N不能并发写。R仅写远端A及唯一createdOwned，B保持对照；故障已清空，尚未清理。创建额度已消费，Native H Unavailable时只能重放同一bc132请求，不得新建/reset/reinit。真实Native/PWA/创建输入页与N/R2仍待验；IAB、协议回执及后台去重不代签。",
-    "Main清理任务因当前主工作区保护待handoff；保留其任务卡和材料，不归档其工作树或承载83证据的旧树。正式配置迁移与最终部署须等同一候选完整31/16及内容审阅通过。",
+    "冻结92已按用户最新带遗留发布指令上线，新解包根529自动项再次全过；91 timer、92原MCP Null及首次共享target路径失败保留。release_ready仍false，完整31/16及UI/PWA/N/R2待完成，不以部署冒称验收通过。",
+    "正式插件与HTTP已切92/c521/配置bd6978fc9a03aaa1，本会话serverInfo和实际面板已核对；没有全局reload。旧验收别名及S88不覆盖、不调用，83历史缓存和工作树保留。初次正式面板旧82连接报版本不符，正式plugin/install后恢复。",
+    "专用L/R board和guard均已停止，数据、基线及额度保留；测试会话恢复尚未完成。唯一创建已消费，Native H Unavailable时只能重放同一bc132请求，不得新建/reset/reinit。M1原生导航、离线缓存状态误显、bb握手EOF见发布遗留文档；Hermes自动连接仍关闭。",
+    "Main清理任务因当前主工作区保护待handoff；保留其任务卡和材料，不归档其工作树或承载83证据的旧树。正式92五库备份与回滚限制见发布目录backup及遗留文档，回退前必须另存上线后数据和恢复队列。",
     "0.2.79连接异常和恢复指导已实现，任务仍待发布验收；缺少真实客户端退出重启恢复及完整外部证据，未部署。续作见context/handoffs/socket-recovery-guidance-20261111.md。",
     "2026-11-11项目筛选列宽回归已修复并上线v0.2.82：更正标题nowrap及看板min-content；20组真实浏览器回归与正式页面159/5条会话筛选往返保持等宽。完整验收500项自动通过，14项全局真实环境证据仍待补，release_ready=false。见context/tasks/completed/ui-stable-columns-20261111.md。",
     "2026-11-11正式v0.2.73仍有分区socket丢失。两套错误清理器的timer、service及脚本已按授权删除，系统清理改为十五分钟检查、/tmp四小时老化，首次执行成功，隔离活socket保护通过。历史删除责任PID未实锤，客户端及包装器的端点恢复尚未实施，未重启Codex。方案及实施记录见Docs/SOCKET-LIFECYCLE-REPORT-20261111.md。",

@@ -157,3 +157,35 @@ N与L本机写集串行，R只用H专用目标。剩余清单见N/remaining-acce
 生产旧六绑定须用旧82 binary及旧config先停止；92不能解析旧completed绑定来stop。
 备份一致DB/WAL及配置、保留回滚，迁移五绑定并保持dataDir、本机1800/远端关闭。
 不要把只读迁移演练中指向生产dataDir的新配置当测试启动。旧83树及全部失败证据保留。
+
+## 2026-11-11 最新指令与实际上线
+
+用户明确将原生远程连接登记遗留并先上线，替代上文等待全部证据再部署的排程。
+执行前已告知完整UI/PWA/N/R2仍待验；没有修改门禁或伪造通过。
+正式载荷仍冻结92/f9c68da/FP701d/binary c521，95只是发布记录。
+新解包根delivery92-authorized-release01实际529全过，完整31 exit2/release_ready=false；
+strict16未签。旧失败材料、只创建一次约束及原额度不变。
+
+正式92位于 ~/.local/share/codex-session-board/releases/0.2.92/package，
+18767、原dataDir保留；新config-0.2.92.json只退休completed绑定，
+configId=bd6978fc9a03aaa1；本机1800/远端null、Hermes自动连接false不变。
+旧82由自身二进制/原配置核验停止；备份含五库、原始journal/WAL侧车、
+SQLite恢复副本与一致快照，以及source/scan-progress/归档元数据。
+备份在发布目录backup，全部完整性、ID及备注核对通过；原配置字节不变。
+回滚前另存上线后数据，注意旧82丢失restoration_errors；整库恢复会丢上线后新写入，
+本地快照不能撤销原生改名、移动及归档。
+
+marketplace CLI首次因同名不同source拒绝，按正式remove/add/add-plugin更新成功；
+旧82缓存及发布包保留，未改S88。新定向临时发现读回92及资源，
+当前会话起初仍82，面板版本不符；正式plugin/install后本会话serverInfo92，
+原生面板实际显示五列163条，本机runtime/native正常。
+没有调用config/mcpServer/reload，也没有重启客户端。
+生产服务PID3939312；后续按deployment92-authorized01/production92-process.json重新核验，
+不要仅据本段PID发信号。
+
+专用L/R board先用自身stop退出，再精确核验停止guard；R mirror已先消失，
+没有把它记为本轮主动终止。所有测试数据/账本/额度保留，基线恢复未完成。
+唯一created/pending UUID及bc132请求继续保留，后续只重放原请求，不新建/reset/reinit。
+最新遗留清单为Docs/RELEASE-0.2.92-KNOWN-ISSUES-20261111.md，
+包括M1原生连接、离线缓存状态误显、bb握手EOF和未验范围。
+本任务继续active只为后续遗留；部署完成不代表完整31/16验收完成。
