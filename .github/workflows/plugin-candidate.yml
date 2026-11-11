@@ -24,7 +24,6 @@ jobs:
       RUSTC_WRAPPER: sccache
       SCCACHE_ALLOW_INCREMENTAL: "1"
       SCCACHE_GHA_ENABLED: "false"
-      SCCACHE_DIR: ${{ runner.temp }}/sccache
       GIT_AUTHOR_NAME: Codex plugin publisher
       GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
       GIT_COMMITTER_NAME: Codex plugin publisher
@@ -38,6 +37,7 @@ jobs:
           python-version: "3.12"
       - run: python3 -m pip install -r requirements-delivery.txt
       - run: rustup toolchain install 1.99.1 --profile minimal --component clippy
+      - run: echo "SCCACHE_DIR=$RUNNER_TEMP/sccache" >> "$GITHUB_ENV"
       - uses: mozilla-actions/sccache-action@v0.0.11
         with:
           version: v0.16.0
