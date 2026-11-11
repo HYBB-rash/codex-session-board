@@ -29,9 +29,9 @@ def build():
     title_io = group("title_", "old_ack", "newer_state_before_write", "saved_state_reports")
     rpc = group("::rpc::tests::")
     configuration = group("::config::tests::")
-    service = group("::service::tests::", "changed_config_or_port", "real_http_persistence", "service_update")
+    service = group("::service::tests::", "changed_config_or_port", "real_http_persistence", "service_update", "open_and_new")
     mcp = group("native_resource", "real_stdio_mcp", "saved_state_reports", "mcp_bridge_")
-    security = group("host_origin", "navigation_is_canonical", "open_accepts", "real_http_persistence", "real_http_pwa")
+    security = group("host_origin", "navigation_is_canonical", "open_accepts", "open_and_new", "open_reports", "real_http_persistence", "real_http_pwa")
     suite = unittest.defaultTestLoader.discover(str(ROOT / "acceptance"), top_level_dir=str(ROOT))
     python_names = list(test_identifiers(suite))
     package_prefix = "acceptance.test_gate.PackageTests."
@@ -60,7 +60,7 @@ def build():
         "UI-002": store,
         "UI-003": [],
         "MCP-001": mcp + archive,
-        "DATA-001": configuration,
+        "DATA-001": configuration + group("open_and_new", "open_reports"),
         "DATA-002": service,
         "SERVICE-001": service,
         "BOUNDARY-001": rpc + security + archive + group("disabled_title"),

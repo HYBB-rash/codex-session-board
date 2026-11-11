@@ -935,7 +935,20 @@
       "lib::codex_session_board::remote::project_registry::tests::invalid_or_ambiguous_registries_fail_before_fallback",
       "lib::codex_session_board::remote::project_registry::tests::older_state_without_remote_registry_preserves_the_existing_reader",
       "lib::codex_session_board::remote::project_registry::tests::registered_projects_do_not_depend_on_git_probes_or_native_tool_availability",
-      "lib::codex_session_board::remote::project_registry::tests::registry_removal_is_read_fresh_and_does_not_resurrect_a_tool_result"
+      "lib::codex_session_board::remote::project_registry::tests::registry_removal_is_read_fresh_and_does_not_resurrect_a_tool_result",
+      "lib::codex_session_board::remote::connections::tests::explicit_request_waits_until_a_connection_exists",
+      "lib::codex_session_board::remote::connections::tests::failed_manual_connection_stops_when_auto_connect_is_off",
+      "lib::codex_session_board::remote::scans::restore_tests::a_newer_archive_cannot_be_undone_by_an_inflight_restoration_scan",
+      "lib::codex_session_board::remote::scans::restore_tests::a_retired_source_cannot_restore_cards_after_its_reply_arrives",
+      "lib::codex_session_board::remote::scans::restore_tests::absent_active_entries_and_saved_progress_never_count_as_restoration_proof",
+      "lib::codex_session_board::remote::scans::restore_tests::archived_pagination_requires_completion_and_rejects_repeated_cursors",
+      "lib::codex_session_board::remote::scans::restore_tests::fresh_unarchive_survives_restart_without_losing_notes_or_queuing_titles",
+      "lib::codex_session_board::remote::scans::restore_tests::identical_remote_identifiers_keep_independent_archive_history",
+      "lib::codex_session_board::remote::scans::restore_tests::incomplete_or_invalid_archived_proof_is_visible_and_does_not_block_other_cards",
+      "lib::codex_session_board::remote::scans::restore_tests::restoration_warning_is_durable_when_a_later_runtime_read_disconnects",
+      "lib::codex_session_board::remote::scans::restore_tests::restoration_warnings_reach_root_and_survive_unrelated_pages_restart_and_expired_cursor",
+      "lib::codex_session_board::remote::scans::restore_tests::stale_discovery_and_still_archived_remote_entries_cannot_restore_cards",
+      "lib::codex_session_board::remote::scans::restore_tests::unconfirmed_archived_cards_do_not_fetch_potentially_oversized_turns"
     ],
     "DISCOVERY-002": [
       "test::native_authority::native_archive_list_absence_keeps_position_without_an_unread_error",
@@ -1017,7 +1030,9 @@
       "test::board_io::open_accepts_only_known_uuid_and_preserves_all_state",
       "test::board_io::real_http_persistence_security_and_launcher_reuse",
       "test::board_io::real_http_pwa_assets_preserve_host_and_mutation_checks",
-      "test::board_io::real_http_pwa_manifest_and_assets_are_local_and_uncached"
+      "test::board_io::real_http_pwa_manifest_and_assets_are_local_and_uncached",
+      "test::board_io::open_and_new_survive_removed_service_working_directory",
+      "test::board_io::open_reports_exit_status_and_unavailable_stable_directory"
     ],
     "APP-001": [
       "test::board_io::mcp_bridge_uses_http_versions_and_reports_pending_title_without_rollback",
@@ -1100,7 +1115,9 @@
       "lib::codex_session_board::remote::hosts::source::tests::source_confirmation_lock_is_bounded_without_overwriting_the_record",
       "lib::codex_session_board::remote::hosts::source::tests::source_identity_survives_timeout_keepalive_wrapper_and_nonce_changes",
       "lib::codex_session_board::remote::hosts::source::tests::ssh_identity_keeps_only_effective_hostname_user_port_and_rejects_ambiguity",
-      "lib::codex_session_board::remote::hosts::source::tests::nonregular_source_records_are_rejected_without_waiting_for_a_pipe_writer"
+      "lib::codex_session_board::remote::hosts::source::tests::nonregular_source_records_are_rejected_without_waiting_for_a_pipe_writer",
+      "test::board_io::open_and_new_survive_removed_service_working_directory",
+      "test::board_io::open_reports_exit_status_and_unavailable_stable_directory"
     ],
     "DATA-002": [
       "test::section_config::section_migration_preserves_source_data_and_unrelated_configuration",
@@ -1147,7 +1164,8 @@
       "lib::codex_session_board::service::migration::tests::rollback::installation_refuses_concurrent_target_entries_and_preserves_them",
       "lib::codex_session_board::service::migration::tests::rollback::rollback_preserves_files_replaced_by_another_writer",
       "lib::codex_session_board::service::migration::tests::rollback::second_host_backup_failure_cleans_staging_and_allows_retry",
-      "lib::codex_session_board::formal::tests::remote_draft_stages_match_the_store_on_every_edge"
+      "lib::codex_session_board::formal::tests::remote_draft_stages_match_the_store_on_every_edge",
+      "test::board_io::open_and_new_survive_removed_service_working_directory"
     ],
     "SERVICE-001": [
       "lib::codex_session_board::service::tests::data_lock_serializes_independent_open_descriptors",
@@ -1191,7 +1209,11 @@
       "lib::codex_session_board::service::migration::tests::rollback::configuration_race_preserves_external_files_and_symlinks",
       "lib::codex_session_board::service::migration::tests::rollback::installation_refuses_concurrent_target_entries_and_preserves_them",
       "lib::codex_session_board::service::migration::tests::rollback::rollback_preserves_files_replaced_by_another_writer",
-      "lib::codex_session_board::service::migration::tests::rollback::second_host_backup_failure_cleans_staging_and_allows_retry"
+      "lib::codex_session_board::service::migration::tests::rollback::second_host_backup_failure_cleans_staging_and_allows_retry",
+      "test::board_io::open_and_new_survive_removed_service_working_directory",
+      "test::section_config::section_migration_preserves_source_data_and_unrelated_configuration",
+      "test::section_config::section_migration_refuses_missing_active_bindings_and_legacy_mode",
+      "lib::codex_session_board::formal::tests::remote_draft_stages_match_the_store_on_every_edge"
     ],
     "BOUNDARY-001": [
       "lib::codex_session_board::rpc::sidebar::tests::directory_migration_rejects_unsafe_second_directory_after_finding_live_candidate",
@@ -1332,7 +1354,26 @@
       "lib::codex_session_board::app::drafts::tests::project_confirmation_uses_the_same_registry_without_optional_git_probes",
       "lib::codex_session_board::app::drafts::tests::releasing_uncertain_drafts_requires_confirmation_and_cannot_clear_another_project",
       "lib::codex_session_board::app::drafts::tests::initial_draft_readback_rejects_new_turns_and_unconfirmed_history",
-      "lib::codex_session_board::app::drafts::tests::lost_initial_title_receipts_keep_the_created_id_without_replaying_creation"
+      "lib::codex_session_board::app::drafts::tests::lost_initial_title_receipts_keep_the_created_id_without_replaying_creation",
+      "test::board_io::open_and_new_survive_removed_service_working_directory",
+      "test::board_io::open_reports_exit_status_and_unavailable_stable_directory",
+      "lib::codex_session_board::remote::connections::tests::explicit_request_waits_until_a_connection_exists",
+      "lib::codex_session_board::remote::connections::tests::failed_manual_connection_stops_when_auto_connect_is_off",
+      "lib::codex_session_board::remote::scans::restore_tests::a_newer_archive_cannot_be_undone_by_an_inflight_restoration_scan",
+      "lib::codex_session_board::remote::scans::restore_tests::a_retired_source_cannot_restore_cards_after_its_reply_arrives",
+      "lib::codex_session_board::remote::scans::restore_tests::absent_active_entries_and_saved_progress_never_count_as_restoration_proof",
+      "lib::codex_session_board::remote::scans::restore_tests::archived_pagination_requires_completion_and_rejects_repeated_cursors",
+      "lib::codex_session_board::remote::scans::restore_tests::fresh_unarchive_survives_restart_without_losing_notes_or_queuing_titles",
+      "lib::codex_session_board::remote::scans::restore_tests::identical_remote_identifiers_keep_independent_archive_history",
+      "lib::codex_session_board::remote::scans::restore_tests::incomplete_or_invalid_archived_proof_is_visible_and_does_not_block_other_cards",
+      "lib::codex_session_board::remote::scans::restore_tests::restoration_warning_is_durable_when_a_later_runtime_read_disconnects",
+      "lib::codex_session_board::remote::scans::restore_tests::restoration_warnings_reach_root_and_survive_unrelated_pages_restart_and_expired_cursor",
+      "lib::codex_session_board::remote::scans::restore_tests::stale_discovery_and_still_archived_remote_entries_cannot_restore_cards",
+      "lib::codex_session_board::remote::scans::restore_tests::unconfirmed_archived_cards_do_not_fetch_potentially_oversized_turns",
+      "lib::codex_session_board::rpc::unavailable::tests::missing_desktop_socket_explains_recovery_and_preserves_the_cause",
+      "lib::codex_session_board::rpc::unavailable::tests::missing_sidebar_socket_explains_recovery_and_rediscovery_still_works",
+      "lib::codex_session_board::rpc::unavailable::tests::refused_desktop_socket_has_the_same_recovery_without_hiding_security_errors",
+      "lib::codex_session_board::rpc::unavailable::tests::unrelated_io_failures_do_not_suggest_restarting_codex"
     ],
     "SECURITY-001": [
       "test::native_authority::archive::native_archive_rejects_external_moves_before_archiving_and_accepts_fresh_confirmation",
@@ -1376,7 +1417,9 @@
       "test::column_sort::column_sort_defaults_persistence_and_independent_conflicts",
       "test::column_sort::column_sort_real_http_and_stdio_mcp_share_persistent_settings",
       "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions",
-      "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation"
+      "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation",
+      "test::board_io::open_and_new_survive_removed_service_working_directory",
+      "test::board_io::open_reports_exit_status_and_unavailable_stable_directory"
     ],
     "HEALTH-001": [
       "lib::codex_session_board::rpc::unavailable::tests::missing_desktop_socket_explains_recovery_and_preserves_the_cause",

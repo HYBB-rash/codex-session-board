@@ -334,7 +334,9 @@ pub fn open_conversation(identifier: &str, config: &Config) -> Result<String> {
 }
 
 fn open_client_url(url: String, config: &Config) -> Result<String> {
+    let directory = config.data_dir.canonicalize().context("客户端工作目录不可用")?;
     let mut child = Command::new(config.open_command.first().context("缺少客户端命令")?)
+        .current_dir(&directory)
         .args(&config.open_command[1..])
         .arg(&url)
         .stdin(Stdio::null())
@@ -345,7 +347,7 @@ fn open_client_url(url: String, config: &Config) -> Result<String> {
     let deadline = now() + 1.0;
     while now() < deadline {
         if let Some(status) = child.try_wait()? {
-            ensure!(status.success(), "Codex 客户端未接受跳转请求");
+            ensure!(status.success(), "Codex 客户端未接受跳转请求，退出状态：{status}，工作目录：{}", directory.display());
             return Ok(url);
         }
         std::thread::sleep(Duration::from_millis(10));

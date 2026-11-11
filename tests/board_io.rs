@@ -108,6 +108,10 @@ impl Fixture {
     }
 
     fn launch(&self) -> Value {
+        self.launch_in(self._directory.path())
+    }
+
+    fn launch_in(&self, directory: &std::path::Path) -> Value {
         let mut slot = self.server.lock().unwrap();
         if slot.is_some() {
             let output = self.cli("serve");
@@ -118,10 +122,11 @@ impl Fixture {
             );
             return serde_json::from_slice(&output.stdout).unwrap();
         }
-        let mut child = ChildGuard::spawn(
+        let mut child = ChildGuard::spawn_in(
             env!("CARGO_BIN_EXE_codex-session-board"),
             &self.path,
             Arc::clone(&self._port),
+            directory,
         )
         .unwrap();
         let mut line = String::new();
@@ -1016,6 +1021,49 @@ fn open_accepts_only_known_uuid_and_preserves_all_state() {
     failing_config.open_command = vec!["/bin/false".into()];
     let failing_app = app::App::new(failing_config).unwrap();
     assert!(failing_app.request("/api/new", Some(&json!({}))).is_err());
+}
+
+#[test]
+fn open_and_new_survive_removed_service_working_directory() {
+    let mut fixture = Fixture::new(false);
+    fixture.register_projects(&["project-a"]);
+    let captured = fixture._directory.path().join("client-cwd");
+    fixture.settings["open_command"] = json!(["/bin/sh", "-c",
+        "pwd -P >> \"$0\"; printf '%s\\n' \"$1\" >> \"$0\"", captured]);
+    fs::write(&fixture.path, fixture.settings.to_string()).unwrap();
+    fixture.populate();
+    let temporary = tempfile::tempdir().unwrap();
+    let running = fixture.launch_in(temporary.path());
+    temporary.close().unwrap();
+    let url = running["url"].as_str().unwrap();
+    let client = client();
+    let html = client.get(url).send().unwrap().text().unwrap();
+    let token = html.split("const csrf = \"").nth(1).unwrap().split('"').next().unwrap();
+    for (endpoint, body) in [("open", json!({"id":FIRST})), ("new", json!({})), ("new", json!({"projectId":"project-a"}))] {
+        assert!(client.post(format!("{url}/api/{endpoint}"))
+            .header("X-CSRF-Token", token).json(&body).send().unwrap().status().is_success());
+    }
+    let lines = fs::read_to_string(captured).unwrap();
+    let expected = config::load(Some(&fixture.path)).unwrap().data_dir.canonicalize().unwrap();
+    let lines: Vec<_> = lines.lines().collect();
+    assert_eq!(lines.len(), 6);
+    for position in [0, 2, 4] {
+        assert_eq!(std::path::Path::new(lines[position]), expected);
+    }
+    assert_eq!(lines[1], app::conversation_url(FIRST, "local").unwrap());
+    assert_eq!(lines[3], "codex://threads/new");
+    assert_eq!(lines[5], "codex://new?projectId=project-a");
+}
+
+#[test]
+fn open_reports_exit_status_and_unavailable_stable_directory() {
+    let fixture = Fixture::new(false);
+    let mut app = fixture.app();
+    app.config.open_command = vec!["/bin/sh".into(), "-c".into(), "exit 21".into()];
+    let error = app.request("/api/new", Some(&json!({}))).unwrap_err().to_string();
+    assert!(error.contains("21") && error.contains("工作目录"));
+    fs::remove_dir_all(&app.config.data_dir).unwrap();
+    assert!(app.request("/api/new", Some(&json!({}))).unwrap_err().to_string().contains("工作目录不可用"));
 }
 
 #[test]

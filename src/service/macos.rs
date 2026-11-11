@@ -122,6 +122,10 @@ pub(super) fn stop(pid: u32, start: u64, url: &str, config: &Config) -> Result<(
     )?;
     confirm_process(pid, start)?;
     stream.write_all(b"stop\n")?;
+    wait_exit(queue, event, config)
+}
+
+fn wait_exit(queue: Kqueue, event: KEvent, config: &Config) -> Result<()> {
     let mut events = [event];
     let timeout = nix::libc::timespec {
         tv_sec: config.rpc_timeout_seconds.saturating_add(10).try_into()?,
