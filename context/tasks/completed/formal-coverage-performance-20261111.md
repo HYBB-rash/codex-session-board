@@ -82,3 +82,12 @@ schema/六表清理、查看及重启完整快照、远端Surface与generation�
 业务错误全文与无底层异常链都须符合预期，其他错误向上传播。
 未读runtime/lost、人工编辑、归档和草稿均已核对，新增两个独立未读拒绝检查。
 17项formal及Clippy通过；10个新增技术错误变异被捕获，累计33项业务、11项设施变异。
+
+最终补充交付代码4ed8147与文档d39a040，分别通过完整钩子；
+来源最后干净scripts/check和verify_context通过，停止写入。
+返回类别、重试确认、连续拒绝和草稿终态历史的补强累计捕获39项业务、
+11项设施变异；源码与文档独立复审无新增问题。
+共享收尾由codex-release-integration完成，见formal-followup-integration-20261111任务。
+合并后绑定为544个唯一测试、1473条映射，最终完整验收与main读回保存在
+/home/herman/.local/share/codex-session-board/integration/20261111-formal-followup/。
+这项本地开发交付不代表真实环境证据齐全或发布验收完成。
