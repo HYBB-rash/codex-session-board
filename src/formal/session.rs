@@ -66,15 +66,6 @@ impl Phase {
         matches!(self, Self::Error | Self::Finished)
     }
 
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Running => "running",
-            Self::Approval => "approval",
-            Self::Input => "input",
-            Self::Error => "error",
-            Self::Finished => "finished",
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -89,6 +80,8 @@ pub enum When {
     Same,
     Fresh,
     Old,
+    BeforeObservation,
+    BeforeChoice,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -96,11 +89,13 @@ pub struct Session {
     pub column: Column,
     pub phase: Option<Phase>,
     pub pending: Option<Phase>,
+    pub pending_same_turn: bool,
     pub manual: bool,
     pub seat: Seat,
     pub review: bool,
     pub anchor: bool,
     pub archived: bool,
+    pub has_input: bool,
 }
 
 impl Session {
@@ -109,11 +104,13 @@ impl Session {
             column: Column::Unknown,
             phase: None,
             pending: None,
+            pending_same_turn: false,
             manual: false,
             seat: Seat::Unread,
             review: false,
             anchor: false,
             archived: false,
+            has_input: false,
         }
     }
 }
@@ -126,11 +123,12 @@ pub enum Event {
     StaleManual(Column),
     Runtime(Phase, When),
     Lost(Phase),
+    LostSameTurn(Phase),
+    Retry(Phase),
     Input,
     Archive,
     StaleArchive,
     View,
-    Restart,
     Same,
 }
 
@@ -145,14 +143,17 @@ pub fn events() -> Vec<Event> {
     for phase in Phase::ALL {
         events.push(Event::Runtime(phase, When::Fresh));
         events.push(Event::Runtime(phase, When::Old));
+        events.push(Event::Runtime(phase, When::BeforeObservation));
+        events.push(Event::Runtime(phase, When::BeforeChoice));
         events.push(Event::Lost(phase));
+        events.push(Event::LostSameTurn(phase));
+        events.push(Event::Retry(phase));
     }
     events.extend([
         Event::Input,
         Event::Archive,
         Event::StaleArchive,
         Event::View,
-        Event::Restart,
         Event::Same,
     ]);
     events
@@ -164,20 +165,21 @@ pub fn step(session: Session, event: Event) -> Session {
         Event::ReadCustom => read(session, Seat::Custom, Column::Unknown),
         Event::Manual(column) => manual(session, column),
         Event::Runtime(phase, when) => runtime(session, phase, when),
-        Event::Lost(phase) => lost(session, phase),
+        Event::Lost(phase) => lost(session, phase, false),
+        Event::LostSameTurn(phase) => lost(session, phase, true),
+        Event::Retry(phase) => retry(session, phase),
         Event::Input => input(session),
         Event::Archive => archive(session),
         Event::StaleManual(_)
         | Event::StaleArchive
         | Event::View
-        | Event::Restart
         | Event::Same => session,
     }
 }
 
 fn preserves(session: Session, phase: Phase, when: When) -> bool {
-    when == When::Old
-        && (session.phase.is_none() || phase.terminal() && session.manual)
+    session.phase.is_none() && matches!(when, When::Old | When::BeforeObservation)
+        || phase.terminal() && session.manual && matches!(when, When::Old | When::BeforeChoice)
 }
 
 fn runtime(session: Session, phase: Phase, when: When) -> Session {
@@ -191,6 +193,7 @@ fn runtime(session: Session, phase: Phase, when: When) -> Session {
         let mut next = session;
         next.phase = Some(phase);
         next.pending = None;
+        next.pending_same_turn = false;
         return next;
     }
     commit(session, phase)
@@ -203,6 +206,7 @@ fn unread_runtime(session: Session, phase: Phase, when: When) -> Session {
     let mut next = session;
     next.phase = Some(phase);
     next.pending = None;
+    next.pending_same_turn = false;
     next
 }
 
@@ -210,19 +214,32 @@ fn commit(session: Session, phase: Phase) -> Session {
     let mut next = session;
     next.phase = Some(phase);
     next.pending = None;
+    next.pending_same_turn = false;
     next.column = phase.column();
     next.manual = false;
     next.seat = Seat::Movable;
     next
 }
 
-fn lost(session: Session, phase: Phase) -> Session {
-    if session.archived || session.seat != Seat::Movable {
+fn lost(session: Session, phase: Phase, same_turn: bool) -> Session {
+    if session.archived || session.seat != Seat::Movable
+        || same_turn && (session.phase.is_none() || session.phase == Some(phase))
+    {
         return session;
     }
     let mut next = session;
     next.pending = Some(phase);
+    next.pending_same_turn = same_turn;
     next
+}
+
+fn retry(session: Session, phase: Phase) -> Session {
+    if session.pending.is_none()
+        || session.pending_same_turn && session.phase == Some(phase)
+    {
+        return session;
+    }
+    commit(session, phase)
 }
 
 fn read(session: Session, seat: Seat, column: Column) -> Session {
@@ -237,8 +254,10 @@ fn read(session: Session, seat: Seat, column: Column) -> Session {
         next.phase = Some(phase);
     }
     next.pending = None;
+    next.pending_same_turn = false;
     next.seat = seat;
     next.column = column;
+    next.review |= column == Column::ToArchive && !session.anchor && session.has_input;
     if confirmed {
         next.manual = false;
     }
@@ -254,6 +273,7 @@ fn manual(session: Session, column: Column) -> Session {
         next.phase = Some(phase);
     }
     next.pending = None;
+    next.pending_same_turn = false;
     next.column = column;
     next.seat = Seat::Movable;
     next.manual = true;
@@ -267,6 +287,7 @@ fn input(session: Session) -> Session {
         return session;
     }
     let mut next = session;
+    next.has_input = true;
     if session.review || session.anchor || session.column == Column::ToArchive {
         next.review = true;
     }
@@ -284,10 +305,17 @@ fn archive(session: Session) -> Session {
     let mut next = session;
     next.archived = true;
     next.pending = None;
+    next.pending_same_turn = false;
     next
 }
 
 pub fn invariant(session: Session) -> Result<()> {
+    ensure!(!session.review || session.has_input, "复核标记缺少输入");
+    ensure!(
+        !session.pending_same_turn || session.pending.is_some()
+            && session.phase.is_some() && session.pending != session.phase,
+        "同轮待确认阶段缺少不同的已确认阶段"
+    );
     ensure!(!session.manual || session.anchor, "人工选择缺少确认锚点");
     ensure!(
         !session.archived || session.pending.is_none(),
@@ -309,4 +337,20 @@ pub fn invariant(session: Session) -> Result<()> {
         );
     }
     Ok(())
+}
+
+pub fn version_delta(before: Session, event: Event, after: Session) -> i64 {
+    let changes = match event {
+        Event::Read(_) | Event::ReadCustom => {
+            (before.seat, before.column) != (after.seat, after.column)
+        }
+        Event::Manual(_) => !before.archived && before.seat != Seat::Unread,
+        Event::Runtime(phase, when) => !before.archived && before.seat == Seat::Movable
+            && when != When::Same && !preserves(before, phase, when),
+        Event::Retry(phase) => before.pending.is_some()
+            && !(before.pending_same_turn && before.phase == Some(phase)),
+        Event::Archive => !before.archived && after.archived,
+        _ => false,
+    };
+    i64::from(changes)
 }

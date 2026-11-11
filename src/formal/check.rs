@@ -21,17 +21,21 @@ fn placed_by_hand(before: Session, event: Event, after: Session) -> Result<()> {
 fn identity_events(before: Session, event: Event, after: Session) -> Result<()> {
     let identity = matches!(
         event,
-        Event::Same | Event::View | Event::Restart | Event::StaleManual(_) | Event::StaleArchive
+        Event::Same | Event::View | Event::StaleManual(_) | Event::StaleArchive
     );
     ensure!(!identity || before == after, "应保持原状态的事件改变了会话");
     Ok(())
 }
 
 fn lost_keeps_column(before: Session, event: Event, after: Session) -> Result<()> {
-    let Event::Lost(phase) = event else {
-        return Ok(());
+    let (phase, same_turn) = match event {
+        Event::Lost(phase) => (phase, false),
+        Event::LostSameTurn(phase) => (phase, true),
+        _ => return Ok(()),
     };
-    if before.archived || before.seat != Seat::Movable {
+    if before.archived || before.seat != Seat::Movable
+        || same_turn && (before.phase.is_none() || before.phase == Some(phase))
+    {
         ensure!(before == after, "未发出的移动改变了会话");
         return Ok(());
     }
@@ -40,6 +44,7 @@ fn lost_keeps_column(before: Session, event: Event, after: Session) -> Result<()
         "丢失回执后已确认状态被改写"
     );
     ensure!(after.pending == Some(phase), "丢失回执后没有留下待确认阶段");
+    ensure!(after.pending_same_turn == same_turn, "待确认轮次关系丢失");
     Ok(())
 }
 
@@ -67,7 +72,7 @@ fn fresh_rules(before: Session, event: Event, after: Session) -> Result<()> {
 }
 
 fn old_baseline(before: Session, event: Event, after: Session) -> Result<()> {
-    let Event::Runtime(phase, When::Old) = event else {
+    let Event::Runtime(phase, When::Old | When::BeforeObservation) = event else {
         return Ok(());
     };
     if before.archived || before.phase.is_some() {
