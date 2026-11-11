@@ -35,6 +35,8 @@
   "requirements": {
     "STATE-001": [
       "lib::codex_session_board::formal::tests::native_session_control_matches_the_store_on_every_reachable_edge",
+      "lib::codex_session_board::formal::paths::input_history_and_reconfirmation_follow_real_continuous_paths",
+      "lib::codex_session_board::formal::paths::pending_identity_and_fresh_turns_follow_real_continuous_paths",
       "test::legacy_mode::compatibility_tools_and_direct_routes_keep_archive_and_remote_creation_disabled",
       "test::legacy_mode::legacy_six_states_preserve_completed_notes_titles_and_sorting_in_the_current_store",
       "test::archive_flow::archive_checks_native_inputs_even_when_local_revision_has_not_changed",
@@ -268,6 +270,7 @@
       "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions"
     ],
     "AUTO-005": [
+      "lib::codex_session_board::formal::paths::pending_identity_and_fresh_turns_follow_real_continuous_paths",
       "example::remote_parity_lab::model_replay_tests::all_520_frozen_edges_replay_through_host_adapter_and_native_writes",
       "test::native_authority::runtime::new_stages_apply_once_and_external_moves_survive_repeated_observations",
       "test::native_authority::runtime::failed_stage_is_consumed_when_the_native_position_changes",
@@ -454,6 +457,7 @@
       "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation"
     ],
     "MANUAL-002": [
+      "lib::codex_session_board::formal::tests::native_session_control_matches_the_store_on_every_reachable_edge",
       "lib::codex_session_board::remote::instances::tests::disabling_a_host_drains_its_old_operations_without_blocking_another_host",
       "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation",
       "test::native_authority::transport::external_move_rejects_an_unobserved_stale_save_and_fresh_save_succeeds",
@@ -539,6 +543,7 @@
       "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions"
     ],
     "MANUAL-003": [
+      "lib::codex_session_board::formal::paths::input_history_and_reconfirmation_follow_real_continuous_paths",
       "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation",
       "test::archive_flow::archive_checks_native_inputs_even_when_local_revision_has_not_changed",
       "test::archive_flow::archive_confirmation_persists_and_stale_observers_cannot_restore_the_card",

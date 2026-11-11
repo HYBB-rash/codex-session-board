@@ -2,6 +2,7 @@ mod check;
 mod draft;
 mod explore;
 mod fixture;
+mod paths;
 mod replay;
 mod session;
 
@@ -14,9 +15,9 @@ mod tests {
         let states = explore::reachable().unwrap();
         let edges = replay::conform(&states).unwrap();
         replay::store_refuses_a_column_before_a_section_is_cached().unwrap();
-        assert_eq!(session::events().len(), 37);
-        assert_eq!(states.len(), 1077);
-        assert_eq!(edges, 39_849);
+        assert_eq!(session::events().len(), 56);
+        assert_eq!(states.len(), 2465);
+        assert_eq!(edges, 138_040);
     }
 
     #[test]

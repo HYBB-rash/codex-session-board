@@ -1,5 +1,5 @@
-use super::fixture::{ID, flags, install, load, project, revision, seat_of};
-use super::session::{Column, Event, Phase, Seat, Session, When, events, step};
+use super::fixture::{ID, flags, install, load, project, revision, seat_of, turn_id};
+use super::session::{Column, Event, Phase, Seat, Session, When, events, step, version_delta};
 use crate::native_sections::Observation;
 use crate::store::{RuntimeChange, Store};
 use anyhow::{Context, Result, ensure};
@@ -19,6 +19,11 @@ pub fn conform(states: &[Session]) -> Result<usize> {
                 step(*session, event),
                 project(&store)?
             );
+            let row = load(&store)?;
+            ensure!(row.version == 1 + version_delta(*session, event, step(*session, event)),
+                "{session:?} {event:?}: 状态版本增量错误");
+            ensure!(row.input_revision == i64::from(matches!(event, Event::Input) && !session.archived),
+                "{session:?} {event:?}: 输入版本增量错误");
             edges += 1;
         }
     }
@@ -50,19 +55,21 @@ pub fn store_refuses_a_column_before_a_section_is_cached() -> Result<()> {
     Ok(())
 }
 
-fn apply(store: &Store, event: Event) -> Result<()> {
+pub(super) fn apply(store: &Store, event: Event) -> Result<()> {
     match event {
         Event::Read(column) => read(store, Seat::Movable, column),
         Event::ReadCustom => read(store, Seat::Custom, Column::Unknown),
         Event::Manual(column) => edit(store, column, false),
         Event::StaleManual(column) => edit(store, column, true),
         Event::Runtime(phase, when) => runtime(store, phase, when),
-        Event::Lost(phase) => lost(store, phase),
+        Event::Lost(phase) => lost(store, phase, false),
+        Event::LostSameTurn(phase) => lost(store, phase, true),
+        Event::Retry(phase) => retry(store, phase),
         Event::Input => input(store),
         Event::Archive => archive(store, false),
         Event::StaleArchive => archive(store, true),
         Event::View => view(store),
-        Event::Restart | Event::Same => same(store),
+        Event::Same => same(store),
     }
 }
 
@@ -78,26 +85,25 @@ fn read(store: &Store, seat: Seat, column: Column) -> Result<()> {
 
 fn edit(store: &Store, column: Column, stale: bool) -> Result<()> {
     let stored = load(store)?;
-    if stored.native_section.is_none() {
-        return Ok(());
-    }
     let version = if stale { 0 } else { stored.version };
     let note = if column == Column::Blocked || !stored.note.trim().is_empty() {
         "记"
     } else {
         ""
     };
-    match store.set_native_state(
+    let result = store.set_native_state(
         ID,
         Some(column.as_str()),
         note,
         (version, stored.input_revision),
         &seen(column),
-    ) {
-        Ok(()) => Ok(()),
-        Err(_) if stale || stored.archived == 1 => Ok(()),
-        Err(error) => Err(error),
+    );
+    let accepts = !stale && stored.archived == 0 && stored.native_section.is_some();
+    ensure!(result.is_ok() == accepts, "人工选择返回结果错误: {result:?}");
+    if !accepts {
+        ensure!(load(store)? == stored, "拒绝人工选择后持久记录改变");
     }
+    Ok(())
 }
 
 fn seen(column: Column) -> Observation {
@@ -129,7 +135,7 @@ fn finish(store: &Store, change: &RuntimeChange) -> Result<()> {
     )
 }
 
-fn lost(store: &Store, phase: Phase) -> Result<()> {
+fn lost(store: &Store, phase: Phase, same_turn: bool) -> Result<()> {
     let stored = load(store)?;
     let seat = seat_of(stored.native_section.as_deref())?;
     if stored.archived == 1 {
@@ -149,6 +155,9 @@ fn lost(store: &Store, phase: Phase) -> Result<()> {
     if seat != Seat::Movable {
         return Ok(());
     }
+    if same_turn {
+        return lost_same_turn(store, phase, stored.runtime_key.as_deref());
+    }
     ensure!(
         prepare(store, phase, When::Fresh)?.is_some(),
         "可移动会话没有留下待确认阶段"
@@ -156,14 +165,46 @@ fn lost(store: &Store, phase: Phase) -> Result<()> {
     Ok(())
 }
 
+fn lost_same_turn(store: &Store, phase: Phase, key: Option<&str>) -> Result<()> {
+    let Some(turn) = turn_id(key)? else { return Ok(()); };
+    let (status, body) = evidence(phase, &turn, 1.0e12);
+    let change = store.prepare_native_runtime(ID, &status, &body, 0.0)?;
+    ensure!(change.is_some() == (project(store)?.phase != Some(phase)),
+        "同轮阶段去重或待确认结果错误");
+    Ok(())
+}
+
 fn prepare(store: &Store, phase: Phase, when: When) -> Result<Option<RuntimeChange>> {
-    let (turn, time, since) = match when {
-        When::Fresh => (format!("fresh-{}", phase.label()), 1.0e12, 0.0),
-        When::Old => (format!("old-{}", phase.label()), 1.0, 10_000.0),
-        When::Same => (format!("held-{}", phase.label()), 1.0e12, 0.0),
+    let stored = load(store)?;
+    let held = turn_id(stored.runtime_key.as_deref())?;
+    let pending = turn_id(stored.pending_key.as_deref())?;
+    let mut turn = "next".to_string();
+    while held.as_ref() == Some(&turn) || pending.as_ref() == Some(&turn) {
+        turn.push('-');
+    }
+    if when == When::Same {
+        let Some(held) = held else { return Ok(None); };
+        turn = held;
+    }
+    let choice = stored.choice_at.unwrap_or(50.0);
+    let (time, since) = match when {
+        When::Fresh | When::Same => (1.0e12, 0.0),
+        When::Old => (1.0, 1.0e12 + 1.0),
+        When::BeforeObservation => (choice + 1.0, 1.0e12 + 1.0),
+        When::BeforeChoice => (choice - 1.0, 0.0),
     };
     let (status, body) = evidence(phase, &turn, time);
     store.prepare_native_runtime(ID, &status, &body, since)
+}
+
+fn retry(store: &Store, phase: Phase) -> Result<()> {
+    let stored = load(store)?;
+    let Some(turn) = turn_id(stored.pending_key.as_deref())? else { return Ok(()); };
+    let (status, body) = evidence(phase, &turn, 1.0e12);
+    if let Some(change) = store.prepare_native_runtime(ID, &status, &body, 1.0e12 + 1.0)? {
+        finish(store, &change)?;
+    }
+    Ok(())
 }
 
 fn evidence(phase: Phase, turn: &str, time: f64) -> (Value, Value) {
@@ -192,9 +233,10 @@ fn same(store: &Store) -> Result<()> {
 }
 
 fn input(store: &Store) -> Result<()> {
+    let next = load(store)?.input_revision + 1;
     store.observe(
         ID,
-        &json!({"id":"turn-input","status":"completed","startedAt":1.0e12,"completedAt":1.0e12,"userItems":["new"]}),
+        &json!({"id":format!("input-{next}"),"status":"completed","startedAt":1.0e12,"completedAt":1.0e12,"userItems":[format!("new-{next}")]}),
         None,
     )
 }
@@ -207,11 +249,19 @@ fn view(store: &Store) -> Result<()> {
 fn archive(store: &Store, stale: bool) -> Result<()> {
     let stored = load(store)?;
     let version = if stale { 0 } else { stored.version };
-    if store
-        .prepare_archive(ID, (version, stored.input_revision))
-        .is_err()
-    {
-        return Ok(());
+    let accepts = !stale && stored.archived == 0 && stored.review == 0
+        && stored.native_state.as_deref() == Some("to_archive");
+    let prepared = store.prepare_archive(ID, (version, stored.input_revision));
+    ensure!(prepared.is_ok() == accepts, "归档准备返回结果错误: {prepared:?}");
+    if let Ok(turn) = prepared {
+        ensure!(turn == serde_json::from_str::<Value>(&stored.turn_json)?,
+            "归档准备返回了错误的输入依据");
     }
-    store.confirm_archive(ID, (version, stored.input_revision))
+    ensure!(load(store)? == stored, "归档准备修改了持久记录");
+    let result = store.confirm_archive(ID, (version, stored.input_revision));
+    ensure!(result.is_ok() == accepts, "归档确认返回结果错误: {result:?}");
+    if !accepts {
+        ensure!(load(store)? == stored, "拒绝归档后持久记录改变");
+    }
+    Ok(())
 }
