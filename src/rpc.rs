@@ -1309,41 +1309,55 @@ mod tests {
         Ok(())
     }
 
-    fn delayed_desktop(listener: UnixListener, delay: Duration) -> Result<()> {
+    fn desktop_request_count(listener: UnixListener) -> Result<usize> {
         let (stream, _) = listener.accept()?;
+        stream.set_nonblocking(false)?;
         stream.set_read_timeout(Some(Duration::from_secs(1)))?;
         stream.set_write_timeout(Some(Duration::from_secs(1)))?;
         let mut server = tungstenite::accept(stream).map_err(|error| anyhow!("{error}"))?;
-        for _ in 0..3 {
-            let mut request = read_json(&mut server)?;
+        for completed in 0..3 {
+            let mut request = match read_json(&mut server) {
+                Ok(request) => request,
+                Err(error)
+                    if completed == 2
+                        && error.downcast_ref::<tungstenite::Error>().is_some_and(|failure| {
+                            matches!(failure, tungstenite::Error::ConnectionClosed
+                                | tungstenite::Error::Protocol(
+                                    tungstenite::error::ProtocolError::ResetWithoutClosingHandshake))
+                        }) => return Ok(completed),
+                Err(error) => return Err(error),
+            };
             if request["method"] == "initialized" {
                 request = read_json(&mut server)?;
             }
-            thread::sleep(delay);
             let result = if request["method"] == "thread/read" {
                 json!({"thread": {"name": "完整标题"}})
             } else {
                 json!({})
             };
-            if send_response(&mut server, json!({"id": request["id"], "result": result})).is_err() {
-                return Ok(());
-            }
+            send_response(&mut server, json!({"id": request["id"], "result": result}))?;
         }
-        Ok(())
+        Ok(3)
     }
 
     #[test]
     fn title_deadline_is_shared_across_initialize_read_and_write() -> Result<()> {
         let sandbox = Sandbox::create()?;
         let (path, listener) = sandbox.listener()?;
-        let worker = thread::spawn(move || delayed_desktop(listener, Duration::from_millis(80)));
+        let worker = thread::spawn(move || desktop_request_count(listener));
         let started = Instant::now();
+        let budget = Duration::from_millis(210);
+        let deadline = deadline_after(budget)?;
+        let stream = connect_unix(&path, deadline)?;
         let mut writer =
-            DesktopConnection::connect(&path, Duration::from_millis(210), Role::TitleWriter)?;
+            DesktopConnection::handshake(stream.into(), budget, Role::TitleWriter, deadline)?;
+        assert_eq!(writer.title_deadline, Some(deadline));
         writer.call(
             "thread/read",
             json!({"threadId": "sample", "includeTurns": false}),
         )?;
+        assert_eq!(writer.title_deadline, Some(deadline));
+        writer.title_deadline = Some(started);
         assert!(
             writer
                 .call(
@@ -1354,7 +1368,7 @@ mod tests {
         );
         assert!(started.elapsed() < Duration::from_millis(600));
         drop(writer);
-        worker.join().map_err(|_| anyhow!("模拟服务异常"))??;
+        assert_eq!(worker.join().map_err(|_| anyhow!("模拟服务异常"))??, 2);
         Ok(())
     }
 

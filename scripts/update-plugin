@@ -2,6 +2,10 @@
 set -eu
 root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)"
 python="${XDG_DATA_HOME:-$HOME/.local/share}/codex-session-board/delivery-venv/bin/python"
+gitconfig="${XDG_CONFIG_HOME:-$HOME/.config}/codex-session-board/gitconfig"
+if [ -f "$gitconfig" ]; then
+  export GIT_CONFIG_GLOBAL="$gitconfig"
+fi
 exec "$python" "$root/scripts/update_plugin.py" \
   --repository "$(git -C "$root" remote get-url origin)" \
   --expected-channel-source "$(git -C "$root" rev-parse HEAD)" \

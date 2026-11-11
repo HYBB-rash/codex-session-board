@@ -36,7 +36,7 @@ class UpdateDeliveryTests(unittest.TestCase):
 
     def test_backup_preserves_committed_wal_notes_and_all_host_databases(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             data = root / "runtime"
             data.mkdir()
             remote = data / "remote-hosts/mac"

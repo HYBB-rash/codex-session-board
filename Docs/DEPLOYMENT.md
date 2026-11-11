@@ -93,6 +93,9 @@ MCP 清单中的插件 ID、serverInfo.version 和 board_view 必须吻合。
 `--defer-reload` 只记录 `awaiting_client_reload`。
 Git 开发检出也可运行 `./scripts/update-plugin --channel candidate`：
 自动读取 origin、外部配置和本地 HEAD，CI 尚未产出该 HEAD 时不停止原版本。
+可用外部 `~/.config/codex-session-board/gitconfig` 配置仓库专用认证，
+启动器将其作为此次更新子进程的 `GIT_CONFIG_GLOBAL`；
+手动调用 Python 发布或更新工具时，也可为单条命令设置该变量。
 
 将上次回执中的 Git `revision` 固定后，回退命令为：
 

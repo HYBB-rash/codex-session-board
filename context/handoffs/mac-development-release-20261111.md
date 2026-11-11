@@ -10,7 +10,8 @@ status: verification_in_progress
 - Mac 迁移保全：`/Users/hongyong/Documents/codex-session-board-migration/20261111`。
 - Fedora 实现检出：`/home/herman/文档/codex-session-board-migration-20261111`。
 - 私有远端：`HYBB-rash/codex-session-board`。
-- Mac origin 使用 `ssh://git@ssh.github.com:443/HYBB-rash/codex-session-board.git`。
+- Mac origin 拉取使用 `https://github.com/HYBB-rash/codex-session-board.git`；
+  pushurl 保留 `ssh://git@ssh.github.com:443/HYBB-rash/codex-session-board.git`。
 - 日常过程与完整命令：`Docs/MAC-DEVELOPMENT.md`、`Docs/DEPLOYMENT.md`。
 
 ## 证据与判定
@@ -50,3 +51,13 @@ Mac `~/.local/bin/agent-git` 使用独立 Agent 身份与系统 ssh-keygen，
 曾有 SSH agent 拒绝与旧 WebSocket 重载失败，日志保留；
 认证恢复后 Mac GitHub 基线安装和实际 MCP 重载成功。
 新取包不得把缓存恢复记录当作 GitHub 下载成功证明。
+Mac 的既有 op-member 委托登录可用，仓库专用 HTTPS helper 已真实拉取 main。
+外部 gitconfig、凭据引用和 helper 位于本机配置数据目录，不含 token 明文。
+现存 token 写入及默认分支设置返回 403；不扩大权限、不复制 Fedora 凭据。
+源码推送仍由已登记 SSH 身份负责，未把 fetch 成功写成 push 成功。
+
+CI 初跑发现系统 Bash 3.2 空参数数组、暂存缓存嵌入旧目录、
+Python 临时目录未规范化以及 Linux 测试磁盘耗时。
+修复保持断言和冻结契约；共享 deadline 测试保留 210ms 预算、
+600ms 上界，并精确验证初始化、读取不重置绝对 deadline。
+失败工作流、日志与报告继续保留。

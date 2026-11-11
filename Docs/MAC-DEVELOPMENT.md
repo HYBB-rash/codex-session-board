@@ -23,7 +23,10 @@ GitHub 最初建库返回 HTTP 403，用户修复权限后已创建私有仓库
 `HYBB-rash/codex-session-board`。源码使用 main，产物使用平台分支。
 临时局域网 `source.git`、`plugins.git` 与迁移 bundle 继续保留。
 准确源 SHA、平台 revision 和最终推送结果以任务回执为准。
-Mac 访问 GitHub 使用已有 SSH 身份和 `ssh.github.com:443`；
+Mac 拉取源码和插件使用仓库专用 HTTPS 凭据配置，
+从本机既有 `op-member` 授权读取只读 token。
+配置仅保留凭据引用，token 经进程管道传给 Git。
+源码推送保留已有 SSH 身份和 `ssh.github.com:443`，
 已由原来受信任的 GitHub 主机密钥核对并记录该端点。
 SSH agent 拒绝签名属于认证失败，须在 Mac 的凭据管理器中允许 Git 访问。
 Fedora 的私钥与 GitHub 凭据没有复制到 Mac。
@@ -32,6 +35,8 @@ Fedora 的私钥与 GitHub 凭据没有复制到 Mac。
 包装器直接调用 `/usr/bin/ssh-keygen`；提交签名与远端 SSH 认证分别验证。
 普通 Git 身份保持原设置。GitHub 的 Verified 徽标另需账号登记签名公钥，
 不作为这次取包和运行验证的前提。
+当前保存的 token 可读取本私有仓库，推送和修改默认分支返回 403。
+源码写入仍须已有 SSH 身份授权，完整自主推送尚待验证。
 
 ## 日常开发
 
@@ -78,6 +83,9 @@ git pull --ff-only
 命令从 origin 获取正确平台的包，候选源码必须与本地 HEAD 相同；
 CI 尚未产出对应版本时，命令在停止现有服务前报错。
 固定旧 revision 回退可传 `--revision SHA`，此时按显式选择的旧源版本验证。
+存在外部 `~/.config/codex-session-board/gitconfig` 时，
+更新命令仅在子进程中加载它。开发检出本地 include 同一份配置；
+普通用户全局 Git 配置未改。
 
 安装状态放在 `~/.local/share/codex-session-board/installation`，
 配置放在 `~/.config/codex-session-board/config.json`，数据放在独立持久目录。

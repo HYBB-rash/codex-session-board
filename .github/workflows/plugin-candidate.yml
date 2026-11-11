@@ -35,6 +35,12 @@ jobs:
       - run: python3 -m pip install -r requirements-delivery.txt
       - run: rustup toolchain install 1.99.1 --profile minimal --component clippy
       - run: cargo fetch --locked
+      - name: Use executable memory storage for Linux test fixtures
+        if: runner.os == 'Linux'
+        run: |
+          fixture_root="$(mktemp -d /tmp/csb.XXXXXX)"
+          sudo mount -t tmpfs -o size=2G,mode=1777,nodev,nosuid,exec tmpfs "$fixture_root"
+          echo "TMPDIR=$fixture_root" >> "$GITHUB_ENV"
       - run: ./scripts/install-git-hooks && ./scripts/check
       - run: cargo clippy --all-targets --locked --offline -- -D warnings
       - run: python3 scripts/verify_acceptance.py --scope automated --report "$RUNNER_TEMP/automated.json"
@@ -46,6 +52,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
       - run: tar -czf "$RUNNER_TEMP/plugin-${{ matrix.label }}.tar.gz" -C "$RUNNER_TEMP/plugin" .
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: plugin-${{ matrix.label }}
           path: |

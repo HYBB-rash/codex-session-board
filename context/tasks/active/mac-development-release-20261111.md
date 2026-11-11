@@ -2,7 +2,7 @@
 
 owner: codex
 execution_mode: isolated_write
-allowed_write_set: src/, tests/, scripts/, Docs/, README.md, requirements-delivery.txt, .github/, .agents/plugins/, Cargo.toml, Cargo.lock, plugin.json, .codex-plugin/plugin.json, acceptance/bindings.json, acceptance/test_delivery.py, acceptance/test_update_delivery.py, context/
+allowed_write_set: src/, tests/, scripts/, Docs/, README.md, requirements-delivery.txt, .github/, .agents/plugins/, Cargo.toml, Cargo.lock, plugin.json, .codex-plugin/plugin.json, acceptance/bindings.json, acceptance/test_delivery.py, acceptance/test_update_delivery.py, acceptance/test_remote_release.py, context/
 base_commit: f9c68da06de85bc2f7e739f5df9e638d8f480d3e
 worktree_path: /home/herman/文档/codex-session-board-migration-20261111
 coordinator: codex-mac-migration
@@ -48,6 +48,10 @@ Fedora 原检出仍有独立形式化任务进行；本任务使用独立 clone�
   Linux 隔离安装与固定 Git SHA 回退已成功，原生产服务未切换。
 - 用户提供的新 Agent 签名器已检查，直接调用系统 ssh-keygen；
   远端 Git 认证也独立通过，未登记新 GitHub 密钥。
+- Mac 既有委托凭据可直接用于仓库专用 HTTPS 拉取，真实 fetch 已过；
+  token 无写权限，pushurl 保留已有 SSH，源码自主推送仍待验证。
+- Linux 0.3.8 自动范围 543 项通过。Mac Python 路径别名、共享 deadline
+  测试调度与云端磁盘耗时继续按实际失败修正，不降低断言或跳过测试。
 - 最终源码推送、CI、升级回退及配置数据保留结果继续写入 handoff 指定的运行回执。
 - 完整业务验收仍须真实目标环境证据，不能以候选交付或自动检查代签。
 
