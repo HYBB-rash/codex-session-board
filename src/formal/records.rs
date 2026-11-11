@@ -2,24 +2,11 @@ use super::fixture::{ID, load};
 use crate::native_sections::Observation;
 use crate::store::Store;
 use anyhow::{Result, bail, ensure};
-use rusqlite::types::Value as SqlValue;
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
 
-pub(super) type DatabaseSnapshot = BTreeMap<&'static str, Vec<Vec<SqlValue>>>;
-
-pub(super) fn snapshot(store: &Store) -> Result<DatabaseSnapshot> {
+pub(super) fn snapshot(store: &Store) -> Result<super::model_database::Snapshot> {
     let database = store.connection()?;
-    ["sessions", "changes", "title_updates", "settings", "remote_sessions", "remote_projects"]
-        .into_iter()
-        .map(|table| {
-            let mut query = database.prepare(&format!("SELECT * FROM {table} ORDER BY rowid"))?;
-            let count = query.column_count();
-            let rows = query.query_map([], |row| (0..count).map(|index| row.get(index)).collect())?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            Ok((table, rows))
-        })
-        .collect::<rusqlite::Result<_>>().map_err(Into::into)
+    Ok(super::model_database::snapshot(&database)?)
 }
 
 pub(super) fn start() -> Result<Store> {
