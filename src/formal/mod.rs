@@ -4,10 +4,12 @@ mod explore;
 mod fixture;
 mod paths;
 mod replay;
+mod records;
 mod session;
 mod section_model;
 mod section_fixture;
 mod sections;
+mod versions;
 
 #[cfg(test)]
 mod tests {
@@ -38,3 +40,4 @@ mod tests {
         assert_eq!(edges, 30);
     }
 }
+mod archive;

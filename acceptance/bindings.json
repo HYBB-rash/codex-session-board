@@ -472,6 +472,12 @@
       "lib::codex_session_board::remote::scans::restore_tests::unconfirmed_archived_cards_do_not_fetch_potentially_oversized_turns"
     ],
     "MANUAL-002": [
+      "lib::codex_session_board::formal::versions::position_and_manual_writes_increment_versions_without_false_conflicts",
+      "lib::codex_session_board::formal::versions::input_revisions_count_new_batches_and_preserve_confirmation",
+      "lib::codex_session_board::formal::versions::stale_edits_reject_each_revision_without_persistent_side_effects",
+      "lib::codex_session_board::formal::versions::runtime_results_and_same_column_stages_preserve_revision_contracts",
+      "lib::codex_session_board::formal::archive::archive_guards_independently_reject_versions_review_and_wrong_columns",
+      "lib::codex_session_board::formal::archive::archive_rechecks_prepared_versions_and_commits_only_fresh_confirmation",
       "lib::codex_session_board::formal::tests::native_session_control_matches_the_store_on_every_reachable_edge",
       "lib::codex_session_board::remote::instances::tests::disabling_a_host_drains_its_old_operations_without_blocking_another_host",
       "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation",

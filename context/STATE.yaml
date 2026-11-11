@@ -2,12 +2,12 @@
   "schema_version": 1,
   "updated_at": "2026-11-11",
   "current_phase": {
-    "id": "release92-main-integration-20261111",
-    "status": "completed",
+    "id": "formal-followup-integration-20261111",
+    "status": "in_progress",
     "as_of": "2026-11-11",
-    "summary": "发布记录1ecde5f与main交接19c713d已通过01273ee和46d7efc会合，两轮完整提交钩子及工作区检查通过。0.2.98只整理交接记录；保留分区模型、138040条原生边和531个唯一验收测试。main快进及最终验收回执位于本机integration/20261111-main目录。形式化后续提交和Mac平台改动仍在独立分支，未混入本轮。正式0.2.92不变，不推送或部署，完整发布验收仍缺真实环境证据。"
+    "summary": "main 4641088/0.2.98已完成发布分支与首轮形式化整合。继续按封板清单逐个接入6b02aa8、7097299、34c9ad9、8093775。复用隔离整合工作区，保留分区模型和验收映射并集，每次按规则进位并跑完整钩子。复审发现既有未读分区验证接受任意错误，已反馈来源修正。Mac改动仍独立，本轮只做本地整合，不推送或部署。"
   },
-  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/state-section-consistency-implementation-20261111.md", "context/tasks/active/ui-worktree-cleanup-20261111.md", "context/tasks/active/remote-final-integration-20261111.md", "context/tasks/active/formal-coverage-performance-20261111.md"],
+  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/state-section-consistency-implementation-20261111.md", "context/tasks/active/ui-worktree-cleanup-20261111.md", "context/tasks/active/remote-final-integration-20261111.md", "context/tasks/active/formal-coverage-performance-20261111.md", "context/tasks/active/formal-followup-integration-20261111.md"],
   "known_open_issues": [
     "冻结92已按用户最新带遗留发布指令上线，新解包根529自动项再次全过；91 timer、92原MCP Null及首次共享target路径失败保留。release_ready仍false，完整31/16及UI/PWA/N/R2待完成，不以部署冒称验收通过。",
     "正式插件与HTTP已切92/c521/配置bd6978fc9a03aaa1，发布会话已核对serverInfo和实际面板。后续清理已卸载旧验收插件和市场，正式入口保留。初次正式面板旧82连接报版本不符，正式plugin/install后恢复。",
@@ -27,8 +27,8 @@
     ]
   },
   "verification": {
-    "status": "passed",
-    "last_checked_at": "2026-11-11",
+    "status": "pending",
+    "last_checked_at": null,
     "method": "sh scripts/verify_context.sh",
     "boundary": "Project-local context files and declared local paths only."
   }
