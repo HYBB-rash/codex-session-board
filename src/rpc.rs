@@ -1309,7 +1309,10 @@ mod tests {
         Ok(())
     }
 
-    fn desktop_request_count(listener: UnixListener) -> Result<usize> {
+    fn desktop_request_count(
+        listener: UnixListener,
+        initialized: std::sync::mpsc::Sender<Instant>,
+    ) -> Result<usize> {
         let (stream, _) = listener.accept()?;
         stream.set_nonblocking(false)?;
         stream.set_read_timeout(Some(Duration::from_secs(1)))?;
@@ -1330,6 +1333,9 @@ mod tests {
             if request["method"] == "initialized" {
                 request = read_json(&mut server)?;
             }
+            if completed == 0 {
+                initialized.send(Instant::now())?;
+            }
             let result = if request["method"] == "thread/read" {
                 json!({"thread": {"name": "完整标题"}})
             } else {
@@ -1344,14 +1350,16 @@ mod tests {
     fn title_deadline_is_shared_across_initialize_read_and_write() -> Result<()> {
         let sandbox = Sandbox::create()?;
         let (path, listener) = sandbox.listener()?;
-        let worker = thread::spawn(move || desktop_request_count(listener));
+        let (initialized, received) = std::sync::mpsc::channel();
+        let worker = thread::spawn(move || desktop_request_count(listener, initialized));
         let started = Instant::now();
         let budget = Duration::from_millis(210);
-        let deadline = deadline_after(budget)?;
-        let stream = connect_unix(&path, deadline)?;
         let mut writer =
-            DesktopConnection::handshake(stream.into(), budget, Role::TitleWriter, deadline)?;
-        assert_eq!(writer.title_deadline, Some(deadline));
+            DesktopConnection::connect(&path, budget, Role::TitleWriter)?;
+        let deadline = writer.title_deadline.ok_or_else(|| anyhow!("缺少共享 deadline"))?;
+        let origin = deadline.checked_sub(budget).ok_or_else(|| anyhow!("deadline 越界"))?;
+        assert!(origin >= started);
+        assert!(origin <= received.recv_timeout(budget)?);
         writer.call(
             "thread/read",
             json!({"threadId": "sample", "includeTurns": false}),

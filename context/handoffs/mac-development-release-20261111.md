@@ -6,8 +6,8 @@ status: verification_in_progress
 
 ## 入口
 
-- Mac 开发目录：`/Users/hongyong/Documents/codex-session-board`。
-- Mac 迁移保全：`/Users/hongyong/Documents/codex-session-board-migration/20261111`。
+- Mac 开发目录：`/Users/hongyong/Developer/codex-session-board`。
+- Mac 迁移保全：`/Users/hongyong/Developer/codex-session-board-migration/20261111`。
 - Fedora 实现检出：`/home/herman/文档/codex-session-board-migration-20261111`。
 - 私有远端：`HYBB-rash/codex-session-board`。
 - Mac origin 拉取使用 `https://github.com/HYBB-rash/codex-session-board.git`；
@@ -61,3 +61,10 @@ Python 临时目录未规范化以及 Linux 测试磁盘耗时。
 修复保持断言和冻结契约；共享 deadline 测试保留 210ms 预算、
 600ms 上界，并精确验证初始化、读取不重置绝对 deadline。
 失败工作流、日志与报告继续保留。
+共享 deadline 回归使用公开 connect、服务端初始化时刻和精确绝对时间，
+同时核对读取不刷新预算、过期写入不发送第三条请求，保留原时间上界。
+CI 钩子测试在内存临时盘仍触及原 600 秒限额，改用官方 sccache
+复用依赖编译；增量工作区编译保持不缓存，测试仓库与 target 继续独立。
+适配器超时保留已捕获的输出，不跳过任何测试或改变验收限额。
+Mac 文稿出现旧文件“2”后缀副本，源码指纹保护实际拦截；
+旧目录及全部副本先保全，再从 GitHub 在 Developer 新克隆并导入历史引用。

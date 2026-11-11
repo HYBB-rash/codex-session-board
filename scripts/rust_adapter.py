@@ -10,11 +10,17 @@ ROOT = Path.cwd().resolve()
 
 
 def command(arguments, timeout=600):
-    result = subprocess.run(
-        arguments, cwd=ROOT, capture_output=True, text=True, timeout=timeout,
-        env={**os.environ, "RUST_BACKTRACE": "0",
-             **({"TMPDIR": "/private/tmp"} if sys.platform == "darwin" else {})},
-    )
+    try:
+        result = subprocess.run(
+            arguments, cwd=ROOT, capture_output=True, text=True, timeout=timeout,
+            env={**os.environ, "RUST_BACKTRACE": "0",
+                 **({"TMPDIR": "/private/tmp"} if sys.platform == "darwin" else {})},
+        )
+    except subprocess.TimeoutExpired as error:
+        transcript = []
+        for captured in (error.stdout, error.stderr):
+            transcript.append(captured.decode(errors="replace") if isinstance(captured, bytes) else captured or "")
+        raise TimeoutError(f"{error}\n" + "\n".join(transcript)[-10000:]) from error
     return result
 
 

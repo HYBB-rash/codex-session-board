@@ -1,9 +1,11 @@
 # Mac 开发与迁移
 
 2026-11-11 的目标机器已核对为 hongyong 的 MacBook Pro，Apple Silicon、zsh。
-开发目录为 `/Users/hongyong/Documents/codex-session-board`。
-迁移保全目录为 `/Users/hongyong/Documents/codex-session-board-migration/20261111`。
+开发目录为 `/Users/hongyong/Developer/codex-session-board`。
+迁移保全目录为 `/Users/hongyong/Developer/codex-session-board-migration/20261111`。
 机器地址、配置与凭据均不写进可分发插件。
+文稿目录在验证时出现额外“2”后缀副本，触发源码变更保护，来源未实锤。
+现已在 Developer 新建干净 Git 检出；原文稿目录、全部副本及 Git 引用继续保全。
 
 ## 开发上下文
 
