@@ -62,7 +62,8 @@ def run_rust(targets, names):
         expected = {name for name, (target, _) in names.items() if target == prefix}
         if not expected:
             continue
-        process = command([str(executable), "--test-threads=1"])
+        timeout = 1200 if prefix == "test::git_hooks" else 600
+        process = command([str(executable), "--test-threads=1"], timeout=timeout)
         for line in process.stdout.splitlines():
             match = re.fullmatch(r"test (.+) \.\.\. (ok|FAILED|ignored)", line)
             if match:

@@ -9,6 +9,7 @@ import tomllib
 from pathlib import Path
 
 from verify_acceptance import fingerprint
+from package_migration import build_package
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -97,6 +98,7 @@ def build(root, target, destination=None):
         shutil.copy2(root / name, destination / name)
     for name in (".codex-plugin", "assets", "skills", ".agents/plugins"):
         shutil.copytree(root / name, destination / name)
+    build_package(root, destination / "SOURCE.tar.gz")
     manifest = {
         "schema_version": 1, "version": version, "target": target, "source_commit": source,
         "contract_sha256": hashlib.sha256((root / "acceptance/requirements.json").read_bytes()).hexdigest(),

@@ -3,7 +3,8 @@
 2026-11-11 的目标机器已核对为 hongyong 的 MacBook Pro，Apple Silicon、zsh。
 开发目录为 `/Users/hongyong/Developer/codex-session-board`。
 迁移保全目录为 `/Users/hongyong/Developer/codex-session-board-migration/20261111`。
-机器地址、配置与凭据均不写进可分发插件。
+活动配置、凭据、用户数据库及原始聊天快照均不写进可分发插件。
+附带的源码包保留仓库中的项目文档与任务上下文。
 文稿目录在验证时出现额外“2”后缀副本，触发源码变更保护，来源未实锤。
 现已在 Developer 新建干净 Git 检出；原文稿目录、全部副本及 Git 引用继续保全。
 
@@ -38,7 +39,9 @@ Fedora 的私钥与 GitHub 凭据没有复制到 Mac。
 普通 Git 身份保持原设置。GitHub 的 Verified 徽标另需账号登记签名公钥，
 不作为这次取包和运行验证的前提。
 当前保存的 token 可读取本私有仓库，推送和修改默认分支返回 403。
-源码写入仍须已有 SSH 身份授权，完整自主推送尚待验证。
+2026-11-12 已从 Mac 完成 HTTPS 拉取及 SSH 推送预检。
+预检曾记录一把 agent 密钥拒签，随后同次调用成功；不据此推断所有密钥均已解锁。
+真实 Agent 签名源提交与推送结果以最终回执为准。
 
 ## 日常开发
 
@@ -62,11 +65,15 @@ python3 -m venv ~/.local/share/codex-session-board/delivery-venv
 ~/.local/share/codex-session-board/delivery-venv/bin/python -m pip install -r requirements-delivery.txt
 ```
 
-提交前仍须准备版本、同步两个插件清单、审阅暂存内容并运行
+`./scripts/check --prepare-commit` 同步 Cargo 与两个插件清单的版本。
+提交前须审阅并暂存本次代码和四份版本文件，再运行
 `./scripts/check --pre-commit`；源提交使用本机独立 Agent 签名器。
 Mac 的密钥保持本机管理。源码规则不因迁移放宽，完整验收仍使用原 31 条需求、模型和锁。
 测试临时目录使用 `/private/tmp`，避免 `/tmp` 符号链接和过长 Unix socket 路径。
 macOS 与 Linux 的 socket 队列差异采用对应的明确结果断言，原测试编号保留。
+CI 的 19 项钩子集成测试逐项使用独立编译目录；Mac runner 曾在 600 秒内完成前 17 项。
+该测试进程的执行预算为 1200 秒，其余测试进程保持 600 秒，业务断言保持原值。
+试用编译缓存出现零命中，已移除该依赖。
 
 ## 获取与验证新版本
 
@@ -74,6 +81,9 @@ macOS 与 Linux 的 socket 队列差异采用对应的明确结果断言，原�
 每个包带平台、源提交、源码指纹、可执行文件与资产摘要。构建和发布命令见
 `Docs/DEPLOYMENT.md`；消费者通过同一插件 ID 选择本机平台分支。
 开发者可使用 candidate，完成目标环境签收后才提升 stable。
+每个原生插件包含 `SOURCE.tar.gz` 及其 SHA256 文件；源码包沿用既有迁移白名单。
+解包到独立目录后，可运行 `python3 scripts/verify_acceptance.py` 复验同一源码指纹。
+没有外部证据时，完整验收仍返回待验证；准备 Rust 依赖后可单独运行 automated 范围。
 
 GitHub 对本次源码的双平台构建通过后，在 Mac 开发目录执行：
 

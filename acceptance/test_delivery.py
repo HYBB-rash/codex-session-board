@@ -2,6 +2,7 @@ import json
 import hashlib
 import sys
 import tempfile
+import tarfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -50,6 +51,27 @@ class DeliveryTests(unittest.TestCase):
         (self.package / "bin/codex-session-board").write_bytes(b"other executable")
         with self.assertRaisesRegex(ValueError, "hashes"):
             package_plugin.verify_package(self.package)
+
+    def test_portable_source_archive_preserves_the_complete_implementation_fingerprint(self):
+        archive_path = self.package / "SOURCE.tar.gz"
+        result = package_plugin.build_package(package_plugin.ROOT, archive_path)
+        self.assertEqual(result["sha256"], hashlib.sha256(archive_path.read_bytes()).hexdigest())
+        with tarfile.open(archive_path) as archive:
+            names = archive.getnames()
+            for name in (
+                "src/main.rs", "tests/board_contract.rs", "acceptance/requirements.json",
+                "acceptance/model.py", "acceptance/contract.lock.json", "Docs/MIGRATION.md",
+            ):
+                self.assertIn("codex-session-board/" + name, names)
+            self.assertFalse(any(Path(name).suffix in {".sqlite3", ".db", ".log", ".png", ".pyc"} for name in names))
+            archive.extractall(self.root / "relocated", filter="data")
+        relocated = self.root / "relocated/codex-session-board"
+        bindings = json.loads((relocated / "acceptance/bindings.json").read_text())
+        self.assertEqual(
+            package_plugin.fingerprint(relocated, bindings["fingerprint_paths"]),
+            package_plugin.fingerprint(package_plugin.ROOT, bindings["fingerprint_paths"]),
+        )
+        self.assertEqual(package_plugin.versions(relocated), package_plugin.versions(package_plugin.ROOT))
 
     def test_extra_files_and_symlinks_cannot_enter_a_release(self):
         (self.package / "unexpected").write_text("runtime data")

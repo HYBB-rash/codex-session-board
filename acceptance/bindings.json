@@ -1484,6 +1484,7 @@
       "lib::codex_session_board::remote::connections::tests::failed_manual_connection_stops_when_auto_connect_is_off"
     ],
     "DELIVERY-001": [
+      "acceptance.test_delivery.DeliveryTests.test_portable_source_archive_preserves_the_complete_implementation_fingerprint",
       "acceptance.test_delivery.DeliveryTests.test_package_hashes_bind_assets_binary_and_version",
       "acceptance.test_delivery.DeliveryTests.test_extra_files_and_symlinks_cannot_enter_a_release",
       "acceptance.test_gate.PackageTests.test_package_requires_the_fingerprinted_build_gate_and_preserves_its_rejection",
@@ -1584,6 +1585,7 @@
       "example::project_check::version_policy::tests::moving_the_boundary_to_a_real_ancestor_or_hiding_invalid_history_fails",
       "example::project_check::version_policy::tests::pending_merge_rejects_invalid_history_and_conflicting_real_boundaries",
       "example::project_check::version_policy::tests::preparation_is_idempotent_and_manual_release_is_rejected",
+      "example::project_check::version_policy::tests::preparation_synchronizes_plugin_versions_and_rejects_partial_manifests",
       "example::project_check::version_policy::tests::repeat_preparation_and_rejected_changes_preserve_files_and_index",
       "example::project_check::version_policy::tests::rollover_boundaries_ranges_and_overflow",
       "test::git_hooks::an_unstaged_failure_does_not_change_the_passing_commit_snapshot",
