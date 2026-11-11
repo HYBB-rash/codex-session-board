@@ -125,6 +125,9 @@ fn apply(store: &Store, draft: Draft, event: DraftEvent) -> Result<()> {
         );
         ensure!(record(store)? == Some(returned), "新建返回值与持久记录不同");
     } else {
+        super::check::rejection(result, if draft == Draft::Absent {
+            "新建请求不存在"
+        } else { "新建请求已经结束" })?;
         ensure!(record(store)? == before, "拒绝新建操作后记录被修改");
     }
     validate_pending(store, draft_step(draft, event))
@@ -194,26 +197,21 @@ fn identity_guards(store: &Store, draft: Draft) -> Result<()> {
     }
     let before = record(store)?;
     let pending = store.pending_drafts()?;
-    ensure!(
-        store.draft_begin("another-project", REQUEST).is_err(),
-        "同一请求被另一个项目复用"
-    );
+    super::check::rejection(
+        store.draft_begin("another-project", REQUEST), "新建请求已用于另一个项目",
+    )?;
     if before
         .as_ref()
         .is_some_and(|record| record["threadId"].is_string())
     {
-        ensure!(
-            store
-                .draft_update(REQUEST, Some(REQUEST), "created")
-                .is_err(),
-            "已确认的会话身份被替换"
-        );
+        let reason = if matches!(draft, Draft::Complete | Draft::Abandoned) {
+            "新建请求已经结束"
+        } else { "新建会话 ID 不一致" };
+        super::check::rejection(store.draft_update(REQUEST, Some(REQUEST), "created"), reason)?;
     }
     if !pending.is_empty() {
-        ensure!(
-            store.draft_begin(PROJECT, THREAD).is_err(),
-            "待核对期间允许了第二个创建请求"
-        );
+        super::check::rejection(store.draft_begin(PROJECT, THREAD),
+            &format!("该项目有结果待核对的新建请求：{REQUEST}；不会重复创建"))?;
     }
     ensure!(record(store)? == before, "拒绝跨身份操作后记录改变");
     ensure!(

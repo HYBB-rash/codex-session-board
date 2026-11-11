@@ -299,6 +299,8 @@
       "test::board_contract::state_contract_tests::test_state_names_and_display_order"
     ],
     "AUTO-006": [
+      "lib::codex_session_board::formal::paths::unread_runtime_rejection_preserves_the_entire_database",
+      "lib::codex_session_board::formal::paths::unread_lost_ack_rejection_preserves_the_entire_database",
       "lib::codex_session_board::formal::time::first_phase_distinguishes_older_equal_and_newer_observation_times",
       "lib::codex_session_board::formal::time::terminal_completion_time_respects_both_sides_and_equality_of_manual_choice",
       "lib::codex_session_board::formal::time::pending_turn_retry_bypasses_old_observation_and_manual_choice_boundaries",
