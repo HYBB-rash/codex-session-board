@@ -8,6 +8,7 @@ use std::path::Path;
 fn open(directory: &Path) -> Result<Store> {
     let mut store = Store::open(directory, true)?;
     store.native_sections = true;
+    assert!(store.title_epoch.is_some());
     Ok(store)
 }
 
@@ -29,10 +30,14 @@ fn native_manual_input_pending_and_title_failure_survive_real_reopen() -> Result
     store.cache_native(ID, &position("review"))?;
     observe(&store, "history", &["u1"])?;
     select(&store, "to_archive")?;
-    store.title_failed(ID, revisions(&store)?.0, "暂时断开")?;
+    fail_title(&store)?;
     let store = reopen(store, directory.path())?;
     assert_eq!(load(&store)?.review, 0);
     observe(&store, "history", &["u1", "u2"])?;
+    let before_empty = revisions(&store)?;
+    observe(&store, "empty", &[])?;
+    assert_eq!(revisions(&store)?, before_empty);
+    assert_eq!(load(&store)?.review, 1);
     let status = json!({"type":"active"});
     let turn = json!({"id":"pending","status":"inProgress","startedAt":1.0e12});
     assert!(store.prepare_native_runtime(ID, &status, &turn, 0.0)?.is_some());
@@ -51,6 +56,17 @@ fn native_manual_input_pending_and_title_failure_survive_real_reopen() -> Result
     assert!(store.prepare_native_runtime(ID, &status, &turn, 1.0e12 + 1.0)?.is_none());
     assert_eq!(snapshot(&store)?, before);
     archive_restore(store, directory.path())
+}
+
+fn fail_title(store: &Store) -> Result<()> {
+    let version = revisions(store)?.0;
+    store.title_failed(ID, version, "暂时断开")?;
+    let failure: (i64, Option<String>, bool) = store.connection()?.query_row(
+        "SELECT version,error,attempted_at IS NOT NULL FROM title_updates WHERE thread_id=?",
+        [ID], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+    assert_eq!(failure, (version, Some("暂时断开".into()), true));
+    Ok(())
 }
 
 fn archive_restore(store: Store, directory: &Path) -> Result<()> {

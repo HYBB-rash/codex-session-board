@@ -2,7 +2,7 @@
 
 owner: codex
 execution_mode: isolated_write
-allowed_write_set: src/formal/, tests/board_contract.rs, examples/remote_parity_lab/model_replay_tests.rs, acceptance/bindings.json, Docs/, Cargo.toml, Cargo.lock, plugin.json, .codex-plugin/plugin.json, context/
+allowed_write_set: src/formal/, tests/board_contract.rs, tests/support/, examples/remote_parity_lab/model_replay_tests.rs, examples/remote_parity_lab/surface.rs, acceptance/bindings.json, Docs/, Cargo.toml, Cargo.lock, plugin.json, .codex-plugin/plugin.json, context/
 base_commit: 19c713ded861beb3546aa61d83f09698527f76ed
 worktree_path: /home/herman/.codex/worktrees/formal-coverage-performance/notion-program
 coordinator: codex
@@ -55,3 +55,9 @@ coordinator: codex
 完成/失败/中断分别核对完成时间早于、等于、晚于人工选择；
 pending重试核对有/无已确认阶段及观察/人工选择两种时间保护。
 三项定向检查及Clippy通过；六个新增单点变异被捕获，累计20项。
+复审后补上首次观察时间的等号边界、标题失败确实写入的前提，
+以及后续空历史不能清掉已存在的输入复核提醒。
+完整快照改为动态读取实际表集合及schema，保留SQLite类型，涵盖索引/触发器变化。
+修正后的同一138,040边SQL重放基线为35.261秒，不含编译。
+冻结模型schema复用临时原型保留520路径、1,417步骤；真实重放通过，
+实测181.593秒，但当时并发运行其他磁盘检查，不能把它当成稳定性能结论。

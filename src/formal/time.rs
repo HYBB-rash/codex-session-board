@@ -12,6 +12,30 @@ fn running(store: &Store, identifier: &str, time: f64, since: f64) -> Result<()>
 }
 
 #[test]
+fn first_phase_distinguishes_older_equal_and_newer_observation_times() -> Result<()> {
+    for offset in [-1.0, 0.0, 1.0] {
+        let store = start()?;
+        store.cache_native(ID, &position("review"))?;
+        let status = json!({"type":"active"});
+        let turn = json!({"id":"first","status":"inProgress","startedAt":100.0 + offset});
+        let change = store.prepare_native_runtime(ID, &status, &turn, 100.0)?;
+        assert_eq!(change.is_some(), offset >= 0.0);
+        if let Some(change) = change {
+            assert_eq!(change.state, "in_progress");
+            store.commit_native_runtime(ID, &change, &position("in_progress"))?;
+        }
+        let row = load(&store)?;
+        assert_eq!(row.native_state.as_deref(), Some(if offset < 0.0 { "review" } else { "in_progress" }));
+        assert_eq!(revisions(&store)?, (1 + i64::from(offset >= 0.0), 0));
+        assert!(row.runtime_key.is_some() && row.pending_key.is_none());
+        let before = snapshot(&store)?;
+        assert!(store.prepare_native_runtime(ID, &status, &turn, 100.0)?.is_none());
+        assert_eq!(snapshot(&store)?, before);
+    }
+    Ok(())
+}
+
+#[test]
 fn terminal_completion_time_respects_both_sides_and_equality_of_manual_choice() -> Result<()> {
     for (outcome, state) in [("completed", "review"), ("failed", "blocked"), ("interrupted", "blocked")] {
         for offset in [-1.0, 0.0, 1.0] {
