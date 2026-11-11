@@ -2,8 +2,8 @@
 
 owner: codex
 execution_mode: isolated_write
-allowed_write_set: src/formal/, acceptance/bindings.json, Docs/, Cargo.toml, Cargo.lock, plugin.json, .codex-plugin/plugin.json, context/
-base_commit: be7d079e2a287a375223852b54bec4950366bc11
+allowed_write_set: src/formal/, tests/board_contract.rs, examples/remote_parity_lab/model_replay_tests.rs, acceptance/bindings.json, Docs/, Cargo.toml, Cargo.lock, plugin.json, .codex-plugin/plugin.json, context/
+base_commit: 19c713ded861beb3546aa61d83f09698527f76ed
 worktree_path: /home/herman/.codex/worktrees/formal-coverage-performance/notion-program
 coordinator: codex
 
@@ -40,7 +40,13 @@ coordinator: codex
 已确认阶段去重、重复草稿误报首次创建。变异未写入工作区。
 只读复审要求补充 pending 早于人工确认的豁免、完成时间跨人工确认及相等边界，
 将在独立连续测试中核对。
-当前模型提交已通过并迁入独立工作区，将干净main 19c713d交给发布分支整合任务。
-该基点包含a94a67f及19c713d两次验证提交。
-发布分支整合只接入这两次提交；后续6b02aa8等继续保存在独立分支。
-后续按本分支父提交推进本地迭代号，统一整合时再按最终父提交准备版本。
+模型修正已提交并交接干净 main；后续在独立工作区开发，
+最终接入统一 main 时按合并父节点准备版本，不预占发布号。
+已完成交接，分支 codex/formal-coverage-performance；main 的 19c713d 提交钩子、
+全套测试及 ./scripts/check 通过，交接时工作区干净。后续不写 main。
+六项独立版本/归档连续测试及 Clippy 通过，拒绝操作比较六张业务表全字段。
+另有十个版本/归档生产行为变异被捕获，累计十四项；
+见 context/results/formal-mutations-20261111.md。
+整合任务需要两轮长检查，后续先在独立分支按本分支父节点进位并提交；
+依 Docs/CHECKS.md 的并行分支规则，最终整合时按合并父节点重新准备版本。
+这些版本仅用于本地验证，不是发布号，不部署或推送，已同步给整合任务。
