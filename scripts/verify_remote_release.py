@@ -99,15 +99,19 @@ def index(records, expected, label):
     return result
 
 
-def references(value):
+def path_references(value):
     if isinstance(value, dict):
-        if "path" in value and "sha256" in value:
+        if "path" in value:
             yield value
         for child in value.values():
-            yield from references(child)
+            yield from path_references(child)
     elif isinstance(value, list):
         for child in value:
-            yield from references(child)
+            yield from path_references(child)
+
+
+def references(value):
+    return (entry for entry in path_references(value) if "sha256" in entry)
 
 
 def referenced_path(manifest_path, reference):
@@ -115,12 +119,20 @@ def referenced_path(manifest_path, reference):
     return (manifest_path.parent / reference["path"]).resolve()
 
 
+def read_sha256_artifact(path, reference):
+    checksum = reference.get("sha256")
+    require(isinstance(checksum, str) and len(checksum) == 64
+            and all(character in "0123456789abcdef" for character in checksum),
+            "Artifact requires a SHA256 reference")
+    return read(referenced_path(path, reference))
+
+
 def protect_report(root, manifest_path, manifest, report_path):
     contract = root / "acceptance/requirements.json"
     bindings = root / "acceptance/bindings.json"
     validate_report_path(root, contract, bindings, None, report_path)
     inputs = [manifest_path]
-    inputs.extend(referenced_path(manifest_path, entry) for entry in references(manifest))
+    inputs.extend(referenced_path(manifest_path, entry) for entry in path_references(manifest))
     require(not any(same_file(report_path, path) for path in inputs),
             "Report would overwrite manifest or referenced input")
     evidence = referenced_path(manifest_path, manifest["legacy_evidence"])
@@ -180,7 +192,7 @@ def section_preflight(mode, config, path, binary_sha, states):
     require(len(set(identifiers)) == len(identifiers)
             and all(str(uuid.UUID(value)) == value for value in identifiers),
             "Invalid or duplicate native section ID")
-    receipt = read(referenced_path(path, mode["section_preflight"]))
+    receipt = read_sha256_artifact(path, mode["section_preflight"])
     require(receipt["nativeCatalogVerified"] is True
             and receipt["app"] == "codex-session-board"
             and receipt["build"] == binary_sha and receipt["configId"] == mode["configId"]
@@ -267,6 +279,59 @@ def audit_records(manifest, modes):
     require(manifest["cleanup"]["remaining_owned_resources"] == [], "Cleanup is incomplete")
 
 
+def remote_artifact(path, reference):
+    return read_sha256_artifact(path, reference)
+
+
+def remote_snapshot(path, reference, host):
+    snapshot = remote_artifact(path, reference)
+    health = snapshot["health"]
+    require(health["nativeSections"] is True, "Remote root snapshot must use native sections")
+    connections = health["remoteConnections"]
+    require(isinstance(connections, list), "Missing remote child observations")
+    children = [child for child in connections if child["hostId"] == host]
+    require(len(children) == 1, "Remote target child is missing or duplicated")
+    require(children[0]["nativeSections"] is False and children[0]["runtimeVerified"] is True,
+            "Remote target child must observe runtime without native columns")
+    return snapshot
+
+
+def remote_column(path, record, host, source):
+    require(record["hostId"] == host, "Remote column evidence targets a different host")
+    thread = record["threadId"]
+    require(isinstance(thread, str) and str(uuid.UUID(thread)) == thread,
+            "Invalid remote column thread")
+    snapshot = remote_snapshot(path, record["snapshot"], host)
+    sessions = snapshot["sessions"]
+    require(isinstance(sessions, list), "Missing remote session observations")
+    rows = [row for row in sessions if row.get("hostId") == host
+            and row.get("threadId") == thread]
+    require(len(rows) == 1, "Remote target session is missing or duplicated")
+    row = rows[0]
+    require(row["remote"] is True and row["readOnly"] is False
+            and row["source"] == source and row["manual"] is (source == "manual")
+            and row["sectionVersion"] is None,
+            f"Incorrect remote column authority: {source}")
+    states = {"unknown", "in_progress", "review", "blocked", "to_archive"}
+    require(row["state"] in (states - {"unknown", "to_archive"} if source == "runtime" else states),
+            f"Invalid remote column state: {source}")
+    return row
+
+
+def remote_columns(manifest, path, modes, checks):
+    host = modes["remote"]["hostId"]
+    runtime = remote_column(path, checks["R-RUNTIME-PHASES"], host, "runtime")
+    manual = remote_column(path, checks["R-NAV-DRAG"], host, "manual")
+    require(runtime["threadId"] == manual["threadId"] and runtime["state"] != manual["state"],
+            "Remote drag must change the same session's runtime column")
+    require(any(entry["hostId"] == host and entry["threadId"] == runtime["threadId"]
+                for entry in manifest["audit"]["allowed_sessions"]),
+            "Remote column evidence is outside the test allowlist")
+    calls = remote_artifact(path, checks["R-NAV-DRAG"]["local_sidebar_calls"])
+    require(isinstance(calls, list) and not calls,
+            "Remote drag must not call the local sidebar")
+
+
 def verify(root, manifest_path, binary):
     manifest = read(manifest_path)
     contract_path = root / "acceptance/requirements.json"
@@ -308,6 +373,7 @@ def verify(root, manifest_path, binary):
                 f"Case mode/config/binary/source mismatch: {identifier}")
         results.append(evidence_result(identifier, record, manifest, manifest_path,
                                        contract_sha, build_sha))
+    remote_columns(manifest, manifest_path, modes, checks)
     audit_records(manifest, modes)
     for identifier in ("audit", "cleanup", "review"):
         results.append(evidence_result(identifier, manifest[identifier], manifest,

@@ -1,4 +1,5 @@
 import copy
+import io
 import json
 import subprocess
 import sys
@@ -76,6 +77,7 @@ class RemoteReleaseTests(unittest.TestCase):
                                             "method": "thread/name/set"}]},
             "cleanup": {**self.record(), "remaining_owned_resources": []},
         }
+        self.remote_columns()
         self.review()
         self.commit_patch = patch.object(gate, "current_commit", return_value=COMMIT)
         self.commit_patch.start()
@@ -124,6 +126,25 @@ class RemoteReleaseTests(unittest.TestCase):
     def config_id(self, name):
         return gate.json_digest(gate.read(self.base / f"{name}-config.json"))[:16]
 
+    def remote_columns(self):
+        for identifier, source in (("R-RUNTIME-PHASES", "runtime"), ("R-NAV-DRAG", "manual")):
+            record = next(check for check in self.manifest["checks"] if check["id"] == identifier)
+            snapshot = {
+                "health": {"nativeSections": True, "remoteConnections": [
+                    {"hostId": HOST, "nativeSections": False, "runtimeVerified": True}]},
+                "sessions": [{"hostId": HOST, "threadId": REMOTE_THREAD, "remote": True,
+                              "readOnly": False, "source": source, "manual": source == "manual",
+                              "sectionVersion": None,
+                              "state": "in_progress" if source == "runtime" else "to_archive"}],
+            }
+            record.update(hostId=HOST, threadId=REMOTE_THREAD,
+                          snapshot=self.artifact(f"{source}-snapshot.json", snapshot))
+            if source == "manual":
+                record["local_sidebar_calls"] = self.artifact("local-sidebar-calls.json", [])
+
+    def remote_check(self, identifier="R-NAV-DRAG"):
+        return next(check for check in self.manifest["checks"] if check["id"] == identifier)
+
     def review(self):
         self.manifest["review"] = {**self.record(),
                                    "subject_sha256": gate.review_digest(self.manifest)}
@@ -143,12 +164,231 @@ class RemoteReleaseTests(unittest.TestCase):
         (self.base / reference["path"]).write_text(json.dumps(value))
         reference["sha256"] = gate.digest(self.base / reference["path"])
 
+    def cli(self, report=None):
+        report = self.base / "cli-report.json" if report is None else report
+        self.assertTrue(all(path.resolve().is_relative_to(self.base.resolve())
+                            for path in (self.root, self.path, self.binary, report)))
+        self.path.write_text(json.dumps(self.manifest))
+        argv = ["verify_remote_release", "--root", str(self.root), "--manifest", str(self.path),
+                "--binary", str(self.binary), "--report", str(report)]
+        with patch.object(sys, "argv", argv), patch("sys.stdout", new_callable=io.StringIO) as output:
+            code = gate.main()
+        return code, json.loads(output.getvalue())
+
+    def authority_references(self):
+        return [mode["section_preflight"] for mode in self.manifest["modes"]
+                if mode["id"] != "legacy"] + [
+                    self.remote_check(identifier)["snapshot"]
+                    for identifier in ("R-RUNTIME-PHASES", "R-NAV-DRAG")] + [
+                        self.remote_check()["local_sidebar_calls"]]
+
+    def test_cli_preflight_rejects_missing_malformed_and_wrong_sha_in_both_modes(self):
+        for reference in self.authority_references()[:2]:
+            original = dict(reference)
+            for checksum in ("missing", None, "", True, "A" * 64, "g" * 64,
+                             "0" * 63, "0" * 65, "0" * 64):
+                reference.clear()
+                reference.update(original)
+                if checksum == "missing":
+                    reference.pop("sha256")
+                else:
+                    reference["sha256"] = checksum
+                self.review()
+                with self.subTest(path=reference["path"], checksum=checksum):
+                    code, report = self.cli()
+                    self.assertEqual(code, 2 if checksum == "0" * 64 else 1)
+                    self.assertFalse(report["release_ready"])
+            reference.update(original)
+
+    def test_cli_unhashed_inputs_and_aliases_are_never_overwritten(self):
+        extra = self.artifact("nested.json", {})
+        self.manifest["extra"] = {"nested": [extra]}
+        directory = self.base / "aliases"
+        directory.mkdir()
+        for position, reference in enumerate([*self.authority_references(), extra]):
+            original = dict(reference)
+            reference.pop("sha256")
+            target = self.base / reference["path"]
+            before = target.read_bytes()
+            aliases = [target, directory / ".." / target.name]
+            for kind in ("hardlink", "symlink"):
+                alias = self.base / f"{position}-{kind}.json"
+                getattr(alias, f"{kind}_to")(target)
+                aliases.append(alias)
+            self.review()
+            for alias in aliases:
+                target.write_bytes(before)
+                with self.subTest(path=reference["path"], alias=alias):
+                    code, report = self.cli(alias)
+                    self.assertEqual(target.read_bytes(), before)
+                    self.assertEqual(alias.read_bytes(), before)
+                    self.assertEqual(code, 1)
+                    self.assertIn("overwrite", report["error"])
+            target.write_bytes(before)
+            reference.update(original)
+
+    def test_cli_authority_hash_and_review_require_fresh_evidence(self):
+        for reference in self.authority_references():
+            with self.subTest(path=reference["path"]):
+                target = self.base / reference["path"]
+                target.write_bytes(target.read_bytes() + b"\n")
+                self.review()
+                code, report = self.cli()
+                self.assertEqual((code, report["status"], report["release_ready"]),
+                                 (2, "pending", False))
+                reference["sha256"] = gate.digest(target)
+                code, report = self.cli()
+                self.assertEqual(code, 1)
+                self.assertIn("Review does not cover", report["error"])
+                self.review()
+                code, report = self.cli()
+                self.assertEqual((code, report["release_ready"]), (0, True))
+
     def test_complete_three_mode_evidence_passes_without_executing_binary(self):
         report, code = self.run_gate()
         self.assertEqual(code, 0)
         self.assertTrue(report["release_ready"])
         self.assertEqual({mode["configId"] for mode in report["modes"].values()},
                          {self.config_id(name) for name in gate.MODES})
+
+    def test_remote_native_root_and_runtime_manual_child_evidence_passes(self):
+        mode = next(mode for mode in self.manifest["modes"] if mode["id"] == "remote")
+        self.assertIs(gate.read(self.base / mode["config"]["path"])["native_sections"], True)
+        for identifier in ("R-RUNTIME-PHASES", "R-NAV-DRAG"):
+            reference = self.remote_check(identifier)["snapshot"]
+            snapshot = gate.read(self.base / reference["path"])
+            self.assertIs(snapshot["health"]["nativeSections"], True)
+            self.assertIs(snapshot["health"]["remoteConnections"][0]["nativeSections"], False)
+        report, code = self.run_gate()
+        self.assertEqual(code, 0)
+        self.assertTrue(report["release_ready"])
+
+    def test_remote_root_without_native_sections_is_rejected(self):
+        mode = next(mode for mode in self.manifest["modes"] if mode["id"] == "remote")
+        self.change_artifact(mode["config"], lambda config: config.update(native_sections=False))
+        self.reject()
+
+    def test_remote_child_native_authority_missing_duplicate_or_wrong_host_is_rejected(self):
+        mutations = [
+            lambda health: health.update(nativeSections=False),
+            lambda health: health["remoteConnections"][0].update(nativeSections=True),
+            lambda health: health["remoteConnections"][0].update(nativeSections=0),
+            lambda health: health["remoteConnections"][0].pop("nativeSections"),
+            lambda health: health["remoteConnections"][0].update(runtimeVerified=False),
+            lambda health: health["remoteConnections"][0].update(runtimeVerified=1),
+            lambda health: health["remoteConnections"][0].update(hostId="remote:other"),
+            lambda health: health["remoteConnections"].clear(),
+            lambda health: health["remoteConnections"].append(health["remoteConnections"][0]),
+        ]
+        for identifier in ("R-RUNTIME-PHASES", "R-NAV-DRAG"):
+            reference = self.remote_check(identifier)["snapshot"]
+            original = gate.read(self.base / reference["path"])
+            for position, mutate in enumerate(mutations):
+                reference.update(self.artifact(reference["path"], copy.deepcopy(original)))
+                self.change_artifact(reference, lambda snapshot: mutate(snapshot["health"]))
+                with self.subTest(case=identifier, mutation=position):
+                    self.reject()
+            reference.update(self.artifact(reference["path"], original))
+
+    def test_remote_column_evidence_rejects_wrong_host_thread_source_and_native_position(self):
+        for identifier in ("R-RUNTIME-PHASES", "R-NAV-DRAG"):
+            record = self.remote_check(identifier)
+            original = copy.deepcopy(record)
+            for field, value in (("hostId", "remote:other"), ("threadId", LOCAL_THREAD)):
+                record.update(copy.deepcopy(original))
+                record[field] = value
+                with self.subTest(case=identifier, field=field):
+                    self.reject()
+            record.update(original)
+            reference = record["snapshot"]
+            snapshot = gate.read(self.base / reference["path"])
+            row = snapshot["sessions"][0]
+            mutations = [("source", "codex"), ("source", "history"),
+                         ("manual", not row["manual"]), ("manual", int(row["manual"])),
+                         ("sectionVersion", "native-section"), ("readOnly", True),
+                         ("remote", False), ("hostId", "remote:other")]
+            for field, value in mutations:
+                reference.update(self.artifact(reference["path"], copy.deepcopy(snapshot)))
+                self.change_artifact(reference, lambda data: data["sessions"][0].update({field: value}))
+                with self.subTest(case=identifier, row_field=field, value=value):
+                    self.reject()
+            reference.update(self.artifact(reference["path"], snapshot))
+
+    def test_remote_drag_requires_changed_column_and_allowlisted_session(self):
+        reference = self.remote_check()["snapshot"]
+        self.change_artifact(reference,
+                             lambda snapshot: snapshot["sessions"][0].update(state="in_progress"))
+        self.reject()
+        self.remote_columns()
+        self.remote_check()["threadId"] = LOCAL_THREAD
+        self.change_artifact(self.remote_check()["snapshot"],
+                             lambda snapshot: snapshot["sessions"][0].update(threadId=LOCAL_THREAD))
+        self.manifest["audit"]["allowed_sessions"].append(
+            {"hostId": HOST, "threadId": LOCAL_THREAD})
+        self.reject()
+        self.remote_columns()
+        self.manifest["audit"]["allowed_sessions"] = [
+            entry for entry in self.manifest["audit"]["allowed_sessions"] if entry["hostId"] == "local"]
+        self.reject()
+
+    def test_remote_drag_rejects_local_sidebar_calls_and_missing_semantic_evidence(self):
+        record = self.remote_check()
+        reference = record["local_sidebar_calls"]
+        for calls in ([{"method": "move_thread_to_sidebar_section", "params": {
+                "hostId": HOST, "threadId": REMOTE_THREAD}}], {"count": 0}, False):
+            reference.update(self.artifact(reference["path"], calls))
+            with self.subTest(calls=calls):
+                self.reject()
+        reference.update(self.artifact(reference["path"], []))
+        for field in ("local_sidebar_calls", "snapshot", "hostId", "threadId"):
+            value = record.pop(field)
+            with self.subTest(missing=field):
+                self.reject()
+            record[field] = value
+
+    def test_remote_column_artifacts_require_sha256_references(self):
+        references = [self.remote_check(identifier)["snapshot"]
+                      for identifier in ("R-RUNTIME-PHASES", "R-NAV-DRAG")]
+        references.append(self.remote_check()["local_sidebar_calls"])
+        for reference in references:
+            original = copy.deepcopy(reference)
+            for checksum in (None, "", "not-a-sha256", True):
+                reference.update(original)
+                if checksum is None:
+                    reference.pop("sha256")
+                else:
+                    reference["sha256"] = checksum
+                with self.subTest(artifact=reference["path"], checksum=checksum):
+                    self.reject()
+            reference.update(original)
+
+    def test_remote_snapshot_hash_and_review_cover_the_new_evidence(self):
+        reference = self.remote_check()["snapshot"]
+        path = self.base / reference["path"]
+        snapshot = gate.read(path)
+        snapshot["sessions"][0]["note"] = "unreviewed observation"
+        path.write_text(json.dumps(snapshot))
+        self.review()
+        report, code = self.run_gate()
+        self.assertEqual(code, 2)
+        self.assertFalse(report["release_ready"])
+        reference["sha256"] = gate.digest(path)
+        with self.assertRaises(ValueError):
+            self.run_gate()
+        self.review()
+        self.assertEqual(self.run_gate()[1], 0)
+
+    def test_report_cannot_overwrite_remote_column_snapshots_or_sidebar_trace(self):
+        self.path.write_text(json.dumps(self.manifest))
+        references = [self.remote_check(identifier)["snapshot"]
+                      for identifier in ("R-RUNTIME-PHASES", "R-NAV-DRAG")]
+        references.append(self.remote_check()["local_sidebar_calls"])
+        for reference in references:
+            target = self.base / reference["path"]
+            before = target.read_bytes()
+            with self.subTest(target=target), self.assertRaises(ValueError):
+                gate.protect_report(self.root, self.path, self.manifest, target)
+            self.assertEqual(target.read_bytes(), before)
 
     def test_context_only_final_commit_preserves_evidence_and_rejects_payload_drift(self):
         def git(*arguments, input=None):
