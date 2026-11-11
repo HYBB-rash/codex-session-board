@@ -170,10 +170,10 @@ fn directory_migration_times_out_on_second_directory_without_sending_rpc_frames(
         started + Duration::from_millis(50),
     )
     .unwrap_err();
-    assert_eq!(
-        error.downcast_ref::<io::Error>().unwrap().kind(),
-        io::ErrorKind::TimedOut
-    );
+    #[cfg(target_os = "linux")]
+    assert_eq!(error.downcast_ref::<io::Error>().unwrap().kind(), io::ErrorKind::TimedOut);
+    #[cfg(target_os = "macos")]
+    assert_eq!(error.downcast_ref::<io::Error>().map(io::Error::kind), Some(io::ErrorKind::ConnectionRefused), "{error:#}");
     assert!(started.elapsed() < Duration::from_millis(500));
     let (mut accepted, _) = server.accept()?;
     assert_eq!(accepted.read(&mut [0; 1])?, 0);

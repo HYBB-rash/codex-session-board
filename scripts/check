@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "$(uname -s)" == Darwin ]]; then
+    export TMPDIR=/private/tmp
+fi
 project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd -- "$project_root"
 check_arguments=("$@")

@@ -12,7 +12,8 @@ ROOT = Path.cwd().resolve()
 def command(arguments, timeout=600):
     result = subprocess.run(
         arguments, cwd=ROOT, capture_output=True, text=True, timeout=timeout,
-        env={**os.environ, "RUST_BACKTRACE": "0"},
+        env={**os.environ, "RUST_BACKTRACE": "0",
+             **({"TMPDIR": "/private/tmp"} if sys.platform == "darwin" else {})},
     )
     return result
 
