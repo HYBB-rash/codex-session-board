@@ -1417,6 +1417,18 @@
       "acceptance.test_gate.PackageTests.test_package_is_reproducible_and_has_only_portable_source"
     ],
     "GATE-001": [
+      "acceptance.test_remote_release.RemoteReleaseTests.test_remote_child_native_authority_missing_duplicate_or_wrong_host_is_rejected",
+      "acceptance.test_remote_release.RemoteReleaseTests.test_remote_column_artifacts_require_sha256_references",
+      "acceptance.test_remote_release.RemoteReleaseTests.test_remote_column_evidence_rejects_wrong_host_thread_source_and_native_position",
+      "acceptance.test_remote_release.RemoteReleaseTests.test_remote_drag_rejects_local_sidebar_calls_and_missing_semantic_evidence",
+      "acceptance.test_remote_release.RemoteReleaseTests.test_remote_drag_requires_changed_column_and_allowlisted_session",
+      "acceptance.test_remote_release.RemoteReleaseTests.test_remote_native_root_and_runtime_manual_child_evidence_passes",
+      "acceptance.test_remote_release.RemoteReleaseTests.test_remote_root_without_native_sections_is_rejected",
+      "acceptance.test_remote_release.RemoteReleaseTests.test_remote_snapshot_hash_and_review_cover_the_new_evidence",
+      "acceptance.test_remote_release.RemoteReleaseTests.test_report_cannot_overwrite_remote_column_snapshots_or_sidebar_trace",
+      "acceptance.test_remote_release.RemoteReleaseTests.test_cli_preflight_rejects_missing_malformed_and_wrong_sha_in_both_modes",
+      "acceptance.test_remote_release.RemoteReleaseTests.test_cli_unhashed_inputs_and_aliases_are_never_overwritten",
+      "acceptance.test_remote_release.RemoteReleaseTests.test_cli_authority_hash_and_review_require_fresh_evidence",
       "acceptance.test_remote_release.RemoteReleaseTests.test_native_preflight_rejects_retired_missing_duplicate_and_stale_bindings",
       "acceptance.test_gate.GateTests.test_adapter_checks_the_target_instead_of_its_own_project",
       "acceptance.test_gate.GateTests.test_automatic_success_does_not_claim_release_completion",

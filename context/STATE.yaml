@@ -5,7 +5,7 @@
     "id": "remote-final-integration-20261111",
     "status": "in_progress",
     "as_of": "2026-11-11",
-    "summary": "89恢复基础与8回归、S5571ff4脚本修正已提交，完整钩子与check/context通过。准备90合入跨页/重启/断线持久告警、未确认归档记录不读超大轮次、3补充回归、PWA静态安装按钮和host.error展示；保留Main列宽修复、S分区规则与全部原断言。90尚待测试和提交，门禁独立分支仍待合并，当前不是最终候选。本机A/B仍由另一任务占用，不写；刚核对M1 SSH成功，桌面read_thread仍host unavailable，原生drag不支持。未部署，最后生产82；旧83只保留历史部分实测，下方63/73仅旧观察。"
+    "summary": "90完整钩子、check/context、11恢复回归和20布局场景已通过。准备91合并Gate89 69fc35e，保留S原18门禁测试/C九反例，新增3项完整CLI回归，修复缺SHA附件被报告覆盖及预检无SHA问题；待整合测试后冻结同一构建。Main仍be7d079且已干净，S仍5571ff4，两者均在本树祖先链。A/B归属未确认释放前不写；M1 SSH成功但桌面read_thread仍host unavailable，原生drag不支持。官方CLI可独立注册新namespace，不能保证单插件热加载，不做全局刷新。未部署，最后生产82；旧83仍仅部分历史实测，下方63/73为旧观察。"
   },
   "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/state-section-consistency-implementation-20261111.md", "context/tasks/active/ui-worktree-cleanup-20261111.md", "context/tasks/active/remote-final-integration-20261111.md"],
   "known_open_issues": [
