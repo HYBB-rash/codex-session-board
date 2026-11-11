@@ -19,11 +19,14 @@
 在独立检出中恢复，不把 patch 直接叠加到当前 main。
 `history.bundle` 保留的是 Git 历史；会话原文件是开发记录，不自动合并到 Mac 的实时会话索引。
 
-GitHub 建库在这次执行中返回 HTTP 403。当前可用的私有传输入口为用户局域网 Git 裸仓库，
-源码和原生插件分别保存在 `source.git`、`plugins.git`。
-准确地址与源 SHA 写入本任务 handoff 和运行回执；网络不在同一局域网时不可据此更新。
-取得私有 GitHub 仓库权限后推送现有源码与平台分支，再更换消费者仓库地址即可。
-没有把 Fedora 的 GitHub 凭据复制到 Mac。
+GitHub 最初建库返回 HTTP 403，用户修复权限后已创建私有仓库
+`HYBB-rash/codex-session-board`。源码使用 main，产物使用平台分支。
+临时局域网 `source.git`、`plugins.git` 与迁移 bundle 继续保留。
+准确源 SHA、平台 revision 和最终推送结果以任务回执为准。
+Mac 访问 GitHub 使用已有 SSH 身份和 `ssh.github.com:443`；
+已由原来受信任的 GitHub 主机密钥核对并记录该端点。
+SSH agent 拒绝签名属于认证失败，须在 Mac 的凭据管理器中允许 Git 访问。
+Fedora 的私钥与 GitHub 凭据没有复制到 Mac。
 
 ## 日常开发
 
@@ -40,6 +43,13 @@ python3 scripts/verify_acceptance.py --scope automated --report outputs/mac-auto
 ./scripts/check
 ```
 
+更新工具的 Python 环境独立于源码和运行数据：
+
+```zsh
+python3 -m venv ~/.local/share/codex-session-board/delivery-venv
+~/.local/share/codex-session-board/delivery-venv/bin/python -m pip install -r requirements-delivery.txt
+```
+
 提交前仍须准备版本、同步两个插件清单、审阅暂存内容并运行
 `./scripts/check --pre-commit`；源提交使用本机独立 Agent 签名器。
 Mac 的密钥保持本机管理。源码规则不因迁移放宽，完整验收仍使用原 31 条需求、模型和锁。
@@ -52,6 +62,17 @@ macOS 与 Linux 的 socket 队列差异采用对应的明确结果断言，原�
 每个包带平台、源提交、源码指纹、可执行文件与资产摘要。构建和发布命令见
 `Docs/DEPLOYMENT.md`；消费者通过同一插件 ID 选择本机平台分支。
 开发者可使用 candidate，完成目标环境签收后才提升 stable。
+
+GitHub 对本次源码的双平台构建通过后，在 Mac 开发目录执行：
+
+```zsh
+git pull --ff-only
+./scripts/update-plugin --channel candidate
+```
+
+命令从 origin 获取正确平台的包，候选源码必须与本地 HEAD 相同；
+CI 尚未产出对应版本时，命令在停止现有服务前报错。
+固定旧 revision 回退可传 `--revision SHA`，此时按显式选择的旧源版本验证。
 
 安装状态放在 `~/.local/share/codex-session-board/installation`，
 配置放在 `~/.config/codex-session-board/config.json`，数据放在独立持久目录。

@@ -2,7 +2,7 @@
 
 原生构建目标为 Linux x86_64 GNU 与 macOS Apple Silicon。
 Linux 使用 `/proc` 与 pidfd；macOS 使用同用户控制 socket、自身停止和 kqueue 退出确认。
-本次 CLI 接入验证使用 Codex 0.167.1。构建候选与完整目标环境签收分别记录。
+本次 CLI 接入使用 Linux Codex 0.167.0、Mac Codex 0.167.1。构建候选与完整目标环境签收分别记录。
 Mac 的开发入口与迁移记录见 `Docs/MAC-DEVELOPMENT.md`。
 
 ```bash
@@ -41,8 +41,9 @@ MCP 通过包内 `bin/run-plugin` 进入独立数据根目录后启动。
 可以先复制 `config.example.json` 至独立位置，再用 `--config PATH`。
 `open_command` 是客户端命令参数数组，最后追加 `codex://threads/…` 链接；
 省略该字段时 macOS 使用 `open`，Linux 使用 `xdg-open`。
-`codex_command` 默认连接已运行的 `codex app-server proxy`；
+`codex_command` 默认使用 `codex app-server --stdio` 读取历史；
 GUI 的 PATH 不含 CLI 时，在机器配置中填写实际 CLI 绝对路径。
+更新工具使用当前守护进程的私有 Unix WebSocket 完成插件重载与版本读回。
 桌面 socket 可以使用进程环境中的 `CODEX_LINUX_APP_SERVER_BRIDGE_SOCKET`，
 也可以写入部署配置。更换用户或机器时只调整外部配置。
 若 MCP 子进程没有继承桌面 socket 环境变量，应在同一外部配置中明确填写
@@ -65,6 +66,14 @@ bin/codex-session-board stop
 
 ## 更新与回退
 
+安装更新工具依赖：
+
+```bash
+python3 -m venv ~/.local/share/codex-session-board/delivery-venv
+~/.local/share/codex-session-board/delivery-venv/bin/python -m pip install -r requirements-delivery.txt
+source ~/.local/share/codex-session-board/delivery-venv/bin/activate
+```
+
 先准备独立配置，确认 `data_dir` 指向需保留的运行数据，再执行：
 
 ```bash
@@ -80,6 +89,8 @@ python3 scripts/update_plugin.py --repository "$PLUGIN_REPOSITORY" \
 MCP 清单中的插件 ID、serverInfo.version 和 board_view 必须吻合。
 `current.json` 保存回执；失败保留 `pending.json` 与 `service.log`，不能解释成更新成功。
 `--defer-reload` 只记录 `awaiting_client_reload`。
+Git 开发检出也可运行 `./scripts/update-plugin --channel candidate`：
+自动读取 origin、外部配置和本地 HEAD，CI 尚未产出该 HEAD 时不停止原版本。
 
 将上次回执中的 Git `revision` 固定后，回退命令为：
 
@@ -113,7 +124,9 @@ python3 scripts/package_migration.py --output outputs/codex-session-board-rust.t
 
 归档不包含真实配置、数据库、日志、截图或构建缓存。
 解包后需要 Rust 工具链和 `Cargo.lock` 对应的依赖缓存，运行
-`bash scripts/build-plugin` 生成当前平台二进制。
+`cargo build --release --locked --offline` 生成当前平台二进制。
+可发布插件包从干净 Git 检出运行 `bash scripts/build-plugin`；
+完整开发迁移另保留 `history.bundle`，可恢复同源 Git 历史再构建发布包。
 离线前端资产随源码提供；异目录验收不表示已验证全新机器的工具链安装。
 
 本次源码重构不更换已安装的插件，也不启用任何 systemd 服务。

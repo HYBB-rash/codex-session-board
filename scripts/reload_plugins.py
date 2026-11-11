@@ -11,7 +11,8 @@ def verify_loaded(request, version):
     cursor = None
     identifier = 4
     while True:
-        response = request(identifier, "mcpServerStatus/list", {"cursor": cursor, "limit": 100})
+        response = request(identifier, "mcpServerStatus/list", {
+            "cursor": cursor, "limit": 100, "serverName": "session_board"})
         for server in response["data"]:
             if server.get("pluginId") != "codex-session-board@session-board-rust":
                 continue

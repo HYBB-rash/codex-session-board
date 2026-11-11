@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)"
+python="${XDG_DATA_HOME:-$HOME/.local/share}/codex-session-board/delivery-venv/bin/python"
+exec "$python" "$root/scripts/update_plugin.py" \
+  --repository "$(git -C "$root" remote get-url origin)" \
+  --expected-channel-source "$(git -C "$root" rev-parse HEAD)" \
+  --config "${XDG_CONFIG_HOME:-$HOME/.config}/codex-session-board/config.json" "$@"
