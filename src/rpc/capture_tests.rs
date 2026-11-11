@@ -40,7 +40,11 @@ fn ssh_g_timeout_reaps_only_its_owned_process_group() -> Result<()> {
     assert!(output(&command, start + Duration::from_millis(100)).is_err());
     assert!(start.elapsed() < Duration::from_secs(1));
     let pid = std::fs::read_to_string(path)?;
-    assert!(!Path::new(&format!("/proc/{pid}")).exists());
+    let pid = rustix::process::Pid::from_raw(pid.parse()?);
+    assert!(matches!(
+        rustix::process::waitpid(pid, rustix::process::WaitOptions::NOHANG),
+        Err(Errno::CHILD)
+    ));
     assert!(unrelated.0.try_wait()?.is_none());
     Ok(())
 }

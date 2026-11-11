@@ -119,7 +119,11 @@ mod tests {
         );
         assert!(result.is_err());
         assert!(started.elapsed() < Duration::from_secs(1));
-        assert!(!Path::new(&format!("/proc/{identifier}")).exists());
+        let pid = rustix::process::Pid::from_raw(identifier.try_into()?);
+        assert!(matches!(
+            rustix::process::waitpid(pid, rustix::process::WaitOptions::NOHANG),
+            Err(Errno::CHILD)
+        ));
         Ok(())
     }
 

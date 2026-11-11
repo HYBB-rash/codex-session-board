@@ -3,6 +3,7 @@ use crate::config::{self, Config};
 use anyhow::{Context, Result, bail, ensure};
 use fs2::FileExt;
 use reqwest::blocking::Client;
+#[cfg(target_os = "linux")]
 use rustix::process::{Pid, PidfdFlags, Signal, pidfd_open, pidfd_send_signal};
 use serde_json::{Value, json};
 use std::fs::{self, File, OpenOptions};
@@ -11,10 +12,16 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(target_os = "linux")]
+use std::time::Instant;
 use tiny_http::Server;
 
+#[cfg(target_os = "macos")]
+mod macos;
 mod migration;
+#[cfg(target_os = "macos")]
+use macos::process_start;
 
 #[cfg(test)]
 use migration::{import_database, publish as publish_migration};
@@ -87,6 +94,7 @@ fn probe(url: &str) -> Result<Option<Value>> {
     Ok(Some(value))
 }
 
+#[cfg(any(test, target_os = "linux"))]
 fn stat_identity(stat: &str) -> Result<Option<u64>> {
     let (_, fields) = stat.rsplit_once(')').context("无效 /proc 进程记录")?;
     let values: Vec<_> = fields.split_whitespace().collect();
@@ -97,6 +105,7 @@ fn stat_identity(stat: &str) -> Result<Option<u64>> {
     Ok(Some(values.get(19).context("缺少进程启动时间")?.parse()?))
 }
 
+#[cfg(target_os = "linux")]
 fn process_start(pid: u32) -> Result<Option<u64>> {
     ensure!(pid > 0, "无效进程 PID");
     let stat = match fs::read_to_string(format!("/proc/{pid}/stat")) {
@@ -162,6 +171,14 @@ fn confirm_process(pid: u32, start: u64) -> Result<()> {
 
 fn stop_verified(pid: u32, start: u64, url: &str, config: &Config) -> Result<()> {
     confirm_process(pid, start)?;
+    #[cfg(target_os = "macos")]
+    return macos::stop(pid, start, url, config);
+    #[cfg(target_os = "linux")]
+    stop_linux(pid, start, url, config)
+}
+
+#[cfg(target_os = "linux")]
+fn stop_linux(pid: u32, start: u64, url: &str, config: &Config) -> Result<()> {
     let descriptor = pidfd_open(
         Pid::from_raw(i32::try_from(pid)?).context("无效进程 PID")?,
         PidfdFlags::empty(),
@@ -223,6 +240,8 @@ pub fn open(config_path: &Path) -> Result<OpenedBoard> {
     let (server, port) = crate::http::bind(loaded.port)
         .map_err(|error| anyhow::anyhow!("端口暂不可访问，不会重复启动：{error}"))?;
     let app = Arc::new(App::new(loaded)?);
+    #[cfg(target_os = "macos")]
+    macos::listen(&app.config)?;
     crate::observer::start(&app);
     Ok(OpenedBoard::Owned(OwnedBoard {
         url: format!("http://127.0.0.1:{port}"),

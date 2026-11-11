@@ -1,7 +1,7 @@
 [package]
 name = "codex-session-board"
 build = "build.rs"
-version = "0.2.92"
+version = "0.2.93"
 edition = "2024"
 description = "Local Codex conversation status board"
 default-run = "codex-session-board"
@@ -39,6 +39,10 @@ url = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 rusqlite = { version = "0.38", features = ["bundled", "backup"] }
 tiny_http = "0.12"
+socket2 = "0.6"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+nix = { version = "0.29", features = ["user", "socket", "event"] }
 
 [dev-dependencies]
 ra-ap-rustc_lexer = "=0.183.0"

@@ -1,8 +1,8 @@
-use super::*;
 use super::unavailable::{Unavailable, stale};
+use super::*;
 use std::os::unix::fs::FileTypeExt;
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(test)]
 #[path = "sidebar_tests.rs"]
 mod tests;
 
@@ -21,20 +21,23 @@ fn endpoint(path: &Path, deadline: Instant) -> Result<UnixStream> {
         "分区连接所有者或权限无效"
     );
     let stream = connect_unix(&path, deadline)?;
-    ensure!(
-        rustix::net::sockopt::socket_peercred(&stream)?.uid == owner,
-        "分区连接服务端身份无效"
-    );
+    ensure!(same_user(&stream)?, "分区连接服务端身份无效");
     remaining(deadline)?;
     Ok(stream)
+}
+
+pub(crate) fn same_user(stream: &UnixStream) -> Result<bool> {
+    #[cfg(target_os = "linux")]
+    let user = rustix::net::sockopt::socket_peercred(stream)?.uid.as_raw();
+    #[cfg(target_os = "macos")]
+    let user = nix::unistd::getpeereid(stream)?.0.as_raw();
+    Ok(user == rustix::process::getuid().as_raw())
 }
 
 fn directories(configured: &Path) -> Result<Vec<PathBuf>> {
     let parent = configured.parent().context("分区连接缺少父目录")?;
     let mut directories = vec![parent.to_path_buf()];
-    if cfg!(target_os = "linux")
-        && let Some(root) = parent.parent()
-    {
+    if let Some(root) = parent.parent() {
         let private = format!("codex-app-tools-{}", rustix::process::getuid().as_raw());
         let alternate = match parent.file_name().and_then(|name| name.to_str()) {
             Some("codex-app-tools") => Some(private.as_str()),
@@ -95,8 +98,7 @@ fn discover(configured: &Path, deadline: Instant) -> Result<UnixStream> {
     }
     remaining(deadline)?;
     connected.ok_or_else(|| {
-        anyhow!("未发现可用的侧栏连接：{}", configured.display())
-            .context(Unavailable::Sidebar)
+        anyhow!("未发现可用的侧栏连接：{}", configured.display()).context(Unavailable::Sidebar)
     })
 }
 

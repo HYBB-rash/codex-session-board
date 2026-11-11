@@ -341,7 +341,11 @@ pub fn build_id() -> Result<String> {
     if let Some(build) = BUILD.get() {
         return Ok(build.clone());
     }
-    let mut executable = fs::File::open("/proc/self/exe")?;
+    #[cfg(target_os = "linux")]
+    let path = PathBuf::from("/proc/self/exe");
+    #[cfg(target_os = "macos")]
+    let path = std::env::current_exe()?;
+    let mut executable = fs::File::open(path)?;
     let mut digest = Sha256::new();
     let mut buffer = [0_u8; 65536];
     loop {

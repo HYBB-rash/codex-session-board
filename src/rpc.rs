@@ -1,7 +1,7 @@
 use crate::remote::hosts::source::{Binding, Peer};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use rustix::io::Errno;
-use rustix::net::{AddressFamily, SocketAddrUnix, SocketFlags, SocketType};
+use rustix::net::SocketAddrUnix;
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::fmt;
@@ -16,8 +16,8 @@ use std::time::{Duration, Instant};
 use tungstenite::{Message, WebSocket};
 
 pub(crate) mod capture;
-pub(crate) mod framing;
 mod forwarding;
+pub(crate) mod framing;
 #[cfg(test)]
 #[path = "rpc/connection_identity_fixture.rs"]
 pub(crate) mod identity_fixture;
@@ -70,7 +70,8 @@ impl Role {
                 "initialize" | "thread/list" | "thread/turns/list" | "threadSection/list"
             ),
             Self::DraftWriter => matches!(
-                method, "initialize" | "thread/start" | "thread/read" | "thread/name/set"
+                method,
+                "initialize" | "thread/start" | "thread/read" | "thread/name/set"
             ),
             Self::TitleWriter => matches!(method, "initialize" | "thread/read" | "thread/name/set"),
             Self::ArchiveWriter => matches!(
@@ -294,12 +295,8 @@ fn connect_unix(path: &Path, deadline: Instant) -> Result<UnixStream> {
     let address = SocketAddrUnix::new(path)?;
     loop {
         remaining(deadline)?;
-        let socket = rustix::net::socket_with(
-            AddressFamily::UNIX,
-            SocketType::STREAM,
-            SocketFlags::NONBLOCK | SocketFlags::CLOEXEC,
-            None,
-        )?;
+        let socket = socket2::Socket::new(socket2::Domain::UNIX, socket2::Type::STREAM, None)?;
+        socket.set_nonblocking(true)?;
         match rustix::net::connect(&socket, &address) {
             Ok(()) => return Ok(UnixStream::from(socket)),
             Err(Errno::INPROGRESS | Errno::ALREADY | Errno::INTR) => {
@@ -468,8 +465,10 @@ impl Rpc for DesktopConnection {
     fn call(&mut self, method: &str, params: Value) -> Result<Value> {
         self.role.check(method)?;
         let deadline = self.call_deadline()?;
-        if matches!(method, "thread/start" | "thread/name/set" | "thread/archive")
-            && let Some(binding) = &self.remote_binding
+        if matches!(
+            method,
+            "thread/start" | "thread/name/set" | "thread/archive"
+        ) && let Some(binding) = &self.remote_binding
         {
             binding.require_confirmed()?;
             framing::verify_current(binding, deadline)?;
@@ -570,8 +569,10 @@ impl SidebarConnection {
 impl Rpc for SidebarConnection {
     fn call(&mut self, method: &str, params: Value) -> Result<Value> {
         self.check(method)?;
-        if matches!(method, "move_thread_to_sidebar_section" | "move_thread_to_project")
-            && let Some(origin) = &self.origin
+        if matches!(
+            method,
+            "move_thread_to_sidebar_section" | "move_thread_to_project"
+        ) && let Some(origin) = &self.origin
         {
             origin.verify(&params, self.stream.deadline)?;
         }
@@ -810,7 +811,12 @@ mod tests {
 
     #[test]
     fn empty_draft_connections_cannot_send_turns_or_modify_sidebar_sections() -> Result<()> {
-        for method in ["initialize", "thread/start", "thread/read", "thread/name/set"] {
+        for method in [
+            "initialize",
+            "thread/start",
+            "thread/read",
+            "thread/name/set",
+        ] {
             Role::DraftWriter.check(method)?;
         }
         let (mut client, mut server) = sidebar_pair()?;
@@ -947,8 +953,7 @@ mod tests {
         fn create() -> Result<Self> {
             static NEXT: AtomicU64 = AtomicU64::new(0);
             let identifier = NEXT.fetch_add(1, Ordering::Relaxed);
-            let path =
-                std::env::temp_dir().join(format!("r{}-{identifier:x}", std::process::id()));
+            let path = std::env::temp_dir().join(format!("r{}-{identifier:x}", std::process::id()));
             fs::create_dir(&path)?;
             let sandbox = Self(path);
             fs::set_permissions(&sandbox.0, Permissions::from_mode(0o700))?;
