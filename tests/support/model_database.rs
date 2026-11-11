@@ -9,6 +9,17 @@ pub struct Snapshot {
     pub tables: BTreeMap<String, Rows>,
 }
 
+pub fn mark_restart(database: &Connection) -> Result<()> {
+    database.execute_batch("CREATE TEMP TABLE formal_restart_marker(value);")
+}
+
+pub fn restart_marker_exists(database: &Connection) -> Result<bool> {
+    database.query_row(
+        "SELECT EXISTS(SELECT 1 FROM temp.sqlite_schema WHERE name='formal_restart_marker')",
+        [], |row| row.get(0),
+    )
+}
+
 fn rows(database: &Connection, sql: &str) -> Result<Rows> {
     let mut query = database.prepare(sql)?;
     let count = query.column_count();
