@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "session_board": {
+      "command": "./bin/run-plugin",
+      "args": ["mcp"],
+      "cwd": "."
+    }
+  }
+}

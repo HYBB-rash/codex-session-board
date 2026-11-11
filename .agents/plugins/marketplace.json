@@ -1,0 +1,10 @@
+{
+  "name": "session-board-rust",
+  "interface": {"displayName": "Rust 会话看板"},
+  "plugins": [{
+    "name": "codex-session-board",
+    "source": {"source": "local", "path": "./"},
+    "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+    "category": "Productivity"
+  }]
+}

@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+plugin_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)"
+umask 077
+runtime_root="${XDG_DATA_HOME:-$HOME/.local/share}/codex-session-board"
+mkdir -p "$runtime_root"
+cd -- "$runtime_root"
+exec "$plugin_root/bin/codex-session-board" "$@"
