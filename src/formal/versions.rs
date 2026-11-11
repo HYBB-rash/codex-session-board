@@ -58,13 +58,14 @@ fn stale_edits_reject_each_revision_without_persistent_side_effects() -> Result<
     store.cache_native(ID, &position("review"))?;
     let original = revisions(&store)?;
     select(&store, "to_archive")?;
-    reject_edit(&store, original, "状态已更新")?;
+    reject_edit(&store, original, "状态已更新，请刷新后重试")?;
     let before_input = revisions(&store)?;
     observe(&store, "new", &["u1"])?;
-    reject_edit(&store, before_input, "新输入")?;
+    let input_conflict = "会话有新输入，请刷新并核对后重试";
+    reject_edit(&store, before_input, input_conflict)?;
     select(&store, "to_archive")?;
     assert_eq!(load(&store)?.review, 0);
-    reject_edit(&store, (revisions(&store)?.0, before_input.1), "新输入")?;
+    reject_edit(&store, (revisions(&store)?.0, before_input.1), input_conflict)?;
     select(&store, "review")?;
     assert_eq!(load(&store)?.native_state.as_deref(), Some("review"));
     Ok(())

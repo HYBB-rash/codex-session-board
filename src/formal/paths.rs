@@ -26,7 +26,16 @@ fn follow(store: &Store, expected: &mut Session, events: &[Event]) -> Result<()>
 
 #[test]
 fn unread_runtime_rejection_preserves_the_entire_database() -> Result<()> {
-    unread_rejection(Event::Runtime(Phase::Running, When::Fresh))
+    unread_rejection(Event::Runtime(Phase::Running, When::Fresh))?;
+    for when in [When::Old, When::BeforeObservation] {
+        let (store, mut expected) = start()?;
+        follow(&store, &mut expected, &[Event::Runtime(Phase::Running, when)])?;
+        assert_eq!(expected.phase, Some(Phase::Running));
+        let before = super::records::snapshot(&store)?;
+        super::replay::apply(&store, Event::Runtime(Phase::Input, when))?;
+        assert_eq!(super::records::snapshot(&store)?, before);
+    }
+    Ok(())
 }
 
 #[test]

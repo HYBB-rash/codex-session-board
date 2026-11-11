@@ -79,7 +79,11 @@ fn replay(draft: Draft, event: DraftEvent, expected: Draft) -> Result<()> {
         "新建 {draft:?} 经 {event:?} 模型 {expected:?} 数据库 {:?}",
         project(&store)?
     );
-    identity_guards(&store, expected)
+    identity_guards(&store, expected)?;
+    if expected != Draft::Absent {
+        apply(&store, expected, DraftEvent::Begin)?;
+    }
+    Ok(())
 }
 
 fn install(store: &Store, draft: Draft) -> Result<()> {
