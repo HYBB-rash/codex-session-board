@@ -173,7 +173,7 @@ fn directory_migration_times_out_on_second_directory_without_sending_rpc_frames(
     #[cfg(target_os = "linux")]
     assert_eq!(error.downcast_ref::<io::Error>().unwrap().kind(), io::ErrorKind::TimedOut);
     #[cfg(target_os = "macos")]
-    assert_eq!(error.downcast_ref::<io::Error>().map(io::Error::kind), Some(io::ErrorKind::ConnectionRefused), "{error:#}");
+    assert_eq!(error.to_string(), "多个分区连接仍存活，无法唯一确定新 socket");
     assert!(started.elapsed() < Duration::from_millis(500));
     let (mut accepted, _) = server.accept()?;
     assert_eq!(accepted.read(&mut [0; 1])?, 0);
