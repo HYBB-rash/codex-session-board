@@ -70,11 +70,13 @@ def install_market(codex, repository, reference):
                    check=True, stdout=subprocess.DEVNULL)
 
 
-def cached_package(version):
+def cached_package(version, revision):
     home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
     package = home / "plugins/cache" / MARKET / "codex-session-board" / version
-    verify_package(package)
-    return package
+    metadata = json.loads((package / ".codex-marketplace-install.json").read_text())
+    if metadata.get("source_type") != "git" or metadata.get("revision") != revision:
+        raise ValueError("Installed plugin Git revision differs from the fetched release")
+    return verify_package(package, installed=True)
 
 
 def activate(package, config_path, state, codex, reload, data, backup_path):
@@ -128,6 +130,7 @@ def update(repository, channel, revision, config_path, state, codex, reload=True
             manifest = verify_package(checkout)
             if manifest["target"] != target():
                 raise ValueError("Release targets a different operating system or architecture")
+            source_revision = command(["git", "rev-parse", "HEAD"], checkout)
             directory = state / "releases" / f"{manifest['version']}-{manifest['binary_sha256'][:12]}"
             if directory.exists():
                 if verify_package(directory) != manifest:
@@ -144,11 +147,11 @@ def update(repository, channel, revision, config_path, state, codex, reload=True
                 "reference": reference, "config": str(config_path),
             }, indent=2) + "\n")
             install_market(codex, repository, reference)
-            cached = verify_package(cached_package(manifest["version"]))
+            cached = cached_package(manifest["version"], source_revision)
             if cached != manifest:
                 raise ValueError("Installed plugin cache differs from fetched release")
             result = activate(directory, config_path, state, codex, reload, data, backup_path)
-            result["revision"] = command(["git", "rev-parse", "HEAD"], checkout)
+            result["revision"] = source_revision
             (state / "current.json").write_text(json.dumps(result, indent=2) + "\n")
             return result
 

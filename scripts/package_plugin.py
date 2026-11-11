@@ -42,12 +42,18 @@ def hashes(directory):
     return files
 
 
-def verify_package(directory):
+def verify_package(directory, installed=False):
     manifest = json.loads((directory / "RELEASE.json").read_text())
     if manifest["schema_version"] != 1 or manifest["target"] not in TARGETS:
         raise ValueError("Unsupported plugin release")
-    if manifest["files"] != hashes(directory):
+    actual = hashes(directory)
+    if installed:
+        actual.pop(".codex-marketplace-install.json", None)
+    if manifest["files"] != actual:
         raise ValueError("Plugin package file hashes differ")
+    for name in ("bin/codex-session-board", "bin/run-plugin"):
+        if not (directory / name).stat().st_mode & 0o111:
+            raise ValueError("Plugin launchers must be executable")
     if manifest["binary_sha256"] != manifest["files"]["bin/codex-session-board"]:
         raise ValueError("Plugin binary identity differs")
     for name in ("plugin.json", ".codex-plugin/plugin.json"):

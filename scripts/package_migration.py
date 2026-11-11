@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PATTERNS = (
+    "requirements-delivery.txt",
     "Cargo.toml", "Cargo.lock", "build.rs", "clippy.toml", "project-rules.json",
     "src/**/*.rs", "tests/**/*.rs", "examples/**/*.rs", "index.html", "config.example.json",
     "plugin.json", "mcp.json", ".mcp.json", ".codex-plugin/plugin.json",

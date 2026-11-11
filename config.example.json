@@ -1,5 +1,5 @@
 {
-  "codex_command": ["codex", "app-server", "proxy"],
+  "codex_command": ["codex", "app-server", "--stdio"],
   "data_dir": "./persistent",
   "port": 8767,
   "poll_seconds": 30,

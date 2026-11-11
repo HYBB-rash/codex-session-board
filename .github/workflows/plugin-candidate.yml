@@ -29,6 +29,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - run: python3 -m pip install -r requirements-delivery.txt
       - run: rustup toolchain install 1.99.1 --profile minimal --component clippy
       - run: cargo fetch --locked
       - run: ./scripts/install-git-hooks && ./scripts/check

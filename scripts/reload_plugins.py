@@ -1,8 +1,10 @@
 import json
 import os
-import selectors
+import socket
+import stat
 import subprocess
 import time
+from pathlib import Path
 
 
 def verify_loaded(request, version):
@@ -26,51 +28,36 @@ def verify_loaded(request, version):
 
 
 def reload_plugins(codex, directory, version):
-    process = subprocess.Popen([codex, "app-server", "proxy"], cwd=directory,
-                               stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                               stderr=subprocess.DEVNULL)
-    selector = selectors.DefaultSelector()
-    selector.register(process.stdout, selectors.EVENT_READ)
-    pending = bytearray()
-
-    def send(message):
-        process.stdin.write(json.dumps(message).encode() + b"\n")
-        process.stdin.flush()
-
-    def request(identifier, method, params):
-        send({"id": identifier, "method": method, "params": params})
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            if not selector.select(max(0, deadline - time.monotonic())):
-                break
-            chunk = os.read(process.stdout.fileno(), 65536)
-            if not chunk:
-                raise RuntimeError("Codex daemon proxy disconnected")
-            pending.extend(chunk)
-            while b"\n" in pending:
-                line, _, remaining = pending.partition(b"\n")
-                pending[:] = remaining
-                message = json.loads(line)
-                if message.get("id") != identifier:
+    import websocket
+    daemon = json.loads(subprocess.check_output(
+        [codex, "app-server", "daemon", "version"], cwd=directory, text=True, timeout=10))
+    path = Path(daemon["socketPath"]).resolve(strict=True)
+    metadata = path.stat()
+    if not stat.S_ISSOCK(metadata.st_mode) or metadata.st_uid != os.getuid() or metadata.st_mode & 0o077:
+        raise RuntimeError("Codex daemon socket must be private and owned by this user")
+    with socket.socket(socket.AF_UNIX) as transport:
+        transport.settimeout(30)
+        transport.connect(str(path))
+        connection = websocket.create_connection("ws://localhost/", socket=transport,
+                                                 timeout=30, suppress_origin=True)
+        def request(identifier, method, params):
+            connection.send(json.dumps({"id": identifier, "method": method, "params": params}))
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                connection.settimeout(max(0.001, deadline - time.monotonic()))
+                message = json.loads(connection.recv())
+                if message.get("method") or message.get("id") != identifier:
                     continue
                 if "error" in message:
                     raise RuntimeError(f"Codex rejected {method}, code {message['error'].get('code')}")
                 return message["result"]
-        raise TimeoutError(f"Codex did not finish {method}")
-
-    try:
-        request(1, "initialize", {"clientInfo": {"name": "session_board_update", "version": "1"},
-                                 "capabilities": {"experimentalApi": True}})
-        send({"method": "initialized"})
-        request(2, "skills/list", {"cwds": [str(directory)], "forceReload": True})
-        request(3, "config/mcpServer/reload", None)
-        return verify_loaded(request, version)
-    finally:
-        selector.close()
-        if process.poll() is None:
-            process.terminate()
+            raise TimeoutError(f"Codex did not finish {method}")
         try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
+            request(1, "initialize", {"clientInfo": {"name": "session_board_update", "version": "1"},
+                                     "capabilities": {"experimentalApi": True}})
+            connection.send(json.dumps({"method": "initialized"}))
+            request(2, "skills/list", {"cwds": [str(directory)], "forceReload": True})
+            request(3, "config/mcpServer/reload", None)
+            return verify_loaded(request, version)
+        finally:
+            connection.close()

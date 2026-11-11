@@ -20,6 +20,9 @@ class DeliveryTests(unittest.TestCase):
         (self.package / "bin").mkdir(parents=True)
         (self.package / ".codex-plugin").mkdir()
         (self.package / "bin/codex-session-board").write_bytes(b"candidate executable")
+        (self.package / "bin/run-plugin").write_text("launcher")
+        for name in ("codex-session-board", "run-plugin"):
+            (self.package / "bin" / name).chmod(0o755)
         for name in ("plugin.json", ".codex-plugin/plugin.json"):
             (self.package / name).write_text(json.dumps({"version": "0.2.93"}))
         self.manifest = {
@@ -56,6 +59,16 @@ class DeliveryTests(unittest.TestCase):
         (self.package / "alias").symlink_to(self.package / "plugin.json")
         with self.assertRaisesRegex(ValueError, "symlinks"):
             package_plugin.verify_package(self.package)
+
+    def test_native_cache_metadata_is_excluded_only_for_installed_packages(self):
+        metadata = self.package / ".codex-marketplace-install.json"
+        metadata.write_text('{"source_type":"git"}')
+        with self.assertRaisesRegex(ValueError, "hashes"):
+            package_plugin.verify_package(self.package)
+        self.assertEqual(package_plugin.verify_package(self.package, installed=True), self.manifest)
+        (self.package / "bin/run-plugin").chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "executable"):
+            package_plugin.verify_package(self.package, installed=True)
 
     def test_source_fingerprint_changes_reject_publication(self):
         with patch.object(publish_plugin, "command", return_value="a" * 40):
