@@ -2,13 +2,17 @@
   "schema_version": 1,
   "updated_at": "2026-11-11",
   "current_phase": {
-    "id": "state-section-consistency-implementation-20261111",
-    "status": "pending_validation",
+    "id": "remote-final-integration-20261111",
+    "status": "in_progress",
     "as_of": "2026-11-11",
-    "summary": "五状态有效绑定、严格校验、显式迁移、只读预检和独立有限模型已实现并通过提交检查。已整合主线布局与部署收尾；候选86的真实五分区保存、完整标题与旧动作投影通过，需用最终87重新取证并完成全量验收。正式仍为0.2.82和六映射配置，尚未切换本修复。"
+    "summary": "在独立final工作树固定分区实现2f63a5a并整合Main be7d079记录，保留稳定布局、五绑定、迁移/预检和build.rs/mjs交付。当前准备88整合基底，尚未移植83独有远端恢复、PWA和严格远端校验，尚无最终候选签收。本会话83部分材料与失败均留原树，缓存虽已换成另一任务88，但原构建包保留同SHA二进制。两本机验收卡仍由分区任务使用，本任务不写；桌面M1连接和真实drag仍待验。本任务未部署，最后核对生产为82；下方63/73描述均是继承的历史观察。"
   },
-  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/state-section-consistency-implementation-20261111.md"],
+  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/state-section-consistency-implementation-20261111.md", "context/tasks/active/ui-worktree-cleanup-20261111.md", "context/tasks/active/remote-final-integration-20261111.md"],
   "known_open_issues": [
+    "最终候选将合并83独有的11条恢复、9条严格远端反例及S六条独有测试，静态并集526为下限；预检缺SHA及不完整引用的报告防覆盖缺口需新增回归。保留全部冻结需求、模型、锁及断言，不借任何旧版本签收。",
+    "旧验收插件命名空间现在指向分区任务的88及其私有配置；不覆盖、不调用其MCP别名。final将另用本会话唯一命名空间。旧83原构建包二进制SHA仍为c7e4f4aaeeed4fc7e8026a9186b6dd44c6ccb73e2918aaf8f8d915279176385c。",
+    "本机两专用卡由其他分区验收占用；只做源码、隔离协议和受限远端验证，不同时更新它们。M1 canonical可写而桌面缺host client，已请求设置连接重连；Linux CUA无drag，不把合成事件或URI接收当实际验收。",
+    "Main清理任务因当前主工作区保护待handoff；保留其任务卡和材料，不归档其工作树或承载83证据的旧树。正式配置迁移与最终部署须等同一候选完整31/16及内容审阅通过。",
     "0.2.79连接异常和恢复指导已实现，任务仍待发布验收；缺少真实客户端退出重启恢复及完整外部证据，未部署。续作见context/handoffs/socket-recovery-guidance-20261111.md。",
     "2026-11-11项目筛选列宽回归已修复并上线v0.2.82：更正标题nowrap及看板min-content；20组真实浏览器回归与正式页面159/5条会话筛选往返保持等宽。完整验收500项自动通过，14项全局真实环境证据仍待补，release_ready=false。见context/tasks/completed/ui-stable-columns-20261111.md。",
     "2026-11-11正式v0.2.73仍有分区socket丢失。两套错误清理器的timer、service及脚本已按授权删除，系统清理改为十五分钟检查、/tmp四小时老化，首次执行成功，隔离活socket保护通过。历史删除责任PID未实锤，客户端及包装器的端点恢复尚未实施，未重启Codex。方案及实施记录见Docs/SOCKET-LIFECYCLE-REPORT-20261111.md。",

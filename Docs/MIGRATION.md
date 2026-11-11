@@ -42,6 +42,9 @@ remote_auto_archive_seconds 默认 null。冻结六状态需显式 legacy_mode=t
 build-plugin 使用实际 CARGO_TARGET_DIR 的新构建，避免打包另一路径的旧二进制。
 构建门禁 build.rs 是显式必需输入，纳入迁移包及验收指纹；删除脚本不能绕过门禁。
 浏览器验证所需的 scripts/*.mjs 同样随源码包提供。
+完整串行验收的编译、全部 Rust binary 和 Python 测试共用 1800 秒外层预算；
+单条内部命令仍限 600 秒，测试项、断言及验证器的 3600 秒上限不变。
+先前串行提交检查的各测试程序累计约 912 秒，不能用单条命令预算截断完整套件。
 
 当前仓库仍使用原 `scripts/check`、注释限制、Clippy 和 Git 钩子。
 开发改动尚未提交时，工作区干净检查会失败，不可用忽略文件或重置工作区掩盖。
