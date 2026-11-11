@@ -3,16 +3,20 @@ use super::{
     archive::Engine,
     transport::{Server, section_id},
 };
+#[path = "../support/fixture.rs"]
+mod fixture;
+
+use fixture::{ChildGuard, PortLease};
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 pub(super) struct Live {
     path: PathBuf,
     url: String,
-    child: Option<Child>,
+    child: Option<ChildGuard>,
 }
 
 fn cli(path: &Path, action: &str) -> Result<std::process::Output> {
@@ -23,17 +27,13 @@ fn cli(path: &Path, action: &str) -> Result<std::process::Output> {
 
 impl Live {
     pub(super) fn new(config: &mut Config, directory: &Path) -> Result<Self> {
-        let available = std::net::TcpListener::bind("127.0.0.1:0")?;
-        config.port = available.local_addr()?.port();
-        drop(available);
+        let port = PortLease::acquire()?;
+        config.port = port.port;
         let path = directory.join("config.json");
         std::fs::write(&path, serde_json::to_vec(&*config)?)?;
-        let mut child = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
-            .args(["--config", path.to_str().unwrap(), "serve"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+        let mut child = ChildGuard::spawn(env!("CARGO_BIN_EXE_codex-session-board"), &path, port)?;
         let stdout = child
+            .child
             .stdout
             .take()
             .ok_or_else(|| anyhow::anyhow!("看板没有输出"))?;
@@ -124,9 +124,7 @@ impl Live {
 impl Drop for Live {
     fn drop(&mut self) {
         let _ = cli(&self.path, "stop");
-        if let Some(mut child) = self.child.take() {
-            let _ = child.wait();
-        }
+        drop(self.child.take());
     }
 }
 

@@ -1,11 +1,15 @@
 use anyhow::Result;
+#[path = "support/fixture.rs"]
+mod fixture;
+
 use codex_session_board::{app::App, config::Config, mcp, store::Store};
+use fixture::{ChildGuard, PortLease};
 use serde_json::{Value, json};
 use std::{
     fs,
     io::Write,
     path::Path,
-    process::{Child, Command, Stdio},
+    process::{Command, Stdio},
 };
 
 #[test]
@@ -77,25 +81,18 @@ fn column_sort_rejects_invalid_requests_without_touching_sessions() -> Result<()
     Ok(())
 }
 
-fn start_fixture(path: &Path) -> Result<(Value, Child)> {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
-    let port = listener.local_addr()?.port();
-    drop(listener);
+fn start_fixture(path: &Path) -> Result<(Value, ChildGuard)> {
+    let port = PortLease::acquire()?;
     fs::write(
         path,
-        json!({"data_dir":"data","port":port,"sync_titles":false,
+        json!({"data_dir":"data","port":port.port,"sync_titles":false,
         "codex_command":["/bin/false"],"desktop_socket":"","sidebar_socket":"",
         "auto_archive_seconds":null})
         .to_string(),
     )?;
-    let mut child = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
-        .arg("--config")
-        .arg(path)
-        .arg("serve")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
+    let mut child = ChildGuard::spawn(env!("CARGO_BIN_EXE_codex-session-board"), path, port)?;
     let stdout = child
+        .child
         .stdout
         .take()
         .ok_or_else(|| anyhow::anyhow!("看板没有输出"))?;
@@ -170,7 +167,7 @@ fn column_sort_real_http_and_stdio_mcp_share_persistent_settings() -> Result<()>
         .output();
     checks?;
     assert!(stopped?.status.success());
-    let _ = child.wait();
+    let _ = child.child.wait();
     let reopened = Store::open(&directory.path().join("data"), false)?;
     assert_eq!(reopened.column_sorts()?["review"]["direction"], "asc");
     Ok(())

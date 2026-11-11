@@ -20,9 +20,24 @@ pub(super) struct Engine {
     stop: Arc<AtomicBool>,
     worker: Option<std::thread::JoinHandle<()>>,
     pub blocked: Arc<Mutex<Option<BlockingMove>>>,
+    discovery: Arc<(Mutex<bool>, Condvar)>,
+}
+
+pub(super) struct DiscoveryPause(Arc<(Mutex<bool>, Condvar)>);
+
+impl Drop for DiscoveryPause {
+    fn drop(&mut self) {
+        *self.0.0.lock().unwrap() = true;
+        self.0.1.notify_all();
+    }
 }
 
 impl Engine {
+    pub(super) fn pause_discovery_after_archive(&self) -> DiscoveryPause {
+        *self.discovery.0.lock().unwrap() = false;
+        DiscoveryPause(Arc::clone(&self.discovery))
+    }
+
     pub fn new(path: &std::path::Path, surface: Arc<Mutex<Surface>>) -> Result<Self> {
         let listener = UnixListener::bind(path)?;
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
@@ -33,6 +48,8 @@ impl Engine {
         let state = Arc::clone(&archived);
         let blocked = Arc::new(Mutex::new(None));
         let gate = Arc::clone(&blocked);
+        let discovery = Arc::new((Mutex::new(true), Condvar::new()));
+        let scans = Arc::clone(&discovery);
         let worker = std::thread::spawn(move || {
             let mut clients = Vec::new();
             while !flag.load(Ordering::Relaxed) {
@@ -40,8 +57,9 @@ impl Engine {
                     let state = Arc::clone(&state);
                     let gate = Arc::clone(&gate);
                     let surface = Arc::clone(&surface);
+                    let discovery = Arc::clone(&scans);
                     clients.push(std::thread::spawn(move || {
-                        engine_connection(stream, state, gate, surface)
+                        engine_connection(stream, state, gate, surface, discovery)
                     }));
                 } else {
                     std::thread::sleep(Duration::from_millis(2));
@@ -56,6 +74,7 @@ impl Engine {
             stop,
             worker: Some(worker),
             blocked,
+            discovery,
         })
     }
 }
@@ -65,6 +84,7 @@ fn engine_connection(
     archived: Arc<Mutex<HashSet<String>>>,
     blocked: Arc<Mutex<Option<BlockingMove>>>,
     surface: Arc<Mutex<Surface>>,
+    discovery: Arc<(Mutex<bool>, Condvar)>,
 ) -> Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(10)))?;
     let mut socket = tungstenite::accept(stream)?;
@@ -75,6 +95,12 @@ fn engine_connection(
         let request: Value = serde_json::from_str(message.to_text()?)?;
         if request["id"].is_null() {
             continue;
+        }
+        if request["method"] == "thread/list" && !archived.lock().unwrap().is_empty() {
+            let _released = discovery
+                .1
+                .wait_while(discovery.0.lock().unwrap(), |released| !*released)
+                .unwrap();
         }
         let identifier = request["params"]["threadId"].as_str().unwrap_or(FIRST);
         let block = blocked.lock().unwrap().clone().filter(|block| {

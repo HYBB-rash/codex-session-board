@@ -5,13 +5,13 @@
     "id": "remote-final-integration-20261111",
     "status": "in_progress",
     "as_of": "2026-11-11",
-    "summary": "90完整钩子、check/context、11恢复回归和20布局场景已通过。准备91合并Gate89 69fc35e，保留S原18门禁测试/C九反例，新增3项完整CLI回归，修复缺SHA附件被报告覆盖及预检无SHA问题；待整合测试后冻结同一构建。Main仍be7d079且已干净，S仍5571ff4，两者均在本树祖先链。A/B归属未确认释放前不写；M1 SSH成功但桌面read_thread仍host unavailable，原生drag不支持。官方CLI可独立注册新namespace，不能保证单插件热加载，不做全局刷新。未部署，最后生产82；旧83仍仅部分历史实测，下方63/73为旧观察。"
+    "summary": "91已冻结8225fd7，529首次全验528过1个timer观察失败，原失败保留。92测试同步保留8秒/lastRun/原断言；提交钩子另见MCP titlePending Null，原回执不足未定因。并行复查第11组发现另一case端口占用及析构poison二次panic；前10组全过不清除原失败。92以共用端口租约和持有子进程guard修复3个fixture，默认并行的board_io/native_authority/column_sort合计64项通过，待完整钩子及重新冻结。src业务文件相对91未改。91浏览器23项、五绑定只读迁移演练通过，均非完整签收。P未启动、新真实消息0；A/B仍占用，11:04桌面查询M1仍Unavailable且根因未定，SSH可达不代替桌面连接。未部署，生产仍82；旧83及下方63/73均为历史观察。"
   },
   "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/state-section-consistency-implementation-20261111.md", "context/tasks/active/ui-worktree-cleanup-20261111.md", "context/tasks/active/remote-final-integration-20261111.md"],
   "known_open_issues": [
-    "最终候选将合并83独有的11条恢复、9条严格远端反例及S六条独有测试，静态并集526为下限；预检缺SHA及不完整引用的报告防覆盖缺口需新增回归。保留全部冻结需求、模型、锁及断言，不借任何旧版本签收。",
+    "91共529，首次全验timer失败及92首次钩子MCP失败均保留。后续并行组证实另一case存在端口占用和析构二次panic；不追认原MCP Null同因。92共用租约/子进程清理及timer同步修复，64项默认并行通过，待完整钩子和冻结；保留冻结需求、模型、锁及原断言。",
     "旧验收插件命名空间现在指向分区任务的88及其私有配置；不覆盖、不调用其MCP别名。final将另用本会话唯一命名空间。旧83原构建包二进制SHA仍为c7e4f4aaeeed4fc7e8026a9186b6dd44c6ccb73e2918aaf8f8d915279176385c。",
-    "本机两专用卡由其他分区验收占用；只做源码、隔离协议和受限远端验证，不同时更新它们。M1 canonical可写而桌面缺host client，已请求设置连接重连；Linux CUA无drag，不把合成事件或URI接收当实际验收。",
+    "本机两专用卡仍由分区验收占用，不同时更新。M1 SSH可达，11:04桌面查询仍Unavailable，当前根因未确定；旧client-not-found日志不代表当前失败。Linux CUA无drag，不把合成事件或URI接收当实际验收；直接SSH与桌面工具依赖仍分别核对。",
     "Main清理任务因当前主工作区保护待handoff；保留其任务卡和材料，不归档其工作树或承载83证据的旧树。正式配置迁移与最终部署须等同一候选完整31/16及内容审阅通过。",
     "0.2.79连接异常和恢复指导已实现，任务仍待发布验收；缺少真实客户端退出重启恢复及完整外部证据，未部署。续作见context/handoffs/socket-recovery-guidance-20261111.md。",
     "2026-11-11项目筛选列宽回归已修复并上线v0.2.82：更正标题nowrap及看板min-content；20组真实浏览器回归与正式页面159/5条会话筛选往返保持等宽。完整验收500项自动通过，14项全局真实环境证据仍待补，release_ready=false。见context/tasks/completed/ui-stable-columns-20261111.md。",

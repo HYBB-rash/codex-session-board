@@ -1,12 +1,16 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+#[path = "support/fixture.rs"]
+mod fixture;
+
 use anyhow::{Result, bail};
 use codex_session_board::{app, config, http, mcp, observer, rpc::Rpc, titles};
+use fixture::{ChildGuard, PortLease};
 use serde_json::{Value, json};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tempfile::TempDir;
@@ -16,23 +20,24 @@ const SECOND: &str = "22222222-2222-4222-8222-222222222222";
 
 struct Fixture {
     _directory: TempDir,
+    _port: Arc<PortLease>,
     path: PathBuf,
     settings: Value,
-    server: Mutex<Option<Child>>,
+    server: Mutex<Option<ChildGuard>>,
 }
 
 impl Fixture {
     fn new(sync: bool) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("config.json");
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let settings = json!({"data_dir":"data","port":port,"sync_titles":sync,
+        let port = PortLease::acquire().unwrap();
+        let settings = json!({"data_dir":"data","port":port.port,"sync_titles":sync,
             "desktop_socket":"","codex_command":["/bin/false"],"open_command":["/bin/true"],
             "poll_seconds":1,"rpc_timeout_seconds":1,"runtime_poll_seconds":1});
         fs::write(&path, settings.to_string()).unwrap();
         Self {
             _directory: directory,
+            _port: port,
             path,
             settings,
             server: Mutex::new(None),
@@ -113,19 +118,19 @@ impl Fixture {
             );
             return serde_json::from_slice(&output.stdout).unwrap();
         }
-        let mut child = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
-            .args(["--config", self.path.to_str().unwrap(), "serve"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+        let mut child = ChildGuard::spawn(
+            env!("CARGO_BIN_EXE_codex-session-board"),
+            &self.path,
+            Arc::clone(&self._port),
+        )
+        .unwrap();
         let mut line = String::new();
-        BufReader::new(child.stdout.take().unwrap())
+        BufReader::new(child.child.stdout.take().unwrap())
             .read_line(&mut line)
             .unwrap();
         let value: Value = serde_json::from_str(line.trim()).unwrap_or_else(|_| {
             let mut error = String::new();
-            let _ = std::io::Read::read_to_string(child.stderr.as_mut().unwrap(), &mut error);
+            let _ = std::io::Read::read_to_string(child.child.stderr.as_mut().unwrap(), &mut error);
             panic!("{error}");
         });
         *slot = Some(child);
@@ -146,10 +151,14 @@ impl Fixture {
 impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = fs::write(&self.path, self.settings.to_string());
-        let _ = self.cli("stop");
-        if let Some(mut child) = self.server.lock().unwrap().take() {
-            let _ = child.wait();
-        }
+        let _ = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
+            .args(["--config", self.path.to_str().unwrap(), "stop"])
+            .output();
+        let slot = self
+            .server
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        drop(slot.take());
     }
 }
 
@@ -376,7 +385,12 @@ fn saved_state_reports_pending_title_without_rollback() {
         .unwrap();
     assert_eq!(result["ok"], true);
     assert_eq!(result["titlePending"], true);
-    assert!(result["titleError"].as_str().unwrap().contains("完整退出并重新打开 Codex"));
+    assert!(
+        result["titleError"]
+            .as_str()
+            .unwrap()
+            .contains("完整退出并重新打开 Codex")
+    );
     assert!(!result["titleError"].as_str().unwrap().contains("os error"));
     let row = &app.store.sessions().unwrap()[0];
     assert_eq!(row["state"], "review");
@@ -640,8 +654,8 @@ fn mcp_bridge_uses_http_versions_and_reports_pending_title_without_rollback() {
         ("board_open", json!({"id":"invalid"})),
     ]);
     assert_eq!(
-        replies[0]["result"]["structuredContent"]["titlePending"],
-        true
+        replies[0]["result"]["structuredContent"]["titlePending"], true,
+        "{replies:#?}"
     );
     assert_eq!(replies[1]["result"]["isError"], true);
     let row = &replies[2]["result"]["structuredContent"]["sessions"][0];
@@ -696,7 +710,10 @@ fn remote_cards_use_the_same_http_and_mcp_annotations_without_native_writes() {
 }
 
 fn check_remote_replies(replies: &[Value]) {
-    assert_eq!(replies[0]["result"]["structuredContent"]["titleEnabled"], false);
+    assert_eq!(
+        replies[0]["result"]["structuredContent"]["titleEnabled"],
+        false
+    );
     assert_eq!(replies[1]["result"]["isError"], true);
     let row = &replies[2]["result"]["structuredContent"]["sessions"][0];
     assert_eq!(row["note"], "远程备注");
@@ -949,14 +966,12 @@ fn service_update_rejects_old_build_but_can_verify_and_stop_its_process() {
             .output()
             .unwrap()
     };
-    let mut child = Command::new(&executable)
-        .args(["--config", fixture.path.to_str().unwrap(), "serve"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let mut child =
+        ChildGuard::spawn(&executable, &fixture.path, Arc::clone(&fixture._port)).unwrap();
     let mut line = String::new();
-    BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
+    BufReader::new(child.child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
     assert!(serde_json::from_str::<Value>(line.trim()).is_ok(), "{line}");
     fs::copy(&executable, &replacement).unwrap();
     fs::OpenOptions::new()
@@ -975,7 +990,7 @@ fn service_update_rejects_old_build_but_can_verify_and_stop_its_process() {
         "{}",
         String::from_utf8_lossy(&stopped.stderr)
     );
-    let _ = child.wait();
+    let _ = child.child.wait();
 }
 
 #[test]

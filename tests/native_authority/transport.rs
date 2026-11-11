@@ -171,6 +171,10 @@ pub(super) struct Server {
 }
 
 impl Server {
+    pub(super) fn pause_discovery_after_archive(&self) -> super::archive::DiscoveryPause {
+        self._engine.pause_discovery_after_archive()
+    }
+
     pub fn new(directory: &std::path::Path) -> Result<Self> {
         std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700))?;
         let socket = directory.join("sidebar.sock");

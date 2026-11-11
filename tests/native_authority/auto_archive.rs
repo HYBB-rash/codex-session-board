@@ -156,6 +156,7 @@ fn built_service_archives_on_its_timer_and_publishes_the_result_without_an_archi
     server.config.runtime_poll_seconds = 1;
     drop(server.app()?);
     let live = Live::new(&mut server.config, directory.path())?;
+    let _discovery_pause = server.pause_discovery_after_archive();
     let client = reqwest::blocking::Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(3))
