@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 
 pub(super) const ID: &str = "session-1";
 
+#[derive(Debug, PartialEq)]
 pub(super) struct Stored {
     pub(super) native_state: Option<String>,
     pub(super) native_section: Option<String>,
@@ -51,10 +52,10 @@ fn write_session(store: &Store, session: Session) -> Result<()> {
             native_state(session),
             revision(session.seat),
             session.phase.map(|phase| key("held", phase)),
-            session.pending.map(|phase| key("pend", phase)),
+            session.pending.map(|phase| key(if session.pending_same_turn { "held" } else { "pend" }, phase)),
             session.manual.then_some(session.column.as_str()),
             session.anchor.then_some(50.0),
-            session.manual.then_some(80.0),
+            session.manual.then_some(50.0),
             if session.manual && session.column == Column::Blocked {
                 "记"
             } else {
@@ -62,9 +63,9 @@ fn write_session(store: &Store, session: Session) -> Result<()> {
             },
             i64::from(session.review),
             i64::from(session.archived),
-            anchor_turn(session.anchor),
-            session.anchor.then_some("turn-anchor"),
-            if session.anchor { "[\"u\"]" } else { "[]" },
+            history(session),
+            (session.anchor && session.has_input).then_some("history"),
+            if session.anchor && session.has_input { "[\"u\"]" } else { "[]" },
         ],
     )?;
     Ok(())
@@ -77,9 +78,10 @@ fn native_state(session: Session) -> Option<&'static str> {
     }
 }
 
-fn anchor_turn(anchor: bool) -> String {
-    if anchor {
-        json!({"id":"turn-anchor","status":"completed","startedAt":50.0,"userItems":["u"]})
+fn history(session: Session) -> String {
+    if session.has_input {
+        let users = if session.anchor && session.review { json!(["u","new"]) } else { json!(["u"]) };
+        json!({"id":"history","status":"completed","startedAt":40.0,"userItems":users})
             .to_string()
     } else {
         "{}".into()
@@ -96,7 +98,7 @@ pub(super) fn revision(seat: Seat) -> Option<&'static str> {
 
 fn key(prefix: &str, phase: Phase) -> String {
     json!([
-        format!("{prefix}-{}", phase.label()),
+        prefix,
         phase.column().as_str(),
         flags(phase)
     ])
@@ -122,12 +124,23 @@ pub(super) fn project(store: &Store) -> Result<Session> {
             .unwrap_or(Column::Unknown),
         phase: phase_of(stored.runtime_key.as_deref())?,
         pending: phase_of(stored.pending_key.as_deref())?,
+        pending_same_turn: stored.pending_key.is_some() && stored.runtime_key.is_some()
+            && turn_id(stored.pending_key.as_deref())? == turn_id(stored.runtime_key.as_deref())?,
         manual: stored.selected_state.is_some(),
         seat: seat_of(stored.native_section.as_deref())?,
         review: stored.review == 1,
         anchor: stored.selected_at.is_some(),
         archived: stored.archived == 1,
+        has_input: serde_json::from_str::<Value>(&stored.turn_json)?["userItems"]
+            .as_array().is_some_and(|items| !items.is_empty()),
     })
+}
+
+pub(super) fn turn_id(key: Option<&str>) -> Result<Option<String>> {
+    key.map(|key| {
+        let value: Value = serde_json::from_str(key)?;
+        Ok(value[0].as_str().context("阶段缺少轮次")?.to_string())
+    }).transpose()
 }
 
 pub(super) fn load(store: &Store) -> Result<Stored> {
@@ -201,7 +214,7 @@ mod tests {
     #[test]
     fn every_reachable_session_roundtrips_through_sqlite() {
         let states = crate::formal::explore::reachable().unwrap();
-        assert_eq!(states.len(), 1077);
+        assert_eq!(states.len(), 2465);
         let mut store = Store::open_memory(true).unwrap();
         store.native_sections = true;
         for session in states {
