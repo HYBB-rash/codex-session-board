@@ -302,6 +302,9 @@
       "lib::codex_session_board::formal::tests::native_session_control_matches_the_store_on_every_reachable_edge"
     ],
     "AUTO-006": [
+      "lib::codex_session_board::formal::time::terminal_completion_time_respects_both_sides_and_equality_of_manual_choice",
+      "lib::codex_session_board::formal::time::pending_turn_retry_bypasses_old_observation_and_manual_choice_boundaries",
+      "lib::codex_session_board::formal::persistence::native_manual_input_pending_and_title_failure_survive_real_reopen",
       "lib::codex_session_board::rpc::runtime::tests::remote_clock_uses_conservative_bounds_and_rejects_unbounded_samples",
       "lib::codex_session_board::rpc::runtime::tests::runtime_clock_probe_is_bounded_and_reaps_the_owned_child",
       "test::native_authority::faults::delayed_completion_still_moves_after_an_unconfirmed_external_position",
@@ -350,6 +353,7 @@
       "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions"
     ],
     "MANUAL-001": [
+      "lib::codex_session_board::formal::persistence::native_manual_input_pending_and_title_failure_survive_real_reopen",
       "lib::codex_session_board::formal::fixture::tests::every_reachable_session_roundtrips_through_sqlite",
       "test::native_authority::native_unarchive_restores_the_confirmed_card_and_keeps_the_note",
       "test::column_sort::column_sort_defaults_persistence_and_independent_conflicts",
@@ -780,6 +784,7 @@
       "lib::codex_session_board::app::drafts::tests::lost_initial_title_receipts_keep_the_created_id_without_replaying_creation"
     ],
     "TITLE-004": [
+      "lib::codex_session_board::formal::persistence::native_manual_input_pending_and_title_failure_survive_real_reopen",
       "lib::codex_session_board::app::tests::busy_title_sync_does_not_wait_for_background_batch",
       "lib::codex_session_board::rpc::tests::title_budget_never_exceeds_three_seconds",
       "lib::codex_session_board::rpc::tests::title_deadline_bounds_a_full_unix_listener_queue",
