@@ -864,12 +864,11 @@ mod tests {
     #[test]
     fn sidebar_recovers_after_crash_with_stale_and_recreated_endpoints() -> Result<()> {
         let sandbox = Sandbox::create()?;
-        let (old, listener) = sandbox.listener()?;
+        let old = crashed_sidebar_endpoint(&sandbox)?;
         let config = crate::config::Config {
             sidebar_socket: old.clone(),
             ..crate::config::Config::default()
         };
-        drop(listener);
         assert!(SidebarConnection::connect(&config, Duration::from_millis(100)).is_err());
         let current = sandbox.0.join("current.sock");
         let listener = UnixListener::bind(&current)?;
@@ -882,6 +881,22 @@ mod tests {
         let _client = SidebarConnection::connect(&config, Duration::from_millis(100))?;
         let (_accepted, _) = replacement.accept()?;
         Ok(())
+    }
+
+    fn crashed_sidebar_endpoint(sandbox: &Sandbox) -> Result<PathBuf> {
+        let path = sandbox.0.join("configured.sock");
+        let script = "import os,socket,sys; listener=socket.socket(socket.AF_UNIX); \
+            listener.bind(sys.argv[1]); os.chmod(sys.argv[1],0o600); listener.listen(); \
+            print('ready',flush=True); sys.stdin.read()";
+        let mut process = ManagedChild(Command::new("python3")
+            .args(["-c", script]).arg(&path)
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()?);
+        let output = process.0.stdout.take().context("Missing sidebar fixture readiness")?;
+        let mut ready = String::new();
+        std::io::BufRead::read_line(&mut std::io::BufReader::new(output), &mut ready)?;
+        ensure!(ready == "ready\n", "Sidebar fixture did not become ready");
+        drop(process);
+        Ok(path)
     }
 
     #[test]

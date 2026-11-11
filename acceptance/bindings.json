@@ -1600,7 +1600,8 @@
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_backup_preserves_committed_wal_notes_and_all_host_databases",
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_wrong_architecture_is_rejected_before_stopping_or_installing",
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_reload_does_not_accept_an_old_mcp_after_cache_update",
-      "acceptance.test_delivery.DeliveryTests.test_native_cache_metadata_is_excluded_only_for_installed_packages"
+      "acceptance.test_delivery.DeliveryTests.test_native_cache_metadata_is_excluded_only_for_installed_packages",
+      "acceptance.test_update_delivery.UpdateDeliveryTests.test_pending_candidate_never_stops_the_installed_version"
     ]
   }
 }

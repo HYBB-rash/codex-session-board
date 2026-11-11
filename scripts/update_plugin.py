@@ -116,7 +116,7 @@ def activate(package, config_path, state, codex, reload, data, backup_path):
     return record
 
 
-def update(repository, channel, revision, config_path, state, codex, reload=True):
+def update(repository, channel, revision, config_path, state, codex, reload=True, expected_source=None):
     state.mkdir(mode=0o700, parents=True, exist_ok=True)
     with (state / "update.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -130,6 +130,8 @@ def update(repository, channel, revision, config_path, state, codex, reload=True
             manifest = verify_package(checkout)
             if manifest["target"] != target():
                 raise ValueError("Release targets a different operating system or architecture")
+            if not revision and expected_source and manifest["source_commit"] != expected_source:
+                raise ValueError("Candidate for the expected source is not yet available")
             source_revision = command(["git", "rev-parse", "HEAD"], checkout)
             directory = state / "releases" / f"{manifest['version']}-{manifest['binary_sha256'][:12]}"
             if directory.exists():
@@ -161,6 +163,7 @@ def main():
     parser.add_argument("--repository", required=True)
     parser.add_argument("--channel", choices=("candidate", "stable"), default="stable")
     parser.add_argument("--revision", help="Explicit immutable release revision, including rollback")
+    parser.add_argument("--expected-channel-source", help="Reject a channel still built from another source")
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--state", type=Path, default=Path.home() / ".local/share/codex-session-board/installation")
     parser.add_argument("--codex", default="codex")
@@ -171,7 +174,7 @@ def main():
         os.environ["GIT_SSH_COMMAND"] = shlex.join(["ssh", "-F", str(arguments.ssh_config.resolve())])
     result = update(arguments.repository, arguments.channel, arguments.revision,
                     arguments.config.resolve(), arguments.state.resolve(),
-                    arguments.codex, not arguments.defer_reload)
+                    arguments.codex, not arguments.defer_reload, arguments.expected_channel_source)
     print(json.dumps(result, indent=2))
 
 

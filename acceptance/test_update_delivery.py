@@ -12,6 +12,17 @@ import reload_plugins
 
 
 class UpdateDeliveryTests(unittest.TestCase):
+    def test_pending_candidate_never_stops_the_installed_version(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with patch.object(update_plugin.subprocess, "run"), patch.object(update_plugin, "target", return_value="linux"):
+                with patch.object(update_plugin, "verify_package", return_value={"target":"linux", "source_commit":"old"}):
+                    with patch.object(update_plugin, "command") as command:
+                        with self.assertRaisesRegex(ValueError, "not yet available"):
+                            update_plugin.update("repository", "candidate", None, root / "config",
+                                                 root / "state", "codex", expected_source="new")
+                        command.assert_not_called()
+
     def test_reload_does_not_accept_an_old_mcp_after_cache_update(self):
         server = {"pluginId": "codex-session-board@session-board-rust",
                   "serverInfo": {"name": "codex-session-board", "version": "old"},

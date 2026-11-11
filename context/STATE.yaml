@@ -5,13 +5,13 @@
     "id": "remote-final-integration-20261111",
     "status": "in_progress",
     "as_of": "2026-11-11",
-    "summary": "最终候选92已冻结f9c68da，正常钩子/check/context通过；独立target完整529项自动检查全过，release_ready=false/exit2，原失败保留。23浏览器组件与19私有CLI运行检查通过，不签native/PWA或空输入页。S已09:21释放本机A/B，当前L独占，两卡取消归档；B手工状态、中文备注、重复刷新、过期/空原因拒绝及canonical标题读回已过。独立L插件已官方安装，未全局reload；正确工具检索未返回新L，插件URI被浏览器协议安全规则拒绝，原生输入接口超时。M1一次正常daemon start后只读Peer握手同实例通过，注册项目及实目录已核实，但App尚未列出H项目。P为5私有chat/6start/9fakeHTTP/0真实provider；本候选N/R真实输入0，旧额度不重置。新R使用独立配置和执行记录，不沿用旧入口。未部署，生产仍82；完整31/16及真实界面待验，旧83及下方63/73为历史观察。"
+    "summary": "最终载荷仍为f9c68da候选92，94仅记录实测。529项自动检查全过，完整release仍exit2/release_ready=false；旧失败保留。L独占已释放的本机A/B，B状态备注与标题通过；Native入口和系统PWA未验，插件协议入口被工具拒绝。R-full01已按e5b5封存一次init，同config8616实际完成A标题失败队列持久化、重启后纯后台补偿、完整emoji、MCP状态标题、真实归档及外部取消归档保守恢复，B保持原归档/标题/轮次。M1现0.167.1，OS前后同实例；唯一创建已消费，同bc132请求/实际新UUID01a1c9a1-3762-7600-a2ca-1cdb8cc2a278，重启前后独立读回legacy/0turn。HTTP/MCP重试未重复创建，但Native桥仍报H Unavailable，draft=created，整项未过。P为5私有chat/6start/9fakeHTTP；N/R2真实模型输入0，旧额度不重置。原packager已生成92补充迁移包及351文件manifest，新解包FP不变/context过，完整529/31须从新根实际跑。未清理专用实例，未部署，生产仍82；见最新handoff与journal。"
   },
   "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/state-section-consistency-implementation-20261111.md", "context/tasks/active/ui-worktree-cleanup-20261111.md", "context/tasks/active/remote-final-integration-20261111.md"],
   "known_open_issues": [
     "92已固定FP/binary/config并通过529项自动检查；91 timer、92原MCP Null及首次共享target路径失败均保留，不改原断言、冻结需求/模型/锁或以旧构建签新实现。release_ready仍false，完整31/16及内容审阅待完成。",
     "旧验收别名仍指向S88，不覆盖、不调用。final L已用独立session-board-final-01a1b4de-l官方安装，仅本机A/B；生产82和旧缓存前后未变。新的board_view尚未在正确名称检索中返回；浏览器禁止codex协议入口，不绕过或全局reload。",
-    "本机A/B已明确释放且L正在使用；结束L前恢复本轮改动并核验，N不能并发写。M1正常daemon连接、Peer和注册目录已核实，当前App接口仍未列H项目，根因未定。真实native界面、系统PWA、创建桥和N/R2仍待验；IAB、合成事件及URI形式不代签。",
+    "L正在使用本机A/B，N不能并发写。R仅写远端A及唯一createdOwned，B保持对照；故障已清空，尚未清理。创建额度已消费，Native H Unavailable时只能重放同一bc132请求，不得新建/reset/reinit。真实Native/PWA/创建输入页与N/R2仍待验；IAB、协议回执及后台去重不代签。",
     "Main清理任务因当前主工作区保护待handoff；保留其任务卡和材料，不归档其工作树或承载83证据的旧树。正式配置迁移与最终部署须等同一候选完整31/16及内容审阅通过。",
     "0.2.79连接异常和恢复指导已实现，任务仍待发布验收；缺少真实客户端退出重启恢复及完整外部证据，未部署。续作见context/handoffs/socket-recovery-guidance-20261111.md。",
     "2026-11-11项目筛选列宽回归已修复并上线v0.2.82：更正标题nowrap及看板min-content；20组真实浏览器回归与正式页面159/5条会话筛选往返保持等宽。完整验收500项自动通过，14项全局真实环境证据仍待补，release_ready=false。见context/tasks/completed/ui-stable-columns-20261111.md。",
