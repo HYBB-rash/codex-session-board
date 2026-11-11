@@ -1,7 +1,7 @@
 use crate::store::Store;
 use anyhow::{Result, ensure};
 use rusqlite::OptionalExtension;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 const PROJECT: &str = "project-1";
 const REQUEST: &str = "11111111-1111-4111-8111-111111111111";
@@ -79,7 +79,7 @@ fn replay(draft: Draft, event: DraftEvent, expected: Draft) -> Result<()> {
         "新建 {draft:?} 经 {event:?} 模型 {expected:?} 数据库 {:?}",
         project(&store)?
     );
-    Ok(())
+    identity_guards(&store, expected)
 }
 
 fn install(store: &Store, draft: Draft) -> Result<()> {
@@ -101,32 +101,51 @@ fn install(store: &Store, draft: Draft) -> Result<()> {
 }
 
 fn apply(store: &Store, draft: Draft, event: DraftEvent) -> Result<()> {
+    let before = record(store)?;
     let result = match event {
-        DraftEvent::Begin => store.draft_begin(PROJECT, REQUEST).map(|_| ()),
-        DraftEvent::Mark => store.draft_update(REQUEST, None, "created").map(|_| ()),
-        DraftEvent::Attach => store
-            .draft_update(REQUEST, Some(THREAD), "created")
-            .map(|_| ()),
+        DraftEvent::Begin => begin(store, draft),
+        DraftEvent::Mark => store.draft_update(REQUEST, None, "created"),
+        DraftEvent::Attach => store.draft_update(REQUEST, Some(THREAD), "created"),
         DraftEvent::Complete => complete(store, draft),
-        DraftEvent::Abandon => store.draft_update(REQUEST, None, "abandoned").map(|_| ()),
+        DraftEvent::Abandon => store.draft_update(REQUEST, None, "abandoned"),
     };
-    match result {
-        Ok(()) => Ok(()),
-        Err(_) if draft_step(draft, event) == draft => Ok(()),
-        Err(error) => Err(error),
+    let accepts = matches!(event, DraftEvent::Begin)
+        || matches!(draft, Draft::Starting | Draft::Created | Draft::Threaded);
+    ensure!(result.is_ok() == accepts, "{draft:?} {event:?}: {result:?}");
+    if let Ok(returned) = result {
+        let mut expected = expected_record(draft_step(draft, event));
+        if matches!(event, DraftEvent::Begin | DraftEvent::Abandon)
+            && let Some(before) = &before
+        {
+            expected["threadId"] = before["threadId"].clone();
+        }
+        ensure!(
+            returned == expected,
+            "新建返回记录不符合阶段或身份: {returned}"
+        );
+        ensure!(record(store)? == Some(returned), "新建返回值与持久记录不同");
+    } else {
+        ensure!(record(store)? == before, "拒绝新建操作后记录被修改");
     }
+    validate_pending(store, draft_step(draft, event))
 }
 
-fn complete(store: &Store, draft: Draft) -> Result<()> {
+fn begin(store: &Store, draft: Draft) -> Result<Value> {
+    let (record, fresh) = store.draft_begin(PROJECT, REQUEST)?;
+    ensure!(fresh == (draft == Draft::Absent), "首次/重复新建标志错误");
+    Ok(record)
+}
+
+fn complete(store: &Store, draft: Draft) -> Result<Value> {
     let thread = match draft {
         Draft::Threaded => None,
         Draft::Starting | Draft::Created => Some(THREAD),
         Draft::Absent | Draft::Complete | Draft::Abandoned => None,
     };
-    store.draft_update(REQUEST, thread, "complete").map(|_| ())
+    store.draft_update(REQUEST, thread, "complete")
 }
 
-fn project(store: &Store) -> Result<Draft> {
+fn record(store: &Store) -> Result<Option<Value>> {
     let value: Option<String> = store
         .connection()?
         .query_row(
@@ -135,11 +154,73 @@ fn project(store: &Store) -> Result<Draft> {
             |row| row.get(0),
         )
         .optional()?;
-    let Some(value) = value else {
-        return Ok(Draft::Absent);
+    value
+        .map(|value| serde_json::from_str(&value).map_err(Into::into))
+        .transpose()
+}
+
+fn project(store: &Store) -> Result<Draft> {
+    Ok(record(store)?.as_ref().map(decode).unwrap_or(Draft::Absent))
+}
+
+fn expected_record(draft: Draft) -> Value {
+    let (stage, thread) = match draft {
+        Draft::Absent => return Value::Null,
+        Draft::Starting => ("starting", None),
+        Draft::Created => ("created", None),
+        Draft::Threaded => ("created", Some(THREAD)),
+        Draft::Complete => ("complete", Some(THREAD)),
+        Draft::Abandoned => ("abandoned", None),
     };
-    let record: Value = serde_json::from_str(&value)?;
-    Ok(decode(&record))
+    json!({"project":PROJECT,"requestId":REQUEST,"stage":stage,"threadId":thread})
+}
+
+fn validate_pending(store: &Store, draft: Draft) -> Result<()> {
+    let records = store.pending_drafts()?;
+    let pending = matches!(draft, Draft::Starting | Draft::Created | Draft::Threaded);
+    ensure!(
+        records.len() == usize::from(pending),
+        "待核对索引与阶段不一致"
+    );
+    if pending {
+        ensure!(records[0] == expected_record(draft), "待核对请求身份不一致");
+    }
+    Ok(())
+}
+
+fn identity_guards(store: &Store, draft: Draft) -> Result<()> {
+    if draft == Draft::Absent {
+        return Ok(());
+    }
+    let before = record(store)?;
+    let pending = store.pending_drafts()?;
+    ensure!(
+        store.draft_begin("another-project", REQUEST).is_err(),
+        "同一请求被另一个项目复用"
+    );
+    if before
+        .as_ref()
+        .is_some_and(|record| record["threadId"].is_string())
+    {
+        ensure!(
+            store
+                .draft_update(REQUEST, Some(REQUEST), "created")
+                .is_err(),
+            "已确认的会话身份被替换"
+        );
+    }
+    if !pending.is_empty() {
+        ensure!(
+            store.draft_begin(PROJECT, THREAD).is_err(),
+            "待核对期间允许了第二个创建请求"
+        );
+    }
+    ensure!(record(store)? == before, "拒绝跨身份操作后记录改变");
+    ensure!(
+        store.pending_drafts()? == pending,
+        "拒绝跨身份操作后待核对索引改变"
+    );
+    Ok(())
 }
 
 fn decode(record: &Value) -> Draft {
