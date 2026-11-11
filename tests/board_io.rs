@@ -964,7 +964,7 @@ fn service_update_rejects_old_build_but_can_verify_and_stop_its_process() {
     let fixture = Fixture::new(false);
     let executable = fixture._directory.path().join("board-bin");
     let replacement = fixture._directory.path().join("board-next");
-    fs::copy(env!("CARGO_BIN_EXE_codex-session-board"), &executable).unwrap();
+    install_test_binary(std::path::Path::new(env!("CARGO_BIN_EXE_codex-session-board")), &executable, false);
     let invoke = |action| {
         Command::new(&executable)
             .args(["--config", fixture.path.to_str().unwrap(), action])
@@ -978,13 +978,7 @@ fn service_update_rejects_old_build_but_can_verify_and_stop_its_process() {
         .read_line(&mut line)
         .unwrap();
     assert!(serde_json::from_str::<Value>(line.trim()).is_ok(), "{line}");
-    fs::copy(&executable, &replacement).unwrap();
-    fs::OpenOptions::new()
-        .append(true)
-        .open(&replacement)
-        .unwrap()
-        .write_all(b"controlled build variation")
-        .unwrap();
+    install_test_binary(&executable, &replacement, true);
     fs::rename(&replacement, &executable).unwrap();
     let duplicate = invoke("serve");
     assert!(!duplicate.status.success());
@@ -996,6 +990,20 @@ fn service_update_rejects_old_build_but_can_verify_and_stop_its_process() {
         String::from_utf8_lossy(&stopped.stderr)
     );
     let _ = child.child.wait();
+}
+
+fn install_test_binary(source: &std::path::Path, destination: &std::path::Path, variation: bool) {
+    let script = r#"import shutil,sys,subprocess
+shutil.copy2(sys.argv[1],sys.argv[2])
+if sys.argv[3]=='true':
+    with open(sys.argv[2],'ab') as output: output.write(b'controlled build variation')
+if sys.platform=='darwin':
+    subprocess.run(['/usr/bin/codesign','--force','--sign','-',sys.argv[2]],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+"#;
+    assert!(Command::new("python3")
+        .args(["-c", script])
+        .arg(source).arg(destination).arg(variation.to_string())
+        .status().unwrap().success());
 }
 
 #[test]

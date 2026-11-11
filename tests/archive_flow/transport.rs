@@ -57,6 +57,7 @@ fn accept_desktop(listener: UnixListener) -> Result<UnixStream> {
 
 fn serve_desktop(listener: UnixListener) -> Result<Vec<String>> {
     let stream = accept_desktop(listener)?;
+    stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(Duration::from_secs(3)))?;
     let mut connection = tungstenite::accept(stream)?;
     let mut methods = Vec::new();

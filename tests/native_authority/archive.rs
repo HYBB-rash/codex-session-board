@@ -86,6 +86,7 @@ fn engine_connection(
     surface: Arc<Mutex<Surface>>,
     discovery: Arc<(Mutex<bool>, Condvar)>,
 ) -> Result<()> {
+    stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(Duration::from_secs(10)))?;
     let mut socket = tungstenite::accept(stream)?;
     while let Ok(message) = socket.read() {

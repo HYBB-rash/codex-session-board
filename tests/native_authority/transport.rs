@@ -300,6 +300,7 @@ fn connection(
     surface: Arc<Mutex<Surface>>,
     database: &std::path::Path,
 ) -> Result<()> {
+    stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(Duration::from_secs(3)))?;
     loop {
         let mut size = [0u8; 4];
