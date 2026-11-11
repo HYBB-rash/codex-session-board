@@ -4,7 +4,9 @@ mod explore;
 mod fixture;
 mod paths;
 mod replay;
+mod records;
 mod session;
+mod versions;
 
 #[cfg(test)]
 mod tests {
@@ -26,3 +28,4 @@ mod tests {
         assert_eq!(edges, 30);
     }
 }
+mod archive;
