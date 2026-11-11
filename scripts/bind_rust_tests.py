@@ -96,7 +96,7 @@ def build():
         "fingerprint_paths": [
             "Cargo.toml", "Cargo.lock", "build.rs", "clippy.toml", "project-rules.json", "src", "tests",
             "index.html", "config.example.json", "plugin.json", "mcp.json", ".mcp.json",
-            ".codex-plugin", ".agents/plugins", ".githooks", "assets", "skills", "acceptance",
+            ".codex-plugin", ".agents/plugins", ".githooks", ".github", "assets", "skills", "acceptance",
             "scripts", "examples", "AGENTS.md", "README.md", "Docs/*.md",
         ],
         "requirements": mappings,

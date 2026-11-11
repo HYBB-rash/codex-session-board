@@ -73,8 +73,14 @@ fn extensions_ignore_case_but_root_allowance_requires_exact_case() -> Result<()>
         "README.MD",
         "Readme.md",
     ];
-    write_files(directory.path(), &variants)?;
-    let found = violations(directory.path())?;
+    let mut found = violations(directory.path())?;
+    for name in variants {
+        let sample = tempdir()?;
+        write_files(sample.path(), &[name])?;
+        let reported = violations(sample.path())?;
+        assert_eq!(reported, [PathBuf::from(name)]);
+        found.extend(reported);
+    }
     assert_eq!(found.len(), DOCUMENT_EXTENSIONS.len() + variants.len());
     for name in variants {
         assert!(found.contains(&PathBuf::from(name)));
@@ -272,9 +278,13 @@ fn document_file_links_are_reported_but_directory_links_are_ignored() -> Result<
 fn non_utf8_document_filenames_keep_their_original_bytes() -> Result<()> {
     use std::ffi::OsString;
     use std::os::unix::ffi::OsStringExt;
-    let directory = tempdir()?;
     let name = OsString::from_vec(vec![0xff, b'.', b'M', b'D']);
-    fs::write(directory.path().join(&name), b"document")?;
-    assert_eq!(violations(directory.path())?, [PathBuf::from(name)]);
+    assert_eq!(document_entry(&name, || Ok(true))?, Some(PathBuf::from(&name)));
+    #[cfg(target_os = "linux")]
+    {
+        let directory = tempdir()?;
+        fs::write(directory.path().join(&name), b"document")?;
+        assert_eq!(violations(directory.path())?, [PathBuf::from(name)]);
+    }
     Ok(())
 }

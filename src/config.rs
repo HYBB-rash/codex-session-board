@@ -51,7 +51,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            codex_command: vec!["codex".into(), "app-server".into(), "--stdio".into()],
+            codex_command: vec!["codex".into(), "app-server".into(), "proxy".into()],
             proxy_command: Vec::new(),
             clock_command: Vec::new(),
             ssh_command: vec!["ssh".into()],

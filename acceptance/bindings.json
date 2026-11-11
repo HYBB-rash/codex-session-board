@@ -31,7 +31,8 @@
     "examples",
     "AGENTS.md",
     "README.md",
-    "Docs/*.md"
+    "Docs/*.md",
+    ".github"
   ],
   "requirements": {
     "STATE-001": [

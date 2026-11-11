@@ -57,12 +57,20 @@ pub fn violations(root: &Path) -> Result<Vec<PathBuf>> {
     let mut documents = Vec::new();
     for entry in entries {
         let entry = entry.with_context(|| format!("无法读取根目录中的条目：{root:?}"))?;
-        if is_document_name(&entry.file_name()) && is_file_entry(&entry)? {
-            documents.push(PathBuf::from(entry.file_name()));
+        if let Some(document) = document_entry(&entry.file_name(), || is_file_entry(&entry))? {
+            documents.push(document);
         }
     }
     documents.sort();
     Ok(documents)
+}
+
+fn document_entry(name: &OsStr, is_file: impl FnOnce() -> Result<bool>) -> Result<Option<PathBuf>> {
+    if is_document_name(name) && is_file()? {
+        Ok(Some(PathBuf::from(name)))
+    } else {
+        Ok(None)
+    }
 }
 
 fn is_document_name(name: &OsStr) -> bool {
