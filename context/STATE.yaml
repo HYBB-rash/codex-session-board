@@ -3,9 +3,9 @@
   "updated_at": "2026-11-12",
   "current_phase": {
     "id": "mac-development-release-20261111",
-    "status": "in_progress",
+    "status": "blocked",
     "as_of": "2026-11-12",
-    "summary": "Mac平台实现与形式化封板f8d716d已按提交规模合入，保留双方全部历史、任务归档和验收映射。完整Git、工作区、上下文及聊天归档已到Mac；私有GitHub取包、服务/MCP读回及Mac推送预检已实测。当前继续双平台CI与升级回退验证，权威结果见mac-development-release handoff指定的final-delivery.json。正式Fedora仍0.2.92，稳定发布仍须完整业务与真实环境验收。"
+    "summary": "完整开发材料已迁入Mac，形式化封板f8d716d及双方历史均已保留。Mac真实Cindy Agent签名提交f9daae5已验证，经Fedora已授权通道原样推送，0.3.21双平台CI和561自动项全过。Mac直接推送仍被既有SSH agent拒绝，默认分支修改也受403阻止，等待用户恢复授权。最终候选构建、安装、回退和独立解包验收结果见handoff指定的final-delivery.json。原正式Fedora仍0.2.92，完整业务缺证不代签。"
   },
   "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/state-section-consistency-implementation-20261111.md", "context/tasks/active/ui-worktree-cleanup-20261111.md", "context/tasks/active/remote-final-integration-20261111.md", "context/tasks/active/mac-development-release-20261111.md"],
   "known_open_issues": [

@@ -85,3 +85,24 @@ Mac 恢复试验已成功升级与回退，但冗余 marketplace upgrade 下载�
 这是修订工作区控制器的验证，提交后的版本仍须自己的 CI 与新原生包闭环。
 Mac 文稿出现旧文件“2”后缀副本，源码指纹保护实际拦截；
 旧目录及全部副本先保全，再从 GitHub 在 Developer 新克隆并导入历史引用。
+
+## 最终签名验证与待恢复授权
+
+Mac 已实际创建 f9daae5a4402644cdd39b93db41eca2b98b65bf4，
+作者、提交者均为 Cindy Agent，使用系统 ssh-keygen 的本机验签成功；
+此次提交令 SSH_AUTH_SOCK 指向不存在路径，普通全局 Git 配置哈希未变。
+真实 GitHub SSH 推送随后失败。agent socket 存在且能列出身份，
+GitHub 身份签名仍遭拒绝或通信失败，不能据此判定应用未启动或单纯锁定。
+Fedora 用既有授权通道推送同一个签名提交，未重写签名、作者或树。
+0.3.21 工作流 43071438282 双平台成功，561 项自动检查通过。
+收尾版本的 CI、来源、原生包、实际升级回退和独立解包结果统一写入 final-delivery.json。
+
+用户恢复 Mac 的现有 GitHub SSH 授权后，在 Developer 检出中实际推送后续提交；
+本机签名成功与远端推送成功须分别记录，不复用此前 dry-run 结果。
+GitHub 默认分支仍须由有权限的账号改为 main，现存 token 返回 403。
+未新增 GitHub 密钥，未扩大 token 权限，未复制 Fedora 凭据，也未开启 agent 转发。
+GitHub Verified 徽标仍未配置；本机签名验证通过不代表账号已关联该签名身份。
+
+最终业务验收应绑定最终候选实现指纹。交付源码的真实解包证据可单独审阅；
+其余真实业务证据缺口继续保持 pending，禁止发布 stable。
+原正式 Fedora 实例、生产数据库及其历史 release 路径保持不变。
