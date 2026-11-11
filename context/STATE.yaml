@@ -3,11 +3,11 @@
   "updated_at": "2026-11-11",
   "current_phase": {
     "id": "release92-main-integration-20261111",
-    "status": "in_progress",
+    "status": "completed",
     "as_of": "2026-11-11",
-    "summary": "形式化任务已交出干净main 19c713d，并迁入独立工作区。以发布记录1ecde5f为基底分两次合入a94a67f和19c713d，保留双方模型、测试及验收映射，检查后快进main。Mac任务在独立clone开发，等待统一基点。正式0.2.92不变；本次不部署或推送，完整发布验收仍未完成。"
+    "summary": "发布记录1ecde5f与main交接19c713d已通过01273ee和46d7efc会合，两轮完整提交钩子及工作区检查通过。0.2.98只整理交接记录；保留分区模型、138040条原生边和531个唯一验收测试。main快进及最终验收回执位于本机integration/20261111-main目录。形式化后续提交和Mac平台改动仍在独立分支，未混入本轮。正式0.2.92不变，不推送或部署，完整发布验收仍缺真实环境证据。"
   },
-  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/state-section-consistency-implementation-20261111.md", "context/tasks/active/ui-worktree-cleanup-20261111.md", "context/tasks/active/remote-final-integration-20261111.md", "context/tasks/active/formal-coverage-performance-20261111.md", "context/tasks/active/release92-main-integration-20261111.md"],
+  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/state-section-consistency-implementation-20261111.md", "context/tasks/active/ui-worktree-cleanup-20261111.md", "context/tasks/active/remote-final-integration-20261111.md", "context/tasks/active/formal-coverage-performance-20261111.md"],
   "known_open_issues": [
     "冻结92已按用户最新带遗留发布指令上线，新解包根529自动项再次全过；91 timer、92原MCP Null及首次共享target路径失败保留。release_ready仍false，完整31/16及UI/PWA/N/R2待完成，不以部署冒称验收通过。",
     "正式插件与HTTP已切92/c521/配置bd6978fc9a03aaa1，发布会话已核对serverInfo和实际面板。后续清理已卸载旧验收插件和市场，正式入口保留。初次正式面板旧82连接报版本不符，正式plugin/install后恢复。",
@@ -17,7 +17,7 @@
     "2026-11-11项目筛选列宽回归已修复并上线v0.2.82：更正标题nowrap及看板min-content；20组真实浏览器回归与正式页面159/5条会话筛选往返保持等宽。完整验收500项自动通过，14项全局真实环境证据仍待补，release_ready=false。见context/tasks/completed/ui-stable-columns-20261111.md。",
     "2026-11-11正式v0.2.73仍有分区socket丢失。两套错误清理器的timer、service及脚本已按授权删除，系统清理改为十五分钟检查、/tmp四小时老化，首次执行成功，隔离活socket保护通过。历史删除责任PID未实锤，客户端及包装器的端点恢复尚未实施，未重启Codex。方案及实施记录见Docs/SOCKET-LIFECYCLE-REPORT-20261111.md。",
     "正式进程已是 v0.2.63。完整活动列表里没有、但出现在原生归档列表中的会话不再计为未读回位置，本地行不改。这次启动时桌面 socket 文件不在，本机 nativeError 为桌面 socket 不存在，4 个缺项有没有消失还没有在一次成功读回里核对。未改用户会话备注。v0.2.38两张已归档M1验收卡的迁移缓存已依据新鲜归档列表单独补确认。", "新建会话旧任务的第二项目输入页验收仍单独保留；本次M1已登记项目新建和同UUID首轮闭环不代签此前已取消的新建项目任务。", "v0.2.38完整31条及16项已通过。v0.2.63 已换上 18767。M1 已按运行状态分列。bb macbook 这次握手是 unexpected end of file，超限轮次隔离还没有在这次连接里走到。两台 Hermes 自动连接保持关闭。未扩大专用验收写入范围。", "项目登记与分区读回依赖当前Codex客户端内部状态格式，格式改变时需重新核对；旧userMessage ID重编号会保守增加inputVersion，旧表单可能需刷新。", "PWA安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。", "本机和M1专用会话真实归档已通过。正式进程已是 v0.2.63，原生侧栏取消归档后，下一次本机位置读回会恢复本地已确认卡片并保留备注。这次启动还没有完成一次本机位置读回。旧库含热日志时，迁移前须在私有副本执行SQLite标准恢复，保留原始数据库与日志。"],
-  "last_completed_task": "context/tasks/completed/ui-stable-columns-20261111.md",
+  "last_completed_task": "context/tasks/completed/release92-main-integration-20261111.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
@@ -27,8 +27,8 @@
     ]
   },
   "verification": {
-    "status": "pending",
-    "last_checked_at": null,
+    "status": "passed",
+    "last_checked_at": "2026-11-11",
     "method": "sh scripts/verify_context.sh",
     "boundary": "Project-local context files and declared local paths only."
   }

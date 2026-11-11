@@ -1,10 +1,10 @@
 # 补齐形式化业务覆盖并优化重放
 
 owner: codex
-execution_mode: serial_write
+execution_mode: isolated_write
 allowed_write_set: src/formal/, acceptance/bindings.json, Docs/, Cargo.toml, Cargo.lock, plugin.json, .codex-plugin/plugin.json, context/
 base_commit: be7d079e2a287a375223852b54bec4950366bc11
-worktree_path: /home/herman/文档/notion-program
+worktree_path: /home/herman/.codex/worktrees/formal-coverage-performance/notion-program
 coordinator: codex
 
 用户授权先补齐业务验证，再优化数据库重放与有等价依据的剪枝。
@@ -40,5 +40,7 @@ coordinator: codex
 已确认阶段去重、重复草稿误报首次创建。变异未写入工作区。
 只读复审要求补充 pending 早于人工确认的豁免、完成时间跨人工确认及相等边界，
 将在独立连续测试中核对。
-当前模型提交通过后迁入独立工作区，将干净 main 交给发布分支整合任务；
-后续提交先接入整合后的 main，再按其版本准备，避免预占版本。
+当前模型提交已通过并迁入独立工作区，将干净main 19c713d交给发布分支整合任务。
+该基点包含a94a67f及19c713d两次验证提交。
+发布分支整合只接入这两次提交；后续6b02aa8等继续保存在独立分支。
+后续按本分支父提交推进本地迭代号，统一整合时再按最终父提交准备版本。
