@@ -10,7 +10,7 @@ use std::sync::atomic::Ordering;
 
 fn reference() -> Result<Value> {
     let output = Command::new("python3")
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .current_dir(std::env::current_dir()?)
         .args([
             "-c",
             r#"

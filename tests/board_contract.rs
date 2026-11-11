@@ -7,7 +7,7 @@ use rusqlite::types::ValueRef;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -50,7 +50,8 @@ print(json.dumps({
 "#;
 
 fn acceptance_path(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+    std::env::current_dir()
+        .expect("test runner project directory")
         .join("acceptance")
         .join(name)
 }

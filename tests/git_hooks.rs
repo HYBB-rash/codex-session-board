@@ -264,6 +264,15 @@ fn passing_staged_tests_allow_a_commit_and_installation_is_idempotent() -> Resul
             || String::from_utf8_lossy(&output.stderr).contains("允许提交")
     );
     successful_git(root, &["rev-parse", "--verify", "HEAD"])?;
+    let check = Command::new("/bin/bash")
+        .arg("scripts/check")
+        .current_dir(root)
+        .output()?;
+    assert!(
+        check.status.success(),
+        "{}",
+        String::from_utf8_lossy(&check.stdout)
+    );
     Ok(())
 }
 

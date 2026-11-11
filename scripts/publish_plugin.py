@@ -33,6 +33,13 @@ def authorize(package, channel, evidence, root=ROOT):
     return manifest
 
 
+def validate_channel_progression(previous, manifest):
+    if tuple(map(int, previous["version"].split("."))) > tuple(map(int, manifest["version"].split("."))):
+        raise ValueError("Cannot downgrade a release channel; use a pinned consumer rollback")
+    if previous["version"] == manifest["version"] and previous != manifest:
+        raise ValueError("Published versions are immutable; changed artifacts require a new version")
+
+
 def publish(repository, package, channel, evidence=None):
     manifest = authorize(package, channel, evidence)
     reference = f"{channel}/{manifest['target']}"
@@ -45,8 +52,7 @@ def publish(repository, package, channel, evidence=None):
             subprocess.run(["git", "fetch", "-q", "origin", reference], cwd=checkout, check=True)
             subprocess.run(["git", "checkout", "-q", "--detach", "FETCH_HEAD"], cwd=checkout, check=True)
             previous = verify_package(checkout)
-            if tuple(map(int, previous["version"].split("."))) > tuple(map(int, manifest["version"].split("."))):
-                raise ValueError("Cannot downgrade a release channel; use a pinned consumer rollback")
+            validate_channel_progression(previous, manifest)
             for path in checkout.iterdir():
                 if path.name != ".git":
                     shutil.rmtree(path) if path.is_dir() else path.unlink()

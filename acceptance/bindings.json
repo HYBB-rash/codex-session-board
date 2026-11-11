@@ -1475,7 +1475,8 @@
       "acceptance.test_gate.PackageTests.test_package_is_reproducible_and_has_only_portable_source",
       "acceptance.test_delivery.DeliveryTests.test_native_cache_metadata_is_excluded_only_for_installed_packages",
       "acceptance.test_delivery.DeliveryTests.test_source_fingerprint_changes_reject_publication",
-      "acceptance.test_delivery.DeliveryTests.test_stable_requires_full_gate_even_for_valid_candidate"
+      "acceptance.test_delivery.DeliveryTests.test_stable_requires_full_gate_even_for_valid_candidate",
+      "acceptance.test_delivery.DeliveryTests.test_channel_versions_are_monotonic_and_bind_immutable_payloads"
     ],
     "GATE-001": [
       "acceptance.test_delivery.DeliveryTests.test_package_hashes_bind_assets_binary_and_version",
@@ -1610,7 +1611,8 @@
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_wrong_architecture_is_rejected_before_stopping_or_installing",
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_reload_does_not_accept_an_old_mcp_after_cache_update",
       "acceptance.test_delivery.DeliveryTests.test_native_cache_metadata_is_excluded_only_for_installed_packages",
-      "acceptance.test_update_delivery.UpdateDeliveryTests.test_pending_candidate_never_stops_the_installed_version"
+      "acceptance.test_update_delivery.UpdateDeliveryTests.test_pending_candidate_never_stops_the_installed_version",
+      "acceptance.test_delivery.DeliveryTests.test_channel_versions_are_monotonic_and_bind_immutable_payloads"
     ]
   }
 }

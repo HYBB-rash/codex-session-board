@@ -70,6 +70,16 @@ class DeliveryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "executable"):
             package_plugin.verify_package(self.package, installed=True)
 
+    def test_channel_versions_are_monotonic_and_bind_immutable_payloads(self):
+        publish_plugin.validate_channel_progression(self.manifest, self.manifest)
+        newer = {**self.manifest, "version": "0.2.94"}
+        publish_plugin.validate_channel_progression(self.manifest, newer)
+        with self.assertRaisesRegex(ValueError, "downgrade"):
+            publish_plugin.validate_channel_progression(newer, self.manifest)
+        with self.assertRaisesRegex(ValueError, "immutable"):
+            publish_plugin.validate_channel_progression(
+                self.manifest, {**self.manifest, "source_commit": "c" * 40})
+
     def test_source_fingerprint_changes_reject_publication(self):
         with patch.object(publish_plugin, "command", return_value="a" * 40):
             with patch.object(publish_plugin, "fingerprint", return_value="c" * 64):

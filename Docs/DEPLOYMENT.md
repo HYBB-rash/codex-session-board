@@ -24,6 +24,8 @@ python3 scripts/publish_plugin.py --repository "$PLUGIN_REPOSITORY" \
 `.github/workflows/plugin-candidate.yml` 在两个原生 runner 上运行检查、自动验收、
 构建和候选发布，保存可下载产物。它没有自动提升稳定版本的步骤。
 云端工作流必须在实际私有仓库上运行通过后才能记为已验证。
+每个平台版本绑定固定产物，重复发布同一包保持不变；
+相同版本的不同产物会被拒绝。默认由 CI 发布，手动发布使用新的版本。
 
 安装后让 Codex 重新加载插件。最左侧应用栏由全局 `board_view` 入口提供，
 前端资源随 MCP 服务返回，不嵌套备用网页。资源和备用网页通过同一个受保护服务读写。
