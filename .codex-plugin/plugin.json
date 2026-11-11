@@ -1,0 +1,17 @@
+{
+  "name": "codex-session-board",
+  "version": "0.2.98",
+  "description": "Rust 会话看板，自动发现会话、拖动维护状态并同步原生标题。",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "会话看板",
+    "shortDescription": "自动发现会话，拖动改状态，点击回到对话",
+    "developerName": "Local",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "brandColor": "#32694B",
+    "composerIcon": "./assets/board.svg",
+    "logo": "./assets/board.svg"
+  }
+}

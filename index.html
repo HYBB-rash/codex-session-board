@@ -1,0 +1,872 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>会话状态 · Codex</title>
+<style>
+:root{color-scheme:light;--bg:#fff;--subtle:#f5f5f5;--ink:#202020;--muted:#6b6b6b;--line:#e6e6e6;--danger:#b42318;--warning:#b54708}
+*{box-sizing:border-box}[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans CJK SC",sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+button{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 11px;cursor:pointer;white-space:nowrap}
+button:hover{background:var(--subtle)}
+button:disabled{opacity:.5;cursor:default}
+button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #202020;outline-offset:1px}
+button.quiet{border-color:transparent;background:transparent;color:var(--muted)}
+button.quiet:hover{background:var(--subtle);color:var(--ink)}
+button.primary{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:600}
+button.primary:hover{background:var(--ink);opacity:.86}
+.shell{height:100dvh;display:flex;flex-direction:column;min-height:0;padding:16px 20px 12px}
+.page-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:2px 0 8px}
+h1{font-size:18px;font-weight:600;margin:0}
+.header-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;min-width:0}
+#new-session{white-space:nowrap}
+.health{margin:0 0 8px;padding:0;background:transparent;border:0;color:var(--muted);font-size:12px}
+.health.error{background:transparent;border:0;color:var(--danger)}
+.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 8px}
+.filters{display:flex;align-items:center;gap:8px;min-width:0;margin-left:auto}
+.filter-field{display:grid;grid-template-columns:auto minmax(140px,220px);align-items:center;gap:8px;color:var(--muted);font-size:11px}
+.filter-field:has(select[hidden]){display:none}
+select,input[type=search]{height:32px;border:1px solid var(--line);border-radius:8px;background:var(--subtle);padding:0 10px}
+input[type=search]{width:180px}
+.count{font-size:12px;color:var(--muted);white-space:nowrap}
+.jump{display:flex;gap:2px;min-width:0;overflow-x:auto}
+.jump button{border:0;background:transparent;color:var(--muted);white-space:nowrap;font-size:12px;font-weight:600;padding:6px 10px}
+.jump button:hover{background:var(--subtle);color:var(--ink)}
+.feedback{min-height:0;margin:0 0 6px;font-size:12px;color:var(--ink)}.feedback:empty{display:none}.feedback.error{color:var(--danger)}
+.board-viewport{flex:1;min-height:0;overflow-x:auto;overflow-y:hidden;padding-bottom:6px}
+.board{display:flex;gap:12px;height:100%;min-width:0}
+.column{--accent:#8a8a8a;flex:1 0 240px;min-width:0;display:flex;flex-direction:column;height:100%;background:color-mix(in srgb,var(--subtle) 78%,transparent);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.column.unknown{--accent:#3b82f6}.column.in_progress{--accent:#202020}.column.review{--accent:#d97706}
+.column.blocked{--accent:#c45c4a}.column.to_archive{--accent:#7c6a9a}.column.completed{--accent:#202020}
+.column.drop-target{background:#f3f3f3;border-color:#bdbdbd;box-shadow:inset 0 0 0 1px #20202022}
+.column-heading{display:flex;align-items:center;gap:6px;padding:9px 12px;border-bottom:1px solid var(--line);background:color-mix(in srgb,#fff 72%,transparent)}
+.column h2{display:flex;align-items:center;gap:7px;margin:0;font-size:12px;font-weight:650;white-space:nowrap}
+.column h2::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none}
+.column.in_progress h2::before,.column.completed h2::before{box-shadow:0 0 0 3px #20202014}
+.column-count{margin-left:auto;min-width:20px;padding:1px 6px;border-radius:10px;background:#e8e8e8;color:var(--muted);font-size:11px;text-align:center}
+.column-sort{padding:3px 6px;border-color:transparent;background:transparent;color:var(--muted);white-space:nowrap;font-size:11px}
+.column-sort[aria-expanded=true]{background:var(--subtle);color:var(--ink)}
+.sort-caret{margin-left:4px;color:var(--muted)}
+.sort-menu{position:fixed;inset:auto;width:174px;max-height:calc(100dvh - 16px);margin:0;overflow:auto;padding:6px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);box-shadow:0 12px 36px #00000020}
+.sort-menu-title{padding:5px 9px;font-size:11px;color:var(--muted)}
+.sort-option{display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;border:0;border-radius:6px;background:transparent;text-align:left;font-size:12px}
+.sort-option::before{content:"";width:14px;flex:none}
+.sort-option[aria-checked=true]{background:var(--subtle)}
+.sort-option[aria-checked=true]::before{content:"✓"}
+.cards{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;overflow-y:auto;overscroll-behavior:contain;padding:8px;scrollbar-width:thin}
+.card{margin:0;padding:9px;border:1px solid var(--line);border-radius:9px;background:#fff;cursor:grab;user-select:none}
+.card:hover{border-color:#c8c8c8}
+.card:focus-within{outline:2px solid #202020;outline-offset:1px}.card.drag-source{opacity:.35}
+.title{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:12px;font-weight:650;line-height:1.45;word-break:break-word}
+.card-title{width:100%;padding:0;border:0;border-radius:0;background:none;color:var(--ink);text-align:left;white-space:normal}
+.card-title:hover{background:none;color:inherit}
+.meta{margin-top:6px;overflow-wrap:anywhere;color:var(--muted);font-size:11px}
+.project{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.project-tag{min-width:0;margin-top:8px;font-size:11px}
+.project-tag summary{display:block;width:fit-content;max-width:100%;padding:2px 6px;overflow:hidden;border:0;border-radius:10px;background:var(--subtle);color:var(--muted);font-weight:600;white-space:nowrap;text-overflow:ellipsis;cursor:pointer}
+.project-tag summary::-webkit-details-marker{display:none}
+.project-tag.pending summary{background:#f8efdf;color:#9a6700}
+.project-info{margin-top:5px;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere;user-select:text}
+.card-note{margin-top:8px;color:#5c5c5c;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.source{display:inline-flex;align-items:center;min-height:19px;padding:2px 6px;border-radius:10px;background:var(--subtle);color:var(--muted);font-size:10px;font-weight:600}
+.follow{margin-top:6px;color:var(--warning);font-size:12px}
+.card-footer{display:flex;align-items:center;gap:8px;margin-top:8px}
+.card-footer time{color:var(--muted);font-size:11px}
+.card-actions{display:flex;gap:2px;margin-left:auto}
+.row-action{min-height:25px;padding:0 7px;border-color:transparent;background:transparent;color:var(--muted);font-size:11px;font-weight:650;white-space:nowrap}
+.row-action:hover{border-color:transparent;background:var(--subtle);color:var(--ink)}
+.empty-column{display:grid;place-items:center;min-height:74px;margin:0;padding:16px 12px;border:1px dashed var(--line);border-radius:10px;color:#a3a3a3;font-size:12px;text-align:center}
+.drag-active .empty-column{border-color:#bdbdbd;color:var(--muted)}
+.foot{margin:8px 0 0;color:var(--muted);font-size:11px}
+dialog{width:min(520px,calc(100vw - 32px));max-height:80dvh;overflow:auto;padding:20px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);box-shadow:0 12px 36px #00000020}
+dialog::backdrop{background:#2020204d}dialog h2{margin:0 0 8px;font-size:15px;font-weight:600}
+.dialog-title{overflow-wrap:anywhere;color:var(--muted);font-size:12px}
+dialog label{display:block;margin:16px 0 6px;color:var(--muted);font-size:12px}
+dialog select,dialog textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--subtle)}
+textarea{resize:vertical;min-height:90px}
+.dialog-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:16px}
+.reason{margin-top:12px;color:var(--muted);font-size:12px}
+.notice{min-height:18px;margin-top:8px;color:var(--danger);font-size:12px}
+@media(max-width:800px){
+  .shell{padding:14px 12px 10px}
+  .page-header,.toolbar{flex-wrap:wrap}
+  .toolbar{align-items:stretch}
+  .filters{flex:1 1 280px;flex-wrap:wrap;margin-left:0}
+  .jump{flex:1 1 220px}
+  .filter-field{width:100%;grid-template-columns:auto minmax(0,1fr)}
+  input[type=search]{flex:1 1 140px;width:auto;min-width:0}
+  .column{flex-basis:270px}
+}
+</style>
+<main class="shell">
+  <header class="page-header">
+    <h1>会话</h1>
+    <div class="header-actions">
+      <button id="connection-help" class="quiet" type="button">连接帮助</button>
+      <button id="refresh" class="quiet" type="button">刷新</button>
+      <button id="install-app" class="quiet" type="button" hidden>安装应用</button>
+      <button id="new-session" class="primary" type="button">＋ 新建会话</button>
+    </div>
+  </header>
+  <div id="health" class="health" role="status">正在连接本地会话读取器…</div>
+  <div id="archive-status" class="health" role="status" hidden></div>
+  <div class="toolbar">
+    <nav class="jump" id="jump" aria-label="跳转到状态列"></nav>
+    <div class="filters">
+      <div class="filter-field"><span>项目</span>
+        <select id="project-filter" aria-label="选择项目" disabled><option value="all">全部项目</option></select>
+      </div>
+      <input id="search" type="search" placeholder="搜索会话…" aria-label="搜索会话、项目名称或路径" hidden>
+      <button id="filter-toggle" class="quiet" type="button" aria-controls="project-filter search" aria-pressed="false">搜索会话</button>
+      <span id="count" class="count"></span>
+    </div>
+  </div>
+  <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
+  <div class="board-viewport" id="board-viewport" tabindex="0" aria-label="横向滚动查看全部状态列">
+    <div class="board" id="board" aria-label="会话状态看板"></div>
+  </div>
+  <p class="foot" id="foot">拖动卡片修改状态。“待归档”列的一键归档处理当前筛选下本机和远程主机中的可归档会话，也可以逐张归档。只读记录不会归档。新建会话只打开输入页，不发送输入。</p>
+</main>
+<dialog id="editor">
+  <form id="edit-form">
+    <h2>调整工作状态</h2>
+    <div id="dialog-title" class="dialog-title"></div>
+    <label for="state">状态</label><select id="state"></select>
+    <label for="note">备注 / 阻塞原因</label><textarea id="note" maxlength="2000" placeholder="记录下一步，或说明卡在哪里"></textarea>
+    <div id="reason" class="reason"></div>
+    <div id="notice" class="notice" role="alert"></div>
+    <div class="dialog-actions"><button type="button" id="cancel">取消</button><button type="submit" id="save" class="primary">保存状态</button></div>
+  </form>
+</dialog>
+<dialog id="new-target" aria-labelledby="new-target-title">
+  <form id="new-target-form">
+    <h2 id="new-target-title">选择远程项目</h2>
+    <label for="new-project">在这个项目中打开新会话</label><select id="new-project" required></select>
+    <p class="reason">使用客户端中已登记的项目。不会发送输入。</p>
+    <div class="dialog-actions"><button type="button" id="new-target-cancel">取消</button><button type="submit" class="primary">打开新会话</button></div>
+  </form>
+</dialog>
+<dialog id="draft-recovery" aria-labelledby="draft-recovery-title">
+  <h2 id="draft-recovery-title">核对新建结果</h2>
+  <p id="draft-message" class="reason"></p>
+  <p class="reason">请先在客户端检查是否已经出现新会话。重试会继续处理同一次新建；重新新建会保留此前可能已经创建的会话。</p>
+  <div class="dialog-actions"><button type="button" id="draft-later">稍后处理</button><button type="button" id="draft-retry">重试打开</button><button type="button" id="draft-restart">已核对，重新新建</button></div>
+</dialog>
+<dialog id="connection-recovery" aria-labelledby="connection-recovery-title">
+  <h2 id="connection-recovery-title">恢复 Codex 连接</h2>
+  <p>连接不可用时，执行状态或侧栏位置可能暂时无法更新。请先保留未保存的输入和备注。</p>
+  <ol>
+    <li>等待正在运行的任务结束。退出 Codex 可能中断任务。</li>
+    <li>从 Codex 菜单或系统托盘选择“退出”，然后重新打开 Codex。仅关闭窗口可能没有退出客户端。</li>
+    <li>重新打开看板，点击“重新检查连接”，并查看上方连接状态是否恢复。</li>
+  </ol>
+  <p>如果仍未恢复，请核对客户端是否启动、插件连接配置是否正确，再向维护者提供错误信息。</p>
+  <p class="reason">远程主机连接异常时，请检查对应主机和连接；重启本机 Codex 不保证能恢复远程连接。</p>
+  <div class="dialog-actions"><button id="connection-close" type="button">关闭</button><button id="connection-recheck" class="primary" type="button">重新检查连接</button></div>
+</dialog>
+<script>
+const csrf = "__CSRF_TOKEN__";
+let data = {states:{},sessions:[],health:{},projectCatalog:{loaded:false,items:[]}}, editing = null, dragging = null;
+let saving = false, requestSerial = 0, dragPoint = null, scrollFrame = null;
+let opening = false, suppressOpenUntil = 0;
+let filterMode = "project", selectedProject = "all", projectOptionsKey = "";
+let creating = false, recoveringDraft = null;
+const draftRequests = new Map();
+const byId = id => document.getElementById(id);
+const date = value => value ? new Date(value * 1000).toLocaleString("zh-CN",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "尚未读取";
+function element(tag, text, className) {
+  const node = document.createElement(tag);
+  if (text !== undefined) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+}
+async function request(path, body) {
+  if (window.boardRequest) return window.boardRequest(path,body);
+  const options = body === undefined ? {} : {method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(body)};
+  const response = await fetch(path,options);
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "操作失败");
+  return result;
+}
+const post = (path,body) => request(path,body);
+function announce(message, error = false) {
+  byId("feedback").textContent = message;
+  byId("feedback").className = "feedback" + (error ? " error" : "");
+}
+function scrollWhileDragging() {
+  if (!dragging || !dragPoint) return;
+  const viewport = byId("board-viewport");
+  const bounds = viewport.getBoundingClientRect();
+  if (dragPoint.y >= bounds.top && dragPoint.y <= bounds.bottom) {
+    if (dragPoint.x > bounds.right - 45) viewport.scrollLeft += 12;
+    else if (dragPoint.x < bounds.left + 45) viewport.scrollLeft -= 12;
+    for (const list of document.querySelectorAll(".cards")) {
+      const rect = list.getBoundingClientRect();
+      if (dragPoint.x < rect.left || dragPoint.x > rect.right) continue;
+      if (dragPoint.y < rect.top + 45) list.scrollTop -= 10;
+      else if (dragPoint.y > rect.bottom - 45) list.scrollTop += 10;
+    }
+  }
+  scrollFrame = requestAnimationFrame(scrollWhileDragging);
+}
+function finishDrag() {
+  suppressOpenUntil = performance.now() + 400;
+  dragging = null; dragPoint = null;
+  cancelAnimationFrame(scrollFrame); scrollFrame = null;
+  document.body.classList.remove("drag-active");
+  document.querySelectorAll(".drop-target,.drag-source").forEach(node =>
+    node.classList.remove("drop-target","drag-source"));
+}
+function projectLabel(item) {
+  const items = data.projectCatalog?.items || [];
+  const duplicates = items.filter(candidate => candidate.label === item.label);
+  if (duplicates.length < 2) return item.label;
+  const paths = item.paths.join(" · ");
+  const identical = duplicates.filter(candidate => candidate.paths.join(" · ") === paths);
+  return item.label + " · " + paths + (identical.length > 1 ? " · " + item.id : "");
+}
+function makeProjectTag(session) {
+  const catalog = data.projectCatalog || {loaded:false,items:[]};
+  const item = catalog.items.find(candidate => candidate.id === session.projectId);
+  const pending = Boolean(session.projectIssue || (session.projectId && !item) ||
+    (session.remote ? item?.cached || data.health?.remoteError : !catalog.loaded || catalog.error));
+  const label = item ? projectLabel(item) : pending ? "项目待确认" :
+    "默认工作区" + (session.remote ? " · " + (session.hostLabel || session.hostId) : "");
+  const tag = element("details",undefined,"project-tag" + (pending ? " pending" : ""));
+  const summary = element("summary",label + (pending && item ? " · 待确认" : ""));
+  summary.title = summary.textContent + "，点击查看项目详情";
+  summary.setAttribute("aria-label",summary.title);
+  const info = [label];
+  if (item) info.push("项目目录：" + item.paths.join(" · "));
+  info.push("工作目录：" + (session.cwd || "未记录"));
+  if (pending) info.push(session.projectIssue || "项目资料尚未确认，当前显示上次可用信息。");
+  tag.append(summary,element("div",info.join("\n"),"project-info"));
+  return tag;
+}
+function makeCard(session) {
+  const card = element("article",undefined,"card");
+  card.dataset.id = session.id;
+  card.draggable = !session.readOnly;
+  card.setAttribute("aria-label",session.title);
+  const title = element("button",session.title,"title card-title");
+  title.type = "button";
+  title.title = "打开会话：" + session.title;
+  title.onclick = () => openSession(session.id);
+  const project = element("div",session.cwd || "未记录项目路径","meta project");
+  project.title = session.cwd;
+  card.append(title,makeProjectTag(session),project);
+  if (session.remote) card.append(element("div",session.hostLabel || session.hostId,"meta"));
+  if (session.note) card.append(element("div",session.note,"card-note"));
+  if (!session.manual && session.state === "blocked") card.append(element("div",session.reason,"card-note"));
+  if (session.followUp) card.append(element("div","有新输入，待复核","follow"));
+  if (session.readOnly) card.append(element("div","当前只读，保留上次记录","follow"));
+  if (session.observationError) card.append(element("div","历史读取失败，保留原状态","follow"));
+  if (session.projectIssue) card.append(element("div","项目归属待确认","follow"));
+  if (session.titleSyncPending) card.append(element("div",session.titleSyncError ? "状态已保存，标题同步待重试：" + session.titleSyncError : "状态已保存，标题正在同步","follow"));
+  const footer = element("div",undefined,"card-footer");
+  const details = element("div");
+  details.append(element("div",session.manual ? "人工确认" : session.source === "runtime" ? "自动流转" : session.source === "codex" ? "原生状态" : "历史状态","source"),
+    element("time",date(session.updatedAt)));
+  const actions = element("div",undefined,"card-actions");
+  const open = element("button","打开原会话","row-action");
+  open.type = "button";
+  open.title = "打开会话：" + session.title;
+  open.onclick = () => openSession(session.id);
+  actions.append(open);
+  if (session.state === "to_archive" && session.canArchive !== false && !session.readOnly) {
+    const archive = element("button",session.followUp ? "确认待归档" : "归档","row-action");
+    archive.type = "button";
+    archive.title = session.followUp ? "请先打开会话核对输入；确认仅保存待归档状态，不执行归档" : "直接归档此 Codex 会话";
+    archive.onclick = () => session.followUp ? confirmArchiveInputs(session,archive) : archiveSession(session,archive);
+    actions.append(archive);
+  }
+  footer.append(details,actions);
+  card.append(footer);
+  card.onclick = event => {
+    if (!event.target.closest("button,a,input,select,textarea,details")) openSession(session.id);
+  };
+  card.ondragstart = event => {
+    if (saving || session.readOnly || byId("editor").open) {event.preventDefault();return;}
+    dragging = {...session};
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain",session.id);
+    card.classList.add("drag-source");
+    document.body.classList.add("drag-active");
+    dragPoint = {x:event.clientX,y:event.clientY};
+    scrollFrame = requestAnimationFrame(scrollWhileDragging);
+    announce("拖到目标状态列后松开鼠标。");
+  };
+  card.ondragend = () => {
+    finishDrag();
+    if (!saving && !byId("editor").open) render();
+  };
+  return card;
+}
+async function openSession(id) {
+  if (dragging || saving || opening || performance.now() < suppressOpenUntil) return;
+  opening = true;
+  announce("正在打开 Codex 会话…");
+  try {
+    await post("/api/open",{id});
+    announce("已发送会话跳转请求。");
+  } catch (error) {announce(error.message,true);}
+  finally {opening = false;}
+}
+async function archiveSession(session, button) {
+  return archiveSessions([session],button);
+}
+async function confirmArchiveInputs(session, button) {
+  if (saving || dragging || byId("editor").open) return;
+  saving = true;button.disabled = true;
+  try {
+    await persist(session,"to_archive",session.note);
+    announce("已确认待归档。现在可以点击归档或一键归档。");
+  } catch (error) {announce(error.message,true);}
+  finally {saving = false;button.disabled = false;render();await load();}
+}
+async function archiveSessions(sessions, button) {
+  if (saving || dragging || byId("editor").open) return;
+  const targets = sessions.filter(session => session.state === "to_archive" && !session.readOnly && session.canArchive !== false);
+  if (!targets.length) {announce("当前列没有可归档的会话。");return;}
+  saving = true; button.disabled = true; ++requestSerial;
+  let archived = 0;
+  const failures = [];
+  try {
+    for (const [index,session] of targets.entries()) {
+      announce(`正在归档 ${index + 1} / ${targets.length}：${session.title}`);
+      try {
+        await post("/api/archive",{id:session.id,version:session.version,inputVersion:session.inputVersion,sectionVersion:session.sectionVersion});
+        data.sessions = data.sessions.filter(row => row.id !== session.id);
+        archived++;
+      } catch (error) {failures.push(`${session.title}：${error.message}`);}
+    }
+    announce(`已归档 ${archived} 条会话。` + (failures.length ? `${failures.length} 条未完成，已保留卡片。${failures.join("；")}` : ""),failures.length > 0);
+  }
+  finally {saving = false;button.disabled = false;render();await load();}
+}
+function columnSort(state) {
+  return data.columnSorts?.[state] || {field:"updated_at",direction:state === "to_archive" ? "asc" : "desc",version:0};
+}
+function compareSessions(first, second, preference) {
+  let comparison = 0;
+  switch (preference.field) {
+    case "updated_at": {
+      const valid = value => Number.isFinite(value) && value > 0 && value <= 8640000000000;
+      const firstValid = valid(first.updatedAt), secondValid = valid(second.updatedAt);
+      if (firstValid !== secondValid) return firstValid ? -1 : 1;
+      if (firstValid) comparison = first.updatedAt - second.updatedAt;
+      break;
+    }
+    default: throw new Error("不支持的排序字段，请刷新看板。");
+  }
+  if (comparison) return preference.direction === "asc" ? comparison : -comparison;
+  return first.id < second.id ? -1 : first.id > second.id ? 1 : 0;
+}
+async function changeColumnSort(state, menu) {
+  const previous = {...(menu.sortPreference || columnSort(state))}, direction = menu.value;
+  if (saving || dragging || byId("editor").open) {menu.value = previous.direction;return;}
+  let changed = false;
+  saving = true;menu.disabled = true;++requestSerial;
+  try {
+    const result = await post("/api/column-sort",{state,...previous,direction});
+    data.columnSorts = {...data.columnSorts,[state]:result.preference};
+    changed = true;
+    announce(`${data.states[state]}已按更新时间${direction === "asc" ? "旧的在前" : "新的在前"}排列。`);
+  } catch (error) {
+    menu.value = previous.direction;
+    announce(error.message,true);
+  } finally {
+    menu.sortPreference = null;menu.value = columnSort(state).direction;
+    const restoreFocus = document.activeElement === menu || document.activeElement === document.body;
+    saving = false;menu.disabled = false;render(changed ? state : null);
+    if (restoreFocus) menu.focus({preventScroll:true});
+    await load();
+  }
+}
+function positionSortMenu(button, popup) {
+  const bounds = button.getBoundingClientRect();
+  popup.style.left = Math.max(8,Math.min(bounds.right - 174,window.innerWidth - 182)) + "px";
+  popup.style.top = Math.max(8,Math.min(bounds.bottom + 6,window.innerHeight - 148)) + "px";
+}
+function makeSortControl(state, label) {
+  const button = element("button",undefined,"column-sort");
+  button.type = "button";button.value = columnSort(state).direction;
+  button.setAttribute("aria-haspopup","menu");button.setAttribute("aria-expanded","false");
+  button.append(element("span",undefined,"sort-label"));
+  const caret = element("span","▾","sort-caret");caret.setAttribute("aria-hidden","true");button.append(caret);
+  const popup = element("div",undefined,"sort-menu");
+  popup.id = "sort-" + state;popup.setAttribute("popover","auto");popup.setAttribute("role","menu");
+  popup.setAttribute("aria-label",label + "排序");button.setAttribute("aria-controls",popup.id);
+  popup.append(element("div","按更新时间","sort-menu-title"));
+  const options = ["desc","asc"].map(direction => {
+    const option = element("button",direction === "desc" ? "新的在前" : "旧的在前","sort-option");
+    option.type = "button";option.tabIndex = -1;option.dataset.direction = direction;
+    option.setAttribute("role","menuitemradio");
+    option.onclick = () => {
+      popup.hidePopover();button.focus({preventScroll:true});
+      if (saving || dragging || byId("editor").open || direction === columnSort(state).direction) return;
+      button.value = direction;
+      changeColumnSort(state,button);
+    };
+    popup.append(option);return option;
+  });
+  button.onclick = () => {
+    if (popup.matches(":popover-open")) {popup.hidePopover();return;}
+    if (saving || dragging || byId("editor").open) return;
+    button.sortPreference = {...columnSort(state)};
+    positionSortMenu(button,popup);popup.showPopover();
+    options.find(option => option.dataset.direction === button.sortPreference.direction).focus({preventScroll:true});
+  };
+  button.onkeydown = event => {
+    if (["ArrowDown","ArrowUp"].includes(event.key)) {event.preventDefault();if (!popup.matches(":popover-open")) button.click();}
+  };
+  popup.onbeforetoggle = event => button.setAttribute("aria-expanded",String(event.newState === "open"));
+  popup.onkeydown = event => {
+    const index = options.indexOf(document.activeElement);
+    if (["ArrowDown","ArrowUp","Home","End"].includes(event.key)) {
+      event.preventDefault();
+      const next = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1
+        : (index + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length;
+      options[next].focus({preventScroll:true});
+    } else if (["Escape","Tab"].includes(event.key)) {
+      if (event.key === "Escape") {event.preventDefault();event.stopPropagation();}
+      popup.hidePopover();button.focus({preventScroll:true});
+    }
+  };
+  popup.onfocusout = () => queueMicrotask(() => {
+    if (popup.matches(":popover-open") && !popup.contains(document.activeElement) && document.activeElement !== button) popup.hidePopover();
+  });
+  return [button,popup];
+}
+function positionOpenSortMenus() {
+  for (const popup of document.querySelectorAll(".sort-menu:popover-open")) {
+    positionSortMenu(popup.parentElement.querySelector(".column-sort"),popup);
+  }
+}
+window.addEventListener("resize",positionOpenSortMenus);
+window.addEventListener("scroll",positionOpenSortMenus,true);
+function captureScroll(cards) {
+  const top = cards.scrollTop, bounds = cards.getBoundingClientRect();
+  const anchor = top > 0 ? Array.from(cards.querySelectorAll(".card")).find(card =>
+    card.getBoundingClientRect().bottom > bounds.top) : null;
+  return {top,id:anchor?.dataset.id,offset:anchor ? anchor.getBoundingClientRect().top - bounds.top : 0};
+}
+function restoreScroll(cards, position) {
+  cards.scrollTop = position?.top || 0;
+  const anchor = position?.id && Array.from(cards.querySelectorAll(".card")).find(card => card.dataset.id === position.id);
+  if (anchor) cards.scrollTop += anchor.getBoundingClientRect().top - cards.getBoundingClientRect().top - position.offset;
+}
+function updateColumn(column, state, sessions) {
+  column.querySelector(".column-count").textContent = String(sessions.length);
+  const menu = column.querySelector(".column-sort");
+  const preference = columnSort(state);
+  menu.value = preference.direction;
+  menu.querySelector(".sort-label").textContent = "更新 " + (preference.direction === "asc" ? "↑" : "↓");
+  menu.setAttribute("aria-label",`${data.states[state]}排序，按更新时间${preference.direction === "asc" ? "旧的在前" : "新的在前"}`);
+  menu.title = "按会话更新时间排列；点击选择顺序，拖入本列后也遵循此顺序";
+  for (const option of column.querySelectorAll(".sort-option")) {
+    option.setAttribute("aria-checked",String(option.dataset.direction === preference.direction));
+  }
+  const archiveAll = column.querySelector("[data-archive-all]");
+  if (archiveAll) {
+    archiveAll.disabled = !sessions.some(session => !session.readOnly && session.canArchive !== false);
+    archiveAll.onclick = () => archiveSessions(sessions,archiveAll);
+  }
+  const cards = column.querySelector(".cards");
+  cards.replaceChildren(...sessions.map(makeCard));
+  if (!sessions.length) cards.append(element("div","暂无会话","empty-column"));
+}
+function makeColumn(state, label) {
+  const column = element("section",undefined,"column " + state);
+  column.dataset.state = state; column.id = "column-" + state;
+  column.dataset.mode = data.legacyMode ? "legacy" : "native";
+  column.setAttribute("aria-label",label);
+  const heading = element("div",undefined,"column-heading");
+  heading.append(element("h2",label),element("span","0","column-count"));
+  const [menu,popup] = makeSortControl(state,label);
+  heading.append(menu,popup);
+  if (state === "to_archive" && !data.legacyMode) {
+    const archiveAll = element("button","一键归档","row-action");
+    archiveAll.type = "button";
+    archiveAll.title = "归档当前筛选下本列中的本机及远程可归档会话，只读记录保留";
+    archiveAll.dataset.archiveAll = "";
+    heading.append(archiveAll);
+  }
+  const cards = element("div",undefined,"cards");
+  column.append(heading,cards);
+  column.ondragover = event => {
+    if (!dragging || saving) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = dragging.state === state ? "none" : "move";
+    column.classList.toggle("drop-target",dragging.state !== state);
+  };
+  column.ondragleave = event => {
+    if (!column.contains(event.relatedTarget)) column.classList.remove("drop-target");
+  };
+  column.ondrop = event => {
+    if (!dragging || saving) return;
+    event.preventDefault();
+    const session = dragging;
+    finishDrag();
+    if (session.state === state) {announce("状态未改变。");render();return;}
+    if (state === "blocked") {
+      openEditor(session.id,state,session);
+      announce("填写阻塞原因后保存，卡片才会移入已阻塞列。");
+      return;
+    }
+    moveCard(session,state);
+  };
+  return column;
+}
+function updateProjectOptions() {
+  const catalog = data.projectCatalog || {loaded:false,items:[]};
+  const key = JSON.stringify([catalog.loaded,catalog.items,catalog.remoteHosts]);
+  if (key === projectOptionsKey) return;
+  projectOptionsKey = key;
+  const menu = byId("project-filter");
+  const previousHost = menu.selectedOptions[0]?.dataset.hostId;
+  menu.replaceChildren(new Option("全部项目","all"),new Option("默认工作区 · 本机","default"));
+  for (const host of catalog.remoteHosts || []) {
+    menu.append(new Option("默认工作区 · " + host.hostLabel,"host:" + host.hostId));
+  }
+  for (const item of catalog.items) {
+    const paths = item.paths.join(" · ");
+    const option = new Option(projectLabel(item),"project:" + item.id);
+    if (item.remote) option.dataset.hostId = item.hostId;
+    option.title = paths;
+    menu.append(option);
+  }
+  if (selectedProject.startsWith("project:") &&
+      !catalog.items.some(item => "project:" + item.id === selectedProject)) {
+    selectedProject = previousHost
+      ? (catalog.remoteHosts || []).some(host => host.hostId === previousHost) ? "host:" + previousHost : "all"
+      : catalog.loaded ? "default" : "all";
+    announce(previousHost ? "远程项目已移除，保留在该主机范围内查看。" : "项目已移除，已切换到默认工作区。");
+  }
+  if (!Array.from(menu.options).some(option => option.value === selectedProject)) {
+    selectedProject = "all";
+    announce("主机已移除，已切换到全部项目。");
+  }
+  menu.value = selectedProject;
+  menu.disabled = !catalog.loaded;
+}
+function visibleSessions() {
+  if (filterMode === "search") {
+    const query = byId("search").value.trim().toLowerCase();
+    return data.sessions.filter(session => {
+      const item = (data.projectCatalog?.items || []).find(project => project.id === session.projectId);
+      return [session.title,session.cwd,session.hostLabel,item && projectLabel(item)]
+        .filter(Boolean).join(" ").toLowerCase().includes(query);
+    });
+  }
+  if (selectedProject === "all") return data.sessions;
+  if (selectedProject === "default") return data.sessions.filter(session => !session.remote && session.projectId === null && !session.projectIssue);
+  if (selectedProject.startsWith("host:")) return data.sessions.filter(session =>
+    session.remote && session.hostId === selectedProject.slice(5) && session.projectId === null);
+  return data.sessions.filter(session => "project:" + session.projectId === selectedProject);
+}
+function resetFilterScroll() {
+  for (const cards of document.querySelectorAll(".cards")) cards.scrollTop = 0;
+}
+function toggleFilter() {
+  if (dragging || saving || byId("editor").open) return;
+  filterMode = filterMode === "project" ? "search" : "project";
+  byId("project-filter").hidden = filterMode !== "project";
+  byId("search").hidden = filterMode !== "search";
+  byId("filter-toggle").textContent = filterMode === "project" ? "搜索会话" : "选择项目";
+  byId("filter-toggle").setAttribute("aria-pressed",String(filterMode === "search"));
+  resetFilterScroll();
+  render();
+  byId(filterMode === "project" ? "project-filter" : "search").focus();
+}
+function render(resetState = null) {
+  if (dragging || saving || byId("editor").open) return;
+  updateProjectOptions();
+  byId("new-session").disabled = creating;
+  byId("new-session").title = "打开新建会话页，不发送输入";
+  const scrollPositions = new Map(
+    Array.from(document.querySelectorAll(".column")).map(column =>
+      [column.dataset.state,column.dataset.state === resetState ? null : captureScroll(column.querySelector(".cards"))]));
+  const expandedProjects = new Set(Array.from(document.querySelectorAll(".project-tag[open]"))
+    .map(tag => tag.closest(".card").dataset.id));
+  const focusedProject = document.activeElement?.closest(".project-tag")?.closest(".card")?.dataset.id;
+  const filtered = visibleSessions();
+  const columns = [];
+  const mode = data.legacyMode ? "legacy" : "native";
+  byId("board").style.setProperty("--columns",Object.keys(data.states).length);
+  byId("jump").replaceChildren();
+  for (const [state,label] of Object.entries(data.states)) {
+    const sessions = filtered.filter(session => session.state === state);
+    sessions.sort((first,second) => compareSessions(first,second,columnSort(state)));
+    const current = byId("column-" + state);
+    const column = current?.dataset.mode === mode ? current : makeColumn(state,label);
+    updateColumn(column,state,sessions);
+    columns.push(column);
+    const jump = element("button",`${label} ${sessions.length}`);
+    jump.onclick = () => {
+      const viewport = byId("board-viewport");
+      viewport.scrollTo({left:byId("column-" + state).offsetLeft - byId("board").offsetLeft,behavior:"smooth"});
+    };
+    byId("jump").append(jump);
+  }
+  if (columns.length !== byId("board").children.length ||
+      columns.some((column,index) => byId("board").children[index] !== column)) {
+    byId("board").replaceChildren(...columns);
+  }
+  for (const card of byId("board").querySelectorAll(".card")) {
+    card.querySelector(".project-tag").open = expandedProjects.has(card.dataset.id);
+    if (card.dataset.id === focusedProject) card.querySelector(".project-tag summary").focus({preventScroll:true});
+  }
+  for (const column of columns) restoreScroll(column.querySelector(".cards"),scrollPositions.get(column.dataset.state));
+  byId("count").textContent = `当前 ${filtered.length} / 全部 ${data.sessions.length} 条`;
+  const health = data.health;
+  if (data.legacyMode) byId("foot").textContent =
+    "拖动卡片修改状态，备注随会话保存。“待归档”和“已完成”均为人工状态。新建会话仅打开输入页。";
+  const archiveStatus = byId("archive-status");
+  archiveStatus.hidden = !health.autoArchiveSeconds;
+  if (health.autoArchiveSeconds) {
+    const last = health.autoArchiveLastRun;
+    const deferred = last?.deferred || [];
+    archiveStatus.className = "health" + (health.autoArchiveError || deferred.length ? " error" : "");
+    archiveStatus.textContent = `本机每 ${health.autoArchiveSeconds / 60} 分钟自动归档待归档 · 下次 ${date(health.autoArchiveNextAt)}`;
+    if (last) archiveStatus.textContent += ` · 上次 ${date(last.at)}：归档 ${last.archived.length} 条，延后 ${deferred.length} 条`;
+    if (health.autoArchiveError) archiveStatus.textContent += " · 本轮未完成：" + health.autoArchiveError;
+    archiveStatus.title = deferred.map(item => `${item.id}：${item.reason}`).join("\n");
+  }
+  byId("health").className = "health" + (health.error || health.runtimeError || health.sectionsError || health.nativeError || health.nativeStageError || !health.scanComplete && health.lastScanAt && !health.refreshing ? " error" : "");
+  byId("health").textContent = health.error ? `连接异常，已保留本地状态。${health.error}` :
+    health.refreshing ? `正在扫描与补读历史，已发现 ${data.sessions.length} 条。` :
+    health.lastSuccessAt ? `已发现 ${health.discovered} 条本机会话 · 最近扫描 ${date(health.lastSuccessAt)}${health.scanComplete ? "" : " · 尚有未扫描的分页，请调整扫描上限"}` : "等待首次扫描…";
+  byId("health").textContent += health.runtimeError ? " · " + (health.runtimeVerified ? health.runtimeError : "执行状态读取暂停，保留原状态：" + health.runtimeError) :
+    health.runtimeVerified ? (health.nativeStageError ? " · 执行状态可读" : " · 自动状态已连接") : " · 等待执行状态连接";
+  if (health.nativeSections) byId("health").textContent += health.nativeError ?
+    " · 原生分区暂不可读，显示上次位置" + (health.nativeError === health.runtimeError ? "" : "：" + health.nativeError) : health.nativeVerified ? " · 状态来自原生分区" : " · 等待读取原生分区";
+  if (health.nativeStageError) byId("health").textContent += " · 自动状态更新待重试：" + health.nativeStageError;
+  const catalog = data.projectCatalog;
+  if (catalog && catalog.error) {
+    byId("health").className = "health error";
+    byId("health").textContent += catalog.loaded ? " · 项目列表暂不可读，保留上次分类" : " · 项目列表尚未读取，可切换搜索";
+  }
+  if (data.sessions.some(session => session.projectIssue)) {
+    byId("health").className = "health error";
+    byId("health").textContent += " · 有会话项目归属待确认，可在全部项目中查看";
+  }
+  const remoteCount = data.sessions.filter(session => session.remote).length;
+  if (remoteCount || health.remoteVerified) byId("health").textContent += ` · ${remoteCount} 条远程会话`;
+  if (health.remoteCacheErrors?.length) {
+    byId("health").className = "health error";
+    byId("health").textContent += ` · ${health.remoteCacheErrors.length} 个远程缓存读取失败，需核对连接与数据`;
+  }
+  for (const host of health.remoteConnections || []) {
+    const warning = [...new Set([host.writeError,host.error,host.runtimeError,host.nativeError,host.nativeStageError].filter(Boolean))].join("；");
+    const label = host.hostLabel || host.hostId;
+    if (warning) {
+      byId("health").className = "health error";
+      byId("health").textContent += ` · ${label}：${warning}`;
+    }
+    else if (host.runtimeVerified) byId("health").textContent += ` · ${label}：自动状态已连接`;
+    if (host.autoArchiveSeconds) byId("health").textContent +=
+      `；每 ${host.autoArchiveSeconds / 60} 分钟自动归档，下次 ${date(host.autoArchiveNextAt)}`;
+  }
+  for (const host of health.remoteConnectionErrors || []) {
+    byId("health").className = "health error";
+    byId("health").textContent += ` · ${host.hostId}：${host.error}`;
+  }
+  if (health.remoteProjectWarning) byId("health").textContent += " · 部分远程项目资料未确认，保留上次分类";
+  if (health.remoteError) {
+    byId("health").className = "health error";
+    byId("health").textContent += " · 远程项目读取未完成：" + health.remoteError;
+  }
+  renderConnectButtons(health);
+}
+function renderConnectButtons(health) {
+  for (const host of health.remoteRegistry || []) {
+    if (host.enabled !== false || data.legacyMode) continue;
+    const connect = element("button",`连接 ${host.hostLabel || host.hostId}`,"row-action");
+    connect.type = "button";
+    connect.onclick = async () => {
+      connect.disabled = true;
+      try {
+        await post("/api/connect",{hostId:host.hostId});
+        await load();
+      } catch (error) { announce(error.message,true); }
+      finally { connect.disabled = false; }
+    };
+    byId("health").append(" ",connect);
+  }
+}
+function noteDraft(id, value) {
+  try {
+    const key = "failed-note:"+id;
+    if (value === undefined) return sessionStorage.getItem(key);
+    if (value === null) {sessionStorage.removeItem(key);return null;}
+    sessionStorage.setItem(key,value);return value;
+  } catch {return null;}
+}
+function openEditor(id, state, snapshot) {
+  editing = snapshot || data.sessions.find(session => session.id === id);
+  if (!editing) return;
+  if (editing.readOnly) {editing=null;announce("当前只读，请先恢复该主机的连接。",true);return;}
+  byId("dialog-title").textContent = editing.title + (editing.remote ? " · " + editing.hostLabel : "");
+  byId("state").replaceChildren();
+  for (const [value,label] of Object.entries(data.states)) byId("state").append(new Option(label,value));
+  byId("state").value = state || editing.state;
+  const draft = noteDraft(id);
+  byId("note").value = draft === null ? editing.note : draft;
+  byId("reason").textContent = editing.reason;
+  byId("notice").textContent = draft === null ? "" : "已恢复上次未保存的备注，请核对当前状态后保存。";
+  byId("editor").showModal();
+}
+async function load() {
+  if (dragging || saving || creating || byId("editor").open) return;
+  const serial = ++requestSerial;
+  try {
+    const result = await request("/api/sessions");
+    if (serial !== requestSerial || dragging || saving || byId("editor").open) return;
+    data = result;
+    for (const draft of data.pendingDrafts || []) draftRequests.set(draft.project,draft.requestId);
+    render();
+  } catch (error) {
+    if (serial !== requestSerial) return;
+    byId("health").className = "health error";
+    byId("health").textContent = "连接已断开，显示上次结果。"+error.message;
+  }
+}
+async function persist(session, state, note) {
+  ++requestSerial;
+  const result = await post("/api/state",{id:session.id,state,note,version:session.version,inputVersion:session.inputVersion,sectionVersion:session.sectionVersion});
+  data.sessions = data.sessions.map(row => row.id === session.id ? {
+    ...row,state:state || row.suggestion,note,manual:state !== null,
+    version:session.version+1,followUp:false,titleSyncPending:result.titlePending,titleSyncError:result.titleError
+  } : row);
+  return result;
+}
+function syncNotice(result) {
+  return result.titleEnabled ? result.titlePending ? "标题同步待重试。" + (result.titleError || "") : "标题已同步。" : "";
+}
+async function moveCard(session, state) {
+  saving = true;
+  announce(`正在移到${data.states[state]}…`);
+  try {
+    const result = await persist(session,state,session.note);
+    announce(`已移到${data.states[state]}，状态已保存。` + syncNotice(result));
+  } catch(error) {announce(error.message,true);}
+  finally {saving = false;render();await load();}
+}
+byId("edit-form").onsubmit = async event => {
+  event.preventDefault();
+  if (saving) return;
+  saving = true; byId("save").disabled = true; byId("cancel").disabled = true;
+  try {
+    const result = await persist(editing,byId("state").value === "auto" ? null : byId("state").value,byId("note").value);
+    noteDraft(editing.id,null);
+    byId("editor").close(); announce("状态已保存。" + syncNotice(result));
+  } catch(error) {
+    const retained = noteDraft(editing.id,byId("note").value) !== null;
+    byId("notice").textContent = error.message + (retained ? " 备注草稿已保留，刷新后重新打开可继续编辑。" : " 备注仍在编辑框中，请保留后重新核对。");
+  }
+  finally {
+    saving = false;byId("save").disabled = false;byId("cancel").disabled = false;
+    render();await load();
+  }
+};
+byId("cancel").onclick = () => byId("editor").close();
+async function createSession(projectId) {
+  const button = byId("new-session");
+  if (creating || dragging || saving || byId("editor").open) return;
+  const remote = data.projectCatalog.items.find(item => item.id === projectId)?.remote;
+  const body = projectId === null ? {} : {projectId};
+  if (remote) {
+    body.requestId = draftRequests.get(projectId) || crypto.randomUUID();
+    draftRequests.set(projectId,body.requestId);
+  }
+  creating = true;button.disabled = true;++requestSerial;
+  try {
+    const result = await post("/api/new",body);
+    if (result.pending) {
+      recoveringDraft = {projectId,requestId:result.requestId || body.requestId};
+      draftRequests.set(projectId,recoveringDraft.requestId);
+      byId("draft-message").textContent = result.error;
+      byId("draft-recovery").showModal();
+      return;
+    }
+    draftRequests.delete(projectId);
+    announce(remote ? "已打开远程新会话，尚未发送输入。" : "已发送新建会话页面打开请求。");
+  } catch(error) {announce(error.message,true);}
+  finally {creating=false;button.disabled=false;await load();}
+}
+byId("new-session").onclick = () => {
+  if (creating || dragging || saving || byId("editor").open) return;
+  if (filterMode === "project" && selectedProject.startsWith("host:")) {
+    const host = selectedProject.slice(5);
+    const projects = data.projectCatalog.items.filter(item => item.remote && item.hostId === host);
+    if (!projects.length) {announce("此主机暂无已登记项目，请先在客户端登记项目。",true);return;}
+    byId("new-project").replaceChildren(...projects.map(item => new Option(projectLabel(item),item.id)));
+    byId("new-target").showModal();
+    return;
+  }
+  createSession(filterMode === "project" && selectedProject.startsWith("project:")
+    ? selectedProject.slice("project:".length) : null);
+};
+byId("new-target-cancel").onclick = () => byId("new-target").close();
+byId("new-target-form").onsubmit = event => {
+  event.preventDefault();
+  const project = byId("new-project").value;
+  byId("new-target").close();
+  createSession(project);
+};
+byId("draft-later").onclick = () => byId("draft-recovery").close();
+byId("draft-retry").onclick = () => {
+  byId("draft-recovery").close();
+  createSession(recoveringDraft.projectId);
+};
+byId("draft-restart").onclick = async () => {
+  const draft = {...recoveringDraft}, button = byId("draft-restart");
+  button.disabled=true;creating=true;++requestSerial;
+  try {
+    await post("/api/new/reset",{...draft,confirmed:true});
+    draftRequests.delete(draft.projectId);
+    byId("draft-recovery").close();
+    creating=false;
+    await createSession(draft.projectId);
+  } catch(error) {byId("draft-message").textContent=error.message;}
+  finally {creating=false;button.disabled=false;}
+};
+byId("editor").addEventListener("cancel",event => {if (saving) event.preventDefault();});
+byId("editor").addEventListener("close",() => {editing=null;render();load();});
+byId("refresh").onclick = async () => {
+  try {await post("/api/refresh",{}); await load();}
+  catch(error) {byId("health").textContent = error.message;}
+};
+byId("connection-help").onclick = () => byId("connection-recovery").showModal();
+byId("connection-close").onclick = () => byId("connection-recovery").close();
+byId("connection-recheck").onclick = async () => {
+  const button = byId("connection-recheck");
+  button.disabled = true;
+  try {
+    await post("/api/refresh",{});
+    await load();
+    byId("connection-recovery").close();
+    announce("已请求重新检查连接，请查看上方连接状态。");
+  } catch(error) {announce(error.message,true);}
+  finally {button.disabled=false;}
+};
+byId("search").oninput = () => {resetFilterScroll();render();};
+byId("filter-toggle").onclick = toggleFilter;
+byId("project-filter").onchange = () => {
+  if (dragging || saving || byId("editor").open) {
+    byId("project-filter").value = selectedProject;
+    return;
+  }
+  selectedProject = byId("project-filter").value;
+  resetFilterScroll();
+  render();
+};
+document.addEventListener("dragover",event => {
+  if (dragging) dragPoint = {x:event.clientX,y:event.clientY};
+});
+load(); setInterval(load,4000);
+</script>
+</html>
