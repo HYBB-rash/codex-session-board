@@ -1456,10 +1456,16 @@
       "lib::codex_session_board::remote::connections::tests::failed_manual_connection_stops_when_auto_connect_is_off"
     ],
     "DELIVERY-001": [
+      "acceptance.test_delivery.DeliveryTests.test_package_hashes_bind_assets_binary_and_version",
+      "acceptance.test_delivery.DeliveryTests.test_extra_files_and_symlinks_cannot_enter_a_release",
       "acceptance.test_gate.PackageTests.test_package_requires_the_fingerprinted_build_gate_and_preserves_its_rejection",
       "acceptance.test_gate.PackageTests.test_package_is_reproducible_and_has_only_portable_source"
     ],
     "GATE-001": [
+      "acceptance.test_delivery.DeliveryTests.test_package_hashes_bind_assets_binary_and_version",
+      "acceptance.test_delivery.DeliveryTests.test_extra_files_and_symlinks_cannot_enter_a_release",
+      "acceptance.test_delivery.DeliveryTests.test_source_fingerprint_changes_reject_publication",
+      "acceptance.test_delivery.DeliveryTests.test_stable_requires_full_gate_even_for_valid_candidate",
       "acceptance.test_remote_release.RemoteReleaseTests.test_remote_child_native_authority_missing_duplicate_or_wrong_host_is_rejected",
       "acceptance.test_remote_release.RemoteReleaseTests.test_remote_column_artifacts_require_sha256_references",
       "acceptance.test_remote_release.RemoteReleaseTests.test_remote_column_evidence_rejects_wrong_host_thread_source_and_native_position",

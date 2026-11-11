@@ -15,7 +15,8 @@ PATTERNS = (
     ".agents/plugins/marketplace.json", ".gitignore", ".githooks/*",
     "AGENTS.md", "README.md", "Docs/*.md", "assets/*", "skills/**/*",
     "scripts/*.py", "scripts/*.rs", "scripts/*.mjs", "scripts/check", "scripts/install-git-hooks",
-    "scripts/build-plugin", "scripts/verify_context.sh", "context/**/*.md", "context/*.yaml",
+    "scripts/build-plugin", "scripts/run-plugin", ".github/workflows/*.yml",
+    "scripts/verify_context.sh", "context/**/*.md", "context/*.yaml",
     "acceptance/*.py", "acceptance/*.json", "acceptance/*.md",
 )
 FORBIDDEN_SUFFIXES = {".sqlite", ".sqlite3", ".db", ".log", ".png", ".pyc"}

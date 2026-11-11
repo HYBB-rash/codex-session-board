@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "session_board": {
-      "command": "./bin/codex-session-board",
+      "command": "./bin/run-plugin",
       "args": ["mcp"],
       "cwd": "."
     }

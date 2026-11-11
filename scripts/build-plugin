@@ -1,18 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-cd -- "$project_root"
-build_target_dir="${CARGO_TARGET_DIR:-$project_root/target/dev}"
-cargo build --target-dir "$build_target_dir" --release --locked --offline --bin codex-session-board
-mkdir -p bin
-binary_staging="$(mktemp "$project_root/bin/.codex-session-board.XXXXXX")"
-install -m 755 "$build_target_dir/release/codex-session-board" "$binary_staging"
-mv -f -- "$binary_staging" bin/codex-session-board
-mkdir -p outputs
-deployment_dir="$(mktemp -d "$project_root/outputs/codex-session-board-plugin.XXXXXX")"
-mkdir -p "$deployment_dir/bin" "$deployment_dir/.agents/plugins"
-cp bin/codex-session-board "$deployment_dir/bin/"
-cp plugin.json mcp.json .mcp.json index.html "$deployment_dir/"
-cp -R .codex-plugin assets skills "$deployment_dir/"
-cp .agents/plugins/marketplace.json "$deployment_dir/.agents/plugins/"
-printf '%s\n' "$deployment_dir"
+exec python3 "$project_root/scripts/package_plugin.py" "$@"
