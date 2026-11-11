@@ -36,9 +36,13 @@ pub(super) fn install(store: &Store, session: Session) -> Result<()> {
 }
 
 fn clear(store: &Store) -> Result<()> {
-    let database = store.connection()?;
-    database.execute("DELETE FROM title_updates", [])?;
-    database.execute("DELETE FROM sessions", [])?;
+    let mut database = store.connection()?;
+    let transaction = database.transaction()?;
+    transaction.execute_batch(
+        "DELETE FROM title_updates; DELETE FROM changes; DELETE FROM remote_sessions;
+         DELETE FROM remote_projects; DELETE FROM settings; DELETE FROM sessions;"
+    )?;
+    transaction.commit()?;
     Ok(())
 }
 
@@ -46,7 +50,7 @@ fn write_session(store: &Store, session: Session) -> Result<()> {
     store.connection()?.execute(
         "UPDATE sessions SET native_state=?2,native_section=?3,runtime_key=?4,runtime_pending_key=?5,
          selected_state=?6,selected_at=?7,native_choice_at=?8,note=?9,needs_review=?10,archived=?11,
-         version=1,input_revision=0,turn_json=?12,selection_turn=?13,selection_users=?14 WHERE id=?1",
+         version=1,input_revision=0,seen_at=1,turn_json=?12,selection_turn=?13,selection_users=?14 WHERE id=?1",
         rusqlite::params![
             ID,
             native_state(session),
@@ -217,8 +221,14 @@ mod tests {
         assert_eq!(states.len(), 2465);
         let mut store = Store::open_memory(true).unwrap();
         store.native_sections = true;
+        let mut reference = Store::open_memory(true).unwrap();
+        reference.native_sections = true;
         for session in states {
+            poison(&store);
             install(&store, session).unwrap();
+            install(&reference, session).unwrap();
+            assert_eq!(crate::formal::records::snapshot(&store).unwrap(),
+                crate::formal::records::snapshot(&reference).unwrap());
             let stored = load(&store).unwrap();
             assert_eq!(stored.version, 1);
             assert_eq!(stored.input_revision, 0);
@@ -227,5 +237,21 @@ mod tests {
             let blocked = session.manual && session.column == crate::formal::session::Column::Blocked;
             assert_eq!(!stored.note.trim().is_empty(), blocked);
         }
+    }
+
+    fn poison(store: &Store) {
+        store.connection().unwrap().execute_batch(
+            "INSERT INTO sessions(id,title,cwd,updated_at,seen_at) VALUES('noise','noise','',0,0);
+             UPDATE sessions SET observed_at=99,attempted_at=99,observed_revision=99,
+                 observation_error='noise',automatic_state='review',automatic_reason='noise';
+             INSERT INTO changes(thread_id,changed_at,state,note) VALUES('noise',0,'review','noise');
+             INSERT INTO title_updates(thread_id,version,state,requested_at) VALUES('noise',1,'review',0);
+             INSERT INTO settings(key,value) VALUES('noise','noise');
+             INSERT INTO remote_sessions(id,host_id,thread_id,host_label,title,cwd,updated_at)
+                 VALUES('noise','host','thread','host','noise','',0);
+             INSERT INTO remote_projects(id,value) VALUES('noise','{}');"
+        ).unwrap();
+        assert!(crate::formal::records::snapshot(store).unwrap()
+            .tables.values().all(|rows| !rows.is_empty()));
     }
 }

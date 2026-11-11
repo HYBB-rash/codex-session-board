@@ -273,6 +273,7 @@
       "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions"
     ],
     "AUTO-005": [
+      "test::board_contract::state_contract_tests::model_trace_reset_clears_all_tables_and_rejects_changed_schema",
       "lib::codex_session_board::formal::paths::pending_identity_and_fresh_turns_follow_real_continuous_paths",
       "example::remote_parity_lab::model_replay_tests::all_520_frozen_edges_replay_through_host_adapter_and_native_writes",
       "test::native_authority::runtime::new_stages_apply_once_and_external_moves_survive_repeated_observations",

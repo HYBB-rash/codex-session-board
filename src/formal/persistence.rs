@@ -15,8 +15,10 @@ fn open(directory: &Path) -> Result<Store> {
 fn reopen(store: Store, directory: &Path) -> Result<Store> {
     let before = snapshot(&store)?;
     let epoch = store.title_epoch;
+    super::model_database::mark_restart(&*store.connection()?)?;
     drop(store);
     let store = open(directory)?;
+    assert!(!super::model_database::restart_marker_exists(&*store.connection()?)?);
     assert_eq!(store.title_epoch, epoch);
     assert_eq!(snapshot(&store)?, before);
     Ok(store)
