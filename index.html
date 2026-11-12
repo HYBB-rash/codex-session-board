@@ -24,9 +24,11 @@ h1{font-size:18px;font-weight:600;margin:0}
 #new-session{white-space:nowrap}
 .health{margin:0 0 8px;padding:0;background:transparent;border:0;color:var(--muted);font-size:12px}
 .health.error{background:transparent;border:0;color:var(--danger)}
-.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 8px}
-.filters{display:flex;align-items:center;gap:8px;min-width:0;margin-left:auto}
-.filter-field{display:grid;grid-template-columns:auto minmax(140px,220px);align-items:center;gap:8px;color:var(--muted);font-size:11px}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin:0 0 8px}
+.filters{display:flex;flex:1 1 520px;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;min-width:0;margin-left:auto}
+.filter-field{display:grid;grid-template-columns:auto minmax(0,180px);align-items:center;gap:8px;min-width:0;max-width:100%;color:var(--muted);font-size:11px}
+.filter-field select{min-width:0;width:100%}
+#filter-scope{margin:0 0 8px;color:var(--muted);font-size:11px;overflow-wrap:anywhere}
 .filter-field:has(select[hidden]){display:none}
 select,input[type=search]{height:32px;border:1px solid var(--line);border-radius:8px;background:var(--subtle);padding:0 10px}
 input[type=search]{width:180px}
@@ -115,6 +117,7 @@ textarea{resize:vertical;min-height:90px}
   <div class="toolbar">
     <nav class="jump" id="jump" aria-label="跳转到状态列"></nav>
     <div class="filters">
+      <label class="filter-field">主机<select id="host-filter" aria-label="选择主机"><option value="all">全部主机</option></select></label>
       <div class="filter-field"><span>项目</span>
         <select id="project-filter" aria-label="选择项目" disabled><option value="all">全部项目</option></select>
       </div>
@@ -123,6 +126,7 @@ textarea{resize:vertical;min-height:90px}
       <span id="count" class="count"></span>
     </div>
   </div>
+  <div id="filter-scope"></div>
   <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
   <div class="board-viewport" id="board-viewport" tabindex="0" aria-label="横向滚动查看全部状态列">
     <div class="board" id="board" aria-label="会话状态看板"></div>
@@ -142,10 +146,11 @@ textarea{resize:vertical;min-height:90px}
 </dialog>
 <dialog id="new-target" aria-labelledby="new-target-title">
   <form id="new-target-form">
-    <h2 id="new-target-title">选择远程项目</h2>
+    <h2 id="new-target-title">选择新会话的位置</h2>
+    <label for="new-host">主机</label><select id="new-host" required></select>
     <label for="new-project">在这个项目中打开新会话</label><select id="new-project" required></select>
-    <p class="reason">使用客户端中已登记的项目。不会发送输入。</p>
-    <div class="dialog-actions"><button type="button" id="new-target-cancel">取消</button><button type="submit" class="primary">打开新会话</button></div>
+    <p id="new-target-hint" class="reason">使用客户端中已登记的项目。不会发送输入。</p>
+    <div class="dialog-actions"><button type="button" id="new-target-cancel">取消</button><button id="new-target-open" type="submit" class="primary">打开新会话</button></div>
   </form>
 </dialog>
 <dialog id="draft-recovery" aria-labelledby="draft-recovery-title">
@@ -171,7 +176,7 @@ const csrf = "__CSRF_TOKEN__";
 let data = {states:{},sessions:[],health:{},projectCatalog:{loaded:false,items:[]}}, editing = null, dragging = null;
 let saving = false, requestSerial = 0, dragPoint = null, scrollFrame = null;
 let opening = false, suppressOpenUntil = 0;
-let filterMode = "project", selectedProject = "all", projectOptionsKey = "";
+let filterMode = "project", selectedHost = "all", selectedProject = "all", projectOptionsKey = "";
 let creating = false, recoveringDraft = null;
 const draftRequests = new Map();
 const byId = id => document.getElementById(id);
@@ -183,6 +188,7 @@ function element(tag, text, className) {
   return node;
 }
 async function request(path, body) {
+  if (body !== undefined) updateFilterLock();
   if (window.boardRequest) return window.boardRequest(path,body);
   const options = body === undefined ? {} : {method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(body)};
   const response = await fetch(path,options);
@@ -220,12 +226,13 @@ function finishDrag() {
     node.classList.remove("drop-target","drag-source"));
 }
 function projectLabel(item) {
-  const items = data.projectCatalog?.items || [];
-  const duplicates = items.filter(candidate => candidate.label === item.label);
-  if (duplicates.length < 2) return item.label;
+  const name = entry => entry.remote && entry.label.endsWith(" · " + entry.hostLabel)
+    ? entry.label.slice(0,-(" · " + entry.hostLabel).length) : entry.label;
+  const duplicates = hostProjects(item.remote ? "host:" + item.hostId : "local").filter(candidate => name(candidate) === name(item));
+  if (duplicates.length < 2) return name(item);
   const paths = item.paths.join(" · ");
   const identical = duplicates.filter(candidate => candidate.paths.join(" · ") === paths);
-  return item.label + " · " + paths + (identical.length > 1 ? " · " + item.id : "");
+  return name(item) + " · " + paths + (identical.length > 1 ? " · " + item.id : "");
 }
 function makeProjectTag(session) {
   const catalog = data.projectCatalog || {loaded:false,items:[]};
@@ -471,7 +478,10 @@ function updateColumn(column, state, sessions) {
   }
   const archiveAll = column.querySelector("[data-archive-all]");
   if (archiveAll) {
-    archiveAll.disabled = !sessions.some(session => !session.readOnly && session.canArchive !== false);
+    const count = sessions.filter(session => !session.readOnly && session.canArchive !== false).length;
+    archiveAll.disabled = !count;
+    archiveAll.textContent = `归档 ${count} 条`;
+    archiveAll.title = byId("filter-scope").textContent + "；只归档本列可归档的会话";
     archiveAll.onclick = () => archiveSessions(sessions,archiveAll);
   }
   const cards = column.querySelector(".cards");
@@ -520,58 +530,85 @@ function makeColumn(state, label) {
   };
   return column;
 }
+function hostOptions() {
+  const hosts = new Map();
+  for (const host of [...data.sessions.filter(row => row.remote),...data.projectCatalog.items.filter(item => item.remote),
+    ...(data.projectCatalog.remoteHosts || []),...(data.health.remoteRegistry || [])]) {
+    if (host.hostId) hosts.set("host:" + host.hostId,{...host,value:"host:" + host.hostId});
+  }
+  return [{value:"local",hostLabel:"本机"},...hosts.values()];
+}
+function hostProjects(host = selectedHost) {
+  return data.projectCatalog.items.filter(item => host === "local" ? !item.remote : item.remote && "host:" + item.hostId === host);
+}
+function hostName(host) {
+  const label = host.hostLabel || host.hostId;
+  return label + (hostOptions().filter(other => (other.hostLabel || other.hostId) === label).length > 1 ? " · " + (host.hostId || "local") : "");
+}
+function hostSessions(host = selectedHost) {
+  return data.sessions.filter(session => host === "all" || (host === "local" ? !session.remote : session.remote && "host:" + session.hostId === host));
+}
+function filtersLocked() {
+  return Boolean(dragging || saving || creating || byId("editor").open || byId("new-target").open || byId("draft-recovery").open);
+}
+function updateFilterLock() {
+  byId("host-filter").disabled = filtersLocked();
+  byId("project-filter").disabled = filtersLocked() || selectedHost === "all" || !data.projectCatalog.loaded;
+  byId("search").disabled = byId("filter-toggle").disabled = filtersLocked();
+}
+function updateHostOptions() {
+  const menu = byId("host-filter"), hosts = hostOptions();
+  const options = [new Option("全部主机","all"),...hosts.map(host => new Option(
+    hostName(host) + (host.enabled === false ? " · 未连接" : ""),host.value))];
+  if (!hosts.some(host => host.value === selectedHost) && selectedHost !== "all")
+    options.push(new Option((menu.selectedOptions[0]?.textContent || selectedHost).replace(/ · 已移除$/,"") + " · 已移除",selectedHost));
+  const key = JSON.stringify(options.map(option => [option.value,option.textContent]));
+  if (menu.dataset.options !== key) {menu.replaceChildren(...options);menu.dataset.options = key;}
+  menu.value = selectedHost;
+}
 function updateProjectOptions() {
   const catalog = data.projectCatalog || {loaded:false,items:[]};
-  const key = JSON.stringify([catalog.loaded,catalog.items,catalog.remoteHosts]);
+  updateHostOptions();
+  const key = JSON.stringify([selectedHost,catalog.loaded,catalog.items,catalog.error,data.health.remoteError,data.health.remoteProjectWarning]);
   if (key === projectOptionsKey) return;
   projectOptionsKey = key;
   const menu = byId("project-filter");
-  const previousHost = menu.selectedOptions[0]?.dataset.hostId;
-  menu.replaceChildren(new Option("全部项目","all"),new Option("默认工作区 · 本机","default"));
-  for (const host of catalog.remoteHosts || []) {
-    menu.append(new Option("默认工作区 · " + host.hostLabel,"host:" + host.hostId));
-  }
-  for (const item of catalog.items) {
+  const previous = (menu.selectedOptions[0]?.textContent || "上次选择的项目").replace(/ · 资料暂不可读$/,"");
+  menu.replaceChildren(new Option(selectedHost === "all" ? "先选择一台主机" : "全部项目","all"));
+  if (selectedHost !== "all") menu.append(new Option("默认工作区","default"));
+  for (const item of hostProjects()) {
     const paths = item.paths.join(" · ");
     const option = new Option(projectLabel(item),"project:" + item.id);
     if (item.remote) option.dataset.hostId = item.hostId;
     option.title = paths;
     menu.append(option);
   }
-  if (selectedProject.startsWith("project:") &&
-      !catalog.items.some(item => "project:" + item.id === selectedProject)) {
-    selectedProject = previousHost
-      ? (catalog.remoteHosts || []).some(host => host.hostId === previousHost) ? "host:" + previousHost : "all"
-      : catalog.loaded ? "default" : "all";
-    announce(previousHost ? "远程项目已移除，保留在该主机范围内查看。" : "项目已移除，已切换到默认工作区。");
-  }
   if (!Array.from(menu.options).some(option => option.value === selectedProject)) {
-    selectedProject = "all";
-    announce("主机已移除，已切换到全部项目。");
+    const failed = selectedHost === "local" ? catalog.error || !catalog.loaded : data.health.remoteError || data.health.remoteProjectWarning;
+    if (failed) menu.append(new Option(previous + " · 资料暂不可读",selectedProject));
+    else {selectedProject = "all";announce("项目已移除，已回到当前主机的全部项目。");}
   }
   menu.value = selectedProject;
-  menu.disabled = !catalog.loaded;
 }
 function visibleSessions() {
+  const sessions = hostSessions();
   if (filterMode === "search") {
     const query = byId("search").value.trim().toLowerCase();
-    return data.sessions.filter(session => {
+    return sessions.filter(session => {
       const item = (data.projectCatalog?.items || []).find(project => project.id === session.projectId);
       return [session.title,session.cwd,session.hostLabel,item && projectLabel(item)]
         .filter(Boolean).join(" ").toLowerCase().includes(query);
     });
   }
-  if (selectedProject === "all") return data.sessions;
-  if (selectedProject === "default") return data.sessions.filter(session => !session.remote && session.projectId === null && !session.projectIssue);
-  if (selectedProject.startsWith("host:")) return data.sessions.filter(session =>
-    session.remote && session.hostId === selectedProject.slice(5) && session.projectId === null);
-  return data.sessions.filter(session => "project:" + session.projectId === selectedProject);
+  if (selectedProject === "all") return sessions;
+  if (selectedProject === "default") return sessions.filter(session => session.projectId === null && !session.projectIssue);
+  return sessions.filter(session => "project:" + session.projectId === selectedProject);
 }
 function resetFilterScroll() {
   for (const cards of document.querySelectorAll(".cards")) cards.scrollTop = 0;
 }
 function toggleFilter() {
-  if (dragging || saving || byId("editor").open) return;
+  if (filtersLocked()) return;
   filterMode = filterMode === "project" ? "search" : "project";
   byId("project-filter").hidden = filterMode !== "project";
   byId("search").hidden = filterMode !== "search";
@@ -584,6 +621,11 @@ function toggleFilter() {
 function render(resetState = null) {
   if (dragging || saving || byId("editor").open) return;
   updateProjectOptions();
+  updateFilterLock();
+  const host = byId("host-filter").selectedOptions[0]?.textContent || selectedHost;
+  const project = filterMode === "search" ? "全部项目 · 搜索" : byId("project-filter").selectedOptions[0]?.textContent;
+  byId("filter-scope").textContent = `${host} · ${project}`;
+  byId("search").placeholder = `搜索${host}上的会话…`;
   byId("new-session").disabled = creating;
   byId("new-session").title = "打开新建会话页，不发送输入";
   const scrollPositions = new Map(
@@ -620,7 +662,7 @@ function render(resetState = null) {
     if (card.dataset.id === focusedProject) card.querySelector(".project-tag summary").focus({preventScroll:true});
   }
   for (const column of columns) restoreScroll(column.querySelector(".cards"),scrollPositions.get(column.dataset.state));
-  byId("count").textContent = `当前 ${filtered.length} / 全部 ${data.sessions.length} 条`;
+  byId("count").textContent = `显示 ${filtered.length} / 当前主机范围共 ${hostSessions().length} 条`;
   const health = data.health;
   if (data.legacyMode) byId("foot").textContent =
     "拖动卡片修改状态，备注随会话保存。“待归档”和“已完成”均为人工状态。新建会话仅打开输入页。";
@@ -720,11 +762,11 @@ function openEditor(id, state, snapshot) {
   byId("editor").showModal();
 }
 async function load() {
-  if (dragging || saving || creating || byId("editor").open) return;
+  if (filtersLocked()) return;
   const serial = ++requestSerial;
   try {
     const result = await request("/api/sessions");
-    if (serial !== requestSerial || dragging || saving || byId("editor").open) return;
+    if (serial !== requestSerial || filtersLocked()) return;
     data = result;
     for (const draft of data.pendingDrafts || []) draftRequests.set(draft.project,draft.requestId);
     render();
@@ -795,29 +837,46 @@ async function createSession(projectId) {
     draftRequests.delete(projectId);
     announce(remote ? "已打开远程新会话，尚未发送输入。" : "已发送新建会话页面打开请求。");
   } catch(error) {announce(error.message,true);}
-  finally {creating=false;button.disabled=false;await load();}
+  finally {creating=false;button.disabled=false;updateFilterLock();await load();}
+}
+function updateNewProjects() {
+  const host = byId("new-host").value;
+  const options = hostProjects(host).map(item => new Option(projectLabel(item),item.id));
+  if (host === "local") options.unshift(new Option("本机新会话输入页",""));
+  byId("new-project").replaceChildren(...options);
+  byId("new-target-open").disabled = !options.length;
+  byId("new-target-hint").textContent = options.length ? "新会话固定在所选主机，不会发送输入。" :
+    "此主机暂无已登记项目。请先在该主机的 Codex 中登记项目，已有会话仍可查看。";
 }
 byId("new-session").onclick = () => {
-  if (creating || dragging || saving || byId("editor").open) return;
-  if (filterMode === "project" && selectedProject.startsWith("host:")) {
-    const host = selectedProject.slice(5);
-    const projects = data.projectCatalog.items.filter(item => item.remote && item.hostId === host);
-    if (!projects.length) {announce("此主机暂无已登记项目，请先在客户端登记项目。",true);return;}
-    byId("new-project").replaceChildren(...projects.map(item => new Option(projectLabel(item),item.id)));
-    byId("new-target").showModal();
-    return;
+  if (filtersLocked()) return;
+  if (selectedHost.startsWith("host:") && !(data.health.remoteRegistry || []).some(host => "host:" + host.hostId === selectedHost)) {
+    announce("这台主机已移除，不能在这里新建会话。",true);return;
   }
-  createSession(filterMode === "project" && selectedProject.startsWith("project:")
-    ? selectedProject.slice("project:".length) : null);
+  if (filterMode === "project" && selectedProject.startsWith("project:")) {
+    const project = hostProjects().find(item => "project:" + item.id === selectedProject);
+    if (!project) {announce("项目暂不可用，请刷新后重新选择。",true);return;}
+    createSession(project.id);return;
+  }
+  if (selectedHost === "local") {createSession(null);return;}
+  const hosts = hostOptions().filter(host => host.value === "local" || (data.health.remoteRegistry || []).some(item => "host:" + item.hostId === host.value));
+  byId("new-host").replaceChildren(...hosts.filter(host => selectedHost === "all" || host.value === selectedHost)
+    .map(host => new Option(hostName(host),host.value)));
+  byId("new-host").disabled = selectedHost !== "all";
+  if (!byId("new-host").options.length) {announce("这台主机已移除，不能在这里新建会话。",true);return;}
+  updateNewProjects();byId("new-target").showModal();updateFilterLock();
 };
+byId("new-host").onchange = updateNewProjects;
+byId("new-target").addEventListener("close",() => {updateFilterLock();load();});
 byId("new-target-cancel").onclick = () => byId("new-target").close();
 byId("new-target-form").onsubmit = event => {
   event.preventDefault();
   const project = byId("new-project").value;
   byId("new-target").close();
-  createSession(project);
+  createSession(project || null);
 };
 byId("draft-later").onclick = () => byId("draft-recovery").close();
+byId("draft-recovery").addEventListener("close",() => {updateFilterLock();load();});
 byId("draft-retry").onclick = () => {
   byId("draft-recovery").close();
   createSession(recoveringDraft.projectId);
@@ -856,13 +915,18 @@ byId("connection-recheck").onclick = async () => {
 byId("search").oninput = () => {resetFilterScroll();render();};
 byId("filter-toggle").onclick = toggleFilter;
 byId("project-filter").onchange = () => {
-  if (dragging || saving || byId("editor").open) {
+  if (filtersLocked()) {
     byId("project-filter").value = selectedProject;
     return;
   }
   selectedProject = byId("project-filter").value;
   resetFilterScroll();
   render();
+};
+byId("host-filter").onchange = () => {
+  if (filtersLocked()) {byId("host-filter").value = selectedHost;return;}
+  selectedHost = byId("host-filter").value;selectedProject = "all";projectOptionsKey = "";
+  announce("");resetFilterScroll();render();
 };
 document.addEventListener("dragover",event => {
   if (dragging) dragPoint = {x:event.clientX,y:event.clientY};
