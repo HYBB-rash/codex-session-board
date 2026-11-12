@@ -875,6 +875,7 @@ byId("edit-form").onsubmit = async event => {
   } catch(error) {
     const retained = noteDraft(editing.id,byId("note").value) !== null;
     byId("notice").textContent = error.message + (retained ? " 备注草稿已保留，刷新后重新打开可继续编辑。" : " 备注仍在编辑框中，请保留后重新核对。");
+    announce("未收到保存确认，请核对实际位置后再操作。" + error.message,true);
   }
   finally {
     finishMove(operation,saved);

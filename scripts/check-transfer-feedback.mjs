@@ -157,7 +157,7 @@ try {
   await check("表单内等待可见且不能重复提交", 'byId("editor").contains(byId("move-feedback")) && byId("save").disabled && byId("cancel").disabled && byId("state").disabled && byId("note").readOnly && !byId("notice").textContent && data.sessions[0].state === "unknown"');
   await screenshot("blocked-form");
   await complete(409, false);await settled();
-  await check("表单失败保留草稿", 'byId("editor").open && !byId("state").disabled && !byId("note").readOnly && byId("note").value === "等待环境" && noteDraft(data.sessions[0].id) === "等待环境"');
+  await check("表单失败保留草稿并说明未确认", 'byId("editor").open && !byId("state").disabled && !byId("note").readOnly && byId("note").value === "等待环境" && noteDraft(data.sessions[0].id) === "等待环境" && byId("feedback").textContent.includes("未收到保存确认")');
   await evaluate('byId("edit-form").requestSubmit()');
   await complete();await settled();await until('!byId("editor").open');
   await check("表单成功才移动且清除草稿", 'data.sessions[0].state === "blocked" && noteDraft(data.sessions[0].id) === null');
