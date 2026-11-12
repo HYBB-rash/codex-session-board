@@ -32,6 +32,15 @@ impl WorkerGroup {
         Ok(())
     }
 
+    pub(crate) fn while_open<T>(&self, work: impl FnOnce() -> Result<T>) -> Result<T> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("worker 登记锁已损坏"))?;
+        ensure!(!state.closed, "worker 登记已关闭");
+        work()
+    }
+
     fn recover(&self) -> MutexGuard<'_, State> {
         match self.state.lock() {
             Ok(state) => state,
@@ -105,7 +114,7 @@ pub(crate) fn pause(enabled: &AtomicBool, duration: Duration, refresh: Option<&A
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
+    use std::sync::{Arc, mpsc};
 
     #[test]
     fn join_reports_panics_and_errors_after_joining_every_handle() -> Result<()> {
@@ -153,4 +162,37 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn registration_and_shutdown_share_one_gate() -> Result<()> {
+        let group = Arc::new(WorkerGroup::default());
+        let (entered, ready) = mpsc::channel();
+        let (release, wait) = mpsc::channel();
+        let registering = group.clone();
+        let registration = thread::spawn(move || {
+            registering.while_open(|| {
+                entered.send(())?;
+                wait.recv_timeout(Duration::from_secs(1))?;
+                Ok(())
+            })
+        });
+        ready.recv_timeout(Duration::from_secs(1))?;
+        let closing = group.clone();
+        let (closed, received) = mpsc::channel();
+        let shutdown = thread::spawn(move || {
+            closing.close();
+            closed.send(()).unwrap();
+        });
+        assert!(received.recv_timeout(Duration::from_millis(20)).is_err());
+        release.send(())?;
+        registration.join().unwrap()?;
+        shutdown.join().unwrap();
+        received.recv_timeout(Duration::from_secs(1))?;
+        assert!(group.while_open(|| Ok(())).is_err());
+        assert!(group.spawn(|| Ok(())).is_err());
+        group.join()
+    }
 }
+
+#[cfg(test)]
+#[path = "workers/app_tests.rs"]
+mod app_tests;

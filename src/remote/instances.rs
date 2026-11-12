@@ -59,6 +59,7 @@ impl App {
     }
 
     pub(super) fn attach_remote(&self, host: &Host) -> Result<()> {
+        self.workers.while_open(|| Ok(()))?;
         let operation = self.thread_lock(&format!("connect:{}", host.host_id))?;
         let _guard = operation
             .lock()
@@ -75,26 +76,43 @@ impl App {
                 return Err(error);
             }
             let matches = remote.config.proxy_command == host.proxy(&self.config)?;
-            if !matches {
-                remote.deactivate()?;
-            }
             remote.update_health(json!({"hostLabel":host.display_name}))?;
             if matches && (remote.enabled.load(Ordering::SeqCst) || !host.enabled) {
-                return Ok(());
+                return self.workers.while_open(|| Ok(()));
             }
-            remote.deactivate()?;
+            remote.shutdown()?;
         }
         let remote = self.build_remote(host)?;
-        if host.enabled {
-            observer::start_host(&remote)?;
-            crate::auto_archive::start(&remote)?;
-        } else {
+        if !host.enabled {
             remote.deactivate()?;
         }
-        self.remotes
-            .lock()
-            .map_err(|_| anyhow::anyhow!("主机锁已损坏"))?
-            .insert(host.host_id.clone(), remote);
+        self.install_remote(host.host_id.clone(), remote, host.enabled)
+    }
+
+    pub(crate) fn install_remote(
+        &self,
+        identifier: String,
+        remote: Arc<App>,
+        start: bool,
+    ) -> Result<()> {
+        let result = self.workers.while_open(|| {
+            self.remotes
+                .lock()
+                .map_err(|_| anyhow::anyhow!("主机锁已损坏"))?
+                .insert(identifier, Arc::clone(&remote));
+            if start {
+                observer::start_host(&remote)?;
+                crate::auto_archive::start(&remote)?;
+            }
+            Ok(())
+        });
+        if let Err(error) = result {
+            let mut errors = vec![format!("{error:#}")];
+            if let Err(error) = remote.shutdown() {
+                errors.push(format!("{error:#}"));
+            }
+            return crate::workers::finish(errors);
+        }
         Ok(())
     }
 
@@ -185,6 +203,32 @@ mod tests {
         received.recv_timeout(std::time::Duration::from_secs(1))??;
         paused.join().unwrap();
         assert_eq!(local.store.note(&identifier)?, "local");
+        Ok(())
+    }
+
+    #[test]
+    fn replacing_a_deactivated_remote_joins_the_old_workers() -> Result<()> {
+        let fixture = crate::rpc::identity_fixture::Fixture::new()?;
+        let root = Arc::new(App::new(fixture.config.clone())?);
+        let old = root.build_remote(&fixture.host)?;
+        let finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let completed = finished.clone();
+        let worker = old.clone();
+        let owner = root.clone();
+        old.workers.spawn(move || {
+            crate::workers::pause(&worker.enabled, std::time::Duration::from_secs(3600), None);
+            let _remotes = owner.remotes.lock().unwrap();
+            completed.store(true, Ordering::SeqCst);
+            Ok(())
+        })?;
+        root.install_remote(fixture.host.host_id.clone(), old.clone(), false)?;
+        old.deactivate()?;
+        root.attach_remote(&fixture.host)?;
+        let replacement = root.remotes.lock().unwrap()[&fixture.host.host_id].clone();
+        assert!(!Arc::ptr_eq(&old, &replacement));
+        assert!(finished.load(Ordering::SeqCst));
+        assert!(old.workers.spawn(|| Ok(())).is_err());
+        root.shutdown()?;
         Ok(())
     }
 

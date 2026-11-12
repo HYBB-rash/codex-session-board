@@ -1195,6 +1195,13 @@
       "test::board_io::open_and_new_survive_removed_service_working_directory"
     ],
     "SERVICE-001": [
+      "lib::codex_session_board::workers::app_tests::shutdown_interrupts_long_waits_joins_root_and_remote_and_releases_arcs",
+      "lib::codex_session_board::workers::app_tests::shutdown_rejects_remote_registration_and_closes_rejected_remote",
+      "lib::codex_session_board::workers::app_tests::deactivate_from_a_registered_worker_preserves_operations_without_self_join",
+      "lib::codex_session_board::workers::app_tests::concurrent_shutdowns_both_wait_for_the_last_worker",
+      "lib::codex_session_board::workers::app_tests::shutdown_closes_registration_before_draining_inflight_operations",
+      "lib::codex_session_board::workers::tests::registration_and_shutdown_share_one_gate",
+      "lib::codex_session_board::remote::instances::tests::replacing_a_deactivated_remote_joins_the_old_workers",
       "lib::codex_session_board::observer::tests::title_worker_retries_database_failures_and_keeps_unavailable_client_jobs",
       "lib::codex_session_board::observer::tests::project_worker_retries_after_the_client_registry_becomes_available",
       "lib::codex_session_board::workers::tests::join_reports_panics_and_errors_after_joining_every_handle",

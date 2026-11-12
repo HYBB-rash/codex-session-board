@@ -54,12 +54,14 @@ impl App {
         let remote = Arc::new(App::new(config)?);
         remote.update_health(json!({"hostLabel":host.display_name}))?;
         remote.deactivate()?;
-        self.remotes
-            .lock()
-            .map_err(|_| anyhow::anyhow!("主机锁已损坏"))?
-            .entry(host.host_id)
-            .or_insert(remote);
-        Ok(())
+        self.workers.while_open(|| {
+            self.remotes
+                .lock()
+                .map_err(|_| anyhow::anyhow!("主机锁已损坏"))?
+                .entry(host.host_id)
+                .or_insert(remote);
+            Ok(())
+        })
     }
 }
 
