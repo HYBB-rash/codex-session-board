@@ -67,6 +67,7 @@ pub(super) fn open(
     binding.verify(deadline)?;
     let marker = uuid::Uuid::new_v4().simple().to_string();
     let command = binding.launch(operation, &marker)?;
+    let command = binding.shared_command(&command, deadline)?;
     let mut stream = DeadlineStream {
         stream: pipe::Transport::proxy(&command)?,
         deadline,
