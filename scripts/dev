@@ -9,17 +9,27 @@ import sys
 SOURCE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SOURCE))
 from scripts.dev_environment import configuration
+from scripts.dev_environment import runtime
 
 
 def main():
     parser = argparse.ArgumentParser(description="本工作树的隔离开发环境，不安装或重载插件")
-    parser.add_argument("action", choices=("setup",))
+    parser.add_argument("action", choices=("setup", "start", "stop", "status", "_run"))
     arguments = parser.parse_args()
-    root = configuration.task_directory(SOURCE)
+    root = configuration.task_directory(SOURCE, create=arguments.action in ("setup", "start", "_run"))
+    if arguments.action == "_run":
+        runtime.serve(SOURCE, root)
+        return
+    if arguments.action == "status" or (arguments.action == "stop" and not root.exists()):
+        print(json.dumps(runtime.status(root), ensure_ascii=False))
+        return
+    if (root / "action.lock").is_symlink():
+        raise ValueError("开发操作锁不能是符号链接")
     with (root / "action.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        result = configuration.setup(SOURCE, root)
-    print(json.dumps({"prepared": True, "root": str(root), **result}, ensure_ascii=False))
+        operation = getattr(runtime, arguments.action)
+        result = operation(root) if arguments.action == "stop" else operation(SOURCE, root)
+    print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":

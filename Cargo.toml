@@ -1,7 +1,7 @@
 [package]
 name = "codex-session-board"
 build = "build.rs"
-version = "0.3.47"
+version = "0.3.48"
 edition = "2024"
 description = "Local Codex conversation status board"
 default-run = "codex-session-board"
