@@ -18,12 +18,14 @@ coordinator: codex
 
 - 主代理串行修改、验证和提交，维护共享 context。
 - 两个只读子代理核对 fixture 协议和进程/配置隔离边界。
+- 浏览器验证脚本由独立 `dev-isolation-browser` 工作树的 worker 实现，不修改共享文件或提交。
 - 分步交付开发 fixture、统一 setup/start/stop/status、真实 Mac 双任务与浏览器取证。
 - Mac 基线：main 06c4719，干净检出，arm64；Rust、Python 3.12、Node、Chrome、
   Codex 和 agent-git 已通过既有 SSH 连接确认存在。
 - 本机基线：main 82b9355，干净；Linux 和 Mac 正式安装仅采集只读身份及配置摘要作前后对照。
 - 开工后发现主检出有独立运行时恢复任务，已将本任务改动单独迁至 Codex 工作树，
   对方版本、数据库恢复改动及任务记录保留；后续不写共享主检出或其部署。
+- 原生依赖 fixture 已通过独立协议/隔离测试及提交钩子，提交 2aaa3ac。
 
 ## 完成条件
 

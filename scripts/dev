@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+import argparse
+import fcntl
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+SOURCE = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SOURCE))
+from scripts.dev_environment import configuration
+
+
+def main():
+    parser = argparse.ArgumentParser(description="本工作树的隔离开发环境，不安装或重载插件")
+    parser.add_argument("action", choices=("setup",))
+    arguments = parser.parse_args()
+    root = configuration.task_directory(SOURCE)
+    with (root / "action.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        result = configuration.setup(SOURCE, root)
+    print(json.dumps({"prepared": True, "root": str(root), **result}, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, ValueError, RuntimeError, KeyError, subprocess.SubprocessError) as error:
+        print(f"开发环境失败：{error}", file=sys.stderr)
+        sys.exit(1)
