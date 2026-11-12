@@ -85,3 +85,12 @@ Fedora 原检出仍有独立形式化任务进行；本任务使用独立 clone�
   用户需恢复 Mac 现有 GitHub SSH 授权，并将仓库默认分支改成 main。
   此前 dry-run 成功不能替代本次真实推送结果。
 - 保持任务活动和阻塞记录，不以候选交付签收完整业务。后续从 handoff 与最终回执继续。
+
+## 2026-11-12 认证恢复后的复验
+
+用户确认 Cindy 的 op-member-gh-ssh 已在 SSH_AUTH_SOCK=/nonexistent 下完成真实临时分支推送，
+测试分支随后删除。独立现场检查确认包装器可执行，Git core.sshCommand 已指向它；
+仓库默认分支也已通过 GitHub API 读回为 main。
+本轮继续在 Mac 使用独立 Cindy 签名器创建实际源提交并直接推送 main，
+核对该 SHA 的双平台 CI、原生发布和 Mac 更新；最终结果写入运行回执。
+旧认证失败保留为历史，当前无需用户再次处理这两项。完整业务缺证仍保持待验收，禁止发布 stable。
