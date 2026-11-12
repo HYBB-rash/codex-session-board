@@ -296,17 +296,35 @@ fn blocking_request(surface: &Surface, params: &Value) -> Option<BlockingMove> {
     }
 }
 
+fn prepare_native_stream(stream: &UnixStream) -> Result<bool> {
+    stream
+        .set_nonblocking(false)
+        .context("configure accepted native fixture stream")?;
+    if let Err(error) = stream.set_read_timeout(Some(Duration::from_secs(3))) {
+        if cfg!(target_os = "macos")
+            && error.kind() == std::io::ErrorKind::InvalidInput
+            && stream.peer_addr().is_err_and(|peer| {
+                matches!(
+                    peer.kind(),
+                    std::io::ErrorKind::InvalidInput | std::io::ErrorKind::NotConnected
+                )
+            })
+        {
+            return Ok(false);
+        }
+        return Err(error).context("configure native fixture read deadline");
+    }
+    Ok(true)
+}
+
 fn connection(
     mut stream: UnixStream,
     surface: Arc<Mutex<Surface>>,
     database: &std::path::Path,
 ) -> Result<()> {
-    stream
-        .set_nonblocking(false)
-        .context("configure accepted native fixture stream")?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(3)))
-        .context("configure native fixture read deadline")?;
+    if !prepare_native_stream(&stream)? {
+        return Ok(());
+    }
     loop {
         let mut size = [0u8; 4];
         if stream.read_exact(&mut size).is_err() {
@@ -328,13 +346,87 @@ fn connection(
         let Some(result) = result else { return Ok(()) };
         let reply = json!({"id":request["id"],"result":{"success":true,"contentItems":[{"type":"inputText","text":result.to_string()}]}});
         let bytes = serde_json::to_vec(&reply)?;
-        stream
-            .write_all(&(bytes.len() as u32).to_le_bytes())
-            .context("write native fixture frame length")?;
-        stream
-            .write_all(&bytes)
-            .context("write native fixture frame body")?;
+        if !write_reply(&mut stream, &bytes).context("write native fixture response")? {
+            return Ok(());
+        }
     }
+}
+
+fn write_reply(stream: &mut UnixStream, bytes: &[u8]) -> std::io::Result<bool> {
+    let mut frame = Vec::with_capacity(4 + bytes.len());
+    frame.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+    frame.extend_from_slice(bytes);
+    match stream.write_all(&frame) {
+        Ok(()) => Ok(true),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::BrokenPipe
+                    | std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::ConnectionAborted
+                    | std::io::ErrorKind::NotConnected
+            ) =>
+        {
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+#[test]
+fn disconnected_native_fixture_clients_do_not_fail_server_shutdown() -> Result<()> {
+    let (mut client, stream) = UnixStream::pair()?;
+    let release = Arc::new((Mutex::new(false), Condvar::new()));
+    let (started, received) = std::sync::mpsc::channel();
+    let surface = Arc::new(Mutex::new(Surface {
+        read_blocked: Some(BlockingMove {
+            identifier: FIRST.into(),
+            started,
+            release: Arc::clone(&release),
+        }),
+        ..Surface::default()
+    }));
+    let observed = Arc::clone(&surface);
+    let worker =
+        std::thread::spawn(move || connection(stream, surface, std::path::Path::new("unused")));
+    let request =
+        serde_json::to_vec(&json!({"id":1,"params":{"tool":"list_threads","arguments":{}}}))?;
+    client.write_all(&(request.len() as u32).to_le_bytes())?;
+    client.write_all(&request)?;
+    received.recv_timeout(Duration::from_secs(3))?;
+    drop(client);
+    *release.0.lock().unwrap() = true;
+    release.1.notify_all();
+    worker.join().unwrap()?;
+    assert_eq!(observed.lock().unwrap().calls, ["list_threads"]);
+    Ok(())
+}
+
+#[test]
+fn native_fixture_protocol_errors_are_not_treated_as_peer_disconnects() -> Result<()> {
+    let (mut client, stream) = UnixStream::pair()?;
+    client.write_all(&1u32.to_le_bytes())?;
+    client.write_all(b"{")?;
+    client.shutdown(std::net::Shutdown::Write)?;
+    let result = connection(
+        stream,
+        Arc::new(Mutex::new(Surface::default())),
+        std::path::Path::new("unused"),
+    );
+    let error = result.unwrap_err();
+    assert!(error.is::<serde_json::Error>(), "{error:#}");
+    Ok(())
+}
+
+#[test]
+fn disconnected_native_fixture_clients_may_close_before_stream_setup() -> Result<()> {
+    let (client, stream) = UnixStream::pair()?;
+    drop(client);
+    connection(
+        stream,
+        Arc::new(Mutex::new(Surface::default())),
+        std::path::Path::new("unused"),
+    )
 }
 
 impl Drop for Server {
