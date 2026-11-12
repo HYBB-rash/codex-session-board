@@ -36,22 +36,30 @@ export async function launchBrowser() {
     events.clear();
   };
   const close = () => stopped ||= (async () => {
+    if (socket?.readyState === WebSocket.OPEN) {
+      try { await command("Browser.close"); } catch {}
+    }
     fail(new Error("本次 Chrome 已关闭"));
     socket?.close();
     const signal = name => {
       if (!chrome.pid || chrome.exitCode !== null || chrome.signalCode !== null) return;
       try { process.kill(-chrome.pid, name); } catch (error) { if (error.code !== "ESRCH") throw error; }
     };
-    signal("SIGTERM");
     let exit = await Promise.race([exited, delay(5000, null, { ref: false })]);
+    if (!exit) { signal("SIGTERM"); exit = await Promise.race([exited, delay(5000, null, { ref: false })]); }
     if (!exit) { signal("SIGKILL"); exit = await Promise.race([exited, delay(5000, null, { ref: false })]); }
     assert(exit, `无法确认 Chrome ${chrome.pid} 退出，保留 profile：${profile}`);
     if (chrome.pid) {
-      const processes = spawnSync("/bin/ps", ["-axo", "pid=,pgid=,stat="], { encoding: "utf8", timeout: 5000 });
-      assert(processes.status === 0, "无法只读核验 Chrome 进程组，保留 profile");
-      const survivors = processes.stdout.split("\n").map(line => line.trim().split(/\s+/))
-        .filter(([, pgid, state]) => Number(pgid) === chrome.pid && state && !state.startsWith("Z"))
-        .map(([pid]) => Number(pid));
+      let survivors;
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const processes = spawnSync("/bin/ps", ["-axo", "pid=,pgid=,stat="], { encoding: "utf8", timeout: 5000 });
+        assert(processes.status === 0, "无法只读核验 Chrome 进程组，保留 profile");
+        survivors = processes.stdout.split("\n").map(line => line.trim().split(/\s+/))
+          .filter(([, pgid, state]) => Number(pgid) === chrome.pid && state && !state.startsWith("Z"))
+          .map(([pid]) => Number(pid));
+        if (!survivors.length) break;
+        await delay(100);
+      }
       assert(survivors.length === 0, `Chrome 进程组 ${chrome.pid} 仍有存活进程 ${survivors.join(",")}，保留 profile`);
     }
     await fs.rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });

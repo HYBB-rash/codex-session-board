@@ -8,7 +8,6 @@ import sys
 import time
 import threading
 import unittest
-import urllib.error
 
 from scripts.dev_environment import configuration
 from scripts.dev_environment.processes import Child, reap
@@ -19,6 +18,8 @@ def endpoint(payload, code=200, headers=None):
     requests = []
 
     class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
         def do_GET(self):
             requests.append(self.path)
             body = json.dumps(payload).encode()
@@ -122,8 +123,16 @@ class DevEnvironmentTests(unittest.TestCase):
             self.assertEqual(requests, ["/api/info"])
 
     def test_http_redirect_cannot_leave_the_expected_endpoint(self):
-        from scripts.dev_environment.runtime import fetch
+        from scripts.dev_environment.runtime import probe
         with endpoint({}, 302, {"Location": "/api/sessions"}) as (url, requests):
-            with self.assertRaises(urllib.error.HTTPError):
-                fetch(url + "/api/info")
+            with self.assertRaisesRegex(RuntimeError, "HTTP 302"):
+                probe({"url": url})
+            self.assertEqual(requests, ["/api/info"])
+
+    def test_closed_identity_connection_cannot_reconnect_to_read_sessions(self):
+        from scripts.dev_environment.runtime import probe
+        identity = {"pid": os.getpid(), "build": "expected", "dataDir": "/task/data"}
+        with endpoint(identity, headers={"Connection": "close"}) as (url, requests):
+            with self.assertRaisesRegex(RuntimeError, "连接已关闭"):
+                probe({"url": url, "service_pid": os.getpid(), "program_sha256": "expected", "root": "/task"})
             self.assertEqual(requests, ["/api/info"])

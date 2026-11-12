@@ -48,15 +48,46 @@ Mac 真实签名提交、远端 main 写入及对应 CI 和安装结果以最终
 ## 日常开发
 
 Mac 多任务隔离、串行集成与 Linux 即时候选交付的设计见
-[并行开发与交付流程](PARALLEL-DEVELOPMENT.md)。该文档中的待实现接口尚未启用，
-版本、提交、验收和更新操作仍遵守本页及现行检查规则。
+[并行开发与交付流程](PARALLEL-DEVELOPMENT.md)。第一阶段的开发入口已可用；
+Codex 环境动作、串行集成和交付封装仍待实施，现行版本与完整验收规则继续有效。
+
+2026-11-13 已在 Mac 准备两份互相独立的任务工作树：
+`/Users/hongyong/Developer/codex-session-board-dev-a-20261113` 和
+`/Users/hongyong/Developer/codex-session-board-dev-b-20261113`。
+进入任一任务目录执行：
+
+```zsh
+./scripts/dev setup
+./scripts/dev start
+./scripts/dev status
+./scripts/dev stop
+```
+
+首次 `start` 可自动准备环境；源码变化后先 `stop`，再 `setup`、`start`。
+运行中的重复 setup/start 保持原进程；status 实时核对身份和原生依赖健康。
+输出中的 URL 是 Mac 本机回环地址，不自动打开浏览器或操作日用 Codex。
+每份工作树单独构建到自己的 `target/`；下载缓存复用，任务构建不自动清理共享缓存。
+配置、数据库、私有 HOME 和 socket 存在 `~/.csb-dev/<工作树路径摘要>/`，
+目录权限 0700，停止后保留数据。归档工作树前先停止并确认 `cleanup_confirmed=true`。
+
+这里运行真实 Rust 看板、HTTP 与数据库，桌面/侧栏依赖连接本任务 fixture，
+导航只记录到任务目录。它覆盖状态、备注、导航和重启持久性；
+新建会话等未实现的 fixture 方法明确失败，不能代签真实 Codex 或远程验收。
+双任务浏览器检查使用 Node.js 22+ 和 Chrome，每次创建独立 profile/CDP 端口：
+
+```zsh
+node scripts/check-dev-isolation.mjs "$URL_A" "$URL_B" "$OUTPUT"
+node scripts/check-dev-isolation.mjs "$URL_A" "$URL_B" "$OUTPUT" --verify-only
+```
+
+第二条用于外部停止/重启后的只读复验，沿用首轮输出目录。
+脚本操作前核对开发记录与 pid/build/dataDir；拒绝不匹配服务，报告隐藏控制 token。
 
 本次使用 Rust 1.99.1、Python 3.12 和 Codex CLI 0.167.1。
 Mac 原有 Rust 1.78.0 无法满足当前代码，已升级工具链并准备依赖缓存。
-命令在开发目录用 zsh 执行：
+提交与验收命令在本任务目录用 zsh 执行：
 
 ```zsh
-git pull --ff-only
 ./scripts/install-git-hooks
 cargo fetch --locked
 cargo clippy --locked --offline --all-targets -- -D warnings

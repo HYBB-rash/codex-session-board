@@ -41,3 +41,22 @@ coordinator: codex
 - 停止、重启一份不影响另一份；任务数据持久保存，误配真实端点时拒绝启动。
 - 正式插件配置、安装身份和运行进程前后不变；外部证据保存在源码之外。
 - 必需项目检查通过；完整业务缺少的目标环境证据仍保持待验证。
+
+## 第一阶段结果
+
+开发入口、Rust 原生依赖 fixture 和私有浏览器验证已实现。
+两份 Mac 工作树独立构建、同时运行；真实拖拽及备注保存、刷新、导航记录、
+停止 A 后 B 写入、A 重启持久性、fixture 崩溃隔离和恢复、运行中幂等操作均通过。
+最终提交还将按同一外部流程复验，结果以 `final-lifecycle.json` 为准。
+工作树为 `/Users/hongyong/Developer/codex-session-board-dev-{a,b}-20261113`；
+私有根分别为 `~/.csb-dev/05773aea0e1e` 和 `~/.csb-dev/dda8c2b48a54`。
+
+两端证据目录为 `~/.local/state/codex-session-board/development/mac-dev-environment-20261113`。
+`pilot-*` 保留 Mac 非阻塞继承问题；`verified-browser` 保留 Chrome 子进程退出时序失败；
+`verified-fixed-*` 是修正清理后的真实通过记录，浏览器检查器摘要单独登记。
+Mac 正式插件在该验证窗口保持 0.3.38、PID 65822，配置、安装和缓存摘要前后相同。
+另一个已授权交付将 Linux 从 0.3.36、Mac 从 0.3.34 更新至 0.3.38；
+本任务未安装或重载正式插件。Linux 在本机开发测试前后均未连上正式 HTTP，
+保留为独立待核验项，不能宣称 Linux 正式入口全程可用。
+完整 31 条业务验收仍按最终报告处理，fixture 不补签真实目标环境证据。
+Codex 自动环境动作、串行集成及 Linux 即时候选交付留在后续阶段。

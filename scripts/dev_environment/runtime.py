@@ -1,4 +1,6 @@
 import fcntl
+from contextlib import closing
+from http.client import HTTPConnection
 import json
 import os
 from pathlib import Path
@@ -10,8 +12,7 @@ import subprocess
 import sys
 import threading
 import time
-import urllib.error
-import urllib.request
+from urllib.parse import urlsplit
 
 from scripts.dev_environment import configuration as config
 from scripts.dev_environment.processes import Child, reap
@@ -66,27 +67,30 @@ def clear_socket(path):
     raise ValueError(f"已有监听者，拒绝接管：{path}")
 
 
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *_):
-        return None
-
-
-def fetch(url):
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
-    try:
-        with opener.open(url, timeout=0.8) as response:
-            return json.load(response)
-    except urllib.error.HTTPError as error:
-        error.close()
-        raise
-
-
 def probe(record):
-    info = fetch(record["url"] + "/api/info")
-    if (info.get("pid") != record["service_pid"] or info.get("build") != record["program_sha256"]
-            or info.get("dataDir") != str(Path(record["root"]) / "data")):
-        raise RuntimeError("服务身份不匹配，未读取会话")
-    snapshot = fetch(record["url"] + "/api/sessions")
+    address = urlsplit(record["url"])
+    with closing(HTTPConnection(address.hostname, address.port, timeout=0.8)) as connection:
+        connection.connect()
+        connection.auto_open = False
+        pinned = connection.sock
+
+        def read(path):
+            if connection.sock is not pinned:
+                raise RuntimeError("身份连接已关闭，拒绝重新连接读取会话")
+            connection.request("GET", path)
+            with connection.getresponse() as response:
+                if response.status != 200:
+                    raise RuntimeError(f"开发服务返回 HTTP {response.status}，不跟随重定向")
+                value = json.load(response)
+            if connection.sock is not pinned:
+                raise RuntimeError("身份连接已关闭，拒绝继续读取会话")
+            return value
+
+        info = read("/api/info")
+        if (info.get("pid") != record["service_pid"] or info.get("build") != record["program_sha256"]
+                or info.get("dataDir") != str(Path(record["root"]) / "data")):
+            raise RuntimeError("服务身份不匹配，未读取会话")
+        snapshot = read("/api/sessions")
     health = snapshot["health"]
     errors = [health.get(key) for key in ("error", "runtimeError", "nativeError", "nativeStageError", "sectionsError")]
     errors.extend(session.get("observationError") for session in snapshot["sessions"])
