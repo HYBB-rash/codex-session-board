@@ -370,6 +370,8 @@ pub fn open_conversation(identifier: &str, config: &Config) -> Result<String> {
 }
 
 fn open_client_url(url: String, config: &Config) -> Result<String> {
+    #[cfg(target_os = "linux")]
+    let singleton = crate::singleton::runtime::navigation(config)?;
     let directory = config.data_dir.canonicalize().context("客户端工作目录不可用")?;
     let mut child = Command::new(config.open_command.first().context("缺少客户端命令")?)
         .current_dir(&directory)
@@ -389,6 +391,8 @@ fn open_client_url(url: String, config: &Config) -> Result<String> {
         std::thread::sleep(Duration::from_millis(10));
     }
     std::thread::spawn(move || {
+        #[cfg(target_os = "linux")]
+        let _singleton = singleton;
         let _ = child.wait();
     });
     Ok(url)

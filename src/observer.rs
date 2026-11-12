@@ -359,6 +359,8 @@ fn remote_worker(app: Arc<App>) -> Result<()> {
 }
 
 pub fn start(app: &Arc<App>) -> Result<()> {
+    #[cfg(target_os = "linux")]
+    crate::singleton::runtime::start(app)?;
     crate::auto_archive::start(app)?;
     if !app.config.sidebar_socket.as_os_str().is_empty() && !app.config.sidebar_caller.is_empty() {
         let remote = Arc::clone(app);

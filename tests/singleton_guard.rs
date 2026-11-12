@@ -2,7 +2,7 @@
 use anyhow::Result;
 use codex_session_board::singleton::Guard;
 use std::os::unix::fs::symlink;
-use std::fs;
+use std::{fs, path::PathBuf};
 #[path = "singleton_guard/support.rs"]
 mod support;
 use support::Fixture;
@@ -41,3 +41,6 @@ fn missing_cookie_recovers_but_mismatch_and_file_are_preserved() -> Result<()> {
     Ok(())
 }
 
+
+#[path = "singleton_guard/corners.rs"]
+mod corners;

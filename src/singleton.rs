@@ -6,6 +6,7 @@ use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::{Path, PathBuf};
 
 mod identity;
+pub(crate) mod runtime;
 use identity::{Identity, anchored, inode, private_directory, same_directory};
 
 const LINKS: [&str; 3] = ["SingletonLock", "SingletonSocket", "SingletonCookie"];

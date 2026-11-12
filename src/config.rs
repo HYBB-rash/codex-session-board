@@ -34,6 +34,7 @@ pub struct Config {
     pub history_per_poll: usize,
     pub host_id: String,
     pub open_command: Vec<String>,
+    pub client_singleton_profile: Option<PathBuf>,
     pub desktop_socket: PathBuf,
     pub runtime_poll_seconds: u64,
     pub auto_archive_seconds: Option<u64>,
@@ -73,6 +74,7 @@ impl Default for Config {
                 }
                 .into(),
             ],
+            client_singleton_profile: None,
             desktop_socket: env::var_os("CODEX_LINUX_APP_SERVER_BRIDGE_SOCKET")
                 .map(PathBuf::from)
                 .unwrap_or_default(),
@@ -146,6 +148,12 @@ impl Config {
     }
 
     fn validate_commands(&self) -> Result<()> {
+        ensure!(
+            self.client_singleton_profile
+                .as_ref()
+                .is_none_or(|path| cfg!(target_os = "linux") && !path.as_os_str().is_empty()),
+            "client_singleton_profile 仅支持 Linux 非空路径"
+        );
         for (name, command) in [
             ("codex_command", &self.codex_command),
             ("open_command", &self.open_command),
@@ -253,6 +261,10 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
     config.validate()?;
     let base = config_path.parent().context("配置文件缺少父目录")?;
     config.data_dir = resolve_path(&base.join(&config.data_dir))?;
+    config.client_singleton_profile = config
+        .client_singleton_profile
+        .map(|path| resolve_path(&base.join(path)))
+        .transpose()?;
     Ok(config)
 }
 
