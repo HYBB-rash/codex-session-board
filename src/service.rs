@@ -22,6 +22,7 @@ mod macos;
 mod migration;
 mod backup;
 mod owned;
+pub(crate) use owned::RunningBoard;
 #[cfg(target_os = "macos")]
 use macos::process_start;
 

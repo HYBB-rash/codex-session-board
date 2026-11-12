@@ -193,12 +193,17 @@ fn xdg_home(name: &str, fallback: &Path) -> Result<PathBuf> {
     Ok(home.join(fallback))
 }
 
-pub fn default_paths() -> Result<(PathBuf, PathBuf)> {
+pub fn entry_path() -> Result<PathBuf> {
     let config = match environment_path("CODEX_SESSION_BOARD_CONFIG") {
         Some(path) => path,
         None => xdg_home("XDG_CONFIG_HOME", Path::new(".config"))?
             .join("codex-session-board/config.json"),
     };
+    Ok(if config.is_absolute() { config } else { env::current_dir()?.join(config) })
+}
+
+pub fn default_paths() -> Result<(PathBuf, PathBuf)> {
+    let config = entry_path()?;
     let data = xdg_home("XDG_DATA_HOME", Path::new(".local/share"))?.join("codex-session-board");
     Ok((resolve_path(&config)?, resolve_path(&data)?))
 }

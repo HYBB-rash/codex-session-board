@@ -32,8 +32,8 @@ enum Action {
 
 fn main() -> Result<()> {
     let arguments = Cli::parse();
-    let defaults = config::default_paths()?;
-    let path = arguments.config.as_deref().unwrap_or(&defaults.0);
+    let entry = config::entry_path()?;
+    let path = arguments.config.as_deref().unwrap_or(&entry);
     match arguments.command.unwrap_or(Action::Serve) {
         Action::Mcp => mcp::serve(Some(path)),
         Action::Serve => serve(path),

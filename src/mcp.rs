@@ -1,12 +1,9 @@
-use crate::{config, service};
+use crate::{config, runtime::RuntimeHandle};
 use anyhow::{Context, Result, bail, ensure};
 use base64::Engine;
 use serde_json::{Value, json};
 use std::io::{BufRead, Write};
 use std::path::Path;
-use std::sync::Mutex;
-use std::thread;
-use std::time::{Duration, Instant};
 
 pub const RESOURCE: &str = "ui://session-board/index.html";
 pub const MIME: &str = "text/html;profile=mcp-app";
@@ -109,7 +106,7 @@ pub fn resource() -> Value {
         "openai/ui":{"preferredDisplayMode":"fullscreen","availableDisplayModes":["inline","fullscreen"]}}})
 }
 
-pub fn backend(config_path: &Path, name: &str, arguments: &Value) -> Result<Value> {
+fn backend(runtime: &mut RuntimeHandle, name: &str, arguments: &Value) -> Result<Value> {
     if name == "board_view" {
         return Ok(json!({"ready":true}));
     }
@@ -125,110 +122,10 @@ pub fn backend(config_path: &Path, name: &str, arguments: &Value) -> Result<Valu
         "board_refresh" => "/api/refresh",
         _ => bail!("未知看板工具"),
     };
-    let url = board_url(config_path)?;
-    let client = backend_client(config_path)?;
-    if name == "board_snapshot" {
-        return Ok(client
-            .get(format!("{url}{path}"))
-            .send()?
-            .error_for_status()?
-            .json()?);
-    }
-    post(&client, &url, path, arguments)
+    runtime.request(path, (name != "board_snapshot").then_some(arguments))
 }
 
-fn board_url(config_path: &Path) -> Result<String> {
-    static SLOT: Mutex<Option<String>> = Mutex::new(None);
-    let mut slot = SLOT
-        .lock()
-        .map_err(|_| anyhow::anyhow!("看板启动锁已损坏"))?;
-    if let Some(url) = slot.clone() {
-        return Ok(url);
-    }
-    let url = open_board(config_path)?;
-    *slot = Some(url.clone());
-    Ok(url)
-}
-
-fn open_board(config_path: &Path) -> Result<String> {
-    match service::open(config_path)? {
-        service::OpenedBoard::Reused { url, .. } => Ok(url),
-        service::OpenedBoard::Owned(board) => {
-            let url = board.url.clone();
-            thread::spawn(move || {
-                let _ = board.run();
-            });
-            wait_ready(&url)?;
-            Ok(url)
-        }
-    }
-}
-
-fn wait_ready(url: &str) -> Result<()> {
-    let client = reqwest::blocking::Client::builder()
-        .no_proxy()
-        .timeout(Duration::from_millis(200))
-        .build()?;
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let info = format!("{url}/api/info");
-    while Instant::now() < deadline {
-        let ready = client
-            .get(&info)
-            .send()
-            .is_ok_and(|response| response.status().is_success());
-        if ready {
-            return Ok(());
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-    bail!("看板尚未在插件进程内就绪")
-}
-
-fn backend_client(config_path: &Path) -> Result<reqwest::blocking::Client> {
-    let config = config::load(Some(config_path))?;
-    let timeout = if !config.sidebar_socket.as_os_str().is_empty() {
-        config
-            .rpc_timeout_seconds
-            .saturating_mul(5)
-            .saturating_add(10)
-    } else {
-        8
-    };
-    Ok(reqwest::blocking::Client::builder()
-        .no_proxy()
-        .timeout(Duration::from_secs(timeout))
-        .build()?)
-}
-
-fn post(
-    client: &reqwest::blocking::Client,
-    url: &str,
-    path: &str,
-    arguments: &Value,
-) -> Result<Value> {
-    let html = client.get(url).send()?.error_for_status()?.text()?;
-    let token = html
-        .split("const csrf = \"")
-        .nth(1)
-        .and_then(|tail| tail.split('"').next())
-        .filter(|value| !value.is_empty())
-        .context("无法读取本地服务令牌")?;
-    let response = client
-        .post(format!("{url}{path}"))
-        .header("X-CSRF-Token", token)
-        .json(arguments)
-        .send()?;
-    let status = response.status();
-    let result: Value = response.json()?;
-    ensure!(
-        status.is_success(),
-        "{}",
-        result["error"].as_str().unwrap_or("看板操作失败")
-    );
-    Ok(result)
-}
-
-pub fn dispatch(method: &str, params: &Value, path: &Path) -> Result<Value> {
+fn dispatch(method: &str, params: &Value, runtime: &mut RuntimeHandle) -> Result<Value> {
     match method {
         "initialize" => Ok(
             json!({"protocolVersion":params["protocolVersion"].as_str().unwrap_or("2025-06-18"),
@@ -238,9 +135,7 @@ pub fn dispatch(method: &str, params: &Value, path: &Path) -> Result<Value> {
         ),
         "ping" => Ok(json!({})),
         "tools/list" => {
-            let legacy = path.try_exists()?.then(|| config::load(Some(path)))
-                .transpose()?.is_some_and(|config| config.legacy_mode);
-            Ok(tools_for(legacy))
+            Ok(tools_for(runtime.legacy()))
         }
         "resources/list" => {
             Ok(json!({"resources":[{"uri":RESOURCE,"name":"会话看板","mimeType":MIME}]}))
@@ -252,7 +147,7 @@ pub fn dispatch(method: &str, params: &Value, path: &Path) -> Result<Value> {
         }
         "tools/call" => Ok(
             match backend(
-                path,
+                runtime,
                 params["name"].as_str().context("缺少工具名称")?,
                 params.get("arguments").unwrap_or(&json!({})),
             ) {
@@ -269,19 +164,20 @@ pub fn dispatch(method: &str, params: &Value, path: &Path) -> Result<Value> {
 }
 
 pub fn serve(path: Option<&Path>) -> Result<()> {
-    let defaults = config::default_paths()?;
-    let path = path.unwrap_or(&defaults.0);
+    let entry = config::entry_path()?;
+    let path = path.unwrap_or(&entry);
+    let mut runtime = RuntimeHandle::load(path)?;
     for line in std::io::stdin().lock().lines() {
-        let result = answer(&line?, path);
+        let result = answer(&line?, &mut runtime);
         if let Some(response) = result {
             writeln!(std::io::stdout().lock(), "{response}")?;
             std::io::stdout().flush()?;
         }
     }
-    Ok(())
+    runtime.shutdown()
 }
 
-fn answer(line: &str, path: &Path) -> Option<Value> {
+fn answer(line: &str, runtime: &mut RuntimeHandle) -> Option<Value> {
     let parsed = serde_json::from_str::<Value>(line);
     let request = match parsed {
         Ok(request) => request,
@@ -294,7 +190,7 @@ fn answer(line: &str, path: &Path) -> Option<Value> {
     let identifier = request.get("id")?;
     let params = request.get("params").cloned().unwrap_or(json!({}));
     Some(
-        match dispatch(request["method"].as_str().unwrap_or(""), &params, path) {
+        match dispatch(request["method"].as_str().unwrap_or(""), &params, runtime) {
             Ok(result) => json!({"jsonrpc":"2.0","id":identifier,"result":result}),
             Err(error) => {
                 json!({"jsonrpc":"2.0","id":identifier,"error":{"code":-32602,"message":error.to_string()}})
