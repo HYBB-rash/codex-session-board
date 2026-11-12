@@ -2,11 +2,11 @@
 
 - owner: codex
 - execution_mode: isolated_write
-- allowed_write_set: index.html; scripts/check-host-filter.mjs; scripts/check-ui-layout.mjs; tests/ui_layout.rs; Docs/PROJECT-FILTERS.md; context/tasks/active/host-project-filter-20261113.md; context/tasks/completed/host-project-filter-20261113.md; context/journal/2026-11-13-host-project-filter.md; context/STATE.yaml; Cargo.toml; Cargo.lock; plugin.json; .codex-plugin/plugin.json
+- allowed_write_set: index.html; scripts/check-host-filter.mjs; scripts/check-ui-layout.mjs; tests/ui_layout.rs; Docs/PROJECT-FILTERS.md; context/tasks/active/host-project-filter-20261113.md; context/tasks/completed/host-project-filter-20261113.md; context/handoffs/host-project-filter-20261113.md; context/journal/2026-11-13-host-project-filter.md; context/STATE.yaml; Cargo.toml; Cargo.lock; plugin.json; .codex-plugin/plugin.json
 - base_commit: c15946e647b222029ee5938ec2ebdde740833155
 - worktree_path: /Users/hongyong/Developer/codex-session-board-host-filter
 - coordinator: codex
-- status: implementing
+- status: awaiting_integration_and_target_validation
 
 ## 已授权方案
 
@@ -20,3 +20,7 @@
 使用独立开发 fixture 和独立浏览器，不安装、重载或重启日用插件。
 覆盖同名项目、空项目、离线缓存、读取失败、目标固定、归档范围和窄窗口。
 执行项目检查和完整验收入口。真实 Codex 证据缺失时继续标记待验证。
+
+## 实现结果
+
+候选实现通过 49 项交互、48 组布局及 6 项隔离原生服务检查；完整验收 629 项自动检查通过，14 项真实环境证据待补，release_ready=false。接手见 `context/handoffs/host-project-filter-20261113.md`，尚未合入主工作区或部署。
