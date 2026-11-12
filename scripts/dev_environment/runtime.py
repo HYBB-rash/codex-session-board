@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 
 from scripts.dev_environment import configuration as config
@@ -72,8 +73,12 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def fetch(url):
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
-    with opener.open(url, timeout=0.8) as response:
-        return json.load(response)
+    try:
+        with opener.open(url, timeout=0.8) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        error.close()
+        raise
 
 
 def probe(record):
@@ -149,7 +154,8 @@ def supervise(source, root):
             connection.settimeout(2)
             try:
                 message = json.loads(connection.makefile("r").readline(4097))
-                if not isinstance(message, dict) or not isinstance(message.get("token"), str):
+                if (not isinstance(message, dict) or not isinstance(message.get("token"), str)
+                        or not isinstance(message.get("action"), str)):
                     raise ValueError("无效控制请求")
                 if not secrets.compare_digest(message["token"].encode(), record["_token"].encode()):
                     raise ValueError("控制凭据不匹配")
@@ -164,7 +170,7 @@ def supervise(source, root):
                 except (OSError, ValueError, KeyError, RuntimeError) as error:
                     current.update(phase="degraded", reason=str(error))
                 connection.sendall((json.dumps(current) + "\n").encode())
-            except (OSError, ValueError) as error:
+            except (OSError, ValueError, RecursionError) as error:
                 try:
                     connection.sendall((json.dumps({"error": str(error)}) + "\n").encode())
                 except OSError:
@@ -242,7 +248,10 @@ def start(source, root):
 def stop(root):
     existing = status(root)
     if existing["phase"] in ("running", "degraded"):
-        return request(root, "stop")
+        result = request(root, "stop")
+        if result["phase"] != "stopped" or not result.get("cleanup_confirmed"):
+            raise RuntimeError(f"停止未能确认完成：{result.get('reason')}")
+        return result
     if existing["phase"] == "unreachable":
         raise ValueError("控制连接不可用，不会根据旧 PID 杀进程")
     return existing

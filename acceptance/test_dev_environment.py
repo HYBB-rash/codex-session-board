@@ -43,6 +43,16 @@ def endpoint(payload, code=200, headers=None):
 
 
 class DevEnvironmentTests(unittest.TestCase):
+    def test_boundary_accepts_a_system_parent_directory_alias(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            target = parent / "canonical"
+            target.mkdir()
+            (parent / "alias").symlink_to(target.resolve(), target_is_directory=True)
+            root = parent / "alias/task"
+            root.mkdir(mode=0o700)
+            configuration.boundary(root)
+
     def test_private_directories_reject_symlinks_and_shared_permissions(self):
         with tempfile.TemporaryDirectory() as temporary:
             parent = Path(temporary)

@@ -70,7 +70,7 @@ def boundary(root):
              "service.log", "supervisor.log", "data", "desktop", "sidebar")
     for name in names:
         path = root / name
-        if path.is_symlink() or not path.resolve().is_relative_to(root):
+        if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()):
             raise ValueError(f"开发路径越界：{name}")
     data = root / "data"
     if data.exists() and any(path.is_symlink() for path in data.rglob("*")):
@@ -125,7 +125,7 @@ def setup(source, root):
     if target.is_symlink():
         raise ValueError("开发构建目录不能是共享符号链接")
     before = source_fingerprint(source)
-    environment = dict(os.environ, CARGO_TARGET_DIR=str(target))
+    environment = dict(os.environ, CARGO_TARGET_DIR=str(target), CARGO_CACHE_AUTO_CLEAN_FREQUENCY="never")
     if sys.platform == "darwin":
         environment["TMPDIR"] = "/private/tmp"
     subprocess.run(["cargo", "fetch", "--locked"], cwd=source, env=environment, check=True,

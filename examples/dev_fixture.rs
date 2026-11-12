@@ -95,12 +95,14 @@ fn connection(stream: UnixStream, surface: Arc<Mutex<state::Surface>>, framed: b
     if stream.peer_addr().is_err() {
         return Ok(());
     }
+    stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
     if framed {
         return sidebar_connection(stream, surface);
     }
     let mut socket = tungstenite::accept(stream)?;
+    socket.get_mut().set_read_timeout(None)?;
     loop {
         let message = socket.read()?;
         if message.is_close() {
@@ -138,4 +140,33 @@ fn sidebar_connection(mut stream: UnixStream, surface: Arc<Mutex<state::Surface>
 fn shared_reply(surface: &Mutex<state::Surface>, request: &Value, framed: bool) -> Result<Value> {
     let mut locked = surface.lock().map_err(|_| anyhow::anyhow!("fixture 锁损坏"))?;
     Ok(reply(&mut locked, request, framed))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepted_nonblocking_stream_serves_a_delayed_sidebar_frame() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        state::prepare(directory.path(), 18888)?;
+        let surface = Arc::new(Mutex::new(state::Surface::load(directory.path())?));
+        let (mut client, server) = UnixStream::pair()?;
+        server.set_nonblocking(true)?;
+        client.set_read_timeout(Some(Duration::from_secs(2)))?;
+        let worker = std::thread::spawn(move || connection(server, surface, true));
+        std::thread::sleep(Duration::from_millis(50));
+        let request = serde_json::to_vec(&json!({"id":1,"params":{
+            "tool":"threadSection/list","arguments":{}}}))?;
+        client.write_all(&(u32::try_from(request.len())?).to_le_bytes())?;
+        client.write_all(&request)?;
+        let mut header = [0; 4];
+        client.read_exact(&mut header)?;
+        let mut response = vec![0; u32::from_le_bytes(header) as usize];
+        client.read_exact(&mut response)?;
+        assert_eq!(serde_json::from_slice::<Value>(&response)?["result"]["success"], true);
+        drop(client);
+        worker.join().expect("fixture connection thread")?;
+        Ok(())
+    }
 }

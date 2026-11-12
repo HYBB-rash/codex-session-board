@@ -1130,6 +1130,7 @@
       "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation"
     ],
     "DATA-001": [
+      "acceptance.test_dev_environment.DevEnvironmentTests.test_boundary_accepts_a_system_parent_directory_alias",
       "acceptance.test_dev_environment.DevEnvironmentTests.test_private_directories_reject_symlinks_and_shared_permissions",
       "acceptance.test_dev_environment.DevEnvironmentTests.test_child_environment_does_not_inherit_desktop_or_credentials",
       "acceptance.test_dev_environment.DevEnvironmentTests.test_production_data_path_is_rejected_even_with_a_matching_checksum",
@@ -1139,6 +1140,7 @@
       "acceptance.test_dev_environment.DevEnvironmentTests.test_http_redirect_cannot_leave_the_expected_endpoint",
       "example::dev_fixture::state::tests::fixture_rejects_external_hosts_and_unknown_sessions",
       "example::dev_fixture::state::tests::matching_session_ids_remain_private_and_survive_prepare",
+      "example::dev_fixture::tests::accepted_nonblocking_stream_serves_a_delayed_sidebar_frame",
       "lib::codex_session_board::remote::hosts::tests::registered_hosts_do_not_depend_on_projects_and_respect_disabled_connections",
       "lib::codex_session_board::remote::hosts::tests::host_paths_cannot_escape_and_ssh_options_cannot_be_injected",
       "example::remote_parity_lab::host_isolation_tests::host_re_registration_requires_explicit_migration",
