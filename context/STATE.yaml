@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-11-12",
+  "updated_at": "2026-11-13",
   "current_phase": {
-    "id": "plugin-runtime-ownership-20261112",
+    "id": "parallel-development-design-20261113",
     "status": "completed",
-    "as_of": "2026-11-12",
-    "summary": "插件统一持有配置、App、HTTP及工作线程；安装更新只处理包和宿主重载。0.3.34已在Fedora和Mac真实桌面加载并调用工具，正式数据目录、全部既有备注和原生归档保留。收尾版本0.3.36由正式CI构建发布candidate后切换；执行结果见outputs/state-incident-20261112。完整目标环境验收仍未代签，stable不发布。"
+    "as_of": "2026-11-13",
+    "summary": "已记录 Mac 多任务隔离、宿主租约、串行集成、现行版本规则兼容重放、候选交付及 Linux 实际读回设计。待实现接口、七步实施顺序及并发/故障签收场景均已列明；仅完成设计，未推送或部署，业务完整验收仍按原门槛待证。"
   },
   "active_tasks": [
     "context/tasks/active/archive-button.md",
@@ -33,7 +33,7 @@
     "PWA安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。",
     "本机和M1专用会话真实归档已通过。正式进程已是 v0.2.63，原生侧栏取消归档后，下一次本机位置读回会恢复本地已确认卡片并保留备注。这次启动还没有完成一次本机位置读回。旧库含热日志时，迁移前须在私有副本执行SQLite标准恢复，保留原始数据库与日志。"
   ],
-  "last_completed_task": "context/tasks/completed/plugin-runtime-ownership-20261112.md",
+  "last_completed_task": "context/tasks/completed/parallel-development-design-20261113.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
@@ -44,7 +44,7 @@
   },
   "verification": {
     "status": "passed",
-    "last_checked_at": "2026-11-12",
+    "last_checked_at": "2026-11-13",
     "method": "sh scripts/verify_context.sh",
     "boundary": "Project-local context files and declared local paths only."
   }
