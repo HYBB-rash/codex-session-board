@@ -40,7 +40,7 @@ fn logical(config: &Config) -> Result<HashMap<String, String>> {
     let state: Value = serde_json::from_reader(std::io::BufReader::new(std::fs::File::open(
         &config.sidebar_state_file,
     )?))?;
-    let accounts = state["electron-persisted-atom-state"]["sidebar-custom-sections-v3"]
+    let accounts = client_atoms(&state)?["sidebar-custom-sections-v3"]
         .as_object()
         .context("客户端分区映射无效")?;
     let entries = account_sections(config, accounts)?;

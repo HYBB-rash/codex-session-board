@@ -57,6 +57,36 @@ fn reader(section: Value) -> Reader {
 }
 
 #[test]
+fn direct_read_uses_the_current_owner_instead_of_legacy_or_other_accounts() -> Result<()> {
+    let (_directory, config, original) = setup()?;
+    let atoms = original["electron-persisted-atom-state"].clone();
+    let mut state = json!({
+        "electron-renderer-content-owner":"current",
+        "electron-owner-atoms:current":atoms,
+        "electron-owner-atoms:other":atoms,
+        "electron-persisted-atom-state":{}
+    });
+    state["electron-owner-atoms:other"]["sidebar-custom-sections-v3"]["account"]["sections"][0]
+        ["hostSectionIds"]["local"] = json!("wrong-backend");
+    std::fs::write(&config.sidebar_state_file, state.to_string())?;
+    assert_eq!(direct::read(&mut reader(section()), &config, THREAD)?.state, "review");
+    Ok(())
+}
+
+#[test]
+fn direct_read_never_falls_back_from_a_missing_or_invalid_current_owner() -> Result<()> {
+    let (_directory, config, original) = setup()?;
+    for owner in [Value::Null, json!(""), json!("missing"), json!(42)] {
+        let mut state = original.clone();
+        state["electron-renderer-content-owner"] = owner;
+        state["electron-owner-atoms:other"] = original["electron-persisted-atom-state"].clone();
+        std::fs::write(&config.sidebar_state_file, state.to_string())?;
+        assert!(direct::read(&mut reader(section()), &config, THREAD).is_err());
+    }
+    Ok(())
+}
+
+#[test]
 fn retired_mapping_never_changes_the_effective_native_dependencies() -> Result<()> {
     let (_directory, mut config, _) = setup()?;
     config.status_sections.insert("completed".into(), "deleted-section".into());

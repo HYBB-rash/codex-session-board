@@ -2,12 +2,21 @@
   "schema_version": 1,
   "updated_at": "2026-11-12",
   "current_phase": {
-    "id": "mac-development-release-20261111",
-    "status": "pending_acceptance",
+    "id": "state-incident-20261112",
+    "status": "in_progress",
     "as_of": "2026-11-12",
-    "summary": "完整开发材料已迁入Mac，形式化封板f8d716d及双方历史保留。0.3.22双平台CI、561自动项及双端升级回退已验证，Mac候选正常运行。用户已修复Mac推送认证，Git使用本机op-member-gh-ssh流式加载密钥到一次性agent；默认分支已独立读回为main。本轮从Mac签名并实际推送后，源码SHA、双平台CI、新包安装与实际MCP读回以handoff指定的final-delivery.json为准。认证不再列为待用户处理项，完整业务验收仍缺真实证据，原正式Fedora0.2.92保持原部署。"
+    "summary": "用户报告面板状态错乱，要求先调查报告再直接恢复。两实例和数据库已保全，确认MCP默认入口读取旧库，正式数据仍在；正式分区还因当前账号存储迁移而读取失败。本轮修正当前账号映射与别名读取，统一本机正式配置并重建缓存连接，禁止批量移列、标题推断恢复或新增归档。调查报告及后续恢复结果位于outputs/state-incident-20261112。此前Mac交付为0.3.25；本轮修复和完整业务验收分别记录，不发布stable。"
   },
-  "active_tasks": ["context/tasks/active/archive-button.md", "context/tasks/active/deploy-new-session-project.md", "context/tasks/active/socket-recovery-guidance-20261111.md", "context/tasks/active/state-section-consistency-implementation-20261111.md", "context/tasks/active/ui-worktree-cleanup-20261111.md", "context/tasks/active/remote-final-integration-20261111.md", "context/tasks/active/mac-development-release-20261111.md"],
+  "active_tasks": [
+    "context/tasks/active/archive-button.md",
+    "context/tasks/active/deploy-new-session-project.md",
+    "context/tasks/active/socket-recovery-guidance-20261111.md",
+    "context/tasks/active/state-section-consistency-implementation-20261111.md",
+    "context/tasks/active/ui-worktree-cleanup-20261111.md",
+    "context/tasks/active/remote-final-integration-20261111.md",
+    "context/tasks/active/mac-development-release-20261111.md",
+    "context/tasks/active/state-incident-20261112.md"
+  ],
   "known_open_issues": [
     "统一main的自动验证不代签目标环境证据。形式化来源曾出现一次未改动RPC恢复测试的偶发失败，单项复验与后续完整钩子通过，原因未确定；失败及主动中断记录保留。最终发布结论只依据合并后指纹的完整验收，缺少外部证据仍保持待验证。",
     "冻结92已按用户最新带遗留发布指令上线，新解包根529自动项再次全过；91 timer、92原MCP Null及首次共享target路径失败保留。release_ready仍false，完整31/16及UI/PWA/N/R2待完成，不以部署冒称验收通过。",
@@ -17,7 +26,13 @@
     "0.2.79连接异常和恢复指导已实现，任务仍待发布验收；缺少真实客户端退出重启恢复及完整外部证据，未部署。续作见context/handoffs/socket-recovery-guidance-20261111.md。",
     "2026-11-11项目筛选列宽回归已修复并上线v0.2.82：更正标题nowrap及看板min-content；20组真实浏览器回归与正式页面159/5条会话筛选往返保持等宽。完整验收500项自动通过，14项全局真实环境证据仍待补，release_ready=false。见context/tasks/completed/ui-stable-columns-20261111.md。",
     "2026-11-11正式v0.2.73仍有分区socket丢失。两套错误清理器的timer、service及脚本已按授权删除，系统清理改为十五分钟检查、/tmp四小时老化，首次执行成功，隔离活socket保护通过。历史删除责任PID未实锤，客户端及包装器的端点恢复尚未实施，未重启Codex。方案及实施记录见Docs/SOCKET-LIFECYCLE-REPORT-20261111.md。",
-    "正式进程已是 v0.2.63。完整活动列表里没有、但出现在原生归档列表中的会话不再计为未读回位置，本地行不改。这次启动时桌面 socket 文件不在，本机 nativeError 为桌面 socket 不存在，4 个缺项有没有消失还没有在一次成功读回里核对。未改用户会话备注。v0.2.38两张已归档M1验收卡的迁移缓存已依据新鲜归档列表单独补确认。", "新建会话旧任务的第二项目输入页验收仍单独保留；本次M1已登记项目新建和同UUID首轮闭环不代签此前已取消的新建项目任务。", "v0.2.38完整31条及16项已通过。v0.2.63 已换上 18767。M1 已按运行状态分列。bb macbook 这次握手是 unexpected end of file，超限轮次隔离还没有在这次连接里走到。两台 Hermes 自动连接保持关闭。未扩大专用验收写入范围。", "项目登记与分区读回依赖当前Codex客户端内部状态格式，格式改变时需重新核对；旧userMessage ID重编号会保守增加inputVersion，旧表单可能需刷新。", "PWA安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。", "本机和M1专用会话真实归档已通过。正式进程已是 v0.2.63，原生侧栏取消归档后，下一次本机位置读回会恢复本地已确认卡片并保留备注。这次启动还没有完成一次本机位置读回。旧库含热日志时，迁移前须在私有副本执行SQLite标准恢复，保留原始数据库与日志。"],
+    "正式进程已是 v0.2.63。完整活动列表里没有、但出现在原生归档列表中的会话不再计为未读回位置，本地行不改。这次启动时桌面 socket 文件不在，本机 nativeError 为桌面 socket 不存在，4 个缺项有没有消失还没有在一次成功读回里核对。未改用户会话备注。v0.2.38两张已归档M1验收卡的迁移缓存已依据新鲜归档列表单独补确认。",
+    "新建会话旧任务的第二项目输入页验收仍单独保留；本次M1已登记项目新建和同UUID首轮闭环不代签此前已取消的新建项目任务。",
+    "v0.2.38完整31条及16项已通过。v0.2.63 已换上 18767。M1 已按运行状态分列。bb macbook 这次握手是 unexpected end of file，超限轮次隔离还没有在这次连接里走到。两台 Hermes 自动连接保持关闭。未扩大专用验收写入范围。",
+    "项目登记与分区读回依赖当前Codex客户端内部状态格式，格式改变时需重新核对；旧userMessage ID重编号会保守增加inputVersion，旧表单可能需刷新。",
+    "PWA安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。",
+    "本机和M1专用会话真实归档已通过。正式进程已是 v0.2.63，原生侧栏取消归档后，下一次本机位置读回会恢复本地已确认卡片并保留备注。这次启动还没有完成一次本机位置读回。旧库含热日志时，迁移前须在私有副本执行SQLite标准恢复，保留原始数据库与日志。"
+  ],
   "last_completed_task": "context/tasks/completed/formal-followup-integration-20261111.md",
   "disclosure": {
     "startup": [

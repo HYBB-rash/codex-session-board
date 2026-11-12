@@ -5,6 +5,17 @@ use std::collections::{HashMap, HashSet};
 
 pub mod direct;
 
+fn client_atoms(state: &Value) -> Result<&serde_json::Map<String, Value>> {
+    let atoms = if let Some(owner) = state.get("electron-renderer-content-owner") {
+        let owner = owner.as_str().filter(|value| !value.is_empty())
+            .context("客户端当前账号标识无效")?;
+        &state[format!("electron-owner-atoms:{owner}")]
+    } else {
+        &state["electron-persisted-atom-state"]
+    };
+    atoms.as_object().context("客户端当前账号数据无效")
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Observation {
     pub state: String,
@@ -101,9 +112,7 @@ fn aliases(config: &Config) -> Result<HashMap<String, String>> {
         return Ok(HashMap::new());
     }
     let state: Value = serde_json::from_reader(std::fs::File::open(&config.sidebar_state_file)?)?;
-    let atoms = state["electron-persisted-atom-state"]
-        .as_object()
-        .context("客户端别名数据无效")?;
+    let atoms = client_atoms(&state)?;
     let mut aliases = HashMap::new();
     for (key, value) in atoms {
         if let Some(identifier) = key.strip_prefix("thread-client-id-v1:local%3A") {
@@ -322,6 +331,25 @@ mod tests {
             json!({"electron-persisted-atom-state":atoms}).to_string(),
         )?;
         Ok((directory, config))
+    }
+
+    #[test]
+    fn aliases_follow_the_current_owner_without_legacy_fallback() -> Result<()> {
+        let identifier = "11111111-1111-4111-8111-111111111111";
+        let (_directory, config) = alias_config(identifier)?;
+        let original: Value = serde_json::from_slice(&std::fs::read(&config.sidebar_state_file)?)?;
+        let mut state = json!({
+            "electron-renderer-content-owner":"current",
+            "electron-owner-atoms:current":original["electron-persisted-atom-state"],
+            "electron-persisted-atom-state":{}
+        });
+        std::fs::write(&config.sidebar_state_file, state.to_string())?;
+        assert_eq!(aliases(&config)?.get("client-new-thread:alias").map(String::as_str), Some(identifier));
+        state["electron-renderer-content-owner"] = json!("missing");
+        state["electron-persisted-atom-state"] = original["electron-persisted-atom-state"].clone();
+        std::fs::write(&config.sidebar_state_file, state.to_string())?;
+        assert!(aliases(&config).is_err());
+        Ok(())
     }
 
     #[test]

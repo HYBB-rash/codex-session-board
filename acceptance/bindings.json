@@ -359,6 +359,9 @@
       "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions"
     ],
     "MANUAL-001": [
+      "test::native_direct::direct_read_uses_the_current_owner_instead_of_legacy_or_other_accounts",
+      "test::native_direct::direct_read_never_falls_back_from_a_missing_or_invalid_current_owner",
+      "lib::codex_session_board::native_sections::tests::aliases_follow_the_current_owner_without_legacy_fallback",
       "lib::codex_session_board::formal::persistence::native_manual_input_pending_and_title_failure_survive_real_reopen",
       "lib::codex_session_board::formal::fixture::tests::every_reachable_session_roundtrips_through_sqlite",
       "test::native_authority::native_unarchive_restores_the_confirmed_card_and_keeps_the_note",
