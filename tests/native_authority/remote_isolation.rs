@@ -155,6 +155,7 @@ fn actions(live: &Live, client: &Client, before: &Value, remotes: &RemoteFixture
     let after = live.snapshot(client)?;
     check_after(live, client, before, &after)?;
     let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+    eprintln!("REMOTE_ACTIONS state={state} archive={archive} rejection={remote} total={elapsed}");
     anyhow::ensure!(elapsed < 1000.0, "foreground requests took {elapsed} ms");
     Ok(json!({"localStateMs":state,"localArchiveMs":archive,
         "remoteRejectedMs":remote,"foregroundTotalMs":elapsed}))

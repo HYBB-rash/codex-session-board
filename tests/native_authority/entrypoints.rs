@@ -16,7 +16,24 @@ use std::time::{Duration, Instant};
 pub(super) struct Live {
     path: PathBuf,
     url: String,
+    csrf: String,
     child: Option<ChildGuard>,
+}
+
+fn csrf(url: &str) -> Result<String> {
+    let html = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(3))
+        .build()?
+        .get(url)
+        .send()?
+        .error_for_status()?
+        .text()?;
+    html.split("const csrf = \"")
+        .nth(1)
+        .and_then(|tail| tail.split('"').next())
+        .map(str::to_owned)
+        .ok_or_else(|| anyhow::anyhow!("missing CSRF"))
 }
 
 fn cli(path: &Path, action: &str) -> Result<std::process::Output> {
@@ -41,9 +58,12 @@ impl Live {
         BufReader::new(stdout).read_line(&mut line)?;
         let started: Value = serde_json::from_str(line.trim())?;
         anyhow::ensure!(started["started"] == true, "{line}");
+        let url = format!("http://127.0.0.1:{}", config.port);
+        let csrf = csrf(&url)?;
         Ok(Self {
             path,
-            url: format!("http://127.0.0.1:{}", config.port),
+            url,
+            csrf,
             child: Some(child),
         })
     }
@@ -91,15 +111,9 @@ impl Live {
         path: &str,
         body: &Value,
     ) -> Result<reqwest::blocking::Response> {
-        let html = client.get(&self.url).send()?.error_for_status()?.text()?;
-        let token = html
-            .split("const csrf = \"")
-            .nth(1)
-            .and_then(|tail| tail.split('"').next())
-            .ok_or_else(|| anyhow::anyhow!("missing CSRF"))?;
         Ok(client
             .post(format!("{}{path}", self.url))
-            .header("X-CSRF-Token", token)
+            .header("X-CSRF-Token", &self.csrf)
             .json(body)
             .send()?)
     }

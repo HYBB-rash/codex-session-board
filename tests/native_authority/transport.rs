@@ -1,4 +1,5 @@
 use super::*;
+use anyhow::Context;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
@@ -300,15 +301,21 @@ fn connection(
     surface: Arc<Mutex<Surface>>,
     database: &std::path::Path,
 ) -> Result<()> {
-    stream.set_nonblocking(false)?;
-    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    stream
+        .set_nonblocking(false)
+        .context("configure accepted native fixture stream")?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .context("configure native fixture read deadline")?;
     loop {
         let mut size = [0u8; 4];
         if stream.read_exact(&mut size).is_err() {
             return Ok(());
         }
         let mut bytes = vec![0; u32::from_le_bytes(size) as usize];
-        stream.read_exact(&mut bytes)?;
+        stream
+            .read_exact(&mut bytes)
+            .context("read native fixture frame body")?;
         let request: Value = serde_json::from_slice(&bytes)?;
         let params = &request["params"];
         let block = blocking_request(&surface.lock().unwrap(), params);
@@ -321,8 +328,12 @@ fn connection(
         let Some(result) = result else { return Ok(()) };
         let reply = json!({"id":request["id"],"result":{"success":true,"contentItems":[{"type":"inputText","text":result.to_string()}]}});
         let bytes = serde_json::to_vec(&reply)?;
-        stream.write_all(&(bytes.len() as u32).to_le_bytes())?;
-        stream.write_all(&bytes)?;
+        stream
+            .write_all(&(bytes.len() as u32).to_le_bytes())
+            .context("write native fixture frame length")?;
+        stream
+            .write_all(&bytes)
+            .context("write native fixture frame body")?;
     }
 }
 
