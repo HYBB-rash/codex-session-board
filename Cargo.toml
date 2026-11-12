@@ -1,7 +1,7 @@
 [package]
 name = "codex-session-board"
 build = "build.rs"
-version = "0.3.44"
+version = "0.3.45"
 edition = "2024"
 description = "Local Codex conversation status board"
 default-run = "codex-session-board"
@@ -13,6 +13,10 @@ test = true
 
 [[example]]
 name = "remote_parity_lab"
+test = true
+
+[[example]]
+name = "dev_fixture"
 test = true
 
 [lints.rust]

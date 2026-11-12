@@ -1130,6 +1130,8 @@
       "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation"
     ],
     "DATA-001": [
+      "example::dev_fixture::state::tests::fixture_rejects_external_hosts_and_unknown_sessions",
+      "example::dev_fixture::state::tests::matching_session_ids_remain_private_and_survive_prepare",
       "lib::codex_session_board::remote::hosts::tests::registered_hosts_do_not_depend_on_projects_and_respect_disabled_connections",
       "lib::codex_session_board::remote::hosts::tests::host_paths_cannot_escape_and_ssh_options_cannot_be_injected",
       "example::remote_parity_lab::host_isolation_tests::host_re_registration_requires_explicit_migration",
