@@ -2,7 +2,7 @@
 
 owner: codex
 execution_mode: isolated_write
-allowed_write_set: AGENTS.md, examples/, scripts/dev, scripts/dev_environment/, scripts/check-dev-isolation.mjs, scripts/browser-client.mjs, scripts/check-ui-layout.mjs, tests/, acceptance/test_dev_environment.py, acceptance/bindings.json, Cargo.toml, Cargo.lock, plugin.json, .codex-plugin/plugin.json, Docs/MAC-DEVELOPMENT.md, Docs/PARALLEL-DEVELOPMENT.md, context/
+allowed_write_set: AGENTS.md, examples/, scripts/dev, scripts/dev_environment/, scripts/check-dev-isolation.mjs, scripts/browser-client.mjs, scripts/check-ui-layout.mjs, scripts/package_migration.py, tests/, acceptance/test_dev_environment.py, acceptance/test_delivery.py, acceptance/bindings.json, Cargo.toml, Cargo.lock, plugin.json, .codex-plugin/plugin.json, Docs/MAC-DEVELOPMENT.md, Docs/PARALLEL-DEVELOPMENT.md, context/
 base_commit: 82b9355
 worktree_path: /home/herman/.codex/worktrees/mac-dev-environment/notion-program
 coordinator: codex
@@ -63,3 +63,5 @@ Codex 自动环境动作、串行集成及 Linux 即时候选交付留在后续�
 最终 0.3.43 的故障注入抓到清理时控制连接关闭与 status 查询竞态；
 已保留失败报告并补真实 Unix socket 断开回归。该提交上的旧验收已明确取消，
 不用其结果签收新实现；修正后在最终源码重新执行完整验收和 Mac 双任务流程。
+0.3.44 的完整门禁为 611 项自动通过、1 项交付失败：源码白名单未包含 dev 入口和
+三个环境模块。已保留该报告，扩充明确白名单并加强原迁移包测试，不降低指纹等价断言。

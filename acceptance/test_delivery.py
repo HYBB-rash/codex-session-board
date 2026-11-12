@@ -61,8 +61,11 @@ class DeliveryTests(unittest.TestCase):
             for name in (
                 "src/main.rs", "tests/board_contract.rs", "acceptance/requirements.json",
                 "acceptance/model.py", "acceptance/contract.lock.json", "Docs/MIGRATION.md",
+                "scripts/dev", "scripts/dev_environment/configuration.py",
+                "scripts/dev_environment/processes.py", "scripts/dev_environment/runtime.py",
             ):
                 self.assertIn("codex-session-board/" + name, names)
+            self.assertEqual(archive.getmember("codex-session-board/scripts/dev").mode & 0o777, 0o755)
             self.assertFalse(any(Path(name).suffix in {".sqlite3", ".db", ".log", ".png", ".pyc"} for name in names))
             archive.extractall(self.root / "relocated", filter="data")
         relocated = self.root / "relocated/codex-session-board"
