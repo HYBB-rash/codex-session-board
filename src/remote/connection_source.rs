@@ -365,6 +365,10 @@ impl Binding {
     ) -> Result<Vec<String>> {
         self.multiplex.command(command, deadline)
     }
+
+    pub(crate) fn disconnect(&self) -> Result<()> {
+        self.multiplex.close()
+    }
 }
 
 pub(crate) fn verify_existing(host: &Host, settings: &config::Config) -> Result<()> {

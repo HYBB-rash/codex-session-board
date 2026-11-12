@@ -3,7 +3,13 @@ use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct Multiplex(Arc<Mutex<Option<Master>>>);
+pub(crate) struct Multiplex(Arc<Mutex<State>>);
+
+#[derive(Debug, Default)]
+struct State {
+    master: Option<Master>,
+    closed: bool,
+}
 
 #[derive(Debug)]
 struct Master {
@@ -84,6 +90,13 @@ impl Master {
 }
 
 impl Multiplex {
+    pub(crate) fn close(&self) -> Result<()> {
+        let mut state = self.0.lock().map_err(|_| anyhow!("SSH 共享连接锁已损坏"))?;
+        state.closed = true;
+        state.master = None;
+        Ok(())
+    }
+
     pub(crate) fn command(&self, command: &[String], deadline: Instant) -> Result<Vec<String>> {
         let boundary = command
             .iter()
@@ -100,15 +113,16 @@ impl Multiplex {
             }
         };
         remaining(deadline)?;
-        let alive = match state.as_mut() {
+        ensure!(!state.closed, "SSH 主机连接已停止");
+        let alive = match state.master.as_mut() {
             Some(master) => master.command == target && master.process.0.try_wait()?.is_none(),
             None => false,
         };
         if !alive {
-            *state = None;
-            *state = Some(Master::start(target, deadline)?);
+            state.master = None;
+            state.master = Some(Master::start(target, deadline)?);
         }
-        let master = state.as_ref().context("SSH 共享连接未建立")?;
+        let master = state.master.as_ref().context("SSH 共享连接未建立")?;
         options(
             command,
             &[

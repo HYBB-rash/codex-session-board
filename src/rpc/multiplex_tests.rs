@@ -10,7 +10,7 @@ fn shared_connection_restarts_dead_master_and_reaps_owned_process_on_drop() -> R
     let first = multiplex.command(&command, deadline_after(Duration::from_secs(3))?)?;
     let (identifier, directory) = {
         let state = multiplex.0.lock().unwrap();
-        let master = state.as_ref().unwrap();
+        let master = state.master.as_ref().unwrap();
         (master.process.0.id(), master.directory.path().to_path_buf())
     };
     assert!(first.iter().any(|value| value.starts_with("ControlPath=")));
@@ -19,12 +19,13 @@ fn shared_connection_restarts_dead_master_and_reaps_owned_process_on_drop() -> R
         .0
         .lock()
         .unwrap()
+        .master
         .as_mut()
         .unwrap()
         .process
         .0
         .kill()?;
-    multiplex.0.lock().unwrap().as_mut().unwrap().process.0.wait()?;
+    multiplex.0.lock().unwrap().master.as_mut().unwrap().process.0.wait()?;
     let next = multiplex.command(&command, deadline_after(Duration::from_secs(3))?)?;
     assert_ne!(first, next);
     assert!(!directory.exists());
@@ -56,7 +57,7 @@ fn shared_connection_failure_and_lock_wait_obey_request_deadline() -> Result<()>
             .command(&command, deadline_after(Duration::from_secs(2))?)
             .is_err()
     );
-    assert!(multiplex.0.lock().unwrap().is_none());
+    assert!(multiplex.0.lock().unwrap().master.is_none());
     let _lock = multiplex.0.lock().unwrap();
     let started = Instant::now();
     assert!(

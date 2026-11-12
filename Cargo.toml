@@ -1,7 +1,7 @@
 [package]
 name = "codex-session-board"
 build = "build.rs"
-version = "0.3.57"
+version = "0.3.58"
 edition = "2024"
 description = "Local Codex conversation status board"
 default-run = "codex-session-board"
@@ -34,7 +34,7 @@ clap = { version = "4", features = ["derive"] }
 fs2 = "0.4"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
-rustix = { version = "1", features = ["process", "net", "fs"] }
+rustix = { version = "1", features = ["process", "net", "fs", "event"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"

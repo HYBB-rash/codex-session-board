@@ -25,6 +25,7 @@ pub(crate) mod login;
 mod pipe;
 pub(crate) mod multiplex;
 pub(crate) mod runtime;
+pub mod performance;
 
 #[cfg(test)]
 #[path = "rpc/summary_tests.rs"]
@@ -285,14 +286,20 @@ fn verified_socket(path: &Path) -> Result<PathBuf> {
 
 fn wait_connected(stream: UnixStream, deadline: Instant) -> Result<UnixStream> {
     loop {
+        let timeout = rustix::event::Timespec::try_from(
+            remaining(deadline)?.min(Duration::from_secs(1)),
+        )?;
+        let mut descriptors = [rustix::event::PollFd::new(&stream, rustix::event::PollFlags::OUT)];
+        match rustix::event::poll(&mut descriptors, Some(&timeout)) {
+            Ok(0) | Err(Errno::INTR) => continue,
+            Ok(_) => {}
+            Err(error) => return Err(error.into()),
+        }
         remaining(deadline)?;
         if let Some(error) = stream.take_error()? {
             return Err(error.into());
         }
-        if stream.peer_addr().is_ok() {
-            return Ok(stream);
-        }
-        thread::sleep(remaining(deadline)?.min(Duration::from_millis(2)));
+        return Ok(stream);
     }
 }
 
@@ -1401,6 +1408,26 @@ mod tests {
         );
         assert!(started.elapsed() < Duration::from_millis(100));
         worker.join().map_err(|_| anyhow!("模拟服务异常"))??;
+        Ok(())
+    }
+
+    #[test]
+    fn connection_readiness_waits_for_writability_within_the_deadline() -> Result<()> {
+        let (mut stream, _peer) = UnixStream::pair()?;
+        stream.set_nonblocking(true)?;
+        loop {
+            match stream.write(&[1; 65536]) {
+                Ok(0) => bail!("测试 socket 提前关闭"),
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                Err(error) => return Err(error.into()),
+            }
+        }
+        let started = Instant::now();
+        let error = wait_connected(stream, deadline_after(Duration::from_millis(30))?)
+            .err().context("尚不可写的 socket 被当成已就绪")?;
+        assert_eq!(error.downcast_ref::<io::Error>().unwrap().kind(), io::ErrorKind::TimedOut);
+        assert!(started.elapsed() < Duration::from_millis(250));
         Ok(())
     }
 

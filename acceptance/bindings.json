@@ -1478,6 +1478,8 @@
       "lib::codex_session_board::rpc::multiplex::tests::shared_connection_restarts_dead_master_and_reaps_owned_process_on_drop",
       "lib::codex_session_board::rpc::multiplex::tests::shared_connection_failure_and_lock_wait_obey_request_deadline",
       "lib::codex_session_board::rpc::multiplex::tests::warm_guard_performance_budget_keeps_one_authentication_and_all_peer_checks",
+      "lib::codex_session_board::remote::hosts::source::tests::disconnect_releases_shared_transport_even_while_binding_clones_survive",
+      "lib::codex_session_board::rpc::tests::connection_readiness_waits_for_writability_within_the_deadline",
       "test::native_authority::archive::native_archive_rejects_external_moves_before_archiving_and_accepts_fresh_confirmation",
       "test::archive_flow::archive_checks_native_inputs_even_when_local_revision_has_not_changed",
       "test::archive_flow::archive_confirmation_persists_and_stale_observers_cannot_restore_the_card",
