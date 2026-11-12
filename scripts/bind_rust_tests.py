@@ -54,7 +54,7 @@ def build():
         "TITLE-005": title_store,
         "DISCOVERY-001": rpc + store + group("::projects::tests::"),
         "DISCOVERY-002": group("observer_selection") + store + observer,
-        "NAV-001": security,
+        "NAV-001": security + group("test::singleton_guard::", "test::singleton_runtime::"),
         "APP-001": mcp,
         "UI-001": [],
         "UI-002": store,
