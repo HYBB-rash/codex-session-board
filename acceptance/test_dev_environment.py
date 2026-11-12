@@ -2,6 +2,7 @@ import json
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
+import socket
 from pathlib import Path
 import tempfile
 import sys
@@ -136,3 +137,32 @@ class DevEnvironmentTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "连接已关闭"):
                 probe({"url": url, "service_pid": os.getpid(), "program_sha256": "expected", "root": "/task"})
             self.assertEqual(requests, ["/api/info"])
+
+    def test_status_reads_final_receipt_after_controller_disconnects(self):
+        from scripts.dev_environment.runtime import status
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            configuration.write_record(root / "runtime.json",
+                                       {"phase": "running", "_token": "test", "cleanup_confirmed": False})
+            with socket.socket(socket.AF_UNIX) as server:
+                server.bind(str(root / "supervisor.sock"))
+                os.chmod(root / "supervisor.sock", 0o600)
+                server.listen(1)
+                server.settimeout(5)
+
+                def finish():
+                    connection, _ = server.accept()
+                    with connection:
+                        connection.makefile("r").readline()
+                        configuration.write_record(root / "runtime.json",
+                                                   {"phase": "failed", "_token": "test", "cleanup_confirmed": True})
+
+                thread = threading.Thread(target=finish)
+                thread.start()
+                try:
+                    result = status(root)
+                    self.assertEqual(result["phase"], "failed")
+                    self.assertTrue(result["cleanup_confirmed"])
+                    self.assertNotIn("_token", result)
+                finally:
+                    thread.join(timeout=5)

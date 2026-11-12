@@ -32,7 +32,10 @@ def request(root, action):
         connection.settimeout(12)
         connection.connect(str(path))
         connection.sendall((json.dumps({"action": action, "token": record["_token"]}) + "\n").encode())
-        response = json.loads(connection.makefile("r").readline(65537))
+        line = connection.makefile("r").readline(65537)
+        if not line:
+            raise ConnectionError("开发控制连接已关闭")
+        response = json.loads(line)
     if response.get("error"):
         raise ValueError(response["error"])
     return response
@@ -41,7 +44,7 @@ def request(root, action):
 def status(root):
     try:
         return request(root, "status")
-    except (FileNotFoundError, ConnectionRefusedError):
+    except (FileNotFoundError, ConnectionError):
         path = root / "runtime.json"
         prepared = (root / "prepared.json").exists()
         record = json.loads(path.read_text()) if path.exists() else {"phase": "prepared" if prepared else "unprepared"}

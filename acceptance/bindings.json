@@ -1139,6 +1139,7 @@
       "acceptance.test_dev_environment.DevEnvironmentTests.test_foreign_identity_is_rejected_before_reading_sessions",
       "acceptance.test_dev_environment.DevEnvironmentTests.test_http_redirect_cannot_leave_the_expected_endpoint",
       "acceptance.test_dev_environment.DevEnvironmentTests.test_closed_identity_connection_cannot_reconnect_to_read_sessions",
+      "acceptance.test_dev_environment.DevEnvironmentTests.test_status_reads_final_receipt_after_controller_disconnects",
       "example::dev_fixture::state::tests::fixture_rejects_external_hosts_and_unknown_sessions",
       "example::dev_fixture::state::tests::matching_session_ids_remain_private_and_survive_prepare",
       "example::dev_fixture::tests::accepted_nonblocking_stream_serves_a_delayed_sidebar_frame",
