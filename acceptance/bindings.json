@@ -1195,6 +1195,8 @@
       "test::board_io::open_and_new_survive_removed_service_working_directory"
     ],
     "SERVICE-001": [
+      "lib::codex_session_board::observer::tests::title_worker_retries_database_failures_and_keeps_unavailable_client_jobs",
+      "lib::codex_session_board::observer::tests::project_worker_retries_after_the_client_registry_becomes_available",
       "lib::codex_session_board::workers::tests::join_reports_panics_and_errors_after_joining_every_handle",
       "lib::codex_session_board::workers::tests::poisoned_registration_is_reported_and_existing_handles_are_joined",
       "lib::codex_session_board::service::tests::data_lock_serializes_independent_open_descriptors",

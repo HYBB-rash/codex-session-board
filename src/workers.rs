@@ -1,8 +1,10 @@
 use anyhow::{Result, ensure};
 use std::sync::{
     Condvar, Mutex, MutexGuard,
+    atomic::{AtomicBool, Ordering},
 };
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 #[derive(Default)]
 pub(crate) struct WorkerGroup {
@@ -29,8 +31,6 @@ impl WorkerGroup {
         state.handles.push(thread::Builder::new().spawn(work)?);
         Ok(())
     }
-
-
 
     fn recover(&self) -> MutexGuard<'_, State> {
         match self.state.lock() {
@@ -88,14 +88,24 @@ pub(crate) fn finish(errors: Vec<String>) -> Result<()> {
     Ok(())
 }
 
-
+pub(crate) fn pause(enabled: &AtomicBool, duration: Duration, refresh: Option<&AtomicBool>) {
+    let started = Instant::now();
+    while enabled.load(Ordering::SeqCst) && started.elapsed() < duration {
+        if refresh.is_some_and(|refresh| refresh.swap(false, Ordering::Relaxed)) {
+            break;
+        }
+        thread::sleep(
+            duration
+                .saturating_sub(started.elapsed())
+                .min(Duration::from_millis(100)),
+        );
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::time::Duration;
 
     #[test]
     fn join_reports_panics_and_errors_after_joining_every_handle() -> Result<()> {
@@ -143,7 +153,4 @@ mod tests {
         Ok(())
     }
 
-
 }
-
-

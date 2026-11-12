@@ -69,41 +69,40 @@ fn sweep_with(app: &App, mut operation: impl FnMut(&Value) -> Result<Value>) -> 
     Ok(json!({"at":now(),"archived":archived,"deferred":deferred}))
 }
 
-pub fn start(app: &Arc<App>) {
+pub fn start(app: &Arc<App>) -> Result<()> {
     if app.config.legacy_mode {
-        return;
+        return Ok(());
     }
     let Some(seconds) = app.config.auto_archive_seconds else {
-        return;
+        return Ok(());
     };
-    let app = Arc::clone(app);
-    std::thread::spawn(move || {
-        let mut schedule = Schedule::new(seconds, now());
-        while app.enabled.load(std::sync::atomic::Ordering::SeqCst) {
-            let result = app.update_health(json!({
-                "autoArchiveSeconds":seconds,"autoArchiveNextAt":schedule.next
-            }));
-            if result.is_err() {
-                return;
-            }
-            std::thread::sleep(Duration::from_secs_f64(
-                (schedule.next - now()).clamp(0.01, 30.0),
-            ));
-            if schedule.due(now()) {
-                let result = sweep(&app);
-                let (report, error) = match result {
-                    Ok(report) => (report, Value::Null),
-                    Err(error) => (Value::Null, json!(error.to_string())),
-                };
-                if app
-                    .update_health(json!({"autoArchiveLastRun":report,"autoArchiveError":error}))
-                    .is_err()
-                {
-                    return;
-                }
-            }
+    let worker = Arc::clone(app);
+    app.workers.spawn(move || run(worker, seconds))
+}
+
+fn run(app: Arc<App>, seconds: u64) -> Result<()> {
+    let mut schedule = Schedule::new(seconds, now());
+    while app.enabled.load(std::sync::atomic::Ordering::SeqCst) {
+        app.update_health(json!({
+            "autoArchiveSeconds":seconds,"autoArchiveNextAt":schedule.next
+        }))?;
+        crate::workers::pause(
+            &app.enabled,
+            Duration::from_secs_f64((schedule.next - now()).clamp(0.01, 30.0)),
+            None,
+        );
+        if !app.enabled.load(std::sync::atomic::Ordering::SeqCst) {
+            break;
         }
-    });
+        if schedule.due(now()) {
+            let (report, error) = match sweep(&app) {
+                Ok(report) => (report, Value::Null),
+                Err(error) => (Value::Null, json!(error.to_string())),
+            };
+            app.update_health(json!({"autoArchiveLastRun":report,"autoArchiveError":error}))?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

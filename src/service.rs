@@ -242,7 +242,7 @@ pub fn open(config_path: &Path) -> Result<OpenedBoard> {
     let app = Arc::new(App::new(loaded)?);
     #[cfg(target_os = "macos")]
     macos::listen(&app.config)?;
-    crate::observer::start(&app);
+    crate::observer::start(&app)?;
     Ok(OpenedBoard::Owned(OwnedBoard {
         url: format!("http://127.0.0.1:{port}"),
         config: resolved,

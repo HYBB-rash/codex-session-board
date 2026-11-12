@@ -86,8 +86,8 @@ impl App {
         }
         let remote = self.build_remote(host)?;
         if host.enabled {
-            observer::start_host(&remote);
-            crate::auto_archive::start(&remote);
+            observer::start_host(&remote)?;
+            crate::auto_archive::start(&remote)?;
         } else {
             remote.deactivate()?;
         }
