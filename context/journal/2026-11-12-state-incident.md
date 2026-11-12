@@ -12,4 +12,6 @@
 
 插件运行时重构已集成并签名提交至0.3.34。Linux完整Rust测试、Clippy和69项交付脚本测试通过；冻结需求自动验证599项通过，但release_ready=false。
 真实桌面工具board_view和board_snapshot在Fedora、Mac均成功。Linux五库12条备注154个归档保留；Mac一库无备注，原有881个归档全部保留（读回883）。两端运行时由桌面MCP进程持有，更新器未创建独立serve。
-收尾0.3.35仅更新版本和上下文，之后走main正式CI与candidate更新。最终构建、切换和数据读回回执保存在outputs/state-incident-20261112；不能以本记录替代完整31条目标验收。
+收尾0.3.36仅更新版本和上下文，之后走main正式CI与candidate更新。最终构建、切换和数据读回回执保存在outputs/state-incident-20261112；不能以本记录替代完整31条目标验收。
+
+0.3.35正式CI的Linux自动验收通过；Mac的598项通过，1项因runner默认临时目录导致AF_UNIX路径超长而报错。0.3.36为验收命令显式使用/tmp，保持全部断言不变，再进行正式构建交付。

@@ -37,7 +37,7 @@ jobs:
       - run: cargo fetch --locked
       - run: ./scripts/install-git-hooks && ./scripts/check
       - run: cargo clippy --all-targets --locked --offline -- -D warnings
-      - run: python3 scripts/verify_acceptance.py --scope automated --report "$RUNNER_TEMP/automated.json"
+      - run: TMPDIR=/tmp python3 scripts/verify_acceptance.py --scope automated --report "$RUNNER_TEMP/automated.json"
       - run: bash scripts/build-plugin --output "$RUNNER_TEMP/plugin"
       - run: |
           gh auth setup-git

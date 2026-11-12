@@ -18,4 +18,4 @@ Beauvoir 在 /home/herman/.codex/worktrees/runtime-workers-worker/notion-program
 保留31条冻结需求、参考模型和锁，新增测试绑定到既有需求。独立候选自动验证不冒称完整release_ready。
 实施过程和实际部署分别记录，未经真实目标环境读回不声称已经切换。跨平台发布与遗留远端问题分别报告。
 
-结构实施与0.3.34两端实际桌面切换已验证。收尾0.3.35交付沿用candidate，未发布stable，完整目标验收继续保持待验证。
+结构实施与0.3.34两端实际桌面切换已验证。收尾0.3.36交付沿用candidate，未发布stable，完整目标验收继续保持待验证。

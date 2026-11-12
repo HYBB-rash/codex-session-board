@@ -5,7 +5,7 @@
     "id": "plugin-runtime-ownership-20261112",
     "status": "completed",
     "as_of": "2026-11-12",
-    "summary": "插件统一持有配置、App、HTTP及工作线程；安装更新只处理包和宿主重载。0.3.34已在Fedora和Mac真实桌面加载并调用工具，正式数据目录、全部既有备注和原生归档保留。收尾版本0.3.35由正式CI构建发布candidate后切换；执行结果见outputs/state-incident-20261112。完整目标环境验收仍未代签，stable不发布。"
+    "summary": "插件统一持有配置、App、HTTP及工作线程；安装更新只处理包和宿主重载。0.3.34已在Fedora和Mac真实桌面加载并调用工具，正式数据目录、全部既有备注和原生归档保留。收尾版本0.3.36由正式CI构建发布candidate后切换；执行结果见outputs/state-incident-20261112。完整目标环境验收仍未代签，stable不发布。"
   },
   "active_tasks": [
     "context/tasks/active/archive-button.md",
