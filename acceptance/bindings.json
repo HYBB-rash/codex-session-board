@@ -1058,7 +1058,9 @@
       "test::board_io::real_http_pwa_assets_preserve_host_and_mutation_checks",
       "test::board_io::real_http_pwa_manifest_and_assets_are_local_and_uncached",
       "test::board_io::open_and_new_survive_removed_service_working_directory",
-      "test::board_io::open_reports_exit_status_and_unavailable_stable_directory"
+      "test::board_io::open_reports_exit_status_and_unavailable_stable_directory",
+      "test::singleton_guard::healthy_cookie_is_dangling_and_listener_receives_no_probe",
+      "test::singleton_guard::missing_cookie_recovers_but_mismatch_and_file_are_preserved"
     ],
     "APP-001": [
       "test::board_io::mcp_bridge_uses_http_versions_and_reports_pending_title_without_rollback",

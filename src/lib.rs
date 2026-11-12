@@ -13,6 +13,8 @@ pub mod remote;
 pub mod rpc;
 mod runtime;
 pub mod service;
+#[cfg(target_os = "linux")]
+pub mod singleton;
 pub mod store;
 pub mod titles;
 mod workspaces;

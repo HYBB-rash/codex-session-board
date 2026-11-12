@@ -15,7 +15,8 @@
     "context/tasks/active/ui-worktree-cleanup-20261111.md",
     "context/tasks/active/remote-final-integration-20261111.md",
     "context/tasks/active/mac-development-release-20261111.md",
-    "context/tasks/active/state-incident-20261112.md"
+    "context/tasks/active/state-incident-20261112.md",
+    "context/tasks/active/singleton-integration-20261113.md"
   ],
   "known_open_issues": [
     "统一main的自动验证不代签目标环境证据。形式化来源曾出现一次未改动RPC恢复测试的偶发失败，单项复验与后续完整钩子通过，原因未确定；失败及主动中断记录保留。最终发布结论只依据合并后指纹的完整验收，缺少外部证据仍保持待验证。",
