@@ -159,7 +159,13 @@ def publish_saved(github, tag, source, channel, evidence, directory):
     if release["draft"]:
         if channel == "stable":
             raise ValueError("Publish and validate a candidate before promoting stable")
-        if not github.api("immutable-releases")["enabled"]:
+        try:
+            settings = github.api("immutable-releases")
+        except RuntimeError as error:
+            if "(HTTP 403)" not in str(error):
+                raise
+            settings = None
+        if settings is not None and not settings["enabled"]:
             raise ValueError("Enable GitHub immutable releases before publishing")
         result = github.gh("release", "edit", tag, "--draft=false", "--prerelease", "--latest=false", check=False)
         if result.returncode and github.release(tag)["draft"]:

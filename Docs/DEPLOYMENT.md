@@ -6,14 +6,13 @@ Linux 使用 `/proc` 与 pidfd；macOS 使用同用户控制 socket、自身停�
 Mac 的开发入口与迁移记录见 `Docs/MAC-DEVELOPMENT.md`。
 
 ```bash
-cargo fetch --locked
-plugin_dir="$(bash scripts/build-plugin)"
-python3 scripts/publish_plugin.py --repository "$PLUGIN_REPOSITORY" \
-  --package "$plugin_dir" --channel candidate
+./scripts/release candidate
+./scripts/release candidate --local
 ```
 
-`PLUGIN_REPOSITORY` 是私有 Git 产物仓库。源码和产物可用同一 Git 远端的不同分支，
-或使用两个独立远端。市场名固定为 `session-board-rust`，插件 ID 固定为
+发布入口从当前 GitHub 仓库读取身份，也可传 `--repository owner/repo`。
+当前源码与渠道使用同一公开仓库；`PLUGIN_REPOSITORY` 用于安装工具的 Git 远端地址。
+市场名固定为 `session-board-rust`，插件 ID 固定为
 `codex-session-board@session-board-rust`。每个平台使用 `candidate/<Rust target>`、
 `stable/<Rust target>` 分支，同一机器只能选择与本机相符的平台。
 发布脚本只接受干净检出中的原生构建，逐项核对版本、源码提交、源码指纹、
@@ -21,11 +20,19 @@ python3 scripts/publish_plugin.py --repository "$PLUGIN_REPOSITORY" \
 已有分支按正常 Git 快进提交更新，远端读回确认 SHA 后才报告发布成功。
 重复发布相同包保持同一提交。
 
-`.github/workflows/plugin-candidate.yml` 在两个原生 runner 上运行检查、自动验收、
-构建和候选发布，保存可下载产物。它没有自动提升稳定版本的步骤。
-云端工作流必须在实际私有仓库上运行通过后才能记为已验证。
-每个平台版本绑定固定产物，重复发布同一包保持不变；
-相同版本的不同产物会被拒绝。默认由 CI 发布，手动发布使用新的版本。
+提交并推送源码后执行统一入口。默认命令触发 `.github/workflows/plugin-candidate.yml`；
+`--local` 在本机补充对应平台，已有包会直接下载复用。两个入口使用相同保存规则。
+版本标签必须绑定当前提交。同一版本的源码不匹配时停止，必须准备新版本。
+
+流程为：构建并验证 → 保存 GitHub Release 附件 → 双平台验证 → 发布候选渠道。
+附件名为 `plugin-<Rust target>.tar.gz` 及其 `.sha256`，归档中保留 `RELEASE.json`。
+包与 GitHub 附件摘要、源码提交、版本、平台及文件清单逐项匹配后才能复用。
+并发上传同名附件时重新读取并验证已保存的包，不删除、覆盖或使用 `--clobber`。
+只完成一个平台时保留草稿并报告 `incomplete`，不会更新渠道。
+双平台齐全后要求仓库启用 GitHub immutable releases，再发布不可变预发布版本。
+Actions Artifacts 仅保存本次验收报告；长期交付包由 Release 保存。
+发布中断后重复同一入口，继续消费原包。渠道写入从包绑定的源码提交运行验证与发布器。
+工作流不会自动提升稳定版本；GitHub 运行成功和完整目标环境验收分别记录。
 
 安装后让 Codex 重新加载插件。最左侧应用栏由全局 `board_view` 入口提供，
 前端资源随 MCP 服务返回，不嵌套备用网页。资源和备用网页通过同一个受保护服务读写。
@@ -116,9 +123,18 @@ python3 scripts/update_plugin.py --repository "$PLUGIN_REPOSITORY" \
 `scripts/verify_remote_release.py` 验证。审阅对应证据文件的实际内容后，将同一个包提升：
 
 ```bash
-python3 scripts/publish_plugin.py --repository "$PLUGIN_REPOSITORY" \
-  --package "$plugin_dir" --channel stable --evidence "$REVIEWED_EVIDENCE"
+./scripts/release stable --evidence "$REVIEWED_EVIDENCE_INDEX"
 ```
+
+证据索引为 JSON，`platforms` 按 Rust target 指向对应平台已审阅的证据文件：
+
+```json
+{"platforms":{"x86_64-unknown-linux-gnu":"linux.json","aarch64-apple-darwin":"mac.json"}}
+```
+
+路径相对于索引文件。每份证据仍须满足现有验证器对源码、二进制和目标环境的约束。
+两平台都验证通过后才写入稳定分支；不重新编译或替换 Release 附件。
+成功后解除预发布标记。若某个平台渠道写入失败，重复命令继续，已完成的平台保持原包。
 
 完整验证必须退出 0 且 `release_ready=true`；缺证时稳定发布被拒绝。
 自动验收通过、CLI 接收跳转或服务启动，均不能替代真实客户端和远程验收。

@@ -1533,6 +1533,14 @@
       "lib::codex_session_board::remote::connections::tests::failed_manual_connection_stops_when_auto_connect_is_off"
     ],
     "DELIVERY-001": [
+      "acceptance.test_saved_release.SavedReleaseTests.test_local_then_ci_reuses_exact_archive_without_building",
+      "acceptance.test_saved_release.SavedReleaseTests.test_missing_platform_stays_draft_without_channel_writes",
+      "acceptance.test_saved_release.SavedReleaseTests.test_actions_token_checks_immutability_before_channel_writes",
+      "acceptance.test_saved_release.SavedReleaseTests.test_mismatched_source_is_rejected_before_build_or_upload",
+      "acceptance.test_saved_release.SavedReleaseTests.test_upload_race_consumes_winner_without_replacing_it",
+      "acceptance.test_saved_release.SavedReleaseTests.test_publish_retry_and_stable_keep_original_bytes",
+      "acceptance.test_saved_release.SavedReleaseTests.test_stable_requires_evidence_and_complete_packages_before_writes",
+      "acceptance.test_saved_release.SavedReleaseTests.test_archive_links_and_checksum_tampering_are_rejected",
       "test::native_authority::transport::disconnected_native_fixture_clients_do_not_fail_server_shutdown",
       "test::native_authority::transport::native_fixture_protocol_errors_are_not_treated_as_peer_disconnects",
       "test::native_authority::transport::disconnected_native_fixture_clients_may_close_before_stream_setup",

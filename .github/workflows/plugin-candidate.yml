@@ -6,8 +6,8 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: plugin-candidate-${{ github.ref }}
-  cancel-in-progress: true
+  group: plugin-candidate-${{ github.sha }}
+  cancel-in-progress: false
 jobs:
   candidate:
     strategy:
@@ -16,8 +16,10 @@ jobs:
         include:
           - runner: ubuntu-24.04
             label: linux-x86_64
+            target: x86_64-unknown-linux-gnu
           - runner: macos-26
             label: macos-arm64
+            target: aarch64-apple-darwin
     runs-on: ${{ matrix.runner }}
     env:
       RUSTUP_TOOLCHAIN: 1.99.1
@@ -38,17 +40,33 @@ jobs:
       - run: ./scripts/install-git-hooks && ./scripts/check
       - run: cargo clippy --all-targets --locked --offline -- -D warnings
       - run: TMPDIR=/tmp python3 scripts/verify_acceptance.py --scope automated --report "$RUNNER_TEMP/automated.json"
-      - run: bash scripts/build-plugin --output "$RUNNER_TEMP/plugin"
       - run: |
           gh auth setup-git
-          python3 scripts/publish_plugin.py --repository "https://github.com/${{ github.repository }}.git" --package "$RUNNER_TEMP/plugin" --channel candidate
+          ./scripts/release candidate --local --save-only --target "${{ matrix.target }}" --repository "${{ github.repository }}"
         env:
           GH_TOKEN: ${{ github.token }}
-      - run: tar -czf "$RUNNER_TEMP/plugin-${{ matrix.label }}.tar.gz" -C "$RUNNER_TEMP/plugin" .
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: plugin-${{ matrix.label }}
-          path: |
-            ${{ runner.temp }}/plugin-${{ matrix.label }}.tar.gz
-            ${{ runner.temp }}/automated.json
+          name: acceptance-${{ matrix.label }}
+          path: ${{ runner.temp }}/automated.json
+  publish:
+    needs: candidate
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GIT_AUTHOR_NAME: Codex plugin publisher
+      GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+      GIT_COMMITTER_NAME: Codex plugin publisher
+      GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 -m pip install -r requirements-delivery.txt
+      - run: |
+          gh auth setup-git
+          ./scripts/release candidate --finalize --repository "${{ github.repository }}"
