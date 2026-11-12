@@ -1144,7 +1144,7 @@
       "lib::codex_session_board::remote::hosts::source::tests::nonregular_source_records_are_rejected_without_waiting_for_a_pipe_writer",
       "test::board_io::open_and_new_survive_removed_service_working_directory",
       "test::board_io::open_reports_exit_status_and_unavailable_stable_directory",
-      "acceptance.test_update_delivery.UpdateDeliveryTests.test_backup_preserves_committed_wal_notes_and_all_host_databases"
+      "lib::codex_session_board::service::backup::tests::runtime_backup_preserves_wal_notes_disabled_hosts_and_configuration"
     ],
     "DATA-002": [
       "test::section_config::section_migration_preserves_source_data_and_unrelated_configuration",
@@ -1644,7 +1644,7 @@
       "acceptance.test_remote_release.RemoteReleaseTests.test_report_cannot_overwrite_inputs_attachments_or_fingerprinted_sources",
       "acceptance.test_remote_release.RemoteReleaseTests.test_stale_review_future_time_and_missing_operator_cannot_pass",
       "acceptance.test_remote_release.RemoteReleaseTests.test_wrong_mode_flags_config_identity_or_runtime_build_is_rejected",
-      "acceptance.test_update_delivery.UpdateDeliveryTests.test_backup_preserves_committed_wal_notes_and_all_host_databases",
+      "lib::codex_session_board::service::backup::tests::runtime_backup_preserves_wal_notes_disabled_hosts_and_configuration",
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_wrong_architecture_is_rejected_before_stopping_or_installing",
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_reload_does_not_accept_an_old_mcp_after_cache_update",
       "acceptance.test_delivery.DeliveryTests.test_native_cache_metadata_is_excluded_only_for_installed_packages",

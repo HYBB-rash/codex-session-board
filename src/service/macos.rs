@@ -55,6 +55,7 @@ fn read_line(stream: &UnixStream) -> Result<String> {
 }
 
 fn handle(mut stream: UnixStream, identity: &Value) -> Result<()> {
+    stream.set_nonblocking(false)?;
     ensure!(
         nix::unistd::getpeereid(&stream)?.0.as_raw() == rustix::process::getuid().as_raw(),
         "服务控制请求用户不符"
@@ -66,7 +67,8 @@ fn handle(mut stream: UnixStream, identity: &Value) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn listen(config: &Config) -> Result<()> {
+pub(super) fn listen(app: &Arc<App>) -> Result<()> {
+    let config = &app.config;
     let path = config.data_dir.join("control.sock");
     if path.exists() {
         let metadata = fs::symlink_metadata(&path)?;
@@ -75,19 +77,27 @@ pub(super) fn listen(config: &Config) -> Result<()> {
         fs::remove_file(&path)?;
     }
     let listener = UnixListener::bind(&path)?;
+    listener.set_nonblocking(true)?;
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
     let identity = info(config)?;
-    thread::spawn(move || {
-        for stream in listener.incoming() {
-            let result = stream
-                .map_err(anyhow::Error::from)
-                .and_then(|stream| handle(stream, &identity));
-            if let Err(error) = result {
-                eprintln!("服务控制请求失败：{error}");
+    let worker = Arc::clone(app);
+    app.workers.spawn(move || {
+        while worker.enabled.load(std::sync::atomic::Ordering::SeqCst) {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    if let Err(error) = handle(stream, &identity) {
+                        eprintln!("服务控制请求失败：{error}");
+                    }
+                }
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(100));
+                }
+                Err(error) => return Err(error.into()),
             }
         }
-    });
-    Ok(())
+        fs::remove_file(path)?;
+        Ok(())
+    })
 }
 
 pub(super) fn stop(pid: u32, start: u64, url: &str, config: &Config) -> Result<()> {

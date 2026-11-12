@@ -20,6 +20,8 @@ use tiny_http::Server;
 #[cfg(target_os = "macos")]
 mod macos;
 mod migration;
+mod backup;
+mod owned;
 #[cfg(target_os = "macos")]
 use macos::process_start;
 
@@ -208,13 +210,7 @@ pub struct OwnedBoard {
     pub port: u16,
     pub app: Arc<App>,
     lock: File,
-}
-
-impl OwnedBoard {
-    pub fn run(self) -> Result<()> {
-        let _lock = self.lock;
-        crate::http::run(self.server, self.port, self.app)
-    }
+    instance: File,
 }
 
 pub enum OpenedBoard {
@@ -222,13 +218,43 @@ pub enum OpenedBoard {
     Owned(OwnedBoard),
 }
 
+#[derive(Debug)]
+pub(crate) struct OccupiedInstance;
+
+impl std::fmt::Display for OccupiedInstance {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("正式实例仍存活，正在启动或使用了另一套配置")
+    }
+}
+
+impl std::error::Error for OccupiedInstance {}
+
 pub fn open(config_path: &Path) -> Result<OpenedBoard> {
+    let (resolved, loaded) = deployment(config_path)?;
+    open_loaded(&resolved, loaded)
+}
+
+pub(crate) fn deployment(config_path: &Path) -> Result<(PathBuf, Config)> {
     let (_, default_data) = config::default_paths()?;
     config::initialize_config(config_path, &default_data)?;
     let loaded = config::load(Some(config_path))?;
+    Ok((config::resolve_path(config_path)?, loaded))
+}
+
+pub(crate) fn open_loaded(config_path: &Path, loaded: Config) -> Result<OpenedBoard> {
     ensure!(loaded.port > 0, "看板需要固定端口");
     let url = format!("http://127.0.0.1:{}", loaded.port);
     let resolved = config::resolve_path(config_path)?;
+    let instance = instance_lock(config_path)?;
+    if let Err(error) = instance.try_lock_exclusive() {
+        if error.kind() != ErrorKind::WouldBlock {
+            return Err(error.into());
+        }
+        if !running(&loaded, &url)? {
+            return Err(OccupiedInstance.into());
+        }
+        return Ok(OpenedBoard::Reused { url, config: resolved });
+    }
     let lock = lock_file(&loaded.data_dir)?;
     if classify(&loaded, &lock)? {
         return Ok(OpenedBoard::Reused {
@@ -236,13 +262,10 @@ pub fn open(config_path: &Path) -> Result<OpenedBoard> {
             config: resolved,
         });
     }
-    config::build_id()?;
+    backup::before_start(&resolved, &loaded)?;
     let (server, port) = crate::http::bind(loaded.port)
         .map_err(|error| anyhow::anyhow!("端口暂不可访问，不会重复启动：{error}"))?;
     let app = Arc::new(App::new(loaded)?);
-    #[cfg(target_os = "macos")]
-    macos::listen(&app.config)?;
-    crate::observer::start(&app)?;
     Ok(OpenedBoard::Owned(OwnedBoard {
         url: format!("http://127.0.0.1:{port}"),
         config: resolved,
@@ -250,7 +273,16 @@ pub fn open(config_path: &Path) -> Result<OpenedBoard> {
         port,
         app,
         lock,
+        instance,
     }))
+}
+
+fn instance_lock(entry: &Path) -> Result<File> {
+    let parent = entry.parent().context("配置入口缺少父目录")?;
+    config::create_private_dir(parent)?;
+    let name = entry.file_name().context("配置入口缺少文件名")?.to_string_lossy();
+    Ok(OpenOptions::new().read(true).write(true).create(true).truncate(false)
+        .mode(0o600).open(parent.join(format!(".{name}.runtime.lock")))?)
 }
 
 pub fn stop(config_path: &Path) -> Result<Value> {
