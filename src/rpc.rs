@@ -26,6 +26,10 @@ mod pipe;
 pub(crate) mod multiplex;
 pub(crate) mod runtime;
 
+#[cfg(test)]
+#[path = "rpc/summary_tests.rs"]
+mod summary_tests;
+
 mod sidebar;
 mod unavailable;
 
