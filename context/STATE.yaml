@@ -2,12 +2,13 @@
   "schema_version": 1,
   "updated_at": "2026-11-13",
   "current_phase": {
-    "id": "remote-transfer-preview-20261113",
-    "status": "completed",
+    "id": "remote-transfer-feedback-20261113",
+    "status": "pending_acceptance",
     "as_of": "2026-11-13",
-    "summary": "已只读检查远程拖动的整页等待，调研五类等待反馈并制作四种可播放过场预览；独立浏览器10组演示与布局检查通过。等待用户选择后再实现，正式前端和服务未变。此前发布与完整目标环境验收遗留继续保留。"
+    "summary": "微光落位与搬运工已接入，在独立工作树通过等待交互、布局和隔离原生保存验证。完整验收缺真实客户端证据，串行集成与目标环境验收仍待完成；未安装正式插件。"
   },
   "active_tasks": [
+    "context/tasks/active/remote-transfer-feedback-20261113.md",
     "context/tasks/active/archive-button.md",
     "context/tasks/active/deploy-new-session-project.md",
     "context/tasks/active/socket-recovery-guidance-20261111.md",
@@ -18,6 +19,7 @@
     "context/tasks/active/state-incident-20261112.md"
   ],
   "known_open_issues": [
+    "0.3.56 的等待反馈位于独立分支 codex/remote-transfer-feedback-20261113；主检出另有远程耗时调查，未覆盖或合并其上下文。真实 Codex UI 验收与集成后的源码指纹仍待核对，见 context/handoffs/remote-transfer-feedback-20261113.md。",
     "统一main的自动验证不代签目标环境证据。形式化来源曾出现一次未改动RPC恢复测试的偶发失败，单项复验与后续完整钩子通过，原因未确定；失败及主动中断记录保留。最终发布结论只依据合并后指纹的完整验收，缺少外部证据仍保持待验证。",
     "冻结92已按用户最新带遗留发布指令上线，新解包根529自动项再次全过；91 timer、92原MCP Null及首次共享target路径失败保留。release_ready仍false，完整31/16及UI/PWA/N/R2待完成，不以部署冒称验收通过。",
     "正式插件与HTTP已切92/c521/配置bd6978fc9a03aaa1，发布会话已核对serverInfo和实际面板。后续清理已卸载旧验收插件和市场，正式入口保留。初次正式面板旧82连接报版本不符，正式plugin/install后恢复。",
