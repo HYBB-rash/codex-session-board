@@ -2,10 +2,10 @@
   "schema_version": 1,
   "updated_at": "2026-11-12",
   "current_phase": {
-    "id": "state-incident-20261112",
+    "id": "plugin-runtime-ownership-20261112",
     "status": "in_progress",
     "as_of": "2026-11-12",
-    "summary": "用户报告面板状态错乱，要求先调查报告再直接恢复。两实例和数据库已保全，确认MCP默认入口读取旧库，正式数据仍在；正式分区还因当前账号存储迁移而读取失败。本轮修正当前账号映射与别名读取，统一本机正式配置并重建缓存连接，禁止批量移列、标题推断恢复或新增归档。调查报告及后续恢复结果位于outputs/state-incident-20261112。此前Mac交付为0.3.25；本轮修复和完整业务验收分别记录，不发布stable。"
+    "summary": "用户批准插件统一持有运行时的结构重构。此前本机状态事件已恢复0.3.26，正式数据及23张真实归档卡位置保留。当前将配置、App和任务生命周期收拢到插件运行时，更新器只安装包并请求宿主重载，不再拉起独立serve；两名隔离工作树代理分别修改安装器和任务关闭，主代理集成验证。自动归档继续暂缓，不发布stable，不代签缺少的全量目标证据。"
   },
   "active_tasks": [
     "context/tasks/active/archive-button.md",
@@ -15,7 +15,8 @@
     "context/tasks/active/ui-worktree-cleanup-20261111.md",
     "context/tasks/active/remote-final-integration-20261111.md",
     "context/tasks/active/mac-development-release-20261111.md",
-    "context/tasks/active/state-incident-20261112.md"
+    "context/tasks/active/state-incident-20261112.md",
+    "context/tasks/active/plugin-runtime-ownership-20261112.md"
   ],
   "known_open_issues": [
     "统一main的自动验证不代签目标环境证据。形式化来源曾出现一次未改动RPC恢复测试的偶发失败，单项复验与后续完整钩子通过，原因未确定；失败及主动中断记录保留。最终发布结论只依据合并后指纹的完整验收，缺少外部证据仍保持待验证。",

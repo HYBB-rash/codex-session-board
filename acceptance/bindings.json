@@ -1195,6 +1195,8 @@
       "test::board_io::open_and_new_survive_removed_service_working_directory"
     ],
     "SERVICE-001": [
+      "lib::codex_session_board::workers::tests::join_reports_panics_and_errors_after_joining_every_handle",
+      "lib::codex_session_board::workers::tests::poisoned_registration_is_reported_and_existing_handles_are_joined",
       "lib::codex_session_board::service::tests::data_lock_serializes_independent_open_descriptors",
       "lib::codex_session_board::service::tests::existing_database_is_preserved_even_when_source_is_absent",
       "lib::codex_session_board::service::tests::failed_backup_or_config_publication_cleans_only_the_new_database",

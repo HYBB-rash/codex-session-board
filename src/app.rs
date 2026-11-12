@@ -4,6 +4,7 @@ use crate::{
     rpc::{DesktopConnection, Role, SidebarConnection},
     store::Store,
     titles,
+    workers::WorkerGroup,
 };
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
@@ -32,6 +33,7 @@ pub struct App {
     thread_operations: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     native_generation: AtomicUsize,
     pub(crate) enabled: AtomicBool,
+    pub(crate) workers: WorkerGroup,
     pub(crate) remotes: Mutex<HashMap<String, Arc<App>>>,
     pub(crate) remote_requested: Mutex<HashSet<String>>,
     lifecycle: RwLock<()>,
@@ -60,6 +62,7 @@ impl App {
             thread_operations: Mutex::new(HashMap::new()),
             native_generation: AtomicUsize::new(0),
             enabled: AtomicBool::new(true),
+            workers: WorkerGroup::default(),
             remotes: Mutex::new(HashMap::new()),
             remote_requested: Mutex::new(HashSet::new()),
             lifecycle: RwLock::new(()),
@@ -74,10 +77,15 @@ impl App {
     }
 
     pub(crate) fn operation(&self) -> Result<RwLockReadGuard<'_, ()>> {
-        ensure!(self.enabled.load(Ordering::SeqCst), "主机连接已停止");
+        self.worker_operation()?.context("主机连接已停止")
+    }
+
+    pub(crate) fn worker_operation(&self) -> Result<Option<RwLockReadGuard<'_, ()>>> {
+        if !self.enabled.load(Ordering::SeqCst) {
+            return Ok(None);
+        }
         let guard = self.lifecycle.read().map_err(|_| anyhow::anyhow!("主机操作锁已损坏"))?;
-        ensure!(self.enabled.load(Ordering::SeqCst), "主机连接已停止");
-        Ok(guard)
+        Ok(self.enabled.load(Ordering::SeqCst).then_some(guard))
     }
 
     pub(crate) fn deactivate(&self) -> Result<()> {
@@ -85,6 +93,34 @@ impl App {
         let _guard = self.lifecycle.write().map_err(|_| anyhow::anyhow!("主机操作锁已损坏"))?;
         self.update_health(json!({"runtimeVerified":false,"nativeVerified":false,
             "scanComplete":false,"runtimeError":"主机已断开或登记改变，保留缓存"}))
+    }
+
+    pub fn shutdown(&self) -> Result<()> {
+        self.workers.close();
+        let mut errors = Vec::new();
+        if let Err(error) = self.deactivate() {
+            errors.push(format!("{error:#}"));
+        }
+        let remotes = match self.remotes.lock() {
+            Ok(remotes) => remotes.values().cloned().collect::<Vec<_>>(),
+            Err(poison) => {
+                errors.push("主机锁已损坏".into());
+                poison.into_inner().values().cloned().collect()
+            }
+        };
+        for remote in &remotes {
+            remote.workers.close();
+            remote.enabled.store(false, Ordering::SeqCst);
+        }
+        for remote in remotes {
+            if let Err(error) = remote.shutdown() {
+                errors.push(format!("{error:#}"));
+            }
+        }
+        if let Err(error) = self.workers.join() {
+            errors.push(format!("{error:#}"));
+        }
+        crate::workers::finish(errors)
     }
 
     pub(crate) fn connection(&self, timeout: Duration, role: Role) -> Result<DesktopConnection> {
@@ -162,7 +198,7 @@ impl App {
         self.annotate_connections(&mut sessions);
         Ok(
             json!({"states":states,"sessions":sessions,"projectCatalog":catalog,"columnSorts":self.store.column_sorts()?,
-            "legacyMode":self.config.legacy_mode,
+            "legacyMode":self.config.legacy_mode,"runtime":crate::service::info(&self.config)?,
             "pendingDrafts":self.store.pending_drafts()?,
             "health":self.health.lock().map_err(|_| anyhow::anyhow!("健康状态锁已损坏"))?.clone()}),
         )

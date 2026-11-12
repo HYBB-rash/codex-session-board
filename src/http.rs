@@ -123,7 +123,10 @@ pub fn handle(mut request: Request, app: &App, token: &str, port: u16) {
         return response(request, 200, body.to_string(), content_type);
     }
     let result = if !writing && path == "/api/info" {
-        info(app)
+        info(app).map(|mut identity| {
+            identity["requestToken"] = json!(token);
+            identity
+        })
     } else if request.method() == &Method::Post {
         body(&mut request).and_then(|body| app.request(&path, Some(&body)))
     } else if !writing {
@@ -152,16 +155,31 @@ pub fn bind(port: u16) -> Result<(Server, u16)> {
 }
 
 pub fn run(server: Server, port: u16, app: Arc<App>) -> Result<()> {
+    run_shared(Arc::new(server), port, app)
+}
+
+pub(crate) fn run_shared(server: Arc<Server>, port: u16, app: Arc<App>) -> Result<()> {
     let token = format!(
         "{}{}",
         uuid::Uuid::new_v4().simple(),
         uuid::Uuid::new_v4().simple()
     );
     let token = Arc::new(token);
-    for request in server.incoming_requests() {
-        let app = Arc::clone(&app);
+    while app.enabled.load(std::sync::atomic::Ordering::SeqCst) {
+        let Some(request) = server.recv_timeout(std::time::Duration::from_millis(100))? else {
+            continue;
+        };
+        let worker = Arc::clone(&app);
         let token = Arc::clone(&token);
-        std::thread::spawn(move || handle(request, &app, &token, port));
+        if let Err(error) = app.workers.spawn(move || {
+            handle(request, &worker, &token, port);
+            Ok(())
+        }) {
+            if app.enabled.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(error);
+            }
+            break;
+        }
     }
     Ok(())
 }
