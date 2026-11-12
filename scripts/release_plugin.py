@@ -36,12 +36,12 @@ class GitHub:
         return self.api(f"releases/tags/{tag}")
 
     def ensure_draft(self, tag, source):
-        existing = self.api(f"commits/{tag}")
+        existing = self.api(f"git/ref/tags/{tag}")
         if existing is None:
             try:
                 self.api("git/refs", "POST", ref=f"refs/tags/{tag}", sha=source)
             except RuntimeError:
-                existing = self.api(f"commits/{tag}")
+                existing = self.api(f"git/ref/tags/{tag}")
                 if existing is None:
                     raise
         existing = self.api(f"commits/{tag}")

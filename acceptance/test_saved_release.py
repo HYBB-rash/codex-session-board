@@ -86,6 +86,14 @@ class SavedReleaseTests(unittest.TestCase):
         self.github.assets[name] = body
         self.github.assets[name + ".sha256"] = f"{hashlib.sha256(body).hexdigest()}  {name}\n".encode()
 
+    def test_first_release_checks_tag_reference_before_resolving_commit(self):
+        github = release_plugin.GitHub("owner/plugin")
+        with patch.object(github, "api", side_effect=[None, {}, {"sha": self.github.source}, None]) as api, \
+                patch.object(github, "gh", return_value=SimpleNamespace(returncode=0)):
+            github.ensure_draft(self.tag, self.github.source)
+        self.assertEqual(api.call_args_list[0].args, (f"git/ref/tags/{self.tag}",))
+        self.assertEqual(api.call_args_list[1].kwargs, {"ref": f"refs/tags/{self.tag}", "sha": self.github.source})
+
     def test_local_then_ci_reuses_exact_archive_without_building(self):
         self.save_existing()
         original = dict(self.github.assets)
