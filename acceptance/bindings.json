@@ -1195,6 +1195,11 @@
       "test::board_io::open_and_new_survive_removed_service_working_directory"
     ],
     "SERVICE-001": [
+      "test::plugin_runtime::mcp_processes_share_one_owner_and_take_over_after_owner_exits",
+      "test::plugin_runtime::changed_data_directory_cannot_create_another_owner_for_the_same_entry",
+      "test::plugin_runtime::simultaneous_plugin_entries_elect_one_business_owner",
+      "test::plugin_runtime::first_upgrade_imports_recorded_configuration_instead_of_old_default_cache",
+      "test::plugin_runtime::missing_recorded_production_config_does_not_initialize_a_default_database",
       "lib::codex_session_board::workers::app_tests::shutdown_interrupts_long_waits_joins_root_and_remote_and_releases_arcs",
       "lib::codex_session_board::workers::app_tests::shutdown_rejects_remote_registration_and_closes_rejected_remote",
       "lib::codex_session_board::workers::app_tests::deactivate_from_a_registered_worker_preserves_operations_without_self_join",

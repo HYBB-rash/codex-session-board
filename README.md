@@ -24,8 +24,9 @@ cargo run --locked --offline -- serve
 
 首次启动使用 XDG 配置和数据目录。配置示例见 `config.example.json`，
 自定义部署使用 `--config /path/to/config.json`。
-`serve` 在当前进程监听。已有相同数据目录、配置和构建的服务时，它直接退出，不另起进程。
-`stop` 核验身份并等待实际退出。`mcp` 在插件进程内提供同一份看板。
+普通桌面安装由 `mcp` 插件进程持有看板运行时，退出时回收 HTTP 和工作线程。
+配置仅在统一入口解析一次，安装和更新不再另外选择配置，见 [插件运行时](Docs/PLUGIN-RUNTIME.md)。
+`serve` 是显式独立部署入口，在当前进程监听；`stop` 核验身份并等待实际退出。
 `mcp` 提供 stdio MCP App，`scan` 执行一次发现，`migrate --source-config PATH`
 使用 SQLite 备份导入旧原型，保留原库并拒绝覆盖目标。
 
@@ -69,12 +70,12 @@ python3 scripts/verify_acceptance.py --evidence /path/to/evidence.json --report 
 
 ## 安装为应用
 
-使用 Chrome 或 Edge 打开本机 `serve` 打印的网页地址。
+使用 Chrome 或 Edge 打开插件看板提供的本机网页地址。
 浏览器允许安装时，工具栏会显示“安装应用”；也可使用浏览器菜单中的安装入口。
 安装后从系统应用列表打开“Codex 会话看板”，会使用独立窗口。
 浏览器取消安装后仍可从菜单重新安装，原生 Codex 内嵌看板不提供此按钮。
 
-应用仍需这台电脑的看板服务运行，安装不会创建后台服务。
+应用仍需这台电脑的插件运行，安装不会创建后台服务。
 服务不可用时显示重新连接页面，不离线保存会话、备注或待提交操作。
 服务恢复后点击“重新连接”，重新读取当前页面令牌和数据。
 回环地址可用于本机安装；其他设备不能通过本机回环地址访问。

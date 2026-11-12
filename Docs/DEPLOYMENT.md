@@ -45,9 +45,9 @@ MCP 通过包内 `bin/run-plugin` 进入独立数据根目录后启动。
 省略该字段时 macOS 使用 `open`，Linux 使用 `xdg-open`。
 `codex_command` 默认使用 `codex app-server --stdio` 读取历史；
 GUI 的 PATH 不含 CLI 时，在机器配置中填写实际 CLI 绝对路径。
-更新工具使用当前守护进程的私有 Unix WebSocket 完成插件重载与版本读回。
-桌面 socket 可以使用进程环境中的 `CODEX_LINUX_APP_SERVER_BRIDGE_SOCKET`，
-也可以写入部署配置。更换用户或机器时只调整外部配置。
+更新工具通过桌面客户端提供的私有 Unix WebSocket 完成插件重载与版本读回。
+更新工具只从进程环境中的 `CODEX_LINUX_APP_SERVER_BRIDGE_SOCKET` 或 Linux 标准运行目录
+取得桌面 socket；未发现桌面连接时保留待加载状态。
 若 MCP 子进程没有继承桌面 socket 环境变量，应在同一外部配置中明确填写
 `desktop_socket`，使 MCP 与命令行启动时解析出相同的配置身份。
 
@@ -61,10 +61,12 @@ bin/codex-session-board serve
 bin/codex-session-board stop
 ```
 
-`serve` 在当前进程监听，只复用相同数据目录、配置和构建的服务。
-插件的 `mcp` 使用同一规则，不另起进程。
+`serve` 用于明确的独立部署，在当前进程监听。普通桌面安装由 `mcp` 自己持有业务运行时和 HTTP 线程。
+多个插件入口通过同一配置入口锁和数据目录锁共享一个所有者，不创建分离的后台服务。
 变更配置、端口或二进制后，先 `stop` 再启动。
 活进程暂时不可访问时拒绝再开一份。`stop` 核对 PID、启动时间和可执行文件身份。
+
+配置迁移、运行时退出和安装回执的结构见 `Docs/PLUGIN-RUNTIME.md`。
 
 ## 更新与回退
 
@@ -76,23 +78,23 @@ python3 -m venv ~/.local/share/codex-session-board/delivery-venv
 source ~/.local/share/codex-session-board/delivery-venv/bin/activate
 ```
 
-先准备独立配置，确认 `data_dir` 指向需保留的运行数据，再执行：
+普通安装和更新沿用插件统一解析的正式配置入口。更新命令不再选择配置：
 
 ```bash
 python3 scripts/update_plugin.py --repository "$PLUGIN_REPOSITORY" \
-  --channel candidate --config "$HOME/.config/codex-session-board/config.json"
+  --channel candidate
 ```
 
-脚本取得匹配本机架构的包，验证可执行版本，核实并停止原进程，
-使用 SQLite backup API 保全主库及各远程主机库的已提交 WAL 数据，
-再更新 Git 市场与插件缓存。安装器保留配置、旧包和备份，不自动清理历史 release。
+脚本取得匹配本机架构的包，验证可执行版本，更新 Git 市场与插件缓存，
+再请求实际桌面客户端重载。新运行时打开数据库前通过 SQLite backup API
+保全主库及各远程主机库的已提交 WAL 数据。安装器保留配置、旧包和备份，不自动清理历史 release。
 历史 data_dir 即使位于旧 release 下也不得随程序清理删除。
-启动后读回真实 PID、版本、二进制 SHA、数据目录，再强制刷新技能及 MCP；
+重载后核对实际桌面的 MCP 清单；
 MCP 清单中的插件 ID、serverInfo.version 和 board_view 必须吻合。
-`current.json` 保存回执；失败保留 `pending.json` 与 `service.log`，不能解释成更新成功。
-`--defer-reload` 只记录 `awaiting_client_reload`。
+`current.json` 保存安装和加载回执；失败保留 `pending.json`，不能解释成桌面已加载。
+`--defer-reload` 只记录 `awaiting_desktop_reload`。
 Git 开发检出也可运行 `./scripts/update-plugin --channel candidate`：
-自动读取 origin、外部配置和本地 HEAD，CI 尚未产出该 HEAD 时不停止原版本。
+自动读取 origin 和本地 HEAD，CI 尚未产出该 HEAD 时不修改已安装版本。
 可用外部 `~/.config/codex-session-board/gitconfig` 配置仓库专用认证，
 启动器将其作为此次更新子进程的 `GIT_CONFIG_GLOBAL`；
 手动调用 Python 发布或更新工具时，也可为单条命令设置该变量。
@@ -101,7 +103,7 @@ Git 开发检出也可运行 `./scripts/update-plugin --channel candidate`：
 
 ```bash
 python3 scripts/update_plugin.py --repository "$PLUGIN_REPOSITORY" \
-  --revision "$PREVIOUS_REVISION" --config "$HOME/.config/codex-session-board/config.json"
+  --revision "$PREVIOUS_REVISION"
 ```
 
 回退保留当前数据库。数据库格式若有不兼容升级，应先按该升级的迁移文档恢复备份；
