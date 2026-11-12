@@ -2,7 +2,7 @@
 
 owner: codex
 execution_mode: isolated_write
-allowed_write_set: examples/, scripts/dev, scripts/dev_environment/, scripts/check-dev-isolation.mjs, scripts/browser-client.mjs, scripts/check-ui-layout.mjs, tests/, acceptance/bindings.json, Cargo.toml, Cargo.lock, plugin.json, .codex-plugin/plugin.json, Docs/MAC-DEVELOPMENT.md, Docs/PARALLEL-DEVELOPMENT.md, context/
+allowed_write_set: AGENTS.md, examples/, scripts/dev, scripts/dev_environment/, scripts/check-dev-isolation.mjs, scripts/browser-client.mjs, scripts/check-ui-layout.mjs, tests/, acceptance/test_dev_environment.py, acceptance/bindings.json, Cargo.toml, Cargo.lock, plugin.json, .codex-plugin/plugin.json, Docs/MAC-DEVELOPMENT.md, Docs/PARALLEL-DEVELOPMENT.md, context/
 base_commit: 82b9355
 worktree_path: /home/herman/.codex/worktrees/mac-dev-environment/notion-program
 coordinator: codex
@@ -26,6 +26,9 @@ coordinator: codex
 - 开工后发现主检出有独立运行时恢复任务，已将本任务改动单独迁至 Codex 工作树，
   对方版本、数据库恢复改动及任务记录保留；后续不写共享主检出或其部署。
 - 原生依赖 fixture 已通过独立协议/隔离测试及提交钩子，提交 2aaa3ac。
+- 两份 Mac 工作树已分别完成约 45 秒首次构建，Mac fixture 单元测试通过。
+- setup 配置边界已提交 07aa02f；本机真实服务启动、重复 setup/start、
+  停止及重复停止已通过。正在补 Mac 双实例运行、浏览器写入及正式插件保护取证。
 
 ## 完成条件
 

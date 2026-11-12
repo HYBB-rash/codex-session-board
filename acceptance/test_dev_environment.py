@@ -2,9 +2,12 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import sys
+import time
 import unittest
 
 from scripts.dev_environment import configuration
+from scripts.dev_environment.processes import Child, reap
 
 
 class DevEnvironmentTests(unittest.TestCase):
@@ -13,6 +16,7 @@ class DevEnvironmentTests(unittest.TestCase):
             parent = Path(temporary)
             shared = parent / "shared"
             shared.mkdir(mode=0o755)
+            shared.chmod(0o755)
             linked = parent / "linked"
             linked.symlink_to(shared, target_is_directory=True)
             for directory in (shared, linked):
@@ -38,3 +42,32 @@ class DevEnvironmentTests(unittest.TestCase):
                         "files": {"config.json": configuration.digest(config)}}
             with self.assertRaisesRegex(ValueError, "边界"):
                 configuration.configuration(root, root, manifest)
+
+    def test_prepare_rejects_a_config_symlink_before_invoking_the_fixture(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            production = parent / "production.json"
+            production.write_text("unchanged")
+            root = parent / "task"
+            root.mkdir(mode=0o700)
+            (root / "config.json").symlink_to(production)
+            with self.assertRaisesRegex(ValueError, "越界"):
+                configuration.configure(root, root, {})
+            self.assertEqual(production.read_text(), "unchanged")
+
+    def test_owned_group_cleanup_terminates_a_child_that_ignores_interrupt(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            child = Child(root, "test", [sys.executable, "-c",
+                          "import signal,sys,time;signal.signal(signal.SIGINT,signal.SIG_IGN);"
+                          "open(sys.argv[1],'w').close();time.sleep(300)", str(root / "ready")],
+                          configuration.child_environment(root))
+            try:
+                deadline = time.monotonic() + 5
+                while not (root / "ready").exists() and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                self.assertTrue((root / "ready").exists())
+                self.assertIsNotNone(child.pid)
+            finally:
+                reap([child])
+            self.assertEqual(child.guard.returncode, -9)

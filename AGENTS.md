@@ -31,3 +31,13 @@ If Git worktrees or an equivalent isolated copy are unavailable, write tasks run
 
 Active task cards declare `owner`, `execution_mode`, `allowed_write_set`, `base_commit`, `worktree_path`, and `coordinator`. `STATE.yaml`, `current_phase`, verification metadata, journal entries, and task registration are coordinator-owned during coordinated work.
 <!-- project-context:end -->
+
+## 隔离开发入口
+
+- 常规开发优先在 Mac 的独立工作树运行 `./scripts/dev setup` 和 `./scripts/dev start`；
+  用 `status` 查看本任务，用 `stop` 停止本任务。详见 `Docs/MAC-DEVELOPMENT.md`。
+- 默认只连接本任务的原生依赖 fixture。普通开发不得安装、重载正式插件或操作用户日用
+  Codex 实例；有明确部署授权的交付任务按其授权执行。
+- 浏览器验证使用独立 profile 和随机调试端口，结束时只清理自己创建的进程。
+- fixture 验证不替代真实 Codex 验收。真实客户端验收单独安排，不因开发任务并行而并发修改
+  同一客户端实例；缺少目标环境证据继续保持待验证。

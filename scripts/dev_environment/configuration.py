@@ -34,11 +34,12 @@ def private_directory(path):
         raise ValueError(f"开发目录必须由当前用户独占且不能为符号链接：{path}")
 
 
-def task_directory(source):
+def task_directory(source, create=True):
     parent = Path.home() / ".csb-dev"
-    private_directory(parent)
     root = parent / hashlib.sha256(os.fsencode(source)).hexdigest()[:12]
-    private_directory(root)
+    for directory in (parent, root):
+        if create or directory.exists() or directory.is_symlink():
+            private_directory(directory)
     if len(os.fsencode(root / "data/control.sock")) >= 100:
         raise ValueError("开发目录过长，无法安全创建 macOS Unix socket")
     return root
@@ -63,7 +64,21 @@ def child_environment(root):
     return environment
 
 
+def boundary(root):
+    names = ("prepared.json", "runtime.json", "action.lock", "owner.lock", "config.json",
+             "projects.json", "fixture.json", "navigation.jsonl", "fixture.log",
+             "service.log", "supervisor.log", "data", "desktop", "sidebar")
+    for name in names:
+        path = root / name
+        if path.is_symlink() or not path.resolve().is_relative_to(root):
+            raise ValueError(f"开发路径越界：{name}")
+    data = root / "data"
+    if data.exists() and any(path.is_symlink() for path in data.rglob("*")):
+        raise ValueError("开发数据库目录不能包含符号链接")
+
+
 def configuration(source, root, manifest):
+    boundary(root)
     config = json.loads((root / "config.json").read_text())
     expected = {
         "data_dir": str(root / "data"), "desktop_socket": str(root / "desktop/rpc.sock"),
@@ -77,16 +92,9 @@ def configuration(source, root, manifest):
     }
     if manifest["source"] != str(source) or any(config.get(key) != value for key, value in expected.items()):
         raise ValueError("开发配置越过本任务边界，拒绝启动")
-    for name in ("config.json", "projects.json", "fixture.json", "data", "desktop", "sidebar"):
-        path = root / name
-        if path.is_symlink() or not path.resolve().is_relative_to(root):
-            raise ValueError(f"开发路径越界：{name}")
     for name in ("config.json", "projects.json"):
         if digest(root / name) != manifest["files"][name]:
             raise ValueError(f"开发配置已被修改，请显式重新 setup：{name}")
-    data = root / "data"
-    if data.exists() and any(path.is_symlink() for path in data.rglob("*")):
-        raise ValueError("开发数据库目录不能包含符号链接")
     return config
 
 
@@ -100,6 +108,7 @@ def load(source, root):
 
 
 def configure(source, root, manifest):
+    boundary(root)
     with socket.socket() as lease:
         lease.bind(("127.0.0.1", 0))
         port = lease.getsockname()[1]

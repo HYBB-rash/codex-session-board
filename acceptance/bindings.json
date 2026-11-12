@@ -1133,6 +1133,8 @@
       "acceptance.test_dev_environment.DevEnvironmentTests.test_private_directories_reject_symlinks_and_shared_permissions",
       "acceptance.test_dev_environment.DevEnvironmentTests.test_child_environment_does_not_inherit_desktop_or_credentials",
       "acceptance.test_dev_environment.DevEnvironmentTests.test_production_data_path_is_rejected_even_with_a_matching_checksum",
+      "acceptance.test_dev_environment.DevEnvironmentTests.test_prepare_rejects_a_config_symlink_before_invoking_the_fixture",
+      "acceptance.test_dev_environment.DevEnvironmentTests.test_owned_group_cleanup_terminates_a_child_that_ignores_interrupt",
       "example::dev_fixture::state::tests::fixture_rejects_external_hosts_and_unknown_sessions",
       "example::dev_fixture::state::tests::matching_session_ids_remain_private_and_survive_prepare",
       "lib::codex_session_board::remote::hosts::tests::registered_hosts_do_not_depend_on_projects_and_respect_disabled_connections",
