@@ -1168,6 +1168,8 @@
       "test::board_io::changed_config_or_port_cannot_start_second_service",
       "test::board_io::real_http_persistence_security_and_launcher_reuse",
       "test::board_io::service_update_rejects_old_build_but_can_verify_and_stop_its_process",
+      "lib::codex_session_board::service::migration::recovery::tests::hot_journal_is_recovered_privately_without_changing_source",
+      "lib::codex_session_board::service::migration::recovery::tests::private_recovery_rejects_a_live_sqlite_writer",
       "lib::codex_session_board::service::migration::tests::snapshots::migration_copies_host_databases_when_the_main_database_is_absent",
       "lib::codex_session_board::service::migration::tests::snapshots::migration_preserves_root_and_all_host_wal_state_and_only_allowed_sidecars",
       "lib::codex_session_board::service::migration::tests::guards::migration_refuses_existing_configuration_before_creating_destination",

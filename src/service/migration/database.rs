@@ -6,7 +6,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::time::Duration;
 
-fn copy_database(source: &Path, target: &Path) -> Result<()> {
+pub(super) fn copy_database(source: &Path, target: &Path) -> Result<()> {
     let source = Connection::open_with_flags(
         source,
         OpenFlags::SQLITE_OPEN_READ_ONLY
@@ -34,7 +34,17 @@ pub(in crate::service) fn import_database(source: &Path, target: &Path) -> Resul
         .mode(0o600)
         .open(target)?;
     drop(reserved);
-    if let Err(error) = copy_database(source, target) {
+    let copied = copy_database(source, target).or_else(|error| {
+        if matches!(error.downcast_ref::<rusqlite::Error>(),
+            Some(rusqlite::Error::SqliteFailure(code, _))
+                if code.extended_code == rusqlite::ffi::SQLITE_READONLY_ROLLBACK)
+        {
+            super::recovery::copy(source, target)
+        } else {
+            Err(error)
+        }
+    });
+    if let Err(error) = copied {
         fs::remove_file(target).context("迁移失败且新建状态库未能清理")?;
         return Err(error);
     }

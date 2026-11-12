@@ -7,6 +7,7 @@ use std::path::Path;
 mod database;
 mod paths;
 mod plan;
+mod recovery;
 mod transaction;
 
 pub(super) use database::import_database;
