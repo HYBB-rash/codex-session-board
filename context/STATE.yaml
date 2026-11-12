@@ -8,6 +8,7 @@
     "summary": "Chromium singleton 目录持锁、当前实例身份校验与缺失 cookie 条件恢复已本地集成；12 项新增回归和隔离 Electron 转交/清理/重启实验通过。正式配置保持关闭，不推送或部署；真实 Codex GUI 与完整目标环境验收仍待验证。"
   },
   "active_tasks": [
+    "context/tasks/active/saved-release-delivery-20261113.md",
     "context/tasks/active/archive-button.md",
     "context/tasks/active/deploy-new-session-project.md",
     "context/tasks/active/socket-recovery-guidance-20261111.md",
