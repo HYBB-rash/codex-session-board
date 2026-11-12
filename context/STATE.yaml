@@ -2,10 +2,10 @@
   "schema_version": 1,
   "updated_at": "2026-11-13",
   "current_phase": {
-    "id": "saved-release-delivery-20261113",
+    "id": "remote-transfer-preview-20261113",
     "status": "completed",
     "as_of": "2026-11-13",
-    "summary": "发布入口已统一保存、复用和渠道提升，补齐草稿分页查询与10项发布回归；已集成并归档独立开发环境和单实例双平台任务。真实双平台构建、候选发布和日用切换待本轮最终提交后核验；完整目标环境证据仍待验证。"
+    "summary": "已只读检查远程拖动的整页等待，调研五类等待反馈并制作四种可播放过场预览；独立浏览器10组演示与布局检查通过。等待用户选择后再实现，正式前端和服务未变。此前发布与完整目标环境验收遗留继续保留。"
   },
   "active_tasks": [
     "context/tasks/active/archive-button.md",
@@ -33,7 +33,7 @@
     "PWA安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。",
     "本机和M1专用会话真实归档已通过。正式进程已是 v0.2.63，原生侧栏取消归档后，下一次本机位置读回会恢复本地已确认卡片并保留备注。这次启动还没有完成一次本机位置读回。0.3.38 已实现 SQLite 兼容锁下私有副本热日志恢复，原库与日志不变；两项子进程回归通过，候选交付证据单独保留。"
   ],
-  "last_completed_task": "context/tasks/completed/saved-release-delivery-20261113.md",
+  "last_completed_task": "context/tasks/completed/remote-transfer-preview-20261113.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
