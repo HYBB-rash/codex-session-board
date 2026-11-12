@@ -111,10 +111,6 @@ fn validate_selection(
         note.chars().count() <= 2000,
         "备注必须为不超过 2000 字的文本"
     );
-    ensure!(
-        state != Some("blocked") || !note.trim().is_empty(),
-        "请填写阻塞原因"
-    );
     ensure!(row["archived"] == 0, "会话已归档，请刷新看板");
     ensure!(row["version"] == revision.0, "状态已更新，请刷新后重试");
     ensure!(

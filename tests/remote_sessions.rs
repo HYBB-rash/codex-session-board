@@ -83,8 +83,9 @@ fn remote_validation_is_atomic_and_rejects_cross_host_data() -> Result<()> {
             "id":THREAD,"hostId":"mac","title":"有效","updatedAt":1
         })],
     )?;
+    let oversized = "字".repeat(2001);
     for (state, note) in [
-        ("blocked", ""),
+        ("blocked", oversized.as_str()),
         ("completed", "旧状态"),
         ("invalid", "无效"),
     ] {
