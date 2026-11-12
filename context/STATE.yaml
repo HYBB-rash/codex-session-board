@@ -3,9 +3,9 @@
   "updated_at": "2026-11-12",
   "current_phase": {
     "id": "plugin-runtime-ownership-20261112",
-    "status": "in_progress",
+    "status": "completed",
     "as_of": "2026-11-12",
-    "summary": "用户批准插件统一持有运行时的结构重构。此前本机状态事件已恢复0.3.26，正式数据及23张真实归档卡位置保留。当前将配置、App和任务生命周期收拢到插件运行时，更新器只安装包并请求宿主重载，不再拉起独立serve；两名隔离工作树代理分别修改安装器和任务关闭，主代理集成验证。自动归档继续暂缓，不发布stable，不代签缺少的全量目标证据。"
+    "summary": "插件统一持有配置、App、HTTP及工作线程；安装更新只处理包和宿主重载。0.3.34已在Fedora和Mac真实桌面加载并调用工具，正式数据目录、全部既有备注和原生归档保留。收尾版本0.3.35由正式CI构建发布candidate后切换；执行结果见outputs/state-incident-20261112。完整目标环境验收仍未代签，stable不发布。"
   },
   "active_tasks": [
     "context/tasks/active/archive-button.md",
@@ -15,8 +15,7 @@
     "context/tasks/active/ui-worktree-cleanup-20261111.md",
     "context/tasks/active/remote-final-integration-20261111.md",
     "context/tasks/active/mac-development-release-20261111.md",
-    "context/tasks/active/state-incident-20261112.md",
-    "context/tasks/active/plugin-runtime-ownership-20261112.md"
+    "context/tasks/active/state-incident-20261112.md"
   ],
   "known_open_issues": [
     "统一main的自动验证不代签目标环境证据。形式化来源曾出现一次未改动RPC恢复测试的偶发失败，单项复验与后续完整钩子通过，原因未确定；失败及主动中断记录保留。最终发布结论只依据合并后指纹的完整验收，缺少外部证据仍保持待验证。",
@@ -34,7 +33,7 @@
     "PWA安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。",
     "本机和M1专用会话真实归档已通过。正式进程已是 v0.2.63，原生侧栏取消归档后，下一次本机位置读回会恢复本地已确认卡片并保留备注。这次启动还没有完成一次本机位置读回。旧库含热日志时，迁移前须在私有副本执行SQLite标准恢复，保留原始数据库与日志。"
   ],
-  "last_completed_task": "context/tasks/completed/formal-followup-integration-20261111.md",
+  "last_completed_task": "context/tasks/completed/plugin-runtime-ownership-20261112.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
