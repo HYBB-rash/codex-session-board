@@ -1,5 +1,7 @@
 # Singleton 跨平台验收绑定修复
 
+协调者已集成至0.3.53；自动验收通过，完整外部验收仍待验证。
+
 owner: singleton-integration
 execution_mode: isolated_write
 allowed_write_set: acceptance/test_plugin_update.py, scripts/verify_acceptance.py, scripts/bind_rust_tests.py, acceptance/test_gate.py, acceptance/bindings.json, tests/singleton_platform.rs, Docs/SINGLETON-GUARD.md, Cargo.toml, Cargo.lock, plugin.json, .codex-plugin/plugin.json, context/tasks/active/singleton-platform-20261113.md

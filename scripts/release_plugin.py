@@ -33,7 +33,16 @@ class GitHub:
         return json.loads(result.stdout or "null")
 
     def release(self, tag):
-        return self.api(f"releases/tags/{tag}")
+        release = self.api(f"releases/tags/{tag}")
+        if release is not None:
+            return release
+        page = 1
+        while releases := self.api(f"releases?per_page=100&page={page}"):
+            for release in releases:
+                if release["tag_name"] == tag:
+                    return release
+            page += 1
+        return None
 
     def ensure_draft(self, tag, source):
         existing = self.api(f"git/ref/tags/{tag}")

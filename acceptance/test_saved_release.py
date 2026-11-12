@@ -88,11 +88,29 @@ class SavedReleaseTests(unittest.TestCase):
 
     def test_first_release_checks_tag_reference_before_resolving_commit(self):
         github = release_plugin.GitHub("owner/plugin")
-        with patch.object(github, "api", side_effect=[None, {}, {"sha": self.github.source}, None]) as api, \
+        with patch.object(github, "api", side_effect=[None, {}, {"sha": self.github.source}]) as api, \
+                patch.object(github, "release", return_value=None), \
                 patch.object(github, "gh", return_value=SimpleNamespace(returncode=0)):
             github.ensure_draft(self.tag, self.github.source)
         self.assertEqual(api.call_args_list[0].args, (f"git/ref/tags/{self.tag}",))
         self.assertEqual(api.call_args_list[1].kwargs, {"ref": f"refs/tags/{self.tag}", "sha": self.github.source})
+
+    def test_draft_release_discovery_paginates_and_preserves_asset_digests(self):
+        github = release_plugin.GitHub("owner/plugin")
+        expected = {"tag_name": self.tag, "draft": True, "assets": [{"digest": "sha256:original"}]}
+        with patch.object(github, "api", side_effect=[None, [{"tag_name": "v0.0.1"}], [expected]]) as api:
+            self.assertEqual(github.release(self.tag), expected)
+        self.assertEqual([call.args[0] for call in api.call_args_list], [
+            f"releases/tags/{self.tag}", "releases?per_page=100&page=1", "releases?per_page=100&page=2",
+        ])
+        with patch.object(github, "api", side_effect=[None, []]):
+            self.assertIsNone(github.release(self.tag))
+        with patch.object(github, "api", side_effect=[None, RuntimeError("access denied")]):
+            with self.assertRaisesRegex(RuntimeError, "access denied"):
+                github.release(self.tag)
+        with patch.object(github, "api", return_value=expected) as api:
+            self.assertEqual(github.release(self.tag), expected)
+            api.assert_called_once_with(f"releases/tags/{self.tag}")
 
     def test_local_then_ci_reuses_exact_archive_without_building(self):
         self.save_existing()

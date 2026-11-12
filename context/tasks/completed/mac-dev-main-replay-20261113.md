@@ -1,5 +1,7 @@
 # 隔离开发改动重放到统一主线
 
+协调者已集成至0.3.52；最终同源Mac验证与日用切换由本轮交付继续完成。
+
 owner: codex
 execution_mode: isolated-worker
 allowed_write_set: 原隔离开发八提交涉及文件及本任务卡；不写共享 STATE、primary main、渠道或正式实例

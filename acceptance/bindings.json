@@ -1737,6 +1737,7 @@
       "acceptance.test_saved_release.SavedReleaseTests.test_actions_token_checks_immutability_before_channel_writes",
       "acceptance.test_saved_release.SavedReleaseTests.test_archive_links_and_checksum_tampering_are_rejected",
       "acceptance.test_saved_release.SavedReleaseTests.test_first_release_checks_tag_reference_before_resolving_commit",
+      "acceptance.test_saved_release.SavedReleaseTests.test_draft_release_discovery_paginates_and_preserves_asset_digests",
       "acceptance.test_saved_release.SavedReleaseTests.test_local_then_ci_reuses_exact_archive_without_building",
       "acceptance.test_saved_release.SavedReleaseTests.test_mismatched_source_is_rejected_before_build_or_upload",
       "acceptance.test_saved_release.SavedReleaseTests.test_missing_platform_stays_draft_without_channel_writes",
