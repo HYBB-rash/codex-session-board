@@ -6,13 +6,14 @@ import tarfile
 import tempfile
 import tomllib
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timezone
 from pathlib import Path
 
 from scripts.package_migration import ROOT, build_package
 from scripts.verify_acceptance import (
     digest, execute_adapter, fingerprint, validate_contract, validate_report_path,
-    validate_results, verify,
+    validate_results, verify, requirement_tests,
 )
 
 
@@ -62,6 +63,35 @@ class GateTests(unittest.TestCase):
 
     def run_gate(self, scope="release", evidence=None):
         return verify(self.root, self.contract_path, self.bindings_path, scope, evidence)
+
+    def test_platform_branches_select_real_tests_and_keep_common_checks(self):
+        mapping = {"common": ["shared"], "linux": ["proc"], "darwin": ["rejection"]}
+        for platform, expected in (("linux", ["shared", "proc"]),
+                                   ("darwin", ["shared", "rejection"])):
+            with self.subTest(platform=platform), patch("sys.platform", platform):
+                self.assertEqual(requirement_tests(mapping), expected)
+                self.bindings["requirements"]["AUTO"] = mapping
+                self.bindings_path.write_text(json.dumps(self.bindings))
+                report, code = self.run_gate("automated")
+                self.assertEqual(code, 0)
+                self.assertEqual(report["platform"], platform)
+                self.assertEqual(report["requirements"][0]["automated_tests"], expected)
+
+    def test_platform_binding_errors_fail_closed(self):
+        cases = [
+            {"common": [], "linux": ["proc"]},
+            {"common": [], "linux": ["proc"], "darwin": ["duplicate", "duplicate"]},
+            {"common": ["shared"], "linux": ["shared"], "darwin": []},
+        ]
+        for mapping in cases:
+            with self.subTest(mapping=mapping), patch("sys.platform", "linux"):
+                with self.assertRaises(ValueError):
+                    requirement_tests(mapping)
+        self.bindings["requirements"]["AUTO"] = {"common": [], "linux": ["proc"], "darwin": []}
+        with patch("sys.platform", "linux"), self.assertRaises(ValueError):
+            validate_contract(self.contract, self.bindings)
+        with patch("sys.platform", "unknown"), self.assertRaises(ValueError):
+            requirement_tests({"common": ["shared"], "linux": [], "darwin": []})
 
     def test_automatic_success_does_not_claim_release_completion(self):
         report, code = self.run_gate("automated")

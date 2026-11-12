@@ -88,6 +88,24 @@ def validate_report_path(root, contract_path, bindings_path, evidence_path, repo
             raise ValueError("Report output would become a fingerprinted input")
 
 
+def requirement_tests(mapping):
+    branches = mapping if isinstance(mapping, dict) else {"common": mapping}
+    if isinstance(mapping, dict) and set(branches) != {"common", "linux", "darwin"}:
+        raise ValueError("Platform mappings require common, linux and darwin branches")
+    for names in branches.values():
+        if (not isinstance(names, list)
+                or not all(isinstance(name, str) and name.strip() == name and name for name in names)
+                or len(names) != len(set(names))):
+            raise ValueError("Invalid test mapping")
+    if isinstance(mapping, dict) and sys.platform not in branches:
+        raise ValueError("Unsupported acceptance platform: " + sys.platform)
+    common = branches["common"]
+    specific = branches.get(sys.platform, [])
+    if any(set(common) & set(names) for key, names in branches.items() if key != "common"):
+        raise ValueError("Platform tests duplicate common tests")
+    return common + specific
+
+
 def validate_contract(contract, bindings):
     if contract.get("schema_version") != 1 or bindings.get("schema_version") != 1:
         raise ValueError("Unsupported contract or bindings version")
@@ -114,14 +132,11 @@ def validate_contract(contract, bindings):
         raise ValueError("Bindings must cover exactly the contract identifiers")
     tests = set()
     for item in requirements:
-        names = mappings[item["id"]]
-        if (
-            not isinstance(names, list)
-            or not all(isinstance(name, str) and name.strip() == name and name for name in names)
-            or len(names) != len(set(names))
-        ):
-            raise ValueError(f"Invalid test mapping: {item['id']}")
-        if item["verification"] != "live" and not names:
+        names = requirement_tests(mappings[item["id"]])
+        mapping = mappings[item["id"]]
+        empty_platform = isinstance(mapping, dict) and any(
+            not mapping["common"] and not mapping[platform] for platform in ("linux", "darwin"))
+        if item["verification"] != "live" and (not names or empty_platform):
             raise ValueError(f"No automated checks bound to {item['id']}")
         tests.update(names)
     if not tests:
@@ -216,7 +231,7 @@ def verify(root, contract_path, bindings_path, scope, evidence_path=None):
     items = []
     for requirement in contract["requirements"]:
         identifier = requirement["id"]
-        bound = bindings["requirements"][identifier]
+        bound = requirement_tests(bindings["requirements"][identifier])
         failed = [name for name in bound if records[name]["status"] != "pass"]
         status = "fail" if failed else "pass"
         detail = "自动检查通过" if bound else "需要真实环境验收"
@@ -239,7 +254,7 @@ def verify(root, contract_path, bindings_path, scope, evidence_path=None):
     report = {
         "schema_version": 1, "contract_id": contract["contract_id"],
         "contract_sha256": contract_sha, "build_sha256": build_sha,
-        "scope": scope, "passed": passed, "release_ready": complete,
+        "platform": sys.platform, "scope": scope, "passed": passed, "release_ready": complete,
         "automated_passed": automated_ok, "test_count": len(records),
         "requirements": items, "tests": list(records.values()),
     }

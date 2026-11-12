@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT))
 from rust_adapter import executables, inventory
 from acceptance.unittest_adapter import test_identifiers
+from scripts.verify_acceptance import requirement_tests
 
 
 def matching(names, *needles):
@@ -54,7 +55,7 @@ def build():
         "TITLE-005": title_store,
         "DISCOVERY-001": rpc + store + group("::projects::tests::"),
         "DISCOVERY-002": group("observer_selection") + store + observer,
-        "NAV-001": security + group("test::singleton_guard::", "test::singleton_runtime::"),
+        "NAV-001": security + group("test::singleton_platform::"),
         "APP-001": mcp,
         "UI-001": [],
         "UI-002": store,
@@ -78,16 +79,26 @@ def build():
         "DATA-002": group("::service::migration::"),
         "BOUNDARY-001": group("::rpc::", "::remote::", "::app::drafts::tests::", "test::legacy_mode::"),
     }
+    platform_nav = previous["requirements"]["NAV-001"]
     for key, values in previous["requirements"].items():
-        for name in values:
+        for name in requirement_tests(values):
             if name.startswith(("lib::", "bin::", "test::", "example::")) and name not in names:
                 raise ValueError("Previously bound native test disappeared: " + name)
-        mappings[key].extend(values)
+        mappings[key].extend(values["common"] if isinstance(values, dict) else values)
     for key, values in additions.items():
         mappings[key].extend(values)
-    mappings = {key: list(dict.fromkeys(previous["requirements"][key] + values))
+    previously_bound = {name for values in previous["requirements"].values()
+                        for branch in (values.values() if isinstance(values, dict) else [values])
+                        for name in branch}
+    mappings = {key: list(dict.fromkeys(
+        (previous["requirements"][key]["common"] if isinstance(previous["requirements"][key], dict)
+         else previous["requirements"][key]) + [name for name in values if name not in previously_bound]))
                 for key, values in mappings.items()}
-    bound = {name for values in mappings.values() for name in values}
+    specific = set(platform_nav["linux"] + platform_nav["darwin"])
+    mappings["NAV-001"] = {
+        **platform_nav, "common": [name for name in mappings["NAV-001"] if name not in specific],
+    }
+    bound = {name for values in mappings.values() for name in requirement_tests(values)}
     missing = set(names) - bound
     if missing:
         raise ValueError("Native tests without a requirement mapping: " + repr(sorted(missing)))
