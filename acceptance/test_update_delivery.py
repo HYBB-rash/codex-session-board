@@ -1,5 +1,4 @@
 import json
-import sqlite3
 import socket
 import sys
 import tempfile
@@ -52,28 +51,46 @@ class UpdateDeliveryTests(unittest.TestCase):
                   "tools": {"board_view": {}}}
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
-            path = root / "control.sock"
+            path = root / "desktop.sock"
+            marketplace = root / "marketplace.json"
+            marketplace.write_text(json.dumps({"name": update_plugin.MARKET}))
             with socket.socket(socket.AF_UNIX) as listener:
                 listener.bind(str(path))
                 path.chmod(0o600)
-                connection = MagicMock()
-                connection.recv.side_effect = [
-                    json.dumps({"id": 1, "result": {}}),
-                    json.dumps({"id": 3, "result": {}}),
-                    json.dumps({"id": 4, "result": {"data": [server], "nextCursor": None}}),
-                ]
-                module = SimpleNamespace(create_connection=MagicMock(return_value=connection))
-                with patch.dict(sys.modules, {"websocket": module}):
-                    with patch.object(reload_plugins.socket, "socket"):
-                        with patch.object(reload_plugins.subprocess, "check_output",
-                                          return_value=json.dumps({"socketPath": str(path)})):
-                            result = reload_plugins.reload_plugins("codex", root, "new")
-                self.assertEqual(result["serverInfo"]["version"], "new")
-                self.assertEqual(
-                    [json.loads(call.args[0])["method"] for call in connection.send.call_args_list],
-                    ["initialize", "initialized", "config/mcpServer/reload", "mcpServerStatus/list"],
-                )
-                connection.close.assert_called_once()
+                for install in (False, True):
+                    with self.subTest(install=install):
+                        connection = MagicMock()
+                        responses = [{"id": 1, "result": {}}]
+                        if install:
+                            responses.append({"id": 2, "result": {}})
+                        responses.extend([
+                            {"id": 3, "result": {}},
+                            {"id": 4, "result": {"data": [server], "nextCursor": None}},
+                        ])
+                        connection.recv.side_effect = [json.dumps(item) for item in responses]
+                        module = SimpleNamespace(create_connection=MagicMock(return_value=connection))
+                        with patch.dict(sys.modules, {"websocket": module}), \
+                             patch.dict(reload_plugins.os.environ, {
+                                 "CODEX_LINUX_APP_SERVER_BRIDGE_SOCKET": str(path)}), \
+                             patch.object(reload_plugins.socket, "socket") as transport, \
+                             patch.object(update_plugin.subprocess, "check_output",
+                                          side_effect=AssertionError("No daemon lookup")):
+                            result = reload_plugins.reload_plugins(
+                                "codex", root, "new", marketplace if install else None)
+                        self.assertTrue(result["desktop_loaded"])
+                        self.assertEqual(result["phase"], "desktop_loaded")
+                        self.assertEqual(result["socket"], str(path))
+                        self.assertEqual(result["mcp"]["serverInfo"]["version"], "new")
+                        calls = [json.loads(call.args[0]) for call in connection.send.call_args_list]
+                        methods = ["initialize", "initialized"]
+                        if install:
+                            methods.append("plugin/install")
+                            self.assertEqual(calls[2]["params"], {
+                                "marketplacePath": str(marketplace), "pluginName": "codex-session-board"})
+                        methods.extend(["config/mcpServer/reload", "mcpServerStatus/list"])
+                        self.assertEqual([call["method"] for call in calls], methods)
+                        transport.return_value.__enter__.return_value.connect.assert_called_once_with(str(path))
+                        connection.close.assert_called_once()
 
     def test_pending_candidate_never_stops_the_installed_version(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -82,7 +99,7 @@ class UpdateDeliveryTests(unittest.TestCase):
                 with patch.object(update_plugin, "verify_package", return_value={"target":"linux", "source_commit":"old"}):
                     with patch.object(update_plugin, "command") as command:
                         with self.assertRaisesRegex(ValueError, "not yet available"):
-                            update_plugin.update("repository", "candidate", None, root / "config",
+                            update_plugin.update("repository", "candidate", None,
                                                  root / "state", "codex", expected_source="new")
                         command.assert_not_called()
 
@@ -97,39 +114,6 @@ class UpdateDeliveryTests(unittest.TestCase):
         server["serverInfo"]["version"] = "new"
         self.assertEqual(reload_plugins.verify_loaded(response, "new")["pluginId"], server["pluginId"])
 
-    def test_backup_preserves_committed_wal_notes_and_all_host_databases(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary).resolve()
-            data = root / "runtime"
-            data.mkdir()
-            remote = data / "remote-hosts/mac"
-            remote.mkdir(parents=True)
-            config = root / "config.json"
-            original_config = json.dumps({"data_dir": "runtime", "port": 18767})
-            config.write_text(original_config)
-            connections = []
-            try:
-                for directory in (data, remote):
-                    connection = sqlite3.connect(directory / "status.sqlite3")
-                    connections.append(connection)
-                    connection.execute("PRAGMA journal_mode=WAL")
-                    connection.execute("CREATE TABLE sessions(id TEXT, note TEXT)")
-                    connection.execute("INSERT INTO sessions VALUES('same-id','retain this note')")
-                    connection.commit()
-                (data / "private-key").write_text("never copy unrelated files")
-                backup = root / "backup"
-                self.assertEqual(update_plugin.backup(config, backup), data)
-                for relative in ("status.sqlite3", "remote-hosts/mac/status.sqlite3"):
-                    with sqlite3.connect(backup / relative) as copied:
-                        self.assertEqual(copied.execute("SELECT * FROM sessions").fetchall(),
-                                         [("same-id", "retain this note")])
-                self.assertFalse((backup / "private-key").exists())
-                self.assertEqual(config.read_text(), original_config)
-                self.assertEqual((backup / "config.json").read_text(), original_config)
-            finally:
-                for connection in connections:
-                    connection.close()
-
     def test_wrong_architecture_is_rejected_before_stopping_or_installing(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -140,6 +124,6 @@ class UpdateDeliveryTests(unittest.TestCase):
                             with patch.object(update_plugin, "command") as command:
                                 with self.assertRaisesRegex(ValueError, "different operating"):
                                     update_plugin.update("test-repository", "candidate", None,
-                                                         root / "config.json", root / "state", "codex")
+                                                         root / "state", "codex")
                                 install.assert_not_called()
                                 command.assert_not_called()

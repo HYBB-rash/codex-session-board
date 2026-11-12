@@ -9,4 +9,4 @@ fi
 exec "$python" "$root/scripts/update_plugin.py" \
   --repository "$(git -C "$root" remote get-url origin)" \
   --expected-channel-source "$(git -C "$root" rev-parse HEAD)" \
-  --config "${XDG_CONFIG_HOME:-$HOME/.config}/codex-session-board/config.json" "$@"
+  "$@"
