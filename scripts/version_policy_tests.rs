@@ -3,6 +3,51 @@ use crate::tests::{commit, fixture, fixture_git, rewrite_version};
 use crate::{git, prepare, validate_history};
 use std::fs;
 
+#[test]
+fn release_policy_keeps_checkpoints_and_requires_a_release_record() -> Result<()> {
+    let (directory, mut rules) = fixture()?;
+    let root = directory.path();
+    prepare(root, &mut rules, None)?;
+    commit(root)?;
+    rules.versioning.release_only = true;
+    save(root, &rules)?;
+    commit(root)?;
+    assert_eq!(prepare(root, &mut rules, None)?.to_string(), "0.1.1");
+    fs::write(root.join("checkpoint"), "unfinished development")?;
+    commit(root)?;
+    let history = validate_history(root, &rules)?;
+    assert_eq!(history.version.to_string(), "0.1.1");
+    assert!(
+        rules
+            .validate_step(
+                history.tip.as_deref(),
+                history.version,
+                Version::parse("0.1.2")?
+            )
+            .is_err()
+    );
+    prepare_release(root, &mut rules)?;
+    prepare_release(root, &mut rules)?;
+    assert_eq!(rules.versioning.feature_releases.len(), 1);
+    commit(root)?;
+    assert_eq!(validate_history(root, &rules)?.version.to_string(), "0.1.2");
+    Ok(())
+}
+
+#[test]
+fn release_policy_cannot_be_removed_after_a_checkpoint() -> Result<()> {
+    let (directory, mut rules) = fixture()?;
+    let root = directory.path();
+    prepare(root, &mut rules, None)?;
+    commit(root)?;
+    rules.versioning.release_only = true;
+    save(root, &rules)?;
+    commit(root)?;
+    rules.versioning.release_only = false;
+    assert!(validate_history(root, &rules).is_err());
+    Ok(())
+}
+
 fn save(root: &Path, rules: &Rules) -> Result<()> {
     fs::write(root.join(RULES_FILE), serde_json::to_vec_pretty(rules)?)?;
     Ok(())

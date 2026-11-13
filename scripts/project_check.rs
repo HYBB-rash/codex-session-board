@@ -26,13 +26,13 @@ const RULES_FILE: &str = "project-rules.json";
 struct Cli {
     #[arg(
         long,
-        conflicts_with_all = ["prepare_commit", "feature_complete"],
+        conflicts_with_all = ["prepare_commit", "prepare_release", "feature_complete"],
         help = "仅检查 Rust 普通注释增量，不检查工作区和版本"
     )]
     comments_only: bool,
     #[arg(
         long,
-        conflicts_with_all = ["prepare_commit", "feature_complete"],
+        conflicts_with_all = ["prepare_commit", "prepare_release", "feature_complete"],
         help = "检查本次实际暂存内容、提交规模和版本，不要求工作区干净"
     )]
     pre_commit: bool,
@@ -46,6 +46,12 @@ struct Cli {
     prepare_commit: bool,
     #[arg(
         long,
+        conflicts_with = "prepare_commit",
+        help = "冻结下一发布候选的版本，普通提交不升版"
+    )]
+    prepare_release: bool,
+    #[arg(
+        long,
         requires = "prepare_commit",
         value_name = "用户明确决定的说明",
         help = "旧规则兼容参数；自动进位启用后禁止人工阶段升版"
@@ -53,7 +59,7 @@ struct Cli {
     feature_complete: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct Version {
     major: u64,
     minor: u64,
@@ -117,6 +123,8 @@ struct VersionRules {
     feature_releases: Vec<FeatureRelease>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     rollover_after: Option<String>,
+    #[serde(default)]
+    release_only: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -254,6 +262,7 @@ fn validate_history(root: &Path, rules: &Rules) -> Result<History> {
     history.version = *versions.get(tip.as_str()).context("缺少 HEAD 的版本")?;
     history.tip = Some(tip);
     let parents = parents.iter().map(String::as_str).collect::<Vec<_>>();
+    history.version = version_policy::inherited_version(root, rules, &parents, history.version)?;
     version_policy::validate_transition(root, rules, &parents)?;
     Ok(history)
 }
@@ -277,6 +286,7 @@ fn validate_commit_version(
     );
     let parent = parents.first().copied();
     version_policy::validate_transition(root, &recorded, parents)?;
+    let previous = version_policy::inherited_version(root, &recorded, parents, previous)?;
     recorded.validate_step(parent, previous, version)?;
     Ok(version)
 }
@@ -315,7 +325,7 @@ fn check_hooks(root: &Path) -> bool {
     })();
     match result {
         Ok(()) => {
-            println!("[通过] 已启用提交前测试钩子，测试通过后才允许提交。");
+            println!("[通过] 已启用暂存区快检；完整测试在集成候选门禁执行。");
             true
         }
         Err(error) => {
@@ -493,6 +503,9 @@ fn prepare_target(
     current: Version,
     decision: Option<&str>,
 ) -> Result<Version> {
+    if let Some(target) = version_policy::prepared_version(history, rules, current, decision)? {
+        return Ok(target);
+    }
     if rules.versioning.rollover_after.is_some() {
         ensure!(
             decision.is_none(),
@@ -574,6 +587,10 @@ fn run(cli: Cli) -> Result<bool> {
         root_directory()?
     };
     let mut rules = Rules::parse(&fs::read_to_string(root.join(RULES_FILE))?)?;
+    if cli.prepare_release {
+        version_policy::prepare_release(&root, &mut rules)?;
+        return Ok(true);
+    }
     if cli.prepare_commit {
         prepare(&root, &mut rules, cli.feature_complete.as_deref())?;
         return Ok(true);

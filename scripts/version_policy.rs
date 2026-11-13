@@ -1,4 +1,4 @@
-use super::{RULES_FILE, Rules, Version, committed, git};
+use super::{FeatureRelease, History, RULES_FILE, Rules, Version, committed, git, package};
 use anyhow::{Context, Result, ensure};
 use std::path::Path;
 use std::{fs, io};
@@ -38,6 +38,15 @@ impl Rules {
         previous: Version,
         current: Version,
     ) -> Result<()> {
+        if self.versioning.release_only {
+            ensure!(
+                current == previous
+                    || current == self.next_version(previous)?
+                        && parent.is_some_and(|parent| self.approves(parent, previous, current)),
+                "普通提交保持 v{previous}；升版须由 --prepare-release 准备发布记录"
+            );
+            return Ok(());
+        }
         let expected = self.next_version(previous)?;
         let approved = self.versioning.rollover_after.is_none()
             && current == previous.next_minor()?
@@ -59,6 +68,10 @@ pub(super) fn validate_transition(root: &Path, rules: &Rules, parents: &[&str]) 
     let mut inherited_policy = false;
     for parent in parents {
         let inherited = recorded(root, parent)?;
+        ensure!(
+            !inherited.versioning.release_only || rules.versioning.release_only,
+            "不能撤销任何父提交已启用的按发布升版规则"
+        );
         if let Some(boundary) = inherited.versioning.rollover_after {
             ensure!(
                 current == Some(boundary.as_str()),
@@ -73,6 +86,68 @@ pub(super) fn validate_transition(root: &Path, rules: &Rules, parents: &[&str]) 
             "自动进位切换点必须是直接父提交的完整提交号"
         );
     }
+    Ok(())
+}
+
+pub(super) fn inherited_version(
+    root: &Path,
+    rules: &Rules,
+    parents: &[&str],
+    previous: Version,
+) -> Result<Version> {
+    if !rules.versioning.release_only || parents.len() < 2 {
+        return Ok(previous);
+    }
+    parents.iter().try_fold(previous, |version, parent| {
+        Ok(version.max(package(&committed(root, parent, "Cargo.toml")?)?.1))
+    })
+}
+
+pub(super) fn prepared_version(
+    history: &History,
+    rules: &Rules,
+    current: Version,
+    decision: Option<&str>,
+) -> Result<Option<Version>> {
+    if !rules.versioning.release_only {
+        return Ok(None);
+    }
+    ensure!(decision.is_none(), "按发布升版使用 --prepare-release");
+    let next = rules.next_version(history.version)?;
+    let approved = history
+        .tip
+        .as_deref()
+        .is_some_and(|parent| rules.approves(parent, history.version, next));
+    let target = if approved { next } else { history.version };
+    ensure!(
+        current == history.version || current == target,
+        "当前 v{current} 与本次允许的 v{target} 不一致"
+    );
+    Ok(Some(target))
+}
+
+pub(super) fn prepare_release(root: &Path, rules: &mut Rules) -> Result<()> {
+    ensure!(rules.versioning.release_only, "须先启用按发布升版规则");
+    let history = super::validate_history(root, rules)?;
+    let parent = history.tip.as_deref().context("发布须有已提交的源码基线")?;
+    ensure!(
+        candidate_parents(root, parent)?.len() == 1,
+        "先完成正在进行的合并，再冻结发布候选"
+    );
+    let target = rules.next_version(history.version)?;
+    if !rules.approves(parent, history.version, target) {
+        rules.versioning.feature_releases.push(FeatureRelease {
+            after_commit: parent.to_string(),
+            from: history.version.to_string(),
+            to: target.to_string(),
+            decision: "冻结发布候选".to_string(),
+        });
+    }
+    fs::write(
+        root.join(RULES_FILE),
+        format!("{}\n", serde_json::to_string_pretty(rules)?),
+    )?;
+    super::prepare(root, rules, None)?;
     Ok(())
 }
 
@@ -110,7 +185,10 @@ pub(super) fn plugin_versions(
         let version = manifest.get_mut("version").context("插件缺少 version")?;
         Version::parse(version.as_str().context("插件 version 必须是字符串")?)?;
         *version = serde_json::Value::String(target.to_string());
-        prepared.push((path, format!("{}\n", serde_json::to_string_pretty(&manifest)?)));
+        prepared.push((
+            path,
+            format!("{}\n", serde_json::to_string_pretty(&manifest)?),
+        ));
     }
     ensure!(
         prepared.is_empty() || prepared.len() == 2,
