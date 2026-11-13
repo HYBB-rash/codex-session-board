@@ -6,6 +6,36 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { launchBrowser } from "./browser-client.mjs";
 
+function installClock() {
+  let now = 0, nextId = 0;
+  const timers = new Map();
+  const schedule = (callback, delay, interval, args) => {
+    if (typeof callback !== "function") throw new Error("Test clock requires function callbacks");
+    const duration = Math.max(interval ? 1 : 0, Number(delay) || 0), id = ++nextId;
+    timers.set(id, { id, at: now + duration, interval: interval ? duration : 0, callback, args });
+    return id;
+  };
+  window.setTimeout = (callback, delay = 0, ...args) => schedule(callback, delay, false, args);
+  window.setInterval = (callback, delay = 0, ...args) => schedule(callback, delay, true, args);
+  window.clearTimeout = window.clearInterval = id => timers.delete(id);
+  Object.defineProperty(performance, "now", { configurable: true, value: () => now });
+  window.transferTestClock = { advance(milliseconds) {
+    if (!Number.isFinite(milliseconds) || milliseconds < 0) throw new Error("Invalid test time");
+    const target = now + milliseconds;
+    let executed = 0;
+    for (;;) {
+      const next = [...timers.values()].filter(timer => timer.at <= target)
+        .sort((first, second) => first.at - second.at || first.id - second.id)[0];
+      if (!next) break;
+      if (++executed > 10000) throw new Error("Test clock callback limit exceeded");
+      now = next.at;timers.delete(next.id);
+      if (next.interval) timers.set(next.id, { ...next, at: now + next.interval });
+      next.callback.apply(window, next.args);
+    }
+    now = target;
+  } };
+}
+
 const output = process.argv[2] || await fs.mkdtemp(path.join(os.tmpdir(), "board-transfer-"));
 await fs.mkdir(output, { recursive: true });
 const html = await fs.readFile(new URL("../index.html", import.meta.url), "utf8");
@@ -54,7 +84,15 @@ const server = http.createServer(async (request, response) => {
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 const browser = await launchBrowser();
 const page = await browser.page(`http://127.0.0.1:${server.address().port}/`);
+await page.command("Page.addScriptToEvaluateOnNewDocument", { source: `(${installClock.toString()})()` });
+await page.command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/` });
 const evaluate = expression => page.evaluate(expression);
+const advance = milliseconds => evaluate(`transferTestClock.advance(${milliseconds})`);
+const advanceTo = async elapsed => {
+  const age = await evaluate("performance.now() - moving.started");
+  assert(age <= elapsed, `测试时钟已超过检查点：${age} > ${elapsed}`);
+  await advance(elapsed - age);
+};
 const until = async expression => {
   for (let attempt = 0; attempt < 150; attempt++) {
     if (await evaluate(expression)) return;
@@ -92,13 +130,15 @@ const screenshot = async name => {
   await fs.writeFile(path.join(output, name + ".png"), Buffer.from(image.data, "base64"));
 };
 try {
-  await until('Boolean(document.querySelector(".card"))');
+  await until('typeof transferTestClock !== "undefined" && Boolean(document.querySelector(".card"))');
+  assert.deepEqual(await evaluate("moveDelays"), { courier: 1500, slow: 8000 });
   const id = snapshot.sessions[0].id, otherId = snapshot.sessions[2].id;
   await evaluate('window.pendingCreation=createSession("project");void 0');
   await until('creating');
   await check("新建等待中禁用拖动归档排序与筛选", 'byId("new-session").disabled && byId("host-filter").disabled && document.querySelector("[data-archive-all]").disabled && [...document.querySelectorAll(".card")].every(card=>!card.draggable) && [...document.querySelectorAll(".column-sort")].every(button=>button.disabled)');
   await evaluate('(() => {const card=document.querySelector(".card"), event=new Event("dragstart",{cancelable:true});card.dispatchEvent(event);window.creationBlockedDrag=event.defaultPrevented;void moveCard(data.sessions[0],"review");void archiveSessions([data.sessions[2]],document.querySelector("[data-archive-all]"));void confirmArchiveInputs(data.sessions[2],document.querySelector("[data-archive-all]"));void changeColumnSort("to_archive",document.querySelector("#column-to_archive .column-sort"));byId("draft-restart").onclick();openEditor(data.sessions[0].id,"blocked");byId("edit-form").onsubmit({preventDefault(){}});})()');
   await check("新建先开始时各写入口也保持互斥", 'creating && !saving && !dragging && window.creationBlockedDrag && !byId("editor").open');
+  for (let attempt = 0; attempt < 150 && !pendingNew; attempt++) await delay(40);
   assert.equal(writes.length, 0);assert.equal(mutations.length, 1);
   assert.equal(mutations[0].path, "/api/new");assert.equal(mutations[0].body.projectId, "project");
   assert.match(mutations[0].body.requestId, /^[0-9a-f-]{36}$/);
@@ -113,9 +153,22 @@ try {
   assert(heldSnapshot, "必须实际挂起旧快照请求");
   await drag(id, "#column-review .cards");
   await check("临时落位不修改已确认记录", 'saving && data.sessions[0].state === "in_progress" && document.querySelector(".move-pending").closest(".column").dataset.state === "review" && byId("column-review").querySelector(".column-count").textContent === "0 + 1"');
-  await delay(300);
+  await advance(300);
+  const glowBoundary = await evaluate(`(() => {
+    const card = document.querySelector(".move-pending");
+    const animation = card.getAnimations({subtree:true}).find(item => item.animationName === "move-glow");
+    animation.pause();
+    const timing = animation.effect.getTiming();
+    animation.currentTime = 179;
+    const before = getComputedStyle(card,"::after").opacity;
+    animation.currentTime = 180;
+    const after = getComputedStyle(card,"::after").opacity;
+    animation.currentTime = 300;
+    return {delay:timing.delay,before,after};
+  })()`);
+  assert.deepEqual(glowBoundary, { delay: 180, before: "0", after: "1" });
   await check("保存中触发离开保护", '(() => {const event=new Event("beforeunload",{cancelable:true});window.dispatchEvent(event);return event.defaultPrevented;})()');
-  await check("短等待仅有微光", 'getComputedStyle(document.querySelector(".move-pending"),"::after").opacity !== "0" && byId("move-feedback").hidden');
+  await check("短等待仅有微光", 'performance.now() - moving.started === 300 && getComputedStyle(document.querySelector(".move-pending"),"::after").opacity !== "0" && byId("move-feedback").hidden');
   await screenshot("short-wait");
   await evaluate('void moveCard(data.sessions[0],"to_archive");void load();byId("refresh").click()');
   assert.equal(writes.length, 1, "重复操作不能追加写入");
@@ -128,7 +181,7 @@ try {
   await check("等待中禁用归档排序新建和再次拖动", 'byId("new-session").disabled && document.querySelector("[data-archive-all]").disabled && document.querySelector(".card .card-actions button:last-child").disabled && [...document.querySelectorAll(".column-sort")].every(button=>button.disabled) && [...document.querySelectorAll(".card")].every(card=>!card.draggable)');
   await evaluate('byId("new-session").onclick()');
   await check("等待中直接调用新建也不打开对话框", '!byId("new-target").open && !creating && saving');
-  await until('performance.now() > suppressOpenUntil');
+  await advance(401);await until('performance.now() > suppressOpenUntil');
   await evaluate('(() => {const card=document.querySelector(".card"), event=new Event("dragstart",{cancelable:true});card.dispatchEvent(event);window.blockedDrag=event.defaultPrevented;void archiveSessions(visibleSessions(),document.querySelector("[data-archive-all]"));void changeColumnSort("to_archive",document.querySelector("#column-to_archive .column-sort"));void confirmArchiveInputs(visibleSessions()[0],document.querySelector("[data-archive-all]"));void moveCard(visibleSessions()[0],"review");void openSession(moving.id);})()');
   await check("等待中直接调用也不能重复写入", 'window.blockedDrag && saving && moving.id === data.sessions[0].id && !opening');
   assert.equal(writes.length, 1);assert.deepEqual(mutations, expectedMutations);assert.deepEqual(opens, []);
@@ -144,8 +197,10 @@ try {
   await until('snapshotError === "刷新断线"');
   await check("刷新失败保留健康摘要和保存等待", 'Boolean(byId("health-summary")) && byId("health-summary").textContent.includes("断开") && saving && Boolean(document.querySelector(".move-pending"))');
   refreshError = false;
-  await until('!byId("move-feedback").hidden');
-  await check("长等待搬运工与微光共存", 'document.querySelector(".move-pending") && byId("move-feedback").classList.contains("waiting") && !byId("move-feedback").hidden');
+  await advanceTo(1499);
+  assert.equal(await evaluate('byId("move-feedback").hidden'), true);
+  await advance(1);await until('!byId("move-feedback").hidden');
+  await check("长等待搬运工与微光共存", 'performance.now() - moving.started === 1500 && document.querySelector(".move-pending") && byId("move-feedback").classList.contains("waiting") && !byId("move-feedback").hidden');
   await screenshot("long-wait");
   for (const width of [320, 736, 1680]) {
     await page.command("Emulation.setDeviceMetricsOverride", { width, height: 1000, deviceScaleFactor: 1, mobile: false });
@@ -156,9 +211,12 @@ try {
   await check("减少动画保留静态说明", 'getComputedStyle(document.querySelector(".courier")).animationName === "none" && getComputedStyle(document.querySelector(".move-pending"),"::after").animationName === "none" && document.querySelector(".move-label").textContent.includes("等待")');
   await screenshot("reduced-motion");
   await page.command("Emulation.setEmulatedMedia", { features: [] });
-  await delay(Math.max(0, await evaluate('moveDelays.slow - (performance.now() - moving.started)')));
+  await advanceTo(7999);
+  assert.equal(await evaluate('Boolean(moving.slow)'), false);
+  await advance(1);
+  assert.equal(await evaluate('Boolean(moving.slow)'), true);
   await until('moving?.slow === true');
-  await check("慢响应不假装完成", 'saving && byId("move-heading").textContent.includes("还在等确认") && !byId("feedback").textContent.includes("已保存")');
+  await check("慢响应不假装完成", 'performance.now() - moving.started === 8000 && saving && byId("move-heading").textContent.includes("还在等确认") && !byId("feedback").textContent.includes("已保存")');
   await complete(200, true, true);
   await settled();
   await check("回执才触发完成且标题待同步独立", 'data.sessions[0].state === "review" && !document.querySelector(".move-pending") && byId("move-feedback").classList.contains("saved") && document.querySelector(".follow").textContent.includes("标题") && byId("feedback").textContent.includes("标题同步待重试")');
@@ -169,9 +227,9 @@ try {
   await evaluate('for(let index=0;index<20;index++)data.sessions.push({...data.sessions[1],id:"scroll-"+index});render();byId("column-unknown").querySelector(".cards").scrollTop=180;window.previousScroll=byId("column-unknown").querySelector(".cards").scrollTop');
   await move("to_archive");
   await check("临时落位保留其他列的滚动", 'window.previousScroll > 0 && byId("column-unknown").querySelector(".cards").scrollTop === window.previousScroll');
-  await delay(1050);
+  await advance(1050);
   await check("上一轮收尾不会打断新等待", 'saving && byId("move-feedback").hidden && moving.state === "to_archive"');
-  await until('!byId("move-feedback").hidden');
+  await advanceTo(1500);await until('!byId("move-feedback").hidden');
   await evaluate('byId("move-dismiss").click()');
   await check("收起仅隐藏过场", 'saving && moving.dismissed && byId("move-feedback").hidden');
   await complete(409, false);
@@ -190,34 +248,38 @@ try {
   assert.equal(writes.length, beforeNoop, "同列和列外不保存");cases.push("同列及列外不提交");
   await drag(id, "#column-blocked .cards");
   await check("阻塞仍弹窗提示选填原因", 'byId("editor").open && !moving && data.sessions[0].state === "unknown" && byId("note-help").textContent.includes("暂时不填")');
-  await evaluate('byId("cancel").click()');await until('!byId("editor").open');
+  await evaluate('byId("cancel").click()');await until('!byId("editor").open && editing === null');
   assert.equal(writes.length, beforeNoop, "取消不保存");
   await drag(id, "#column-blocked .cards");
   await evaluate('byId("note").value="";byId("edit-form").requestSubmit()');
-  await until('!byId("move-feedback").hidden');
+  await advanceTo(1500);await until('!byId("move-feedback").hidden');
   await check("空原因允许保存并保持等待保护", 'saving && moving.state === "blocked" && byId("note").readOnly && byId("save").disabled && byId("cancel").disabled && data.sessions[0].state === "unknown"');
   assert.equal(writes.length, beforeNoop + 1);assert.equal(writes.at(-1).note, "");
   await complete(409, false);await settled();
   await check("空原因失败后保留空草稿", 'byId("editor").open && !byId("note").readOnly && byId("note").value === "" && noteDraft(data.sessions[0].id) === "" && byId("feedback").textContent.includes("未收到保存确认")');
-  await evaluate('byId("cancel").click()');await until('!byId("editor").open');
+  await evaluate('byId("cancel").click()');await until('!byId("editor").open && editing === null');
   await drag(id, "#column-blocked .cards");
   await check("等待失败后的空草稿重开仍为空", 'byId("editor").open && byId("note").value === "" && noteDraft(data.sessions[0].id) === ""');
   await evaluate('byId("note").value="等待环境";byId("edit-form").requestSubmit()');
-  await until('!byId("move-feedback").hidden');
+  await advanceTo(1500);await until('!byId("move-feedback").hidden');
   await check("表单内等待可见且不能重复提交", 'byId("editor").contains(byId("move-feedback")) && byId("save").disabled && byId("cancel").disabled && byId("state").disabled && byId("note").readOnly && !byId("notice").textContent && data.sessions[0].state === "unknown"');
   await screenshot("blocked-form");
   await complete(409, false);await settled();
   await check("表单失败保留草稿并说明未确认", 'byId("editor").open && !byId("state").disabled && !byId("note").readOnly && byId("note").value === "等待环境" && noteDraft(data.sessions[0].id) === "等待环境" && byId("feedback").textContent.includes("未收到保存确认")');
-  await evaluate('byId("cancel").click()');await until('!byId("editor").open');
+  await evaluate('byId("cancel").click()');await until('!byId("editor").open && editing === null');
   await drag(otherId, "#column-blocked .cards");
   await check("另一会话编辑框不显示前一会话失败面板", `editing.id === ${JSON.stringify(otherId)} && byId("move-feedback").hidden && byId("move-slot").contains(byId("move-feedback")) && unconfirmedMoves.has(data.sessions[0].id) && !unconfirmedMoves.has(editing.id) && byId("note").value === editing.note`);
-  await evaluate('byId("cancel").click()');await until('!byId("editor").open');
+  await evaluate('byId("cancel").click()');await until('!byId("editor").open && editing === null');
   await drag(id, "#column-blocked .cards");
   await evaluate('byId("edit-form").requestSubmit()');
-  await until('!byId("move-feedback").hidden');
+  await advanceTo(1500);await until('!byId("move-feedback").hidden');
   await complete();await settled();await until('!byId("editor").open && editing === null');
   await check("表单成功才移动清草稿并保留收尾提示", 'data.sessions[0].state === "blocked" && noteDraft(data.sessions[0].id) === null && byId("move-feedback").classList.contains("saved") && !byId("move-feedback").hidden && byId("move-slot").contains(byId("move-feedback"))');
-  automatic = true;await move("review");await settled();await delay(1800);
+  await advance(899);
+  assert.equal(await evaluate('byId("move-feedback").hidden'), false);
+  await advance(1);
+  assert.equal(await evaluate('byId("move-feedback").hidden'), true);
+  automatic = true;await move("review");await settled();await advance(1800);
   await check("快响应不闪现搬运工", 'byId("move-feedback").hidden && !moving && !document.querySelector(".move-pending")');
   await evaluate('data.sessions[0].readOnly=true;render();void moveCard(data.sessions[0],"unknown")');
   await check("只读卡片保持只读", '!Array.from(document.querySelectorAll(".card")).find(card => card.dataset.id === data.sessions[0].id).draggable && !saving');
@@ -238,7 +300,7 @@ try {
 } catch (error) {
   await screenshot("failure");
   await fs.writeFile(path.join(output, "failure.json"), JSON.stringify({ error: error.message, cases, writes, mutations,
-    state: await evaluate('({dragging,saving,moving,ids:[...document.querySelectorAll(".card")].map(card=>({id:card.dataset.id,draggable:card.draggable,rect:card.getBoundingClientRect().toJSON()}))})') }, null, 2));
+    state: await evaluate('({now:performance.now(),hidden:document.hidden,editing,editorOpen:byId("editor").open,dragging,saving,moving,feedback:byId("move-feedback").outerHTML,ids:[...document.querySelectorAll(".card")].map(card=>({id:card.dataset.id,draggable:card.draggable,rect:card.getBoundingClientRect().toJSON()}))})') }, null, 2));
   throw error;
 } finally {
   for (const { response } of responses) response.destroy();

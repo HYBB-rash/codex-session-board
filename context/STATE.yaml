@@ -2,12 +2,13 @@
   "schema_version": 1,
   "updated_at": "2026-11-13",
   "current_phase": {
-    "id": "pr-integration-20261113",
-    "status": "pending_validation",
+    "id": "deploy-merged-plugin-20261113",
+    "status": "in_progress",
     "as_of": "2026-11-13",
-    "summary": "四个 PR 的源码已整合到 main，候选 v0.3.68 的完整验收643项自动检查全部通过，31项需求17通过、14待真实环境证据，release_ready=false。已复核原作者发现的组合缺口；未安装或重载日用插件。远端合并结果以本轮回执为准。"
+    "summary": "用户已授权部署并验证四项功能，正式0.3.54已备份但尚未替换。4be58e4双平台CI失败，正在修正测试时钟、已断开socket准备及草稿发布回执并按原门禁准备后续版本。仅沿用现有Actions发布身份；原完整验收14项目标环境缺证边界保留。"
   },
   "active_tasks": [
+    "context/tasks/active/deploy-merged-plugin-20261113.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",

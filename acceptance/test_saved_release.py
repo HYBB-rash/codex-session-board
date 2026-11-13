@@ -88,12 +88,30 @@ class SavedReleaseTests(unittest.TestCase):
 
     def test_first_release_checks_tag_reference_before_resolving_commit(self):
         github = release_plugin.GitHub("owner/plugin")
-        with patch.object(github, "api", side_effect=[None, {}, {"sha": self.github.source}]) as api, \
-                patch.object(github, "release", return_value=None), \
-                patch.object(github, "gh", return_value=SimpleNamespace(returncode=0)):
+        created = {"tag_name": self.tag, "draft": True}
+        with patch.object(github, "api", side_effect=[None, {}, {"sha": self.github.source}, created]) as api, \
+                patch.object(github, "release", return_value=None):
             github.ensure_draft(self.tag, self.github.source)
         self.assertEqual(api.call_args_list[0].args, (f"git/ref/tags/{self.tag}",))
         self.assertEqual(api.call_args_list[1].kwargs, {"ref": f"refs/tags/{self.tag}", "sha": self.github.source})
+        self.assertEqual(api.call_args_list[-1].args, ("releases", "POST"))
+        self.assertEqual(api.call_args_list[-1].kwargs, {
+            "tag_name": self.tag, "target_commitish": self.github.source,
+            "draft": True, "prerelease": True, "name": self.tag, "body": f"Source commit: {self.github.source}",
+        })
+        for result in (None, {}, {"tag_name": "wrong", "draft": True}, {"tag_name": self.tag, "draft": False}):
+            with patch.object(github, "api", side_effect=[{}, {"sha": self.github.source}, result]), \
+                    patch.object(github, "release", return_value=None):
+                with self.assertRaisesRegex(ValueError, "did not confirm"):
+                    github.ensure_draft(self.tag, self.github.source)
+        for discovered in (None, created):
+            with patch.object(github, "api", side_effect=[{}, {"sha": self.github.source}, RuntimeError("403 denied")]), \
+                    patch.object(github, "release", side_effect=[None, discovered]):
+                if discovered is None:
+                    with self.assertRaisesRegex(RuntimeError, "403 denied"):
+                        github.ensure_draft(self.tag, self.github.source)
+                else:
+                    github.ensure_draft(self.tag, self.github.source)
 
     def test_draft_release_discovery_paginates_and_preserves_asset_digests(self):
         github = release_plugin.GitHub("owner/plugin")

@@ -24,6 +24,8 @@ class GitHub:
     def api(self, path, method="GET", **fields):
         arguments = ["gh", "api", f"repos/{self.repository}/{path}", "--method", method]
         for name, value in fields.items():
+            if isinstance(value, bool):
+                value = json.dumps(value)
             arguments.extend(["-F", f"{name}={value}"])
         result = subprocess.run(arguments, text=True, capture_output=True)
         if result.returncode:
@@ -57,10 +59,15 @@ class GitHub:
         if existing["sha"] != source:
             raise ValueError("Version tag belongs to different source; use a new version")
         if self.release(tag) is None:
-            result = self.gh("release", "create", tag, "--verify-tag", "--draft", "--prerelease",
-                             "--title", tag, "--notes", f"Source commit: {source}", check=False)
-            if result.returncode and self.release(tag) is None:
-                raise RuntimeError(result.stderr)
+            try:
+                created = self.api("releases", "POST", tag_name=tag, target_commitish=source,
+                                   draft=True, prerelease=True, name=tag, body=f"Source commit: {source}")
+            except RuntimeError:
+                if self.release(tag) is None:
+                    raise
+            else:
+                if not created or created.get("tag_name") != tag or not created.get("draft"):
+                    raise ValueError("GitHub did not confirm the requested draft release")
 
     def download(self, tag, name, destination):
         self.gh("release", "download", tag, "--pattern", name, "--dir", str(destination))
