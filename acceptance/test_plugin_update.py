@@ -50,6 +50,7 @@ class PluginUpdateTests(unittest.TestCase):
         self.pending_at_install = None
         self.installed_revision = self.revision
         self.environment = patch.dict(os.environ, {"CODEX_HOME": str(self.home),
+            "CODEX_THREAD_ID": "fixture-thread",
             "CODEX_LINUX_APP_SERVER_BRIDGE_SOCKET": str(self.root / "absent.sock")})
         self.environment.start()
         self.addCleanup(self.environment.stop)
@@ -144,12 +145,14 @@ class PluginUpdateTests(unittest.TestCase):
         connection = MagicMock()
         connection.recv.side_effect = [json.dumps(item) for item in [
             {"method": "notification"}, {"id": 1, "result": {}},
+            {"id": 0, "result": {"thread": {"status": {"type": "idle"}}}},
             {"id": 2, "result": {}}, {"id": 3, "result": {}},
             {"id": 4, "result": {"data": [], "nextCursor": "next"}},
             {"id": 5, "result": {"data": [{
                 "pluginId": "codex-session-board@session-board-rust",
                 "serverInfo": {"name": "codex-session-board", "version": version or self.version},
                 "tools": {"board_view": {}}}], "nextCursor": None}},
+            {"id": 6, "result": {"content": [], "structuredContent": {"sessions": []}}},
         ]]
         return connection
 
@@ -165,8 +168,9 @@ class PluginUpdateTests(unittest.TestCase):
         self.assertEqual(result["phase"], "desktop_loaded")
         calls = [json.loads(call.args[0]) for call in connection.send.call_args_list]
         self.assertEqual([call["method"] for call in calls], ["initialize", "initialized",
-            "plugin/install", "config/mcpServer/reload", "mcpServerStatus/list", "mcpServerStatus/list"])
-        self.assertEqual(calls[2]["params"], {"marketplacePath": str(self.market / ".agents/plugins/marketplace.json"),
+            "thread/read", "plugin/install", "config/mcpServer/reload", "mcpServerStatus/list",
+            "mcpServerStatus/list", "mcpServer/tool/call"])
+        self.assertEqual(calls[3]["params"], {"marketplacePath": str(self.market / ".agents/plugins/marketplace.json"),
                                               "pluginName": "codex-session-board"})
         transport.return_value.__enter__.return_value.connect.assert_called_once_with(str(self.root / "desktop.sock"))
         connection.close.assert_called_once()

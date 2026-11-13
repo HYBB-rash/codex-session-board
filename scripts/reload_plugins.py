@@ -7,12 +7,14 @@ import time
 from pathlib import Path
 
 
-def verify_loaded(request, version):
+def verify_loaded(request, version, thread_id=None):
     cursor = None
     identifier = 4
     while True:
-        response = request(identifier, "mcpServerStatus/list", {
-            "cursor": cursor, "limit": 100, "serverName": "session_board"})
+        params = {"cursor": cursor, "limit": 100, "serverName": "session_board"}
+        if thread_id:
+            params["threadId"] = thread_id
+        response = request(identifier, "mcpServerStatus/list", params)
         for server in response["data"]:
             if server.get("pluginId") != "codex-session-board@session-board-rust":
                 continue
@@ -20,6 +22,12 @@ def verify_loaded(request, version):
             if (info.get("name") != "codex-session-board" or info.get("version") != version
                     or server.get("toolsError") or "board_view" not in (server.get("tools") or {})):
                 raise RuntimeError("Installed board MCP version and tools were not confirmed")
+            if thread_id:
+                snapshot = request(identifier + 1, "mcpServer/tool/call", {
+                    "threadId": thread_id, "server": "session_board", "tool": "board_snapshot", "arguments": {}})
+                content = snapshot.get("structuredContent")
+                if snapshot.get("isError") or not isinstance(content, dict) or not isinstance(content.get("sessions"), list):
+                    raise RuntimeError("Current thread board snapshot was not confirmed")
             return {name: server.get(name) for name in
                     ("name", "pluginId", "serverInfo", "runtimeStatus", "toolsError")}
         cursor = response.get("nextCursor")
@@ -48,7 +56,8 @@ def desktop_socket():
 
 def reload_plugins(codex, directory, version, marketplace_path=None):
     path = desktop_socket()
-    if path is None:
+    thread_id = os.environ.get("CODEX_THREAD_ID", "").strip()
+    if path is None or not thread_id:
         return {"phase": "awaiting_desktop_reload", "desktop_loaded": False}
     marketplace = Path(marketplace_path) if marketplace_path is not None else None
     if marketplace is not None and (not marketplace.is_file() or marketplace.name != "marketplace.json"):
@@ -75,11 +84,14 @@ def reload_plugins(codex, directory, version, marketplace_path=None):
             request(1, "initialize", {"clientInfo": {"name": "session_board_update", "version": "1"},
                                      "capabilities": {"experimentalApi": True}})
             connection.send(json.dumps({"method": "initialized"}))
+            thread = request(0, "thread/read", {"threadId": thread_id, "includeTurns": False})
+            if thread.get("thread", {}).get("status", {}).get("type") not in {"idle", "active", "systemError"}:
+                raise RuntimeError("Current thread is not loaded in the selected desktop; reload was not attempted")
             if marketplace is not None:
                 request(2, "plugin/install", {"marketplacePath": str(marketplace),
                                               "pluginName": "codex-session-board"})
             request(3, "config/mcpServer/reload", None)
             return {"phase": "desktop_loaded", "desktop_loaded": True,
-                    "socket": str(path), "mcp": verify_loaded(request, version)}
+                    "socket": str(path), "threadId": thread_id, "mcp": verify_loaded(request, version, thread_id)}
         finally:
             connection.close()

@@ -5,7 +5,7 @@
     "id": "deploy-merged-plugin-20261113",
     "status": "in_progress",
     "as_of": "2026-11-13",
-    "summary": "日用0.3.54未替换且实时MCP核对正常。0.3.70 6b5f29e完整钩子和本机643项通过，Mac云端快速42项、完整643及保存包通过；Linux一次Chrome启动失败，连接器定向复跑后在只读fixture与晚到快照的竞态失败，无额外写入。正在修正服务器只读快照读回、启动诊断与等待，准备0.3.71。14项外部缺证边界保留，未用新凭据。"
+    "summary": "0.3.71 efc265c候选已不可变发布并安装，实际当前客户端重载及UI仍待验证。配置、38张原卡片备注与SQLite完整性已复核。发现原无会话MCP清单来自另一daemon，已撤回已加载标记并关闭7个旧版连接，当前工具Transport closed，需当前客户端重新加载。整合源码真实SSH隔离性能通过。补充发布ID及同会话快照核验，32项定向通过；续作见context/handoffs/deploy-merged-plugin-20261113.md。完整验收仍14项外部缺证。"
   },
   "active_tasks": [
     "context/tasks/active/deploy-merged-plugin-20261113.md",
@@ -23,8 +23,8 @@
     "context/tasks/active/state-incident-20261112.md"
   ],
   "known_open_issues": [
-    "远端性能和私有SSH参数策略已整合。原作者补做六组ssh -G确认无新增阻断；两次并行完整套件的原生隔离长尾仍未定位，最终受控验收父调度为单线程，内部并发和原阈值保留。原PR实测不代签最终源码与真实客户端验收。",
-    "主机筛选已整合，最终全量自动检查覆盖49项筛选和48组布局；未安装日用插件。原分支记录见context/handoffs/host-project-filter-20261113.md，隔离fixture不代签真实客户端证据。",
+    "远端性能和私有SSH参数策略已整合；0.3.71整合源码真实SSH隔离门禁通过，20次保存中位96.8ms、p95 159.9ms，36次摘要470ms。两次并行完整套件的原生隔离长尾仍未定位，受控父调度为单线程，内部并发和原阈值保留；不代签全部主机及原生UI。",
+    "主机筛选已整合，49项筛选和48组布局通过；0.3.71已安装，当前客户端接管及UI仍待验证。原分支记录见context/handoffs/host-project-filter-20261113.md，隔离fixture不代签真实客户端证据。",
     "阻塞原因选填已整合，最终同指纹真实Rust fixture十项通过并确认停止。SQLite writer独立行握手已修复，子进程显式单线程覆盖原死锁模式；原PR退出超时与RPC os error 35失败记录保留。14项外部证据仍待补，见context/handoffs/blocked-optional-20261113.md。",
     "等待反馈已整合，42项组合浏览器场景通过。原作者发现的新建反向写互斥、失败提示串卡和成功收尾时序均已修复并复核。真实Codex UI验收仍待完成，原分支记录见context/handoffs/remote-transfer-feedback-20261113.md。",
     "统一main的自动验证不代签目标环境证据。形式化来源曾出现一次未改动RPC恢复测试的偶发失败，单项复验与后续完整钩子通过，原因未确定；失败及主动中断记录保留。最终发布结论只依据合并后指纹的完整验收，缺少外部证据仍保持待验证。",
