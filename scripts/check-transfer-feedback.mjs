@@ -287,9 +287,16 @@ try {
   assert.equal(await evaluate('byId("move-feedback").hidden'), true);
   automatic = true;await move("review");await settled();await advance(1800);
   await check("快响应不闪现搬运工", 'byId("move-feedback").hidden && !moving && !document.querySelector(".move-pending")');
-  await evaluate('data.sessions[0].readOnly=true;render();void moveCard(data.sessions[0],"unknown")');
+  const beforeReadonly = writes.length;
+  snapshot.sessions[0].readOnly = true;
+  await evaluate('load()');
+  assert.equal(await evaluate('data.sessions[0].readOnly'), true, "必须读回服务器只读标志");
+  await evaluate('void moveCard(data.sessions[0],"unknown")');
   await check("只读卡片保持只读", '!Array.from(document.querySelectorAll(".card")).find(card => card.dataset.id === data.sessions[0].id).draggable && !saving');
-  await evaluate('data.sessions[0].readOnly=false;render()');
+  assert.equal(writes.length, beforeReadonly, "只读卡片不能发送保存请求");
+  snapshot.sessions[0].readOnly = false;
+  await evaluate('load()');
+  assert.equal(await evaluate('data.sessions[0].readOnly'), false, "必须读回服务器解除只读");
   automatic = false;await move("unknown");
   snapshot.sessions[0].state = "in_progress";snapshot.sessions[0].version++;snapshot.sessions[0].inputVersion++;
   await complete(409, false);await settled();
@@ -302,7 +309,7 @@ try {
   await check("重载读真实位置且不重放操作", '!moving && !document.querySelector(".move-pending")');
   assert.equal(writes.length, beforeReload, "重载不能重发写入");
   assert.deepEqual(mutations, expectedMutations);
-  await fs.writeFile(path.join(output, "transfer.json"), JSON.stringify({ cases, writes, opens, mutations, initialReducedMotion }, null, 2));
+  await fs.writeFile(path.join(output, "transfer.json"), JSON.stringify({ cases, writes, opens, mutations, initialReducedMotion, browserStartup: browser.startup }, null, 2));
 } catch (error) {
   await screenshot("failure");
   await fs.writeFile(path.join(output, "failure.json"), JSON.stringify({ error: error.message, cases, writes, mutations,
@@ -315,4 +322,4 @@ try {
   server.closeAllConnections();await new Promise(resolve => server.close(resolve));
   await fs.writeFile(path.join(output, "cleanup.json"), JSON.stringify(cleanup));
 }
-console.log(JSON.stringify({ cases: cases.length, output, initialReducedMotion }));
+console.log(JSON.stringify({ cases: cases.length, output, initialReducedMotion, browserStartup: browser.startup }));

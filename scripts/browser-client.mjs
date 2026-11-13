@@ -12,10 +12,13 @@ export async function launchBrowser() {
   const executable = candidates.find(candidate => spawnSync(candidate, ["--version"], { timeout: 5000 }).status === 0);
   assert(executable, "需要 Chrome/Chromium，可用 CODEX_BOARD_BROWSER 指定");
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), "board-isolation-chrome-"));
+  const startupStarted = performance.now(), startupTimeout = 30000;
+  let startupOutput = "";
   const chrome = spawn(executable, ["--headless=new", "--no-sandbox", "--disable-gpu",
     "--disable-dev-shm-usage", "--no-first-run", "--no-default-browser-check",
     "--disable-background-networking", "--disable-extensions", "--remote-debugging-address=127.0.0.1",
-    "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore", detached: true });
+    "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank"], { stdio: ["ignore", "ignore", "pipe"], detached: true });
+  chrome.stderr.on("data", chunk => { startupOutput = (startupOutput + chunk.toString()).slice(-16384); });
   let startupError, socket, port, serial = 0, stopped;
   const exited = new Promise(resolve => {
     chrome.once("exit", (code, signal) => resolve({ code, signal }));
@@ -67,15 +70,17 @@ export async function launchBrowser() {
   })();
   try {
     let endpoint;
-    for (let attempt = 0; attempt < 100 && !endpoint; attempt++) {
-      assert(!startupError && chrome.exitCode === null && chrome.signalCode === null, "Chrome 提前退出");
+    while (!endpoint && performance.now() - startupStarted < startupTimeout) {
+      assert(!startupError && chrome.exitCode === null && chrome.signalCode === null,
+        "Chrome 提前退出：" + JSON.stringify({ error: startupError?.message, stderr: startupOutput }));
       try {
         const lines = (await fs.readFile(path.join(profile, "DevToolsActivePort"), "utf8")).trim().split("\n");
         if (/^\d+$/.test(lines[0]) && lines[1]?.startsWith("/devtools/browser/")) endpoint = lines;
       } catch (error) { if (error.code !== "ENOENT") throw error; }
       if (!endpoint) await delay(100);
     }
-    assert(endpoint, "Chrome 调试端点未启动");
+    const startup = { executable, temporaryRoot: os.tmpdir(), elapsedMs: performance.now() - startupStarted };
+    assert(endpoint, "Chrome 调试端点未启动：" + JSON.stringify({ ...startup, timeoutMs: startupTimeout, stderr: startupOutput }));
     port = Number(endpoint[0]);
     socket = new WebSocket(`ws://127.0.0.1:${port}${endpoint[1]}`);
     await new Promise((resolve, reject) => {
@@ -94,7 +99,7 @@ export async function launchBrowser() {
         events.delete(listener); clearTimeout(listener.timer); listener.resolve(message.params);
       }
     });
-    return { profile, port, pid: chrome.pid, command, close, async page(url) {
+    return { profile, port, pid: chrome.pid, startup, command, close, async page(url) {
       const { targetId } = await command("Target.createTarget", { url: "about:blank" });
       const { sessionId } = await command("Target.attachToTarget", { targetId, flatten: true });
       const scoped = (method, params) => command(method, params, sessionId);
