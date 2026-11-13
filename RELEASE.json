@@ -1,16 +1,16 @@
 {
   "schema_version": 1,
-  "version": "0.3.73",
+  "version": "0.3.75",
   "target": "x86_64-unknown-linux-gnu",
-  "source_commit": "1683bd4a6d1a42eddc066f42355b328ea7a2f3c4",
+  "source_commit": "e6f186a141579154a9a8f50f252bc57d9203b726",
   "contract_sha256": "b8ffcf1ded7d8e6bd7607979172843ed069708e62281e54d64445d42ce0c3c3a",
-  "build_sha256": "2a2801c5928d12dbff63312c77ac059bec252125a63a24d98635aedf7d6bb485",
+  "build_sha256": "721c5723c1c5cc538b8ab5d98e3e9142c025c014bb6f668628c5af13f1f99316",
   "files": {
     ".agents/plugins/marketplace.json": "f4a6622cc875c6e4857666e6e73ad2ab3c4a170323da4131deffa3b5280cb671",
-    ".codex-plugin/plugin.json": "8624e8c87e7c007604901334600bebfabe2febaf5e2197ffbef4b5ce9a06ba3e",
+    ".codex-plugin/plugin.json": "4ababcbf2f1b3e34df404b3cdc49c3e1d1d18edf83e36b22ba7f3d043b4063e5",
     ".mcp.json": "294bd4e6158076bf7831c2a1b98c4b351409904c0ca1be0b55ed8520fa514861",
-    "SOURCE.tar.gz": "05da3dfaad84cacf91a833b9e882a7ef0004afb2d6d2bb762311c1872e86966c",
-    "SOURCE.tar.gz.sha256": "b39026be0e02ecfa7b5b7caede7fb369e31dac1db80c0f5cbd94a449571eac3b",
+    "SOURCE.tar.gz": "0784267af81916ba65adfa8894af33ecff08fe44f48ce548b31ae75aba64a6a1",
+    "SOURCE.tar.gz.sha256": "1293adcc1b5dcc5d81129774d3d8e7444edcdc8dfa82cde7a279e8a285043ddb",
     "assets/app-bridge.js": "5d4d7c4be09127032369ff3f309a4d112302830642cbbf08706fa28244490ed0",
     "assets/app-bridge.js.LEGAL.txt": "99845957be48d02957ee10e67e4ec7737d6c750de20016f6f6f6de91871be8da",
     "assets/board.svg": "b1ef15ab2a981b6a7959c7ffe18b197795745b3124178e6699270700bc321040",
@@ -18,12 +18,12 @@
     "assets/pwa.js": "f7cea52d3f8a5f73033f2a2eeece37ca1406cf2b5c9c9d0f10667a8a3ec671f7",
     "assets/sw.js": "42aa35a4286ed0e09f2a9e020b57e47ed2a06853831a9e3cff285766e52bf4eb",
     "assets/third-party-licenses.txt": "b54e0492ec95c9882816f02c96a0ce4875b5e4fb148347fe20aa82aec8ef3df2",
-    "bin/codex-session-board": "f740c1c0b09650fb369002d9643474731929c3e0fe67ccde476f27ef6120b11c",
+    "bin/codex-session-board": "6547be98f9b7eb0873f6fa8d8d76a34a124b49dcb3d9386511d166303066c15b",
     "bin/run-plugin": "a1579d2e06a2e919ad4a5222ab787153f6c8415f181f41bdfe4b8876eac4eafe",
     "index.html": "21926e505ba7c347ea1a936931a87aaa69ea7dc3dc7069454e025167dc91e927",
     "mcp.json": "a629b93820e492a616c74895ffbbbd179ffca6e7b6e83bde4a6685d30b741be7",
-    "plugin.json": "db628de5c6485e05851516d779cb0c058385d0035bb71aeeaed3545546b5d233",
+    "plugin.json": "0a5dd8d5f21e25e0ffe7fdf27f7f5a5b14f6b9d3b270220c2b25be993841fa88",
     "skills/open-session-board/SKILL.md": "155eacabee4f6f7de180109876f605fada402c1c40ce653af6765795ff7bcce8"
   },
-  "binary_sha256": "f740c1c0b09650fb369002d9643474731929c3e0fe67ccde476f27ef6120b11c"
+  "binary_sha256": "6547be98f9b7eb0873f6fa8d8d76a34a124b49dcb3d9386511d166303066c15b"
 }
