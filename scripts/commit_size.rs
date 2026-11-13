@@ -77,32 +77,37 @@ fn statistics(output: &[u8]) -> Result<Statistics> {
 }
 
 fn measure(repository: &Path, snapshot: &Path) -> Result<Statistics> {
+    measure_against(repository, snapshot, None)
+}
+
+fn measure_against(repository: &Path, snapshot: &Path, base: Option<&str>) -> Result<Statistics> {
     let git_directory = git(repository, &["rev-parse", "--absolute-git-dir"])?;
     let snapshot = snapshot.to_str().context("暂存快照路径不是 UTF-8")?;
-    let output = git_output(
-        repository,
-        &[
-            "--git-dir",
-            git_directory.trim_end_matches('\n'),
-            "--work-tree",
-            snapshot,
-            "-C",
-            snapshot,
-            "-c",
-            "core.attributesFile=/dev/null",
-            "diff",
-            "--cached",
-            "--numstat",
-            "-z",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--no-renames",
-            "--find-renames=50%",
-            "--ignore-submodules=none",
-            "--ita-invisible-in-index",
-            "--",
-        ],
-    )?;
+    let mut arguments = vec![
+        "--git-dir",
+        git_directory.trim_end_matches('\n'),
+        "--work-tree",
+        snapshot,
+        "-C",
+        snapshot,
+        "-c",
+        "core.attributesFile=/dev/null",
+        "diff",
+        "--cached",
+        "--numstat",
+        "-z",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-renames",
+        "--find-renames=50%",
+        "--ignore-submodules=none",
+        "--ita-invisible-in-index",
+    ];
+    if let Some(base) = base {
+        arguments.push(base);
+    }
+    arguments.push("--");
+    let output = git_output(repository, &arguments)?;
     ensure!(
         output.status.success(),
         "无法统计暂存区：{}",
@@ -112,7 +117,10 @@ fn measure(repository: &Path, snapshot: &Path) -> Result<Statistics> {
 }
 
 pub fn check(repository: &Path, snapshot: &Path) -> Result<bool> {
-    let total = measure(repository, snapshot)?;
+    let total = match merge_size::measure(repository, snapshot)? {
+        Some(total) => total,
+        None => measure(repository, snapshot)?,
+    };
     let passed = total.allowed();
     let label = if passed { "通过" } else { "未通过" };
     println!(
@@ -139,6 +147,9 @@ pub fn check(repository: &Path, snapshot: &Path) -> Result<bool> {
     }
     Ok(passed)
 }
+
+#[path = "merge_size.rs"]
+mod merge_size;
 
 #[cfg(test)]
 #[path = "commit_size_integration_tests.rs"]
