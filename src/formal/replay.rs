@@ -28,6 +28,9 @@ pub fn conform(states: &[Session], note: Option<&str>) -> Result<usize> {
                 project(&store)?
             );
             let row = load(&store)?;
+            if let Some(note) = note {
+                ensure!(row.note == note.trim(), "空备注被自动阶段、旧选择或拒绝操作改写");
+            }
             ensure!(row.version == 1 + version_delta(*session, event, step(*session, event)),
                 "{session:?} {event:?}: 状态版本增量错误");
             ensure!(row.input_revision == i64::from(matches!(event, Event::Input) && !session.archived),

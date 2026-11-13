@@ -12,6 +12,7 @@
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",
+    "context/tasks/active/remote-transfer-feedback-20261113.md",
     "context/tasks/active/archive-button.md",
     "context/tasks/active/deploy-new-session-project.md",
     "context/tasks/active/socket-recovery-guidance-20261111.md",
@@ -24,6 +25,8 @@
   "known_open_issues": [
     "远端性能已整合到本地主线，未部署。原 PR 的真实主机实测、长尾失败和固定三批采样均保留，不代签整合后源码与真实客户端验收。",
     "主机筛选正在串行整合，未部署。原分支验证见context/handoffs/host-project-filter-20261113.md，不以隔离fixture代签真实客户端证据。",
+    "阻塞原因选填首次完整验收631/632项通过，既有插件退出超时；单项3次及最终完整632项复验通过。提交钩子另有既有RPC用例报os error 35，单项复验通过，两项偶发失败根因未定且保留。单线程环境另会改变既有子进程握手行，已实验确认并改用2线程提交复验。真实客户端14项外部证据待补；见context/handoffs/blocked-optional-20261113.md，不得用隔离fixture代签。",
+    "等待反馈正在整合到本地主线；原分支证据不代签组合源码。真实 Codex UI 验收仍待完成，见 context/handoffs/remote-transfer-feedback-20261113.md。",
     "统一main的自动验证不代签目标环境证据。形式化来源曾出现一次未改动RPC恢复测试的偶发失败，单项复验与后续完整钩子通过，原因未确定；失败及主动中断记录保留。最终发布结论只依据合并后指纹的完整验收，缺少外部证据仍保持待验证。",
     "冻结92已按用户最新带遗留发布指令上线，新解包根529自动项再次全过；91 timer、92原MCP Null及首次共享target路径失败保留。release_ready仍false，完整31/16及UI/PWA/N/R2待完成，不以部署冒称验收通过。",
     "正式插件与HTTP已切92/c521/配置bd6978fc9a03aaa1，发布会话已核对serverInfo和实际面板。后续清理已卸载旧验收插件和市场，正式入口保留。初次正式面板旧82连接报版本不符，正式plugin/install后恢复。",

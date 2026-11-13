@@ -8,8 +8,10 @@
 验收来源是 Codex 会话 `01a1ac96-0282-7871-ae59-1d2ce1a8583e`
 交付的 `codex-session-board-0.2.5-acceptance-v1.tar.gz`。
 原包及 SHA256 位于 `Docs/verification-baseline/`。
-`acceptance/requirements.json`、`model.py` 与 `contract.lock.json` 原样保留。
-Rust 测试与绑定替换原型测试的接线，不改变需求或通过条件。
+迁移时 `acceptance/requirements.json`、`model.py` 与 `contract.lock.json` 原样保留，
+Rust 测试与绑定替换原型测试的接线。2026-11-13 用户批准 UI-002 改为阻塞原因选填，
+契约升级为 v2 并同步需求锁；31 个编号、其他 30 条及独立参考模型不变。
+原 v1 包继续保留在上述基线目录。此次调整的行为及证据要求见 `acceptance/README.md`。
 
 运行代码全部使用 Rust。HTML、CSS、浏览器 JavaScript 与离线 MCP App SDK 复用。
 验收执行器继续使用 Python 标准库，与运行时分离。
