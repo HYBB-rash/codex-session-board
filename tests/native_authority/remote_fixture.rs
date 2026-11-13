@@ -21,7 +21,7 @@ const HOSTS: [&str; 2] = ["mac", "other"];
 const SSH: &str = r#"import json,os,pathlib,re,socket,struct,sys,threading,time
 root=pathlib.Path(sys.argv[1])
 args=sys.argv[2:]
-target=args[-1] if "-G" in args or "-M" in args else args[-2]
+target=args[-1] if "-G" in args else args[args.index("--")+1]
 assert target in ("mac","other")
 def event(phase):
     with open(root/"events","a") as out: out.write(target+" "+phase+"\n")
@@ -32,6 +32,8 @@ if "-G" in args:
 if "-M" in args:
     endpoint=next(value.split("=",1)[1] for value in args if value.startswith("ControlPath="))
     listener=socket.socket(socket.AF_UNIX); listener.bind(endpoint); listener.listen()
+    if args[-1]=="exec cat >/dev/null":
+        sys.stdin.buffer.read(); sys.exit()
     while True: time.sleep(1)
 operation=args[-1]
 mode="proxy" if "app-server proxy" in operation else "clock" if "import time" in operation else "probe"

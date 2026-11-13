@@ -2,6 +2,9 @@ use super::*;
 use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::sync::{Arc, Mutex};
 
+#[path = "ssh_options.rs"]
+mod ssh_options;
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Multiplex(Arc<Mutex<State>>);
 
@@ -19,13 +22,28 @@ struct Master {
 }
 
 fn options(command: &[String], values: &[String]) -> Result<Vec<String>> {
-    let mut command = command.to_vec();
     let boundary = command
         .iter()
         .rposition(|value| value == "--")
         .context("SSH 命令缺少目标边界")?;
-    command.splice(boundary..boundary, values.iter().cloned());
-    Ok(command)
+    let (program, prefix) = command[..boundary].split_first().context("SSH 命令为空")?;
+    let mut result = vec![program.clone()];
+    result.extend(ssh_options::sanitize(prefix)?);
+    result.extend(values.iter().cloned());
+    for value in [
+        "ControlPersist=no",
+        "ForkAfterAuthentication=no",
+        "ClearAllForwardings=yes",
+        "ForwardAgent=no",
+        "SessionType=default",
+        "StdinNull=no",
+        "RemoteCommand=none",
+        "IPQoS=none",
+    ] {
+        result.extend(["-o".into(), value.into()]);
+    }
+    result.extend_from_slice(&command[boundary..]);
+    Ok(result)
 }
 
 impl Master {
@@ -39,25 +57,17 @@ impl Master {
             command,
             &[
                 "-M".into(),
-                "-N".into(),
                 "-o".into(),
                 "ControlMaster=yes".into(),
                 "-o".into(),
                 format!("ControlPath={}", path.display()),
-                "-o".into(),
-                "ControlPersist=no".into(),
-                "-o".into(),
-                "ForkAfterAuthentication=no".into(),
-                "-o".into(),
-                "ClearAllForwardings=yes".into(),
-                "-o".into(),
-                "ForwardAgent=no".into(),
             ],
         )?;
         let process = ManagedChild(
             Command::new(&arguments[0])
                 .args(&arguments[1..])
-                .stdin(Stdio::null())
+                .arg("exec cat >/dev/null")
+                .stdin(Stdio::piped())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .spawn()?,

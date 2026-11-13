@@ -8,6 +8,7 @@
     "summary": "在独立工作树实现远端连接复用、保留全部输入证据的远端状态摘要压缩和性能门禁。随后用真实主机验证状态操作与读取收益，不重载正式插件。"
   },
   "active_tasks": [
+    "context/tasks/active/pr-integration-20261113.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/archive-button.md",
     "context/tasks/active/deploy-new-session-project.md",

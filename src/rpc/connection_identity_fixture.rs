@@ -22,6 +22,8 @@ if "-M" in args:
     if state.get("masterFailure"): sys.exit(1)
     endpoint=next(value.split("=",1)[1] for value in args if value.startswith("ControlPath="))
     listener=socket.socket(socket.AF_UNIX); listener.bind(endpoint); listener.listen()
+    if args[-1]=="exec cat >/dev/null":
+        sys.stdin.buffer.read(); sys.exit()
     while True: time.sleep(1)
 if state.get("connectDelay") and not any(value.startswith("ControlPath=") for value in args):
     time.sleep(state["connectDelay"])

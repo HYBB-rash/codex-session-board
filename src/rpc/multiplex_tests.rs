@@ -1,11 +1,46 @@
 use super::*;
 use crate::rpc::identity_fixture::Fixture;
 
+fn kill_master(multiplex: &Multiplex) -> Result<()> {
+    let mut state = multiplex.0.lock().unwrap();
+    let process = &mut state.master.as_mut().unwrap().process.0;
+    process.kill()?;
+    process.wait()?;
+    Ok(())
+}
+
+fn check_owner_pipe_exit(
+    multiplex: &Multiplex,
+    command: &[String],
+    before: &[String],
+) -> Result<()> {
+    {
+        let mut state = multiplex.0.lock().unwrap();
+        let master = state.master.as_mut().unwrap();
+        drop(
+            master
+                .process
+                .0
+                .stdin
+                .take()
+                .context("共享连接未绑定主实例 stdin")?,
+        );
+        let deadline = deadline_after(Duration::from_secs(1))?;
+        while master.process.0.try_wait()?.is_none() {
+            remaining(deadline)?;
+            thread::sleep(Duration::from_millis(2));
+        }
+        assert!(master.process.0.try_wait()?.unwrap().success());
+    }
+    let reopened = multiplex.command(command, deadline_after(Duration::from_secs(3))?)?;
+    assert_ne!(before, reopened);
+    Ok(())
+}
+
 #[test]
 fn shared_connection_restarts_dead_master_and_reaps_owned_process_on_drop() -> Result<()> {
     let fixture = Fixture::new()?;
-    let binding = fixture.binding()?;
-    let command = binding.launch(":", &"a".repeat(32))?;
+    let command = fixture.binding()?.launch(":", &"a".repeat(32))?;
     let multiplex = Multiplex::default();
     let first = multiplex.command(&command, deadline_after(Duration::from_secs(3))?)?;
     let (identifier, directory) = {
@@ -15,20 +50,11 @@ fn shared_connection_restarts_dead_master_and_reaps_owned_process_on_drop() -> R
     };
     assert!(first.iter().any(|value| value.starts_with("ControlPath=")));
     assert_eq!(std::fs::metadata(&directory)?.mode() & 0o777, 0o700);
-    multiplex
-        .0
-        .lock()
-        .unwrap()
-        .master
-        .as_mut()
-        .unwrap()
-        .process
-        .0
-        .kill()?;
-    multiplex.0.lock().unwrap().master.as_mut().unwrap().process.0.wait()?;
+    kill_master(&multiplex)?;
     let next = multiplex.command(&command, deadline_after(Duration::from_secs(3))?)?;
     assert_ne!(first, next);
     assert!(!directory.exists());
+    check_owner_pipe_exit(&multiplex, &command, &next)?;
     drop(multiplex);
     let pid = rustix::process::Pid::from_raw(identifier.try_into()?);
     assert!(matches!(
@@ -41,7 +67,7 @@ fn shared_connection_restarts_dead_master_and_reaps_owned_process_on_drop() -> R
             .lines()
             .filter(|line| *line == "master")
             .count(),
-        2
+        3
     );
     Ok(())
 }

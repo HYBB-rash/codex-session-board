@@ -1,5 +1,17 @@
 # 远端性能门禁
 
+## 托管 SSH 参数
+
+连接复用使用自己的控制路径和前台生命周期。用户配置中的控制路径、master、
+fork、agent 转发、stdin、会话类型与远端命令选项由托管策略覆盖。
+保留身份文件、用户名、端口、配置文件、ProxyJump 与 ProxyCommand。
+不支持只查询配置、公钥或版本、控制现有 master、stdio 转发、无命令或断开 stdin
+等会改变会话模式的参数。真实 OpenSSH `-G` 回归分别核对 master 和 slave 的最终配置。
+
+自定义 `ssh_command` 可以使用固定前缀、随后接受 SSH 参数的 wrapper。
+其前置参数不能与受管 SSH 选项或 `--` 目标边界冲突。
+当前 Python fixture 前缀有独立保留测试；不承诺解析任意 wrapper 的自有选项。
+
 连接复用由每个主机实例持有独立 SSH master、随机私有目录和 socket。
 仍然逐次解析当前目标，核对来源记录，并在远端核对 UID、HOME 和 CODEX_HOME。
 不写用户 SSH 配置，不与其他主机、实例或程序共用控制 socket。
