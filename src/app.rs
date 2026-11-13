@@ -91,6 +91,9 @@ impl App {
     pub(crate) fn deactivate(&self) -> Result<()> {
         self.enabled.store(false, Ordering::SeqCst);
         let _guard = self.lifecycle.write().map_err(|_| anyhow::anyhow!("主机操作锁已损坏"))?;
+        if let Some(binding) = &self.config.remote_binding {
+            binding.disconnect()?;
+        }
         self.update_health(json!({"runtimeVerified":false,"nativeVerified":false,
             "scanComplete":false,"runtimeError":"主机已断开或登记改变，保留缓存"}))
     }
