@@ -148,7 +148,8 @@ textarea{resize:vertical;min-height:90px}
     <h2>调整工作状态</h2>
     <div id="dialog-title" class="dialog-title"></div>
     <label for="state">状态</label><select id="state"></select>
-    <label for="note">备注 / 阻塞原因</label><textarea id="note" maxlength="2000" placeholder="记录下一步，或说明卡在哪里"></textarea>
+    <label for="note">备注 / 阻塞原因（可选）</label><textarea id="note" maxlength="2000" aria-describedby="note-help" placeholder="记录下一步，或说明卡在哪里"></textarea>
+    <p id="note-help" class="reason"></p>
     <div id="reason" class="reason"></div>
     <div id="notice" class="notice" role="alert"></div>
     <div class="dialog-actions"><button type="button" id="cancel">取消</button><button type="submit" id="save" class="primary">保存状态</button></div>
@@ -525,8 +526,9 @@ function makeColumn(state, label) {
   column.ondragover = event => {
     if (!dragging || saving) return;
     event.preventDefault();
-    event.dataTransfer.dropEffect = dragging.state === state ? "none" : "move";
-    column.classList.toggle("drop-target",dragging.state !== state);
+    const accepts = dragging.state !== state || state === "blocked";
+    event.dataTransfer.dropEffect = accepts ? "move" : "none";
+    column.classList.toggle("drop-target",accepts);
   };
   column.ondragleave = event => {
     if (!column.contains(event.relatedTarget)) column.classList.remove("drop-target");
@@ -536,12 +538,12 @@ function makeColumn(state, label) {
     event.preventDefault();
     const session = dragging;
     finishDrag();
-    if (session.state === state) {announce("状态未改变。");render();return;}
     if (state === "blocked") {
       openEditor(session.id,state,session);
-      announce("填写阻塞原因后保存，卡片才会移入已阻塞列。");
+      announce("请说明卡在哪里，暂时不填也可以保存。");
       return;
     }
+    if (session.state === state) {announce("状态未改变。");render();return;}
     moveCard(session,state);
   };
   return column;
@@ -820,7 +822,15 @@ function openEditor(id, state, snapshot) {
   byId("reason").textContent = editing.reason;
   byId("notice").textContent = draft === null ? "" : "已恢复上次未保存的备注，请核对当前状态后保存。";
   byId("editor").showModal();
+  updateNoteHelp();
+  byId("note").focus();
 }
+function updateNoteHelp() {
+  byId("note-help").textContent = byId("state").value === "blocked"
+    ? "请说明卡在哪里，方便之后继续处理；暂时不填也可以保存。"
+    : "可以记录下一步，也可以留空。";
+}
+byId("state").onchange = updateNoteHelp;
 async function load() {
   if (filtersLocked()) return;
   const serial = ++requestSerial;

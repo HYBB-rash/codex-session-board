@@ -71,6 +71,33 @@ fn fail_title(store: &Store) -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn empty_manual_block_keeps_confirmation_and_empty_audit_after_restart() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let store = open(directory.path())?;
+    store.discover(&[json!({"id":ID,"name":"空原因","updatedAt":1})])?;
+    store.cache_native(ID, &position("review"))?;
+    observe(&store, "history", &["u1"])?;
+    store.set_native_state(ID, Some("blocked"), "　\t\n", revisions(&store)?, &position("blocked"))?;
+    let store = reopen(store, directory.path())?;
+    let saved = load(&store)?;
+    assert_eq!(saved.selected_state.as_deref(), Some("blocked"));
+    assert!(saved.selected_at.is_some() && saved.choice_at.is_some());
+    assert_eq!(saved.review, 0);
+    assert_eq!(saved.note, "");
+    let history: (String, String) = store.connection()?.query_row(
+        "SELECT state,note FROM changes WHERE thread_id=? ORDER BY changed_at DESC LIMIT 1",
+        [ID], |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    assert_eq!(history, ("blocked".into(), "".into()));
+    observe(&store, "history", &["u1"])?;
+    assert_eq!(load(&store)?.selected_state.as_deref(), Some("blocked"));
+    observe(&store, "history", &["u1", "u2"])?;
+    assert_eq!(load(&store)?.review, 1);
+    assert_eq!(load(&store)?.note, "");
+    Ok(())
+}
+
 fn archive_restore(store: Store, directory: &Path) -> Result<()> {
     select(&store, "to_archive")?;
     let version = revisions(&store)?;

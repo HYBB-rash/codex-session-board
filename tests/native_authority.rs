@@ -117,11 +117,12 @@ fn native_endpoint_requires_position_and_validates_notes_before_remote_writes() 
             .contains("缺少原生位置")
     );
     body["sectionVersion"] = json!("review-id");
+    body["note"] = json!("字".repeat(2001));
     assert!(
         app.request("/api/state", Some(&body))
             .unwrap_err()
             .to_string()
-            .contains("填写阻塞原因")
+            .contains("2000")
     );
     assert_eq!(app.store.note(FIRST)?, "");
     assert_eq!(app.snapshot()?["sessions"][0]["state"], "review");
@@ -318,7 +319,7 @@ fn native_confirmations_commit_notes_and_reject_stale_or_invalid_edits() -> Resu
     assert!(
         store
             .validate_state(FIRST, Some("blocked"), "", (1, 0))
-            .is_err()
+            .is_ok()
     );
     assert!(
         store
