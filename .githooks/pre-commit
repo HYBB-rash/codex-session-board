@@ -27,15 +27,4 @@ if ! GIT_INDEX_FILE="$commit_index" ./scripts/check --pre-commit \
     printf '%s\n' '[提交已阻止] 项目提交前检查未通过或无法运行。按检查建议处理后重新暂存，再次提交。' >&2
     exit 1
 fi
-printf '%s\n' '[提交前检查] 正在运行 Clippy……'
-if ! cargo clippy --all-targets --locked --offline -- -D warnings; then
-    printf '%s\n' '[提交已阻止] Clippy 检查未通过或无法运行。修复后重新暂存，再次提交。' >&2
-    exit 1
-fi
-printf '%s\n' '[提交前测试] 正在离线测试暂存区中的代码……'
-if cargo test --locked --offline -- --test-threads=1; then
-    printf '%s\n' '[提交前测试] 全部通过，允许提交。'
-else
-    printf '%s\n' '[提交已阻止] 测试未通过或无法运行。修复后重新暂存，再次提交。' >&2
-    exit 1
-fi
+printf '%s\n' '[提交前检查] 快检通过，允许提交。完整测试由集成候选验证执行。'

@@ -2,12 +2,13 @@
   "schema_version": 1,
   "updated_at": "2026-11-13",
   "current_phase": {
-    "id": "deploy-merged-plugin-20261113",
-    "status": "deployed_pending_full_acceptance",
-    "as_of": "2026-11-13",
-    "summary": "0.3.71 efc265c已由当前ChatGPT.app客户端的正式MCP接管，真实面板、HTTP、进程归属及固定不可变包身份一致。原生面板主机/项目/搜索与正式HTTP页面阻塞选填、取消、备注清除、真实拖动等待及确认均已验证；测试卡片恢复自动状态和空备注。配置、38张原卡片备注及SQLite完整性复核通过，安装回执已按实际客户端证据更新。真实SSH隔离性能通过。0.3.72发布ID及同会话核验修正已推送；本次归档仅结束部署与定向验证，完整31条仍14项外部缺证、release_ready=false。"
+    "id": "batch-policy-delivery-20261114",
+    "status": "implementing",
+    "as_of": "2026-11-14",
+    "summary": "用户授权落实提交快检、PR审阅、组合门禁和发布四层规则，再重演原四PR到正式插件部署。旧实验快照已保存并校验，当前从主线1683bd4实现规则；尚未改变日用插件，完整31条外部缺证边界保留。"
   },
   "active_tasks": [
+    "context/tasks/active/batch-policy-delivery-20261114.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",

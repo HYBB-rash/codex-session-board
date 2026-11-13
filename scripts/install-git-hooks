@@ -23,4 +23,4 @@ if [[ ! -x .githooks/pre-commit ]]; then
     exit 1
 fi
 git config --local core.hooksPath .githooks
-printf '%s\n' '已为当前仓库启用提交前 Clippy 和测试；任一失败将阻止提交。'
+printf '%s\n' '已启用暂存区快检；Clippy 和完整测试由集成候选门禁执行。'
