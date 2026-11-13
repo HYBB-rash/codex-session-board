@@ -39,7 +39,6 @@ impl Master {
             command,
             &[
                 "-M".into(),
-                "-N".into(),
                 "-o".into(),
                 "ControlMaster=yes".into(),
                 "-o".into(),
@@ -57,7 +56,8 @@ impl Master {
         let process = ManagedChild(
             Command::new(&arguments[0])
                 .args(&arguments[1..])
-                .stdin(Stdio::null())
+                .arg("exec cat >/dev/null")
+                .stdin(Stdio::piped())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .spawn()?,
