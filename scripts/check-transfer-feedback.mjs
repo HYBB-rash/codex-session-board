@@ -84,6 +84,8 @@ const server = http.createServer(async (request, response) => {
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 const browser = await launchBrowser();
 const page = await browser.page(`http://127.0.0.1:${server.address().port}/`);
+const initialReducedMotion = await page.evaluate('matchMedia("(prefers-reduced-motion: reduce)").matches');
+await page.command("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
 await page.command("Page.addScriptToEvaluateOnNewDocument", { source: `(${installClock.toString()})()` });
 await page.command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/` });
 const evaluate = expression => page.evaluate(expression);
@@ -131,6 +133,9 @@ const screenshot = async name => {
 };
 try {
   await until('typeof transferTestClock !== "undefined" && Boolean(document.querySelector(".card"))');
+  const normalReducedMotion = await evaluate('matchMedia("(prefers-reduced-motion: reduce)").matches');
+  console.error(JSON.stringify({ motion: { initialReducedMotion, normalReducedMotion } }));
+  assert.equal(normalReducedMotion, false);
   assert.deepEqual(await evaluate("moveDelays"), { courier: 1500, slow: 8000 });
   const id = snapshot.sessions[0].id, otherId = snapshot.sessions[2].id;
   await evaluate('window.pendingCreation=createSession("project");void 0');
@@ -154,6 +159,7 @@ try {
   await drag(id, "#column-review .cards");
   await check("临时落位不修改已确认记录", 'saving && data.sessions[0].state === "in_progress" && document.querySelector(".move-pending").closest(".column").dataset.state === "review" && byId("column-review").querySelector(".column-count").textContent === "0 + 1"');
   await advance(300);
+  await until('document.querySelector(".move-pending").getAnimations({subtree:true}).some(animation=>animation.animationName==="move-glow")');
   const glowBoundary = await evaluate(`(() => {
     const card = document.querySelector(".move-pending");
     const animation = card.getAnimations({subtree:true}).find(item => item.animationName === "move-glow");
@@ -210,7 +216,7 @@ try {
   await page.command("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
   await check("减少动画保留静态说明", 'getComputedStyle(document.querySelector(".courier")).animationName === "none" && getComputedStyle(document.querySelector(".move-pending"),"::after").animationName === "none" && document.querySelector(".move-label").textContent.includes("等待")');
   await screenshot("reduced-motion");
-  await page.command("Emulation.setEmulatedMedia", { features: [] });
+  await page.command("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
   await advanceTo(7999);
   assert.equal(await evaluate('Boolean(moving.slow)'), false);
   await advance(1);
@@ -296,11 +302,11 @@ try {
   await check("重载读真实位置且不重放操作", '!moving && !document.querySelector(".move-pending")');
   assert.equal(writes.length, beforeReload, "重载不能重发写入");
   assert.deepEqual(mutations, expectedMutations);
-  await fs.writeFile(path.join(output, "transfer.json"), JSON.stringify({ cases, writes, opens, mutations }, null, 2));
+  await fs.writeFile(path.join(output, "transfer.json"), JSON.stringify({ cases, writes, opens, mutations, initialReducedMotion }, null, 2));
 } catch (error) {
   await screenshot("failure");
   await fs.writeFile(path.join(output, "failure.json"), JSON.stringify({ error: error.message, cases, writes, mutations,
-    state: await evaluate('({now:performance.now(),hidden:document.hidden,editing,editorOpen:byId("editor").open,dragging,saving,moving,feedback:byId("move-feedback").outerHTML,ids:[...document.querySelectorAll(".card")].map(card=>({id:card.dataset.id,draggable:card.draggable,rect:card.getBoundingClientRect().toJSON()}))})') }, null, 2));
+    initialReducedMotion, state: await evaluate('({now:performance.now(),reducedMotion:matchMedia("(prefers-reduced-motion: reduce)").matches,glowAnimation:document.querySelector(".move-pending")?getComputedStyle(document.querySelector(".move-pending"),"::after").animationName:null,hidden:document.hidden,editing,editorOpen:byId("editor").open,dragging,saving,moving,feedback:byId("move-feedback").outerHTML,ids:[...document.querySelectorAll(".card")].map(card=>({id:card.dataset.id,draggable:card.draggable,rect:card.getBoundingClientRect().toJSON()}))})') }, null, 2));
   throw error;
 } finally {
   for (const { response } of responses) response.destroy();
@@ -309,4 +315,4 @@ try {
   server.closeAllConnections();await new Promise(resolve => server.close(resolve));
   await fs.writeFile(path.join(output, "cleanup.json"), JSON.stringify(cleanup));
 }
-console.log(JSON.stringify({ cases: cases.length, output }));
+console.log(JSON.stringify({ cases: cases.length, output, initialReducedMotion }));

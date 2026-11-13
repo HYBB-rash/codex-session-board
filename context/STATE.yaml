@@ -5,7 +5,7 @@
     "id": "deploy-merged-plugin-20261113",
     "status": "in_progress",
     "as_of": "2026-11-13",
-    "summary": "用户已授权部署并验证四项功能，正式0.3.54已备份但尚未替换。4be58e4双平台CI失败，正在修正测试时钟、已断开socket准备及草稿发布回执并按原门禁准备后续版本。仅沿用现有Actions发布身份；原完整验收14项目标环境缺证边界保留。"
+    "summary": "用户已授权部署并验证四项功能，正式0.3.54已备份但尚未替换。0.3.69 cbb3f49已签名推送，本机完整643自动项全过、14项外部缺证，LinuxCI通过并保存包；Mac仅UI动画对象缺失一项失败。正在显式覆盖运动偏好与动画注册、保存CI快速复验诊断并准备0.3.70，全部原门槛保留。仅沿用现有Actions发布身份。"
   },
   "active_tasks": [
     "context/tasks/active/deploy-merged-plugin-20261113.md",
