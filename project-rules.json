@@ -2,7 +2,14 @@
   "schema_version": 1,
   "versioning": {
     "baseline": "0.1.0",
-    "feature_releases": [],
+    "feature_releases": [
+      {
+        "after_commit": "a2d7a9efb9f7f3edae9951898e673d3580b4e8b1",
+        "from": "0.3.73",
+        "to": "0.3.74",
+        "decision": "冻结发布候选"
+      }
+    ],
     "rollover_after": "b7acaa72fb62e2ffaf0d44292956a31d34bee036",
     "release_only": true
   },
