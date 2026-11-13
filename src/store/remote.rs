@@ -149,7 +149,6 @@ impl Store {
             .context("备注必须是文本")?
             .trim();
         ensure!(note.chars().count() <= 2000, "备注不能超过 2000 字");
-        ensure!(state != "blocked" || !note.is_empty(), "请填写阻塞原因");
         let version = body["version"].as_i64().context("缺少状态版本")?;
         let input = body["inputVersion"].as_i64().context("缺少输入版本")?;
         ensure!(row["version"] == version, "状态已更新，请刷新后重试");
