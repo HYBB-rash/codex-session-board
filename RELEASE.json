@@ -1,16 +1,16 @@
 {
   "schema_version": 1,
-  "version": "0.3.54",
+  "version": "0.3.71",
   "target": "aarch64-apple-darwin",
-  "source_commit": "fb1d3d4c1a7ea23f73abc596769ca865cd5c8587",
-  "contract_sha256": "83c5da84132391106a372c423eaa01c11dc7a1306864d669d8c70bbc21534449",
-  "build_sha256": "9a4ac47fb06848b68bc66ac9fcdac1c11c2f94ff206d0d1575f680142f237105",
+  "source_commit": "efc265c10b6f2c383751f7dc983f424c26f959ec",
+  "contract_sha256": "b8ffcf1ded7d8e6bd7607979172843ed069708e62281e54d64445d42ce0c3c3a",
+  "build_sha256": "b106ee889c700419391b5e4f7dd979456947d04542a75b2b04a0c2ae6838599b",
   "files": {
     ".agents/plugins/marketplace.json": "f4a6622cc875c6e4857666e6e73ad2ab3c4a170323da4131deffa3b5280cb671",
-    ".codex-plugin/plugin.json": "a817ed7d9fe23115bb1e0b4ebefc37a18cce5b07c06576b5a2a3d1f9e229bf45",
+    ".codex-plugin/plugin.json": "afec180e4367d7396b57a1b1aaeb4eb53b37cbaa792269d91fd5f40ce9c0f05b",
     ".mcp.json": "294bd4e6158076bf7831c2a1b98c4b351409904c0ca1be0b55ed8520fa514861",
-    "SOURCE.tar.gz": "943f2f8255e36dd0a626f7bd90c5d5b04ad52429ef9b2b964a069b9ffbc64570",
-    "SOURCE.tar.gz.sha256": "f9450b2933f976c78410badf6605275d4400e3c8df7e66f708a48c3f7f74a454",
+    "SOURCE.tar.gz": "1c7c892611f7d6b26c89cd0eb38a24b198045d060f5887474629821b68770ad4",
+    "SOURCE.tar.gz.sha256": "f7f1c23e7930b084244bd9acb7e8c600bdcd3c07ccba6344dc36effa3d108a92",
     "assets/app-bridge.js": "5d4d7c4be09127032369ff3f309a4d112302830642cbbf08706fa28244490ed0",
     "assets/app-bridge.js.LEGAL.txt": "99845957be48d02957ee10e67e4ec7737d6c750de20016f6f6f6de91871be8da",
     "assets/board.svg": "b1ef15ab2a981b6a7959c7ffe18b197795745b3124178e6699270700bc321040",
@@ -18,12 +18,12 @@
     "assets/pwa.js": "f7cea52d3f8a5f73033f2a2eeece37ca1406cf2b5c9c9d0f10667a8a3ec671f7",
     "assets/sw.js": "42aa35a4286ed0e09f2a9e020b57e47ed2a06853831a9e3cff285766e52bf4eb",
     "assets/third-party-licenses.txt": "b54e0492ec95c9882816f02c96a0ce4875b5e4fb148347fe20aa82aec8ef3df2",
-    "bin/codex-session-board": "c817d5f54b779720ba56d79ca16e1d06900536b70519c99a61d5c242cc823a00",
+    "bin/codex-session-board": "38cf271e93e429bfcd42b77d4070aeeb8c1298182a93d93ce56d14f211933319",
     "bin/run-plugin": "a1579d2e06a2e919ad4a5222ab787153f6c8415f181f41bdfe4b8876eac4eafe",
-    "index.html": "9d427f2d8ff3ce77a726b65b97fbe8d09c9421214461a482a484bcae4f9fe252",
+    "index.html": "21926e505ba7c347ea1a936931a87aaa69ea7dc3dc7069454e025167dc91e927",
     "mcp.json": "a629b93820e492a616c74895ffbbbd179ffca6e7b6e83bde4a6685d30b741be7",
-    "plugin.json": "070615b85f9802fac35fd883538da04e2aad4654036c6874eb82c5227768594f",
+    "plugin.json": "845251fe24a8b5fa95a390d79fede96e1b13e9ab0a28ea50320d31ee30184f2f",
     "skills/open-session-board/SKILL.md": "155eacabee4f6f7de180109876f605fada402c1c40ce653af6765795ff7bcce8"
   },
-  "binary_sha256": "c817d5f54b779720ba56d79ca16e1d06900536b70519c99a61d5c242cc823a00"
+  "binary_sha256": "38cf271e93e429bfcd42b77d4070aeeb8c1298182a93d93ce56d14f211933319"
 }
