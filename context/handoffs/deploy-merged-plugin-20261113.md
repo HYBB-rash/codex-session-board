@@ -1,8 +1,32 @@
-# 当前客户端重载后继续验收
+# 合并版本部署及剩余验收
 
 owner: codex
-status: in_progress
-task: context/tasks/active/deploy-merged-plugin-20261113.md
+status: delivered_with_pending_full_acceptance
+task: context/tasks/completed/deploy-merged-plugin-20261113.md
+
+当前0.3.71已由用户重开后的实际ChatGPT.app宿主接管。当前聊天board_view成功，
+展开原生MCP App读取正常；正式HTTP pid13256及其App Server父进程12342已核对。
+固定canonical包、安装和缓存目录、实际服务HTML、版本、配置和数据身份一致。
+after-current-client-71/receipt.json保存当前客户端证明，安装回执已更新desktop_loaded。
+不得用当前HEAD版本或另一daemon的无会话清单代替该固定71身份。
+
+实际原生面板本机/全部主机、项目8条、搜索1条及恢复38条通过。
+正式服务页面以本卡验证同列阻塞编辑、取消不写、纯空白保存、备注保存和清除。
+仅暂停该页本卡片保存POST，验证临时落位、慢提示、筛选可用及后端未提前写入；
+放行原请求后真实确认保存，页面拦截清除。本卡恢复manual=false和原空备注，
+38张原卡片备注及配置字节不变，SQLite完整性ok。未启用日用远程和原生写入。
+native-71-final.jpg、live-71-waiting.jpg、live-71-after-ack.jpg均已实际查看。
+部分重复AX导出仅无变化提示，不作为文本证据。拖动调用耗时478秒，未签收
+1500ms早提示和900ms收尾的现场边界；精确时间点仍依据42项隔离检查。
+MCP App自动化没有真实指针拖动，原生容器拖动仍缺证。
+
+0.3.72发布ID及当前会话快照核验修正已签名并成功推送主线。
+本任务归档仅结束部署与本次定向验证，完整31条仍17通过、14待外部证据、
+退出2、release_ready=false。其余原任务保持登记，不改判或降低断言。
+之后上下文归档提交不自动替代已验证71安装，不因版本进位反复部署。
+继续完整验收沿用独立原任务和真实预算，不将局部交互与隔离性能代签全部现场。
+
+## 客户端重开前的历史交接
 
 0.3.71已安装，但当前客户端尚未接管，实际新UI未验证，不能报告部署完成。
 源码efc265c10b6f2c383751f7dc983f424c26f959ec，Mac产物59689a3da56b698b06e57a2aad8e7f6cf4d6a8a6，
