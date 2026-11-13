@@ -23,6 +23,7 @@ pub(crate) mod framing;
 pub(crate) mod identity_fixture;
 pub(crate) mod login;
 mod pipe;
+pub(crate) mod multiplex;
 pub(crate) mod runtime;
 
 mod sidebar;
