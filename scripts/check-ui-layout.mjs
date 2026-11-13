@@ -12,7 +12,7 @@ await fs.mkdir(output, { recursive: true });
 const html = await fs.readFile(process.env.CODEX_BOARD_TEST_HTML || path.join(root, "index.html"), "utf8");
 const states = { unknown: "待判断", in_progress: "进行中", review: "待审阅", blocked: "已阻塞", to_archive: "待归档" };
 const fixture = {
-  states, health: {}, projectCatalog: { loaded: true, items: [
+  states, health: {remoteRegistry:[{hostId:"long",hostLabel:"很长的远程主机".repeat(12)+"remote".repeat(18),enabled:false}]}, projectCatalog: { loaded: true, items: [
     { id: "first", label: "第一个项目", paths: ["/projects/first"] },
     { id: "second", label: "第二个项目", paths: ["/projects/second"] },
   ] },
@@ -87,7 +87,7 @@ try {
   const measure = async name => {
     const result = await evaluate(`(() => {
       const viewport=byId("board-viewport"), columns=[...document.querySelectorAll(".column")];
-      return {window:innerWidth,viewport:viewport.clientWidth,scroll:viewport.scrollWidth,
+      return {theme:matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light",window:innerWidth,viewport:viewport.clientWidth,scroll:viewport.scrollWidth,
         documentWidth:document.documentElement.scrollWidth,columns:columns.map(node=>node.getBoundingClientRect().width),
         count:document.querySelectorAll(".card").length,titles:[...document.querySelectorAll(".card-title")].map(node=>({
           width:node.clientWidth,scroll:node.scrollWidth,height:node.getBoundingClientRect().height,
@@ -105,7 +105,8 @@ try {
   };
   const select = value => evaluate(`byId("project-filter").value=${JSON.stringify(value)};
     byId("project-filter").dispatchEvent(new Event("change"))`);
-  for (const legacy of [false, true]) {
+  for (const [legacy,theme] of [[false,"light"],[true,"light"],[false,"dark"],[true,"dark"]]) {
+    await command("Emulation.setEmulatedMedia",{features:[{name:"prefers-color-scheme",value:theme}]},sessionId);
     fixture.legacyMode = legacy;
     fixture.states = legacy ? { ...states, completed: "已完成" } : states;
     await resize(1474);
@@ -132,7 +133,9 @@ try {
     assert.equal(empty.count, 0, "搜索没有清空卡片");
     assert(Math.abs(empty.columns[0] - baseline.columns[0]) < 1, "空搜索改变列宽");
     await evaluate(`byId("filter-toggle").click();render()`);
-    for (const width of [801, 800, 600, 390]) {
+    await evaluate('byId("host-filter").value="host:long";byId("host-filter").dispatchEvent(new Event("change"))');
+    await measure(`${legacy ? "six" : "five"}-long-host`);
+    for (const width of [801, 800, 600, 390, 320]) {
       await resize(width);
       const narrow = await measure(`${legacy ? "six" : "five"}-${width}`);
       assert(narrow.scroll > narrow.viewport, "窄屏没有横向滚动");
@@ -144,7 +147,7 @@ try {
     }
     await resize(1474);
     const image = await command("Page.captureScreenshot", { format: "png" }, sessionId);
-    await fs.writeFile(path.join(output, `${legacy ? "six" : "five"}-columns.png`), Buffer.from(image.data, "base64"));
+    await fs.writeFile(path.join(output, `${legacy ? "six" : "five"}-${theme}-columns.png`), Buffer.from(image.data, "base64"));
   }
   const report = { browser: await command("Browser.getVersion"), cases: measurements.length, measurements };
   await fs.writeFile(path.join(output, "measurements.json"), JSON.stringify(report, null, 2));

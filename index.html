@@ -22,8 +22,12 @@ button.primary:hover{background:var(--ink);opacity:.86}
 h1{font-size:18px;font-weight:600;margin:0}
 .header-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;min-width:0}
 #new-session{white-space:nowrap}
-.health{margin:0 0 8px;padding:0;background:transparent;border:0;color:var(--muted);font-size:12px}
+.health{margin:0 0 8px;padding:0;background:transparent;border:0;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
 .health.error{background:transparent;border:0;color:var(--danger)}
+.health-host{margin:12px 0;padding:10px;border:1px solid var(--line);border-radius:8px;overflow-wrap:anywhere}
+.health-host summary{cursor:pointer;font-weight:600}
+.health-host p{margin:8px 0;white-space:pre-wrap}
+.health-host .diagnostics{color:var(--muted);font-size:11px;user-select:text}
 .toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin:0 0 8px}
 .filters{display:flex;flex:1 1 520px;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;min-width:0;margin-left:auto}
 .filter-field{display:grid;grid-template-columns:auto minmax(0,180px);align-items:center;gap:8px;min-width:0;max-width:100%;color:var(--muted);font-size:11px}
@@ -112,7 +116,7 @@ textarea{resize:vertical;min-height:90px}
       <button id="new-session" class="primary" type="button">＋ 新建会话</button>
     </div>
   </header>
-  <div id="health" class="health" role="status">正在连接本地会话读取器…</div>
+  <div id="health" class="health"><span id="health-summary" role="status">正在读取会话…</span> <button id="health-more" type="button" class="row-action">查看连接详情</button></div>
   <div id="archive-status" class="health" role="status" hidden></div>
   <div class="toolbar">
     <nav class="jump" id="jump" aria-label="跳转到状态列"></nav>
@@ -133,6 +137,12 @@ textarea{resize:vertical;min-height:90px}
   </div>
   <p class="foot" id="foot">拖动卡片修改状态。“待归档”列的一键归档处理当前筛选下本机和远程主机中的可归档会话，也可以逐张归档。只读记录不会归档。新建会话只打开输入页，不发送输入。</p>
 </main>
+<dialog id="health-details" aria-labelledby="health-details-title">
+  <h2 id="health-details-title">连接与会话读取</h2>
+  <p class="reason">先查看受影响的功能，再选择处理办法。选择主机只改变显示范围。后台定时归档仍按原配置运行。</p>
+  <div id="health-detail-list"></div>
+  <div class="dialog-actions"><button id="health-close" type="button">关闭</button><button id="health-help" type="button">连接帮助</button><button id="health-recheck" type="button">重新检查</button></div>
+</dialog>
 <dialog id="editor">
   <form id="edit-form">
     <h2>调整工作状态</h2>
@@ -178,7 +188,9 @@ let saving = false, requestSerial = 0, dragPoint = null, scrollFrame = null;
 let opening = false, suppressOpenUntil = 0;
 let filterMode = "project", selectedHost = "all", selectedProject = "all", projectOptionsKey = "";
 let creating = false, recoveringDraft = null;
+let snapshotError = null;
 const draftRequests = new Map();
+const connectingHosts = new Set();
 const byId = id => document.getElementById(id);
 const date = value => value ? new Date(value * 1000).toLocaleString("zh-CN",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "尚未读取";
 function element(tag, text, className) {
@@ -238,17 +250,18 @@ function makeProjectTag(session) {
   const catalog = data.projectCatalog || {loaded:false,items:[]};
   const item = catalog.items.find(candidate => candidate.id === session.projectId);
   const pending = Boolean(session.projectIssue || (session.projectId && !item) ||
-    (session.remote ? item?.cached || data.health?.remoteError : !catalog.loaded || catalog.error));
+    (!session.remote && !catalog.loaded));
+  const cached = Boolean(item && (item.cached || !session.remote && catalog.error));
   const label = item ? projectLabel(item) : pending ? "项目待确认" :
     "默认工作区" + (session.remote ? " · " + (session.hostLabel || session.hostId) : "");
-  const tag = element("details",undefined,"project-tag" + (pending ? " pending" : ""));
-  const summary = element("summary",label + (pending && item ? " · 待确认" : ""));
+  const tag = element("details",undefined,"project-tag" + (pending || cached ? " pending" : ""));
+  const summary = element("summary",label + (pending && item ? " · 归属待确认" : cached ? " · 缓存" : ""));
   summary.title = summary.textContent + "，点击查看项目详情";
   summary.setAttribute("aria-label",summary.title);
   const info = [label];
   if (item) info.push("项目目录：" + item.paths.join(" · "));
   info.push("工作目录：" + (session.cwd || "未记录"));
-  if (pending) info.push(session.projectIssue || "项目资料尚未确认，当前显示上次可用信息。");
+  if (pending || cached) info.push(session.projectIssue || "项目资料尚未确认更新，当前显示上次可用信息。");
   tag.append(summary,element("div",info.join("\n"),"project-info"));
   return tag;
 }
@@ -486,7 +499,10 @@ function updateColumn(column, state, sessions) {
   }
   const cards = column.querySelector(".cards");
   cards.replaceChildren(...sessions.map(makeCard));
-  if (!sessions.length) cards.append(element("div","暂无会话","empty-column"));
+  if (!sessions.length) {
+    const unread = !hostSessions().length && healthReports().some(host => (selectedHost === "all" || host.key === selectedHost) && !host.lastRead);
+    cards.append(element("div",unread ? "尚未读取会话，可查看连接详情" : "暂无匹配的会话","empty-column"));
+  }
 }
 function makeColumn(state, label) {
   const column = element("section",undefined,"column " + state);
@@ -532,7 +548,8 @@ function makeColumn(state, label) {
 }
 function hostOptions() {
   const hosts = new Map();
-  for (const host of [...data.sessions.filter(row => row.remote),...data.projectCatalog.items.filter(item => item.remote),
+  for (const host of [...(data.health.remoteConnections || []),...(data.health.remoteConnectionErrors || []),
+    ...data.sessions.filter(row => row.remote),...data.projectCatalog.items.filter(item => item.remote),
     ...(data.projectCatalog.remoteHosts || []),...(data.health.remoteRegistry || [])]) {
     if (host.hostId) hosts.set("host:" + host.hostId,{...host,value:"host:" + host.hostId});
   }
@@ -569,7 +586,7 @@ function updateHostOptions() {
 function updateProjectOptions() {
   const catalog = data.projectCatalog || {loaded:false,items:[]};
   updateHostOptions();
-  const key = JSON.stringify([selectedHost,catalog.loaded,catalog.items,catalog.error,data.health.remoteError,data.health.remoteProjectWarning]);
+  const key = JSON.stringify([selectedHost,catalog.loaded,catalog.items,catalog.error,data.health.remoteError]);
   if (key === projectOptionsKey) return;
   projectOptionsKey = key;
   const menu = byId("project-filter");
@@ -584,7 +601,7 @@ function updateProjectOptions() {
     menu.append(option);
   }
   if (!Array.from(menu.options).some(option => option.value === selectedProject)) {
-    const failed = selectedHost === "local" ? catalog.error || !catalog.loaded : data.health.remoteError || data.health.remoteProjectWarning;
+    const failed = selectedHost === "local" ? catalog.error || !catalog.loaded : data.health.remoteError;
     if (failed) menu.append(new Option(previous + " · 资料暂不可读",selectedProject));
     else {selectedProject = "all";announce("项目已移除，已回到当前主机的全部项目。");}
   }
@@ -623,7 +640,7 @@ function render(resetState = null) {
   updateProjectOptions();
   updateFilterLock();
   const host = byId("host-filter").selectedOptions[0]?.textContent || selectedHost;
-  const project = filterMode === "search" ? "全部项目 · 搜索" : byId("project-filter").selectedOptions[0]?.textContent;
+  const project = filterMode === "search" ? "全部项目 · 搜索" : selectedHost === "all" ? "全部会话" : byId("project-filter").selectedOptions[0]?.textContent;
   byId("filter-scope").textContent = `${host} · ${project}`;
   byId("search").placeholder = `搜索${host}上的会话…`;
   byId("new-session").disabled = creating;
@@ -674,70 +691,113 @@ function render(resetState = null) {
     archiveStatus.className = "health" + (health.autoArchiveError || deferred.length ? " error" : "");
     archiveStatus.textContent = `本机每 ${health.autoArchiveSeconds / 60} 分钟自动归档待归档 · 下次 ${date(health.autoArchiveNextAt)}`;
     if (last) archiveStatus.textContent += ` · 上次 ${date(last.at)}：归档 ${last.archived.length} 条，延后 ${deferred.length} 条`;
-    if (health.autoArchiveError) archiveStatus.textContent += " · 本轮未完成：" + health.autoArchiveError;
+    archiveStatus.textContent += " · 不受当前筛选影响";
+    if (health.autoArchiveError) archiveStatus.textContent += " · 本轮未完成，请查看连接详情";
     archiveStatus.title = deferred.map(item => `${item.id}：${item.reason}`).join("\n");
   }
-  byId("health").className = "health" + (health.error || health.runtimeError || health.sectionsError || health.nativeError || health.nativeStageError || !health.scanComplete && health.lastScanAt && !health.refreshing ? " error" : "");
-  byId("health").textContent = health.error ? `连接异常，已保留本地状态。${health.error}` :
-    health.refreshing ? `正在扫描与补读历史，已发现 ${data.sessions.length} 条。` :
-    health.lastSuccessAt ? `已发现 ${health.discovered} 条本机会话 · 最近扫描 ${date(health.lastSuccessAt)}${health.scanComplete ? "" : " · 尚有未扫描的分页，请调整扫描上限"}` : "等待首次扫描…";
-  byId("health").textContent += health.runtimeError ? " · " + (health.runtimeVerified ? health.runtimeError : "执行状态读取暂停，保留原状态：" + health.runtimeError) :
-    health.runtimeVerified ? (health.nativeStageError ? " · 执行状态可读" : " · 自动状态已连接") : " · 等待执行状态连接";
-  if (health.nativeSections) byId("health").textContent += health.nativeError ?
-    " · 原生分区暂不可读，显示上次位置" + (health.nativeError === health.runtimeError ? "" : "：" + health.nativeError) : health.nativeVerified ? " · 状态来自原生分区" : " · 等待读取原生分区";
-  if (health.nativeStageError) byId("health").textContent += " · 自动状态更新待重试：" + health.nativeStageError;
-  const catalog = data.projectCatalog;
-  if (catalog && catalog.error) {
-    byId("health").className = "health error";
-    byId("health").textContent += catalog.loaded ? " · 项目列表暂不可读，保留上次分类" : " · 项目列表尚未读取，可切换搜索";
-  }
-  if (data.sessions.some(session => session.projectIssue)) {
-    byId("health").className = "health error";
-    byId("health").textContent += " · 有会话项目归属待确认，可在全部项目中查看";
-  }
-  const remoteCount = data.sessions.filter(session => session.remote).length;
-  if (remoteCount || health.remoteVerified) byId("health").textContent += ` · ${remoteCount} 条远程会话`;
-  if (health.remoteCacheErrors?.length) {
-    byId("health").className = "health error";
-    byId("health").textContent += ` · ${health.remoteCacheErrors.length} 个远程缓存读取失败，需核对连接与数据`;
-  }
-  for (const host of health.remoteConnections || []) {
-    const warning = [...new Set([host.writeError,host.error,host.runtimeError,host.nativeError,host.nativeStageError].filter(Boolean))].join("；");
-    const label = host.hostLabel || host.hostId;
-    if (warning) {
-      byId("health").className = "health error";
-      byId("health").textContent += ` · ${label}：${warning}`;
-    }
-    else if (host.runtimeVerified) byId("health").textContent += ` · ${label}：自动状态已连接`;
-    if (host.autoArchiveSeconds) byId("health").textContent +=
-      `；每 ${host.autoArchiveSeconds / 60} 分钟自动归档，下次 ${date(host.autoArchiveNextAt)}`;
-  }
-  for (const host of health.remoteConnectionErrors || []) {
-    byId("health").className = "health error";
-    byId("health").textContent += ` · ${host.hostId}：${host.error}`;
-  }
-  if (health.remoteProjectWarning) byId("health").textContent += " · 部分远程项目资料未确认，保留上次分类";
-  if (health.remoteError) {
-    byId("health").className = "health error";
-    byId("health").textContent += " · 远程项目读取未完成：" + health.remoteError;
-  }
-  renderConnectButtons(health);
+  renderHealth();
 }
-function renderConnectButtons(health) {
-  for (const host of health.remoteRegistry || []) {
-    if (host.enabled !== false || data.legacyMode) continue;
-    const connect = element("button",`连接 ${host.hostLabel || host.hostId}`,"row-action");
-    connect.type = "button";
-    connect.onclick = async () => {
-      connect.disabled = true;
-      try {
-        await post("/api/connect",{hostId:host.hostId});
-        await load();
-      } catch (error) { announce(error.message,true); }
-      finally { connect.disabled = false; }
-    };
-    byId("health").append(" ",connect);
-  }
+function hostHealth(host) {
+  const local = host.value === "local", rows = hostSessions(host.value), root = data.health;
+  const current = local ? root : (root.remoteConnections || []).find(item => item.hostId === host.hostId) || {};
+  const scan = (root.remoteHosts || []).find(item => item.hostId === host.hostId) || {};
+  const connection = (root.remoteConnectionErrors || []).find(item => item.hostId === host.hostId);
+  const idle = !local && (host.enabled === false || !data.legacyMode && !(root.remoteRegistry || []).some(item => item.hostId === host.hostId));
+  const projectError = local ? data.projectCatalog.error : null;
+  const listError = current.error || connection?.error || (!scan.connectionRequired && scan.error);
+  const readonly = rows.filter(row => row.readOnly).length;
+  const blocked = Boolean(current.writeError || rows.length && readonly === rows.length);
+  const partial = Boolean(current.nativeStageError || current.runtimeVerified && current.runtimeError);
+  const diagnostics = [["会话列表",listError],["自动状态",current.runtimeError],["状态分组",current.nativeError],
+    ["状态更新",current.nativeStageError],["修改权限",current.writeError],["侧栏同步",current.sectionsError],
+    ["项目列表",projectError],["定时归档",current.autoArchiveError]].filter(([,error]) => error);
+  const incomplete = current.lastScanAt && !current.scanComplete && !current.refreshing;
+  const faults = diagnostics.some(([label]) => label !== "自动状态" || current.lastScanAt || current.lastSuccessAt || current.runtimeLastAt);
+  const attention = !idle && Boolean(faults || blocked || readonly || incomplete || rows.some(row => row.projectIssue));
+  let status = !current.lastSuccessAt ? rows.length ? "显示已有会话，更新时间待确认" : "正在等待读取会话" :
+    !current.scanComplete ? "会话列表尚未读取完整" : !current.runtimeVerified ? "自动状态尚未连接" :
+    current.nativeSections && !current.nativeVerified ? "状态分组尚未确认" : "会话列表已读取 · 自动状态已连接";
+  if (current.autoArchiveError) status = "本轮后台自动归档未完成";
+  if (current.sectionsError) status = "侧栏同步未完成，保留原状态";
+  if (rows.some(row => row.projectIssue)) status = "部分会话的项目归属待确认";
+  if (projectError) status = "项目列表暂不可读，保留上次分类";
+  if (current.nativeError) status = "状态分组暂不可读，保留上次位置";
+  if (partial) status = "部分自动状态更新未完成";
+  if (blocked || readonly) status = blocked ? "可以查看会话，暂时不能修改" : "部分会话暂时不能修改";
+  if (listError) status = rows.length ? "会话列表暂时无法更新，显示已有记录" : "尚未读取会话，请检查连接";
+  if (idle) status = (host.enabled === false ? "尚未连接" : "主机已移除") + (rows.length ? " · 显示缓存" : " · 尚未读取会话");
+  const effects = [
+    "会话列表：" + (idle ? "只显示缓存，尚未确认更新" : listError ? "暂时无法更新，保留已有记录" : current.lastSuccessAt ? current.scanComplete ? "已读取" : "尚未读取完整" : "最近读取情况尚未确认"),
+    "自动状态：" + (idle || !current.runtimeVerified ? "尚未连接，保留原状态" : partial ? "部分更新未完成" : "已连接"),
+    "状态分组：" + (current.nativeSections ? current.nativeError || !current.nativeVerified || idle ? "尚未确认更新，保留上次位置" : "已读回" : "不使用原生分组"),
+    "修改与归档：" + (idle || blocked ? "暂不可用" : readonly ? "部分会话只读" : "请以卡片上可用的操作为准"),
+  ];
+  if (projectError || hostProjects(host.value).some(item => item.cached)) effects.push("项目资料来自上次记录，暂未确认更新。");
+  if (rows.some(row => row.projectIssue)) effects.push("有会话的项目归属待确认，可在此主机的全部项目中查看。");
+  if (current.autoArchiveSeconds) effects.push(`后台每 ${current.autoArchiveSeconds / 60} 分钟自动归档，下次 ${date(current.autoArchiveNextAt)}；不受筛选影响。`);
+  return {key:host.value,label:hostName(host),status,attention,effects,diagnostics,lastRead:current.lastSuccessAt,
+    canConnect:host.enabled === false && !data.legacyMode,hostId:host.hostId};
+}
+function healthReports() {
+  const reports = hostOptions().map(hostHealth);
+  const global = [["远程项目读取",data.health.remoteError],["远程缓存读取",data.health.remoteCacheErrors?.length ? JSON.stringify(data.health.remoteCacheErrors) : null],
+    ["看板服务",snapshotError]].filter(([,error]) => error);
+  if (global.length) reports.push({key:"service",label:"其他读取问题",status:"部分资料未更新",attention:true,
+    effects:["已有记录已保留。这里的问题尚未定位到具体主机，请展开诊断核对。"],diagnostics:global});
+  if (selectedHost !== "all" && !reports.some(report => report.key === selectedHost)) reports.unshift({
+    key:selectedHost,label:byId("host-filter").selectedOptions[0]?.textContent,status:"主机已移除 · 尚未读取会话",
+    effects:["原来的显示范围已保留。请在主机菜单选择另一台主机。"],diagnostics:[],attention:true});
+  return reports;
+}
+function renderHealth() {
+  const reports = healthReports(), current = reports.find(host => host.key === selectedHost);
+  const others = reports.filter(host => host.key !== selectedHost && host.key !== "service" && host.attention).length;
+  const summary = snapshotError ? "看板连接暂时断开，显示上次结果" : current ? current.label + "：" + current.status :
+    others ? `有 ${others} 台主机需要处理` : "请选择主机查看读取与连接情况";
+  const message = summary + (current && others ? ` · 另有 ${others} 台主机需要处理` : "") +
+    (reports.some(host => host.key === "service") ? " · 另有资料读取问题" : "");
+  if (byId("health-summary").textContent !== message) byId("health-summary").textContent = message;
+  byId("health").className = "health" + (reports.some(host => host.attention) ? " error" : "");
+  if (byId("health-details").open) renderHealthDetails(reports);
+}
+function renderHealthDetails(reports = healthReports()) {
+  const list = byId("health-detail-list"), first = !list.children.length;
+  const expanded = new Set([...list.querySelectorAll("details[open]")].map(node => node.dataset.key));
+  const focus = document.activeElement?.dataset.focus, focusedHost = document.activeElement?.closest(".health-host")?.dataset.key;
+  const nodes = [...reports].sort((a,b) => Number(b.key === selectedHost) - Number(a.key === selectedHost)).map(host => {
+    const detail = element("details",undefined,"health-host");detail.dataset.key = host.key;
+    detail.open = expanded.has(host.key) || first && (host.key === selectedHost || selectedHost === "all" && host.attention);
+    const summary = element("summary",host.label + "：" + (snapshotError ? "上次记录 · " : "") + host.status);
+    summary.dataset.focus = host.key;detail.append(summary,element("p",host.effects.join("\n")));
+    detail.append(element("p",host.lastRead ? "上次成功读取：" + date(host.lastRead) : "缓存时间未提供，不能确认资料是否最新。","reason"));
+    const steps = host.canConnect ? "此主机未启用连接。点击下方连接按钮后，再查看读取结果。" :
+      host.key === "service" ? "请重新检查。仍未恢复时，可把技术诊断提供给维护者。" :
+      host.attention ? "请先确认这台主机的 Codex 是否可用，再点击“重新检查”。仍未恢复时，可把技术诊断提供给维护者。" :
+      "需要更新结果时，可点击“重新检查”。";
+    detail.append(element("p",steps,"reason"));
+    if (host.canConnect) {
+      const connect = element("button","连接这台主机");connect.type = "button";connect.dataset.focus = "connect:" + host.key;
+      connect.disabled = connectingHosts.has(host.hostId);
+      connect.onclick = async () => {
+        if (connectingHosts.has(host.hostId)) return;
+        connectingHosts.add(host.hostId);connect.disabled = true;
+        try {await post("/api/connect",{hostId:host.hostId});await load();}
+        catch (error) {announce(error.message,true);}
+        finally {connectingHosts.delete(host.hostId);renderHealth();}
+      };detail.append(connect);
+    }
+    if (host.diagnostics.length) {
+      const diagnostics = element("details",undefined,"diagnostics");diagnostics.dataset.key = "diagnostics:" + host.key;
+      diagnostics.open = expanded.has(diagnostics.dataset.key);
+      const title = element("summary","技术诊断");title.dataset.focus = diagnostics.dataset.key;
+      diagnostics.append(title,element("p",host.diagnostics.map(([label,error]) => label + "：" + error).join("\n")));
+      detail.append(diagnostics);
+    }
+    return detail;
+  });
+  list.replaceChildren(...nodes);
+  const targets = [...list.querySelectorAll("[data-focus]")];
+  if (focus) (targets.find(node => node.dataset.focus === focus) || targets.find(node => node.dataset.focus === focusedHost))?.focus({preventScroll:true});
 }
 function noteDraft(id, value) {
   try {
@@ -768,12 +828,12 @@ async function load() {
     const result = await request("/api/sessions");
     if (serial !== requestSerial || filtersLocked()) return;
     data = result;
+    snapshotError = null;
     for (const draft of data.pendingDrafts || []) draftRequests.set(draft.project,draft.requestId);
     render();
   } catch (error) {
     if (serial !== requestSerial) return;
-    byId("health").className = "health error";
-    byId("health").textContent = "连接已断开，显示上次结果。"+error.message;
+    snapshotError = error.message;renderHealth();
   }
 }
 async function persist(session, state, note) {
@@ -818,7 +878,7 @@ byId("cancel").onclick = () => byId("editor").close();
 async function createSession(projectId) {
   const button = byId("new-session");
   if (creating || dragging || saving || byId("editor").open) return;
-  const remote = data.projectCatalog.items.find(item => item.id === projectId)?.remote;
+  const remote = data.projectCatalog.items.find(item => item.id === projectId)?.remote || draftRequests.has(projectId);
   const body = projectId === null ? {} : {projectId};
   if (remote) {
     body.requestId = draftRequests.get(projectId) || crypto.randomUUID();
@@ -844,6 +904,7 @@ function updateNewProjects() {
   const options = hostProjects(host).map(item => new Option(projectLabel(item),item.id));
   if (host === "local") options.unshift(new Option("本机新会话输入页",""));
   byId("new-project").replaceChildren(...options);
+  byId("new-project").required = host !== "local";
   byId("new-target-open").disabled = !options.length;
   byId("new-target-hint").textContent = options.length ? "新会话固定在所选主机，不会发送输入。" :
     "此主机暂无已登记项目。请先在该主机的 Codex 中登记项目，已有会话仍可查看。";
@@ -897,9 +958,22 @@ byId("editor").addEventListener("cancel",event => {if (saving) event.preventDefa
 byId("editor").addEventListener("close",() => {editing=null;render();load();});
 byId("refresh").onclick = async () => {
   try {await post("/api/refresh",{}); await load();}
-  catch(error) {byId("health").textContent = error.message;}
+  catch(error) {snapshotError=error.message;renderHealth();}
 };
 byId("connection-help").onclick = () => byId("connection-recovery").showModal();
+byId("health-more").onclick = () => {
+  const list = byId("health-detail-list");
+  if (list.dataset.scope !== selectedHost) list.replaceChildren();
+  list.dataset.scope = selectedHost;renderHealthDetails();byId("health-details").showModal();
+};
+byId("health-close").onclick = () => byId("health-details").close();
+byId("health-help").onclick = byId("connection-help").onclick;
+byId("health-recheck").onclick = async () => {
+  const button = byId("health-recheck");button.disabled = true;
+  try {await post("/api/refresh",{});await load();}
+  catch (error) {announce(error.message,true);}
+  finally {button.disabled = false;}
+};
 byId("connection-close").onclick = () => byId("connection-recovery").close();
 byId("connection-recheck").onclick = async () => {
   const button = byId("connection-recheck");

@@ -15,7 +15,7 @@ fn long_content_and_project_filters_preserve_browser_column_geometry() {
         String::from_utf8_lossy(&result.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(report["cases"], 20);
+    assert_eq!(report["cases"], 48);
     let filters = Command::new("node")
         .arg("scripts/check-host-filter.mjs")
         .output()
@@ -27,5 +27,5 @@ fn long_content_and_project_filters_preserve_browser_column_geometry() {
         String::from_utf8_lossy(&filters.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&filters.stdout).unwrap();
-    assert!(report["cases"].as_u64().unwrap() >= 25);
+    assert_eq!(report["cases"], 49);
 }
