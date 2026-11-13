@@ -38,12 +38,14 @@ fn transfer_feedback_waits_for_receipts_and_preserves_interaction() {
         .arg(output.path())
         .output()
         .unwrap();
+    let diagnosis = std::fs::read_to_string(output.path().join("failure.json")).unwrap_or_default();
     assert!(
         result.status.success(),
-        "等待反馈回归失败：\n{}\n{}",
+        "等待反馈回归失败：\n{}\n{}\n{}",
         String::from_utf8_lossy(&result.stdout),
-        String::from_utf8_lossy(&result.stderr)
+        String::from_utf8_lossy(&result.stderr),
+        diagnosis
     );
     let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(report["cases"], 28);
+    assert_eq!(report["cases"], 42);
 }

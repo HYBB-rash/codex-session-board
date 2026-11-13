@@ -1,0 +1,39 @@
+name: Check PR changes
+on:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    env:
+      RUSTUP_TOOLCHAIN: 1.99.1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 -m pip install -r requirements-delivery.txt
+      - run: rustup toolchain install 1.99.1 --profile minimal --component clippy
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: pr-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            pr-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-
+      - run: cargo fetch --locked
+      - run: ./scripts/install-git-hooks
+      - run: ./scripts/validate --scope pr --base origin/main --output "$RUNNER_TEMP/validation"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pr-validation
+          path: ${{ runner.temp }}/validation/

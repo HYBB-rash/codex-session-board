@@ -1,11 +1,30 @@
 use super::*;
 use crate::rpc::identity_fixture::Fixture;
 
-fn check_owner_pipe_exit(multiplex: &Multiplex, command: &[String], before: &[String]) -> Result<()> {
+fn kill_master(multiplex: &Multiplex) -> Result<()> {
+    let mut state = multiplex.0.lock().unwrap();
+    let process = &mut state.master.as_mut().unwrap().process.0;
+    process.kill()?;
+    process.wait()?;
+    Ok(())
+}
+
+fn check_owner_pipe_exit(
+    multiplex: &Multiplex,
+    command: &[String],
+    before: &[String],
+) -> Result<()> {
     {
         let mut state = multiplex.0.lock().unwrap();
         let master = state.master.as_mut().unwrap();
-        drop(master.process.0.stdin.take().context("共享连接未绑定主实例 stdin")?);
+        drop(
+            master
+                .process
+                .0
+                .stdin
+                .take()
+                .context("共享连接未绑定主实例 stdin")?,
+        );
         let deadline = deadline_after(Duration::from_secs(1))?;
         while master.process.0.try_wait()?.is_none() {
             remaining(deadline)?;
@@ -31,17 +50,7 @@ fn shared_connection_restarts_dead_master_and_reaps_owned_process_on_drop() -> R
     };
     assert!(first.iter().any(|value| value.starts_with("ControlPath=")));
     assert_eq!(std::fs::metadata(&directory)?.mode() & 0o777, 0o700);
-    multiplex
-        .0
-        .lock()
-        .unwrap()
-        .master
-        .as_mut()
-        .unwrap()
-        .process
-        .0
-        .kill()?;
-    multiplex.0.lock().unwrap().master.as_mut().unwrap().process.0.wait()?;
+    kill_master(&multiplex)?;
     let next = multiplex.command(&command, deadline_after(Duration::from_secs(3))?)?;
     assert_ne!(first, next);
     assert!(!directory.exists());

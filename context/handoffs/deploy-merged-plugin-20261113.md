@@ -1,0 +1,62 @@
+# 合并版本部署及剩余验收
+
+owner: codex
+status: delivered_with_pending_full_acceptance
+task: context/tasks/completed/deploy-merged-plugin-20261113.md
+
+当前0.3.71已由用户重开后的实际ChatGPT.app宿主接管。当前聊天board_view成功，
+展开原生MCP App读取正常；正式HTTP pid13256及其App Server父进程12342已核对。
+固定canonical包、安装和缓存目录、实际服务HTML、版本、配置和数据身份一致。
+after-current-client-71/receipt.json保存当前客户端证明，安装回执已更新desktop_loaded。
+不得用当前HEAD版本或另一daemon的无会话清单代替该固定71身份。
+
+实际原生面板本机/全部主机、项目8条、搜索1条及恢复38条通过。
+正式服务页面以本卡验证同列阻塞编辑、取消不写、纯空白保存、备注保存和清除。
+仅暂停该页本卡片保存POST，验证临时落位、慢提示、筛选可用及后端未提前写入；
+放行原请求后真实确认保存，页面拦截清除。本卡恢复manual=false和原空备注，
+38张原卡片备注及配置字节不变，SQLite完整性ok。未启用日用远程和原生写入。
+native-71-final.jpg、live-71-waiting.jpg、live-71-after-ack.jpg均已实际查看。
+部分重复AX导出仅无变化提示，不作为文本证据。拖动调用耗时478秒，未签收
+1500ms早提示和900ms收尾的现场边界；精确时间点仍依据42项隔离检查。
+MCP App自动化没有真实指针拖动，原生容器拖动仍缺证。
+
+0.3.72发布ID及当前会话快照核验修正已签名并成功推送主线。
+本任务归档仅结束部署与本次定向验证，完整31条仍17通过、14待外部证据、
+退出2、release_ready=false。其余原任务保持登记，不改判或降低断言。
+之后上下文归档提交不自动替代已验证71安装，不因版本进位反复部署。
+继续完整验收沿用独立原任务和真实预算，不将局部交互与隔离性能代签全部现场。
+
+## 客户端重开前的历史交接
+
+0.3.71已安装，但当前客户端尚未接管，实际新UI未验证，不能报告部署完成。
+源码efc265c10b6f2c383751f7dc983f424c26f959ec，Mac产物59689a3da56b698b06e57a2aad8e7f6cf4d6a8a6，
+二进制38cf271e93e429bfcd42b77d4070aeeb8c1298182a93d93ce56d14f211933319。
+候选Release已不可变，原始附件与Git包清单一致。当前源码后续修正发布器及重载核验，不自动代替该已安装包。
+
+证据根为本会话可视化目录下deploy-v68，目录名沿用最初尝试，最终候选为71。
+candidate-71-preflight.json及其canonical目录保存原始包；before-install-71是安装前WAL快照。
+current-host-pending-71.json确认安装、配置未改、38张原卡片备注未改、SQLite integrity=ok。
+正式配置和数据仍由原入口持有；功能开关未启用远程或原生分区。旧54安装包保留，可固定原产物回退。
+回退revision为9798c73a77b4854dbf061865bcba3826da66b8e4，回退程序前仍须保全最新数据。
+
+配置desktop_socket所连daemon是0.169.0，本会话在那里thread/read=notLoaded。
+实际当前工具宿主进程来自ChatGPT.app的stdio App Server，原PID25206。不能把另一个daemon的无会话71清单当作它已加载。
+官方更新器安装后旧54进程曾接管HTTP；已严格核对UID、父进程、启动时间和完整命令，对7个旧MCP发送SIGINT并确认退出。
+独立开发fixture未动。当前控制会话和原作者会话board_view均Transport closed；需退出重开承载这些会话的客户端，再打开会话看板。
+未启动独立serve、替代MCP或新的用户会话。安装回执已原子更正为awaiting_desktop_reload，保留原发现清单作审计。
+
+重开后先从实际当前客户端调用board_view，核对正式HTTP的version/build/PID及真实插件进程归属，确保由71持有。
+不要沿用无threadId的csb-desktop-readback.py作为当前客户端证据；旧csb-verify-install.py还假定HEAD为71，使用前应改为核对固定71报告及canonical包。
+当前新增重载检查要求CODEX_THREAD_ID属于目标socket宿主，并从同会话连接确认MCP身份和成功board_snapshot，否则保留等待。
+然后在同一正式服务UI验证本机/全部主机及项目/搜索筛选、阻塞空白保存、临时备注取消/保存/清除和真实拖动等待反馈。
+只使用控制会话01a1d38b-1ef8-7392-ba78-caa7935c5ab4卡片；测试后恢复原备注空串及manual=false，不真实归档、不新建或发送任务输入。
+授权作者协调消息另行记录，不属于功能测试写入。IAB已有正式页面，CUA续作先rewriteDocumentation，最终观察完成后再completion_summary。
+
+本机完整报告acceptance-71-full.json：643自动项通过，17需求通过、14待外部证据、退出2，release_ready=false。
+源码指纹b106ee889c700419391b5e4f7dd979456947d04542a75b2b04a0c2ae6838599b；报告SHA2248df5a9ee31aee4908ae22fd39d123440a04076992eee71ca644f77bddd888。
+Actions43432109645含首次发布失败和定向重试，最终成功；两端42项快速检查通过，Linux自动报告654项、Mac643项。
+performance-71-live-2.json是同一源码真实SSH/RPC与临时DB门禁：20次保存中位96.833ms、p95 159.896ms，36次摘要470.257ms，全部证据一致。
+初次Agent等待超时保留；同一已核对公钥经1Password进入临时Agent后成功，Agent及socket已清理，未换身份或改正式配置。
+自动审批曾拒绝未知更高权限GitHub凭据枚举和含具体环境元数据的协调消息，均未执行；后续使用现有连接及概括性协调。
+
+恢复后完成真实UI验证、更新本任务归档/STATE/journal，verify_context及scripts/check必须通过；14项缺证不可因安装或本次局部验证而改判。

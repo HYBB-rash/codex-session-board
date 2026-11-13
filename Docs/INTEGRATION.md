@@ -34,3 +34,32 @@ Clippy、业务测试和检查工具自测不在每个提交重复执行。
 冻结候选后执行组合验证和打包，部署同一不可变产物。
 完整 31 条验收及外部证据门槛继续保留，候选自动通过不等于 release_ready。
 部署任务如按用户授权携带既有缺证，必须明确记录，不能冒称完整验收完成。
+
+## 实际入口
+
+开发提交运行 `./scripts/check --pre-commit`；PR 运行
+`./scripts/validate --scope pr --base origin/main --output /tmp/pr-result`。
+协调者将固定的原 PR 依次合并到 `codex/integration-*` 分支，解决冲突并审阅最终组合，
+运行 `./scripts/check --prepare-release`，提交后推送候选分支。
+
+候选工作流在 Linux 与 macOS 分别运行完整门禁，保存绑定当前提交和平台的记录，
+打包并读回同一不可变 Release，最后确认 `Candidate gate` 成功。
+缓存只复用依赖和编译产物，不复用其他源码的成功记录。
+失败重跑使用 Actions 的失败任务重试及已有 Release 包，不重建已确认的平台包。
+主线推送不再次触发整套构建；主线只接收已验证候选的同一提交。
+
+协调者在候选的干净检出中执行：
+
+```bash
+./scripts/promote --candidate CANDIDATE_SHA --base EXPECTED_MAIN_SHA \
+  --run ACTIONS_RUN_ID --repository OWNER/REPO --output /tmp/promotion.json
+```
+
+入口检查正确仓库和工作流、四项任务各自成功、双平台源码身份、报告和日志摘要，
+再次核对主线未前进，然后正常快进推送并读回确认。不允许强推或用跳过状态提升。
+GitHub 默认使用已有 `gh` 登录；自动环境可用 `CODEX_GITHUB_COMMAND` 指定参数数组形式的
+既有凭据入口，不在脚本或记录内存放令牌。
+
+服务端主线保护要求 `Candidate gate` 成功、分支为最新，并禁止强推及删除。
+仓库权限不足以配置时必须明确报告保护未生效，不能把本地脚本等同服务端保护。
+部署使用候选渠道中相同源码身份的包，核对实际客户端的版本和功能后才结束计时。

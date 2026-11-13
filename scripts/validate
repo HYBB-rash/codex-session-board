@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ "${1:-}" != "--staged" ]]; then
+    exec python3 "$project_root/scripts/validate_candidate.py" "$@"
+fi
+[[ "$#" == 1 ]] || exit 2
+cd -- "$project_root"
+commit_index="$(git rev-parse --path-format=absolute --git-path index)"
+snapshot="$(mktemp -d "${TMPDIR:-/tmp}/csb-candidate-staged.XXXXXX")"
+trap 'rm -rf -- "$snapshot"' EXIT
+git checkout-index --all --prefix="$snapshot/"
+git_local_variables="$(git rev-parse --local-env-vars)"
+while IFS= read -r variable; do
+    unset "$variable"
+done <<< "$git_local_variables"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$project_root/target}"
+cd -- "$snapshot"
+GIT_INDEX_FILE="$commit_index" ./scripts/check --pre-commit --baseline-repository "$project_root"
+cargo clippy --all-targets --locked --offline -- -D warnings
+cargo test --locked --offline -- --test-threads=1

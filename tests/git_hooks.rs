@@ -196,9 +196,14 @@ fn copy_checker(root: &Path) -> Result<()> {
             copy_fixture_path(&entry.path(), &root.join("scripts").join(name.as_ref()))?;
         }
     }
-    let check = root.join("scripts/check");
-    fs::write(&check, include_str!("../scripts/check"))?;
-    fs::set_permissions(check, fs::Permissions::from_mode(0o755))?;
+    for (name, source) in [
+        ("check", include_str!("../scripts/check")),
+        ("validate", include_str!("../scripts/validate")),
+    ] {
+        let script = root.join("scripts").join(name);
+        fs::write(&script, source)?;
+        fs::set_permissions(script, fs::Permissions::from_mode(0o755))?;
+    }
     Ok(())
 }
 
@@ -253,11 +258,37 @@ fn blocked_commit(root: &Path, message: &str) -> Result<Output> {
     Ok(output)
 }
 
+fn candidate(root: &Path) -> Result<Output> {
+    Ok(Command::new("bash")
+        .args(["scripts/validate", "--staged"])
+        .current_dir(root)
+        .output()?)
+}
+
+fn blocked_candidate(root: &Path) -> Result<Output> {
+    let head = successful_git(root, &["rev-parse", "HEAD"])?;
+    let index = successful_git(root, &["write-tree"])?;
+    let output = candidate(root)?;
+    assert!(!output.status.success());
+    assert_eq!(
+        head.stdout,
+        successful_git(root, &["rev-parse", "HEAD"])?.stdout
+    );
+    assert_eq!(index.stdout, successful_git(root, &["write-tree"])?.stdout);
+    Ok(output)
+}
+
 #[test]
 fn passing_staged_tests_allow_a_commit_and_installation_is_idempotent() -> Result<()> {
     let directory = fixture(42)?;
     let root = directory.path();
     assert!(install(root)?.status.success());
+    let validation = candidate(root)?;
+    assert!(
+        validation.status.success(),
+        "{}",
+        String::from_utf8_lossy(&validation.stderr)
+    );
     let output = successful_git(root, &["commit", "-m", "passing fixture"])?;
     assert!(
         String::from_utf8_lossy(&output.stdout).contains("允许提交")
@@ -277,11 +308,12 @@ fn passing_staged_tests_allow_a_commit_and_installation_is_idempotent() -> Resul
 }
 
 #[test]
-fn failing_staged_tests_block_commits_and_preserve_the_index() -> Result<()> {
+fn failing_staged_tests_block_candidates_and_preserve_the_index() -> Result<()> {
     let directory = fixture(0)?;
     let root = directory.path();
-    let output = blocked_commit(root, "failing fixture")?;
-    assert!(String::from_utf8_lossy(&output.stderr).contains("提交已阻止"));
+    let output = blocked_candidate(root)?;
+    assert!(String::from_utf8_lossy(&output.stdout).contains("FAILED"));
+    successful_git(root, &["commit", "-m", "unfinished checkpoint is allowed"])?;
     Ok(())
 }
 
@@ -291,7 +323,7 @@ fn an_unstaged_fix_does_not_hide_failing_staged_code() -> Result<()> {
     let root = directory.path();
     source(root, 42)?;
     let before = fs::read(root.join("src/lib.rs"))?;
-    blocked_commit(root, "still failing")?;
+    blocked_candidate(root)?;
     assert_eq!(before, fs::read(root.join("src/lib.rs"))?);
     Ok(())
 }
@@ -324,7 +356,7 @@ fn installation_preserves_existing_hooks_configuration() -> Result<()> {
 }
 
 #[test]
-fn clippy_failure_blocks_a_commit_even_when_unit_tests_would_pass() -> Result<()> {
+fn clippy_failure_blocks_a_candidate_even_when_unit_tests_would_pass() -> Result<()> {
     for (method, lint) in [
         ("unwrap()", "unwrap_used"),
         ("expect(\"fixed test input\")", "expect_used"),
@@ -339,8 +371,7 @@ fn clippy_failure_blocks_a_commit_even_when_unit_tests_would_pass() -> Result<()
             ),
         )?;
         successful_git(root, &["add", "--all"])?;
-        let output = blocked_commit(root, "blocked by clippy")?;
-        assert!(String::from_utf8_lossy(&output.stderr).contains("Clippy"));
+        let output = blocked_candidate(root)?;
         assert!(String::from_utf8_lossy(&output.stderr).contains(lint));
     }
     Ok(())
@@ -373,16 +404,22 @@ fn limited_function_source(body_lines: usize) -> String {
 }
 
 #[test]
-fn function_line_limit_accepts_41_and_blocks_42_on_commit() -> Result<()> {
+fn function_line_limit_accepts_41_and_blocks_42_on_candidate() -> Result<()> {
     for (body_lines, accepted) in [(41, true), (42, false)] {
         let directory = fixture(42)?;
         let root = directory.path();
         fs::write(root.join("src/lib.rs"), limited_function_source(body_lines))?;
         successful_git(root, &["add", "--all"])?;
         let output = if accepted {
+            let validation = candidate(root)?;
+            assert!(
+                validation.status.success(),
+                "{}",
+                String::from_utf8_lossy(&validation.stderr)
+            );
             successful_git(root, &["commit", "-m", "function length boundary"])?
         } else {
-            blocked_commit(root, "function length boundary")?
+            blocked_candidate(root)?
         };
         assert_eq!(
             output.status.success(),
