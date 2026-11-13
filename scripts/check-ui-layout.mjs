@@ -109,7 +109,7 @@ try {
     fixture.legacyMode = legacy;
     fixture.states = legacy ? { ...states, completed: "已完成" } : states;
     await resize(1474);
-    await evaluate(`data=${JSON.stringify(fixture)};selectedProject="all";filterMode="project";projectOptionsKey="";render()`);
+    await evaluate(`data=${JSON.stringify(fixture)};selectedHost="local";selectedProject="all";filterMode="project";projectOptionsKey="";render()`);
     const baseline = await measure(`${legacy ? "six" : "five"}-short`);
     const long = structuredClone(fixture);
     long.sessions[1].title = "长标题与不可断开的文本".repeat(40) + "x".repeat(400);
@@ -123,6 +123,7 @@ try {
     for (const value of ["project:first", "project:second", "all"]) {
       await select(value);
       const filtered = await measure(`${legacy ? "six" : "five"}-${value}`);
+      assert.equal(filtered.count, value === "all" ? 3 : value === "project:first" ? 1 : 2, "项目筛选数量不符");
       assert(Math.abs(filtered.columns[0] - baseline.columns[0]) < 1, "项目筛选改变列宽");
     }
     await evaluate(`byId("filter-toggle").click();byId("search").value="不存在的搜索内容";
