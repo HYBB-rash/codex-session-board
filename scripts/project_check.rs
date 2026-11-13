@@ -422,7 +422,7 @@ fn validate_current_version(root: &Path, rules: &Rules) -> Result<()> {
 
 fn print_commit_guidance() {
     println!("\n处理顺序：");
-    println!("  1. 运行 ./scripts/check --prepare-commit，准备本次提交的下一版本。");
+    println!("  1. 普通提交保持版本；冻结发布时运行 ./scripts/check --prepare-release。");
     println!(
         "  2. 用 git status --short 和 git diff 检查改动，仅暂存应提交文件，再用 git diff --cached 审阅。"
     );
@@ -430,7 +430,7 @@ fn print_commit_guidance() {
         "  3. 运行 ./scripts/check --pre-commit；审阅和检查通过后自主提交，优先使用 agent-git commit。"
     );
     println!("  4. 提交后重新运行 ./scripts/check，直到全部检查通过。");
-    println!("自动进位规则启用后，每次提交前进一步，不接受人工阶段升版。");
+    println!("旧历史按原规则验证；完整 Clippy 和自动验收由 ./scripts/validate 执行。");
     println!("检查不会自动提交、推送、删除文件、修改忽略规则或升级正在运行的服务。");
 }
 
