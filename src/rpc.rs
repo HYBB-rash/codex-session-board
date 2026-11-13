@@ -23,7 +23,13 @@ pub(crate) mod framing;
 pub(crate) mod identity_fixture;
 pub(crate) mod login;
 mod pipe;
+pub(crate) mod multiplex;
 pub(crate) mod runtime;
+pub mod performance;
+
+#[cfg(test)]
+#[path = "rpc/summary_tests.rs"]
+mod summary_tests;
 
 mod sidebar;
 mod unavailable;
@@ -278,17 +284,31 @@ fn verified_socket(path: &Path) -> Result<PathBuf> {
     Ok(target)
 }
 
-fn wait_connected(stream: UnixStream, deadline: Instant) -> Result<UnixStream> {
+fn wait_ready(
+    stream: &impl std::os::fd::AsFd,
+    events: rustix::event::PollFlags,
+    deadline: Instant,
+) -> io::Result<()> {
     loop {
-        remaining(deadline)?;
-        if let Some(error) = stream.take_error()? {
-            return Err(error.into());
+        let timeout = rustix::event::Timespec::try_from(
+            remaining(deadline)?.min(Duration::from_secs(1)),
+        ).map_err(io::Error::other)?;
+        let mut descriptors = [rustix::event::PollFd::new(stream, events)];
+        match rustix::event::poll(&mut descriptors, Some(&timeout)) {
+            Ok(0) | Err(Errno::INTR) => continue,
+            Ok(_) => {}
+            Err(error) => return Err(error.into()),
         }
-        if stream.peer_addr().is_ok() {
-            return Ok(stream);
-        }
-        thread::sleep(remaining(deadline)?.min(Duration::from_millis(2)));
+        return remaining(deadline).map(|_| ());
     }
+}
+
+fn wait_connected(stream: UnixStream, deadline: Instant) -> Result<UnixStream> {
+    wait_ready(&stream, rustix::event::PollFlags::OUT, deadline)?;
+    if let Some(error) = stream.take_error()? {
+        return Err(error.into());
+    }
+    Ok(stream)
 }
 
 fn connect_unix(path: &Path, deadline: Instant) -> Result<UnixStream> {
@@ -318,17 +338,17 @@ struct DeadlineStream {
 
 impl Read for DeadlineStream {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
-        deadline_io(self.deadline, || self.stream.read(bytes))
+        self.stream.io(self.deadline, false, |stream| stream.read(bytes))
     }
 }
 
 impl Write for DeadlineStream {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        deadline_io(self.deadline, || self.stream.write(bytes))
+        self.stream.io(self.deadline, true, |stream| stream.write(bytes))
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        deadline_io(self.deadline, || self.stream.flush())
+        self.stream.io(self.deadline, true, |stream| stream.flush())
     }
 }
 
@@ -1396,6 +1416,26 @@ mod tests {
         );
         assert!(started.elapsed() < Duration::from_millis(100));
         worker.join().map_err(|_| anyhow!("模拟服务异常"))??;
+        Ok(())
+    }
+
+    #[test]
+    fn connection_readiness_waits_for_writability_within_the_deadline() -> Result<()> {
+        let (mut stream, _peer) = UnixStream::pair()?;
+        stream.set_nonblocking(true)?;
+        loop {
+            match stream.write(&[1; 65536]) {
+                Ok(0) => bail!("测试 socket 提前关闭"),
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                Err(error) => return Err(error.into()),
+            }
+        }
+        let started = Instant::now();
+        let error = wait_connected(stream, deadline_after(Duration::from_millis(30))?)
+            .err().context("尚不可写的 socket 被当成已就绪")?;
+        assert_eq!(error.downcast_ref::<io::Error>().unwrap().kind(), io::ErrorKind::TimedOut);
+        assert!(started.elapsed() < Duration::from_millis(250));
         Ok(())
     }
 

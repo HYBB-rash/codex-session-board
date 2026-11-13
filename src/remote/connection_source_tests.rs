@@ -3,6 +3,23 @@ use crate::rpc::identity_fixture::Fixture;
 use serde_json::json;
 
 #[test]
+fn disconnect_releases_shared_transport_even_while_binding_clones_survive() -> Result<()> {
+    let fixture = Fixture::new()?;
+    let app = fixture.app()?;
+    let _connection = app.connection(Duration::from_secs(3), rpc::Role::TitleWriter)?;
+    let binding = app.config.remote_binding.clone().unwrap();
+    let command = binding.launch(":", &"a".repeat(32))?;
+    let shared = binding.shared_command(&command, Instant::now() + Duration::from_secs(2))?;
+    let path = shared.iter().find_map(|value| value.strip_prefix("ControlPath=")).unwrap();
+    assert!(Path::new(path).exists());
+    app.deactivate()?;
+    assert!(!Path::new(path).parent().unwrap().exists());
+    assert!(binding.shared_command(&command, Instant::now() + Duration::from_secs(1)).is_err());
+    assert!(app.connection(Duration::from_secs(1), rpc::Role::Reader).is_err());
+    Ok(())
+}
+
+#[test]
 fn nonregular_source_records_are_rejected_without_waiting_for_a_pipe_writer() -> Result<()> {
     use std::os::unix::fs::FileTypeExt;
     let directory = tempfile::tempdir()?;

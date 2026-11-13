@@ -109,6 +109,7 @@ pub struct Binding {
     program: Vec<String>,
     timeout_seconds: u64,
     registry: PathBuf,
+    multiplex: rpc::multiplex::Multiplex,
 }
 
 fn load(path: &Path) -> Result<Record> {
@@ -154,6 +155,7 @@ impl Binding {
             program: settings.ssh_command.clone(),
             timeout_seconds: settings.rpc_timeout_seconds,
             registry: settings.sidebar_state_file.clone(),
+            multiplex: rpc::multiplex::Multiplex::default(),
         };
         binding.require_confirmed()?;
         Ok(binding)
@@ -175,6 +177,7 @@ impl Binding {
             program: settings.ssh_command.clone(),
             timeout_seconds: settings.rpc_timeout_seconds,
             registry: settings.sidebar_state_file.clone(),
+            multiplex: rpc::multiplex::Multiplex::default(),
         };
         binding.register()?;
         Ok(binding)
@@ -353,6 +356,18 @@ impl Binding {
         );
         command.push(rpc::login::wrap(&rpc::login::framed(operation, marker)?)?);
         Ok(command)
+    }
+
+    pub(crate) fn shared_command(
+        &self,
+        command: &[String],
+        deadline: Instant,
+    ) -> Result<Vec<String>> {
+        self.multiplex.command(command, deadline)
+    }
+
+    pub(crate) fn disconnect(&self) -> Result<()> {
+        self.multiplex.close()
     }
 }
 
