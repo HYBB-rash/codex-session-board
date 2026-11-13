@@ -10,6 +10,8 @@ const THREAD: &str = "11111111-1111-4111-8111-111111111111";
 mod discovery;
 #[path = "remote_sessions/routes.rs"]
 mod routes;
+#[path = "remote_sessions/optional_notes.rs"]
+mod optional_notes;
 
 fn discover(store: &Store, host: &str, updated: i64) -> Result<()> {
     store.discover_remote(

@@ -174,6 +174,72 @@ fn check_bridge(live: &Live, client: &reqwest::blocking::Client) -> Result<Value
     Ok(snapshot)
 }
 
+fn optional_update(live: &Live, client: &reqwest::blocking::Client, note: Option<Value>, mcp: bool) -> Result<Value> {
+    let before = live.snapshot(client)?;
+    let mut body = update(session(&before), "blocked", "");
+    if let Some(note) = note {
+        body["note"] = note;
+    } else {
+        body.as_object_mut().unwrap().remove("note");
+    }
+    if mcp {
+        assert_eq!(live.mcp("board_update", body)?["structuredContent"]["ok"], true);
+    } else {
+        live.post(client, &body)?.error_for_status()?;
+    }
+    let after = live.snapshot(client)?;
+    assert_eq!(session(&after)["manual"], true);
+    assert_eq!(session(&after)["state"], "blocked");
+    assert_eq!(session(&after)["version"], session(&before)["version"].as_i64().unwrap() + 1);
+    Ok(after)
+}
+
+fn invalid_optional_notes(live: &Live, client: &reqwest::blocking::Client) -> Result<()> {
+    let before = live.snapshot(client)?;
+    for note in [Value::Null, json!(12), json!("字".repeat(2001))] {
+        let mut body = update(session(&before), "blocked", "");
+        body["note"] = note;
+        assert!(!live.post(client, &body)?.status().is_success());
+        assert_eq!(live.mcp("board_update", body)?["isError"], true);
+        let after = live.snapshot(client)?;
+        assert_eq!(session(&after)["version"], session(&before)["version"]);
+        assert_eq!(session(&after)["note"], "");
+    }
+    let mut stale = update(session(&before), "blocked", "");
+    stale["version"] = json!(0);
+    assert!(!live.post(client, &stale)?.status().is_success());
+    Ok(())
+}
+
+#[test]
+fn built_binary_distinguishes_omitted_and_empty_notes_over_http_and_mcp() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let mut server = Server::new(directory.path())?;
+    server.config.desktop_socket = directory.path().join("engine.sock");
+    let _engine = Engine::new(&server.config.desktop_socket, std::sync::Arc::clone(&server.surface))?;
+    drop(server.app()?);
+    let live = Live::new(&mut server.config, directory.path())?;
+    let client = reqwest::blocking::Client::builder().no_proxy().timeout(Duration::from_secs(3)).build()?;
+    live.ready(&client)?;
+    for mcp in [false, true] {
+        assert_eq!(session(&optional_update(&live, &client, Some(json!("")), mcp)?)["note"], "");
+        optional_update(&live, &client, Some(json!("旧备注")), mcp)?;
+        assert_eq!(session(&optional_update(&live, &client, None, mcp)?)["note"], "旧备注");
+        assert_eq!(session(&optional_update(&live, &client, Some(json!(" \t\r\n　")), mcp)?)["note"], "");
+    }
+    invalid_optional_notes(&live, &client)?;
+    let moves = server.surface.lock().unwrap().calls.iter()
+        .filter(|method| method.as_str() == "move_thread_to_sidebar_section").count();
+    assert_eq!(moves, 1);
+    drop(live);
+    let reopened = Live::new(&mut server.config, directory.path())?;
+    let saved = reopened.ready(&client)?;
+    assert_eq!(session(&saved)["state"], "blocked");
+    assert_eq!(session(&saved)["manual"], true);
+    assert_eq!(session(&saved)["note"], "");
+    Ok(())
+}
+
 #[test]
 fn built_binary_preserves_native_position_guards_over_http_and_mcp() -> Result<()> {
     let directory = tempfile::tempdir()?;

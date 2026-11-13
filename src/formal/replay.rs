@@ -6,14 +6,21 @@ use crate::store::{RuntimeChange, Store};
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 
-pub fn conform(states: &[Session]) -> Result<usize> {
+pub fn conform(states: &[Session], note: Option<&str>) -> Result<usize> {
     let mut store = Store::open_memory(true)?;
     store.native_sections = true;
     let mut edges = 0;
     for session in states {
         for event in events() {
             install(&store, *session)?;
-            apply(&store, event)?;
+            if let Some(note) = note {
+                store.connection()?.execute("UPDATE sessions SET note=?", [note])?;
+            }
+            match event {
+                Event::Manual(column) => edit(&store, column, false, note)?,
+                Event::StaleManual(column) => edit(&store, column, true, note)?,
+                _ => apply(&store, event)?,
+            }
             ensure!(
                 project(&store)? == step(*session, event),
                 "状态 {session:?}\n事件 {event:?}\n模型 {:?}\n数据库 {:?}",
@@ -57,8 +64,8 @@ pub(super) fn apply(store: &Store, event: Event) -> Result<()> {
     match event {
         Event::Read(column) => read(store, Seat::Movable, column),
         Event::ReadCustom => read(store, Seat::Custom, Column::Unknown),
-        Event::Manual(column) => edit(store, column, false),
-        Event::StaleManual(column) => edit(store, column, true),
+        Event::Manual(column) => edit(store, column, false, None),
+        Event::StaleManual(column) => edit(store, column, true, None),
         Event::Runtime(phase, when) => runtime(store, phase, when),
         Event::Lost(phase) => lost(store, phase, false),
         Event::LostSameTurn(phase) => lost(store, phase, true),
@@ -81,14 +88,14 @@ fn read(store: &Store, seat: Seat, column: Column) -> Result<()> {
     )
 }
 
-fn edit(store: &Store, column: Column, stale: bool) -> Result<()> {
+fn edit(store: &Store, column: Column, stale: bool, note: Option<&str>) -> Result<()> {
     let stored = load(store)?;
     let version = if stale { 0 } else { stored.version };
-    let note = if column == Column::Blocked || !stored.note.trim().is_empty() {
+    let note = note.unwrap_or(if column == Column::Blocked || !stored.note.trim().is_empty() {
         "记"
     } else {
         ""
-    };
+    });
     let result = store.set_native_state(
         ID,
         Some(column.as_str()),
@@ -98,6 +105,9 @@ fn edit(store: &Store, column: Column, stale: bool) -> Result<()> {
     );
     let accepts = !stale && stored.archived == 0 && stored.native_section.is_some();
     ensure!(result.is_ok() == accepts, "人工选择返回结果错误: {result:?}");
+    if accepts {
+        ensure!(load(store)?.note == note.trim(), "人工备注未按提交内容保存");
+    }
     if !accepts {
         let reason = if stored.archived == 1 { "会话已归档，请刷新看板" }
             else if stale { "状态已更新，请刷新后重试" }
