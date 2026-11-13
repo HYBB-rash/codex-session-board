@@ -284,23 +284,31 @@ fn verified_socket(path: &Path) -> Result<PathBuf> {
     Ok(target)
 }
 
-fn wait_connected(stream: UnixStream, deadline: Instant) -> Result<UnixStream> {
+fn wait_ready(
+    stream: &impl std::os::fd::AsFd,
+    events: rustix::event::PollFlags,
+    deadline: Instant,
+) -> io::Result<()> {
     loop {
         let timeout = rustix::event::Timespec::try_from(
             remaining(deadline)?.min(Duration::from_secs(1)),
-        )?;
-        let mut descriptors = [rustix::event::PollFd::new(&stream, rustix::event::PollFlags::OUT)];
+        ).map_err(io::Error::other)?;
+        let mut descriptors = [rustix::event::PollFd::new(stream, events)];
         match rustix::event::poll(&mut descriptors, Some(&timeout)) {
             Ok(0) | Err(Errno::INTR) => continue,
             Ok(_) => {}
             Err(error) => return Err(error.into()),
         }
-        remaining(deadline)?;
-        if let Some(error) = stream.take_error()? {
-            return Err(error.into());
-        }
-        return Ok(stream);
+        return remaining(deadline).map(|_| ());
     }
+}
+
+fn wait_connected(stream: UnixStream, deadline: Instant) -> Result<UnixStream> {
+    wait_ready(&stream, rustix::event::PollFlags::OUT, deadline)?;
+    if let Some(error) = stream.take_error()? {
+        return Err(error.into());
+    }
+    Ok(stream)
 }
 
 fn connect_unix(path: &Path, deadline: Instant) -> Result<UnixStream> {
@@ -330,17 +338,17 @@ struct DeadlineStream {
 
 impl Read for DeadlineStream {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
-        deadline_io(self.deadline, || self.stream.read(bytes))
+        self.stream.io(self.deadline, false, |stream| stream.read(bytes))
     }
 }
 
 impl Write for DeadlineStream {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        deadline_io(self.deadline, || self.stream.write(bytes))
+        self.stream.io(self.deadline, true, |stream| stream.write(bytes))
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        deadline_io(self.deadline, || self.stream.flush())
+        self.stream.io(self.deadline, true, |stream| stream.flush())
     }
 }
 

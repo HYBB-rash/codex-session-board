@@ -51,6 +51,8 @@ impl Master {
                 "ClearAllForwardings=yes".into(),
                 "-o".into(),
                 "ForwardAgent=no".into(),
+                "-o".into(),
+                "IPQoS=none".into(),
             ],
         )?;
         let process = ManagedChild(

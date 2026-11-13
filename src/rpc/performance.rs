@@ -49,6 +49,7 @@ fn timed(reader: &mut dyn Rpc, identifier: &str) -> Result<(Value, f64, usize)> 
 fn compare(full: &mut dyn Rpc, compact: &mut dyn Rpc, threads: &[Value]) -> Result<Value> {
     let (mut before, mut after) = (Vec::new(), Vec::new());
     let (mut full_bytes, mut summary_bytes) = (0, 0);
+    let mut evidence = Vec::new();
     for batch in 1..=BATCHES {
         for entry in threads {
             let identifier = entry["id"].as_str().context("会话 ID 缺失")?;
@@ -64,6 +65,7 @@ fn compare(full: &mut dyn Rpc, compact: &mut dyn Rpc, threads: &[Value]) -> Resu
             }
             ensure!(summarize_turn(turn) == summarize_turn(&summary.0["data"][0]),
                 "摘要与完整结果的状态或输入证据不同");
+            evidence.push((identifier.to_owned(), summarize_turn(turn)));
             before.push(original.1);
             after.push(summary.1);
             full_bytes += original.2;
@@ -72,9 +74,11 @@ fn compare(full: &mut dyn Rpc, compact: &mut dyn Rpc, threads: &[Value]) -> Resu
         }
         ensure!(before.len() == SAMPLES * batch, "缺少 12 个已结束轮次的真实样本");
     }
+    ensure!(evidence.chunks(SAMPLES).all(|batch| batch == &evidence[..SAMPLES]),
+        "固定采样轮次或输入状态发生变化");
     Ok(json!({"full":distribution(&before)?,"summary":distribution(&after)?,
         "fullBytes":full_bytes,"summaryBytes":summary_bytes,"projectionEqual":true,
-        "batchCount":BATCHES,"readsPerBatch":SAMPLES}))
+        "batchCount":BATCHES,"readsPerBatch":SAMPLES,"fixedCohort":true}))
 }
 
 fn state_saves(root: &App, remote: &App, host: &Host, identifier: &str) -> Result<Value> {
