@@ -21,7 +21,7 @@ const snapshot = { states: { unknown: "待判断", in_progress: "进行中", rev
     { id: 'remote:["codex","other","archive-thread"]', title: "另一主机待归档会话", state: "to_archive", remote: true, hostId: "other", hostLabel: "另一主机", projectId: "other-project", canArchive: true },
   ].map(session => ({ note: "保留原备注", reason: "", version: 3, inputVersion: 5, sectionVersion: "native:source", canArchive: false, ...session })) };
 const writes = [], opens = [], mutations = [], responses = [], cases = [];
-let snapshotError = false, refreshError = false, automatic = false, holdSnapshot = false, heldSnapshot;
+let snapshotError = false, refreshError = false, automatic = false, holdSnapshot = false, heldSnapshot, pendingNew;
 const complete = async (status = 200, apply = status === 200, titlePending = false) => {
   for (let attempt = 0; attempt < 150 && !responses.length; attempt++) await delay(40);
   const { response, body } = responses.shift() || assert.fail("等待保存请求送达超时");
@@ -44,7 +44,8 @@ const server = http.createServer(async (request, response) => {
     writes.push(body);responses.push({ response, body });if (automatic) await complete();return;
   }
   if (request.url === "/api/open") opens.push(body.id);
-  if (["/api/archive", "/api/column-sort", "/api/new"].includes(request.url)) mutations.push({ path: request.url, body });
+  if (["/api/archive", "/api/column-sort", "/api/new", "/api/new/reset"].includes(request.url)) mutations.push({ path: request.url, body });
+  if (request.url === "/api/new") {pendingNew = response;return;}
   if (request.url === "/api/refresh" && refreshError) {
     response.writeHead(503, { "Content-Type": "application/json" });response.end('{"error":"刷新断线"}');return;
   }
@@ -93,6 +94,19 @@ const screenshot = async name => {
 try {
   await until('Boolean(document.querySelector(".card"))');
   const id = snapshot.sessions[0].id, otherId = snapshot.sessions[2].id;
+  await evaluate('window.pendingCreation=createSession("project");void 0');
+  await until('creating');
+  await check("新建等待中禁用拖动归档排序与筛选", 'byId("new-session").disabled && byId("host-filter").disabled && document.querySelector("[data-archive-all]").disabled && [...document.querySelectorAll(".card")].every(card=>!card.draggable) && [...document.querySelectorAll(".column-sort")].every(button=>button.disabled)');
+  await evaluate('(() => {const card=document.querySelector(".card"), event=new Event("dragstart",{cancelable:true});card.dispatchEvent(event);window.creationBlockedDrag=event.defaultPrevented;void moveCard(data.sessions[0],"review");void archiveSessions([data.sessions[2]],document.querySelector("[data-archive-all]"));void confirmArchiveInputs(data.sessions[2],document.querySelector("[data-archive-all]"));void changeColumnSort("to_archive",document.querySelector("#column-to_archive .column-sort"));byId("draft-restart").onclick();openEditor(data.sessions[0].id,"blocked");byId("edit-form").onsubmit({preventDefault(){}});})()');
+  await check("新建先开始时各写入口也保持互斥", 'creating && !saving && !dragging && window.creationBlockedDrag && !byId("editor").open');
+  assert.equal(writes.length, 0);assert.equal(mutations.length, 1);
+  assert.equal(mutations[0].path, "/api/new");assert.equal(mutations[0].body.projectId, "project");
+  assert.match(mutations[0].body.requestId, /^[0-9a-f-]{36}$/);
+  const expectedMutations = structuredClone(mutations);
+  assert(pendingNew, "必须实际挂起新建请求");
+  pendingNew.setHeader("Content-Type", "application/json");pendingNew.end('{"ok":true}');
+  await evaluate('window.pendingCreation');
+  await check("新建结束后恢复卡片和控件", '!creating && !saving && !byId("new-session").disabled && !byId("host-filter").disabled && [...document.querySelectorAll(".card")].every(card=>card.draggable)');
   holdSnapshot = true;
   await evaluate('window.staleRead=load();void 0');
   for (let attempt = 0; attempt < 100 && !heldSnapshot; attempt++) await delay(20);
@@ -117,7 +131,7 @@ try {
   await until('performance.now() > suppressOpenUntil');
   await evaluate('(() => {const card=document.querySelector(".card"), event=new Event("dragstart",{cancelable:true});card.dispatchEvent(event);window.blockedDrag=event.defaultPrevented;void archiveSessions(visibleSessions(),document.querySelector("[data-archive-all]"));void changeColumnSort("to_archive",document.querySelector("#column-to_archive .column-sort"));void confirmArchiveInputs(visibleSessions()[0],document.querySelector("[data-archive-all]"));void moveCard(visibleSessions()[0],"review");void openSession(moving.id);})()');
   await check("等待中直接调用也不能重复写入", 'window.blockedDrag && saving && moving.id === data.sessions[0].id && !opening');
-  assert.equal(writes.length, 1);assert.deepEqual(mutations, []);assert.deepEqual(opens, []);
+  assert.equal(writes.length, 1);assert.deepEqual(mutations, expectedMutations);assert.deepEqual(opens, []);
   await evaluate('document.querySelector(".card-title").click()');
   await until('!opening');
   assert.deepEqual(opens, [otherId]);cases.push("等待中允许打开另一主机的会话");
@@ -194,9 +208,15 @@ try {
   await screenshot("blocked-form");
   await complete(409, false);await settled();
   await check("表单失败保留草稿并说明未确认", 'byId("editor").open && !byId("state").disabled && !byId("note").readOnly && byId("note").value === "等待环境" && noteDraft(data.sessions[0].id) === "等待环境" && byId("feedback").textContent.includes("未收到保存确认")');
+  await evaluate('byId("cancel").click()');await until('!byId("editor").open');
+  await drag(otherId, "#column-blocked .cards");
+  await check("另一会话编辑框不显示前一会话失败面板", `editing.id === ${JSON.stringify(otherId)} && byId("move-feedback").hidden && byId("move-slot").contains(byId("move-feedback")) && unconfirmedMoves.has(data.sessions[0].id) && !unconfirmedMoves.has(editing.id) && byId("note").value === editing.note`);
+  await evaluate('byId("cancel").click()');await until('!byId("editor").open');
+  await drag(id, "#column-blocked .cards");
   await evaluate('byId("edit-form").requestSubmit()');
-  await complete();await settled();await until('!byId("editor").open');
-  await check("表单成功才移动且清除草稿", 'data.sessions[0].state === "blocked" && noteDraft(data.sessions[0].id) === null');
+  await until('!byId("move-feedback").hidden');
+  await complete();await settled();await until('!byId("editor").open && editing === null');
+  await check("表单成功才移动清草稿并保留收尾提示", 'data.sessions[0].state === "blocked" && noteDraft(data.sessions[0].id) === null && byId("move-feedback").classList.contains("saved") && !byId("move-feedback").hidden && byId("move-slot").contains(byId("move-feedback"))');
   automatic = true;await move("review");await settled();await delay(1800);
   await check("快响应不闪现搬运工", 'byId("move-feedback").hidden && !moving && !document.querySelector(".move-pending")');
   await evaluate('data.sessions[0].readOnly=true;render();void moveCard(data.sessions[0],"unknown")');
@@ -213,7 +233,7 @@ try {
   await until('typeof data !== "undefined" && data.sessions?.[0]?.state === "in_progress"');
   await check("重载读真实位置且不重放操作", '!moving && !document.querySelector(".move-pending")');
   assert.equal(writes.length, beforeReload, "重载不能重发写入");
-  assert.deepEqual(mutations, []);
+  assert.deepEqual(mutations, expectedMutations);
   await fs.writeFile(path.join(output, "transfer.json"), JSON.stringify({ cases, writes, opens, mutations }, null, 2));
 } catch (error) {
   await screenshot("failure");
@@ -222,6 +242,7 @@ try {
   throw error;
 } finally {
   for (const { response } of responses) response.destroy();
+  pendingNew?.destroy();
   const cleanup = await browser.close();
   server.closeAllConnections();await new Promise(resolve => server.close(resolve));
   await fs.writeFile(path.join(output, "cleanup.json"), JSON.stringify(cleanup));

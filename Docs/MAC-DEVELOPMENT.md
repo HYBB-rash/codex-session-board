@@ -105,6 +105,12 @@ python3 -m venv ~/.local/share/codex-session-board/delivery-venv
 `./scripts/check --prepare-commit` 同步 Cargo 与两个插件清单的版本。
 提交前须审阅并暂存本次代码和四份版本文件，再运行
 `./scripts/check --pre-commit`；源提交使用本机独立 Agent 签名器。
+提交钩子通过 `--test-threads=1` 串行运行完整测试，与完整验收适配器一致。
+用例内部的并发场景保持原样。SQLite writer fixture 的就绪消息单独占一行，
+避免单线程 harness 的无换行前缀破坏握手；子 fixture 显式单线程覆盖该故障模式，
+无需依赖 `RUST_TEST_THREADS=2`。
+本机并行完整套件两次触发原生隔离耗时门禁，而同一二进制的 36 项串行复查通过；
+失败日志与尚未定位的具体耗时来源继续保留，不修改断言、性能阈值或通过条件。
 Mac 的密钥保持本机管理。源码规则不因迁移放宽，完整验收仍使用原 31 条需求、模型和锁。
 测试临时目录使用 `/private/tmp`，避免 `/tmp` 符号链接和过长 Unix socket 路径。
 macOS 与 Linux 的 socket 队列差异采用对应的明确结果断言，原测试编号保留。

@@ -3,12 +3,11 @@
   "updated_at": "2026-11-13",
   "current_phase": {
     "id": "pr-integration-20261113",
-    "status": "in_progress",
+    "status": "pending_validation",
     "as_of": "2026-11-13",
-    "summary": "正在串行整合四个 PR。远端性能与私有 SSH 策略已通过完整门禁，继续整合主机筛选、阻塞原因选填和等待反馈。最终源码重新验证，目标客户端缺证继续保留，不部署日用插件。"
+    "summary": "四个 PR 的源码已整合到 main，候选 v0.3.68 的完整验收643项自动检查全部通过，31项需求17通过、14待真实环境证据，release_ready=false。已复核原作者发现的组合缺口；未安装或重载日用插件。远端合并结果以本轮回执为准。"
   },
   "active_tasks": [
-    "context/tasks/active/pr-integration-20261113.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",
@@ -23,10 +22,10 @@
     "context/tasks/active/state-incident-20261112.md"
   ],
   "known_open_issues": [
-    "远端性能已整合到本地主线，未部署。原 PR 的真实主机实测、长尾失败和固定三批采样均保留，不代签整合后源码与真实客户端验收。",
-    "主机筛选正在串行整合，未部署。原分支验证见context/handoffs/host-project-filter-20261113.md，不以隔离fixture代签真实客户端证据。",
-    "阻塞原因选填首次完整验收631/632项通过，既有插件退出超时；单项3次及最终完整632项复验通过。提交钩子另有既有RPC用例报os error 35，单项复验通过，两项偶发失败根因未定且保留。单线程环境另会改变既有子进程握手行，已实验确认并改用2线程提交复验。真实客户端14项外部证据待补；见context/handoffs/blocked-optional-20261113.md，不得用隔离fixture代签。",
-    "等待反馈正在整合到本地主线；原分支证据不代签组合源码。真实 Codex UI 验收仍待完成，见 context/handoffs/remote-transfer-feedback-20261113.md。",
+    "远端性能和私有SSH参数策略已整合。原作者补做六组ssh -G确认无新增阻断；两次并行完整套件的原生隔离长尾仍未定位，最终受控验收父调度为单线程，内部并发和原阈值保留。原PR实测不代签最终源码与真实客户端验收。",
+    "主机筛选已整合，最终全量自动检查覆盖49项筛选和48组布局；未安装日用插件。原分支记录见context/handoffs/host-project-filter-20261113.md，隔离fixture不代签真实客户端证据。",
+    "阻塞原因选填已整合，最终同指纹真实Rust fixture十项通过并确认停止。SQLite writer独立行握手已修复，子进程显式单线程覆盖原死锁模式；原PR退出超时与RPC os error 35失败记录保留。14项外部证据仍待补，见context/handoffs/blocked-optional-20261113.md。",
+    "等待反馈已整合，42项组合浏览器场景通过。原作者发现的新建反向写互斥、失败提示串卡和成功收尾时序均已修复并复核。真实Codex UI验收仍待完成，原分支记录见context/handoffs/remote-transfer-feedback-20261113.md。",
     "统一main的自动验证不代签目标环境证据。形式化来源曾出现一次未改动RPC恢复测试的偶发失败，单项复验与后续完整钩子通过，原因未确定；失败及主动中断记录保留。最终发布结论只依据合并后指纹的完整验收，缺少外部证据仍保持待验证。",
     "冻结92已按用户最新带遗留发布指令上线，新解包根529自动项再次全过；91 timer、92原MCP Null及首次共享target路径失败保留。release_ready仍false，完整31/16及UI/PWA/N/R2待完成，不以部署冒称验收通过。",
     "正式插件与HTTP已切92/c521/配置bd6978fc9a03aaa1，发布会话已核对serverInfo和实际面板。后续清理已卸载旧验收插件和市场，正式入口保留。初次正式面板旧82连接报版本不符，正式plugin/install后恢复。",
@@ -42,7 +41,7 @@
     "PWA安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。",
     "本机和M1专用会话真实归档已通过。正式进程已是 v0.2.63，原生侧栏取消归档后，下一次本机位置读回会恢复本地已确认卡片并保留备注。这次启动还没有完成一次本机位置读回。0.3.38 已实现 SQLite 兼容锁下私有副本热日志恢复，原库与日志不变；两项子进程回归通过，候选交付证据单独保留。"
   ],
-  "last_completed_task": "context/tasks/completed/remote-section-latency-20261113.md",
+  "last_completed_task": "context/tasks/completed/pr-integration-20261113.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
