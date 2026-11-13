@@ -1121,7 +1121,8 @@
       "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions"
     ],
     "UI-003": [
-      "test::ui_layout::long_content_and_project_filters_preserve_browser_column_geometry"
+      "test::ui_layout::long_content_and_project_filters_preserve_browser_column_geometry",
+      "test::ui_layout::transfer_feedback_waits_for_receipts_and_preserves_interaction"
     ],
     "MCP-001": [
       "test::column_sort::column_sort_app_and_mcp_expose_separate_settings_operation",
