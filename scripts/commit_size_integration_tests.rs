@@ -58,6 +58,73 @@ fn measure_index(root: &Path) -> Result<Statistics> {
     measure(root, snapshot.path())
 }
 
+fn measure_merge(root: &Path) -> Result<Option<Statistics>> {
+    let snapshot = tempdir()?;
+    fixture_git(
+        root,
+        &[
+            "checkout-index",
+            "--all",
+            &format!("--prefix={}/", snapshot.path().display()),
+        ],
+    )?;
+    merge_size::measure(root, snapshot.path())
+}
+
+#[test]
+fn merge_keeps_small_source_commits_without_limiting_their_combined_size() -> Result<()> {
+    let directory = fixture()?;
+    let root = directory.path();
+    fixture_git(root, &["switch", "-c", "feature"])?;
+    for name in ["first", "second"] {
+        fs::write(root.join(name), "imported\n".repeat(300))?;
+        save_baseline(root)?;
+    }
+    fixture_git(root, &["switch", "main"])?;
+    fixture_git(root, &["merge", "--no-ff", "--no-commit", "feature"])?;
+    assert!(!measure_index(root)?.allowed());
+    assert_eq!(measure_merge(root)?.unwrap(), Statistics::default());
+    for lines in [400, 401] {
+        fs::write(root.join("resolution"), "new\n".repeat(lines))?;
+        fixture_git(root, &["add", "--all"])?;
+        assert_eq!(measure_merge(root)?.unwrap().allowed(), lines == 400);
+    }
+    Ok(())
+}
+
+#[test]
+fn merge_rejects_an_oversized_source_commit() -> Result<()> {
+    let directory = fixture()?;
+    let root = directory.path();
+    fixture_git(root, &["switch", "-c", "feature"])?;
+    fs::write(root.join("oversized"), "new\n".repeat(401))?;
+    save_baseline(root)?;
+    fixture_git(root, &["switch", "main"])?;
+    fixture_git(root, &["merge", "--no-ff", "--no-commit", "feature"])?;
+    assert!(measure_merge(root).is_err());
+    Ok(())
+}
+
+#[test]
+fn ordinary_commits_cannot_claim_a_merge_size_exception() -> Result<()> {
+    let directory = fixture()?;
+    let root = directory.path();
+    fixture_git(
+        root,
+        &[
+            "commit",
+            "--allow-empty",
+            "-m",
+            "merge: pretend integration",
+        ],
+    )?;
+    fs::write(root.join("merge-message"), "new\n".repeat(401))?;
+    fixture_git(root, &["add", "--all"])?;
+    assert!(measure_merge(root)?.is_none());
+    assert!(!measure_index(root)?.allowed());
+    Ok(())
+}
+
 #[test]
 fn staged_line_limit_includes_400_and_rejects_401() -> Result<()> {
     let directory = fixture()?;
