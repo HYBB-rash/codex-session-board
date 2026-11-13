@@ -3,9 +3,9 @@
   "updated_at": "2026-11-13",
   "current_phase": {
     "id": "blocked-optional-20261113",
-    "status": "in_progress",
+    "status": "pending_validation",
     "as_of": "2026-11-13",
-    "summary": "在独立工作树实现用户授权的阻塞原因选填，保留弹窗提示和同列编辑，验证空备注、人工确认、并发保护及失败草稿；未部署。此前目标环境验收遗留继续保留。"
+    "summary": "独立工作树v0.3.58已实现阻塞原因选填，空原因、旧备注保留、主动清空、取消及失败空草稿恢复的隔离浏览器10项通过。最终完整验收632项自动检查通过，14项外部证据待补，退出2、release_ready=false；未合并、未部署。此前目标环境验收遗留继续保留。"
   },
   "active_tasks": [
     "context/tasks/active/blocked-optional-20261113.md",
@@ -19,6 +19,7 @@
     "context/tasks/active/state-incident-20261112.md"
   ],
   "known_open_issues": [
+    "阻塞原因选填首次完整验收631/632项通过，既有插件退出超时；单项3次及最终完整632项复验通过。提交钩子另有既有RPC用例报os error 35，单项复验通过，两项偶发失败根因未定且保留。单线程环境另会改变既有子进程握手行，已实验确认并改用2线程提交复验。真实客户端14项外部证据待补；见context/handoffs/blocked-optional-20261113.md，不得用隔离fixture代签。",
     "统一main的自动验证不代签目标环境证据。形式化来源曾出现一次未改动RPC恢复测试的偶发失败，单项复验与后续完整钩子通过，原因未确定；失败及主动中断记录保留。最终发布结论只依据合并后指纹的完整验收，缺少外部证据仍保持待验证。",
     "冻结92已按用户最新带遗留发布指令上线，新解包根529自动项再次全过；91 timer、92原MCP Null及首次共享target路径失败保留。release_ready仍false，完整31/16及UI/PWA/N/R2待完成，不以部署冒称验收通过。",
     "正式插件与HTTP已切92/c521/配置bd6978fc9a03aaa1，发布会话已核对serverInfo和实际面板。后续清理已卸载旧验收插件和市场，正式入口保留。初次正式面板旧82连接报版本不符，正式plugin/install后恢复。",
