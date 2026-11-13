@@ -6,7 +6,7 @@ allowed_write_set: scripts、tests、验收绑定、CI、项目规则、相关�
 base_commit: 1683bd4a6d1a42eddc066f42355b328ea7a2f3c4
 worktree_path: /Users/hongyong/.codex/worktrees/four-pr-rehearsal/codex-session-board
 coordinator: 01a1d38b-1ef8-7392-ba78-caa7935c5ab4
-status: validating_candidate
+status: completed
 
 用户授权先落实提交、PR、集成候选与发布四层规则，再重演原四 PR 到正式插件部署。
 普通开发提交保留 13 文件、400 行，完整测试改到候选，版本仅在冻结候选时更新。
@@ -22,3 +22,18 @@ status: validating_candidate
 0.3.74 首轮 Linux 670 项仅源码归档指纹检查失败：新增 validate 与 promote
 没有列入无扩展名脚本的打包清单。本地已复现，修复后必须重新冻结候选及双平台验证；
 原失败报告保留，不覆盖原版本，不改断言，也不使用旧源码的通过记录。
+
+最终 0.3.75 源码 e6f186a141579154a9a8f50f252bc57d9203b726 已通过双平台门禁，
+正常快进 main，并部署同一不可变包；渠道提交 6f39a1c140ec5344d83c41016d1a03acebca349b。
+Linux 670 项、Mac 659 项全部通过，完整 release 范围仍为 17 项通过、14 项缺证，
+release_ready=false，不宣称完整 31 条完成。
+当前会话 board_view 返回 ready，当前 ChatGPT 客户端实际加载新进程并展示原生面板。
+原生本机、项目 8 条、搜索 1 条及恢复全部 38 条通过；
+实际 HTTP 页面五组交互通过，早提示 1523ms、慢提示 8052ms，
+测试卡片恢复原自动状态与空备注，全部 38 条原备注保留，配置哈希和数据身份不变。
+新源码真实 SSH 性能门禁通过，仅在临时看板数据库写入。
+2026-11-14 03:50:07 +08 已完成实际部署验证，最终计时包含后续收尾检查。
+完整报告与失败材料保存在：
+/Users/hongyong/.codex/visualizations/2026/11/13/01a1d38b-1ef8-7392-ba78-caa7935c5ab4/four-pr-delivery-20261114/
+本地收尾提交仅改 context，不是新发布；main 保持已验证并部署的 e6f186a，
+不为补写记录重新打包，也不将旧候选门禁冒充为新提交的验证。

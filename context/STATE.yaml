@@ -3,12 +3,11 @@
   "updated_at": "2026-11-14",
   "current_phase": {
     "id": "batch-policy-delivery-20261114",
-    "status": "validating_candidate",
+    "status": "completed",
     "as_of": "2026-11-14",
-    "summary": "新规则本地检查通过，GitHub主线已要求Actions的Candidate gate且禁止强推删除。原四PR已按固定原头完成真实合并，复用已审组合修复并同步当前主线；正在冻结双平台候选，日用插件尚未改变，31条外部缺证边界保留。"
+    "summary": "分层规则已落地并完成原四PR到日用插件的完整重演。修复首轮打包遗漏后，0.3.75/e6f186a双平台670/659项全过，主线正常快进，固定不可变包已在当前ChatGPT客户端加载并现场验证；配置、38条原备注及测试卡片保全。完整31条仍有14项缺证，release_ready=false。收尾context为独立本地记录，主线保持已验证发布源码。"
   },
   "active_tasks": [
-    "context/tasks/active/batch-policy-delivery-20261114.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",
@@ -23,6 +22,7 @@
     "context/tasks/active/state-incident-20261112.md"
   ],
   "known_open_issues": [
+    "0.3.75/e6f186a已在当前客户端验证，原生筛选及实际HTTP交互通过，真实SSH性能门禁通过；这不代签原生容器指针拖动、所有远端主机及完整31条外部证据。完整报告17通过、14待验，release_ready=false。首轮0.3.74打包遗漏失败和Mac取消均保留，后续只依据0.3.75的同源码报告。",
     "远端性能和私有SSH参数策略已整合；0.3.71整合源码真实SSH隔离门禁通过，20次保存中位96.8ms、p95 159.9ms，36次摘要470ms。两次并行完整套件的原生隔离长尾仍未定位，受控父调度为单线程，内部并发和原阈值保留；不代签全部主机及原生UI。",
     "主机筛选已整合，49项筛选和48组布局通过；0.3.71当前客户端已接管，实际原生面板本机/全部主机切换、项目8条、搜索1条及恢复38条均通过。日用配置仅本机，未启用远程来代签多主机现场证据。原分支记录见context/handoffs/host-project-filter-20261113.md。",
     "阻塞原因选填已整合，同指纹真实Rust fixture十项通过并停止。日用0.3.71正式HTTP页面验证同列拖入、取消不写、纯空白保存、非空备注及显式清除；测试卡片恢复自动和空备注。原生容器拖动仍缺证，14项全局外部证据保持待补；原失败记录保留。",
@@ -42,7 +42,7 @@
     "PWA安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。",
     "本机和M1专用会话真实归档已通过。正式进程已是 v0.2.63，原生侧栏取消归档后，下一次本机位置读回会恢复本地已确认卡片并保留备注。这次启动还没有完成一次本机位置读回。0.3.38 已实现 SQLite 兼容锁下私有副本热日志恢复，原库与日志不变；两项子进程回归通过，候选交付证据单独保留。"
   ],
-  "last_completed_task": "context/tasks/completed/deploy-merged-plugin-20261113.md",
+  "last_completed_task": "context/tasks/completed/batch-policy-delivery-20261114.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
