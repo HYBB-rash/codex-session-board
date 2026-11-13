@@ -21,7 +21,12 @@ class CandidateGateTests(unittest.TestCase):
         def execute(name, arguments, destination):
             (destination / f"{name}.log").write_text("actual step transcript\n")
             if "--report" in arguments:
-                report = {"automated_passed": True, "build_sha256": "e" * 64 if mismatch else identity["fingerprint"]}
+                report = {
+                    "automated_passed": True,
+                    "build_sha256": "e" * 64 if mismatch else identity["fingerprint"],
+                    "scope": "release", "passed": True, "release_ready": True,
+                    "tests": [{"status": "pass"}], "requirements": [{"status": "pass"}],
+                }
                 (destination / "automated.json").write_text(json.dumps(report))
             return {"name": name, "arguments": arguments, "returncode": 0, "seconds": 1}
 
@@ -52,3 +57,22 @@ class CandidateGateTests(unittest.TestCase):
         self.assertEqual(report["scope"], "candidate")
         self.assertEqual(len(report["automated_sha256"]), 64)
         self.assertEqual(len(report["steps"]), 3)
+
+    def test_candidate_retains_pending_live_evidence_without_claiming_release_ready(self):
+        report = {
+            "scope": "release", "passed": False, "release_ready": False,
+            "automated_passed": True, "tests": [{"status": "pass"}],
+            "requirements": [{"status": "pass"}, {"status": "pending"}],
+        }
+        self.assertTrue(candidate.acceptance_outcome(report, 2))
+        self.assertFalse(candidate.acceptance_outcome(report, 0))
+        report["release_ready"] = True
+        self.assertFalse(candidate.acceptance_outcome(report, 2))
+
+    def test_candidate_cannot_treat_skipped_tests_as_pending_live_evidence(self):
+        report = {
+            "scope": "release", "passed": False, "release_ready": False,
+            "automated_passed": True, "tests": [{"status": "skip"}],
+            "requirements": [{"status": "pending"}],
+        }
+        self.assertFalse(candidate.acceptance_outcome(report, 2))

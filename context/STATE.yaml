@@ -3,9 +3,9 @@
   "updated_at": "2026-11-14",
   "current_phase": {
     "id": "batch-policy-delivery-20261114",
-    "status": "implementing",
+    "status": "validating_candidate",
     "as_of": "2026-11-14",
-    "summary": "用户授权落实提交快检、PR审阅、组合门禁和发布四层规则，再重演原四PR到正式插件部署。旧实验快照已保存并校验，当前从主线1683bd4实现规则；尚未改变日用插件，完整31条外部缺证边界保留。"
+    "summary": "新规则本地检查通过，GitHub主线已要求Actions的Candidate gate且禁止强推删除。原四PR已按固定原头完成真实合并，复用已审组合修复并同步当前主线；正在冻结双平台候选，日用插件尚未改变，31条外部缺证边界保留。"
   },
   "active_tasks": [
     "context/tasks/active/batch-policy-delivery-20261114.md",

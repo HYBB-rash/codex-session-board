@@ -9,7 +9,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.validate_candidate import ROOT, git, identity
+from scripts.validate_candidate import ROOT, acceptance_outcome, git, identity
 
 JOBS = {
     "Candidate (linux-x86_64)", "Candidate (macos-arm64)",
@@ -53,8 +53,9 @@ def validate_artifact(directory, source, label):
     if (hashlib.sha256(report.read_bytes()).hexdigest() != record["automated_sha256"]
             or automatic["automated_passed"] is not True
             or automatic["build_sha256"] != source["fingerprint"]
-            or len(record["steps"]) != 3
-            or any(step["returncode"] != 0 for step in record["steps"])):
+            or [step["name"] for step in record["steps"]] != ["step-1", "step-2", "step-3"]
+            or any(step["returncode"] != 0 for step in record["steps"][:2])
+            or not acceptance_outcome(automatic, record["steps"][2]["returncode"])):
         raise ValueError("Candidate report is missing, unsuccessful or modified")
     for step in record["steps"]:
         log = directory / f"{step['name']}.log"

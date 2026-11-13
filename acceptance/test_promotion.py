@@ -47,17 +47,22 @@ class PromotionTests(unittest.TestCase):
                     promotion.validate_run(run, self.jobs, self.source, "owner/repo")
 
     def artifact(self, directory):
-        report = {"automated_passed": True, "build_sha256": self.source["fingerprint"]}
+        report = {
+            "automated_passed": True, "build_sha256": self.source["fingerprint"],
+            "scope": "release", "passed": True, "release_ready": True,
+            "tests": [{"status": "pass"}], "requirements": [{"status": "pass"}],
+        }
         (directory / "automated.json").write_text(json.dumps(report))
-        (directory / "step-1.log").write_text("validation transcript")
+        for number in range(1, 4):
+            (directory / f"step-{number}.log").write_text("validation transcript")
         return {
             "scope": "candidate", "passed": True,
             "source": {**self.source, "platform": "darwin", "machine": "arm64"},
             "automated_sha256": hashlib.sha256((directory / "automated.json").read_bytes()).hexdigest(),
             "steps": [
-                {"name": "step-1", "returncode": 0,
+                {"name": f"step-{number}", "returncode": 0,
                  "log_sha256": hashlib.sha256((directory / "step-1.log").read_bytes()).hexdigest()}
-                for _ in range(3)
+                for number in range(1, 4)
             ],
         }
 

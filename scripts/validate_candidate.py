@@ -63,6 +63,20 @@ def execute(name, arguments, output):
     }
 
 
+def acceptance_outcome(report, returncode):
+    requirements = report["requirements"]
+    tests = report["tests"]
+    ready = report["release_ready"]
+    return (
+        report["scope"] == "release" and report["automated_passed"] is True
+        and type(ready) is bool and report["passed"] is ready
+        and returncode == (0 if ready else 2) and bool(tests) and bool(requirements)
+        and all(test["status"] == "pass" for test in tests)
+        and all(item["status"] in ("pass", "pending") for item in requirements)
+        and ready == all(item["status"] == "pass" for item in requirements)
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--scope", choices=("pr", "candidate"), default="candidate")
@@ -84,7 +98,7 @@ def main():
     ]
     if arguments.scope == "candidate":
         commands.append([
-            "python3", "scripts/verify_acceptance.py", "--scope", "automated",
+            "python3", "scripts/verify_acceptance.py", "--scope", "release",
             "--report", str(output / "automated.json"),
         ])
     else:
@@ -93,16 +107,21 @@ def main():
         step = execute(f"step-{number + 1}", command, output)
         record["steps"].append(step)
         (output / "VALIDATION.json").write_text(json.dumps(record, indent=2) + "\n")
-        if step["returncode"]:
+        accepted = step["returncode"] == 0
+        if arguments.scope == "candidate" and number == 2:
+            accepted = acceptance_outcome(
+                json.loads((output / "automated.json").read_text()), step["returncode"])
+        if not accepted:
             print((output / f"{step['name']}.log").read_text()[-12000:], file=sys.stderr)
             return 1
     if identity() != before or git("status", "--porcelain", "--untracked-files=all"):
         raise ValueError("验证期间源码或提交身份发生变化")
     if arguments.scope == "candidate":
         automatic = json.loads((output / "automated.json").read_text())
-        if not automatic["automated_passed"] or automatic["build_sha256"] != before["fingerprint"]:
+        if automatic["build_sha256"] != before["fingerprint"]:
             raise ValueError("自动报告与候选身份不一致")
         record["automated_sha256"] = hashlib.sha256((output / "automated.json").read_bytes()).hexdigest()
+        record["release_ready"] = automatic["release_ready"]
     record.update(passed=True, finished_at=datetime.now(timezone.utc).isoformat())
     (output / "VALIDATION.json").write_text(json.dumps(record, indent=2) + "\n")
     print(json.dumps(record, ensure_ascii=False))

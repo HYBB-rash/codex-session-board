@@ -1696,6 +1696,8 @@
       "acceptance.test_candidate.CandidateGateTests.test_candidate_rejects_new_uncommitted_changes",
       "acceptance.test_candidate.CandidateGateTests.test_candidate_rejects_a_report_for_different_source",
       "acceptance.test_candidate.CandidateGateTests.test_candidate_records_identity_and_report_hash_after_all_checks",
+      "acceptance.test_candidate.CandidateGateTests.test_candidate_retains_pending_live_evidence_without_claiming_release_ready",
+      "acceptance.test_candidate.CandidateGateTests.test_candidate_cannot_treat_skipped_tests_as_pending_live_evidence",
       "acceptance.test_promotion.PromotionTests.test_promotion_rejects_a_successful_run_for_another_commit",
       "acceptance.test_promotion.PromotionTests.test_promotion_rejects_missing_failed_skipped_and_neutral_jobs",
       "acceptance.test_promotion.PromotionTests.test_promotion_rejects_wrong_repository_workflow_or_branch",
