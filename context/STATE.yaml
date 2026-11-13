@@ -3,9 +3,9 @@
   "updated_at": "2026-11-13",
   "current_phase": {
     "id": "remote-performance-20261113",
-    "status": "in_progress",
+    "status": "implemented_verified_pending_full_acceptance",
     "as_of": "2026-11-13",
-    "summary": "在独立工作树实现远端连接复用、保留全部输入证据的远端状态摘要压缩和性能门禁。随后用真实主机验证状态操作与读取收益，不重载正式插件。"
+    "summary": "远端连接复用及保留全部输入的摘要压缩已实现。真实 Fedora 最终 v0.3.60 连续两轮门禁通过：保存中位数316.50→97.04/99.70ms，36次读取1308.79→538.21/544.36ms，返回JSON量减少99.1%。完整验证637项自动全过，14条需求缺外部证据，release_ready=false。未部署日用插件。"
   },
   "active_tasks": [
     "context/tasks/active/pr-integration-20261113.md",
@@ -20,6 +20,7 @@
     "context/tasks/active/state-incident-20261112.md"
   ],
   "known_open_issues": [
+    "远端性能候选位于独立工作树 codex-session-board-remote-perf-20261113 / codex/remote-performance-20261113，未合并或部署。真实性能与受控回归测试不替代原生客户端拖拽及三十一条完整验收；单批长尾失败回执保留，最终固定三批采样保留全部结果且单位操作预算不变。",
     "统一main的自动验证不代签目标环境证据。形式化来源曾出现一次未改动RPC恢复测试的偶发失败，单项复验与后续完整钩子通过，原因未确定；失败及主动中断记录保留。最终发布结论只依据合并后指纹的完整验收，缺少外部证据仍保持待验证。",
     "冻结92已按用户最新带遗留发布指令上线，新解包根529自动项再次全过；91 timer、92原MCP Null及首次共享target路径失败保留。release_ready仍false，完整31/16及UI/PWA/N/R2待完成，不以部署冒称验收通过。",
     "正式插件与HTTP已切92/c521/配置bd6978fc9a03aaa1，发布会话已核对serverInfo和实际面板。后续清理已卸载旧验收插件和市场，正式入口保留。初次正式面板旧82连接报版本不符，正式plugin/install后恢复。",
