@@ -26,6 +26,7 @@ if "-M" in args:
 if state.get("connectDelay") and not any(value.startswith("ControlPath=") for value in args):
     time.sleep(state["connectDelay"])
 payload=shlex.split(args[-1])[-1]
+if "def compact(payload):" in payload: event("compact")
 marker=re.findall(r"[0-9a-f]{32}",payload)[-1]
 mode="proxy" if "exec codex app-server proxy" in payload else "clock" if "import time;" in payload else "probe"
 event(mode)

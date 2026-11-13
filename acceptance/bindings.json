@@ -305,6 +305,8 @@
       "lib::codex_session_board::formal::tests::native_session_control_matches_the_store_on_every_reachable_edge"
     ],
     "AUTO-006": [
+      "lib::codex_session_board::rpc::summary_tests::remote_summary_projection_and_wire_performance_gate",
+      "lib::codex_session_board::rpc::summary_tests::observer_uses_remote_summary_and_archive_writer_keeps_full_input_verification",
       "lib::codex_session_board::formal::paths::unread_runtime_rejection_preserves_the_entire_database",
       "lib::codex_session_board::formal::paths::unread_lost_ack_rejection_preserves_the_entire_database",
       "lib::codex_session_board::formal::time::first_phase_distinguishes_older_equal_and_newer_observation_times",

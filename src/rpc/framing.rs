@@ -14,7 +14,12 @@ impl DesktopConnection {
             timeout
         };
         let deadline = deadline_after(budget)?;
-        let (transport, peer) = open(binding, PROXY, deadline)?;
+        let operation = if matches!(role, Role::Reader | Role::RemoteObserver) {
+            format!("exec python3 -B -c {}", login::quote(include_str!("../../scripts/remote_turn_proxy.py"))?)
+        } else {
+            PROXY.to_owned()
+        };
+        let (transport, peer) = open(binding, &operation, deadline)?;
         let mut connection =
             Self::handshake_bound(transport, timeout, role, deadline, Some((binding, &peer)))?;
         connection.remote_binding = Some(binding.clone());
