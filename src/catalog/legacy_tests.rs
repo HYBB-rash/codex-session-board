@@ -32,6 +32,12 @@ fn verifies_identity_and_retains_only_current_mapping() -> Result<()> {
     assert_eq!(mismatch.account_status, "identityMismatch");
     assert!(mismatch.projects.is_empty());
     assert!(mismatch.assignments.is_empty());
+    state["local-projects"]["bad"] = json!({"id":"bad","name":"坏根","rootPaths":[123]});
+    assert!(
+        Projection::parse(&state, "/target/codex", &account)?
+            .issues
+            .contains(&"invalidProject:bad".into())
+    );
     state["electron-renderer-content-owner"] = json!(33);
     assert_eq!(
         Projection::parse(&state, "/target/codex", &account)?.account_status,
