@@ -14,8 +14,9 @@ impl DesktopConnection {
             timeout
         };
         let deadline = deadline_after(budget)?;
-        let operation = if matches!(role, Role::Reader | Role::RemoteObserver) {
-            format!("exec python3 -B -c {}", login::quote(include_str!("../../scripts/remote_turn_proxy.py"))?)
+        let operation = if matches!(role, Role::Reader | Role::RemoteObserver | Role::CatalogReader) {
+            let argument = if role == Role::CatalogReader { " --catalog" } else { "" };
+            format!("exec python3 -B -c {}{argument}", login::quote(include_str!("../../scripts/remote_turn_proxy.py"))?)
         } else {
             PROXY.to_owned()
         };

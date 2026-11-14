@@ -49,7 +49,7 @@ fn same_user_wrong_backend_is_rejected_before_rpc_handshake_for_every_role() -> 
             ..crate::config::Config::default()
         };
         for role in [Role::Reader, Role::NativeReader, Role::DraftWriter,
-            Role::TitleWriter, Role::ArchiveWriter, Role::RemoteObserver] {
+            Role::TitleWriter, Role::ArchiveWriter, Role::RemoteObserver, Role::CatalogReader] {
             let error = match DesktopConnection::configured(&config, Duration::from_secs(1), role) {
                 Err(error) => error,
                 Ok(_) => bail!("错误后台被接受"),
