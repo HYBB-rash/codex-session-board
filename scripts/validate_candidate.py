@@ -13,15 +13,16 @@ sys.path.insert(0, str(ROOT))
 from scripts.verify_acceptance import fingerprint
 
 
-def git(*arguments):
-    return subprocess.check_output(["git", *arguments], cwd=ROOT, text=True).strip()
+def git(*arguments, root=None):
+    return subprocess.check_output(["git", *arguments], cwd=root or ROOT, text=True).strip()
 
 
-def identity():
-    bindings = json.loads((ROOT / "acceptance/bindings.json").read_text())
+def identity(root=None):
+    root = root or ROOT
+    bindings = json.loads((root / "acceptance/bindings.json").read_text())
     return {
-        "commit": git("rev-parse", "HEAD"), "tree": git("rev-parse", "HEAD^{tree}"),
-        "fingerprint": fingerprint(ROOT, bindings["fingerprint_paths"]),
+        "commit": git("rev-parse", "HEAD", root=root), "tree": git("rev-parse", "HEAD^{tree}", root=root),
+        "fingerprint": fingerprint(root, bindings["fingerprint_paths"]),
         "platform": sys.platform, "machine": platform.machine(),
     }
 
@@ -50,12 +51,13 @@ def related_commands(base):
     return commands
 
 
-def execute(name, arguments, output):
+def execute(name, arguments, output, root=None, timeout=1800):
     started = time.monotonic()
     print(f"[候选验证] {name}", flush=True)
     log = output / f"{name}.log"
     with log.open("w") as stream:
-        process = subprocess.run(arguments, cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT)
+        process = subprocess.run(arguments, cwd=root or ROOT, stdout=stream,
+                                 stderr=subprocess.STDOUT, timeout=timeout)
     return {
         "name": name, "arguments": arguments, "returncode": process.returncode,
         "seconds": time.monotonic() - started,
@@ -82,8 +84,17 @@ def main():
     parser.add_argument("--scope", choices=("pr", "candidate", "preflight"), default="candidate")
     parser.add_argument("--base", default="origin/main")
     parser.add_argument("--integration-base")
+    parser.add_argument("--project", type=Path)
+    parser.add_argument("--expect-head")
+    parser.add_argument("--risk", action="append", default=[])
     parser.add_argument("--output", required=True, type=Path)
     arguments = parser.parse_args()
+    if arguments.scope == "pr":
+        from scripts.pr_delivery import validate
+        return validate(arguments.project or ROOT, arguments.base, arguments.output,
+                        arguments.expect_head, arguments.risk)
+    if arguments.project or arguments.expect_head or arguments.risk:
+        raise ValueError("PR source and risk options are only valid for --scope pr")
     output = arguments.output.resolve()
     if output.is_relative_to(ROOT):
         raise ValueError("验证记录必须放在源码之外")

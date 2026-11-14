@@ -1,13 +1,14 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-11-14",
+  "updated_at": "2026-11-15",
   "current_phase": {
-    "id": "pr6-integration-20261114",
-    "status": "completed",
-    "as_of": "2026-11-14",
-    "summary": "PR #6 后台归属与 PR #7 图标随0.3.85/a2d094a进入主线，43604895442完整双平台门禁通过，Linux723/Mac712项及实际不可变包启动清理确认。核心1小时44分29秒，其中最终CI17分31秒，审查修复、取消、失败及网络恢复全部计入。记录同步和清理单列；未操作日用客户端，验收独立。"
+    "id": "pr-delivery-checks-20261115",
+    "status": "active",
+    "as_of": "2026-11-15",
+    "summary": "复用现有PR验证入口，落实最终代码的通用检查、按改动选择的风险场景与源码绑定报告。实现后以固定历史PR故障及当前正确实现演练，分别记录问题检出和耗时；不升版、发布或操作日用客户端。"
   },
   "active_tasks": [
+    "context/tasks/active/pr-delivery-checks-20261115.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",
@@ -59,7 +60,7 @@
   },
   "verification": {
     "status": "passed",
-    "last_checked_at": "2026-11-14",
+    "last_checked_at": "2026-11-15",
     "method": "sh scripts/verify_context.sh",
     "boundary": "Project-local context files and declared local paths only."
   }

@@ -106,7 +106,7 @@ def run_rust(targets, names, selected=None):
     return results, timings
 
 
-def run(request, prefixes=None):
+def run(request, prefixes=None, include_python=False):
     if request.get("protocol") != 1:
         raise ValueError("Unsupported adapter protocol")
     requested = request.get("tests")
@@ -127,16 +127,19 @@ def run(request, prefixes=None):
         )))
     available = set(names) | set(python_names)
     if prefixes is not None and (
-        not prefixes or any(not any(name.startswith(prefix + "::") for name in names)
+        not prefixes and not include_python
+        or any(not any(name.startswith(prefix + "::") for name in names)
                             for prefix in prefixes)
     ):
         raise ValueError("An integration test group is missing")
     selected = available if prefixes is None else {
         name for name in names if any(name.startswith(prefix + "::") for prefix in prefixes)
     }
+    if include_python:
+        selected.update(python_names)
     outcomes, rust_timings = run_rust(targets, names, selected & set(names))
     timings.extend(rust_timings)
-    if prefixes is None:
+    if prefixes is None or include_python:
         started = time.monotonic()
         python_result = python_tests({"protocol": 1, "tests": python_names})
         outcomes.update({item["id"]: item for item in python_result["results"]})
