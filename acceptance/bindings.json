@@ -1330,6 +1330,8 @@
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_wrong_architecture_is_rejected_before_stopping_or_installing"
     ],
     "BOUNDARY-001": [
+      "test::native_authority::sidebar_origin::active_backend_b_never_writes_sections_or_projects_to_same_user_client_a",
+      "lib::codex_session_board::rpc::authority::sidebar::tests::shared_sibling_client_requires_explicit_backend_client_and_launcher_epochs",
       "lib::codex_session_board::formal::tests::remote_draft_stages_match_the_store_on_every_edge",
       "lib::codex_session_board::remote::connections::tests::explicit_request_waits_until_a_connection_exists",
       "lib::codex_session_board::remote::connections::tests::failed_manual_connection_stops_when_auto_connect_is_off",
@@ -1581,6 +1583,12 @@
       "lib::codex_session_board::remote::connections::tests::failed_manual_connection_stops_when_auto_connect_is_off"
     ],
     "DELIVERY-001": [
+      "acceptance.test_package_startup.PackageStartupTests.test_connect_and_send_share_the_total_startup_budget",
+      "acceptance.test_package_startup.PackageStartupTests.test_child_exit_after_total_deadline_cannot_pass",
+      "acceptance.test_package_startup.PackageStartupTests.test_mcp_response_stream_keeps_one_total_deadline",
+      "acceptance.test_package_startup.PackageStartupTests.test_fixture_channel_preserves_all_mcp_startup_requests_and_runtime_identity",
+      "acceptance.test_package_startup.PackageStartupTests.test_mcp_failure_wrong_backend_or_different_service_cannot_pass",
+      "acceptance.test_package_startup.PackageStartupTests.test_missing_replies_errors_wrong_version_resource_or_empty_snapshot_fail",
       "acceptance.test_delivery.DeliveryTests.test_source_preflight_checks_relocated_fingerprint_without_building_a_binary",
       "acceptance.test_delivery.DeliveryTests.test_source_preflight_detects_an_omitted_extensionless_entry",
       "acceptance.test_saved_release.SavedReleaseTests.test_local_then_ci_reuses_exact_archive_without_building",
@@ -1608,6 +1616,23 @@
       "acceptance.test_delivery.DeliveryTests.test_channel_versions_are_monotonic_and_bind_immutable_payloads"
     ],
     "GATE-001": [
+      "acceptance.test_integrate.IntegrateTests.test_run_selection_uses_exact_source_branch_and_latest_attempt",
+      "acceptance.test_integrate.IntegrateTests.test_wrong_checkout_dirty_source_or_changed_branch_blocks_resume",
+      "acceptance.test_integrate.IntegrateTests.test_failed_run_is_recorded_without_promoting_or_restarting_the_clock",
+      "acceptance.test_promotion.PromotionTests.test_actual_package_must_be_immutable_and_match_the_started_binary",
+      "acceptance.test_promotion.PromotionTests.test_scoped_promotion_recomputes_plan_and_rejects_omitted_or_failed_tests",
+      "acceptance.test_integration_plan.IntegrationPlanTests.test_special_unknown_paths_never_become_ui_paths",
+      "acceptance.test_integration_plan.IntegrationPlanTests.test_wrong_working_directory_cannot_verify_another_implementation",
+      "acceptance.test_integration_plan.IntegrationPlanTests.test_real_replay_retains_ui_scope_even_when_main_already_has_the_pr",
+      "acceptance.test_integration_plan.IntegrationPlanTests.test_release_record_must_bind_the_exact_parent_and_preserve_other_rules",
+      "acceptance.test_integration_plan.IntegrationPlanTests.test_ui_scope_rejects_unknown_dependency_deletion_and_mode_changes",
+      "acceptance.test_integration_plan.IntegrationPlanTests.test_only_version_fields_are_exempted",
+      "acceptance.test_integration_plan.IntegrationPlanTests.test_replay_cannot_invent_an_ingress_or_hide_actual_changes",
+      "acceptance.test_integration_plan.IntegrationPlanTests.test_partial_results_cannot_be_presented_as_complete_or_successful",
+      "acceptance.test_rust_adapter.RustAdapterTests.test_target_rejects_missing_duplicate_unexpected_and_false_success",
+      "acceptance.test_rust_adapter.RustAdapterTests.test_target_preserves_failed_and_ignored_outcomes",
+      "acceptance.test_rust_adapter.RustAdapterTests.test_only_isolated_tools_receive_multiple_threads",
+      "acceptance.test_rust_adapter.RustAdapterTests.test_selection_does_not_execute_unselected_groups",
       "acceptance.test_verify_plugin.VerifyPluginTests.test_missing_reconnect_dependency_is_recorded_as_failure",
       "acceptance.test_smoke_cli.SmokeCliTests.test_live_write_and_recovery_reject_other_cards_and_concurrent_changes",
       "acceptance.test_smoke_cli.SmokeCliTests.test_unverified_or_nonlocal_receipts_stop_before_opening_a_browser",
@@ -1732,6 +1757,7 @@
       "acceptance.test_candidate.CandidateGateTests.test_candidate_rejects_new_uncommitted_changes",
       "acceptance.test_candidate.CandidateGateTests.test_candidate_rejects_a_report_for_different_source",
       "acceptance.test_candidate.CandidateGateTests.test_candidate_records_identity_and_report_hash_after_all_checks",
+      "acceptance.test_candidate.CandidateGateTests.test_scoped_candidate_preserves_plan_and_pending_checks_and_rejects_omissions",
       "acceptance.test_candidate.CandidateGateTests.test_candidate_retains_pending_live_evidence_without_claiming_release_ready",
       "acceptance.test_candidate.CandidateGateTests.test_candidate_cannot_treat_skipped_tests_as_pending_live_evidence",
       "acceptance.test_candidate.ContextGateTests.test_context_records_preserve_the_entire_implementation",

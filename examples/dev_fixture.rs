@@ -10,6 +10,8 @@ use std::time::Duration;
 mod state;
 #[path = "dev_fixture/client.rs"]
 mod client;
+#[path = "dev_fixture/hosted.rs"]
+mod hosted;
 
 fn main() -> Result<()> {
     let arguments: Vec<_> = std::env::args().collect();
@@ -71,7 +73,7 @@ fn listener(root: &Path, name: &str) -> Result<UnixListener> {
     Ok(listener)
 }
 
-struct BoardProcess(std::process::Child);
+pub(crate) struct BoardProcess(std::process::Child);
 
 impl Drop for BoardProcess {
     fn drop(&mut self) {
@@ -83,13 +85,15 @@ impl Drop for BoardProcess {
 fn serve(root: &Path, program: Option<&String>) -> Result<()> {
     let desktop = listener(root, "desktop/rpc.sock")?;
     let sidebar = listener(root, "sidebar/rpc.sock")?;
+    let mcp = program.map(|_| listener(root, "mcp.sock")).transpose()?;
+    let authority = codex_session_board::rpc::authority::LocalAuthority::owned_listener(&desktop)?;
+    std::fs::write(root.join("fixture-authority.json"), serde_json::to_vec(&authority)?)?;
     let surface = Arc::new(Mutex::new(state::Surface::load(root)?));
     let mut board = program.map(|program| -> Result<BoardProcess> {
         let output = std::fs::OpenOptions::new().append(true).create(true).open(root.join("service.log"))?;
         let child = std::process::Command::new(program).arg("--config").arg(root.join("config.json"))
             .arg("serve").stdout(output.try_clone()?).stderr(output).spawn()?;
-        std::fs::write(root.join("service-child.pending"), json!({"pid":child.id(),"exit":null}).to_string())?;
-        std::fs::rename(root.join("service-child.pending"), root.join("service-child.json"))?;
+        hosted::record(root, "service", &child, None)?;
         Ok(BoardProcess(child))
     }).transpose()?;
     println!("{}", json!({"fixture":true,"root":root}));
@@ -110,6 +114,9 @@ fn serve(root: &Path, program: Option<&String>) -> Result<()> {
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
                 Err(error) => return Err(error.into()),
             }
+        }
+        if let (Some(listener), Some(program)) = (&mcp, program) {
+            hosted::accept(listener, root, program)?;
         }
         std::thread::sleep(Duration::from_millis(10));
     }

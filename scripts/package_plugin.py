@@ -81,7 +81,7 @@ def preflight(root, destination):
             raise ValueError("Portable source versions differ")
         if fingerprint(relocated, bindings["fingerprint_paths"]) != before:
             raise ValueError("Portable source archive is missing implementation files")
-        for name in ("scripts/check", "scripts/validate", "scripts/promote"):
+        for name in ("scripts/check", "scripts/validate", "scripts/promote", "scripts/integrate"):
             if not (relocated / name).stat().st_mode & 0o111:
                 raise ValueError(f"Portable entry point is not executable: {name}")
     if fingerprint(root, bindings["fingerprint_paths"]) != before:

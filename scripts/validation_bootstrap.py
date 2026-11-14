@@ -16,6 +16,7 @@ def parse():
     parser = argparse.ArgumentParser()
     parser.add_argument("--scope", choices=("pr", "candidate", "preflight"), default="candidate")
     parser.add_argument("--base", default="origin/main")
+    parser.add_argument("--integration-base")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--timeout", type=float, default=1800)
     parser.add_argument("--staged", action="store_true")

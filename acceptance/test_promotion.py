@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
 
 from scripts import promote_candidate as promotion
 from scripts import validation_report
@@ -74,8 +75,8 @@ class PromotionTests(unittest.TestCase):
         }
         return self.complete_record(directory, record)
 
-    def complete_record(self, directory, record):
-        commands = [
+    def complete_record(self, directory, record, commands=None):
+        commands = commands or [
             ["./scripts/check"],
             ["cargo", "clippy", "--all-targets", "--locked", "--offline", "--", "-D", "warnings"],
             ["python3", "scripts/verify_acceptance.py", "--scope", "automated",
@@ -187,3 +188,69 @@ class PromotionTests(unittest.TestCase):
             (directory / "step-1.log").write_text("substituted transcript")
             with self.assertRaises(ValueError):
                 promotion.validate_artifact(directory, self.source, "macos-arm64")
+
+    def test_actual_package_must_be_immutable_and_match_the_started_binary(self):
+        startup = {
+            "source_commit": self.source["commit"], "build_sha256": self.source["fingerprint"],
+            "binary_sha256": "e" * 64, "version": "0.3.80", "target": promotion.TARGETS["macos-arm64"],
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            service = Mock()
+            with patch("release_plugin.GitHub", return_value=service), \
+                    patch("release_plugin.read_package") as read, \
+                    patch("package_plugin.verify_package", return_value=startup) as verify:
+                for release in (None, {"draft": True, "immutable": True},
+                                {"draft": False, "immutable": False}):
+                    service.release.return_value = release
+                    with self.assertRaises(ValueError):
+                        promotion.verify_saved_package(
+                            "owner/repo", "macos-arm64", self.source, startup, directory / "invalid")
+                read.assert_not_called()
+                service.release.return_value = {"draft": False, "immutable": True}
+                for key in startup:
+                    verify.return_value = {**startup, key: "wrong"}
+                    with self.subTest(key=key), self.assertRaises(ValueError):
+                        promotion.verify_saved_package(
+                            "owner/repo", "macos-arm64", self.source, startup, directory / key)
+
+    def test_scoped_promotion_recomputes_plan_and_rejects_omitted_or_failed_tests(self):
+        from scripts.integration_plan import bound_inventory, selected
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            record = self.artifact(directory)
+            strategy = {"profile": "ui", "base": "f" * 40, "paths": ["index.html"], "replay": None}
+            bindings = json.loads((promotion.ROOT / "acceptance/bindings.json").read_text())
+            inventory = bound_inventory(bindings, "darwin")
+            chosen = selected(inventory, "ui")
+            report = {
+                "scope": "integration", "plan": strategy, "source": record["source"],
+                "passed": True, "release_ready": False, "inventory": sorted(inventory),
+                "selected": sorted(chosen), "not_run": sorted(inventory - chosen),
+                "tests": [{"id": name, "status": "pass"} for name in sorted(chosen)],
+            }
+            record.pop("automated_sha256")
+            record["plan"] = strategy
+            path = directory / "integration.json"
+            commands = record["selected_checks"][:2] + [[
+                "python3", "scripts/verify_integration.py", "--base", strategy["base"],
+                "--report", str(path)]]
+            self.complete_record(directory, record, commands)
+            record.update(release_ready=False, pending=["完整自动验收", "目标环境验收"],
+                          not_run=report["not_run"])
+            with patch("scripts.integration_plan.plan", return_value=strategy):
+                for change in ({}, {"tests": report["tests"][:-1]}, {"not_run": []},
+                               {"tests": [{**test, "status": "fail"} for test in report["tests"]]}):
+                    path.write_text(json.dumps({**report, **change}))
+                    record["integration_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+                    (directory / "VALIDATION.json").write_text(json.dumps(record))
+                    if change:
+                        with self.subTest(change=next(iter(change))), self.assertRaises(ValueError):
+                            promotion.validate_artifact(directory, self.source, "macos-arm64", strategy["base"])
+                    else:
+                        promotion.validate_artifact(directory, self.source, "macos-arm64", strategy["base"])
+                        with self.assertRaises(ValueError):
+                            promotion.validate_artifact(directory, self.source, "macos-arm64")
+            with patch("scripts.integration_plan.plan", return_value={**strategy, "profile": "full"}):
+                with self.assertRaises(ValueError):
+                    promotion.validate_artifact(directory, self.source, "macos-arm64", strategy["base"])

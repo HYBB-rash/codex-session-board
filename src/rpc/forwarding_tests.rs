@@ -2,6 +2,12 @@ use super::*;
 use crate::rpc::identity_fixture::Fixture;
 
 fn writer(settings: &Config, project: bool) -> Result<(SidebarConnection, UnixStream)> {
+    let mut settings = settings.clone();
+    let directory = tempfile::tempdir()?;
+    let listener = std::os::unix::net::UnixListener::bind(directory.path().join("local"))?;
+    if settings.local_authority.is_none() {
+        settings.local_authority = Some(authority::LocalAuthority::owned_listener(&listener)?);
+    }
     let (client, server) = UnixStream::pair()?;
     client.set_nonblocking(true)?;
     server.set_nonblocking(true)?;
@@ -16,7 +22,7 @@ fn writer(settings: &Config, project: bool) -> Result<(SidebarConnection, UnixSt
             request_id: 0,
             read_only: false,
             project_only: project,
-            origin: Some(Guard::new(settings)),
+            origin: Some(Guard::new(&settings)),
         },
         server,
     ))
