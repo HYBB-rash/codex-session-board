@@ -1,4 +1,5 @@
 import argparse
+from contextlib import closing
 from datetime import datetime, timezone
 from http.client import HTTPConnection
 import json
@@ -98,7 +99,7 @@ def verify(package, fixture, output):
                     "program_sha256": manifest["binary_sha256"],
                 }
                 ready(children, record, threading.Event())
-                with HTTPConnection("127.0.0.1", port, timeout=3) as connection:
+                with closing(HTTPConnection("127.0.0.1", port, timeout=3)) as connection:
                     connection.request("GET", "/api/info")
                     with connection.getresponse() as response:
                         if response.status != 200:
@@ -132,7 +133,7 @@ def verify(package, fixture, output):
                         for name in ("fixture", "service", "mcp") if (root / f"{name}.log").exists()
                     }
             report.update(passed=True, checks=CHECKS)
-    except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, KeyError, RuntimeError, TypeError, subprocess.SubprocessError) as error:
         report["error"] = str(error)
         raise
     finally:
