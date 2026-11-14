@@ -26,6 +26,7 @@ IDENTITY_FIELDS = ("app", "version", "build", "dataDir", "configId", "pid", "aut
 
 
 def mcp(root, version, runtime):
+    deadline = time.monotonic() + 30
     requests = [
         {"id": 1, "method": "initialize", "params": {
             "protocolVersion": "2025-06-18",
@@ -41,8 +42,17 @@ def mcp(root, version, runtime):
         connection.sendall("".join(json.dumps({"jsonrpc": "2.0", **request}) + "\n"
                                    for request in requests).encode())
         connection.shutdown(socket.SHUT_WR)
-        with connection.makefile("r") as stream:
-            replies = [json.loads(line) for line in stream]
+        output = bytearray()
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("Packaged MCP startup exceeded 30 seconds")
+            connection.settimeout(remaining)
+            chunk = connection.recv(65536)
+            if not chunk:
+                break
+            output.extend(chunk)
+        replies = [json.loads(line) for line in output.decode().splitlines()]
     deadline = time.monotonic() + 3
     while True:
         child = json.loads((root / "mcp-child.json").read_text())

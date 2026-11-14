@@ -1583,6 +1583,7 @@
       "lib::codex_session_board::remote::connections::tests::failed_manual_connection_stops_when_auto_connect_is_off"
     ],
     "DELIVERY-001": [
+      "acceptance.test_package_startup.PackageStartupTests.test_mcp_response_stream_keeps_one_total_deadline",
       "acceptance.test_package_startup.PackageStartupTests.test_fixture_channel_preserves_all_mcp_startup_requests_and_runtime_identity",
       "acceptance.test_package_startup.PackageStartupTests.test_mcp_failure_wrong_backend_or_different_service_cannot_pass",
       "acceptance.test_package_startup.PackageStartupTests.test_missing_replies_errors_wrong_version_resource_or_empty_snapshot_fail",
