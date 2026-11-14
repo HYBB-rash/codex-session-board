@@ -115,6 +115,7 @@ Coverage 分开保存 projects、ordinaryHistory、archive、nativeSections、le
 账户 selector 已实测：account/read 响应顶层 userId 与 workspaceRouting.chatgptAccountId 做 JSON 二元数组的 SHA256，必须等于 marker。
 两端均精确相等；只用已验证 accountId 选择 sidebar-custom-sections-v3 的账户桶，缺失或不匹配标 accountUnresolved/identityMismatch，不任选第一桶。
 前后读取的账户指纹也纳入 legacy generation 校验。抽出统一纯 owner 投影，不能直接复用当前只返回 ownerAtoms 的读取而漏掉 live 覆盖。
+原生状态路径仍要求 marker 对应的 owner atoms 桶存在且有效，再应用 live 浅覆盖；live 数据不替代这项账号校验。目录的只读投影另由目标账户指纹与 owner hash 联合核验。
 marker 类型错误、owner namespace 冲突或私有 schema 字段类型变化使 legacy partial；保留公共后台结果，不挑第一项或把异常当成功空值。
 
 ## 归属状态机

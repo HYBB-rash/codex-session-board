@@ -1551,7 +1551,8 @@
       "lib::codex_session_board::rpc::catalog_guard::tests::local_home_is_derived_from_owned_absolute_directories",
       "lib::codex_session_board::rpc::catalog_guard::tests::verified_remote_catalog_accepts_only_metadata_and_its_own_state_file",
       "lib::codex_session_board::rpc::catalog_guard::tests::verified_remote_catalog_rejects_unsafe_requests_before_transport",
-      "lib::codex_session_board::remote::instances::identity_gate_tests::failed_runtime_keeps_own_pending_drafts_visible_but_rejects_state_writes"
+      "lib::codex_session_board::remote::instances::identity_gate_tests::failed_runtime_keeps_own_pending_drafts_visible_but_rejects_state_writes",
+      "test::native_authority::archive::unsupported_engine_methods_return_errors_without_disconnecting"
     ],
     "SECURITY-001": [
       "lib::codex_session_board::rpc::multiplex::ssh_options::tests::private_options_preserve_wrapper_identity_and_proxy_arguments",

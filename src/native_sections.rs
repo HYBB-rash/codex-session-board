@@ -9,7 +9,8 @@ fn client_atoms(state: &Value) -> Result<Map<String, Value>> {
     let owner_atoms = if let Some(owner) = state.get("electron-renderer-content-owner") {
         let owner = owner.as_str().filter(|value| !value.is_empty())
             .context("客户端当前账号标识无效")?;
-        state.get(format!("electron-owner-atoms:{owner}"))
+        Some(state.get(format!("electron-owner-atoms:{owner}"))
+            .context("客户端当前账号数据缺失")?)
     } else {
         None
     };
@@ -354,10 +355,7 @@ mod tests {
         state["electron-renderer-content-owner"] = json!("missing");
         state["electron-persisted-atom-state"] = original["electron-persisted-atom-state"].clone();
         std::fs::write(&config.sidebar_state_file, state.to_string())?;
-        assert_eq!(aliases(&config)?.get("client-new-thread:alias").map(String::as_str), Some(identifier));
-        state["electron-persisted-atom-state"] = json!({});
-        std::fs::write(&config.sidebar_state_file, state.to_string())?;
-        assert!(aliases(&config)?.is_empty());
+        assert!(aliases(&config).is_err());
         Ok(())
     }
 
@@ -376,12 +374,13 @@ mod tests {
 
     #[test]
     fn missing_owner_atoms_can_use_live_data_without_other_owner_fallback() -> Result<()> {
-        let state = json!({
-            "electron-renderer-content-owner":"current",
+        let mut state = json!({
             "electron-owner-atoms:other":{"foreign":true},
             "electron-persisted-atom-state":{"live":true}
         });
         assert_eq!(Value::Object(client_atoms(&state)?), json!({"live":true}));
+        state["electron-renderer-content-owner"] = json!("current");
+        assert!(client_atoms(&state).is_err());
         assert!(client_atoms(&json!({
             "electron-renderer-content-owner":"current",
             "electron-owner-atoms:other":{"foreign":true}
