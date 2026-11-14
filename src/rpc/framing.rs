@@ -7,7 +7,7 @@ const BANNER_LIMIT: usize = 65536;
 const PEER_LIMIT: usize = 8192;
 
 impl DesktopConnection {
-    pub(crate) fn remote(binding: &Binding, timeout: Duration, role: Role) -> Result<Self> {
+    pub(super) fn remote(binding: &Binding, timeout: Duration, role: Role) -> Result<Self> {
         let budget = if role == Role::TitleWriter {
             timeout.min(Duration::from_secs(3))
         } else {

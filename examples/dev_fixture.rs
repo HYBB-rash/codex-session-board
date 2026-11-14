@@ -8,6 +8,8 @@ use std::time::Duration;
 
 #[path = "dev_fixture/state.rs"]
 mod state;
+#[path = "dev_fixture/client.rs"]
+mod client;
 
 fn main() -> Result<()> {
     let arguments: Vec<_> = std::env::args().collect();
@@ -30,9 +32,11 @@ fn main() -> Result<()> {
 }
 
 fn history(root: &Path) -> Result<()> {
-    use codex_session_board::rpc::{DesktopConnection, Role, Rpc};
-    let mut connection = DesktopConnection::connect(
-        &root.join("desktop/rpc.sock"), Duration::from_secs(3), Role::Reader)?;
+    use codex_session_board::rpc::Rpc;
+    let socket = UnixStream::connect(root.join("desktop/rpc.sock"))?;
+    socket.set_read_timeout(Some(Duration::from_secs(3)))?;
+    socket.set_write_timeout(Some(Duration::from_secs(3)))?;
+    let mut connection = client::FixtureConnection::open(socket)?;
     for line in std::io::stdin().lock().lines() {
         let request: Value = serde_json::from_str(&line?)?;
         if request["id"].is_null() {

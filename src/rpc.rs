@@ -365,7 +365,11 @@ pub struct DesktopConnection {
 }
 
 impl DesktopConnection {
-    pub fn configured(config: &crate::config::Config, timeout: Duration, role: Role) -> Result<Self> {
+    pub(crate) fn configured(request: crate::app::ConnectionRequest<'_>, timeout: Duration, role: Role) -> Result<Self> {
+        Self::from_config(request.config(), timeout, role)
+    }
+
+    fn from_config(config: &crate::config::Config, timeout: Duration, role: Role) -> Result<Self> {
         if let Some(binding) = &config.remote_binding {
             Self::remote(binding, timeout, role)
         } else {
@@ -378,7 +382,8 @@ impl DesktopConnection {
         }
     }
 
-    pub fn connect(path: &Path, timeout: Duration, role: Role) -> Result<Self> {
+    #[cfg(test)]
+    fn connect(path: &Path, timeout: Duration, role: Role) -> Result<Self> {
         Self::connect_source(path, timeout, role, None)
     }
 
@@ -396,16 +401,6 @@ impl DesktopConnection {
             source.verify(&socket)?;
         }
         Self::handshake(socket.into(), timeout, role, deadline)
-    }
-
-    pub fn proxy(command: &[String], timeout: Duration, role: Role) -> Result<Self> {
-        let budget = if role == Role::TitleWriter {
-            timeout.min(Duration::from_secs(3))
-        } else {
-            timeout
-        };
-        let deadline = deadline_after(budget)?;
-        Self::handshake(pipe::Transport::proxy(command)?, timeout, role, deadline)
     }
 
     fn handshake(
