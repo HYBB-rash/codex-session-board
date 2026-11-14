@@ -93,7 +93,8 @@ impl App {
         let state = state.context("缺少目标原生分区")?;
         let target = self.config.section_target(state)?;
         let mut reader = self.native_reader()?;
-        native_sections::direct::confirm_move(&mut reader, &self.config, identifier, target)
+        native_sections::direct::Catalog::load(&mut reader, &self.config)?
+            .confirm_move(&mut reader, &self.config, identifier, target)
     }
 
     pub fn refresh_native(&self) -> Result<()> {
