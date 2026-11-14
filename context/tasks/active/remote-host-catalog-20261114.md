@@ -2,7 +2,7 @@
 
 - owner: root
 - execution_mode: isolated_write
-- allowed_write_set: src/catalog*, src/app*, src/observer.rs, src/store*, src/lib.rs, src/rpc*, src/remote*, index.html, scripts/test_remote_turn_proxy.py, scripts/remote_turn_proxy.py, scripts/bind_rust_tests.py, scripts/check-remote-catalog.mjs, examples/dev_fixture*, acceptance/bindings.json, Docs/REMOTE-CATALOG-DESIGN-20261114.md, context/tasks/active/remote-host-catalog-20261114.md, context/tasks/completed/remote-host-catalog-20261114.md, context/journal/2026-11-14-remote-host-catalog.md
+- allowed_write_set: src/catalog*, src/app*, src/auto_archive.rs, src/observer.rs, src/store*, src/lib.rs, src/native_sections*, src/rpc*, src/remote*, index.html, tests/ui_layout.rs, scripts/test_remote_turn_proxy.py, scripts/remote_turn_proxy.py, scripts/bind_rust_tests.py, scripts/check-remote-catalog.mjs, examples/dev_fixture*, acceptance/bindings.json, README.md, Docs/REMOTE-CATALOG-DESIGN-20261114.md, context/results/remote-catalog*, context/tasks/active/remote-host-catalog-20261114.md, context/tasks/completed/remote-host-catalog-20261114.md, context/journal/2026-11-15-remote-host-catalog.md
 - base_commit: d4b40bb3aae98569a310f1e412defbb1f20dddbb
 - worktree_path: /Users/hongyong/Developer/codex-session-board-remote-catalog-impl-20261114
 - coordinator: root

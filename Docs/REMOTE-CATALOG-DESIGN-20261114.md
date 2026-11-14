@@ -123,7 +123,7 @@ marker 类型错误、owner namespace 冲突或私有 schema 字段类型变化�
 
 | 情况 | 处理 |
 | --- | --- |
-| 后端字段 Missing | 保留未知观测，不能清空已知归属；兼容投影可补，coverage 反映来源 |
+| 后端字段 Missing | 同 host/home/peer/version 且两轮账户指纹均有效并相同，才保留仍有效的已知归属；标记 previousObservation、lastKnownAt 与 backendProjectMissing，membership coverage 为 partial。显式 null、新来源/账户、未知账户及项目删除不续接；当前明确兼容意图优先于历史观测 |
 | thread 在 pending 集合 | 未应用的有效 legacy assignment 或明确 projectless 优先 |
 | 两个迁移完成标记均未成立 | 有明确 legacy 意图时保留；不能让尚未迁移的 backend null 冲掉它 |
 | 已完成对应读取/迁移且 thread 不 pending | 以有效 backend project 为准；与旧意图冲突先 metadata read 并复核同一状态 generation |

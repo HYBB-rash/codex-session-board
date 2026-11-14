@@ -340,7 +340,7 @@ mod tests {
     }
 
     #[test]
-    fn aliases_use_live_atoms_without_falling_back_to_another_owner() -> Result<()> {
+    fn aliases_follow_the_current_owner_without_legacy_fallback() -> Result<()> {
         let identifier = "11111111-1111-4111-8111-111111111111";
         let (_directory, config) = alias_config(identifier)?;
         let original: Value = serde_json::from_slice(&std::fs::read(&config.sidebar_state_file)?)?;

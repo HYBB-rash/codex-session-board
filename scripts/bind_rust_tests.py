@@ -57,7 +57,7 @@ def build():
         "DISCOVERY-002": group("observer_selection") + store + observer,
         "NAV-001": security + group("test::singleton_platform::"),
         "APP-001": mcp,
-        "UI-001": [],
+        "UI-001": group("test::ui_layout::"),
         "UI-002": store,
         "UI-003": [],
         "MCP-001": mcp + archive,
@@ -74,10 +74,10 @@ def build():
     }
     additions = {
         "STATE-001": group("test::legacy_mode::"),
-        "DISCOVERY-001": group("::remote::", "::rpc::framing::"),
+        "DISCOVERY-001": group("::remote::", "::rpc::framing::", "::catalog::"),
         "DATA-001": group("::remote::hosts::source::"),
         "DATA-002": group("::service::migration::"),
-        "BOUNDARY-001": group("::rpc::", "::remote::", "::app::drafts::tests::", "test::legacy_mode::"),
+        "BOUNDARY-001": group("::rpc::", "::remote::", "::app::drafts::tests::", "::native_sections::tests::", "test::legacy_mode::"),
     }
     platform_nav = previous["requirements"]["NAV-001"]
     for key, values in previous["requirements"].items():
