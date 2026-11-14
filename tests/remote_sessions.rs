@@ -10,6 +10,8 @@ const THREAD: &str = "11111111-1111-4111-8111-111111111111";
 mod discovery;
 #[path = "remote_sessions/routes.rs"]
 mod routes;
+#[path = "remote_sessions/optional_notes.rs"]
+mod optional_notes;
 
 fn discover(store: &Store, host: &str, updated: i64) -> Result<()> {
     store.discover_remote(
@@ -83,8 +85,9 @@ fn remote_validation_is_atomic_and_rejects_cross_host_data() -> Result<()> {
             "id":THREAD,"hostId":"mac","title":"有效","updatedAt":1
         })],
     )?;
+    let oversized = "字".repeat(2001);
     for (state, note) in [
-        ("blocked", ""),
+        ("blocked", oversized.as_str()),
         ("completed", "旧状态"),
         ("invalid", "无效"),
     ] {

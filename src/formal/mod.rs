@@ -31,7 +31,8 @@ mod tests {
     #[test]
     fn native_session_control_matches_the_store_on_every_reachable_edge() {
         let states = explore::reachable().unwrap();
-        let edges = replay::conform(&states).unwrap();
+        let edges = replay::conform(&states, None).unwrap();
+        assert_eq!(replay::conform(&states, Some("")).unwrap(), 138_040);
         replay::store_refuses_a_column_before_a_section_is_cached().unwrap();
         assert_eq!(session::events().len(), 56);
         assert_eq!(states.len(), 2465);

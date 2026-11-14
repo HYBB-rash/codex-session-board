@@ -312,15 +312,14 @@ mod store_tests {
     }
 
     #[test]
-    fn test_block_requires_reason_and_stale_edits_are_rejected() {
+    fn test_block_allows_empty_reason_and_rejects_stale_edits() {
         let (_directory, store) = fixture(true);
-        let before = database_snapshot(&store);
-        assert!(
-            store
-                .set_state("sample", Some("blocked"), " ", 0, None)
-                .is_err()
-        );
-        assert_eq!(database_snapshot(&store), before);
+        for note in ["", " ", "\t\r\n", "　\u{a0}\u{2003}"] {
+            select(&store, Some("blocked"), note);
+            assert_eq!(session(&store)["state"], "blocked");
+            assert_eq!(session(&store)["note"], "");
+            assert_eq!(session(&store)["manual"], true);
+        }
         select(&store, Some("review"), "");
         let before = database_snapshot(&store);
         let error = store
@@ -987,7 +986,7 @@ mod state_contract_tests {
             serde_json::from_slice(&std::fs::read(acceptance_path("requirements.json")).unwrap())
                 .unwrap();
         let exported = python_model();
-        assert_eq!(contract["contract_id"], "codex-session-board/acceptance-v1");
+        assert_eq!(contract["contract_id"], "codex-session-board/acceptance-v2");
         assert_eq!(contract["requirements"].as_array().unwrap().len(), 31);
         assert_eq!(contract["states"], exported["states"]);
         assert_eq!(serde_json::to_value(STATES).unwrap(), exported["states"]);

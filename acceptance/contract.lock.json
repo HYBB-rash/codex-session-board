@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "files": {
-    "requirements.json": "83c5da84132391106a372c423eaa01c11dc7a1306864d669d8c70bbc21534449",
+    "requirements.json": "b8ffcf1ded7d8e6bd7607979172843ed069708e62281e54d64445d42ce0c3c3a",
     "model.py": "afc587078c415ccb631fed4efdcef304269096fbfece812e680a6d4e195738d7"
   }
 }
