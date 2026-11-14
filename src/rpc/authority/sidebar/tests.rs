@@ -15,6 +15,12 @@ fn peer(root: &Path, name: &str) -> Result<(ManagedChild, UnixStream)> {
     Ok((process, UnixStream::connect(socket)?))
 }
 
+fn write_proof(path: &Path, value: &serde_json::Value) -> Result<()> {
+    std::fs::write(path, serde_json::to_vec(value)?)?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    Ok(())
+}
+
 #[test]
 fn shared_sibling_client_requires_explicit_backend_client_and_launcher_epochs() -> Result<()> {
     let directory = tempfile::tempdir()?;
@@ -27,8 +33,7 @@ fn shared_sibling_client_requires_explicit_backend_client_and_launcher_epochs() 
     let launcher = LocalAuthority::capture(std::process::id())?;
     let original = serde_json::json!({"backend":backend,"client":client,"launcher":launcher});
     let path = directory.path().join("proof.json");
-    std::fs::write(&path, serde_json::to_vec(&original)?)?;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    write_proof(&path, &original)?;
     verify(&backend, &client_socket, Some(&path))?;
     assert!(verify(&backend, &other_socket, Some(&path)).is_err());
     assert!(verify(&backend, &client_socket, None).is_err());
@@ -37,10 +42,10 @@ fn shared_sibling_client_requires_explicit_backend_client_and_launcher_epochs() 
         let mut stale = original.clone();
         stale[subject]["started"] = serde_json::json!(
             stale[subject]["started"].as_u64().context("缺少 epoch")?.wrapping_add(1));
-        std::fs::write(&path, serde_json::to_vec(&stale)?)?;
+        write_proof(&path, &stale)?;
         assert!(verify(&backend, &client_socket, Some(&path)).is_err(), "{subject}");
     }
-    std::fs::write(&path, serde_json::to_vec(&original)?)?;
+    write_proof(&path, &original)?;
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644))?;
     assert!(verify(&backend, &client_socket, Some(&path)).is_err());
     assert!(other_process.0.try_wait()?.is_none());
@@ -52,7 +57,7 @@ fn shared_sibling_client_requires_explicit_backend_client_and_launcher_epochs() 
     assert!(verify(&backend, &replacement_socket, Some(&path)).is_err());
     let mut renewed = original;
     renewed["client"] = serde_json::to_value(LocalAuthority::capture(replacement.0.id())?)?;
-    std::fs::write(&path, serde_json::to_vec(&renewed)?)?;
+    write_proof(&path, &renewed)?;
     verify(&backend, &replacement_socket, Some(&path))?;
     backend_process.0.kill()?;
     backend_process.0.wait()?;
