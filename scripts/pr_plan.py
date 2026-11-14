@@ -96,3 +96,19 @@ def groups(inventory, profile):
     if not selected or not selected <= available:
         raise ValueError("Required PR test groups are missing")
     return sorted(selected)
+
+
+def validate_report(report, strategy, source, inventory):
+    from scripts.verify_acceptance import validate_results
+    prefixes = groups(inventory, strategy["profile"])
+    chosen = {name for name in inventory if "::" not in name
+              or any(name.startswith(prefix + "::") for prefix in prefixes)}
+    outcomes = validate_results(report, chosen)
+    if (not chosen or report.get("scope") != "pr_tests" or report.get("source") != source
+            or report.get("plan") != strategy or report.get("passed") is not True
+            or report.get("release_ready") is not False
+            or report.get("inventory") != sorted(inventory)
+            or report.get("selected") != sorted(chosen)
+            or report.get("not_run") != sorted(inventory - chosen)
+            or any(item["status"] != "pass" for item in outcomes.values())):
+        raise ValueError("PR report does not prove the complete selected test plan")

@@ -4,6 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 import platform
+import os
+import signal
 import subprocess
 import sys
 import time
@@ -56,8 +58,19 @@ def execute(name, arguments, output, root=None, timeout=1800):
     print(f"[候选验证] {name}", flush=True)
     log = output / f"{name}.log"
     with log.open("w") as stream:
-        process = subprocess.run(arguments, cwd=root or ROOT, stdout=stream,
-                                 stderr=subprocess.STDOUT, timeout=timeout)
+        process = subprocess.Popen(arguments, cwd=root or ROOT, stdout=stream,
+                                   stderr=subprocess.STDOUT, start_new_session=True)
+        try:
+            process.wait(timeout=timeout)
+        except BaseException:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGINT)
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=5)
+            raise
     return {
         "name": name, "arguments": arguments, "returncode": process.returncode,
         "seconds": time.monotonic() - started,
