@@ -2,12 +2,13 @@
   "schema_version": 1,
   "updated_at": "2026-11-14",
   "current_phase": {
-    "id": "ci-optimization-replay-20261114",
-    "status": "completed",
+    "id": "pr6-integration-20261114",
+    "status": "active",
     "as_of": "2026-11-14",
-    "summary": "CI分层与连续候选入口已随0.3.81通过完整双平台门禁。固定PR #5从真实历史基线重新合并，0.3.82/8102dad选定328项在双平台均通过，实际不可变包和隔离启动确认后进入受保护主线。核心14分51秒，比原24分46秒减少40.03%，CI由18分钟降为9分28秒；记录收尾和分支清理另计。完整验收未完成，不操作日用客户端。"
+    "summary": "固定PR #6/9667957与主线04f7d58，审查后台归属修复并执行完整双平台候选门禁、不可变包启动及受保护主线更新，计时评估现有流程。不操作日用客户端，验收独立。"
   },
   "active_tasks": [
+    "context/tasks/active/pr6-integration-20261114.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",

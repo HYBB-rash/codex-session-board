@@ -40,7 +40,10 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(config: Config) -> Result<Self> {
+    pub fn new(mut config: Config) -> Result<Self> {
+        if config.local_authority.is_none() && config.remote_binding.is_none() {
+            config.local_authority = Some(crate::rpc::authority::LocalAuthority::parent()?);
+        }
         config.validate_modes()?;
         ensure!(
             !config.sync_sections,

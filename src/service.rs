@@ -24,7 +24,7 @@ mod backup;
 mod owned;
 pub(crate) use owned::RunningBoard;
 #[cfg(target_os = "macos")]
-use macos::process_start;
+pub(crate) use macos::process_start;
 
 #[cfg(test)]
 use migration::{import_database, publish as publish_migration};
@@ -36,7 +36,8 @@ pub fn info(config: &Config) -> Result<Value> {
         "build": config::build_id()?,
         "dataDir": config.data_dir,
         "configId": config::config_id(config)?,
-        "pid": std::process::id()
+        "pid": std::process::id(),
+        "authority": config.local_authority
     }))
 }
 
@@ -109,7 +110,7 @@ fn stat_identity(stat: &str) -> Result<Option<u64>> {
 }
 
 #[cfg(target_os = "linux")]
-fn process_start(pid: u32) -> Result<Option<u64>> {
+pub(crate) fn process_start(pid: u32) -> Result<Option<u64>> {
     ensure!(pid > 0, "无效进程 PID");
     let stat = match fs::read_to_string(format!("/proc/{pid}/stat")) {
         Ok(stat) => stat,
@@ -135,6 +136,10 @@ fn verify_info(value: &Value, config: &Config, pid: Option<u32>) -> Result<()> {
 
 fn verify_version(value: &Value, config: &Config, build: &str) -> Result<()> {
     ensure!(value["build"] == build, "已有其他版本看板运行，请先 stop");
+    if let Some(authority) = &config.local_authority {
+        authority.confirm()?;
+        ensure!(value["authority"] == serde_json::to_value(authority)?, "已有看板属于其他客户端后台");
+    }
     ensure!(
         value["configId"] == config::config_id(config)?,
         "运行服务的配置已变化，请先 stop"

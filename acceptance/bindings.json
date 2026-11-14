@@ -305,6 +305,18 @@
       "lib::codex_session_board::formal::tests::native_session_control_matches_the_store_on_every_reachable_edge"
     ],
     "AUTO-006": [
+      "lib::codex_session_board::rpc::authority::tests::genuine_terminal_evidence_survives_unloading",
+      "test::plugin_runtime::authority::a_shared_runtime_can_be_stopped_without_inheriting_its_ephemeral_socket",
+      "test::plugin_runtime::authority::inherited_shared_backend_drives_new_tasks_and_unloaded_projection_cannot_block_them",
+      "test::plugin_runtime::authority::a_different_client_parent_cannot_reuse_an_existing_board_owner",
+      "acceptance.test_shared_desktop.SharedDesktopTests.test_shared_environment_and_peer_identity_are_checked_and_children_are_reaped",
+      "acceptance.test_shared_desktop.SharedDesktopTests.test_wrong_endpoint_process_is_rejected_before_launching_the_desktop",
+      "acceptance.test_shared_desktop.SharedDesktopTests.test_stdio_fallback_or_wrong_version_never_passes_startup",
+      "acceptance.test_shared_desktop.SharedDesktopTests.test_single_instance_handoff_is_a_failure_and_only_owned_backend_is_stopped",
+      "lib::codex_session_board::rpc::authority::tests::shared_url_accepts_only_local_unix_transport",
+      "lib::codex_session_board::rpc::authority::tests::listener_capability_and_stale_process_epoch_are_checked",
+      "lib::codex_session_board::rpc::authority::tests::same_user_wrong_backend_is_rejected_before_rpc_handshake_for_every_role",
+      "lib::codex_session_board::rpc::authority::tests::unloaded_or_unknown_history_projection_cannot_create_blocked_runtime",
       "lib::codex_session_board::rpc::summary_tests::remote_summary_projection_and_wire_performance_gate",
       "lib::codex_session_board::rpc::summary_tests::observer_uses_remote_summary_and_archive_writer_keeps_full_input_verification",
       "lib::codex_session_board::formal::paths::unread_runtime_rejection_preserves_the_entire_database",

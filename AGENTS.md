@@ -50,3 +50,9 @@ Active task cards declare `owner`, `execution_mode`, `allowed_write_set`, `base_
 - 浏览器验证使用独立 profile 和随机调试端口，结束时只清理自己创建的进程。
 - fixture 验证不替代真实 Codex 验收。真实客户端验收单独安排，不因开发任务并行而并发修改
   同一客户端实例；缺少目标环境证据继续保持待验证。
+
+## 客户端后台连接
+
+- 业务连接统一经过 `App::connection`；独立 `StdioReader` 只用于历史补读，不作为实时服务。
+- Mac 共享入口及自动验证见 `Docs/SHARED-DESKTOP.md`。端点继承、进程归属、重连及错误后台拒绝由连接层和门禁负责，业务任务无须自行挑选或验证后台。
+- 不从 `daemon version` 的 socketPath 推断当前客户端后台，不用换地址或关闭校验来绕过连接错误。

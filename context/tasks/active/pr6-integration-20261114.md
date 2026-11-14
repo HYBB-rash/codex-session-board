@@ -1,0 +1,23 @@
+# PR #6 后台归属修复集成
+
+owner: codex
+execution_mode: coordinated_write
+allowed_write_set: PR #6 合并及必要冲突解决、候选版本冻结、本任务记录与共享上下文
+base_commit: 04f7d58f17a4301c8e5b7f50eae2e3bdeb62dddf
+worktree_path: /Users/hongyong/.codex/worktrees/four-pr-rehearsal/codex-session-board
+coordinator: 01a1d38b-1ef8-7392-ba78-caa7935c5ab4
+status: active
+
+用户授权检查并合并新 PR，同时观察现有流程的实际效果。
+固定 PR #6 头为 966795746becd982ec1bdf1d2e6df735c369601e。
+按既有集成规则保留七条原始提交，审查业务连接、状态保护、共享启动、测试及打包。
+两个只读审查者分别检查 Rust 行为和启动/门禁兼容，协调者独占写入。
+
+合并计时自 2026-11-14T13:00:20+00:00 固定来源开始，
+到受保护主线确认同一候选且双平台不可变插件包及隔离启动检查通过停止。
+记录同步及本任务分支清理单列耗时；发现、调查及此前流程开发不混入核心时间。
+本次新增文件、工具及验收绑定按现有保守规则执行完整双平台门禁。
+不安装或重载日用插件，目标环境验收另行安排，完整 31 条要求保持。
+
+源码外证据目录：
+/Users/hongyong/.codex/visualizations/2026/11/13/01a1d38b-1ef8-7392-ba78-caa7935c5ab4/pr6-integration-20261114/

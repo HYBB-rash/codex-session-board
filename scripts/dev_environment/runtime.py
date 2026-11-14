@@ -109,7 +109,7 @@ def ready(children, record, cancelled):
         if any(child.poll() is not None for child in children):
             raise RuntimeError("开发子进程提前退出，请查看本任务日志")
         try:
-            record["service_pid"] = children[1].pid
+            record["service_pid"] = json.loads((Path(record["root"]) / "service-child.json").read_text())["pid"]
             probe(record)
             return
         except (OSError, ValueError, KeyError, RuntimeError) as error:
@@ -139,11 +139,10 @@ def supervise(source, root):
     server, stopping, failure, bound = None, None, None, False
     try:
         environment = config.child_environment(root)
-        commands = ([manifest["fixture"], "serve", str(root)], [manifest["program"], "--config", str(root / "config.json"), "serve"])
-        for name, command in zip(("fixture", "service"), commands):
-            children.append(Child(root, name, command, environment))
+        (root / "service-child.json").unlink(missing_ok=True)
+        children.append(Child(root, "fixture", [manifest["fixture"], "serve", str(root), manifest["program"]], environment))
         ready(children, record, cancelled)
-        record.update(phase="running", fixture_pid=children[0].pid, service_pid=children[1].pid)
+        record.update(phase="running", fixture_pid=children[0].pid)
         server = socket.socket(socket.AF_UNIX)
         server.bind(str(root / "supervisor.sock"))
         bound = True

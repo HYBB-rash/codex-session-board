@@ -291,6 +291,16 @@ class PackageTests(unittest.TestCase):
             )
             self.assertNotEqual(rejected.returncode, 0)
             self.assertIn("插件入口只能调用", rejected.stderr)
+            entry.write_text(original)
+            bypass = source / "src/connection_bypass.rs"
+            for constructor in ("connect", "proxy", "remote"):
+                bypass.write_text(f"fn bypass() {{ DesktopConnection::{constructor}(value); }}")
+                rejected = subprocess.run(
+                    [str(executable)], cwd=source, capture_output=True, text=True, timeout=10,
+                )
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn("绕过统一客户端连接层", rejected.stderr)
+            bypass.unlink()
             gate.unlink()
             with self.assertRaisesRegex(ValueError, "Missing a required migration file"):
                 build_package(source, directory / "missing.tar.gz")
