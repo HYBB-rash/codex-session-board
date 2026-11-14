@@ -49,4 +49,47 @@ pub struct State {
     pub error: Option<String>,
     pub live: bool,
     pub progress: Option<Value>,
+    pub last_check: f64,
+    pub last_attempt: f64,
+    pub restarts: usize,
+}
+
+impl State {
+    pub(crate) fn load(store: &crate::store::Store, host: &str) -> Self {
+        let result = (|| -> Result<Self> {
+            let snapshot = store
+                .catalog_value("catalog_snapshot_v1")?
+                .map(serde_json::from_value::<Snapshot>)
+                .transpose()?;
+            if let Some(snapshot) = &snapshot {
+                snapshot.validate(host)?;
+            }
+            Ok(Self {
+                snapshot,
+                progress: store.catalog_value("catalog_progress_v1")?,
+                ..Self::default()
+            })
+        })();
+        result.unwrap_or_else(|error| Self {
+            error: Some(format!("目录缓存不可用：{error}")),
+            ..Self::default()
+        })
+    }
+
+    pub(crate) fn health(&self) -> Value {
+        let snapshot = self.snapshot.as_ref();
+        let complete = snapshot.is_some_and(|snapshot| {
+            snapshot
+                .coverage
+                .as_object()
+                .is_some_and(|coverage| coverage.values().all(|value| value == "complete"))
+        }) && self.live
+            && self.error.is_none()
+            && self.progress.is_none();
+        serde_json::json!({"complete":complete,"cached":!self.live,
+            "capturedAt":snapshot.map(|snapshot| snapshot.captured_at),
+            "coverage":snapshot.map(|snapshot| &snapshot.coverage),
+            "issues":snapshot.map(|snapshot| &snapshot.issues),
+            "error":self.error,"pending":self.progress.is_some()})
+    }
 }

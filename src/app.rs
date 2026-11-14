@@ -16,16 +16,18 @@ use std::sync::{
 };
 use std::time::Duration;
 
+mod drafts;
 mod native;
 mod remote;
 mod remote_snapshot;
-mod drafts;
 
 pub struct App {
     pub config: Config,
     pub store: Arc<Store>,
     pub refresh: AtomicBool,
     pub remote_refresh: AtomicBool,
+    pub(crate) catalog_refresh: AtomicBool,
+    pub(crate) catalog: Mutex<crate::catalog::State>,
     pub health: Mutex<Value>,
     pub(crate) projects: Mutex<crate::projects::Catalog>,
     pub(crate) title_lock: Mutex<()>,
@@ -54,11 +56,14 @@ impl App {
         store.legacy_mode = config.legacy_mode;
         let store = Arc::new(store);
         let native_sections = config.native_sections;
+        let catalog = crate::catalog::State::load(&store, &config.host_id);
         Ok(Self {
             config,
             store,
             refresh: AtomicBool::new(false),
             remote_refresh: AtomicBool::new(false),
+            catalog_refresh: AtomicBool::new(true),
+            catalog: Mutex::new(catalog),
             projects: Mutex::new(crate::projects::Catalog::default()),
             title_lock: Mutex::new(()),
             active_sessions: Mutex::new(None),
@@ -87,13 +92,19 @@ impl App {
         if !self.enabled.load(Ordering::SeqCst) {
             return Ok(None);
         }
-        let guard = self.lifecycle.read().map_err(|_| anyhow::anyhow!("主机操作锁已损坏"))?;
+        let guard = self
+            .lifecycle
+            .read()
+            .map_err(|_| anyhow::anyhow!("主机操作锁已损坏"))?;
         Ok(self.enabled.load(Ordering::SeqCst).then_some(guard))
     }
 
     pub(crate) fn deactivate(&self) -> Result<()> {
         self.enabled.store(false, Ordering::SeqCst);
-        let _guard = self.lifecycle.write().map_err(|_| anyhow::anyhow!("主机操作锁已损坏"))?;
+        let _guard = self
+            .lifecycle
+            .write()
+            .map_err(|_| anyhow::anyhow!("主机操作锁已损坏"))?;
         if let Some(binding) = &self.config.remote_binding {
             binding.disconnect()?;
         }
@@ -130,9 +141,14 @@ impl App {
     }
 
     pub(crate) fn connection(&self, timeout: Duration, role: Role) -> Result<DesktopConnection> {
-        ensure!(self.enabled.load(Ordering::SeqCst), "主机登记已改变，请刷新核对");
-        ensure!(!self.config.legacy_mode || !matches!(role, Role::DraftWriter | Role::ArchiveWriter),
-            "六状态兼容模式不允许创建或归档远程会话");
+        ensure!(
+            self.enabled.load(Ordering::SeqCst),
+            "主机登记已改变，请刷新核对"
+        );
+        ensure!(
+            !self.config.legacy_mode || !matches!(role, Role::DraftWriter | Role::ArchiveWriter),
+            "六状态兼容模式不允许创建或归档远程会话"
+        );
         DesktopConnection::configured(&self.config, timeout, role)
     }
 
@@ -176,7 +192,9 @@ impl App {
 
     pub fn snapshot(&self) -> Result<Value> {
         self.load_remote_cache()?;
-        let states: serde_json::Map<String, Value> = self.config.board_states()
+        let states: serde_json::Map<String, Value> = self
+            .config
+            .board_states()
             .map(|(state, label)| (state.to_string(), json!(label)))
             .collect();
         let mut sessions = self.store.sessions()?;
@@ -214,7 +232,9 @@ impl App {
         if !self.config.legacy_mode
             && matches!(path, "/api/state" | "/api/archive")
             && let Some(body) = body
-            && body["id"].as_str().is_some_and(|id| id.starts_with("remote:"))
+            && body["id"]
+                .as_str()
+                .is_some_and(|id| id.starts_with("remote:"))
         {
             return self.route_remote(path, body);
         }
@@ -246,7 +266,10 @@ impl App {
 
     fn new_session(&self, body: &Value) -> Result<Value> {
         ensure!(body.is_object(), "请求格式无效");
-        if body["projectId"].as_str().is_some_and(|project|project.starts_with("remote:")) {
+        if body["projectId"]
+            .as_str()
+            .is_some_and(|project| project.starts_with("remote:"))
+        {
             return self.new_remote_session(body);
         }
         let url = match body.get("projectId") {
@@ -378,7 +401,10 @@ pub fn open_conversation(identifier: &str, config: &Config) -> Result<String> {
 fn open_client_url(url: String, config: &Config) -> Result<String> {
     #[cfg(target_os = "linux")]
     let singleton = crate::singleton::runtime::navigation(config)?;
-    let directory = config.data_dir.canonicalize().context("客户端工作目录不可用")?;
+    let directory = config
+        .data_dir
+        .canonicalize()
+        .context("客户端工作目录不可用")?;
     let mut child = Command::new(config.open_command.first().context("缺少客户端命令")?)
         .current_dir(&directory)
         .args(&config.open_command[1..])
@@ -391,7 +417,11 @@ fn open_client_url(url: String, config: &Config) -> Result<String> {
     let deadline = now() + 1.0;
     while now() < deadline {
         if let Some(status) = child.try_wait()? {
-            ensure!(status.success(), "Codex 客户端未接受跳转请求，退出状态：{status}，工作目录：{}", directory.display());
+            ensure!(
+                status.success(),
+                "Codex 客户端未接受跳转请求，退出状态：{status}，工作目录：{}",
+                directory.display()
+            );
             return Ok(url);
         }
         std::thread::sleep(Duration::from_millis(10));
