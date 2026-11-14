@@ -153,7 +153,7 @@ fn field_value(field: &str, value: &Value) -> Result<Option<Value>> {
     })
 }
 
-fn source_projection(value: &Value) -> Option<Value> {
+pub(super) fn source_projection(value: &Value) -> Option<Value> {
     if let Some(source) = value.as_str() {
         return matches!(source, "cli" | "vscode" | "exec" | "mcp" | "appServer" | "unknown")
             .then(|| json!(source));

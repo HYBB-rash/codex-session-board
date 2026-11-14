@@ -1,13 +1,12 @@
 use super::{
     Snapshot, input,
-    legacy::Projection,
     paging::{ALL_SOURCES, PageScan, ordinary_params},
 };
 use crate::rpc::{RequestError, Rpc};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Capture {
@@ -18,6 +17,10 @@ pub(crate) struct Capture {
     pub archive_check: Option<usize>,
     pub reference_index: usize,
     pub references: Vec<Value>,
+    #[serde(default)]
+    pub unresolved_references: Vec<Value>,
+    #[serde(default)]
+    pub metadata_checks: BTreeMap<String, Value>,
     pub issues: Vec<String>,
 }
 
@@ -41,6 +44,8 @@ impl Capture {
             archive_check: None,
             reference_index: 0,
             references: Vec::new(),
+            unresolved_references: Vec::new(),
+            metadata_checks: BTreeMap::new(),
             issues: Vec::new(),
         })
     }
@@ -92,21 +97,26 @@ impl Capture {
                     ) {
                         Ok(result) => {
                             let thread = result.get("thread").context("会话元数据响应无效")?;
-                            ensure!(thread["id"] == identifier, "会话元数据身份不匹配");
-                            if eligible(thread) {
-                                self.references
-                                    .push(super::paging::project_fields(thread, "thread/list")?);
-                            }
+                            self.accept_reference(&identifier, thread)?;
                         }
                         Err(error) if error.downcast_ref::<RequestError>().is_some() => {
                             self.issues
                                 .push(format!("referenceUnavailable:{identifier}:{error}"));
+                            self.unresolved_reference(&identifier, "unavailable");
                         }
                         Err(error) => return Err(error),
                     }
                     remaining -= 1;
                 }
                 self.reference_index += 1;
+                continue;
+            }
+            if let Some(identifier) = self.next_conflict(&host) {
+                if remaining == 0 {
+                    return Ok(None);
+                }
+                self.check_membership(reader, &identifier)?;
+                remaining -= 1;
                 continue;
             }
             let home = self.source["codexHome"].as_str().context("缺少目录来源")?;
@@ -117,6 +127,100 @@ impl Capture {
             );
             return self.snapshot(&host).map(Some);
         }
+    }
+
+    fn supported_sources(&self) -> bool {
+        self.source["version"].as_str().is_some_and(|version| version.starts_with("0.169."))
+    }
+
+    fn unresolved_reference(&mut self, identifier: &str, reason: &str) {
+        self.unresolved_references.push(json!({"id":identifier,"reason":reason}));
+        self.issues.push(format!("referenceUnresolved:{identifier}:{reason}"));
+    }
+
+    fn accept_reference(&mut self, identifier: &str, thread: &Value) -> Result<()> {
+        ensure!(thread["id"] == identifier, "会话元数据身份不匹配");
+        let reason = if !self.supported_sources() {
+            Some("unsupportedArchiveScope")
+        } else if !thread.get("attachedToThreadId").is_some_and(|value| value.is_null() || value.is_string())
+            || !thread["ephemeral"].is_boolean()
+        {
+            Some("missingVisibilityEvidence")
+        } else if !self.archive_check.is_some_and(|index| self.jobs[index].complete)
+            || super::paging::source_projection(&thread["source"]).is_none()
+        {
+            Some("unprovenArchiveScope")
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            self.unresolved_reference(identifier, reason);
+        } else if eligible(thread) {
+            let row = super::paging::project_fields(thread, "thread/list")?;
+            self.metadata_checks.insert(identifier.to_owned(), row.clone());
+            self.references.push(row);
+        }
+        Ok(())
+    }
+
+    fn rows(&self) -> impl Iterator<Item = &Value> {
+        self.jobs.iter().enumerate()
+            .filter(|(index, job)| job.method == "thread/list" && self.archive_check != Some(*index))
+            .flat_map(|(_, job)| &job.items).chain(&self.references)
+    }
+
+    fn next_conflict(&self, host: &str) -> Option<String> {
+        self.rows().find_map(|row| {
+            let identifier = row["id"].as_str()?;
+            let membership = super::membership::resolve(row, &self.jobs[0].items, &self.initial.projection, host);
+            (membership["projectIssue"] == "backendLegacyConflict"
+                && !self.metadata_checks.contains_key(identifier)).then(|| identifier.to_owned())
+        })
+    }
+
+    fn check_membership(&mut self, reader: &mut dyn Rpc, identifier: &str) -> Result<()> {
+        let row = match reader.call("thread/read", json!({"threadId":identifier,"includeTurns":false})) {
+            Ok(result) => {
+                let thread = result.get("thread").context("归属元数据响应无效")?;
+                ensure!(thread["id"] == identifier, "归属元数据身份不匹配");
+                super::paging::project_fields(thread, "thread/list")?
+            }
+            Err(error) if error.downcast_ref::<RequestError>().is_some() => {
+                self.issues.push(format!("membershipUnavailable:{identifier}:{error}"));
+                Value::Null
+            }
+            Err(error) => return Err(error),
+        };
+        self.metadata_checks.insert(identifier.to_owned(), row);
+        Ok(())
+    }
+
+    fn checked_row(&self, row: &Value) -> Value {
+        let mut row = row.clone();
+        if let Some(metadata) = row["id"].as_str().and_then(|identifier| self.metadata_checks.get(identifier)) {
+            for field in ["projectId", "ephemeral", "attachedToThreadId", "threadSource"] {
+                if let Some(value) = metadata.get(field) {
+                    row[field] = value.clone();
+                }
+            }
+        }
+        row
+    }
+
+    fn membership(&self, row: &Value, host: &str) -> Value {
+        let mut membership = super::membership::resolve(row, &self.jobs[0].items, &self.initial.projection, host);
+        if membership["projectIssue"] == "backendLegacyConflict" {
+            let verified = row["id"].as_str().and_then(|identifier| self.metadata_checks.get(identifier))
+                .is_some_and(|metadata| metadata.get("projectId").is_some());
+            if verified {
+                membership["projectIssue"] = Value::Null;
+                membership["basis"] = json!("backendMetadata");
+            } else {
+                membership["state"] = json!("unresolved");
+                membership["projectId"] = Value::Null;
+            }
+        }
+        membership
     }
 
     fn listed(&self, identifier: &str) -> bool {
@@ -132,9 +236,7 @@ impl Capture {
     }
 
     fn expand(&mut self) -> Result<()> {
-        let supported = self.source["version"]
-            .as_str()
-            .is_some_and(|version| version.starts_with("0.169."));
+        let supported = self.supported_sources();
         let limit = self.jobs[1].params["limit"].clone();
         let sections = self.jobs[3].items.clone();
         for section in sections {
@@ -197,31 +299,20 @@ impl Capture {
         let mut active_rows = Vec::new();
         let mut archived_rows = Vec::new();
         let mut seen = BTreeSet::new();
-        for row in self
-            .jobs
-            .iter()
-            .enumerate()
-            .filter(|(index, job)| {
-                job.method == "thread/list" && self.archive_check != Some(*index)
-            })
-            .map(|(_, job)| job)
-            .flat_map(|job| &job.items)
-            .chain(&self.references)
-        {
+        let mut membership_issues = Vec::new();
+        for original in self.rows() {
+            let mut row = self.checked_row(original);
             let identifier = row["id"].as_str().context("目录会话缺少身份")?;
-            if !eligible(row) || !seen.insert(identifier) {
+            if !eligible(&row) || !seen.insert(identifier.to_owned()) {
                 continue;
             }
             let archived = archived.contains(identifier);
-            let mut row = row.clone();
             row["ordinary"] = json!(ordinary.contains(identifier));
             row["archived"] = json!(archived);
-            row["membership"] = super::membership::resolve(
-                &row,
-                &self.jobs[0].items,
-                &self.initial.projection,
-                host,
-            );
+            row["membership"] = self.membership(&row, host);
+            if let Some(issue) = row["membership"]["projectIssue"].as_str() {
+                membership_issues.push(format!("membership:{}:{issue}", row["id"]));
+            }
             row["catalogProjectId"] = row["membership"]["projectId"].clone();
             if archived {
                 archived_rows.push(row);
@@ -231,6 +322,7 @@ impl Capture {
         }
         let mut issues = self.initial.projection.issues.clone();
         issues.extend(self.issues.clone());
+        issues.extend(membership_issues.clone());
         let mut source = self.source.clone();
         source["generation"] = json!(input::digest(&serde_json::to_vec(&json!([
             self.source,
@@ -239,6 +331,7 @@ impl Capture {
         ]))?));
         source["stateHash"] = json!(self.initial.hash);
         source["stateMetadata"] = self.initial.metadata.clone();
+        source["unresolvedReferences"] = json!(self.unresolved_references);
         Ok(Snapshot {
             source,
             captured_at: crate::model::now(),
@@ -247,6 +340,7 @@ impl Capture {
             archived: archived_rows,
             coverage: json!({"projects":"complete","ordinaryActive":"complete","ordinaryArchived":"complete",
                 "publishedReferences":if issues.is_empty() {"complete"} else {"partial"},
+                "membership":if membership_issues.is_empty() {"complete"} else {"partial"},
                 "legacy":if self.initial.projection.issues.is_empty() {"complete"} else {"partial"}}),
             issues,
         })
@@ -261,3 +355,7 @@ fn eligible(row: &Value) -> bool {
             uuid::Uuid::parse_str(identifier).is_ok_and(|parsed| parsed.to_string() == identifier)
         })
 }
+
+#[cfg(test)]
+#[path = "capture_tests.rs"]
+mod tests;
