@@ -6,8 +6,9 @@ allowed_write_set: 本任务记录、远程分区实现与相关测试、验收�
 base_commit: 59a7a68fc3e76b01062f6d124a1900d8a2b47527
 worktree_path: /Users/hongyong/Developer/codex-session-board-remote-sections-20261114
 coordinator: codex
-status: active
+status: completed
 started_at: 2026-11-15
+completed_at: 2026-11-15
 
 用户要求提交远程自动分区 PR，并自行处理检查失败，直到 PR 正确。
 范围包括推送本任务分支、创建 PR、核对合并兼容性和跟进最终头的检查。
@@ -26,4 +27,17 @@ started_at: 2026-11-15
 远程分区新增的权限角色、空会话校准与验收绑定均保留。
 之前 709 项报告属于合入主线前的实现；最终组合需重新验证。
 
-完成条件：PR 可合并，最终头的相关自动检查通过；记录测试及未完成的真实验收边界。
+PR：https://github.com/HYBB-rash/codex-session-board/pull/9
+实现验证头：b3861c69bd7f2d221d52951f1537acff4de2f002。
+GitHub 确认没有合并冲突；PR 工作流 43619901999 的 changes 任务成功，
+Clippy、项目检查和相关业务测试全部通过，没有检查失败需要修复。
+
+最终组合在 Mac 完整自动回归 734 项全部通过，无失败或跳过。
+需求仍为 17 pass、14 pending，release_ready=false；没有代签真实环境验收。
+全目标 Clippy、`./scripts/check` 和 `sh scripts/verify_context.sh` 均通过。
+报告：`/private/tmp/csb-remote-pr9-acceptance.json`。
+源码指纹：26b3df496c182ae3b45dca66f12edfd6750b51b3c060e5396e0b5606d5cee02f。
+核对版本清单、共享 STATE、需求、参考模型及锁与固定主线完全相同。
+
+此归档只改变本任务记录，不改变已验证源码；推送后继续核对最终 PR 头的线上检查。
+未合并、安装或部署，实机验证边界继续沿用原实现完成记录。
