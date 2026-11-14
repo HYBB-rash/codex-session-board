@@ -27,6 +27,8 @@ pub struct Config {
     pub remote_retry: bool,
     #[serde(skip)]
     pub local_authority: Option<crate::rpc::authority::LocalAuthority>,
+    #[serde(skip)]
+    pub inherited_socket: Option<PathBuf>,
     pub data_dir: PathBuf,
     pub port: u16,
     pub poll_seconds: u64,
@@ -61,6 +63,7 @@ impl Default for Config {
             remote_binding: None,
             remote_retry: true,
             local_authority: None,
+            inherited_socket: None,
             data_dir: PathBuf::new(),
             port: 8767,
             poll_seconds: 30,
@@ -97,6 +100,10 @@ impl Default for Config {
 }
 
 impl Config {
+    pub(crate) fn desktop_endpoint(&self) -> &Path {
+        self.inherited_socket.as_deref().unwrap_or(&self.desktop_socket)
+    }
+
     pub fn validate_modes(&self) -> Result<()> {
         ensure!(
             !self.legacy_mode

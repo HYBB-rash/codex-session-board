@@ -305,6 +305,8 @@
       "lib::codex_session_board::formal::tests::native_session_control_matches_the_store_on_every_reachable_edge"
     ],
     "AUTO-006": [
+      "lib::codex_session_board::rpc::authority::tests::genuine_terminal_evidence_survives_unloading",
+      "test::plugin_runtime::authority::a_shared_runtime_can_be_stopped_without_inheriting_its_ephemeral_socket",
       "test::plugin_runtime::authority::inherited_shared_backend_drives_new_tasks_and_unloaded_projection_cannot_block_them",
       "test::plugin_runtime::authority::a_different_client_parent_cannot_reuse_an_existing_board_owner",
       "acceptance.test_shared_desktop.SharedDesktopTests.test_shared_environment_and_peer_identity_are_checked_and_children_are_reaped",

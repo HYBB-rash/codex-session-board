@@ -372,7 +372,7 @@ impl DesktopConnection {
             ensure!(config.proxy_command.is_empty(), "代理连接缺少已登记主机的归属校验");
             let authority = config.local_authority.clone()
                 .map_or_else(authority::LocalAuthority::parent, Ok)?;
-            let mut connection = Self::connect_source(&config.desktop_socket, timeout, role, Some(&authority))?;
+            let mut connection = Self::connect_source(config.desktop_endpoint(), timeout, role, Some(&authority))?;
             connection.local_authority = Some(authority);
             Ok(connection)
         }

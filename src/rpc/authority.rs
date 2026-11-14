@@ -44,7 +44,7 @@ impl LocalAuthority {
 
 pub(crate) fn inherit(config: &mut crate::config::Config) -> Result<()> {
     if let Some(url) = std::env::var_os("CODEX_APP_SERVER_WS_URL") {
-        config.desktop_socket = socket_url(url.to_str().context("客户端连接地址不是 UTF-8")?)?;
+        config.inherited_socket = Some(socket_url(url.to_str().context("客户端连接地址不是 UTF-8")?)?);
     }
     config.local_authority = Some(LocalAuthority::parent()?);
     Ok(())

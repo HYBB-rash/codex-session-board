@@ -111,14 +111,35 @@ fn inherited_shared_backend_drives_new_tasks_and_unloaded_projection_cannot_bloc
     let active = until(&mut plugin, |snapshot| snapshot["sessions"][0]["state"] == "in_progress")?;
     assert_eq!(active["health"]["runtimeVerified"], true);
     assert_eq!(active["runtime"]["authority"]["pid"], std::process::id());
+    assert_eq!(active["runtime"]["configId"], codex_session_board::config::config_id(
+        &codex_session_board::config::load(Some(&profile.path))?)?);
     backend.set("notLoaded", "interrupted")?;
     let unloaded = until(&mut plugin, |snapshot| snapshot["sessions"][0]["turnStatus"] == "interrupted")?;
     assert_eq!(unloaded["sessions"][0]["state"], "in_progress");
-    backend.set("idle", "completed")?;
+    backend.set("notLoaded", "completed")?;
     until(&mut plugin, |snapshot| snapshot["sessions"][0]["state"] == "review")?;
     backend.set("idle", "interrupted")?;
     until(&mut plugin, |snapshot| snapshot["sessions"][0]["state"] == "blocked")?;
     plugin.close()
+}
+
+#[test]
+fn a_shared_runtime_can_be_stopped_without_inheriting_its_ephemeral_socket() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let profile = Profile::new(directory.path())?;
+    let backend = Backend::start(directory.path())?;
+    let mut plugin = backend.plugin(&profile)?;
+    until(&mut plugin, |snapshot| snapshot["health"]["runtimeVerified"] == true)?;
+    let output = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
+        .arg("--config").arg(&profile.path).arg("stop")
+        .env_remove("CODEX_APP_SERVER_WS_URL").output()?;
+    ensure!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let stopped: Value = serde_json::from_slice(&output.stdout)?;
+    assert_eq!(stopped["stopped"], true);
+    plugin.input.take();
+    plugin.child.wait()?;
+    assert!(std::net::TcpStream::connect(("127.0.0.1", profile.config.port)).is_err());
+    Ok(())
 }
 
 #[test]

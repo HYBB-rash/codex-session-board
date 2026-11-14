@@ -11,6 +11,7 @@ Mac 使用原装客户端支持的 CODEX_APP_SERVER_WS_URL，将 GUI 和后台�
 Unix WebSocket。启动器在创建后台之前设置该环境，让后台启动的插件自然继承。
 看板自动采用继承的端点，不再要求 Agent 从 daemon version 输出猜测地址。
 配置里的旧 desktop_socket 不会覆盖客户端实际继承的连接。
+继承的临时端点单独保存在运行时，不改变持久配置指纹，外部停止和更新仍可核验原配置。
 
 ```zsh
 python3 scripts/shared_desktop.py --probe --report /private/tmp/csb-mac-sharing.json
@@ -41,8 +42,10 @@ home 和 profile 必须是已存在且属于目标客户端的目录。可用 --
 自动验收绑定错误后台的六类角色、过期启动时间、未加载历史投影和启动器失败场景。
 隔离开发 fixture 由同一模拟后台启动看板，遵循相同的父进程与对端核对。
 
-只有已加载的 active / idle 或 systemError 参与实时状态推断。notLoaded 和未知
-状态不将历史投影的 interrupted 认定为真实暂停，历史补读仍走独立读取接口。
+active / idle、systemError，以及同一后台保留的真实结束记录参与实时状态推断。
+notLoaded 的 interrupted / failed 必须有实际结束时间，不能把未结束轮次的投影
+认定为真实暂停。正常 completed 在卸载后仍可进入待审阅；未知状态不猜测。
+历史补读仍走独立读取接口。
 连接错误不修改人工选择，也不会批量重置已经保存的卡片。
 
 2026-11-14 原装 Mac 客户端的两次隔离验证通过：托管后台 0.169.0，以及上述入口

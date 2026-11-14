@@ -67,11 +67,26 @@ fn same_user_wrong_backend_is_rejected_before_rpc_handshake_for_every_role() -> 
 #[test]
 fn unloaded_or_unknown_history_projection_cannot_create_blocked_runtime() {
     for kind in ["notLoaded", "newStatus", ""] {
-        for phase in ["inProgress", "interrupted", "failed", "completed"] {
+        for phase in ["inProgress", "interrupted", "failed"] {
             assert!(crate::model::runtime_state(
                 &serde_json::json!({"type":kind}),
                 &serde_json::json!({"id":"new-task","status":phase,"completedAt":null}),
             ).is_none(), "{kind}/{phase}");
         }
+    }
+}
+
+#[test]
+fn genuine_terminal_evidence_survives_unloading() {
+    let unloaded = serde_json::json!({"type":"notLoaded"});
+    for (phase, expected) in [("completed", "review"), ("failed", "blocked"), ("interrupted", "blocked")] {
+        let turn = serde_json::json!({"id":"turn-1","status":phase,"completedAt":10.0});
+        assert_eq!(crate::model::runtime_state(&unloaded, &turn).map(|state| state.0), Some(expected));
+    }
+    assert_eq!(crate::model::runtime_state(&unloaded,
+        &serde_json::json!({"id":"turn-1","status":"completed"})).map(|state| state.0), Some("review"));
+    for kind in ["newStatus", ""] {
+        assert!(crate::model::runtime_state(&serde_json::json!({"type":kind}),
+            &serde_json::json!({"id":"turn-1","status":"completed","completedAt":10.0})).is_none());
     }
 }

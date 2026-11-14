@@ -25,3 +25,5 @@ Mac 首阶段已通过：原装 ChatGPT.app 的独立 profile 在私有 CODEX_HO
 统一入口和四项启动回归、两项 MCP 跨进程状态及隔离回归均通过。随后清除 probe 继承的日用环境再做真实 Mac 复验通过（GUI 2894 / 后台 2890；/private/tmp/csb-shared-desktop-sanitized.json）；原装后台的 initialize、thread/list、thread/turns/list 和 mcpServerStatus/list 接口已独立核对（/private/tmp/csb-shared-protocol-methods.json）。临时隔离开发环境启动、归属检查及停止通过，cleanup_confirmed=true，报告 /private/tmp/csb-dev-authority-fpz_52_0/proof.json。
 
 首次完整候选检查 /private/tmp/csb-authority-candidate-20261114 在 Clippy 阶段拒绝新测试中的四处 unwrap，保留失败记录并改用显式错误处理；业务断言、阈值、需求和参考模型未放宽。待重新执行完整候选检查。
+
+第二轮 /private/tmp/csb-authority-candidate-20261114-r2 完成 685 项，684 通过，旧 section_config 回归要求先执行未经登记的代理，与新的强制归属规则冲突。保留失败并改为断言明确拒绝原因、代理未执行及数据未创建，未降低迁移保护。复查补充真实终态在卸载后仍可生效，以及临时继承 socket 不进入持久配置指纹，新增外部 stop 闭环。源需求与参考模型锁不变。
