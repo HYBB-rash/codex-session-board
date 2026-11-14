@@ -183,6 +183,7 @@ impl Server {
         std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
         listener.set_nonblocking(true)?;
         let config = Config {
+            local_authority: Some(codex_session_board::rpc::authority::LocalAuthority::owned_listener(&listener)?),
             data_dir: directory.join("data"),
             native_sections: true,
             sync_titles: false,

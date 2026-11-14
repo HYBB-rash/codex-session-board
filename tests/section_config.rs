@@ -48,8 +48,9 @@ fn section_migration_preserves_source_data_and_unrelated_configuration() -> Resu
         "import pathlib,sys; pathlib.Path(sys.argv[1]).write_text('selected')", marker]);
     let path = directory.path().join("proxy.json");
     std::fs::write(&path, proxy.to_string())?;
-    assert!(codex_session_board::preflight::sections(&path).is_err());
-    assert!(marker.exists());
+    let error = codex_session_board::preflight::sections(&path).unwrap_err();
+    assert!(error.to_string().contains("代理连接缺少已登记主机的归属校验"), "{error:#}");
+    assert!(!marker.exists());
     assert!(!loaded.data_dir.exists());
     Ok(())
 }

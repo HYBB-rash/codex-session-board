@@ -23,6 +23,11 @@ struct Plugin {
 impl Plugin {
     fn start(path: Option<&Path>, home: Option<&Path>) -> Result<Self> {
         let mut command = Command::new(env!("CARGO_BIN_EXE_codex-session-board"));
+        command.env_remove("CODEX_APP_SERVER_WS_URL");
+        Self::launch(command, path, home)
+    }
+
+    fn launch(mut command: Command, path: Option<&Path>, home: Option<&Path>) -> Result<Self> {
         command.arg("mcp").env_remove("CODEX_SESSION_BOARD_CONFIG")
             .stdin(Stdio::piped()).stdout(Stdio::piped());
         if let Some(path) = path {
@@ -67,6 +72,9 @@ impl Plugin {
         }
     }
 }
+
+#[path = "plugin_runtime/authority.rs"]
+mod authority;
 
 impl Drop for Plugin {
     fn drop(&mut self) {

@@ -43,12 +43,19 @@ pub fn runtime_state(status: &Value, turn: &Value) -> Option<(&'static str, &'st
         }
         Some("active") => None,
         Some("systemError") => Some(("blocked", "执行遇到系统异常，需要处理后继续。")),
-        _ => match turn["status"].as_str() {
-            Some("failed") => Some(("blocked", "本轮请求失败，需要处理后重试。")),
-            Some("interrupted") => Some(("blocked", "本轮执行已中断，需要检查后继续。")),
-            Some("completed") => Some(("review", "本轮执行已结束，等待你审阅结果。")),
-            _ => None,
-        },
+        Some("idle") => terminal_state(turn),
+        Some("notLoaded") if turn["status"] == "completed"
+            || turn["completedAt"].as_f64().is_some_and(|time| time.is_finite() && time > 0.0) => terminal_state(turn),
+        _ => None,
+    }
+}
+
+fn terminal_state(turn: &Value) -> Option<(&'static str, &'static str)> {
+    match turn["status"].as_str() {
+        Some("failed") => Some(("blocked", "本轮请求失败，需要处理后重试。")),
+        Some("interrupted") => Some(("blocked", "本轮执行已中断，需要检查后继续。")),
+        Some("completed") => Some(("review", "本轮执行已结束，等待你审阅结果。")),
+        _ => None,
     }
 }
 

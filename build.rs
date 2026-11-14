@@ -32,6 +32,13 @@ fn plugin_cannot_start_board(root: &Path) -> Result<(), String> {
             .split_once("mod tests")
             .map(|(before, _)| before)
             .unwrap_or(&text);
+        if !name.starts_with("rpc") && !name.ends_with("_tests.rs") {
+            for constructor in ["DesktopConnection::connect(", "DesktopConnection::proxy(", "DesktopConnection::remote("] {
+                if source.contains(constructor) {
+                    return Err(format!("{name} 绕过统一客户端连接层"));
+                }
+            }
+        }
         if source.contains("managed_launch")
             || (name != "rpc/capture.rs" && source.contains("process_group(0)"))
         {

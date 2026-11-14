@@ -374,7 +374,7 @@ pub fn start(app: &Arc<App>) -> Result<()> {
 }
 
 pub(crate) fn start_host(app: &Arc<App>) -> Result<()> {
-    if !app.config.desktop_socket.as_os_str().is_empty() || !app.config.proxy_command.is_empty() {
+    if !app.config.desktop_endpoint().as_os_str().is_empty() || !app.config.proxy_command.is_empty() {
         let runtime = Arc::clone(app);
         app.workers.spawn(move || runtime_worker(runtime))?;
     }
