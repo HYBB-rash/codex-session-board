@@ -6,6 +6,8 @@ use std::sync::{Arc, atomic::Ordering};
 use std::time::Duration;
 
 mod refresh;
+#[cfg(test)]
+mod tests;
 
 pub(crate) fn start(app: &Arc<App>) -> Result<()> {
     if app.config.host_id == "local" {

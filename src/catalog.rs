@@ -8,9 +8,14 @@ mod legacy;
 mod membership;
 pub mod paging;
 mod projects;
+mod validation;
 pub(crate) mod view;
 mod worker;
 pub(crate) use worker::start;
+#[cfg(test)]
+mod test_support;
+#[cfg(test)]
+mod view_tests;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,6 +45,7 @@ impl Snapshot {
             self.captured_at.is_finite() && self.captured_at > 0.0,
             "目录时间无效"
         );
+        validation::validate(self, host)?;
         Ok(())
     }
 
@@ -86,12 +92,8 @@ impl State {
 
     pub(crate) fn health(&self) -> Value {
         let snapshot = self.snapshot.as_ref();
-        let complete = snapshot.is_some_and(|snapshot| {
-            snapshot
-                .coverage
-                .as_object()
-                .is_some_and(|coverage| coverage.values().all(|value| value == "complete"))
-        }) && self.live
+        let complete = snapshot.is_some_and(|snapshot| validation::complete(&snapshot.coverage))
+            && self.live
             && self.error.is_none()
             && self.progress.is_none();
         serde_json::json!({"complete":complete,"cached":!self.live,
