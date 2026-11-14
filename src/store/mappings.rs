@@ -3,6 +3,27 @@ use crate::native_sections::mapping::Record;
 use std::collections::HashSet;
 
 impl Store {
+    pub(crate) fn abandon_unknown_native_probe(&self, host: &str, request: &str,
+        source: &Value) -> Result<()> {
+        let mut database = self.connection()?;
+        let transaction = database.transaction()?;
+        let key = format!("native_mapping:v1:{host}");
+        let saved: String = transaction.query_row("SELECT value FROM settings WHERE key=?",
+            [&key], |row| row.get(0))?;
+        let mut record: Record = serde_json::from_str(&saved)?;
+        let probe = record.probe.as_ref().context("校准请求已结束，请刷新")?;
+        ensure!(record.scope["source"] == *source, "校准请求属于另一个来源");
+        ensure!(probe.request == request && probe.thread.is_none(),
+            "校准请求已改变或仍有可清理的会话，请刷新");
+        transaction.execute("INSERT INTO settings(key,value) VALUES (?,?)",
+            params![format!("native_mapping_abandoned:v1:{host}:{request}"),saved])?;
+        record.probe = None;
+        transaction.execute("UPDATE settings SET value=? WHERE key=?",
+            params![serde_json::to_string(&record)?,key])?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub(crate) fn release_native_probe(&self, host: &str, record: &mut Record) -> Result<()> {
         let identifier = record.probe.as_ref().and_then(|probe| probe.thread.as_deref())
             .context("校准会话归属未知")?.to_owned();
@@ -94,6 +115,7 @@ mod tests {
                 request: uuid::Uuid::new_v4().to_string(),
                 thread: None,
                 prepared: false,
+                initial_name: Value::Null,
             }),
         };
         let store = Store::open(directory.path(), false)?;
@@ -130,6 +152,7 @@ mod tests {
                 request: uuid::Uuid::new_v4().to_string(),
                 thread: Some("invalid".into()),
                 prepared: false,
+                initial_name: Value::Null,
             }),
         };
         assert!(store.save_native_mapping("mac", &record).is_err());

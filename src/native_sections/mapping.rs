@@ -12,6 +12,8 @@ pub(crate) struct Probe {
     pub thread: Option<String>,
     #[serde(default)]
     pub prepared: bool,
+    #[serde(default)]
+    pub initial_name: Value,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

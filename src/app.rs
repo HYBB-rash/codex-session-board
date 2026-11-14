@@ -231,6 +231,7 @@ impl App {
             ("/api/new", Some(body)) => self.new_session(body),
             ("/api/new/reset", Some(body)) => self.reset_remote_draft(body),
             ("/api/connect", Some(body)) => self.connect_remote(body),
+            ("/api/native-calibration/reset", Some(body)) => self.reset_native_calibration(body),
             ("/api/open", Some(body)) => {
                 let identifier = body["id"].as_str().context("缺少会话 ID")?;
                 if identifier.starts_with("remote:") {

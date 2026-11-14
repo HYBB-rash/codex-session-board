@@ -12,9 +12,7 @@ impl App {
         let mut checked = self.native_mapping_scope.lock()
             .map_err(|_| anyhow::anyhow!("分区校验锁已损坏"))?;
         let _lock = self.native_mapping_lock()?;
-        let mut seed = mapping::seed(&self.config)?;
-        seed.scope["source"] = self.config.remote_binding.as_ref()
-            .context("远程分区缺少已核验的来源")?.mapping_identity()?;
+        let seed = self.mapping_seed()?;
         let mut record = self.mapping_record(&seed)?;
         let mut sections = crate::native_sections::direct::sections(reader, &self.config)?;
         record.logical = mapping::usable(&self.config, &sections, record.logical);
@@ -46,6 +44,45 @@ impl App {
                 "分区校准来源或配置已改变；需先在原来源完成专用空会话清理");
         }
         Ok(mapping::Record {scope:seed.scope.clone(),logical:seed.logical.clone(),probe:None})
+    }
+
+    fn mapping_seed(&self) -> Result<mapping::Seed> {
+        let source = self.config.remote_binding.as_ref()
+            .context("远程分区缺少已核验的来源")?.mapping_identity()?;
+        let seed = mapping::seed(&self.config).map(|mut seed| {
+            seed.scope["source"] = source.clone();
+            seed
+        });
+        if let Some(mut previous) = self.mapping_store.native_mapping(&self.config.host_id)?
+            && previous.probe.is_some() {
+            ensure!(previous.scope["source"] == source,
+                "校准清理仍属于原来的远程来源，不能在新来源执行");
+            if !seed.as_ref().is_ok_and(|seed| seed.scope == previous.scope) {
+                let mut backend = self.connection(self.native_timeout(), Role::CalibrationWriter)?;
+                let mut sidebar = self.native_sidebar()?;
+                Calibration {config:&self.config,store:&self.mapping_store,record:&mut previous,
+                    backend:&mut backend,sidebar:&mut sidebar}.cleanup()?;
+            }
+        }
+        seed
+    }
+
+    pub(crate) fn reset_native_calibration(&self, body: &Value) -> Result<Value> {
+        ensure!(body["confirmed"] == true, "请先在客户端核对可能遗留的空会话");
+        let host = body["hostId"].as_str().context("缺少主机 ID")?;
+        let request = body["requestId"].as_str().context("缺少校准请求 ID")?;
+        ensure!(uuid::Uuid::parse_str(request)?.to_string() == request, "校准请求 ID 无效");
+        let remote = self.remote_app(host)?;
+        let _operation = remote.operation()?;
+        let mut checked = remote.native_mapping_scope.lock()
+            .map_err(|_| anyhow::anyhow!("分区校验锁已损坏"))?;
+        let _lock = remote.native_mapping_lock()?;
+        let source = remote.config.remote_binding.as_ref()
+            .context("远程来源尚未登记")?.mapping_identity()?;
+        remote.mapping_store.abandon_unknown_native_probe(host, request, &source)?;
+        *checked = None;
+        remote.refresh.store(true, Ordering::Relaxed);
+        Ok(json!({"ok":true}))
     }
 
     pub(crate) fn native_timeout(&self) -> Duration {

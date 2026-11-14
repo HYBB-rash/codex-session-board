@@ -25,6 +25,7 @@ impl Calibration<'_> {
         if !missing.is_empty() {
             self.prepare()?;
             for (label, target) in missing {
+                self.ensure_scope()?;
                 let identifier = self.identifier()?.to_owned();
                 self.empty()?;
                 let receipt = self.sidebar.call("move_thread_to_sidebar_section", json!({
@@ -41,6 +42,7 @@ impl Calibration<'_> {
                     "原生分区映射出现冲突"
                 );
                 self.record.logical.insert(backend, target);
+                self.ensure_scope()?;
                 self.save()?;
                 sections = updated;
             }
@@ -68,6 +70,7 @@ impl Calibration<'_> {
                 request: uuid::Uuid::new_v4().to_string(),
                 thread: None,
                 prepared: false,
+                initial_name: Value::Null,
             });
             self.save()?;
             self.start()?;
@@ -83,10 +86,11 @@ impl Calibration<'_> {
             }
             return Ok(());
         }
-        self.backend.call(
-            "thread/name/set",
-            json!({"threadId":self.identifier()?,"name":name}),
-        )?;
+        if thread["name"] != name {
+            self.ensure_scope()?;
+            self.backend.call("thread/name/set",
+                json!({"threadId":self.identifier()?,"name":name}))?;
+        }
         let current = self.empty()?;
         ensure!(current["name"] == name, "校准会话初始标题尚未确认");
         self.record.probe.as_mut().context("缺少校准记录")?.prepared = true;
@@ -94,6 +98,7 @@ impl Calibration<'_> {
     }
 
     fn start(&mut self) -> Result<()> {
+        self.ensure_scope()?;
         let home = self.record.scope["source"]["peer"]["home"]
             .as_str()
             .context("校准缺少已核验的远程目录")?;
@@ -109,6 +114,7 @@ impl Calibration<'_> {
             "校准会话 ID 无效"
         );
         self.record.probe.as_mut().context("缺少创建记录")?.thread = Some(identifier.into());
+        self.record.probe.as_mut().context("缺少创建记录")?.initial_name = thread["name"].clone();
         self.save()?;
         if let Err(error) = self.verify_empty(thread) {
             self.store.release_native_probe(&self.config.host_id, self.record)?;
@@ -132,6 +138,21 @@ impl Calibration<'_> {
                 && thread["historyMode"] == "legacy",
             "校准会话目录或历史模式已改变"
         );
+        let probe = self.record.probe.as_ref().context("缺少校准记录")?;
+        let expected = format!("分区校准 · {}", probe.request);
+        ensure!(thread["name"] == expected
+            || !probe.prepared && thread["name"] == probe.initial_name,
+            "校准会话已被改名接手");
+        if let Some(binding) = &self.config.remote_binding {
+            ensure!(binding.mapping_identity()? == self.record.scope["source"], "校准来源已改变");
+        }
+        Ok(())
+    }
+
+    fn ensure_scope(&self) -> Result<()> {
+        let mut current = mapping::seed(self.config)?.scope;
+        current["source"] = self.record.scope["source"].clone();
+        ensure!(current == self.record.scope, "校准过程中账号或分区配置已改变");
         Ok(())
     }
 
@@ -185,10 +206,13 @@ impl Calibration<'_> {
         );
         let live = mapping::live_catalog(self.sidebar, self.config)?;
         mapping::confirm_membership(&live, target, identifier)?;
+        let after = self.empty()?;
+        ensure!(after["section"] == thread["section"], "校准会话的位置在读取期间改变");
+        self.ensure_scope()?;
         Ok((backend.into(), sections))
     }
 
-    fn cleanup(&mut self) -> Result<()> {
+    pub(crate) fn cleanup(&mut self) -> Result<()> {
         if self.record.probe.is_none() {
             return Ok(());
         }

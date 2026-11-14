@@ -27,6 +27,11 @@ impl App {
             .map(|binding| binding.require_confirmed())
             .transpose();
         let writable = remote.enabled.load(Ordering::SeqCst) && checked.is_ok();
+        health["nativeCalibration"] = self.mapping_store.native_mapping(host)?
+            .and_then(|record| record.probe)
+            .map(|probe| json!({"requestId":probe.request,
+                "resetAllowed":probe.thread.is_none(),"cleanupPending":probe.thread.is_some()}))
+            .unwrap_or(Value::Null);
         health["writeError"] = json!(checked.err().map(|error| error.to_string()));
         sessions.retain(|row| {
             row["hostId"] != *host || !known.contains(row["threadId"].as_str().unwrap_or(""))
@@ -40,7 +45,8 @@ impl App {
                 continue;
             }
             let mut row = remote_value(host, &health["hostLabel"], row, legacy)?;
-            row["readOnly"] = json!(!writable);
+            row["readOnly"] = json!(!writable
+                || remote.config.native_sections && !row["sectionVersion"].is_string());
             sessions.retain(|previous| previous["id"] != row["id"]);
             sessions.push(row);
         }
