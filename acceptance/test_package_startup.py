@@ -60,14 +60,59 @@ class PackageStartupTests(unittest.TestCase):
                          {"name": "codex-session-board", "version": "1"})
 
     def test_mcp_response_stream_keeps_one_total_deadline(self):
+        elapsed = [0]
+
+        def chunk(_maximum):
+            elapsed[0] += 15
+            return b'{"id":1}\n'
+
         with patch.object(verify_package_startup.socket, "socket") as factory, \
-                patch.object(verify_package_startup.time, "monotonic", side_effect=[0, 1, 31]):
+                patch.object(verify_package_startup.time, "monotonic", side_effect=lambda: elapsed[0]):
             connection = factory.return_value.__enter__.return_value
-            connection.recv.return_value = b'{"id":1}\n'
+            connection.recv.side_effect = chunk
             with self.assertRaisesRegex(TimeoutError, "30 seconds"):
                 verify_package_startup.mcp(Path("/unused"), "1", self.runtime)
-            self.assertEqual(connection.recv.call_count, 1)
-            self.assertEqual(connection.settimeout.call_args.args, (29,))
+            self.assertEqual(connection.recv.call_count, 2)
+            self.assertLessEqual(elapsed[0], 30)
+
+    def test_connect_and_send_share_the_total_startup_budget(self):
+        elapsed = [0]
+        with patch.object(verify_package_startup.socket, "socket") as factory, \
+                patch.object(verify_package_startup.time, "monotonic", side_effect=lambda: elapsed[0]):
+            connection = factory.return_value.__enter__.return_value
+
+            def transfer(_argument):
+                timeout = connection.settimeout.call_args.args[0]
+                elapsed[0] += min(29, timeout)
+                if timeout <= 29:
+                    raise TimeoutError("socket deadline")
+
+            connection.connect.side_effect = transfer
+            connection.sendall.side_effect = transfer
+            with self.assertRaises(TimeoutError):
+                verify_package_startup.mcp(Path("/unused"), "1", self.runtime)
+            self.assertLessEqual(elapsed[0], 30)
+            connection.recv.assert_not_called()
+
+    def test_child_exit_after_total_deadline_cannot_pass(self):
+        elapsed = [0]
+        responses = iter(["".join(json.dumps(reply) + "\n" for reply in self.replies()).encode(), b""])
+
+        def receive(_maximum):
+            elapsed[0] = 29
+            return next(responses)
+
+        def exited(_path):
+            elapsed[0] = 30.5
+            return json.dumps({"pid": 26, "parent": 9, "exit": 0})
+
+        with patch.object(verify_package_startup.socket, "socket") as factory, \
+                patch.object(verify_package_startup.time, "monotonic", side_effect=lambda: elapsed[0]), \
+                patch.object(Path, "read_text", exited):
+            connection = factory.return_value.__enter__.return_value
+            connection.recv.side_effect = receive
+            with self.assertRaisesRegex(TimeoutError, "30 seconds"):
+                verify_package_startup.mcp(Path("/unused"), "1", self.runtime)
 
     def test_mcp_failure_wrong_backend_or_different_service_cannot_pass(self):
         for arguments in ({"exit_code": 1}, {"parent": 10}):

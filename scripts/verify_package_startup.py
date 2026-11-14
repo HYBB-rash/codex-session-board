@@ -25,6 +25,13 @@ CHECKS = [
 IDENTITY_FIELDS = ("app", "version", "build", "dataDir", "configId", "pid", "authority")
 
 
+def remaining_time(deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("Packaged MCP startup exceeded 30 seconds")
+    return remaining
+
+
 def mcp(root, version, runtime):
     deadline = time.monotonic() + 30
     requests = [
@@ -37,30 +44,30 @@ def mcp(root, version, runtime):
         {"id": 3, "method": "tools/call", "params": {"name": "board_snapshot", "arguments": {}}},
     ]
     with socket.socket(socket.AF_UNIX) as connection:
-        connection.settimeout(30)
+        connection.settimeout(remaining_time(deadline))
         connection.connect(str(root / "mcp.sock"))
+        connection.settimeout(remaining_time(deadline))
         connection.sendall("".join(json.dumps({"jsonrpc": "2.0", **request}) + "\n"
                                    for request in requests).encode())
         connection.shutdown(socket.SHUT_WR)
         output = bytearray()
         while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError("Packaged MCP startup exceeded 30 seconds")
-            connection.settimeout(remaining)
+            connection.settimeout(remaining_time(deadline))
             chunk = connection.recv(65536)
             if not chunk:
                 break
             output.extend(chunk)
         replies = [json.loads(line) for line in output.decode().splitlines()]
-    deadline = time.monotonic() + 3
+    exit_deadline = min(deadline, time.monotonic() + 3)
     while True:
+        remaining_time(deadline)
+        if time.monotonic() >= exit_deadline:
+            raise RuntimeError("Packaged MCP exit was not confirmed")
         child = json.loads((root / "mcp-child.json").read_text())
         if child["exit"] is not None:
+            remaining_time(deadline)
             break
-        if time.monotonic() >= deadline:
-            raise RuntimeError("Packaged MCP exit was not confirmed")
-        time.sleep(0.01)
+        time.sleep(min(0.01, remaining_time(deadline)))
     if child["exit"] != 0 or child["parent"] != runtime["authority"]["pid"]:
         raise ValueError("Packaged MCP exited unsuccessfully or belongs to another backend")
     if [reply.get("id") for reply in replies] != [1, 2, 3] or any("error" in reply for reply in replies):
@@ -75,6 +82,7 @@ def mcp(root, version, runtime):
         raise ValueError("Packaged MCP cannot read the isolated fixture")
     if {field: snapshot["structuredContent"]["runtime"][field] for field in IDENTITY_FIELDS} != runtime:
         raise ValueError("Packaged MCP did not reuse the verified HTTP service and configuration")
+    remaining_time(deadline)
     return initialized["serverInfo"]
 
 
