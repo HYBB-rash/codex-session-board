@@ -156,7 +156,7 @@ fn fixture_files(root: &Path) -> Result<()> {
         root.join("scripts/install-git-hooks"),
         include_str!("../scripts/install-git-hooks"),
     )?;
-    fs::write(root.join(".gitignore"), "/target/\n")?;
+    fs::write(root.join(".gitignore"), include_str!("../.gitignore"))?;
     fs::write(root.join("clippy.toml"), include_str!("../clippy.toml"))?;
     fixture_manifest(root)?;
     copy_checker(root)?;
@@ -208,6 +208,11 @@ fn copy_checker(root: &Path) -> Result<()> {
 }
 
 fn copy_fixture_path(source: &Path, destination: &Path) -> Result<()> {
+    if source.file_name().is_some_and(|name| name == "__pycache__")
+        || source.extension().is_some_and(|extension| extension == "pyc")
+    {
+        return Ok(());
+    }
     if source.is_dir() {
         fs::create_dir(destination)?;
         for entry in fs::read_dir(source)? {
@@ -217,6 +222,24 @@ fn copy_fixture_path(source: &Path, destination: &Path) -> Result<()> {
     } else {
         fs::copy(source, destination)?;
     }
+    Ok(())
+}
+
+#[test]
+fn copied_checker_inputs_exclude_generated_python_bytecode() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let source = directory.path().join("source");
+    let destination = directory.path().join("copy");
+    fs::create_dir_all(source.join("nested/__pycache__"))?;
+    fs::write(source.join("module.py"), "value = 42\n")?;
+    fs::write(source.join("nested/check.rs"), "fn main() {}\n")?;
+    fs::write(source.join("nested/__pycache__/module.pyc"), "stale cache")?;
+    fs::write(source.join("module.pyc"), "legacy cache")?;
+    copy_fixture_path(&source, &destination)?;
+    assert_eq!(fs::read(destination.join("module.py"))?, b"value = 42\n");
+    assert_eq!(fs::read(destination.join("nested/check.rs"))?, b"fn main() {}\n");
+    assert!(!destination.join("nested/__pycache__").exists());
+    assert!(!destination.join("module.pyc").exists());
     Ok(())
 }
 
@@ -282,6 +305,7 @@ fn blocked_candidate(root: &Path) -> Result<Output> {
 fn passing_staged_tests_allow_a_commit_and_installation_is_idempotent() -> Result<()> {
     let directory = fixture(42)?;
     let root = directory.path();
+    assert!(successful_git(root, &["ls-files", "--", "*.pyc"])?.stdout.is_empty());
     assert!(install(root)?.status.success());
     let validation = candidate(root)?;
     assert!(
