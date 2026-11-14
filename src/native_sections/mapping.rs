@@ -10,6 +10,8 @@ pub(crate) struct Seed {
 pub(crate) struct Probe {
     pub request: String,
     pub thread: Option<String>,
+    #[serde(default)]
+    pub prepared: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -44,7 +46,7 @@ pub(crate) fn seed(config: &Config) -> Result<Seed> {
     Ok(Seed { scope, logical })
 }
 
-pub(crate) fn live_catalog(reader: &mut impl Rpc, config: &Config) -> Result<Value> {
+pub(crate) fn live_catalog(reader: &mut (impl Rpc + ?Sized), config: &Config) -> Result<Value> {
     let response = reader.call("list_threads", json!({"limit":1}))?;
     let unavailable = response["unavailableHosts"]
         .as_array()

@@ -3,6 +3,22 @@ use crate::native_sections::mapping::Record;
 use std::collections::HashSet;
 
 impl Store {
+    pub(crate) fn release_native_probe(&self, host: &str, record: &mut Record) -> Result<()> {
+        let identifier = record.probe.as_ref().and_then(|probe| probe.thread.as_deref())
+            .context("校准会话归属未知")?.to_owned();
+        let mut replacement = record.clone();
+        replacement.probe = None;
+        let mut database = self.connection()?;
+        let transaction = database.transaction()?;
+        transaction.execute("DELETE FROM settings WHERE key=?",
+            [format!("native_probe:{host}:{identifier}")])?;
+        transaction.execute("UPDATE settings SET value=? WHERE key=?",
+            params![serde_json::to_string(&replacement)?,format!("native_mapping:v1:{host}")])?;
+        transaction.commit()?;
+        *record = replacement;
+        Ok(())
+    }
+
     pub(crate) fn native_mapping(&self, host: &str) -> Result<Option<Record>> {
         let database = self.connection()?;
         let record: Option<String> = database
@@ -77,6 +93,7 @@ mod tests {
             probe: Some(Probe {
                 request: uuid::Uuid::new_v4().to_string(),
                 thread: None,
+                prepared: false,
             }),
         };
         let store = Store::open(directory.path(), false)?;
@@ -112,6 +129,7 @@ mod tests {
             probe: Some(Probe {
                 request: uuid::Uuid::new_v4().to_string(),
                 thread: Some("invalid".into()),
+                prepared: false,
             }),
         };
         assert!(store.save_native_mapping("mac", &record).is_err());

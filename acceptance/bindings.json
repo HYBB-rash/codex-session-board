@@ -373,6 +373,7 @@
       "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions"
     ],
     "MANUAL-001": [
+      "lib::codex_session_board::rpc::tests::calibration_connections_can_manage_empty_probes_but_cannot_run_models",
       "lib::codex_session_board::store::mappings::tests::calibration_ownership_and_unknown_creation_survive_restart",
       "lib::codex_session_board::store::mappings::tests::malformed_probe_cannot_partially_publish_a_mapping",
       "test::native_direct::direct_read_uses_the_current_owner_instead_of_legacy_or_other_accounts",
