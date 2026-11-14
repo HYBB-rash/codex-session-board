@@ -1,5 +1,7 @@
 import argparse
+from contextlib import closing
 from datetime import datetime, timezone
+from http.client import HTTPConnection
 import json
 from pathlib import Path
 import socket
@@ -22,7 +24,7 @@ CHECKS = [
 ]
 
 
-def mcp(package, root, environment, version):
+def mcp(root, version, runtime):
     requests = [
         {"id": 1, "method": "initialize", "params": {
             "protocolVersion": "2025-06-18",
@@ -32,12 +34,24 @@ def mcp(package, root, environment, version):
         {"id": 2, "method": "resources/read", "params": {"uri": "ui://session-board/index.html"}},
         {"id": 3, "method": "tools/call", "params": {"name": "board_snapshot", "arguments": {}}},
     ]
-    result = subprocess.run(
-        [str(package / "bin/run-plugin"), "--config", str(root / "config.json"), "mcp"],
-        input="".join(json.dumps({"jsonrpc": "2.0", **request}) + "\n" for request in requests),
-        cwd=root, env=environment, text=True, capture_output=True, timeout=30, check=True,
-    )
-    replies = [json.loads(line) for line in result.stdout.splitlines()]
+    with socket.socket(socket.AF_UNIX) as connection:
+        connection.settimeout(30)
+        connection.connect(str(root / "mcp.sock"))
+        connection.sendall("".join(json.dumps({"jsonrpc": "2.0", **request}) + "\n"
+                                   for request in requests).encode())
+        connection.shutdown(socket.SHUT_WR)
+        with connection.makefile("r") as stream:
+            replies = [json.loads(line) for line in stream]
+    deadline = time.monotonic() + 3
+    while True:
+        child = json.loads((root / "mcp-child.json").read_text())
+        if child["exit"] is not None:
+            break
+        if time.monotonic() >= deadline:
+            raise RuntimeError("Packaged MCP exit was not confirmed")
+        time.sleep(0.01)
+    if child["exit"] != 0 or child["parent"] != runtime["authority"]["pid"]:
+        raise ValueError("Packaged MCP exited unsuccessfully or belongs to another backend")
     if [reply.get("id") for reply in replies] != [1, 2, 3] or any("error" in reply for reply in replies):
         raise ValueError("Packaged MCP did not answer all startup requests")
     initialized, resource, snapshot = [reply["result"] for reply in replies]
@@ -48,6 +62,8 @@ def mcp(package, root, environment, version):
         raise ValueError("Packaged MCP interface resource is missing")
     if snapshot.get("isError") or not snapshot["structuredContent"]["sessions"]:
         raise ValueError("Packaged MCP cannot read the isolated fixture")
+    if snapshot["structuredContent"]["runtime"] != runtime:
+        raise ValueError("Packaged MCP did not reuse the verified HTTP service and configuration")
     return initialized["serverInfo"]
 
 
@@ -76,18 +92,34 @@ def verify(package, fixture, output):
                            env=environment, check=True, timeout=10, capture_output=True)
             children = []
             try:
-                commands = [
-                    [str(fixture), "serve", str(root)],
-                    [str(package / "bin/run-plugin"), "--config", str(root / "config.json"), "serve"],
-                ]
-                for name, command in zip(("fixture", "service"), commands):
-                    children.append(Child(root, name, command, environment))
+                children.append(Child(root, "fixture", [
+                    str(fixture), "serve", str(root), str(package / "bin/run-plugin")], environment))
                 record = {
                     "root": str(root), "url": f"http://127.0.0.1:{port}",
                     "program_sha256": manifest["binary_sha256"],
                 }
                 ready(children, record, threading.Event())
-                report["mcp"] = mcp(package, root, environment, manifest["version"])
+                with closing(HTTPConnection("127.0.0.1", port, timeout=3)) as connection:
+                    connection.request("GET", "/api/info")
+                    with connection.getresponse() as response:
+                        if response.status != 200:
+                            raise ValueError("Packaged HTTP identity is unavailable")
+                        runtime = json.load(response)
+                authority = json.loads((root / "fixture-authority.json").read_text())
+                service = json.loads((root / "service-child.json").read_text())
+                if (runtime["authority"] != authority or authority["pid"] != children[0].pid
+                        or service["parent"] != authority["pid"] or runtime["pid"] != service["pid"]
+                        or runtime["build"] != manifest["binary_sha256"]
+                        or runtime["dataDir"] != str(root / "data")
+                        or runtime["version"] != manifest["version"] or not runtime["configId"]):
+                    raise ValueError("Packaged service backend or process identity differs")
+                config_sha = digest(root / "config.json")
+                report["runtime"] = runtime
+                report["config_sha256"] = config_sha
+                report["mcp"] = mcp(root, manifest["version"], runtime)
+                report["mcp_child"] = json.loads((root / "mcp-child.json").read_text())
+                if digest(root / "config.json") != config_sha:
+                    raise ValueError("Isolated configuration changed during startup")
                 if digest(package / "bin/codex-session-board") != manifest["binary_sha256"]:
                     raise ValueError("Package binary changed during startup")
                 verify_package(package)
@@ -98,10 +130,10 @@ def verify(package, fixture, output):
                 finally:
                     report["logs"] = {
                         name: (root / f"{name}.log").read_text()[-8000:]
-                        for name in ("fixture", "service") if (root / f"{name}.log").exists()
+                        for name in ("fixture", "service", "mcp") if (root / f"{name}.log").exists()
                     }
             report.update(passed=True, checks=CHECKS)
-    except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, KeyError, RuntimeError, TypeError, subprocess.SubprocessError) as error:
         report["error"] = str(error)
         raise
     finally:

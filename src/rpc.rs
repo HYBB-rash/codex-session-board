@@ -560,9 +560,14 @@ impl SidebarConnection {
 
     pub fn connect(config: &crate::config::Config, timeout: Duration) -> Result<Self> {
         let deadline = deadline_after(timeout)?;
+        let stream = sidebar::connect(&config.sidebar_socket, deadline)?.into();
+        let origin = forwarding::Guard::new(config);
+        if config.local_authority.is_some() {
+            origin.verify_source(&stream)?;
+        }
         Ok(Self {
             stream: DeadlineStream {
-                stream: sidebar::connect(&config.sidebar_socket, deadline)?.into(),
+                stream,
                 deadline,
             },
             caller: config.sidebar_caller.clone(),
@@ -570,7 +575,7 @@ impl SidebarConnection {
             request_id: 0,
             read_only: false,
             project_only: false,
-            origin: Some(forwarding::Guard::new(config)),
+            origin: Some(origin),
         })
     }
 
@@ -610,7 +615,7 @@ impl Rpc for SidebarConnection {
             "move_thread_to_sidebar_section" | "move_thread_to_project"
         ) && let Some(origin) = &self.origin
         {
-            origin.verify(&params, self.stream.deadline)?;
+            origin.verify(&params, self.stream.deadline, &self.stream.stream)?;
         }
         self.request_id = self.request_id.checked_add(1).context("分区请求编号耗尽")?;
         let request = json!({"jsonrpc":"2.0","id":self.request_id,"method":"tools/call",
