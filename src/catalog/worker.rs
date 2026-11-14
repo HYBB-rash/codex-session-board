@@ -5,6 +5,9 @@ use serde_json::json;
 use std::sync::{Arc, atomic::Ordering};
 use std::time::Duration;
 
+#[cfg(test)]
+#[path = "continuity_tests.rs"]
+mod continuity_tests;
 mod refresh;
 #[cfg(test)]
 mod tests;
@@ -92,7 +95,16 @@ fn checkpoint(app: &App, capture: &Capture) -> Result<()> {
     Ok(())
 }
 
-fn publish(app: &App, snapshot: Snapshot) -> Result<()> {
+fn publish(app: &App, mut snapshot: Snapshot) -> Result<()> {
+    {
+        let state = app
+            .catalog
+            .lock()
+            .map_err(|_| anyhow::anyhow!("目录锁已损坏"))?;
+        if let Some(previous) = &state.snapshot {
+            super::continuity::retain(&mut snapshot, previous);
+        }
+    }
     snapshot.validate(&app.config.host_id)?;
     let ordinary: Vec<_> = snapshot
         .active

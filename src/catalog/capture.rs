@@ -343,6 +343,7 @@ impl Capture {
             self.jobs.iter().map(|job| &job.params).collect::<Vec<_>>()
         ]))?));
         source["stateHash"] = json!(self.initial.hash);
+        source["accountFingerprint"] = json!(self.initial.account_fingerprint);
         source["stateMetadata"] = self.initial.metadata.clone();
         source["unresolvedReferences"] = json!(self.unresolved_references);
         Ok(source)

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 mod capture;
+mod continuity;
 mod input;
 mod legacy;
 mod membership;

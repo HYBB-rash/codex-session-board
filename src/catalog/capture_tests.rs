@@ -14,7 +14,7 @@ fn capture(version: &str) -> Capture {
     }
     Capture {
         source: json!({"hostId":"local","codexHome":"/target","version":version}),
-        initial: input::Input { hash:"state".into(), metadata:Value::Null, projection:Projection::default() },
+        initial: input::Input { hash:"state".into(), account_fingerprint:None, metadata:Value::Null, projection:Projection::default() },
         jobs, expanded:true, archive_check:Some(4), reference_index:0, references:Vec::new(),
         unresolved_references:Vec::new(), metadata_checks:BTreeMap::new(), issues:Vec::new(),
     }

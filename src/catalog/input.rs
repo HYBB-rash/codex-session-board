@@ -11,6 +11,8 @@ const MAX_STATE_BYTES: usize = 16 * 1024 * 1024;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Input {
     pub hash: String,
+    #[serde(default)]
+    pub account_fingerprint: Option<String>,
     pub metadata: Value,
     pub projection: Projection,
 }
@@ -57,9 +59,22 @@ pub(crate) fn read(reader: &mut dyn Rpc, codex_home: &str) -> Result<Input> {
     let hash = digest(&serde_json::to_vec(&json!([raw_hash, identity]))?);
     Ok(Input {
         hash,
+        account_fingerprint: account_fingerprint(&account)?,
         metadata,
         projection,
     })
+}
+
+fn account_fingerprint(account: &Value) -> Result<Option<String>> {
+    let (Some(user), Some(workspace)) = (
+        account["userId"].as_str().filter(|value| !value.is_empty()),
+        account["workspaceRouting"]["chatgptAccountId"]
+            .as_str()
+            .filter(|value| !value.is_empty()),
+    ) else {
+        return Ok(None);
+    };
+    Ok(Some(digest(&serde_json::to_vec(&[user, workspace])?)))
 }
 
 fn state_file(reader: &mut dyn Rpc, path: &str) -> Result<(Vec<u8>, Value)> {
@@ -112,6 +127,23 @@ mod tests {
                 _ => unreachable!(),
             }
         }
+    }
+
+    #[test]
+    fn incomplete_or_empty_account_identity_has_no_fingerprint() -> Result<()> {
+        for account in [
+            json!({}),
+            json!({"userId":"user"}),
+            json!({"userId":"","workspaceRouting":{"chatgptAccountId":"workspace"}}),
+            json!({"userId":"user","workspaceRouting":{"chatgptAccountId":""}}),
+        ] {
+            assert!(account_fingerprint(&account)?.is_none());
+        }
+        let fingerprint = account_fingerprint(
+            &json!({"userId":"user","workspaceRouting":{"chatgptAccountId":"workspace"}}),
+        )?;
+        assert_eq!(fingerprint, Some(digest(br#"["user","workspace"]"#)));
+        Ok(())
     }
 
     #[test]
