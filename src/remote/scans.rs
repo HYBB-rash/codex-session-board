@@ -206,6 +206,13 @@ fn reclaim_probes(app: &App, reader: &mut dyn Rpc, entries: &[Value]) -> Result<
     Ok(owned)
 }
 
+fn prepare_catalog(app: &App, reader: &mut dyn Rpc)
+    -> Result<Option<crate::native_sections::direct::Catalog>> {
+    if !app.config.native_sections { return Ok(None); }
+    let _operation = app.operation()?;
+    Ok(Some(app.native_catalog(reader)?))
+}
+
 pub(crate) fn scan_runtime_page(
     app: &App,
     reader: &mut dyn Rpc,
@@ -213,12 +220,7 @@ pub(crate) fn scan_runtime_page(
     since: f64,
 ) -> Result<()> {
     let mut progress = Progress::load(app)?;
-    let catalog = if app.config.native_sections {
-        let _operation = app.operation()?;
-        Some(app.native_catalog(reader)?)
-    } else {
-        None
-    };
+    let catalog = prepare_catalog(app,reader)?;
     let archived = if app.config.native_sections {
         HashMap::new()
     } else {

@@ -120,6 +120,7 @@ impl RemoteFixture {
                 &directory.join(format!("{host}.sock")),
                 Arc::clone(&surface),
             )?);
+            server.surface.lock().unwrap().remote_surfaces.insert(host.into(),Arc::clone(&surface));
             surfaces.push(surface);
         }
         let fixture = Self {
@@ -189,6 +190,14 @@ impl RemoteFixture {
     }
 
     pub(super) fn seed_native_cache(&self, config: &Config, source: &Store) -> Result<()> {
+        self.seed_cache(config,source,true)
+    }
+
+    pub(super) fn seed_legacy_cache(&self, config: &Config, source: &Store) -> Result<()> {
+        self.seed_cache(config,source,false)
+    }
+
+    fn seed_cache(&self, config: &Config, source: &Store, native: bool) -> Result<()> {
         for identifier in HOSTS {
             let host: Host = serde_json::from_value(
                 json!({"hostId":identifier,"displayName":identifier,"alias":identifier}),
@@ -208,7 +217,7 @@ impl RemoteFixture {
             )?;
             let store = Store::open(&directory, false)?;
             store.import_remote(source, identifier)?;
-            for (thread, state) in [(FIRST, "blocked"), (SECOND, "unknown")] {
+            for (thread, state) in [(FIRST, "blocked"), (SECOND, "unknown")].into_iter().filter(|_| native) {
                 store.connection()?.execute(
                     "UPDATE sessions SET native_state=?,native_section=? WHERE id=?",
                     rusqlite::params![state, section_id(state), thread],
@@ -216,6 +225,15 @@ impl RemoteFixture {
             }
         }
         Ok(())
+    }
+
+    pub(super) fn surface(&self, host: &str) -> Arc<Mutex<Surface>> {
+        Arc::clone(&self.surfaces[HOSTS.iter().position(|entry| *entry == host).unwrap()])
+    }
+
+    pub(super) fn archived(&self, host: &str) -> std::collections::HashSet<String> {
+        self.engines[HOSTS.iter().position(|entry| *entry == host).unwrap()]
+            .archived.lock().unwrap().clone()
     }
 
     pub(super) fn pause(&self) -> Result<Pause> {

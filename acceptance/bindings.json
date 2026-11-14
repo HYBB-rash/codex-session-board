@@ -373,6 +373,7 @@
       "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions"
     ],
     "MANUAL-001": [
+      "test::native_authority::remote_isolation::backfill::remote_first_scan_backfills_legacy_rows_and_cold_maps_then_reconnects_without_old_phase_replay",
       "lib::codex_session_board::native_sections::calibration::tests::empty_probe_learns_every_remote_mapping_without_disk_flush_and_reuses_after_restart",
       "lib::codex_session_board::native_sections::calibration::tests::empty_history_fallback_requires_the_exact_native_unmaterialized_proof_for_this_thread",
       "lib::codex_session_board::native_sections::calibration::tests::a_known_unmaterialized_legacy_probe_can_finish_after_restart_without_recreation",

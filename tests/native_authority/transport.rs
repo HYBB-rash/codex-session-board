@@ -33,6 +33,7 @@ pub(super) struct Surface {
     pub calls: Vec<String>,
     pub notes_during_move: Vec<String>,
     pub lose_receipt: bool,
+    pub lose_archive_receipt: bool,
     pub reject_move: Option<String>,
     pub blocked: Option<BlockingMove>,
     pub read_blocked: Option<BlockingMove>,
@@ -40,6 +41,8 @@ pub(super) struct Surface {
     pub remote_threads: Vec<Value>,
     pub remote_disconnected: bool,
     pub remote_blocked: Option<BlockingMove>,
+    pub remote_surfaces: BTreeMap<String, Arc<Mutex<Surface>>>,
+    pub probe_threads: BTreeMap<String, Value>,
 }
 
 #[derive(Clone)]
@@ -77,6 +80,9 @@ impl Surface {
     }
 
     pub(super) fn backend_section(&self, identifier: &str) -> Value {
+        if self.slots.get(identifier).is_some_and(|state| state == "unsectioned") {
+            return Value::Null;
+        }
         self.slots
             .get(identifier)
             .map(|state| {
@@ -92,12 +98,17 @@ impl Surface {
     pub(super) fn layout(&self) -> Value {
         let sections: Vec<_> = codex_session_board::model::board_states()
             .map(|(state, label)| {
-                let members: Vec<_> = self
+                let mut members: Vec<_> = self
                     .slots
                     .iter()
                     .filter(|(_, slot)| *slot == state)
                     .map(|(identifier, _)| format!("codex:thread:local:{identifier}"))
                     .collect();
+                for (host, remote) in &self.remote_surfaces {
+                    members.extend(remote.lock().unwrap().slots.iter()
+                        .filter(|(_,slot)| *slot == state)
+                        .map(|(id,_)| format!("codex:thread:{host}:{id}")));
+                }
                 json!({"sectionId":section_id(state),"name":label,"itemKeys":members})
             })
             .collect();
@@ -136,30 +147,41 @@ impl Surface {
             "list_threads" if args["mode"] == "history" => self.history(args),
             "list_threads" => Ok(Some(self.layout())),
             "move_thread_to_sidebar_section" => {
-                assert_eq!(args["hostId"], "local");
-                assert_eq!(args["source"], "codex");
-                let identifier = args["threadId"].as_str().unwrap_or("");
-                if self.reject_move.as_deref() == Some(identifier) {
-                    return Ok(None);
+                if args["hostId"] != "local" {
+                    return self.remote_move(args);
                 }
-                let state = codex_session_board::model::board_states()
-                    .find(|(state, _)| args["sectionId"] == section_id(state))
-                    .ok_or_else(|| anyhow::anyhow!("unknown section"))?
-                    .0;
-                let connection = rusqlite::Connection::open(database)?;
-                self.notes_during_move.push(connection.query_row(
-                    "SELECT note FROM sessions WHERE id=?",
-                    [identifier],
-                    |row| row.get(0),
-                )?);
-                self.slots.insert(identifier.into(), state.into());
-                if std::mem::take(&mut self.lose_receipt) {
-                    return Ok(None);
-                }
-                Ok(Some(json!({})))
+                self.local_move(args,database)
             }
             _ => anyhow::bail!("unexpected native method: {method}"),
         }
+    }
+
+    fn local_move(&mut self, args: &Value, database: &std::path::Path) -> Result<Option<Value>> {
+        assert_eq!(args["hostId"],"local");
+        assert_eq!(args["source"],"codex");
+        let identifier = args["threadId"].as_str().unwrap_or("");
+        if self.reject_move.as_deref() == Some(identifier) { return Ok(None); }
+        let state = codex_session_board::model::board_states()
+            .find(|(state,_)| args["sectionId"] == section_id(state))
+            .context("unknown section")?.0;
+        let connection = rusqlite::Connection::open(database)?;
+        self.notes_during_move.push(connection.query_row("SELECT note FROM sessions WHERE id=?",
+            [identifier],|row| row.get(0))?);
+        self.slots.insert(identifier.into(),state.into());
+        Ok((!std::mem::take(&mut self.lose_receipt)).then(|| json!({})))
+    }
+
+    fn remote_move(&mut self, args: &Value) -> Result<Option<Value>> {
+        assert_eq!(args["source"],"codex");
+        let host = args["hostId"].as_str().context("missing remote host")?;
+        let target = self.remote_surfaces.get(host).context("unknown remote host")?;
+        let mut remote = target.lock().unwrap();
+        let state = codex_session_board::model::board_states()
+            .find(|(state,_)| args["sectionId"] == section_id(state))
+            .context("unknown remote section")?.0;
+        remote.calls.push("move_thread_to_sidebar_section".into());
+        remote.slots.insert(args["threadId"].as_str().context("missing thread")?.into(),state.into());
+        Ok((!std::mem::take(&mut remote.lose_receipt)).then(|| json!({})))
     }
 }
 
