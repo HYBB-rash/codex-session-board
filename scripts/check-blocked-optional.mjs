@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { launchBrowser } from "./browser-client.mjs";
+import { until, clickNode, dragCard, inputText } from "./browser-actions.mjs";
 
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const root = path.join(os.homedir(), ".csb-dev", createHash("sha256").update(source).digest("hex").slice(0, 12));
@@ -21,14 +22,6 @@ assert(response.ok && info.pid === runtime.service_pid && info.build === runtime
 const report = { passed: false, source, source_sha: runtime.source_sha, fingerprint: runtime.fingerprint, runtime: info, cases: [] };
 const browser = await launchBrowser();
 let page;
-const until = async (operation, message) => {
-  const deadline = Date.now() + 15000;
-  while (Date.now() < deadline) {
-    if (await operation()) return;
-    await delay(50);
-  }
-  throw new Error(message);
-};
 const evaluate = expression => page.evaluate(expression);
 const snapshot = () => evaluate('(async()=>{const response=await fetch("/api/sessions");if(!response.ok)throw Error(response.status);return response.json()})()');
 const current = async () => {
@@ -38,47 +31,15 @@ const current = async () => {
   return row;
 };
 const fields = row => [row.state, row.note, row.version, row.inputVersion, row.sectionVersion, row.manual];
-const point = selector => evaluate(`(()=>{
-  const node=document.querySelector(${JSON.stringify(selector)});if(!node)throw Error("元素未找到");
-  node.scrollIntoView({block:"center",inline:"nearest",behavior:"instant"});
-  const bounds=node.getBoundingClientRect();return {x:bounds.left+bounds.width/2,y:bounds.top+Math.min(bounds.height/2,40)};
-})()`);
-const click = async selector => {
-  const position = await point(selector);
-  await page.command("Input.dispatchMouseEvent", { type: "mousePressed", ...position, button: "left", buttons: 1, clickCount: 1 });
-  await page.command("Input.dispatchMouseEvent", { type: "mouseReleased", ...position, button: "left", clickCount: 1 });
-};
-const drag = async state => {
-  await page.command("Input.setInterceptDrags", { enabled: true });
-  try {
-    const start = await point(`.card[data-id="${report.id}"] .card-title`);
-    const end = await point(`#column-${state} .cards`);
-    const intercepted = page.event("Input.dragIntercepted");
-    intercepted.catch(() => {});
-    await page.command("Input.dispatchMouseEvent", { type: "mouseMoved", ...start });
-    await page.command("Input.dispatchMouseEvent", { type: "mousePressed", ...start, button: "left", buttons: 1, clickCount: 1 });
-    await page.command("Input.dispatchMouseEvent", { type: "mouseMoved", x: start.x + 30, y: start.y + 15, buttons: 1, button: "left" });
-    const { data } = await intercepted;
-    assert(data.items.some(item => item.mimeType === "text/plain" && item.data === report.id));
-    for (const type of ["dragEnter", "dragOver", "drop"])
-      await page.command("Input.dispatchDragEvent", { type, ...end, data });
-    await page.command("Input.dispatchMouseEvent", { type: "mouseReleased", ...end, button: "left", clickCount: 1 });
-  } finally { await page.command("Input.setInterceptDrags", { enabled: false }); }
-};
+const click = selector => clickNode(page, selector);
+const drag = state => dragCard(page, report.id, state);
 const open = async () => {
   await drag("blocked");
   await until(() => evaluate('document.querySelector("#editor").open'), "拖入阻塞列未打开弹窗");
   assert.equal(await evaluate('document.activeElement.id'), "note");
   assert.match(await evaluate('document.querySelector("#note-help").textContent'), /暂时不填也可以保存/);
 };
-const input = async text => {
-  await evaluate('document.querySelector("#note").focus();document.querySelector("#note").select()');
-  if (text) await page.command("Input.insertText", { text });
-  else {
-    await page.command("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 });
-    await page.command("Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 });
-  }
-};
+const input = text => inputText(page, "#note", text);
 const escape = async () => {
   for (const type of ["keyDown", "keyUp"])
     await page.command("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
