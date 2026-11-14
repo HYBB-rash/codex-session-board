@@ -1,0 +1,130 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+use super::*;
+#[path = "calibration_fixture.rs"]
+mod fixture;
+use fixture::{Fixture, Mock};
+use std::sync::Arc;
+
+#[test]
+fn empty_probe_learns_every_remote_mapping_without_disk_flush_and_reuses_after_restart() -> Result<()> {
+    let fixture = Fixture::new()?;
+    let before = std::fs::read(&fixture.config.sidebar_state_file)?;
+    fixture.surface.lock().unwrap().lose_move = true;
+    let first = fixture.run()?;
+    assert_eq!(first.logical.len(),5);
+    assert!(first.probe.is_none());
+    assert_eq!(fixture.calls("move_thread_to_sidebar_section"),5);
+    assert_eq!(fixture.calls("thread/start"),1);
+    assert_eq!(fixture.calls("thread/archive"),1);
+    let reopened = Store::open(&fixture.config.data_dir,false)?;
+    assert_eq!(reopened.native_mapping(&fixture.config.host_id)?.unwrap().logical,first.logical);
+    assert_eq!(fixture.run()?.logical,first.logical);
+    assert_eq!(fixture.calls("thread/start"),1);
+    assert_eq!(fixture.calls("move_thread_to_sidebar_section"),5);
+    assert_eq!(std::fs::read(&fixture.config.sidebar_state_file)?,before);
+    let surface = fixture.surface.lock().unwrap();
+    assert!(surface.threads.values().all(|thread|
+        thread["archived"] == true && thread["turns"] == json!([])));
+    assert!(!surface.calls.iter().any(|call| call.starts_with("turn/")));
+    Ok(())
+}
+
+#[test]
+fn unknown_creation_never_duplicates_until_explicit_matching_request_reset() -> Result<()> {
+    let fixture = Fixture::new()?;
+    fixture.surface.lock().unwrap().lose_start = true;
+    assert!(fixture.run().is_err());
+    assert!(fixture.run().is_err());
+    assert_eq!(fixture.calls("thread/start"),1);
+    let record = fixture.record()?;
+    let probe = record.probe.as_ref().unwrap();
+    assert!(probe.thread.is_none());
+    assert!(fixture.store.abandon_unknown_native_probe(&fixture.config.host_id,
+        &uuid::Uuid::new_v4().to_string(),&record.scope["source"]).is_err());
+    assert!(fixture.store.abandon_unknown_native_probe(&fixture.config.host_id,
+        &probe.request,&json!({"peer":{"home":"/another"}})).is_err());
+    assert_eq!(fixture.calls("thread/start"),1);
+    fixture.store.abandon_unknown_native_probe(&fixture.config.host_id,
+        &probe.request,&record.scope["source"])?;
+    assert_eq!(fixture.run()?.logical.len(),5);
+    assert_eq!(fixture.calls("thread/start"),2);
+    Ok(())
+}
+
+#[test]
+fn renamed_probe_is_preserved_after_lost_name_receipt_and_a_new_owned_probe_can_finish() -> Result<()> {
+    let fixture = Fixture::new()?;
+    fixture.surface.lock().unwrap().lose_name = true;
+    assert!(fixture.run().is_err());
+    let id = fixture.record()?.probe.unwrap().thread.unwrap();
+    fixture.surface.lock().unwrap().threads.get_mut(&id).unwrap()["name"] = json!("用户接手");
+    assert!(fixture.run().is_err());
+    assert!(!fixture.store.is_native_probe(&fixture.config.host_id,&id)?);
+    assert!(fixture.record()?.probe.is_none());
+    assert_eq!(fixture.run()?.logical.len(),5);
+    let surface = fixture.surface.lock().unwrap();
+    assert_eq!(surface.threads[&id]["name"],"用户接手");
+    assert_eq!(surface.threads[&id]["archived"],false);
+    assert_eq!(surface.calls.iter().filter(|call| *call == "thread/start").count(),2);
+    Ok(())
+}
+
+#[test]
+fn reconnect_cleans_known_probe_but_never_archives_a_probe_adopted_during_disconnect() -> Result<()> {
+    let fixture = Fixture::new()?;
+    fixture.surface.lock().unwrap().reject_archive = true;
+    assert!(fixture.run().is_err());
+    assert_eq!(fixture.record()?.logical.len(),5);
+    let id = fixture.record()?.probe.unwrap().thread.unwrap();
+    fixture.surface.lock().unwrap().threads.get_mut(&id).unwrap()["turns"] =
+        json!([{"id":"user-turn","status":"completed"}]);
+    fixture.surface.lock().unwrap().reject_archive = false;
+    assert!(fixture.run().is_err());
+    assert!(fixture.run()?.probe.is_none());
+    assert_eq!(fixture.calls("thread/start"),1);
+    assert_eq!(fixture.calls("thread/archive"),1);
+    assert!(!fixture.store.is_native_probe(&fixture.config.host_id,&id)?);
+    assert_eq!(fixture.surface.lock().unwrap().threads[&id]["archived"],false);
+    Ok(())
+}
+
+#[test]
+fn cross_time_same_name_position_cannot_publish_a_mapping_and_backend_rebuild_recalibrates() -> Result<()> {
+    let fixture = Fixture::new()?;
+    fixture.surface.lock().unwrap().cross_read = true;
+    assert!(fixture.run().is_err());
+    assert!(fixture.record()?.logical.is_empty());
+    let first = fixture.run()?;
+    assert_eq!(fixture.calls("thread/start"),1);
+    assert!(!first.logical.contains_key("foreign-same-name"));
+    {
+        let mut surface = fixture.surface.lock().unwrap();
+        surface.sections.clear();
+        surface.backend.clear();
+    }
+    let rebuilt = fixture.run()?;
+    assert_eq!(rebuilt.logical.len(),5);
+    assert!(rebuilt.logical.keys().all(|id| !first.logical.contains_key(id)));
+    assert_eq!(fixture.calls("thread/start"),2);
+    assert_eq!(fixture.calls("thread/archive"),2);
+    Ok(())
+}
+
+#[test]
+fn deleted_logical_identity_cleans_owned_probe_and_requires_explicit_new_configuration() -> Result<()> {
+    let mut fixture = Fixture::new()?;
+    fixture.surface.lock().unwrap().reject_archive = true;
+    assert!(fixture.run().is_err());
+    let mut record = fixture.record()?;
+    fixture.config.status_sections.insert("review".into(),uuid::Uuid::new_v4().to_string());
+    fixture.surface.lock().unwrap().reject_archive = false;
+    let mut backend = Mock(Arc::clone(&fixture.surface),false);
+    let mut sidebar = Mock(Arc::clone(&fixture.surface),true);
+    Calibration {config:&fixture.config,store:&fixture.store,record:&mut record,
+        backend:&mut backend,sidebar:&mut sidebar}.cleanup()?;
+    assert!(record.probe.is_none());
+    assert!(fixture.run().is_err());
+    assert_eq!(fixture.calls("thread/start"),1);
+    assert_eq!(fixture.calls("thread/archive"),2);
+    Ok(())
+}

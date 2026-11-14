@@ -133,3 +133,35 @@ fn backfill_keeps_archive_input_confirmation_with_already_cached_identical_input
         row["input_revision"].as_i64().unwrap())).is_err());
     Ok(())
 }
+
+#[test]
+fn backfill_restart_between_move_and_baseline_keeps_a_new_terminal_event() -> Result<()> {
+    for lost_receipt in [false,true] {
+        let (_,config,id,scope) = setup()?;
+        let directory = tempfile::tempdir()?;
+        let mut store = Store::open(directory.path(),true)?;
+        store.native_sections = true;
+        store.discover(&[json!({"id":id,"name":"业务会话","updatedAt":10})])?;
+        store.observe(&id,&json!({"id":"same","status":"inProgress","startedAt":now()-10.0}),None)?;
+        store.cache_native_backfill(&id,&default_position(),&scope)?;
+        let change = store.prepare_native_backfill(&id,&config,
+            &json!({"type":"active"}),&scope)?.unwrap();
+        assert_eq!(change.state,"in_progress");
+        if lost_receipt { store.cache_native_backfill(&id,&target(&change),&scope)?; }
+        else { store.finish_native_backfill(&id,&change,&target(&change))?; }
+        let cutoff = store.native_backfill_since(&id,0.0)?;
+        drop(store);
+        let mut store = Store::open(directory.path(),true)?;
+        store.native_sections = true;
+        let since = store.native_backfill_since(&id,cutoff+1000.0)?;
+        assert_eq!(since,cutoff);
+        let turn = json!({"id":"same","status":"completed","completedAt":cutoff+1.0});
+        store.observe(&id,&turn,None)?;
+        assert!(!store.baseline_native_backfill(&id,&json!({"type":"idle"}),&turn,since)?);
+        let next = store.prepare_native_runtime(&id,&json!({"type":"idle"}),&turn,since)?.unwrap();
+        assert_eq!(next.state,"review");
+        assert!(!store.native_backfill_pending(&id)?);
+        assert!(store.pending_titles(None)?.is_empty());
+    }
+    Ok(())
+}

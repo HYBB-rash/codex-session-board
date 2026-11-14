@@ -5,6 +5,10 @@ use super::{
 use crate::store::Store;
 use std::time::{Duration, Instant};
 
+#[cfg(test)]
+#[path = "calibration_tests.rs"]
+mod tests;
+
 pub(crate) struct Calibration<'source> {
     pub config: &'source Config,
     pub store: &'source Store,

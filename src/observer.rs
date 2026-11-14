@@ -204,6 +204,7 @@ fn apply_observed_turn(
     if let Err(error) = app.backfill_native(identifier, status) {
         return Ok(Seen::Phase(error.to_string()));
     }
+    let since = app.native_runtime_since(identifier,since)?;
     if app.baseline_native_backfill(identifier,status,turn,since)? {
         return Ok(Seen::Saved(identifier.to_owned(), revision));
     }

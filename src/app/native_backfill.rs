@@ -2,6 +2,12 @@ use super::*;
 use crate::native_sections::Observation;
 
 impl App {
+    pub(crate) fn native_runtime_since(&self, identifier: &str, since: f64) -> Result<f64> {
+        if self.config.native_sections && self.config.host_id != "local" {
+            self.store.native_backfill_since(identifier,since)
+        } else { Ok(since) }
+    }
+
     pub(crate) fn baseline_native_backfill(&self, identifier: &str, status: &Value,
         turn: &Value, since: f64) -> Result<bool> {
         Ok(self.config.native_sections && self.config.host_id != "local"

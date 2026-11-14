@@ -17,6 +17,8 @@ struct Backfill {
     done: bool,
     #[serde(default)]
     baselined: bool,
+    #[serde(default)]
+    started_at: Option<f64>,
     pending: Option<BackfillChange>,
 }
 
@@ -29,7 +31,8 @@ fn load(database: &Connection, identifier: &str, scope: &Value) -> Result<Backfi
         [format!("native_backfill:v1:{identifier}")], |row| row.get(0)).optional()?;
     let record: Option<Backfill> = saved.map(|value| serde_json::from_str(&value)).transpose()?;
     Ok(record.filter(|record| record.done || record.scope == *scope)
-        .unwrap_or_else(|| Backfill {scope:scope.clone(),done:false,baselined:false,pending:None}))
+        .unwrap_or_else(|| Backfill {scope:scope.clone(),done:false,baselined:false,
+            started_at:Some(now()),pending:None}))
 }
 
 fn save(database: &Transaction<'_>, identifier: &str, record: &Backfill) -> Result<()> {
@@ -69,6 +72,10 @@ fn validate(database: &Connection, identifier: &str, change: &BackfillChange) ->
 }
 
 impl Store {
+    pub(crate) fn native_backfill_since(&self, identifier: &str, fallback: f64) -> Result<f64> {
+        Ok(load(&*self.connection()?,identifier,&Value::Null)?.started_at.unwrap_or(fallback))
+    }
+
     pub(crate) fn native_backfill_pending(&self, identifier: &str) -> Result<bool> {
         Ok(!load(&*self.connection()?, identifier, &Value::Null)?.done)
     }
@@ -138,8 +145,10 @@ impl Store {
             expect_input:Some(change.input),
             needs_review:native::unconfirmed_input(&get_row(&transaction,identifier)?,confirmed)
                 .then_some(1),..native::DailyWrite::default()})?;
-        save(&transaction, identifier, &Backfill {
-            scope:change.scope.clone(),done:true,baselined:false,pending:None})?;
+        let mut record = load(&transaction,identifier,&change.scope)?;
+        record.done = true;
+        record.pending = None;
+        save(&transaction,identifier,&record)?;
         settle_titles(&transaction, identifier, confirmed)?;
         transaction.commit()?;
         Ok(())
