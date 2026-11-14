@@ -2,12 +2,13 @@
   "schema_version": 1,
   "updated_at": "2026-11-14",
   "current_phase": {
-    "id": "pr5-integration-20261114",
-    "status": "completed",
+    "id": "ci-optimization-replay-20261114",
+    "status": "in_progress",
     "as_of": "2026-11-14",
-    "summary": "最新PR #5 首次真实集成完成，0.3.79/ff8ee01 已正常进入受保护主线。Actions43565346520首轮双平台门禁全过，Linux686/Mac675项及不可变实际包启动、清理均通过。核心计时24分46秒，其中CI18分钟，收尾记录同步与本次集成分支清理另列在源码外completion.json；作者工作区保留，不操作日用客户端，完整验收继续独立安排。"
+    "summary": "按用户授权优化CI的分组计时、独立测试组调度、工具自测触发及连续执行入口。工具和工作流变化先走完整双平台验证，再用固定PR #5首次来源重演并记录核心及含收尾总耗时；完整验收入口与31条契约保持，不操作日用客户端。"
   },
   "active_tasks": [
+    "context/tasks/active/ci-optimization-replay-20261114.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",
