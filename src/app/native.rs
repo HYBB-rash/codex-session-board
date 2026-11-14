@@ -27,7 +27,9 @@ impl App {
             let Ok(_guard) = operation.try_lock() else {continue;};
             ensure!(self.enabled.load(Ordering::SeqCst) && generation == self.native_epoch(),
                 "原生位置观察已过期，请重新读取");
-            self.store.cache_native(identifier, &catalog.observe(&self.config,thread)?)?;
+            let observed = catalog.observe(&self.config,thread)?;
+            if self.config.host_id != "local" { self.store.restore_native(identifier, &observed)?; }
+            self.cache_native_observation(identifier, &observed)?;
         }
         self.update_health(json!({"nativeVerified":true,"nativeError":null,"nativeLastAt":now()}))
     }
@@ -55,10 +57,18 @@ impl App {
         expected: &str,
         state: Option<&str>,
     ) -> Result<native_sections::Observation> {
+        self.move_native_scoped(identifier, expected, state, None)
+    }
+
+    pub(super) fn move_native_scoped(&self, identifier: &str, expected: &str,
+        state: Option<&str>, scope: Option<&Value>) -> Result<native_sections::Observation> {
         self.native_generation.fetch_add(1, Ordering::SeqCst);
         let _mutation = Mutation(self);
         let mut reader = self.native_reader()?;
         let catalog = self.native_catalog(&mut reader)?;
+        if let Some(scope) = scope {
+            ensure!(self.native_backfill_scope()? == *scope, "迁移的远程来源已改变");
+        }
         let mut writer = self.native_sidebar()?;
         let result = catalog.move_checked(
             &mut reader,
@@ -126,7 +136,7 @@ impl App {
                 return Ok(None);
             }
             if let Some(observed) = snapshot.get(identifier) {
-                self.store.cache_native(identifier, observed)?;
+                self.cache_native_observation(identifier, observed)?;
             } else if !archived.contains(identifier) {
                 unresolved += 1;
             }
@@ -233,6 +243,6 @@ impl App {
         let mut reader = self.native_reader()?;
         let observed = self.native_catalog(&mut reader)?
             .read(&mut reader, &self.config, identifier)?;
-        self.store.cache_native(identifier, &observed)
+        self.cache_native_observation(identifier, &observed)
     }
 }

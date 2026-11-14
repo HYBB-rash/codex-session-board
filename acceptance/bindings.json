@@ -373,6 +373,10 @@
       "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions"
     ],
     "MANUAL-001": [
+      "lib::codex_session_board::store::native_backfill::tests::backfill_preserves_manual_notes_input_and_phase_anchors_without_bulk_title_jobs",
+      "lib::codex_session_board::store::native_backfill::tests::backfill_new_input_rejects_commit_and_lost_confirmation_settles_without_replay",
+      "lib::codex_session_board::store::native_backfill::tests::backfill_respects_existing_native_custom_pinned_and_managed_positions_once",
+      "lib::codex_session_board::store::native_backfill::tests::backfill_uses_live_active_and_guarded_history_without_promoting_old_failures",
       "lib::codex_session_board::rpc::tests::calibration_connections_can_manage_empty_probes_but_cannot_run_models",
       "lib::codex_session_board::store::mappings::tests::calibration_ownership_and_unknown_creation_survive_restart",
       "lib::codex_session_board::store::mappings::tests::malformed_probe_cannot_partially_publish_a_mapping",

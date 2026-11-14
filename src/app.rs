@@ -17,6 +17,7 @@ use std::sync::{
 use std::time::Duration;
 
 mod native;
+mod native_backfill;
 mod native_mapping;
 mod remote;
 mod remote_snapshot;
@@ -315,6 +316,7 @@ impl App {
     }
 
     pub fn sync_title(&self, identifier: &str) -> Result<()> {
+        if self.needs_native_backfill(identifier)? { return Ok(()); }
         let Ok(_guard) = self.title_lock.try_lock() else {
             return Ok(());
         };

@@ -42,6 +42,7 @@ pub(super) struct DailyWrite<'a> {
     pub placement: Option<Placement<'a>>,
     pub expect_version: Option<i64>,
     pub expect_pending: Option<&'a str>,
+    pub expect_input: Option<i64>,
 }
 
 impl<'a> Default for DailyWrite<'a> {
@@ -60,6 +61,7 @@ impl<'a> Default for DailyWrite<'a> {
             placement: None,
             expect_version: None,
             expect_pending: None,
+            expect_input: None,
         }
     }
 }
@@ -82,10 +84,13 @@ pub(super) fn write_daily(
     let guard = guard_sql(write);
     values.push(SqlValue::Text(identifier.into()));
     push_guard(&mut values, write);
-    database.execute(
+    let changed = database.execute(
         &format!("UPDATE sessions SET {} WHERE id=?{guard}", assignments.join(",")),
         rusqlite::params_from_iter(values.iter()),
     )?;
+    ensure!(changed == 1 || write.expect_version.is_none()
+        && write.expect_pending.is_none() && write.expect_input.is_none(),
+        "会话已更新，原生写入已过期");
     Ok(())
 }
 
@@ -166,6 +171,9 @@ fn guard_sql(write: &DailyWrite<'_>) -> String {
     if write.expect_pending.is_some() {
         guard.push_str(" AND runtime_pending_key=?");
     }
+    if write.expect_input.is_some() {
+        guard.push_str(" AND input_revision=?");
+    }
     guard
 }
 
@@ -175,6 +183,9 @@ fn push_guard(values: &mut Vec<SqlValue>, write: &DailyWrite<'_>) {
     }
     if let Some(pending) = write.expect_pending {
         values.push(SqlValue::Text(pending.into()));
+    }
+    if let Some(input) = write.expect_input {
+        values.push(SqlValue::Integer(input));
     }
 }
 

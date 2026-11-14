@@ -172,7 +172,8 @@ fn observe_one(
     }
     let status = &thread["status"];
     let revision = json!([thread["updatedAt"], status]).to_string();
-    if status["type"] != "active" && revisions.get(identifier) == Some(&revision) {
+    if status["type"] != "active" && revisions.get(identifier) == Some(&revision)
+        && !app.needs_native_backfill(identifier)? {
         return Ok(Seen::Same);
     }
     match rpc::latest_turn(reader, identifier) {
@@ -198,6 +199,9 @@ fn apply_observed_turn(
     let _operation = app.operation()?;
     ensure!(app.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
     app.store.observe(identifier, turn, None)?;
+    if let Err(error) = app.backfill_native(identifier, status) {
+        return Ok(Seen::Phase(error.to_string()));
+    }
     if crate::model::runtime_state(status, turn).is_none() {
         return Ok(Seen::Same);
     }
