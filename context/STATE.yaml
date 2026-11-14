@@ -2,12 +2,13 @@
   "schema_version": 1,
   "updated_at": "2026-11-14",
   "current_phase": {
-    "id": "closeout-sync-20261114",
-    "status": "completed",
+    "id": "pr5-integration-20261114",
+    "status": "in_progress",
     "as_of": "2026-11-14",
-    "summary": "原四PR演练收尾记录已随0.3.78/5b905ec进入受保护主线。补充仅context普通记录可用的门禁，工作流自身仍通过完整双平台验证；Linux686/Mac675项自动检查及包启动、清理全过。最终记录同步和两条演练分支清理的主线SHA及读回证据保存在源码外closeout-sync-20261114/completion.json。未操作日用客户端，完整31条仍17通过14待验，验收组织与记录留待后续研究。"
+    "summary": "按新流程合并最新PR #5，固定主线b593edd及来源54096cd，正常合并无冲突。计时包含审阅、冻结、双平台自动门禁、不可变包启动及主线确认，收尾记录同步另列；不操作日用客户端，完整验收继续独立安排。"
   },
   "active_tasks": [
+    "context/tasks/active/pr5-integration-20261114.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",

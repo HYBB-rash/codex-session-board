@@ -51,9 +51,14 @@ try {
   const select = (id,value) => evaluate(`byId(${JSON.stringify(id)}).value=${JSON.stringify(value)};byId(${JSON.stringify(id)}).dispatchEvent(new Event("change"))`);
   const ids = () => evaluate("visibleSessions().map(row=>row.id)");
   await wait('typeof data !== "undefined" && data.sessions.length === 5');
-  check(await evaluate('byId("project-filter").disabled'),true);
+  check(await evaluate('[selectedHost,byId("host-filter").value]'),["local","local"]);
+  check(await ids(),["local"]);
+  check(await evaluate('byId("project-filter").disabled'),false);
   check(await evaluate('byId("host-filter").options.length'),5);
   check(await evaluate('Array.from(byId("host-filter").options).find(option=>option.value==="host:a").textContent'),"同名主机 · a");
+  await select("host-filter","all");
+  check(await evaluate('byId("project-filter").disabled'),true);
+  check(await ids(),["local","a1","a-default","a-issue","b1"]);
   await select("host-filter","host:a");
   check(await ids(),["a1","a-default","a-issue"]);
   check(await evaluate('Array.from(byId("project-filter").options).map(option=>option.textContent)'),["全部项目","默认工作区","项目 · /a1","项目 · /a2"]);
