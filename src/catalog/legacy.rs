@@ -23,6 +23,7 @@ pub(crate) struct LegacyProjection {
 }
 
 pub(crate) type Projection = LegacyProjection;
+type FieldRule = (&'static str, fn(&Value) -> bool);
 
 pub(crate) fn project_key(host: &str, origin: &str, identifier: &str) -> String {
     format!("target:{}", json!([host, origin, identifier]))
@@ -37,6 +38,30 @@ fn object(value: &Value, issues: &mut Vec<String>, label: &str) -> Map<String, V
         issues.push(format!("invalid:{label}"));
         Map::new()
     }
+}
+
+fn typed_fields(
+    value: &Value,
+    rules: &[FieldRule],
+    issues: &mut Vec<String>,
+    label: &str,
+) -> Map<String, Value> {
+    let Some(fields) = value.as_object() else {
+        issues.push(format!("invalid:{label}"));
+        return Map::new();
+    };
+    rules
+        .iter()
+        .filter_map(|(key, valid)| {
+            let value = fields.get(*key)?;
+            if valid(value) {
+                Some(((*key).to_owned(), value.clone()))
+            } else {
+                issues.push(format!("invalid:{label}:{key}"));
+                None
+            }
+        })
+        .collect()
 }
 
 pub(crate) fn strings(value: &Value) -> BTreeSet<String> {
@@ -94,33 +119,54 @@ impl LegacyProjection {
     }
 
     fn read_migration(&mut self, state: &Value, identity: &str) {
-        self.checkpoint =
-            self.owner_value(state, "app-server-projects-migration-by-host")[identity].clone();
-        if let Some(checkpoint) = self.checkpoint.as_object_mut() {
-            checkpoint.retain(|key, _| {
-                [
-                    "version",
-                    "projectsMigrated",
-                    "threadAssignmentsMigrated",
-                    "threadAssignmentsReadMigrated",
-                    "pendingThreadAssignmentIds",
-                ]
-                .contains(&key.as_str())
-            });
-        } else if !self.checkpoint.is_null() {
-            self.issues.push("invalid:migrationCheckpoint".into());
-            self.checkpoint = Value::Null;
-        }
+        self.read_checkpoint(state, identity);
         self.pending_deletions = object(
             &self.owner_value(state, "app-server-pending-project-deletions-by-host")[identity],
             &mut self.issues,
             "pendingProjectDeletions",
         );
-        for deletion in self.pending_deletions.values_mut() {
-            if let Some(fields) = deletion.as_object_mut() {
-                fields.retain(|key, _| ["projectId", "deleteAfterMs"].contains(&key.as_str()));
-            }
+        for (identifier, deletion) in &mut self.pending_deletions {
+            *deletion = Value::Object(typed_fields(
+                deletion,
+                &[("projectId", Value::is_string)],
+                &mut self.issues,
+                &format!("pendingDeletion:{identifier}"),
+            ));
         }
+    }
+
+    fn read_checkpoint(&mut self, state: &Value, identity: &str) {
+        let value = &self.owner_value(state, "app-server-projects-migration-by-host")[identity];
+        if value.is_null() {
+            return;
+        }
+        let mut checkpoint = typed_fields(
+            value,
+            &[
+                ("version", Value::is_u64),
+                ("projectsMigrated", Value::is_boolean),
+                ("threadAssignmentsMigrated", Value::is_boolean),
+                ("threadAssignmentsReadMigrated", Value::is_boolean),
+                ("pendingThreadAssignmentIds", Value::is_array),
+            ],
+            &mut self.issues,
+            "migrationCheckpoint",
+        );
+        if let Some(pending) = checkpoint.get_mut("pendingThreadAssignmentIds") {
+            if pending
+                .as_array()
+                .is_some_and(|ids| ids.iter().any(|id| !id.is_string()))
+            {
+                self.issues
+                    .push("invalid:migrationCheckpoint:pendingThreadAssignmentId".into());
+            }
+            *pending = json!(strings(pending));
+        }
+        self.checkpoint = if value.is_object() {
+            Value::Object(checkpoint)
+        } else {
+            Value::Null
+        };
     }
 
     fn read_membership(&mut self, state: &Value, identity: &str) {
@@ -129,6 +175,15 @@ impl LegacyProjection {
             &mut self.issues,
             "workspaceHints",
         );
+        self.workspace_hints.retain(|identifier, hint| {
+            if hint.is_string() {
+                true
+            } else {
+                self.issues
+                    .push(format!("invalid:workspaceHint:{identifier}"));
+                false
+            }
+        });
         let mappings = object(
             &state["app-server-project-id-by-legacy-project-id-by-host"][identity],
             &mut self.issues,
@@ -137,13 +192,21 @@ impl LegacyProjection {
         self.mappings = mappings
             .into_iter()
             .filter(|(identifier, server)| {
-                server.is_string()
-                    && self
-                        .projects
-                        .iter()
-                        .any(|project| project["id"] == *identifier)
+                if !server.is_string() {
+                    self.issues
+                        .push(format!("invalid:projectMapping:{identifier}"));
+                    return false;
+                }
+                self.projects
+                    .iter()
+                    .any(|project| project["id"] == *identifier)
             })
             .collect();
+        self.read_assignments(state);
+        self.projectless = strings(&state["projectless-thread-ids"]);
+    }
+
+    fn read_assignments(&mut self, state: &Value) {
         self.assignments = object(
             &state["thread-project-assignments"],
             &mut self.issues,
@@ -154,14 +217,27 @@ impl LegacyProjection {
             &mut self.issues,
             "membershipHosts",
         );
-        for assignment in self.assignments.values_mut() {
-            if let Some(fields) = assignment.as_object_mut() {
-                fields.retain(|key, _| {
-                    ["projectKind", "projectId", "projectOrigin", "hostId"].contains(&key.as_str())
-                });
+        for (identifier, assignment) in &mut self.assignments {
+            if !assignment.is_null() {
+                *assignment = Value::Object(typed_fields(
+                    assignment,
+                    &[
+                        ("projectKind", Value::is_string),
+                        ("projectId", Value::is_string),
+                        ("hostId", Value::is_string),
+                    ],
+                    &mut self.issues,
+                    &format!("assignment:{identifier}"),
+                ));
             }
         }
-        self.projectless = strings(&state["projectless-thread-ids"]);
+        for (identifier, host) in &mut self.membership_hosts {
+            if !host.is_string() {
+                self.issues
+                    .push(format!("invalid:membershipHost:{identifier}"));
+                *host = Value::Null;
+            }
+        }
     }
 
     fn owner_value(&self, state: &Value, key: &str) -> Value {
@@ -186,9 +262,7 @@ impl LegacyProjection {
                     return None;
                 }
                 if let Some(fields) = project.as_object_mut() {
-                    fields.retain(|key, _| {
-                        ["id", "name", "rootPaths", "appearance"].contains(&key.as_str())
-                    });
+                    fields.retain(|key, _| ["id", "name", "rootPaths"].contains(&key.as_str()));
                 }
                 Some(project)
             })
@@ -262,9 +336,16 @@ impl LegacyProjection {
             if backend.is_some_and(|identifier| self.deleted_section_ids.contains(identifier)) {
                 continue;
             }
-            self.sections
-                .push(json!({"id":identifier,"name":section["name"],
-                "backendId":backend,"migrated":migrated,"appearance":section["appearance"],
+            let name = section["name"].as_str();
+            if section
+                .get("name")
+                .is_some_and(|value| !value.is_null() && !value.is_string())
+            {
+                self.issues
+                    .push(format!("invalid:sectionName:{identifier}"));
+            }
+            self.sections.push(json!({"id":identifier,"name":name,
+                "backendId":backend,"migrated":migrated,
                 "legacy":strings(&custom["appServerLegacySectionIds"]).contains(identifier)}));
             if migrated {
                 continue;

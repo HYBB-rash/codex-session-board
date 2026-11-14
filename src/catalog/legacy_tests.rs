@@ -142,3 +142,93 @@ fn deletion_and_migration_markers_do_not_resurrect_custom_members() -> Result<()
     );
     Ok(())
 }
+
+fn malformed_projection_state() -> Result<(Value, Value)> {
+    let (mut state, account) = fixture();
+    let owner = state["electron-renderer-content-owner"]
+        .as_str()
+        .context("owner")?
+        .to_owned();
+    let body = json!({"private-body":{"text":"do not persist"}});
+    state["thread-project-assignments"] = json!({
+        "cleared":null, "assigned":{"projectKind":"local","projectId":"old","hostId":"local"},
+        "bad":{"projectKind":body,"projectId":body,"hostId":body}, "badValue":[body]
+    });
+    state["thread-project-membership-host-ids"] = json!({"bad":body,"assigned":"local"});
+    state["local-projects"]["old"]["appearance"] = body.clone();
+    state[format!("electron-owner-value:thread-workspace-root-hints:{owner}")] =
+        json!({"bad":body,"assigned":"/target/repo"});
+    state[format!("electron-owner-value:app-server-projects-migration-by-host:{owner}")] = json!({
+        "local:/target/codex":{"version":body,"projectsMigrated":body,
+            "threadAssignmentsMigrated":false,"threadAssignmentsReadMigrated":body,
+            "pendingThreadAssignmentIds":["assigned",body]}
+    });
+    state[format!("electron-owner-value:app-server-pending-project-deletions-by-host:{owner}")] = json!({"local:/target/codex":{"old":{"projectId":body,"deleteAfterMs":body},
+            "valid":{"projectId":"server","deleteAfterMs":123},"badValue":[body]}});
+    state["electron-persisted-atom-state"] = json!({"sidebar-custom-sections-v3":{"account":{
+        "sections":[{"id":"section","name":body,"appearance":body}]
+    }}});
+    Ok((state, account))
+}
+
+#[test]
+fn malformed_nested_values_are_not_persisted_in_the_projection() -> Result<()> {
+    let (state, account) = malformed_projection_state()?;
+    let projection = Projection::parse(&state, "/target/codex", &account)?;
+    let persisted = serde_json::to_string(&projection)?;
+    assert!(!persisted.contains("private-body"));
+    assert!(!persisted.contains("do not persist"));
+    assert!(!persisted.contains("appearance"));
+    assert!(!projection.issues.is_empty());
+    assert_eq!(projection.assignments["bad"], json!({}));
+    assert_eq!(projection.assignments["badValue"], json!({}));
+    assert_eq!(projection.membership_hosts["bad"], Value::Null);
+    assert!(!projection.workspace_hints.contains_key("bad"));
+    assert_eq!(projection.pending_deletions["old"], json!({}));
+    assert_eq!(
+        projection.pending_deletions["valid"],
+        json!({"projectId":"server"})
+    );
+    assert!(projection.checkpoint.get("version").is_none());
+    assert_eq!(
+        projection.checkpoint["pendingThreadAssignmentIds"],
+        json!(["assigned"])
+    );
+    assert_eq!(projection.sections[0]["name"], Value::Null);
+    Ok(())
+}
+
+#[test]
+fn sanitized_assignments_preserve_missing_null_and_assigned_states() -> Result<()> {
+    let (state, account) = malformed_projection_state()?;
+    let projection = Projection::parse(&state, "/target/codex", &account)?;
+    assert!(!projection.assignments.contains_key("missing"));
+    assert_eq!(projection.assignments.get("cleared"), Some(&Value::Null));
+    assert_eq!(
+        projection.assignments["assigned"],
+        json!({"projectKind":"local","projectId":"old","hostId":"local"})
+    );
+    assert_eq!(projection.workspace_hints["assigned"], "/target/repo");
+    assert_eq!(projection.checkpoint["threadAssignmentsMigrated"], false);
+    assert!(projection.pending("assigned"));
+    Ok(())
+}
+
+#[test]
+fn malformed_projected_fields_report_validation_issues() -> Result<()> {
+    let (state, account) = malformed_projection_state()?;
+    let projection = Projection::parse(&state, "/target/codex", &account)?;
+    for issue in [
+        "invalid:assignment:bad:projectId",
+        "invalid:assignment:badValue",
+        "invalid:membershipHost:bad",
+        "invalid:workspaceHint:bad",
+        "invalid:migrationCheckpoint:projectsMigrated",
+        "invalid:migrationCheckpoint:pendingThreadAssignmentId",
+        "invalid:pendingDeletion:old:projectId",
+        "invalid:sectionName:section",
+    ] {
+        assert!(projection.issues.iter().any(|actual| actual == issue));
+    }
+    Ok(())
+}
