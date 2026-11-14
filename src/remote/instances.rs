@@ -19,7 +19,9 @@ impl App {
             "python3 -c 'import time; print(time.time(), flush=True)'",
         )?;
         config.remote_binding = Some(hosts::source::Binding::prepare(host, &self.config)?);
-        let remote = Arc::new(App::new(config)?);
+        let mut remote = App::new(config)?;
+        remote.mapping_store = Arc::clone(&self.mapping_store);
+        let remote = Arc::new(remote);
         remote.update_health(json!({"hostLabel":host.display_name}))?;
         remote.store.import_remote(&self.store, &host.host_id)?;
         Ok(remote)

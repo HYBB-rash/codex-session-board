@@ -38,36 +38,17 @@ pub(crate) fn sections(reader: &mut (impl Rpc + ?Sized), config: &Config) -> Res
 }
 
 fn logical(config: &Config) -> Result<HashMap<String, String>> {
-    let state: Value = serde_json::from_reader(std::io::BufReader::new(std::fs::File::open(
-        &config.sidebar_state_file,
-    )?))?;
-    let accounts = client_atoms(&state)?["sidebar-custom-sections-v3"]
-        .as_object()
-        .context("客户端分区映射无效")?;
-    let entries = account_sections(config, accounts)?;
-    let mut logical = HashMap::new();
-    let mut identifiers = HashSet::new();
-    for entry in entries {
-        let identifier = entry["id"].as_str().context("逻辑分区缺少 ID")?;
-        ensure!(identifiers.insert(identifier), "逻辑分区 ID 重复");
-        if let Some(backend) = entry["hostSectionIds"][&config.host_id].as_str() {
-            ensure!(
-                logical.insert(backend.into(), identifier.into()).is_none(),
-                "主机分区映射重复"
-            );
-        }
-    }
-    Ok(logical)
+    Ok(super::mapping::seed(config)?.logical)
 }
 
-fn account_sections<'a>(
+pub(super) fn account_sections<'a>(
     config: &Config,
     accounts: &'a serde_json::Map<String, Value>,
-) -> Result<&'a Vec<Value>> {
+) -> Result<(&'a str, &'a Vec<Value>)> {
     let candidates: Vec<_> = accounts
-        .values()
-        .filter_map(|account| account["sections"].as_array())
-        .filter(|entries| {
+        .iter()
+        .filter_map(|(key, account)| account["sections"].as_array().map(|entries| (key.as_str(), entries)))
+        .filter(|(_, entries)| {
             config
                 .section_bindings()
                 .all(|(_, _, identifier)| entries.iter().any(|entry| entry["id"] == identifier))
@@ -90,6 +71,18 @@ fn missing(config: &Config, accounts: &serde_json::Map<String, Value>) -> String
 }
 
 impl Catalog {
+    pub(crate) fn mapped(
+        sections: HashMap<String, Value>,
+        logical: HashMap<String, String>,
+        config: &Config,
+    ) -> Result<Self> {
+        let catalog = Self { sections, logical };
+        catalog.validate(config)?;
+        ensure!(config.section_bindings().all(|(_, _, target)|
+            catalog.logical.values().any(|logical| logical == target)), "状态分区映射尚未完整校准");
+        Ok(catalog)
+    }
+
     pub fn load(reader: &mut (impl Rpc + ?Sized), config: &Config) -> Result<Self> {
         let catalog = Self {
             sections: sections(reader, config)?,

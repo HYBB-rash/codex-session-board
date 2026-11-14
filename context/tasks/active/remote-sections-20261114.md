@@ -2,7 +2,7 @@
 
 owner: codex
 execution_mode: isolated_write
-allowed_write_set: src/native_sections*、src/app*、src/remote*、src/store*、src/rpc*、src/config*、tests、acceptance/bindings.json、Docs、当前任务记录、源码外本任务实验资料
+allowed_write_set: src/native_sections*、src/app*、src/remote*、src/store*、src/rpc*、src/config*、src/observer.rs、src/archive.rs、tests、examples、acceptance/bindings.json、Docs、当前任务记录、源码外本任务实验资料
 base_commit: 91a4fe847140ad54daa744519b0112e271527ab4
 worktree_path: /Users/hongyong/Developer/codex-session-board-remote-sections-20261114
 coordinator: codex
@@ -24,3 +24,8 @@ status: active
 只读分析并行分配给 mapping_architecture 与 history_and_tests；
 两者不改文件，所有实现、暂存和提交由本任务完成。
 开发提交保持 13 文件、400 行，不修改版本和共享 STATE。
+
+已完成首个检查点 5d5804c：原生位置确认复用已校验目录，不再在确认循环中重读
+客户端落盘文件；缺失映射在任何业务移动前拒绝。独立 target 的 native_direct
+9 项测试通过，暂存快检和提交钩子通过。后续构建均使用本任务独立 target，
+避免共享 target 命中其他工作树的旧库。

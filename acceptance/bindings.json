@@ -373,6 +373,8 @@
       "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions"
     ],
     "MANUAL-001": [
+      "lib::codex_session_board::store::mappings::tests::calibration_ownership_and_unknown_creation_survive_restart",
+      "lib::codex_session_board::store::mappings::tests::malformed_probe_cannot_partially_publish_a_mapping",
       "test::native_direct::direct_read_uses_the_current_owner_instead_of_legacy_or_other_accounts",
       "test::native_direct::direct_read_never_falls_back_from_a_missing_or_invalid_current_owner",
       "lib::codex_session_board::native_sections::tests::aliases_follow_the_current_owner_without_legacy_fallback",

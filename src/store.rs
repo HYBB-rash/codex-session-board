@@ -6,6 +6,7 @@ use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
 mod drafts;
+mod mappings;
 mod native;
 pub mod remote;
 mod runtime_native;

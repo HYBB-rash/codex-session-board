@@ -24,6 +24,8 @@ mod drafts;
 pub struct App {
     pub config: Config,
     pub store: Arc<Store>,
+    pub(crate) mapping_store: Arc<Store>,
+    pub(crate) native_mapping_scope: Mutex<Option<Value>>,
     pub refresh: AtomicBool,
     pub remote_refresh: AtomicBool,
     pub health: Mutex<Value>,
@@ -56,6 +58,8 @@ impl App {
         let native_sections = config.native_sections;
         Ok(Self {
             config,
+            mapping_store: Arc::clone(&store),
+            native_mapping_scope: Mutex::new(None),
             store,
             refresh: AtomicBool::new(false),
             remote_refresh: AtomicBool::new(false),
