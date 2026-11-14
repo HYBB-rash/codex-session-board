@@ -63,6 +63,12 @@ def verify_complete(output, record):
             or not record.get("finished_at") or not record.get("run_id")):
         raise ValueError("需要完整且通过的第二版验证报告")
     environment = record["environment"]
+    if record["scope"] != "preflight":
+        owner = environment["cargo_owner"]
+        if (owner["source_directory"] != environment["source_directory"]
+                or not Path(environment["cargo_target"]).is_absolute()
+                or type(owner["source_inode"]) is not int or type(owner["source_device"]) is not int):
+            raise ValueError("编译缓存归属不完整")
     names = ("python3", "git") if record["scope"] == "preflight" else ("python3", "git", "cargo", "rustc", "node")
     for name in names:
         tool = environment["tools"][name]

@@ -9,8 +9,9 @@ import sys
 import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.validate_candidate import ROOT, acceptance_outcome, git, identity
+from scripts.validate_candidate import ROOT, acceptance_outcome, commands_for, git, identity
 from scripts.verify_package_startup import CHECKS
+from scripts.validation_report import verify_complete
 
 JOBS = {
     "Candidate (linux-x86_64)", "Candidate (macos-arm64)",
@@ -44,8 +45,15 @@ def validate_run(run, jobs, source, repository):
 
 def validate_artifact(directory, source, label):
     record = json.loads((directory / "VALIDATION.json").read_text())
+    verify_complete(directory, record)
     expected = {key: source[key] for key in ("commit", "tree", "fingerprint")}
     observed = record["source"]
+    commands = [step["arguments"] for step in record["steps"]]
+    expected_commands = commands_for(argparse.Namespace(scope="candidate"), Path("report"))
+    if (len(commands) != 3 or commands[:2] != expected_commands[:2]
+            or commands[2][:-1] != expected_commands[2][:-1]
+            or Path(commands[2][-1]).name != "automated.json"):
+        raise ValueError("Candidate steps do not preserve the required checks and order")
     if (record["scope"] != "candidate" or record["passed"] is not True
             or any(observed[key] != value for key, value in expected.items())
             or (observed["platform"], observed["machine"]) != PLATFORMS[label]):
@@ -54,6 +62,10 @@ def validate_artifact(directory, source, label):
     automatic = json.loads(report.read_text())
     if (hashlib.sha256(report.read_bytes()).hexdigest() != record["automated_sha256"]
             or automatic["automated_passed"] is not True
+            or record["release_ready"] is not automatic["release_ready"]
+            or record["acceptance_status"] != "not_performed"
+            or record["pending"] != [item["id"] for item in automatic["requirements"] if item["status"] == "pending"]
+            or (record["environment"]["platform"], record["environment"]["machine"]) != PLATFORMS[label]
             or automatic["build_sha256"] != source["fingerprint"]
             or [step["name"] for step in record["steps"]] != ["step-1", "step-2", "step-3"]
             or any(step["returncode"] != 0 for step in record["steps"][:2])

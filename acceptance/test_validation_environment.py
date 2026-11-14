@@ -34,9 +34,16 @@ class ValidationEnvironmentTests(unittest.TestCase):
         alias.symlink_to(self.source, target_is_directory=True)
         self.assertEqual(environment.claim_cache(alias, target), str(target))
         before = (target / ".validation-owner.json").read_bytes()
+        (self.root / "other-copy").mkdir()
         with self.assertRaisesRegex(RuntimeError, "其他源码"):
             environment.claim_cache(self.root / "other-copy", target)
         self.assertEqual((target / ".validation-owner.json").read_bytes(), before)
+        previous_target = environment.default_target(self.source)
+        self.source.rename(self.root / "original-copy")
+        self.source.mkdir()
+        self.assertNotEqual(environment.default_target(self.source), previous_target)
+        with self.assertRaisesRegex(RuntimeError, "其他源码"):
+            environment.claim_cache(self.source, target)
 
     def test_unowned_nonempty_cache_is_never_silently_adopted(self):
         target = self.root / "cache"

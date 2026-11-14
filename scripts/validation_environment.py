@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 from pathlib import Path
 import platform
@@ -13,8 +14,8 @@ def choose_python(root, environment):
     explicit = environment.get("CSB_VALIDATION_PYTHON")
     data = Path(environment.get("XDG_DATA_HOME", str(Path.home() / ".local/share")))
     candidates = [explicit] if explicit else [
-        shutil.which("python3"), sys.executable,
-        *(shutil.which(f"python3.{minor}") for minor in range(15, 10, -1)),
+        shutil.which("python3", path=environment.get("PATH")), sys.executable,
+        *(shutil.which(f"python3.{minor}", path=environment.get("PATH")) for minor in range(15, 10, -1)),
         str(root / ".venv/bin/python"),
         str(data / "codex-session-board/delivery-venv/bin/python"),
     ]
@@ -38,7 +39,15 @@ def choose_python(root, environment):
 
 
 def cache_identity(root):
-    return {"schema_version": 1, "source_directory": str(root.resolve())}
+    root = root.resolve()
+    status = root.stat()
+    return {"schema_version": 1, "source_directory": str(root),
+            "source_device": status.st_dev, "source_inode": status.st_ino}
+
+
+def default_target(root):
+    identity = json.dumps(cache_identity(root), sort_keys=True).encode()
+    return root / "target/validation" / hashlib.sha256(identity).hexdigest()[:16]
 
 
 def claim_cache(root, target):
@@ -81,7 +90,7 @@ def resolve(root, output, scope, python=None, staged=False):
     target = None
     if scope != "preflight":
         requested = root / "target" if staged else Path(
-            environment.get("CARGO_TARGET_DIR", str(root / "target/validation")))
+            environment.get("CARGO_TARGET_DIR", str(default_target(root))))
         target = claim_cache(root, requested if requested.is_absolute() else root / requested)
         environment["CARGO_TARGET_DIR"] = target
     binary = output / "tools"
@@ -94,5 +103,6 @@ def resolve(root, output, scope, python=None, staged=False):
                        TMPDIR=str(temporary), CSB_VALIDATION_PYTHON=tools["python3"]["path"])
     metadata = {"tools": tools, "platform": sys.platform, "machine": platform.machine(),
                 "source_directory": str(root.resolve()),
-                "temporary_directory": str(temporary), "cargo_target": target}
+                "temporary_directory": str(temporary), "cargo_target": target,
+                "cargo_owner": cache_identity(root) if target else None}
     return environment, metadata
