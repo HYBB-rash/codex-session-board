@@ -373,6 +373,8 @@
       "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions"
     ],
     "MANUAL-001": [
+      "lib::codex_session_board::store::native_backfill::tests::backfill_baselines_old_phase_but_allows_a_new_terminal_after_initialization",
+      "lib::codex_session_board::store::native_backfill::tests::backfill_keeps_archive_input_confirmation_with_already_cached_identical_input",
       "lib::codex_session_board::store::native_backfill::tests::backfill_preserves_manual_notes_input_and_phase_anchors_without_bulk_title_jobs",
       "lib::codex_session_board::store::native_backfill::tests::backfill_new_input_rejects_commit_and_lost_confirmation_settles_without_replay",
       "lib::codex_session_board::store::native_backfill::tests::backfill_respects_existing_native_custom_pinned_and_managed_positions_once",

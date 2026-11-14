@@ -187,6 +187,25 @@ fn restore_active(
     Ok(())
 }
 
+fn reclaim_probes(app: &App, reader: &mut dyn Rpc, entries: &[Value]) -> Result<HashSet<String>> {
+    let host = &app.config.host_id;
+    let mut owned = app.mapping_store.native_probes(host)?;
+    let candidates: Vec<_> = entries.iter().filter_map(|thread| thread["id"].as_str())
+        .filter(|identifier| owned.contains(*identifier)).collect();
+    if candidates.is_empty() || !app.config.native_sections { return Ok(owned); }
+    let (archived, complete) = rpc::archived_thread_ids(reader,app.config.page_size,app.config.max_pages)?;
+    ensure!(complete, "校准会话归档状态尚未完整读取");
+    let mut verifier = app.native_reader()?;
+    for identifier in candidates {
+        if archived.contains(identifier) { continue; }
+        let response = verifier.call("thread/read",
+            json!({"threadId":identifier,"includeTurns":false}))?;
+        ensure!(response["thread"]["id"] == identifier, "校准会话读回身份不匹配");
+        if app.mapping_store.reclaim_native_probe(host, identifier)? { owned.remove(identifier); }
+    }
+    Ok(owned)
+}
+
 pub(crate) fn scan_runtime_page(
     app: &App,
     reader: &mut dyn Rpc,
@@ -213,6 +232,9 @@ pub(crate) fn scan_runtime_page(
     if continued {
         merge_head(app, reader, &mut entries)?;
     }
+    let owned = reclaim_probes(app, reader, &entries)?;
+    entries.retain(|thread| !owned.contains(thread["id"].as_str().unwrap_or("")));
+    progress.identifiers.retain(|identifier| !owned.contains(identifier));
     let complete = progress.advance(&entries, &response["nextCursor"], app.config.max_pages)?;
     app.store.discover(&entries)?;
     if let Some(catalog) = catalog {

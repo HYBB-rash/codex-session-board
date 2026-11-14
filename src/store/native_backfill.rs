@@ -15,6 +15,8 @@ pub(crate) struct BackfillChange {
 struct Backfill {
     scope: Value,
     done: bool,
+    #[serde(default)]
+    baselined: bool,
     pending: Option<BackfillChange>,
 }
 
@@ -27,7 +29,7 @@ fn load(database: &Connection, identifier: &str, scope: &Value) -> Result<Backfi
         [format!("native_backfill:v1:{identifier}")], |row| row.get(0)).optional()?;
     let record: Option<Backfill> = saved.map(|value| serde_json::from_str(&value)).transpose()?;
     Ok(record.filter(|record| record.done || record.scope == *scope)
-        .unwrap_or_else(|| Backfill {scope:scope.clone(),done:false,pending:None}))
+        .unwrap_or_else(|| Backfill {scope:scope.clone(),done:false,baselined:false,pending:None}))
 }
 
 fn save(database: &Transaction<'_>, identifier: &str, record: &Backfill) -> Result<()> {
@@ -79,9 +81,12 @@ impl Store {
         if record.done { return Ok(false); }
         let row = get_row(&transaction, identifier)?;
         if row["archived"] == 1 { return Ok(true); }
-        if row["native_section"] != native.version || row["native_state"] != native.state {
+        if row["native_section"] != native.version || row["native_state"] != native.state
+            || native::unconfirmed_input(&row,native) && row["needs_review"] != 1 {
             native::write_daily(&transaction, identifier, &native::DailyWrite {
-                column:Some(native),bump_version:true,..native::DailyWrite::default()})?;
+                column:Some(native),bump_version:true,
+                needs_review:native::unconfirmed_input(&row,native).then_some(1),
+                ..native::DailyWrite::default()})?;
         }
         if !default_section(native) {
             record.done = true;
@@ -130,12 +135,31 @@ impl Store {
             "迁移目标尚未在远程原生位置确认");
         native::write_daily(&transaction, identifier, &native::DailyWrite {
             column:Some(confirmed),bump_version:true,expect_version:Some(change.version),
-            expect_input:Some(change.input),..native::DailyWrite::default()})?;
+            expect_input:Some(change.input),
+            needs_review:native::unconfirmed_input(&get_row(&transaction,identifier)?,confirmed)
+                .then_some(1),..native::DailyWrite::default()})?;
         save(&transaction, identifier, &Backfill {
-            scope:change.scope.clone(),done:true,pending:None})?;
+            scope:change.scope.clone(),done:true,baselined:false,pending:None})?;
         settle_titles(&transaction, identifier, confirmed)?;
         transaction.commit()?;
         Ok(())
+    }
+
+    pub(crate) fn baseline_native_backfill(&self, identifier: &str, status: &Value,
+        turn: &Value, since: f64) -> Result<bool> {
+        let mut database = self.connection()?;
+        let transaction = database.transaction()?;
+        let mut record = load(&transaction, identifier, &Value::Null)?;
+        if !record.done || record.baselined { return Ok(false); }
+        let Some((state,_)) = runtime_state(status,turn) else { return Ok(false); };
+        let Some(key) = runtime_native::phase_key(state,status,turn) else { return Ok(false); };
+        let time = turn[if terminal(status,turn) {"completedAt"} else {"startedAt"}].as_f64();
+        let old = time.is_none_or(|time| time < since);
+        if old { runtime_native::keep_phase(&transaction,identifier,&key)?; }
+        record.baselined = true;
+        save(&transaction,identifier,&record)?;
+        transaction.commit()?;
+        Ok(old)
     }
 }
 

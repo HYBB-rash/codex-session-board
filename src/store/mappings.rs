@@ -3,6 +3,26 @@ use crate::native_sections::mapping::Record;
 use std::collections::HashSet;
 
 impl Store {
+    pub(crate) fn is_native_probe(&self, host: &str, identifier: &str) -> Result<bool> {
+        Ok(self.connection()?.query_row("SELECT EXISTS(SELECT 1 FROM settings WHERE key=?)",
+            [format!("native_probe:{host}:{identifier}")], |row| row.get(0))?)
+    }
+
+    pub(crate) fn reclaim_native_probe(&self, host: &str, identifier: &str) -> Result<bool> {
+        let mut database = self.connection()?;
+        let transaction = database.transaction()?;
+        let saved: Option<String> = transaction.query_row(
+            "SELECT value FROM settings WHERE key=?", [format!("native_mapping:v1:{host}")],
+            |row| row.get(0)).optional()?;
+        let record: Option<Record> = saved.map(|value| serde_json::from_str(&value)).transpose()?;
+        if record.and_then(|record| record.probe).and_then(|probe| probe.thread)
+            .is_some_and(|thread| thread == identifier) { return Ok(false); }
+        let changed = transaction.execute("DELETE FROM settings WHERE key=?",
+            [format!("native_probe:{host}:{identifier}")])?;
+        transaction.commit()?;
+        Ok(changed == 1)
+    }
+
     pub(crate) fn abandon_unknown_native_probe(&self, host: &str, request: &str,
         source: &Value) -> Result<()> {
         let mut database = self.connection()?;

@@ -18,6 +18,7 @@ pub fn identity(host: &str, thread: &str) -> String {
 
 impl Store {
     pub fn import_remote(&self, source: &Store, host: &str) -> Result<()> {
+        let owned = source.native_probes(host)?;
         let mut database = self.connection()?;
         let transaction = database.transaction()?;
         let imported: bool = transaction.query_row(
@@ -28,6 +29,7 @@ impl Store {
             return Ok(());
         }
         for row in source.remote_sessions()?.iter().filter(|row| row["hostId"] == host) {
+            if owned.contains(text(row, "threadId")) { continue; }
             import_row(&transaction, source, row)?;
         }
         transaction.execute(
@@ -69,6 +71,7 @@ impl Store {
     }
 
     pub fn discover_remote(&self, host: &str, label: &str, threads: &[Value]) -> Result<()> {
+        let owned = self.native_probes(host)?;
         let mut database = self.connection()?;
         let transaction = database.transaction()?;
         for thread in threads {
@@ -76,6 +79,7 @@ impl Store {
             let uuid = uuid::Uuid::parse_str(identifier).context("远程会话 ID 无效")?;
             ensure!(uuid.to_string() == identifier, "远程会话 ID 无效");
             ensure!(thread["hostId"] == host, "远程会话主机不匹配");
+            if owned.contains(identifier) { continue; }
             let title: String = text(thread, "title").chars().take(300).collect();
             transaction.execute(
                 "INSERT INTO remote_sessions(id,host_id,thread_id,host_label,title,cwd,project_id,updated_at)

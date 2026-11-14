@@ -16,6 +16,14 @@ pub(super) fn pending(row: &Value) -> Result<Option<Value>> {
         .transpose()?)
 }
 
+pub(super) fn phase_key(state: &str, status: &Value, turn: &Value) -> Option<String> {
+    let identifier = turn["id"].as_str().filter(|value| !value.is_empty())?;
+    let mut flags = status["activeFlags"].as_array().cloned().unwrap_or_default();
+    if status["type"] != "active" { flags.clear(); }
+    flags.sort_by_key(Value::to_string);
+    Some(json!([identifier, state, flags]).to_string())
+}
+
 fn event(
     row: &Value,
     status: &Value,
@@ -24,16 +32,7 @@ fn event(
     pending: bool,
 ) -> Option<(&'static str, &'static str, String, bool)> {
     let (state, reason) = runtime_state(status, turn)?;
-    let identifier = turn["id"].as_str().filter(|value| !value.is_empty())?;
-    let mut flags = status["activeFlags"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
-    if status["type"] != "active" {
-        flags.clear();
-    }
-    flags.sort_by_key(Value::to_string);
-    let key = json!([identifier, state, flags]).to_string();
+    let key = phase_key(state, status, turn)?;
     if row["archived"] == 1 || row["runtime_key"] == key {
         return None;
     }
@@ -63,11 +62,12 @@ fn old_event_keeps_card(
     let before_placement = terminal(status, turn)
         && row["native_choice_at"]
             .as_f64()
+            .or_else(|| row["selected_state"].as_str().and_then(|_| row["selected_at"].as_f64()))
             .is_some_and(|placed| time.is_none_or(|end| end <= placed));
     !pending_turn && (no_phase && before_observation || before_placement)
 }
 
-fn keep_phase(database: &rusqlite::Transaction<'_>, identifier: &str, key: &str) -> Result<()> {
+pub(super) fn keep_phase(database: &rusqlite::Transaction<'_>, identifier: &str, key: &str) -> Result<()> {
     native::write_daily(
         database,
         identifier,

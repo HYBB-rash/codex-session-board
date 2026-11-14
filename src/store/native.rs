@@ -189,11 +189,14 @@ fn push_guard(values: &mut Vec<SqlValue>, write: &DailyWrite<'_>) {
     }
 }
 
+pub(super) fn unconfirmed_input(row: &Value, native: &Observation) -> bool {
+    native.state == "to_archive"
+        && row["selected_at"].is_null()
+        && !users(&turn_of(row)).is_empty()
+}
+
 fn observed_write<'a>(row: &Value, native: &'a Observation) -> Result<DailyWrite<'a>> {
     let confirmed = super::runtime_native::pending(row)?.is_some_and(|key| key[1] == native.state);
-    let unconfirmed_input = native.state == "to_archive"
-        && row["selected_at"].is_null()
-        && !users(&turn_of(row)).is_empty();
     Ok(DailyWrite {
         column: Some(native),
         pending: Pending::Clear,
@@ -201,7 +204,7 @@ fn observed_write<'a>(row: &Value, native: &'a Observation) -> Result<DailyWrite
         phase: Phase::Coalesce,
         clear_selected: confirmed,
         automatic: confirmed.then_some((native.state.as_str(), "自动阶段目标已在原生位置确认。")),
-        needs_review: unconfirmed_input.then_some(1),
+        needs_review: unconfirmed_input(row, native).then_some(1),
         bump_version: true,
         ..DailyWrite::default()
     })

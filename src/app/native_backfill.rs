@@ -2,6 +2,12 @@ use super::*;
 use crate::native_sections::Observation;
 
 impl App {
+    pub(crate) fn baseline_native_backfill(&self, identifier: &str, status: &Value,
+        turn: &Value, since: f64) -> Result<bool> {
+        Ok(self.config.native_sections && self.config.host_id != "local"
+            && self.store.baseline_native_backfill(identifier,status,turn,since)?)
+    }
+
     pub(crate) fn needs_native_backfill(&self, identifier: &str) -> Result<bool> {
         Ok(self.config.native_sections && self.config.host_id != "local"
             && self.store.native_backfill_pending(identifier)?)
@@ -19,6 +25,7 @@ impl App {
 
     pub(super) fn cache_native_observation(&self, identifier: &str,
         observed: &Observation) -> Result<()> {
+        if self.is_native_probe(identifier)? { return Ok(()); }
         if self.needs_native_backfill(identifier)?
             && self.store.cache_native_backfill(identifier, observed,
                 &self.native_backfill_scope()?)? {

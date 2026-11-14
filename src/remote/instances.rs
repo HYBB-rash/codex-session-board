@@ -11,7 +11,6 @@ impl App {
         config.host_id = host.host_id.clone();
         config.data_dir = host.directory(&self.config);
         config.auto_archive_seconds = self.config.remote_auto_archive_seconds;
-        config.native_sections = false;
         config.remote_retry = host.auto_connect;
         config.proxy_command = host.proxy(&self.config)?;
         config.clock_command = host.command(

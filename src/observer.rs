@@ -21,8 +21,9 @@ pub fn scan_history(app: &App, reader: &mut dyn Rpc) -> Result<()> {
 }
 
 fn history_pass(app: &App, reader: &mut dyn Rpc) -> Result<()> {
-    let (threads, complete) =
+    let (mut threads, complete) =
         rpc::list_threads(reader, app.config.page_size, app.config.max_pages)?;
+    app.retain_business_threads(&mut threads)?;
     app.store.discover(&threads)?;
     let ids: HashSet<_> = threads
         .iter()
@@ -160,6 +161,7 @@ fn observe_one(
 ) -> Result<Seen> {
     ensure!(app.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
     let identifier = thread["id"].as_str().context("会话缺少 ID")?;
+    if app.is_native_probe(identifier)? { return Ok(Seen::Same); }
     if !app.store.contains(identifier)? {
         return Ok(Seen::Same);
     }
@@ -201,6 +203,9 @@ fn apply_observed_turn(
     app.store.observe(identifier, turn, None)?;
     if let Err(error) = app.backfill_native(identifier, status) {
         return Ok(Seen::Phase(error.to_string()));
+    }
+    if app.baseline_native_backfill(identifier,status,turn,since)? {
+        return Ok(Seen::Saved(identifier.to_owned(), revision));
     }
     if crate::model::runtime_state(status, turn).is_none() {
         return Ok(Seen::Same);

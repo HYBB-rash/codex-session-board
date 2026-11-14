@@ -94,3 +94,42 @@ fn backfill_uses_live_active_and_guarded_history_without_promoting_old_failures(
     }
     Ok(())
 }
+
+#[test]
+fn backfill_baselines_old_phase_but_allows_a_new_terminal_after_initialization() -> Result<()> {
+    let (store, config, id, scope) = setup()?;
+    let since = now();
+    let turn = json!({"id":"old-turn","status":"completed","completedAt":since-100.0});
+    store.connection()?.execute("UPDATE sessions SET runtime_key=?,runtime_pending_key=? WHERE id=?",
+        params![json!(["old-turn","in_progress",[]]).to_string(),
+            json!(["old-turn","review",[]]).to_string(),id])?;
+    let actual = Observation {state:"to_archive".into(),version:"managed-archive".into()};
+    store.cache_native_backfill(&id,&actual,&scope)?;
+    assert!(store.baseline_native_backfill(&id,&json!({"type":"notLoaded"}),&turn,since)?);
+    assert!(store.prepare_native_runtime(&id,&json!({"type":"notLoaded"}),&turn,since)?.is_none());
+    assert!(store.pending_titles(None)?.is_empty());
+    assert_eq!(get_row(&*store.connection()?,&id)?["native_state"],"to_archive");
+    let next = json!({"id":"new-turn","status":"completed","completedAt":since+100.0});
+    assert!(!store.baseline_native_backfill(&id,&json!({"type":"idle"}),&next,since)?);
+    assert!(store.prepare_native_runtime(&id,&json!({"type":"idle"}),&next,since)?.is_some());
+    assert!(store.prepare_native_backfill(&id,&config,&json!({}),&scope)?.is_none());
+    Ok(())
+}
+
+#[test]
+fn backfill_keeps_archive_input_confirmation_with_already_cached_identical_input() -> Result<()> {
+    let (mut store, _, id, scope) = setup()?;
+    store.native_sections = true;
+    let turn = json!({"id":"old","userItems":["u1"],"status":"completed"});
+    store.observe(&id,&turn,None)?;
+    store.connection()?.execute("UPDATE sessions SET needs_review=0,native_state='to_archive',
+        native_section='managed-archive' WHERE id=?", [&id])?;
+    let actual = Observation {state:"to_archive".into(),version:"managed-archive".into()};
+    store.cache_native_backfill(&id,&actual,&scope)?;
+    store.observe(&id,&turn,None)?;
+    let row = get_row(&*store.connection()?,&id)?;
+    assert_eq!(row["needs_review"],1);
+    assert!(store.prepare_archive(&id,(row["version"].as_i64().unwrap(),
+        row["input_revision"].as_i64().unwrap())).is_err());
+    Ok(())
+}
