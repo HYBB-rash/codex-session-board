@@ -1581,6 +1581,9 @@
       "lib::codex_session_board::remote::connections::tests::failed_manual_connection_stops_when_auto_connect_is_off"
     ],
     "DELIVERY-001": [
+      "acceptance.test_package_startup.PackageStartupTests.test_fixture_channel_preserves_all_mcp_startup_requests_and_runtime_identity",
+      "acceptance.test_package_startup.PackageStartupTests.test_mcp_failure_wrong_backend_or_different_service_cannot_pass",
+      "acceptance.test_package_startup.PackageStartupTests.test_missing_replies_errors_wrong_version_resource_or_empty_snapshot_fail",
       "acceptance.test_delivery.DeliveryTests.test_source_preflight_checks_relocated_fingerprint_without_building_a_binary",
       "acceptance.test_delivery.DeliveryTests.test_source_preflight_detects_an_omitted_extensionless_entry",
       "acceptance.test_saved_release.SavedReleaseTests.test_local_then_ci_reuses_exact_archive_without_building",
