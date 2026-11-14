@@ -6,7 +6,7 @@
 - base_commit: 865fb97
 - worktree_path: /Users/hongyong/.codex/worktrees/package-authority-fix/codex-session-board
 - coordinator: 01a1d38b-1ef8-7392-ba78-caa7935c5ab4
-- status: verifying_fixture_lifecycle
+- status: ready_for_coordinator
 
 固定主线 04f7d58 与原 PR 头 9667957 无冲突组合为签名复现基线 865fb97。
 先让包内 serve 与 MCP 均由监听端点的同一 fixture 托管，保留原有身份、就绪、协议与清理断言。
@@ -79,3 +79,15 @@ Mac 日志记录真实私有客户端验证。完整双平台候选门禁仍由�
 Mac 的 LOCAL_PEERPID 存在偶发 ENOTCONN。旧失败日志保留为 targeted/final-python.log。
 修正此模拟后台等待客户端关闭后再关闭，保持真实连接生命周期及全部原断言；
 业务源码仍固定 a0d8001。只补这一处测试 fixture 修正及记录后重新固定最终交付。
+
+最终可带入提交 be902aab76c0d57a10ac8e25648a51679d8cf589 已验证 Agent 签名，
+其中 a0d8001 为最后一条业务/验证器实现变化，be902aa 只修正测试连接生命周期及记录。
+最终源码指纹 022734d1938437c0d809f4b5755c76375794982a855329f9257c0a77488f76fe。
+第五轮重新构建并解包该提交的实际包，五场景全部按预期通过，全部清理确认，执行退出 0；
+最终归档摘要 8d601ef8d2aacb06be6c125bcd361c4d1e5e56152cd7f50c451ec522e3fca42e。
+30 项相关 Python 组合复验通过，日志 targeted/final-python-r2.log；原失败日志保留。
+持久 SUMMARY.json 与 final-package/summary.json 已更新为上述最终 SHA，
+前一轮时限实现的实际包保存在 deadline-package；原始最终执行目录
+/private/tmp/csb-pr6-package-proof-20261114-r5。业务二进制摘要与前两轮一致。
+若集成分支已带入至 53851fb，只需追加 a0d8001 与 be902aa，再由协调者运行最终双平台 CI。
+本任务随后仅提交此记录；共享 STATE、版本与主线仍未改动，工作树继续保留。
