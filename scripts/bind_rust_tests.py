@@ -73,6 +73,7 @@ def build():
         "GATE-001": python_gate + group("example::project_check::", "test::git_hooks::"),
     }
     additions = {
+        "HEALTH-001": group("::observer::tests::"),
         "STATE-001": group("test::legacy_mode::"),
         "DISCOVERY-001": group("::remote::", "::rpc::framing::", "::catalog::"),
         "DATA-001": group("::remote::hosts::source::"),

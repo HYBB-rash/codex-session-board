@@ -19,6 +19,12 @@ fn cached_snapshot_requires_live_reverification_after_restart() -> Result<()> {
     assert_eq!(view.rows[0]["readOnly"], true);
     assert_eq!(view.health["complete"], false);
     assert_eq!(view.health["cached"], true);
+    install(&app, super::test_support::snapshot(), true);
+    app.deactivate()?;
+    let disabled = view::read(&app, &[])?;
+    assert_eq!(disabled.rows[0]["presence"], "cachedUnknown");
+    assert_eq!(disabled.rows[0]["readOnly"], true);
+    assert_eq!(disabled.health["complete"], false);
     Ok(())
 }
 
@@ -30,6 +36,7 @@ fn old_cached_session_needs_positive_runtime_evidence_to_be_current() -> Result<
     assert_eq!(history[0]["catalogCurrent"], false);
     assert_eq!(history[0]["readOnly"], true);
     app.discover(&[thread(FIRST, false, true)], true)?;
+    app.update_health(json!({"runtimeVerified":true}))?;
     let current = view::read(&app, &[])?.rows;
     assert_eq!(current[0]["presence"], "active");
     assert_eq!(current[0]["catalogEvidence"], "runtime");
@@ -37,6 +44,11 @@ fn old_cached_session_needs_positive_runtime_evidence_to_be_current() -> Result<
     assert_eq!(current[0]["readOnly"], false);
     assert_eq!(current[0]["catalogProjectId"], Value::Null);
     assert!(current[0]["projectIssue"].is_string());
+    app.update_health(json!({"runtimeVerified":false}))?;
+    let disconnected = view::read(&app, &[])?.rows;
+    assert_eq!(disconnected[0]["presence"], "cachedUnknown");
+    assert_eq!(disconnected[0]["readOnly"], true);
+    app.update_health(json!({"runtimeVerified":true}))?;
     app.discover(&[], true)?;
     assert_eq!(view::read(&app, &[])?.rows[0]["catalogCurrent"], false);
     Ok(())

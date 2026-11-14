@@ -169,6 +169,7 @@ fn explicit_connection_overrides_startup_preference_without_changing_desktop_con
     let remote = root.remote_app(&fixture.host.host_id)?;
     assert!(remote.enabled.load(Ordering::SeqCst));
     remote.discover(&[json!({"id":THREAD,"name":"test"})], true)?;
+    remote.update_health(json!({"runtimeVerified":true}))?;
     root.request(
         "/api/state",
         Some(&json!({

@@ -1639,7 +1639,8 @@
       "test::observer_contract::runtime_transport_failure_propagates_without_reclassifying_manual_state",
       "test::observer_contract::same_phase_runtime_input_rejects_stale_input_version_without_changing_state_version",
       "lib::codex_session_board::remote::connections::tests::explicit_request_waits_until_a_connection_exists",
-      "lib::codex_session_board::remote::connections::tests::failed_manual_connection_stops_when_auto_connect_is_off"
+      "lib::codex_session_board::remote::connections::tests::failed_manual_connection_stops_when_auto_connect_is_off",
+      "lib::codex_session_board::observer::tests::runtime_disconnect_retires_catalog_liveness_but_frame_limit_does_not"
     ],
     "DELIVERY-001": [
       "acceptance.test_package_startup.PackageStartupTests.test_connect_and_send_share_the_total_startup_budget",

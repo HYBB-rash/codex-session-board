@@ -1,7 +1,7 @@
 use crate::app::App;
 use anyhow::Result;
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::Ordering;
 
 pub(crate) struct View {
@@ -99,12 +99,7 @@ fn append_cache(
     at: f64,
     rows: &mut Vec<Value>,
 ) -> Result<()> {
-    let runtime = app
-        .active_sessions
-        .lock()
-        .map_err(|_| anyhow::anyhow!("会话发现锁已损坏"))?
-        .clone()
-        .unwrap_or_default();
+    let runtime = active_runtime(app)?;
     let published = app.store.catalog_published_ids()?;
     let drafts: BTreeMap<_, _> = drafts
         .iter()
@@ -120,6 +115,23 @@ fn append_cache(
         rows.push(cached_row(row, pending.copied(), fresh));
     }
     Ok(())
+}
+
+fn active_runtime(app: &App) -> Result<HashSet<String>> {
+    let live = app
+        .health
+        .lock()
+        .map_err(|_| anyhow::anyhow!("健康状态锁已损坏"))?["runtimeVerified"]
+        == true;
+    if !live {
+        return Ok(HashSet::new());
+    }
+    Ok(app
+        .active_sessions
+        .lock()
+        .map_err(|_| anyhow::anyhow!("会话发现锁已损坏"))?
+        .clone()
+        .unwrap_or_default())
 }
 
 fn cached_row(mut row: Value, pending: Option<&Value>, fresh: bool) -> Value {

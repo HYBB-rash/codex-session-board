@@ -37,6 +37,7 @@ fn managed_write_gate_requires_initialization_and_preserves_notes_after_home_cha
     assert!(root.route_remote("/api/state", &body).is_err());
     assert_eq!(remote.store.note(&identifier)?, "");
     drop(remote.connection(Duration::from_secs(3), Role::RemoteObserver)?);
+    remote.update_health(json!({"runtimeVerified":true}))?;
     root.route_remote("/api/state", &body)?;
     assert_eq!(remote.store.note(&identifier)?, "keep");
     let source = remote.config.data_dir.join("source.json");

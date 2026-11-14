@@ -108,6 +108,10 @@ impl App {
         if let Some(binding) = &self.config.remote_binding {
             binding.disconnect()?;
         }
+        self.catalog
+            .lock()
+            .map_err(|_| anyhow::anyhow!("目录锁已损坏"))?
+            .live = false;
         self.update_health(json!({"runtimeVerified":false,"nativeVerified":false,
             "scanComplete":false,"runtimeError":"主机已断开或登记改变，保留缓存"}))
     }

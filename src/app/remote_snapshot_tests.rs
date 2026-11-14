@@ -29,6 +29,7 @@ fn fixture() -> Result<(tempfile::TempDir, App, App, String)> {
         })],
     )?;
     remote.discover(&[], true)?;
+    remote.update_health(json!({"runtimeVerified":true}))?;
     Ok((directory, root, remote, thread))
 }
 

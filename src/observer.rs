@@ -117,6 +117,7 @@ fn runtime_pause(app: &App, error: &anyhow::Error) -> Result<bool> {
     if frame_too_large(error) {
         return Ok(false);
     }
+    app.catalog.lock().map_err(|_| anyhow::anyhow!("目录锁已损坏"))?.live = false;
     app.update_health(
         json!({"runtimeVerified":false,"runtimeError":error.to_string(),"scanComplete":false}),
     )?;
@@ -425,6 +426,21 @@ mod tests {
 
     fn thread(identifier: &str, updated_at: i64) -> Value {
         json!({"id":identifier,"updatedAt":updated_at,"status":{"type":"idle"},"name":identifier})
+    }
+
+    #[test]
+    fn runtime_disconnect_retires_catalog_liveness_but_frame_limit_does_not() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let app = App::new(crate::config::Config {
+            data_dir:directory.path().into(), sync_titles:false, ..crate::config::Config::default()
+        })?;
+        app.catalog.lock().unwrap().live = true;
+        assert!(!runtime_pause(&app, &anyhow::anyhow!("Message too long"))?);
+        assert!(app.catalog.lock().unwrap().live);
+        assert!(runtime_pause(&app, &anyhow::anyhow!("connection closed"))?);
+        assert!(!app.catalog.lock().unwrap().live);
+        assert_eq!(app.health.lock().unwrap()["runtimeVerified"], false);
+        Ok(())
     }
 
     #[test]
