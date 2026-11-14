@@ -101,7 +101,7 @@ impl PageScan {
     }
 }
 
-fn project_fields(entry: &Value, method: &str) -> Value {
+pub(crate) fn project_fields(entry: &Value, method: &str) -> Value {
     let fields: &[&str] = match method {
         "project/list" => &["id", "name", "roots", "position", "metadata"],
         "threadSection/list" => &["id", "name"],
