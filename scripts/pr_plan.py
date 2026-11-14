@@ -9,7 +9,7 @@ PACKAGE_SCRIPTS = {
     "scripts/verify_package_startup.py", "scripts/package_scenarios.py",
 }
 CONNECTION_SCRIPTS = {
-    "scripts/shared_desktop.py", "scripts/dev",
+    "scripts/shared_desktop.py", "scripts/dev", "scripts/pr_connection_probe.py",
 }
 TOOLS = {
     "scripts/check", "scripts/validate", "scripts/validate_candidate.py",
@@ -71,7 +71,7 @@ def plan(root, base, additions=()):
             profile = "records"
         elif relevant <= UI:
             profile = "ui"
-    if "connection" in risks:
+    if risks & {"connection", "lifecycle"}:
         risks.add("package")
     if profile == "full":
         risks.add("package")

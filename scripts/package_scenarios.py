@@ -31,6 +31,9 @@ def foreign_peer(root):
                     stream, _ = server.accept()
                 except TimeoutError:
                     continue
+                except OSError as error:
+                    errors.append(str(error))
+                    return
                 try:
                     with stream:
                         stream.settimeout(1)
@@ -119,9 +122,11 @@ def verify(project, built, fixture, output, connection=False):
                   (project / "scripts/verify_package_startup.py").read_bytes()).hexdigest()}
     sys.path.insert(0, str(project))
     sys.path.insert(0, str(project / "scripts"))
-    import verify_package_startup as startup
-    from release_plugin import unpack
     try:
+        import verify_package_startup as startup
+        from release_plugin import unpack
+        if Path(startup.__file__).resolve() != project / "scripts/verify_package_startup.py":
+            raise ValueError("Cached startup verifier belongs to a different project")
         archive = output / "plugin.tar.gz"
         with tarfile.open(archive, "w:gz") as contents:
             for path in sorted(built.iterdir()):
@@ -150,6 +155,8 @@ def verify(project, built, fixture, output, connection=False):
         if connection:
             from pr_connection_probe import verify_sidebar
             record["cases"].append(verify_sidebar(startup, package, fixture, output))
+        if hashlib.sha256(fixture.read_bytes()).hexdigest() != record["fixture_sha256"]:
+            raise ValueError("Fixture changed during actual package checks")
         record["passed"] = True
         return 0
     except (Exception, KeyboardInterrupt) as error:

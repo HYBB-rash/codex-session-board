@@ -39,7 +39,8 @@ def validate(project, base, output, expected=None, additions=()):
             raise RuntimeError(f"PR check failed: {name}; see {output / (name + '.log')}")
 
     try:
-        if git("status", "--porcelain", "--untracked-files=all", root=project):
+        if (git("status", "--porcelain", "--untracked-files=all", root=project)
+                or project != ROOT and git("status", "--porcelain", "--untracked-files=all", root=ROOT)):
             raise ValueError("PR delivery requires a clean committed checkout")
         source = identity(project)
         record.update(source=source, checker=identity())

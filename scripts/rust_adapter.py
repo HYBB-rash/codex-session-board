@@ -11,10 +11,10 @@ from pathlib import Path
 ROOT = Path.cwd().resolve()
 
 
-def command(arguments, timeout=600):
+def command(arguments, timeout=600, input=None):
     try:
         result = subprocess.run(
-            arguments, cwd=ROOT, capture_output=True, text=True, timeout=timeout,
+            arguments, cwd=ROOT, capture_output=True, text=True, timeout=timeout, input=input,
             env={**os.environ, "RUST_BACKTRACE": "0",
                  **({"TMPDIR": "/private/tmp"} if sys.platform == "darwin" else {})},
         )
@@ -106,6 +106,29 @@ def run_rust(targets, names, selected=None):
     return results, timings
 
 
+def python_inventory():
+    process = command([sys.executable, "-c",
+        "import json,unittest\nfrom pathlib import Path\n"
+        "from acceptance.unittest_adapter import test_identifiers\n"
+        "suite=unittest.defaultTestLoader.discover(str(Path.cwd()/'acceptance'),top_level_dir=str(Path.cwd()))\n"
+        "print(json.dumps(list(test_identifiers(suite))))"])
+    if process.returncode:
+        raise ValueError(process.stderr)
+    names = json.loads(process.stdout)
+    if not names or len(names) != len(set(names)):
+        raise ValueError("Python test inventory is empty or duplicated")
+    return names
+
+
+def run_python(names):
+    process = command([sys.executable, str(ROOT / "acceptance/unittest_adapter.py")],
+                      input=json.dumps({"protocol": 1, "tests": names}))
+    if process.returncode:
+        raise ValueError(process.stderr)
+    from scripts.verify_acceptance import validate_results
+    return validate_results(json.loads(process.stdout), set(names))
+
+
 def run(request, prefixes=None, include_python=False):
     if request.get("protocol") != 1:
         raise ValueError("Unsupported adapter protocol")
@@ -116,11 +139,7 @@ def run(request, prefixes=None, include_python=False):
     targets = executables()
     timings = [{"group": "build", "seconds": time.monotonic() - build_started}]
     names = inventory(targets)
-    sys.path.insert(0, str(ROOT))
-    import unittest
-    from acceptance.unittest_adapter import test_identifiers, run as python_tests
-    suite = unittest.defaultTestLoader.discover(str(ROOT / "acceptance"), top_level_dir=str(ROOT))
-    python_names = list(test_identifiers(suite))
+    python_names = python_inventory()
     if set(requested) != set(names) | set(python_names):
         raise ValueError("Test inventory differs from bindings: " + repr(sorted(
             set(requested).symmetric_difference(set(names) | set(python_names))
@@ -141,8 +160,7 @@ def run(request, prefixes=None, include_python=False):
     timings.extend(rust_timings)
     if prefixes is None or include_python:
         started = time.monotonic()
-        python_result = python_tests({"protocol": 1, "tests": python_names})
-        outcomes.update({item["id"]: item for item in python_result["results"]})
+        outcomes.update(run_python(python_names))
         timings.append({"group": "python", "seconds": time.monotonic() - started,
                         "test_count": len(python_names)})
     if set(outcomes) != selected:
