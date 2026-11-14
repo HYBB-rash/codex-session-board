@@ -107,7 +107,8 @@ class ContextGateTests(unittest.TestCase):
         self.assertTrue(self.classify_changes("context/journal/closeout.md"))
 
     def test_code_workflow_and_nonrecord_changes_require_full_candidate(self):
-        for path in ("runtime.rs", ".github/workflows/gate.yml", "context/runtime.rs"):
+        for path in ("runtime.rs", ".github/workflows/gate.yml", "context/runtime.rs",
+                     " context/hidden.md", "\ncontext/hidden.md", "context/hidden.md\n"):
             with self.subTest(path=path):
                 self.assertFalse(self.classify_changes(path))
 

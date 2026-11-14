@@ -10,14 +10,18 @@ def git(*arguments):
 
 def context_only(base):
     subprocess.run(["git", "merge-base", "--is-ancestor", base, "HEAD"], check=True)
-    paths = git("diff", "--no-renames", "--name-only", "-z", base, "HEAD").split("\0")[:-1]
+    paths = subprocess.check_output(
+        ["git", "diff", "--no-renames", "--name-only", "-z", base, "HEAD"], text=True,
+    ).split("\0")[:-1]
     if not paths or any(
         not path.startswith("context/") or Path(path).suffix not in (".md", ".yaml", ".json")
         for path in paths
     ):
         return False
     for reference in (base, "HEAD"):
-        entries = git("ls-tree", "-r", reference, "--", *paths).splitlines()
+        entries = subprocess.check_output(
+            ["git", "ls-tree", "-rz", reference, "--", *paths], text=True,
+        ).split("\0")[:-1]
         if any(entry.split()[0] != "100644" for entry in entries):
             return False
     return True

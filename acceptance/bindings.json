@@ -1596,6 +1596,15 @@
       "acceptance.test_delivery.DeliveryTests.test_channel_versions_are_monotonic_and_bind_immutable_payloads"
     ],
     "GATE-001": [
+      "acceptance.test_integrate.IntegrateTests.test_run_selection_uses_exact_source_branch_and_latest_attempt",
+      "acceptance.test_integrate.IntegrateTests.test_wrong_checkout_dirty_source_or_changed_branch_blocks_resume",
+      "acceptance.test_integrate.IntegrateTests.test_failed_run_is_recorded_without_promoting_or_restarting_the_clock",
+      "acceptance.test_promotion.PromotionTests.test_actual_package_must_be_immutable_and_match_the_started_binary",
+      "acceptance.test_promotion.PromotionTests.test_scoped_promotion_recomputes_plan_and_rejects_omitted_or_failed_tests",
+      "acceptance.test_integration_plan.IntegrationPlanTests.test_special_unknown_paths_never_become_ui_paths",
+      "acceptance.test_integration_plan.IntegrationPlanTests.test_wrong_working_directory_cannot_verify_another_implementation",
+      "acceptance.test_integration_plan.IntegrationPlanTests.test_real_replay_retains_ui_scope_even_when_main_already_has_the_pr",
+      "acceptance.test_integration_plan.IntegrationPlanTests.test_release_record_must_bind_the_exact_parent_and_preserve_other_rules",
       "acceptance.test_integration_plan.IntegrationPlanTests.test_ui_scope_rejects_unknown_dependency_deletion_and_mode_changes",
       "acceptance.test_integration_plan.IntegrationPlanTests.test_only_version_fields_are_exempted",
       "acceptance.test_integration_plan.IntegrationPlanTests.test_replay_cannot_invent_an_ingress_or_hide_actual_changes",
