@@ -22,6 +22,7 @@ CHECKS = [
     "package_hashes", "http_identity", "fixture_ready", "mcp_initialize",
     "mcp_resource", "mcp_snapshot", "cleanup",
 ]
+IDENTITY_FIELDS = ("app", "version", "build", "dataDir", "configId", "pid", "authority")
 
 
 def mcp(root, version, runtime):
@@ -62,7 +63,7 @@ def mcp(root, version, runtime):
         raise ValueError("Packaged MCP interface resource is missing")
     if snapshot.get("isError") or not snapshot["structuredContent"]["sessions"]:
         raise ValueError("Packaged MCP cannot read the isolated fixture")
-    if snapshot["structuredContent"]["runtime"] != runtime:
+    if {field: snapshot["structuredContent"]["runtime"][field] for field in IDENTITY_FIELDS} != runtime:
         raise ValueError("Packaged MCP did not reuse the verified HTTP service and configuration")
     return initialized["serverInfo"]
 
@@ -104,7 +105,8 @@ def verify(package, fixture, output):
                     with connection.getresponse() as response:
                         if response.status != 200:
                             raise ValueError("Packaged HTTP identity is unavailable")
-                        runtime = json.load(response)
+                        runtime = {field: value for field, value in json.load(response).items()
+                                   if field in IDENTITY_FIELDS}
                 authority = json.loads((root / "fixture-authority.json").read_text())
                 service = json.loads((root / "service-child.json").read_text())
                 if (runtime["authority"] != authority or authority["pid"] != children[0].pid

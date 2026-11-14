@@ -12,7 +12,8 @@ import verify_package_startup
 
 
 class PackageStartupTests(unittest.TestCase):
-    runtime = {"pid": 25, "configId": "configuration", "dataDir": "private",
+    runtime = {"app": "codex-session-board", "version": "1", "build": "binary",
+               "pid": 25, "configId": "configuration", "dataDir": "private",
                "authority": {"pid": 9, "started": 123}}
 
     def replies(self):
@@ -61,7 +62,8 @@ class PackageStartupTests(unittest.TestCase):
         for arguments in ({"exit_code": 1}, {"parent": 10}):
             with self.subTest(arguments=arguments), self.assertRaisesRegex(ValueError, "unsuccessfully|backend"):
                 self.exchange(self.replies(), **arguments)
-        for field, value in (("pid", 99), ("configId", "other"), ("dataDir", "other"),
+        for field, value in (("app", "other"), ("version", "other"), ("build", "other"),
+                             ("pid", 99), ("configId", "other"), ("dataDir", "other"),
                              ("authority", {"pid": 9, "started": 124})):
             replies = self.replies()
             replies[2]["result"]["structuredContent"]["runtime"][field] = value
