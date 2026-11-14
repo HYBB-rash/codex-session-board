@@ -56,6 +56,12 @@
         "from": "0.3.81",
         "to": "0.3.82",
         "decision": "冻结发布候选"
+      },
+      {
+        "after_commit": "a60c921d1e10d6eee6795054b715da743e7ef759",
+        "from": "0.3.82",
+        "to": "0.3.83",
+        "decision": "冻结发布候选"
       }
     ],
     "rollover_after": "b7acaa72fb62e2ffaf0d44292956a31d34bee036",
