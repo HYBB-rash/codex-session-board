@@ -113,6 +113,7 @@ def start(arguments):
         result = continue_candidate(state, directory, arguments.timeout)
     except Exception as error:
         state["last_error"] = {"at": now(), "type": type(error).__name__, "detail": str(error)}
+        state.setdefault("errors", []).append(state["last_error"])
         save(path, state)
         raise
     print(json.dumps({"source": result["source"]["commit"], "run": result["run"],

@@ -42,6 +42,7 @@ class IntegrateTests(unittest.TestCase):
                 "source": {"commit": "candidate"}, "base": "base", "branch": "branch",
                 "repository": "owner/repo", "started_at": "2026-11-14T00:00:00+00:00",
                 "pushed_at": "2026-11-14T00:01:00+00:00",
+                "errors": [{"type": "PreviousFailure", "detail": "retained"}],
             }
             integrate.save(directory / "integration.json", state)
             run = {"id": 1, "run_attempt": 1, "status": "completed", "conclusion": "failure"}
@@ -56,3 +57,5 @@ class IntegrateTests(unittest.TestCase):
             self.assertEqual(saved["started_at"], state["started_at"])
             self.assertEqual(saved["run"], 1)
             self.assertEqual(saved["last_error"]["type"], "ValueError")
+            self.assertEqual(saved["errors"][0], state["errors"][0])
+            self.assertEqual(len(saved["errors"]), 2)
