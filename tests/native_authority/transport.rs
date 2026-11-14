@@ -296,11 +296,11 @@ fn blocking_request(surface: &Surface, params: &Value) -> Option<BlockingMove> {
     }
 }
 
-fn prepare_native_stream(stream: &UnixStream) -> Result<bool> {
+pub(super) fn prepare_native_stream(stream: &UnixStream, timeout: Duration) -> Result<bool> {
     stream
         .set_nonblocking(false)
         .context("configure accepted native fixture stream")?;
-    if let Err(error) = stream.set_read_timeout(Some(Duration::from_secs(3))) {
+    if let Err(error) = stream.set_read_timeout(Some(timeout)) {
         if cfg!(target_os = "macos")
             && error.kind() == std::io::ErrorKind::InvalidInput
             && stream.peer_addr().is_err_and(|peer| {
@@ -322,7 +322,7 @@ fn connection(
     surface: Arc<Mutex<Surface>>,
     database: &std::path::Path,
 ) -> Result<()> {
-    if !prepare_native_stream(&stream)? {
+    if !prepare_native_stream(&stream, Duration::from_secs(3))? {
         return Ok(());
     }
     loop {

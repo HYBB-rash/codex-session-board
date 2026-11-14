@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)"
+delivery_python="${XDG_DATA_HOME:-$HOME/.local/share}/codex-session-board/delivery-venv/bin/python"
+if [ -x "$delivery_python" ]; then
+  exec "$delivery_python" "$root/scripts/verify_plugin.py" "$@"
+fi
+exec python3 "$root/scripts/verify_plugin.py" "$@"

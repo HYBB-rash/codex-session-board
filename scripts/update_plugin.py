@@ -33,6 +33,11 @@ def install_market(codex, repository, reference):
                    check=True, stdout=subprocess.DEVNULL)
 
 
+def cache_directory(version):
+    home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+    return home / "plugins/cache" / MARKET / "codex-session-board" / version
+
+
 def cached_package(codex, version, revision):
     markets = json.loads(command([codex, "plugin", "marketplace", "list", "--json"]))
     selected = [item for item in markets["marketplaces"] if item["name"] == MARKET]
@@ -40,8 +45,7 @@ def cached_package(codex, version, revision):
         raise ValueError("Installed marketplace is not the expected native Git snapshot")
     if command(["git", "rev-parse", "HEAD"], Path(selected[0]["root"])) != revision:
         raise ValueError("Native marketplace Git revision differs from the fetched release")
-    home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
-    package = home / "plugins/cache" / MARKET / "codex-session-board" / version
+    package = cache_directory(version)
     metadata_path = package / ".codex-marketplace-install.json"
     if metadata_path.exists():
         metadata = json.loads(metadata_path.read_text())

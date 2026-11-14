@@ -59,7 +59,7 @@ mod tests {
             database
                 .execute_batch("BEGIN IMMEDIATE; UPDATE fixture SET value = 'pending';")
                 .unwrap();
-            println!("writer-ready");
+            println!("\nwriter-ready");
             std::io::stdout().flush().unwrap();
             let mut input = String::new();
             std::io::stdin().read_line(&mut input).unwrap();
@@ -88,7 +88,7 @@ mod tests {
             .unwrap();
         drop(database);
         let mut writer = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "service::migration::recovery::tests::private_recovery_rejects_a_live_sqlite_writer", "--nocapture"])
+            .args(["--exact", "service::migration::recovery::tests::private_recovery_rejects_a_live_sqlite_writer", "--nocapture", "--test-threads=1"])
             .env("SESSION_BOARD_LIVE_WRITER_FIXTURE", &source)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

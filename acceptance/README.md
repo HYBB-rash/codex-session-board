@@ -37,7 +37,11 @@ node scripts/check-blocked-optional.mjs /path/outside/source/blocked-optional.js
 失败和延迟通过独立页面请求拦截注入。报告放在源码之外，结束时关闭独立浏览器。
 这份检查不代签真实 Codex 容器验收。
 
-## 开发完成的判定
+## 完整验收的判定
+
+合并阶段以最终组合自动回归通过、主线更新及可运行插件包产出为完成条件，
+见 `Docs/INTEGRATION.md`。下面的完整验收属于独立阶段，不阻塞符合条件的合并。
+验收阶段如何组织及记录留待后续研究；31 条契约及真实环境证据要求继续保留。
 
 在项目根目录执行：
 
@@ -47,7 +51,7 @@ python3 scripts/verify_acceptance.py --evidence /path/to/evidence.json --report 
 ./scripts/check
 ```
 
-第一条只检查自动部分，不能单独作为“开发完成”的结论。第二条默认检查完整验收。
+第一条只检查自动部分，不能单独作为“完整验收完成”的结论。第二条默认检查完整验收。
 只有每条需求通过、`release_ready=true` 且退出码为 0，才达到这份契约的完成条件。
 有失败返回 1；自动部分通过但外部验收缺证时返回 2。跳过、预期失败、零测试、
 缺少绑定、缺少结果和测试收集错误都不能记为通过。

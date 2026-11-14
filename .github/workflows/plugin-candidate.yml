@@ -2,14 +2,15 @@ name: Build plugin candidates
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: ["codex/integration-*"]
 permissions:
   contents: write
 concurrency:
-  group: plugin-candidate-${{ github.sha }}
-  cancel-in-progress: false
+  group: plugin-candidate-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   candidate:
+    name: Candidate (${{ matrix.label }})
     strategy:
       fail-fast: false
       matrix:
@@ -34,23 +35,43 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - run: ./scripts/validate --scope preflight --output "$RUNNER_TEMP/preflight"
       - run: python3 -m pip install -r requirements-delivery.txt
       - run: rustup toolchain install 1.99.1 --profile minimal --component clippy
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: candidate-${{ matrix.target }}-1.99.1-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            candidate-${{ matrix.target }}-1.99.1-${{ hashFiles('Cargo.lock') }}-
+            candidate-${{ matrix.target }}-1.99.1-
       - run: cargo fetch --locked
-      - run: ./scripts/install-git-hooks && ./scripts/check
-      - run: cargo clippy --all-targets --locked --offline -- -D warnings
-      - run: TMPDIR=/tmp python3 scripts/verify_acceptance.py --scope automated --report "$RUNNER_TEMP/automated.json"
+      - run: ./scripts/install-git-hooks
+      - run: TMPDIR=/tmp node scripts/check-transfer-feedback.mjs "$RUNNER_TEMP/transfer-feedback"
+      - run: TMPDIR=/tmp ./scripts/validate --output "$RUNNER_TEMP/validation"
+      - run: cargo build --locked --offline --example dev_fixture
       - run: |
           gh auth setup-git
-          ./scripts/release candidate --local --save-only --target "${{ matrix.target }}" --repository "${{ github.repository }}"
+          ./scripts/release candidate --local --save-only --target "${{ matrix.target }}" --repository "${{ github.repository }}" --fixture target/debug/examples/dev_fixture --startup-report "$RUNNER_TEMP/validation/STARTUP.json"
         env:
           GH_TOKEN: ${{ github.token }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: acceptance-${{ matrix.label }}
-          path: ${{ runner.temp }}/automated.json
+          path: ${{ runner.temp }}/validation/
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: diagnostics-${{ matrix.label }}
+          path: |
+            ${{ runner.temp }}/transfer-feedback/
+            ${{ runner.temp }}/preflight/
   publish:
+    name: Finalize candidate
     needs: candidate
     runs-on: ubuntu-24.04
     env:
@@ -70,3 +91,15 @@ jobs:
       - run: |
           gh auth setup-git
           ./scripts/release candidate --finalize --repository "${{ github.repository }}"
+  gate:
+    name: Candidate gate
+    if: always()
+    needs: [candidate, publish]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Require every validation and publication job
+        env:
+          CANDIDATE_RESULT: ${{ needs.candidate.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+        run: test "$CANDIDATE_RESULT" = success && test "$PUBLISH_RESULT" = success

@@ -6,6 +6,7 @@ import sys
 import tarfile
 import tempfile
 from pathlib import Path
+from urllib.parse import quote
 
 from package_plugin import ROOT, TARGETS, build, command, verify_package, versions
 from publish_plugin import authorize
@@ -14,6 +15,7 @@ from publish_plugin import authorize
 class GitHub:
     def __init__(self, repository):
         self.repository = repository
+        self.release_ids = {}
 
     def gh(self, *arguments, check=True):
         return subprocess.run(
@@ -24,7 +26,10 @@ class GitHub:
     def api(self, path, method="GET", **fields):
         arguments = ["gh", "api", f"repos/{self.repository}/{path}", "--method", method]
         for name, value in fields.items():
-            arguments.extend(["-F", f"{name}={value}"])
+            flag = "-F" if isinstance(value, (bool, int)) else "-f"
+            if isinstance(value, bool):
+                value = json.dumps(value)
+            arguments.extend([flag, f"{name}={value}"])
         result = subprocess.run(arguments, text=True, capture_output=True)
         if result.returncode:
             if method == "GET" and "(HTTP 404)" in result.stderr:
@@ -32,15 +37,28 @@ class GitHub:
             raise RuntimeError(result.stderr)
         return json.loads(result.stdout or "null")
 
+    def remember_release(self, tag, release):
+        identifier = release.get("id") if isinstance(release, dict) else None
+        if (type(identifier) is not int or identifier <= 0 or release.get("tag_name") != tag
+                or identifier != self.release_ids.get(tag, identifier)):
+            raise ValueError("GitHub did not confirm the requested release identity")
+        self.release_ids[tag] = identifier
+        return release
+
     def release(self, tag):
+        if tag in self.release_ids:
+            release = self.api(f"releases/{self.release_ids[tag]}")
+            if release is None:
+                raise ValueError(f"Confirmed release {self.release_ids[tag]} for {tag} is not readable")
+            return self.remember_release(tag, release)
         release = self.api(f"releases/tags/{tag}")
         if release is not None:
-            return release
+            return self.remember_release(tag, release)
         page = 1
         while releases := self.api(f"releases?per_page=100&page={page}"):
             for release in releases:
                 if release["tag_name"] == tag:
-                    return release
+                    return self.remember_release(tag, release)
             page += 1
         return None
 
@@ -56,22 +74,44 @@ class GitHub:
         existing = self.api(f"commits/{tag}")
         if existing["sha"] != source:
             raise ValueError("Version tag belongs to different source; use a new version")
-        if self.release(tag) is None:
-            result = self.gh("release", "create", tag, "--verify-tag", "--draft", "--prerelease",
-                             "--title", tag, "--notes", f"Source commit: {source}", check=False)
-            if result.returncode and self.release(tag) is None:
-                raise RuntimeError(result.stderr)
+        release = self.release(tag)
+        if release is None:
+            try:
+                release = self.api("releases", "POST", tag_name=tag, target_commitish=source,
+                                   draft=True, prerelease=True, name=tag, body=f"Source commit: {source}")
+            except RuntimeError:
+                release = self.release(tag)
+                if release is None:
+                    raise
+            else:
+                if (not isinstance(release, dict) or release.get("tag_name") != tag
+                        or release.get("draft") is not True):
+                    raise ValueError("GitHub did not confirm the requested draft release")
+        return self.remember_release(tag, release)
 
     def download(self, tag, name, destination):
-        self.gh("release", "download", tag, "--pattern", name, "--dir", str(destination))
-        return destination / name
+        asset = next((entry for entry in self.release(tag)["assets"] if entry["name"] == name), None)
+        if asset is None:
+            raise ValueError(f"Release asset is missing: {name}")
+        saved = destination / name
+        with saved.open("wb") as output:
+            subprocess.run(["gh", "api", f"repos/{self.repository}/releases/assets/{asset['id']}",
+                            "-H", "Accept: application/octet-stream"],
+                           check=True, stdout=output, stderr=subprocess.PIPE)
+        return saved
 
     def upload(self, tag, path):
-        result = self.gh("release", "upload", tag, str(path), check=False)
+        upload_url = f"https://uploads.github.com/repos/{self.repository}/releases/{self.release(tag)['id']}/assets"
+        result = subprocess.run(["gh", "api", f"{upload_url}?name={quote(path.name, safe='')}",
+                                 "--method", "POST", "-H", "Content-Type: application/octet-stream",
+                                 "--input", str(path)], text=True, capture_output=True)
         if result.returncode:
             release = self.release(tag)
             if not release or not any(asset["name"] == path.name for asset in release["assets"]):
                 raise RuntimeError(result.stderr)
+
+    def edit(self, tag, **fields):
+        return self.api(f"releases/{self.release(tag)['id']}", "PATCH", **fields)
 
 
 def asset_name(target):
@@ -104,7 +144,7 @@ def read_package(github, tag, target, source, directory):
     return package
 
 
-def save_platform(github, tag, target, source, directory):
+def save_platform(github, tag, target, source, directory, startup_report=None, fixture=None):
     package = read_package(github, tag, target, source, directory)
     if package is None:
         if not github.release(tag)["draft"]:
@@ -120,6 +160,9 @@ def save_platform(github, tag, target, source, directory):
     if package is None:
         raise ValueError("Uploaded platform package could not be read back")
     authorize(package, "candidate", None)
+    if startup_report is not None:
+        from verify_package_startup import verify as verify_startup
+        verify_startup(package, fixture, startup_report)
     archive = directory / asset_name(target)
     checksum = archive.with_name(archive.name + ".sha256")
     checksum.write_text(f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n")
@@ -176,9 +219,11 @@ def publish_saved(github, tag, source, channel, evidence, directory):
             settings = None
         if settings is not None and not settings["enabled"]:
             raise ValueError("Enable GitHub immutable releases before publishing")
-        result = github.gh("release", "edit", tag, "--draft=false", "--prerelease", "--latest=false", check=False)
-        if result.returncode and github.release(tag)["draft"]:
-            raise RuntimeError(result.stderr)
+        try:
+            github.edit(tag, draft=False, prerelease=True, make_latest="false")
+        except RuntimeError:
+            if github.release(tag)["draft"]:
+                raise
     if not github.release(tag).get("immutable"):
         raise ValueError("Release must be immutable before updating channels")
     for package, platform_evidence in packages:
@@ -189,7 +234,7 @@ def publish_saved(github, tag, source, channel, evidence, directory):
             arguments.extend(["--evidence", str(platform_evidence)])
         subprocess.run(arguments, cwd=checkout, check=True)
     if channel == "stable":
-        github.gh("release", "edit", tag, "--prerelease=false", "--latest")
+        github.edit(tag, prerelease=False, make_latest="true")
     return {"status": "published", "channel": channel, "tag": tag, "source": source}
 
 
@@ -209,7 +254,12 @@ def main():
     parser.add_argument("--target", choices=sorted(TARGETS))
     parser.add_argument("--finalize", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--save-only", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--startup-report", type=Path)
+    parser.add_argument("--fixture", type=Path)
     arguments = parser.parse_args()
+    if bool(arguments.startup_report) != bool(arguments.fixture) or (
+            arguments.startup_report and not (arguments.channel == "candidate" and arguments.local)):
+        parser.error("--startup-report and --fixture require a local candidate")
     repository = arguments.repository or json.loads(command(["gh", "repo", "view", "--json", "nameWithOwner"]))["nameWithOwner"]
     github = GitHub(repository)
     source = command(["git", "rev-parse", "HEAD"])
@@ -232,7 +282,8 @@ def main():
                 target = arguments.target or command(["rustc", "-vV"]).split("host: ")[1].splitlines()[0]
                 if target not in TARGETS:
                     raise ValueError(f"Unsupported native platform: {target}")
-                save_platform(github, tag, target, source, directory)
+                save_platform(github, tag, target, source, directory,
+                              arguments.startup_report, arguments.fixture)
                 if arguments.save_only:
                     print(json.dumps({"status": "saved", "tag": tag, "target": target}))
                     return

@@ -85,6 +85,21 @@ class DeliveryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "symlinks"):
             package_plugin.verify_package(self.package)
 
+    def test_source_preflight_checks_relocated_fingerprint_without_building_a_binary(self):
+        with patch.object(package_plugin.subprocess, "run", side_effect=AssertionError("No build")):
+            result = package_plugin.preflight(package_plugin.ROOT, self.root / "preflight")
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["version"], package_plugin.versions(package_plugin.ROOT))
+        self.assertTrue(Path(result["archive"]).is_file())
+        self.assertEqual(len(result["fingerprint"]), 64)
+
+    def test_source_preflight_detects_an_omitted_extensionless_entry(self):
+        import package_migration
+        patterns = tuple(pattern for pattern in package_migration.PATTERNS if pattern != "scripts/validate")
+        with patch.object(package_migration, "PATTERNS", patterns):
+            with self.assertRaisesRegex(ValueError, "missing implementation files"):
+                package_plugin.preflight(package_plugin.ROOT, self.root / "incomplete")
+
     def test_native_cache_metadata_is_excluded_only_for_installed_packages(self):
         metadata = self.package / ".codex-marketplace-install.json"
         metadata.write_text('{"source_type":"git"}')

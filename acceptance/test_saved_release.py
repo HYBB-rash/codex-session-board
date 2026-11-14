@@ -12,6 +12,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import package_plugin
 import release_plugin
+import verify_package_startup
 
 
 class SavedGitHub:
@@ -22,10 +23,16 @@ class SavedGitHub:
         self.source = "a" * 40
         self.uploaded = []
         self.edits = []
+        self.asset_ids = {}
+        self.api_calls = []
+        self.created = 0
 
     def release(self, tag):
-        return {"draft": self.draft, "immutable": not self.draft, "assets": [
-            {"name": name, "digest": "sha256:" + hashlib.sha256(body).hexdigest()}
+        for name in self.assets:
+            self.asset_ids.setdefault(name, len(self.asset_ids) + 1)
+        return {"id": 7, "tag_name": tag, "draft": self.draft, "immutable": not self.draft,
+                "upload_url": f"https://uploads.github.com/repos/{self.repository}/releases/7/assets{{?name,label}}", "assets": [
+            {"id": self.asset_ids[name], "name": name, "digest": "sha256:" + hashlib.sha256(body).hexdigest()}
             for name, body in self.assets.items()
         ]}
 
@@ -38,8 +45,43 @@ class SavedGitHub:
         result.write_bytes(self.assets[name])
         return result
 
-    def api(self, path):
-        return {"sha": self.source} if path.startswith("commits/") else {"enabled": True}
+    def api(self, path, method="GET", **fields):
+        self.api_calls.append((method, path))
+        if path.startswith("commits/"):
+            return {"sha": self.source}
+        if path.startswith("git/ref/tags/"):
+            return {}
+        if path.startswith("releases/tags/"):
+            return None
+        if path.startswith("releases?"):
+            return []
+        if path == "releases" and method == "POST":
+            self.created += 1
+            return self.release(fields["tag_name"])
+        if path == "releases/7":
+            return self.release("v0.2.93")
+        return {"enabled": True}
+
+    def transfer(self, arguments, **options):
+        assert arguments[:2] == ["gh", "api"]
+        if "--input" in arguments:
+            archive = Path(arguments[arguments.index("--input") + 1])
+            assert arguments[2] == f"https://uploads.github.com/repos/{self.repository}/releases/7/assets?name={archive.name}"
+            self.uploaded.append(archive.name)
+            if archive.name in self.assets:
+                return SimpleNamespace(returncode=1, stderr="already exists")
+            self.assets[archive.name] = archive.read_bytes()
+        else:
+            assert "Accept: application/octet-stream" in arguments
+            identifier = int(arguments[2].rsplit("/", 1)[1])
+            name = next(name for name, asset_id in self.asset_ids.items() if asset_id == identifier)
+            options["stdout"].write(self.assets[name])
+        return SimpleNamespace(returncode=0, stderr="")
+
+    def edit(self, tag, **fields):
+        self.edits.append(fields)
+        self.draft = fields.get("draft", self.draft)
+        return self.release(tag)
 
     def gh(self, *arguments, **options):
         self.edits.append(arguments)
@@ -88,21 +130,64 @@ class SavedReleaseTests(unittest.TestCase):
 
     def test_first_release_checks_tag_reference_before_resolving_commit(self):
         github = release_plugin.GitHub("owner/plugin")
-        with patch.object(github, "api", side_effect=[None, {}, {"sha": self.github.source}]) as api, \
-                patch.object(github, "release", return_value=None), \
-                patch.object(github, "gh", return_value=SimpleNamespace(returncode=0)):
-            github.ensure_draft(self.tag, self.github.source)
+        created = {"id": 7, "tag_name": self.tag, "draft": True, "assets": []}
+        with patch.object(github, "api", side_effect=[None, {}, {"sha": self.github.source}, created]) as api, \
+                patch.object(github, "release", return_value=None):
+            self.assertEqual(github.ensure_draft(self.tag, self.github.source), created)
+        self.assertEqual(github.release_ids, {self.tag: 7})
         self.assertEqual(api.call_args_list[0].args, (f"git/ref/tags/{self.tag}",))
         self.assertEqual(api.call_args_list[1].kwargs, {"ref": f"refs/tags/{self.tag}", "sha": self.github.source})
+        self.assertEqual(api.call_args_list[-1].args, ("releases", "POST"))
+        self.assertEqual(api.call_args_list[-1].kwargs, {
+            "tag_name": self.tag, "target_commitish": self.github.source,
+            "draft": True, "prerelease": True, "name": self.tag, "body": f"Source commit: {self.github.source}",
+        })
+        for result in (None, {}, [created], {"tag_name": "wrong", "draft": True}, {"tag_name": self.tag, "draft": False},
+                       *({**created, "id": identifier} for identifier in (None, True, 0, "7"))):
+            with patch.object(github, "api", side_effect=[{}, {"sha": self.github.source}, result]), \
+                    patch.object(github, "release", return_value=None):
+                with self.assertRaisesRegex(ValueError, "did not confirm"):
+                    self.assertEqual(github.ensure_draft(self.tag, self.github.source), created)
+                    self.assertEqual(github.release_ids, {self.tag: 7})
+        with patch.object(release_plugin.subprocess, "run",
+                          return_value=SimpleNamespace(returncode=0, stdout="{}", stderr="")) as run:
+            github.api("releases/7", "PATCH", draft=False, make_latest="false")
+        self.assertEqual(run.call_args.args[0][-4:], ["-F", "draft=false", "-f", "make_latest=false"])
+        for discovered in (None, created):
+            with patch.object(github, "api", side_effect=[{}, {"sha": self.github.source}, RuntimeError("403 denied")]), \
+                    patch.object(github, "release", side_effect=[None, discovered]):
+                if discovered is None:
+                    with self.assertRaisesRegex(RuntimeError, "403 denied"):
+                        github.ensure_draft(self.tag, self.github.source)
+                else:
+                    github.ensure_draft(self.tag, self.github.source)
 
     def test_draft_release_discovery_paginates_and_preserves_asset_digests(self):
         github = release_plugin.GitHub("owner/plugin")
-        expected = {"tag_name": self.tag, "draft": True, "assets": [{"digest": "sha256:original"}]}
+        expected = {"id": 7, "tag_name": self.tag, "draft": True, "assets": [{"digest": "sha256:original"}]}
         with patch.object(github, "api", side_effect=[None, [{"tag_name": "v0.0.1"}], [expected]]) as api:
             self.assertEqual(github.release(self.tag), expected)
         self.assertEqual([call.args[0] for call in api.call_args_list], [
             f"releases/tags/{self.tag}", "releases?per_page=100&page=1", "releases?per_page=100&page=2",
         ])
+        published = {**expected, "draft": False, "immutable": True, "assets": [{"digest": "sha256:updated"}]}
+        with patch.object(github, "api", return_value=published) as api:
+            self.assertEqual(github.release(self.tag), published)
+            github.edit(self.tag, prerelease=False, make_latest="true")
+        self.assertEqual([call.args[0] for call in api.call_args_list], ["releases/7"] * 3)
+        self.assertEqual(api.call_args.args, ("releases/7", "PATCH"))
+        with patch.object(github, "api", side_effect=[{}, {"sha": self.github.source}, None]) as api:
+            with self.assertRaisesRegex(ValueError, "not readable"):
+                github.ensure_draft(self.tag, self.github.source)
+        self.assertEqual([call.args[0] for call in api.call_args_list], [
+            f"git/ref/tags/{self.tag}", f"commits/{self.tag}", "releases/7"])
+        with patch.object(github, "api", side_effect=RuntimeError("access denied")):
+            with self.assertRaisesRegex(RuntimeError, "access denied"):
+                github.release(self.tag)
+        with patch.object(github, "api", return_value={**expected, "id": 8}):
+            with self.assertRaisesRegex(ValueError, "release identity"):
+                github.release(self.tag)
+        github = release_plugin.GitHub("owner/plugin")
         with patch.object(github, "api", side_effect=[None, []]):
             self.assertIsNone(github.release(self.tag))
         with patch.object(github, "api", side_effect=[None, RuntimeError("access denied")]):
@@ -118,9 +203,28 @@ class SavedReleaseTests(unittest.TestCase):
         for attempt in range(2):
             directory = self.root / str(attempt)
             directory.mkdir()
-            with patch.object(release_plugin, "build") as build, patch.object(release_plugin, "authorize"):
-                release_plugin.save_platform(self.github, self.tag, self.target, self.github.source, directory)
+            with patch.object(release_plugin, "build") as build, patch.object(release_plugin, "authorize"), \
+                    patch.object(verify_package_startup, "verify") as startup:
+                report, fixture = self.root / f"startup-{attempt}.json", self.root / "fixture"
+                release_plugin.save_platform(self.github, self.tag, self.target, self.github.source, directory,
+                                             report, fixture)
                 build.assert_not_called()
+                saved, supplied_fixture, supplied_report = startup.call_args.args
+                self.assertEqual((supplied_fixture, supplied_report), (fixture, report))
+                self.assertEqual(package_plugin.verify_package(saved)["source_commit"], self.github.source)
+        self.assertEqual(self.github.assets, original)
+        github = release_plugin.GitHub(self.github.repository)
+        with patch.object(github, "api", side_effect=self.github.api), \
+                patch.object(release_plugin.subprocess, "run", side_effect=self.github.transfer), \
+                patch.object(release_plugin, "build") as build, patch.object(release_plugin, "authorize"):
+            github.ensure_draft(self.tag, self.github.source)
+            directory = self.root / "confirmed-id"
+            directory.mkdir()
+            release_plugin.save_platform(github, self.tag, self.target, self.github.source, directory)
+            build.assert_not_called()
+        self.assertEqual(self.github.created, 1)
+        self.assertEqual(self.github.api_calls.count(("GET", f"releases/tags/{self.tag}")), 1)
+        self.assertEqual(self.github.api_calls.count(("GET", "releases?per_page=100&page=1")), 1)
         self.assertEqual(self.github.assets, original)
 
     def test_missing_platform_stays_draft_without_channel_writes(self):
@@ -173,9 +277,15 @@ class SavedReleaseTests(unittest.TestCase):
             self.github.assets[release_plugin.asset_name(target)] = winner
             return destination
 
-        with patch.object(release_plugin, "build", side_effect=build), patch.object(release_plugin, "authorize"):
-            release_plugin.save_platform(self.github, self.tag, self.target, self.github.source, self.root)
+        github = release_plugin.GitHub(self.github.repository)
+        github.remember_release(self.tag, self.github.release(self.tag))
+        with patch.object(release_plugin, "build", side_effect=build), patch.object(release_plugin, "authorize"), \
+                patch.object(github, "api", side_effect=self.github.api), \
+                patch.object(release_plugin.subprocess, "run", side_effect=self.github.transfer):
+            release_plugin.save_platform(github, self.tag, self.target, self.github.source, self.root)
         self.assertEqual(self.github.assets[release_plugin.asset_name(self.target)], winner)
+        self.assertIn(release_plugin.asset_name(self.target) + ".sha256", self.github.assets)
+        self.assertTrue(all(path == "releases/7" for method, path in self.github.api_calls))
 
     def test_publish_retry_and_stable_keep_original_bytes(self):
         for target in release_plugin.TARGETS:

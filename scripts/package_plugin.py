@@ -5,6 +5,8 @@ import os
 import shutil
 import subprocess
 import tempfile
+import tarfile
+import time
 import tomllib
 from pathlib import Path
 
@@ -63,6 +65,33 @@ def verify_package(directory, installed=False):
     return manifest
 
 
+def preflight(root, destination):
+    started = time.monotonic()
+    version = versions(root)
+    bindings = json.loads((root / "acceptance/bindings.json").read_text())
+    before = fingerprint(root, bindings["fingerprint_paths"])
+    destination.mkdir(parents=True, exist_ok=False)
+    archive = destination / "SOURCE.tar.gz"
+    result = build_package(root, archive)
+    with tempfile.TemporaryDirectory(prefix="board-source-preflight-") as temporary:
+        with tarfile.open(archive) as source:
+            source.extractall(temporary, filter="data")
+        relocated = Path(temporary) / "codex-session-board"
+        if versions(relocated) != version:
+            raise ValueError("Portable source versions differ")
+        if fingerprint(relocated, bindings["fingerprint_paths"]) != before:
+            raise ValueError("Portable source archive is missing implementation files")
+        for name in ("scripts/check", "scripts/validate", "scripts/promote"):
+            if not (relocated / name).stat().st_mode & 0o111:
+                raise ValueError(f"Portable entry point is not executable: {name}")
+    if fingerprint(root, bindings["fingerprint_paths"]) != before:
+        raise ValueError("Source changed during package preflight")
+    result.update(passed=True, version=version, fingerprint=before,
+                  seconds=time.monotonic() - started)
+    (destination / "PREFLIGHT.json").write_text(json.dumps(result, indent=2) + "\n")
+    return result
+
+
 def build(root, target, destination=None):
     if command(["git", "status", "--porcelain", "--untracked-files=all"], root):
         raise ValueError("Build plugin releases from a clean, committed checkout")
@@ -114,7 +143,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", choices=sorted(TARGETS))
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--preflight", action="store_true")
     arguments = parser.parse_args()
+    if arguments.preflight:
+        if arguments.output is None or arguments.target is not None:
+            parser.error("--preflight requires --output and does not build a target")
+        print(json.dumps(preflight(ROOT, arguments.output.resolve())))
+        return
     print(build(ROOT, arguments.target, arguments.output.resolve() if arguments.output else None))
 
 
