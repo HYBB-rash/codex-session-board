@@ -45,8 +45,12 @@ def main():
     if arguments.report:
         output = arguments.report.resolve()
         record = json.loads((output / "VALIDATION.json").read_text())
-        if record.get("schema_version") != 2:
+        if record.get("schema_version") == 1:
             print("历史报告：仅供读取，不能用于新候选晋升")
+        elif record.get("schema_version") != 2:
+            raise ValueError("无法读取未知版本的验证报告")
+        elif record.get("passed") is True:
+            report.verify_complete(output, record)
         report.summary(output, record)
         return 0
     output = arguments.output or Path(tempfile.gettempdir()) / ("board-validation-" + uuid.uuid4().hex)

@@ -1,4 +1,5 @@
 import json
+from contextlib import ExitStack
 import os
 from pathlib import Path
 import signal
@@ -11,13 +12,15 @@ from scripts.dev_environment.configuration import write_record
 
 
 class Child:
-    def __init__(self, root, name, command, environment, *, cwd=None):
+    def __init__(self, root, name, command, environment, *, cwd=None, stderr_path=None):
         self.state = root / f"{name}-child.json"
         self.state.unlink(missing_ok=True)
-        with (root / f"{name}.log").open("ab") as log:
+        with ExitStack() as streams:
+            log = streams.enter_context((root / f"{name}.log").open("ab"))
+            errors = streams.enter_context(stderr_path.open("ab")) if stderr_path else log
             self.guard = subprocess.Popen([sys.executable, __file__, str(self.state), *command],
                                           cwd=cwd or root, env=environment, stdin=subprocess.DEVNULL,
-                                          stdout=log, stderr=log, start_new_session=True)
+                                          stdout=log, stderr=errors, start_new_session=True)
 
     def record(self):
         if self.guard.poll() is not None:

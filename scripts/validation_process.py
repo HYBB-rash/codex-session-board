@@ -25,7 +25,8 @@ def supervise(request):
     write(path, receipt)
     child = None
     try:
-        child = Child(output, name, request["command"], dict(os.environ), cwd=request["cwd"])
+        child = Child(output, name, request["command"], dict(os.environ), cwd=request["cwd"],
+                      stderr_path=output / f"{name}.stderr.log")
         receipt["group_pid"] = child.guard.pid
         receipt["group_started_at"] = subprocess.check_output(
             ["/bin/ps", "-p", str(child.guard.pid), "-o", "lstart="],
@@ -82,6 +83,7 @@ def execute(name, arguments, output, *, root, environment, timeout, run_id):
     return {
         "name": name, "arguments": arguments, "returncode": receipt["command_returncode"],
         "seconds": time.monotonic() - started, "log_sha256": digest(output / f"{name}.log"),
+        "stderr_sha256": digest(output / f"{name}.stderr.log"),
         "lease_sha256": digest(path), "cleanup_confirmed": True,
     }
 

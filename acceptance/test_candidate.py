@@ -1,5 +1,7 @@
 from contextlib import chdir
+import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -21,7 +23,7 @@ class CandidateGateTests(unittest.TestCase):
         identity = {"commit": "a" * 40, "tree": "b" * 40, "fingerprint": "c" * 64}
         after = {**identity, **({"commit": "d" * 40} if changed else {})}
 
-        def execute(name, arguments, destination):
+        def execute(name, arguments, destination, **options):
             (destination / f"{name}.log").write_text("actual step transcript\n")
             if "--report" in arguments:
                 report = {
@@ -31,18 +33,20 @@ class CandidateGateTests(unittest.TestCase):
                     "tests": [{"status": "pass"}], "requirements": [{"status": "pass"}],
                 }
                 (destination / "automated.json").write_text(json.dumps(report))
-            return {"name": name, "arguments": arguments, "returncode": 0, "seconds": 1}
+            (destination / f"{name}.request.json").write_text("{}")
+            (destination / f"{name}.lease.json").write_text(json.dumps({
+                "run_id": options["run_id"], "name": name, "cleanup_confirmed": True}))
+            return {"name": name, "arguments": arguments, "returncode": 0, "seconds": 1,
+                    "log_sha256": hashlib.sha256((destination / f"{name}.log").read_bytes()).hexdigest(),
+                    "cleanup_confirmed": True}
 
         with mock.patch.object(candidate, "ROOT", root), \
                 mock.patch.object(candidate, "identity", side_effect=[identity, after]), \
                 mock.patch.object(candidate, "git", return_value="dirty" if dirty else ""), \
-                mock.patch.object(candidate, "execute", side_effect=execute), \
+                mock.patch.object(candidate.run.processes, "execute", side_effect=execute), \
+                mock.patch.dict(os.environ, {"CARGO_TARGET_DIR": str(root / "target")}), \
                 mock.patch.object(candidate.sys, "argv", ["validate", "--output", str(output)]):
-            if changed or dirty or mismatch:
-                with self.assertRaises(ValueError):
-                    candidate.main()
-            else:
-                self.assertEqual(candidate.main(), 0)
+            self.assertEqual(candidate.main(), 1 if changed or dirty or mismatch else 0)
         return json.loads((output / "VALIDATION.json").read_text())
 
     def test_candidate_requires_unchanged_commit_even_when_fingerprint_matches(self):
@@ -60,6 +64,10 @@ class CandidateGateTests(unittest.TestCase):
         self.assertEqual(report["scope"], "candidate")
         self.assertEqual(len(report["automated_sha256"]), 64)
         self.assertEqual(len(report["steps"]), 3)
+        self.assertEqual(report["schema_version"], 2)
+        self.assertEqual(report["preparation"]["status"], "pass")
+        self.assertEqual(report["finalization"]["status"], "pass")
+        self.assertTrue(report["cleanup_confirmed"])
 
     def test_candidate_retains_pending_live_evidence_without_claiming_release_ready(self):
         report = {

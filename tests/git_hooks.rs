@@ -192,7 +192,7 @@ fn copy_checker(root: &Path) -> Result<()> {
         let entry = entry?;
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if name.ends_with(".rs") || entry.path().is_dir() {
+        if name.ends_with(".rs") || name.ends_with(".py") || entry.path().is_dir() {
             copy_fixture_path(&entry.path(), &root.join("scripts").join(name.as_ref()))?;
         }
     }
