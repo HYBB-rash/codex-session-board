@@ -19,3 +19,5 @@
 Mac 首阶段已通过：原装 ChatGPT.app 的独立 profile 在私有 CODEX_HOME 中，通过 CODEX_APP_SERVER_WS_URL 的 ws+unix 地址连接同一个 0.169.0 后台。桌面日志确认 websocket 初始化成功且没有 stdio 子后台；外部 Unix 连接的内核 peer PID 与后台 PID 5686 一致。测试客户端 5707 和后台均已停止。证据 /private/tmp/csb-host-gazc892a/report.json。
 
 失败证据保留：只设置 CODEX_APP_SERVER_USE_LOCAL_DAEMON 时，当前 Mac 应用因注入配置覆盖而退回 stdio（/private/tmp/csb-host-zdfg4urf）；只隔离环境而未传 --user-data-dir 时被现有单实例接管（/private/tmp/csb-host-z6_6g4n3）。后续入口必须使用显式 Unix WebSocket，并同时隔离测试 profile，不能依赖该 daemon 开关。
+
+实现入口 scripts/shared_desktop.py 的真实隔离复验已通过，使用客户端自带的 0.167.0-alpha.4.1，GUI 53650 和外部连接共同使用后台 53643，退出清理已确认；证据 /private/tmp/csb-shared-desktop-final.json。首个本地检查点 d8fde27 包含父后台进程归属、复用约束、notLoaded 状态保护及四项回归，未升版。

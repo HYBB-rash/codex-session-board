@@ -15,7 +15,7 @@ fn main() -> Result<()> {
     let root = Path::new(arguments.get(2).context("缺少私有环境目录")?);
     match mode.as_str() {
         "prepare" => state::prepare(root, arguments.get(3).context("缺少端口")?.parse()?),
-        "serve" => serve(root),
+        "serve" => serve(root, arguments.get(3)),
         "history" => history(root),
         "open" => {
             let target = arguments.get(3).context("缺少导航目标")?;
@@ -67,12 +67,32 @@ fn listener(root: &Path, name: &str) -> Result<UnixListener> {
     Ok(listener)
 }
 
-fn serve(root: &Path) -> Result<()> {
+struct BoardProcess(std::process::Child);
+
+impl Drop for BoardProcess {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+fn serve(root: &Path, program: Option<&String>) -> Result<()> {
     let desktop = listener(root, "desktop/rpc.sock")?;
     let sidebar = listener(root, "sidebar/rpc.sock")?;
     let surface = Arc::new(Mutex::new(state::Surface::load(root)?));
+    let mut board = program.map(|program| -> Result<BoardProcess> {
+        let output = std::fs::OpenOptions::new().append(true).create(true).open(root.join("service.log"))?;
+        let child = std::process::Command::new(program).arg("--config").arg(root.join("config.json"))
+            .arg("serve").stdout(output.try_clone()?).stderr(output).spawn()?;
+        std::fs::write(root.join("service-child.pending"), json!({"pid":child.id(),"exit":null}).to_string())?;
+        std::fs::rename(root.join("service-child.pending"), root.join("service-child.json"))?;
+        Ok(BoardProcess(child))
+    }).transpose()?;
     println!("{}", json!({"fixture":true,"root":root}));
     loop {
+        if let Some(board) = &mut board {
+            ensure!(board.0.try_wait()?.is_none(), "开发看板已退出");
+        }
         for (listener, framed) in [(&desktop, false), (&sidebar, true)] {
             match listener.accept() {
                 Ok((stream, _)) => {
