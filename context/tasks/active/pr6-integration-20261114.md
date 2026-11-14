@@ -1,8 +1,8 @@
-# PR #6 后台归属修复集成
+# PR #6 后台归属与 PR #7 图标集成
 
 owner: codex
 execution_mode: coordinated_write
-allowed_write_set: PR #6 合并及必要冲突解决、候选版本冻结、本任务记录与共享上下文
+allowed_write_set: PR #6、PR #7 合并及必要冲突解决、候选版本冻结、本任务记录与共享上下文
 base_commit: 04f7d58f17a4301c8e5b7f50eae2e3bdeb62dddf
 worktree_path: /Users/hongyong/.codex/worktrees/four-pr-rehearsal/codex-session-board
 coordinator: 01a1d38b-1ef8-7392-ba78-caa7935c5ab4
@@ -39,6 +39,17 @@ status: active
 HTTPConnection 使用 closing，HTTP 专用令牌不作为共享身份，其余身份字段严格核对。
 原开发报告五种实际包场景符合预期且全部清理，真实 Mac 私有共享凭证验证通过；
 源码外原始证据及开发收尾记录由原会话继续交付，完整双平台门禁由协调者执行。
+
+0.3.83/20d9682 的 Actions 43601723275 已主动取消，不用于提升主线。
+原开发最终复查补齐 MCP 原有绝对总时限及慢流回归，另修测试后台过早关闭端点的时序。
+初次连续入口一次 GitHub API 调用退出 1，原错误保留；同一 API 后续读取恢复，
+未据此宣称底层网络问题已解决。修复完成后重新冻结，原计时不变。
+
+用户在过程中再次要求合并新 PR，实时查询发现 PR #7。
+2026-11-14T13:57:10+00:00 固定图标来源 637f4b05a47aabeb58eca43e79ac4fdd96313ed0。
+已审阅五文件差异、自包含 SVG、既有引用及品牌色，查看原始定稿参考图；
+不新增依赖或外部资源，PWA 主题色保持既有约定。与 PR #6 同一候选执行完整门禁，
+PR #7 纳入后的耗时单列，整批计时仍自 PR #6 固定来源开始。
 
 源码外证据目录：
 /Users/hongyong/.codex/visualizations/2026/11/13/01a1d38b-1ef8-7392-ba78-caa7935c5ab4/pr6-integration-20261114/
