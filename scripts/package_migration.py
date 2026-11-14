@@ -18,7 +18,7 @@ PATTERNS = (
     "scripts/*.py", "scripts/*.rs", "scripts/*.mjs", "scripts/check", "scripts/install-git-hooks",
     "scripts/build-plugin", "scripts/run-plugin", "scripts/update-plugin", "scripts/release", ".github/workflows/*.yml",
     "scripts/dev", "scripts/dev_environment/*.py", "scripts/validate", "scripts/promote",
-    "scripts/verify-plugin", "scripts/smoke-plugin",
+    "scripts/verify-plugin", "scripts/smoke-plugin", "scripts/integrate",
     "scripts/verify_context.sh", "context/**/*.md", "context/*.yaml",
     "acceptance/*.py", "acceptance/*.json", "acceptance/*.md",
 )
