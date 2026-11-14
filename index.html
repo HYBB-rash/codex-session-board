@@ -614,6 +614,7 @@ function restoreScroll(cards, position) {
   const anchor = position?.id && Array.from(cards.querySelectorAll(".card")).find(card => card.dataset.id === position.id);
   if (anchor) cards.scrollTop += anchor.getBoundingClientRect().top - cards.getBoundingClientRect().top - position.offset;
 }
+const columnContent = new WeakMap();
 function updateColumn(column, state, sessions) {
   const pending = sessions.some(session => session.id === moving?.id);
   column.querySelector(".column-count").textContent = pending ? `${sessions.length - 1} + 1` : String(sessions.length);
@@ -637,13 +638,18 @@ function updateColumn(column, state, sessions) {
     archiveAll.onclick = () => archiveSessions(sessions,archiveAll);
   }
   const cards = column.querySelector(".cards");
+  const unread = !hostSessions().length && healthReports().some(host => (selectedHost === "all" || host.key === selectedHost) && !host.lastRead);
+  const signature = JSON.stringify([sessions,data.projectCatalog,data.states,selectedHost,data.legacyMode,
+    moving,[...unconfirmedMoves],saving,creating,unread]);
+  if (columnContent.get(column) === signature) return false;
+  columnContent.set(column,signature);
   cards.replaceChildren(...sessions.map(makeCard));
   const origin = moving?.from === state && visibleSessions().some(session => session.id === moving.id);
   if (origin) cards.append(element("div",`移往${data.states[moving.state]} · 等待确认`,"move-origin"));
   if (!sessions.length && !origin) {
-    const unread = !hostSessions().length && healthReports().some(host => (selectedHost === "all" || host.key === selectedHost) && !host.lastRead);
     cards.append(element("div",unread ? "尚未读取会话，可查看连接详情" : "暂无匹配的会话","empty-column"));
   }
+  return true;
 }
 function makeColumn(state, label) {
   const column = element("section",undefined,"column " + state);
@@ -790,38 +796,57 @@ function render(resetState = null) {
   const scrollPositions = new Map(
     Array.from(document.querySelectorAll(".column")).map(column =>
       [column.dataset.state,column.dataset.state === resetState ? null : captureScroll(column.querySelector(".cards"))]));
-  const expandedProjects = new Set(Array.from(document.querySelectorAll(".project-tag[open]"))
-    .map(tag => tag.closest(".card").dataset.id));
-  const focusedProject = document.activeElement?.closest(".project-tag")?.closest(".card")?.dataset.id;
+  const active = document.activeElement;
+  const focusedCard = active?.closest(".card");
+  const focus = focusedCard && {id:focusedCard.dataset.id,state:focusedCard.closest(".column").dataset.state,
+    action:active.dataset.action || (active.closest(".project-tag") ? "project" : "open")};
+  const expanded = new Map([...document.querySelectorAll(".card")].map(card => [card.dataset.id,
+    {project:card.querySelector(".project-tag").open,note:Boolean(card.querySelector(".note-details[open]"))}]));
   const filtered = visibleSessions().map(session => moving?.id === session.id ? {...session,state:moving.state} : session);
   const columns = [];
   const mode = data.legacyMode ? "legacy" : "native";
   byId("board").style.setProperty("--columns",Object.keys(data.states).length);
-  byId("jump").replaceChildren();
+  const jumps = [];
+  let changed = false;
   for (const [state,label] of Object.entries(data.states)) {
     const sessions = filtered.filter(session => session.state === state);
     sessions.sort((first,second) => compareSessions(first,second,columnSort(state)));
     const current = byId("column-" + state);
     const column = current?.dataset.mode === mode ? current : makeColumn(state,label);
-    updateColumn(column,state,sessions);
+    changed = updateColumn(column,state,sessions) || changed;
     columns.push(column);
-    const jump = element("button",`${label} ${column.querySelector(".column-count").textContent}`);
+    const jump = [...byId("jump").children].find(button => button.dataset.state === state) || element("button");
+    jump.dataset.state = state;
+    const jumpLabel = `${label} ${column.querySelector(".column-count").textContent}`;
+    if (jump.textContent !== jumpLabel) jump.textContent = jumpLabel;
     jump.onclick = () => {
       const viewport = byId("board-viewport");
       viewport.scrollTo({left:byId("column-" + state).offsetLeft - byId("board").offsetLeft,behavior:"smooth"});
     };
-    byId("jump").append(jump);
+    jumps.push(jump);
   }
+  if (jumps.length !== byId("jump").children.length ||
+      jumps.some((jump,index) => byId("jump").children[index] !== jump)) byId("jump").replaceChildren(...jumps);
   if (columns.length !== byId("board").children.length ||
       columns.some((column,index) => byId("board").children[index] !== column)) {
     byId("board").replaceChildren(...columns);
   }
   for (const card of byId("board").querySelectorAll(".card")) {
-    card.querySelector(".project-tag").open = expandedProjects.has(card.dataset.id);
-    if (card.dataset.id === focusedProject) card.querySelector(".project-tag summary").focus({preventScroll:true});
+    const previous = expanded.get(card.dataset.id);
+    if (previous) {
+      card.querySelector(".project-tag").open = previous.project;
+      const note = card.querySelector(".note-details");
+      if (note) {note.open = previous.note;if (note.open) note.classList.add("expandable");}
+    }
+  }
+  if (focus && !active.isConnected) {
+    const card = [...byId("board").querySelectorAll(".card")].find(card => card.dataset.id === focus.id);
+    const target = card?.querySelector(focus.action === "project" ? ".project-tag summary" : `[data-action="${focus.action}"]`);
+    const fallback = byId("column-" + focus.state)?.querySelector(".column-sort") || byId("host-filter");
+    (target && !target.disabled ? target : fallback).focus({preventScroll:true});
   }
   for (const column of columns) restoreScroll(column.querySelector(".cards"),scrollPositions.get(column.dataset.state));
-  updateNotePreviews();
+  if (changed) updateNotePreviews();
   byId("count").textContent = `显示 ${filtered.length} / 当前主机范围共 ${hostSessions().length} 条`;
   const health = data.health;
   if (data.legacyMode) byId("foot").textContent =

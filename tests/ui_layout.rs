@@ -46,6 +46,20 @@ fn long_content_and_project_filters_preserve_browser_column_geometry() {
     );
     let report: serde_json::Value = serde_json::from_slice(&filters.stdout).unwrap();
     assert_eq!(report["cases"], 53);
+    let interaction = Command::new("node")
+        .arg("scripts/check-light-ui.mjs")
+        .output()
+        .unwrap();
+    assert!(
+        interaction.status.success(),
+        "轻量界面交互回归失败：\n{}\n{}",
+        String::from_utf8_lossy(&interaction.stdout),
+        String::from_utf8_lossy(&interaction.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&interaction.stdout).unwrap();
+    assert_eq!(report["cases"], 38);
+    assert_eq!(report["cleanup"]["groupEmpty"], true);
+    assert_eq!(report["cleanup"]["profileRemoved"], true);
 }
 
 #[test]
