@@ -133,6 +133,7 @@ const screenshot = async name => {
 };
 try {
   await until('typeof transferTestClock !== "undefined" && Boolean(document.querySelector(".card"))');
+  await select("host-filter", "all");
   const normalReducedMotion = await evaluate('matchMedia("(prefers-reduced-motion: reduce)").matches');
   console.error(JSON.stringify({ motion: { initialReducedMotion, normalReducedMotion } }));
   assert.equal(normalReducedMotion, false);

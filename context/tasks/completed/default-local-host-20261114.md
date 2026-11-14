@@ -2,7 +2,7 @@
 
 - owner: codex
 - execution_mode: serial_write
-- allowed_write_set: index.html; scripts/check-host-filter.mjs; tests/ui_layout.rs; Docs/PROJECT-FILTERS.md; context/tasks/active/default-local-host-20261114.md; context/tasks/completed/default-local-host-20261114.md; context/journal/2026-11-14-default-local-host.md
+- allowed_write_set: index.html; scripts/check-host-filter.mjs; scripts/check-transfer-feedback.mjs; tests/ui_layout.rs; Docs/PROJECT-FILTERS.md; context/tasks/active/default-local-host-20261114.md; context/tasks/completed/default-local-host-20261114.md; context/journal/2026-11-14-default-local-host.md
 - base_commit: b593edd2b29304c440c5ca381c48c863c91cb00f
 - worktree_path: /Users/hongyong/Developer/codex-session-board
 - coordinator: codex
@@ -19,3 +19,7 @@
 通过，包含 48 组布局与 53 项主机筛选检查。
 首次受限运行因本机监听端口被拒绝而失败，获准运行隔离浏览器后通过。
 此次仅完成本地开发，不代表已部署或完整目标环境验收完成。
+
+用户随后要求提交 PR。完整 PR 检查发现等待反馈回归隐式依赖全部主机初始范围，
+现改为显式选择全部主机再验证跨主机拖动，保留原有断言及场景。
+首份失败报告保留在 /private/tmp/csb-pr-default-local-host-20261114-f7e64bb。
