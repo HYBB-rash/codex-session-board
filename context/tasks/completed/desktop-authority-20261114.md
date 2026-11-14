@@ -6,7 +6,7 @@
 - base_commit: 54096cd
 - worktree_path: /Users/hongyong/Developer/codex-session-board
 - coordinator: 当前会话主代理
-- status: implementing_verified_gateway
+- status: completed_development_and_isolated_validation
 
 用户要求先验证 Mac 能否共享桌面客户端实际使用的后台。通过后继续实现统一连接层和自动门禁，修复运行中的新任务被误判为阻塞。
 
@@ -27,3 +27,15 @@ Mac 首阶段已通过：原装 ChatGPT.app 的独立 profile 在私有 CODEX_HO
 首次完整候选检查 /private/tmp/csb-authority-candidate-20261114 在 Clippy 阶段拒绝新测试中的四处 unwrap，保留失败记录并改用显式错误处理；业务断言、阈值、需求和参考模型未放宽。待重新执行完整候选检查。
 
 第二轮 /private/tmp/csb-authority-candidate-20261114-r2 完成 685 项，684 通过，旧 section_config 回归要求先执行未经登记的代理，与新的强制归属规则冲突。保留失败并改为断言明确拒绝原因、代理未执行及数据未创建，未降低迁移保护。复查补充真实终态在卸载后仍可生效，以及临时继承 socket 不进入持久配置指纹，新增外部 stop 闭环。源需求与参考模型锁不变。
+
+## 完成结果
+
+最终代码检查点 ad2d392226e1d571f97cd0fdd7f65d09cfcea6f3，源码指纹 74b4bd9376ad801a9f6b35b83c7e1170c7cbd3ecd4cff62b45c4d147abd65773。第三轮固定候选 /private/tmp/csb-authority-candidate-20261114-r3 的项目检查、全部目标 Clippy 和完整自动验收均退出 0；687 项全部通过，零失败、错误或跳过。31 条仍为 17 通过、14 项真实环境待验，release_ready=false，不宣称完整验收或日用部署完成。
+
+本机连接继承共享 Unix WebSocket，逐连接与请求核对 MCP 父后台的 PID 和启动时间，不依据同目录或 daemon version 选择来源；复用也检查后台归属。独立历史读取保持隔离，未结束的 notLoaded/interrupted 不参与阻塞推断。真实完成、带结束证据的卸载终态、人工状态保护及外部停止均有回归。业务绕过连接层的普通直接调用由编译门禁拒绝，未登记代理在执行前被拒绝。
+
+稳定证据目录：/Users/hongyong/.codex/visualizations/2026/11/14/01a1d89d-57e0-71a2-9058-0775f92bc693/backend-verification。包括最终 validation.json、automated.json、真实 Mac 共享报告、GUI 日志、接口响应和隔离开发闭环；前两轮失败也保留。
+
+隔离开发首轮验证器误用 runtime.start 的临时 root，该入口内部仍选择标准任务目录，被既有可执行文件身份保护拒绝；该目录保持 stopped。改为直接在临时 root 运行受控 supervisor 后通过，测试环境已停止。所有真实 Mac probe 均停止自己的客户端及后台，未重启日用客户端。
+
+交付范围是本地源码及开发验证；版本清单、共享 STATE、日用配置和正式插件未改动，没有推送或部署。首次日用切换需独立部署任务，将已审阅入口用于目标 home/profile，并完成该环境的功能验收。后续业务 Agent 使用 App::connection，无须自行选择或证明后台来源。
