@@ -1,6 +1,7 @@
 pub mod app;
 pub mod archive;
 pub mod auto_archive;
+pub mod catalog;
 pub mod config;
 pub mod http;
 pub mod mcp;
