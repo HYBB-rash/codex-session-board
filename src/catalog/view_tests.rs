@@ -58,6 +58,7 @@ fn old_cached_session_needs_positive_runtime_evidence_to_be_current() -> Result<
 fn owned_pending_draft_cannot_resurrect_a_previously_published_session() -> Result<()> {
     let (_directory, app) = app()?;
     app.store.discover(&[thread(FIRST, false, true)])?;
+    app.update_health(json!({"runtimeVerified":true}))?;
     let drafts = vec![json!({"threadId":FIRST,"project":"remote:owned-project"})];
     let pending = view::read(&app, &drafts)?.rows;
     assert_eq!(pending[0]["catalogEvidence"], "pendingDraft");

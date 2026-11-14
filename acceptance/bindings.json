@@ -1033,7 +1033,8 @@
       "lib::codex_session_board::catalog::worker::continuity_tests::unknown_or_missing_account_identity_never_continues_previous_membership",
       "lib::codex_session_board::catalog::worker::tests::cached_or_failed_sources_require_full_input_revalidation",
       "lib::codex_session_board::catalog::worker::tests::nested_cursor_errors_restart_from_the_beginning_with_bounded_retries",
-      "lib::codex_session_board::catalog::worker::tests::only_ordinary_active_catalog_rows_enter_the_task_store"
+      "lib::codex_session_board::catalog::worker::tests::only_ordinary_active_catalog_rows_enter_the_task_store",
+      "lib::codex_session_board::remote::instances::identity_gate_tests::failed_runtime_keeps_own_pending_drafts_visible_but_rejects_state_writes"
     ],
     "DISCOVERY-002": [
       "test::native_authority::native_archive_list_absence_keeps_position_without_an_unread_error",
@@ -1549,7 +1550,8 @@
       "lib::codex_session_board::rpc::catalog_guard::tests::catalog_role_denies_all_execution_writes_history_and_watches",
       "lib::codex_session_board::rpc::catalog_guard::tests::local_home_is_derived_from_owned_absolute_directories",
       "lib::codex_session_board::rpc::catalog_guard::tests::verified_remote_catalog_accepts_only_metadata_and_its_own_state_file",
-      "lib::codex_session_board::rpc::catalog_guard::tests::verified_remote_catalog_rejects_unsafe_requests_before_transport"
+      "lib::codex_session_board::rpc::catalog_guard::tests::verified_remote_catalog_rejects_unsafe_requests_before_transport",
+      "lib::codex_session_board::remote::instances::identity_gate_tests::failed_runtime_keeps_own_pending_drafts_visible_but_rejects_state_writes"
     ],
     "SECURITY-001": [
       "lib::codex_session_board::rpc::multiplex::ssh_options::tests::private_options_preserve_wrapper_identity_and_proxy_arguments",

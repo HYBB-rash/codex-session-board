@@ -99,7 +99,7 @@ fn append_cache(
     at: f64,
     rows: &mut Vec<Value>,
 ) -> Result<()> {
-    let runtime = active_runtime(app)?;
+    let (runtime, runtime_live) = active_runtime(app)?;
     let published = app.store.catalog_published_ids()?;
     let drafts: BTreeMap<_, _> = drafts
         .iter()
@@ -112,29 +112,30 @@ fn append_cache(
         let fresh = runtime.contains(&identifier)
             && row["seenAt"].as_f64().is_some_and(|seen| seen > at)
             && app.enabled.load(Ordering::SeqCst);
-        rows.push(cached_row(row, pending.copied(), fresh));
+        rows.push(cached_row(row, pending.copied(), fresh, runtime_live));
     }
     Ok(())
 }
 
-fn active_runtime(app: &App) -> Result<HashSet<String>> {
+fn active_runtime(app: &App) -> Result<(HashSet<String>, bool)> {
     let live = app
         .health
         .lock()
         .map_err(|_| anyhow::anyhow!("健康状态锁已损坏"))?["runtimeVerified"]
         == true;
     if !live {
-        return Ok(HashSet::new());
+        return Ok((HashSet::new(), false));
     }
-    Ok(app
+    let active = app
         .active_sessions
         .lock()
         .map_err(|_| anyhow::anyhow!("会话发现锁已损坏"))?
         .clone()
-        .unwrap_or_default())
+        .unwrap_or_default();
+    Ok((active, true))
 }
 
-fn cached_row(mut row: Value, pending: Option<&Value>, fresh: bool) -> Value {
+fn cached_row(mut row: Value, pending: Option<&Value>, fresh: bool, runtime_live: bool) -> Value {
     let current = (pending.is_some() || fresh) && row["archived"] != true;
     row["catalogCurrent"] = json!(current);
     row["ordinary"] = json!(fresh);
@@ -146,14 +147,14 @@ fn cached_row(mut row: Value, pending: Option<&Value>, fresh: bool) -> Value {
     } else {
         "cache"
     });
-    row["readOnly"] = json!(!current);
+    row["readOnly"] = json!(!current || !runtime_live);
     row["catalogProjectId"] = pending.cloned().unwrap_or(Value::Null);
     row["projectIssue"] = if pending.is_some() {
         Value::Null
     } else {
         json!("尚未核对这条记录的项目归属")
     };
-    if !current {
+    if row["readOnly"] == true {
         row["canArchive"] = json!(false);
     }
     row
