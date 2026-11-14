@@ -11,12 +11,12 @@ from scripts.dev_environment.configuration import write_record
 
 
 class Child:
-    def __init__(self, root, name, command, environment):
+    def __init__(self, root, name, command, environment, *, cwd=None):
         self.state = root / f"{name}-child.json"
         self.state.unlink(missing_ok=True)
         with (root / f"{name}.log").open("ab") as log:
             self.guard = subprocess.Popen([sys.executable, __file__, str(self.state), *command],
-                                          cwd=root, env=environment, stdin=subprocess.DEVNULL,
+                                          cwd=cwd or root, env=environment, stdin=subprocess.DEVNULL,
                                           stdout=log, stderr=log, start_new_session=True)
 
     def record(self):
@@ -70,7 +70,8 @@ def reap(children):
     try:
         deadline = time.monotonic() + 2
         while True:
-            rows = subprocess.check_output(["/bin/ps", "-axo", "pgid=,stat="], text=True).splitlines()
+            rows = subprocess.check_output(["/bin/ps", "-axo", "pgid=,stat="],
+                                           text=True, timeout=5).splitlines()
             active = [row for row in rows if len(row.split()) == 2
                       and row.split()[0] in groups and not row.split()[1].startswith("Z")]
             if not active:

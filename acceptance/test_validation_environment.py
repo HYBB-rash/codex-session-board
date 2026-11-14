@@ -76,3 +76,17 @@ class ValidationEnvironmentTests(unittest.TestCase):
         report.failure(created, "cleanup", 3)
         self.assertEqual(created["first_failure"]["message"], "first")
         self.assertFalse(created["scope_passed"])
+
+    def test_bootstrap_persists_an_explicit_interpreter_failure_before_project_initialization(self):
+        output = self.root / "broken-environment"
+        script = Path(__file__).resolve().parents[1] / "scripts/validation_bootstrap.py"
+        result = subprocess.run([sys.executable, str(script), "--output", str(output)],
+                                env=dict(os.environ, CSB_VALIDATION_PYTHON=str(self.root / "missing")),
+                                text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+        saved = json.loads((output / "VALIDATION.json").read_text())
+        self.assertEqual(saved["preparation"]["status"], "fail")
+        self.assertIsNone(saved["source"])
+        self.assertIn("CSB_VALIDATION_PYTHON", saved["first_failure"]["message"])
+        self.assertFalse(saved["passed"])
+        self.assertTrue(saved["cleanup_confirmed"])

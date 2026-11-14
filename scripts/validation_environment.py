@@ -93,5 +93,6 @@ def resolve(root, output, scope, python=None, staged=False):
     environment.update(PATH=str(binary) + os.pathsep + environment.get("PATH", ""),
                        TMPDIR=str(temporary), CSB_VALIDATION_PYTHON=tools["python3"]["path"])
     metadata = {"tools": tools, "platform": sys.platform, "machine": platform.machine(),
+                "source_directory": str(root.resolve()),
                 "temporary_directory": str(temporary), "cargo_target": target}
     return environment, metadata
