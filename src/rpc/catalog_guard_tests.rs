@@ -71,6 +71,7 @@ fn verified_remote_catalog_rejects_unsafe_requests_before_transport() -> Result<
     let app = fixture.app()?;
     let mut connection = app.connection(std::time::Duration::from_secs(3), Role::CatalogReader)?;
     assert_eq!(connection.catalog_source()?["codexHome"], fixture.peer()?.codex_home);
+    assert_eq!(connection.call("account/read", json!({"refreshToken":false}))?, json!({"ok":true}));
     let before = fixture.events();
     for (method, params) in [
         ("thread/read", json!({"includeTurns":true})),
