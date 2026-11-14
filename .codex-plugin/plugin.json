@@ -1,6 +1,6 @@
 {
   "name": "codex-session-board",
-  "version": "0.3.82",
+  "version": "0.3.85",
   "description": "Rust 会话看板，自动发现会话、拖动维护状态并同步原生标题。",
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
@@ -14,7 +14,7 @@
       "Read",
       "Write"
     ],
-    "brandColor": "#32694B",
+    "brandColor": "#328CFF",
     "composerIcon": "./assets/board.svg",
     "logo": "./assets/board.svg"
   }
