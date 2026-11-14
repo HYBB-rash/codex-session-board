@@ -17,6 +17,11 @@ fn empty_history_fallback_requires_the_exact_native_unmaterialized_proof_for_thi
     assert!(!unmaterialized(&error("thread/read",-32600,"history unavailable"),&id));
     assert!(!unmaterialized(&error("thread/read",-32600,&message),&uuid::Uuid::new_v4().to_string()));
     assert!(!unmaterialized(&anyhow::anyhow!(message),&id));
+    let paginated = format!("thread {id} is not materialized yet; thread/turns/list is unavailable before first user message");
+    assert!(paginated_unmaterialized(&error("thread/turns/list",-32600,&paginated),&id));
+    assert!(!paginated_unmaterialized(&error("thread/turns/list",-32603,&paginated),&id));
+    assert!(!paginated_unmaterialized(&error("thread/turns/list",-32600,&paginated),&uuid::Uuid::new_v4().to_string()));
+    assert!(!paginated_unmaterialized(&error("thread/turns/list",-32600,"list_turns is not supported yet"),&id));
 }
 
 #[test]
@@ -57,10 +62,13 @@ fn empty_probe_learns_every_remote_mapping_without_disk_flush_and_reuses_after_r
     let fixture = Fixture::new()?;
     let before = std::fs::read(&fixture.config.sidebar_state_file)?;
     fixture.surface.lock().unwrap().lose_move = true;
+    fixture.surface.lock().unwrap().unmaterialized = true;
+    fixture.surface.lock().unwrap().changing_read_times = true;
     let first = fixture.run()?;
     assert_eq!(first.logical.len(),5);
     assert!(first.probe.is_none());
     assert_eq!(fixture.calls("move_thread_to_sidebar_section"),5);
+    assert!(fixture.calls("thread/turns/list") > 0);
     assert_eq!(fixture.calls("thread/start"),1);
     assert_eq!(fixture.calls("thread/archive"),1);
     let reopened = Store::open(&fixture.config.data_dir,false)?;

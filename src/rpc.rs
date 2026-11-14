@@ -26,6 +26,7 @@ mod pipe;
 pub(crate) mod multiplex;
 pub(crate) mod runtime;
 pub mod performance;
+pub mod section_probe;
 pub mod authority;
 
 #[cfg(test)]
@@ -83,7 +84,7 @@ impl Role {
             ),
             Self::CalibrationWriter => matches!(method, "initialize" | "thread/start"
                 | "thread/read" | "thread/name/set" | "thread/archive"
-                | "thread/list" | "threadSection/list"),
+                | "thread/list" | "threadSection/list" | "thread/turns/list"),
             Self::TitleWriter => matches!(method, "initialize" | "thread/read" | "thread/name/set"),
             Self::ArchiveWriter => matches!(
                 method,
@@ -884,7 +885,7 @@ mod tests {
     #[test]
     fn calibration_connections_can_manage_empty_probes_but_cannot_run_models() -> Result<()> {
         for method in ["initialize", "thread/start", "thread/read", "thread/name/set",
-            "thread/archive", "thread/list", "threadSection/list"] {
+            "thread/archive", "thread/list", "threadSection/list", "thread/turns/list"] {
             Role::CalibrationWriter.check(method)?;
         }
         for method in ["turn/start", "turn/resume", "send_message_to_thread",

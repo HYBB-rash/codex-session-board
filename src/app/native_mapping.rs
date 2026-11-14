@@ -4,7 +4,48 @@ use std::fs::{File, OpenOptions};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::time::Instant;
 
+struct CalibrationSidebar<'app>(&'app App);
+struct CalibrationBackend<'app> {
+    app: &'app App,
+    connection: Option<crate::rpc::DesktopConnection>,
+}
+
+impl Rpc for CalibrationSidebar<'_> {
+    fn call(&mut self, method: &str, params: Value) -> Result<Value> {
+        self.0.native_sidebar()?.call(method,params)
+            .with_context(|| format!("分区校准客户端操作失败：{method}"))
+    }
+}
+
+impl Rpc for CalibrationBackend<'_> {
+    fn call(&mut self, method: &str, params: Value) -> Result<Value> {
+        if self.connection.is_none() {
+            self.connection = Some(self.app.connection(self.app.native_timeout(),Role::CalibrationWriter)?);
+        }
+        let result = self.connection.as_mut().context("校准连接未建立")?.call(method,params);
+        if result.as_ref().is_err_and(|error| error.downcast_ref::<crate::rpc::RequestError>().is_none()) {
+            self.connection = None;
+        }
+        result.with_context(|| format!("分区校准后端操作失败：{method}"))
+    }
+}
+
 impl App {
+    pub(crate) fn cleanup_native_probe(&self, identifier: &str) -> Result<()> {
+        ensure!(self.config.host_id != "local","清理仅用于指定远程来源");
+        let _checked = self.native_mapping_scope.lock()
+            .map_err(|_| anyhow::anyhow!("分区校验锁已损坏"))?;
+        let _lock = self.native_mapping_lock()?;
+        let seed = self.mapping_seed()?;
+        let mut record = self.mapping_record(&seed)?;
+        ensure!(record.probe.as_ref().and_then(|probe| probe.thread.as_deref()) == Some(identifier),
+            "只能清理本来源已记录的专用空会话");
+        let mut backend = CalibrationBackend {app:self,connection:None};
+        let mut sidebar = CalibrationSidebar(self);
+        Calibration {config:&self.config,store:&self.mapping_store,record:&mut record,
+            backend:&mut backend,sidebar:&mut sidebar}.cleanup()
+    }
+
     pub(crate) fn native_catalog(&self, reader: &mut (impl Rpc + ?Sized)) -> Result<Catalog> {
         if self.config.host_id == "local" {
             return Catalog::load(reader, &self.config);
@@ -20,14 +61,14 @@ impl App {
             && mapping::complete(&self.config, &record) {
             return Catalog::mapped(sections, record.logical, &self.config);
         }
-        let mut sidebar = self.native_sidebar()?;
+        let mut sidebar = CalibrationSidebar(self);
         mapping::live_catalog(&mut sidebar, &self.config)?;
         if checked.as_ref() != Some(&record.scope) {
             record.logical = mapping::merge_saved(record.logical,
                 mapping::usable(&self.config, &sections, seed.logical));
         }
         if !mapping::complete(&self.config, &record) || record.probe.is_some() {
-            let mut backend = self.connection(self.native_timeout(), Role::CalibrationWriter)?;
+            let mut backend = CalibrationBackend {app:self,connection:None};
             sections = Calibration {config:&self.config,store:&self.mapping_store,
                 record:&mut record,backend:&mut backend,sidebar:&mut sidebar}.complete(sections)?;
         }
@@ -58,8 +99,8 @@ impl App {
             ensure!(previous.scope["source"] == source,
                 "校准清理仍属于原来的远程来源，不能在新来源执行");
             if !seed.as_ref().is_ok_and(|seed| seed.scope == previous.scope) {
-                let mut backend = self.connection(self.native_timeout(), Role::CalibrationWriter)?;
-                let mut sidebar = self.native_sidebar()?;
+                let mut backend = CalibrationBackend {app:self,connection:None};
+                let mut sidebar = CalibrationSidebar(self);
                 Calibration {config:&self.config,store:&self.mapping_store,record:&mut previous,
                     backend:&mut backend,sidebar:&mut sidebar}.cleanup()?;
             }

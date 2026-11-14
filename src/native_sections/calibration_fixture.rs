@@ -14,6 +14,8 @@ pub(super) struct Surface {
     pub lose_move: bool,
     pub reject_archive: bool,
     pub cross_read: bool,
+    pub unmaterialized: bool,
+    pub changing_read_times: bool,
     pending_read: Option<(String, Value)>,
 }
 
@@ -83,6 +85,7 @@ impl Surface {
         match method {
             "thread/start" => self.start(params),
             "thread/read" => self.read_thread(params),
+            "thread/turns/list" => self.list_turns(params),
             "thread/name/set" => {
                 self.threads.get_mut(params["threadId"].as_str().unwrap()).unwrap()["name"]
                     = params["name"].clone();
@@ -105,13 +108,34 @@ impl Surface {
         }
     }
 
+    fn list_turns(&self, params: Value) -> Result<Value> {
+        assert_eq!(params["itemsView"],"summary");
+        assert_eq!(params["limit"],1);
+        let id = params["threadId"].as_str().unwrap();
+        let turns = &self.threads[id]["turns"];
+        if self.unmaterialized && turns == &json!([]) {
+            return Err(crate::rpc::RequestError {method:"thread/turns/list".into(),details:json!({
+                "code":-32600,"message":format!("thread {id} is not materialized yet; thread/turns/list is unavailable before first user message")})}.into());
+        }
+        Ok(json!({"data":turns}))
+    }
+
     fn read_thread(&self, params: Value) -> Result<Value> {
         let id = params["threadId"].as_str().unwrap();
         let thread = self.threads.get(id).ok_or_else(|| crate::rpc::RequestError {
             method:"thread/read".into(),details:json!({"code":-32600,"message":format!("thread not loaded: {id}")})})?;
+        if params["includeTurns"] == true && thread["historyMode"] == "paginated" {
+            return Err(crate::rpc::RequestError {method:"thread/read".into(),
+                details:json!({"code":-32603,"message":"list_turns is not supported yet"})}.into());
+        }
         if params["includeTurns"] == true && thread["historyMode"] == "legacy" && thread["turns"] == json!([]) {
             return Err(crate::rpc::RequestError {method:"thread/read".into(),details:json!({
                 "code":-32600,"message":format!("thread {id} is not materialized yet; includeTurns is unavailable before first user message")})}.into());
+        }
+        let mut thread = thread.clone();
+        if params["includeTurns"] == false { thread["turns"] = json!([]); }
+        if self.changing_read_times {
+            for key in ["createdAt","updatedAt","recencyAt"] { thread[key] = json!(self.calls.len()); }
         }
         Ok(json!({"thread":thread}))
     }

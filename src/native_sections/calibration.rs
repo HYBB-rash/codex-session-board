@@ -180,21 +180,50 @@ impl Calibration<'_> {
 
     fn empty(&mut self) -> Result<Value> {
         let identifier = self.identifier()?.to_owned();
-        let response = self.backend.call(
+        let response = if self.record.probe.as_ref().is_some_and(|probe| probe.history_mode == "paginated") {
+            self.paginated_empty(&identifier)?
+        } else { self.backend.call(
             "thread/read",
             json!({"threadId":identifier,"includeTurns":true}),
         ).or_else(|error| {
             if unmaterialized(&error,&identifier) {
                 self.backend.call("thread/read",json!({"threadId":identifier,"includeTurns":false}))
             } else { Err(error) }
-        })?;
+        })? };
         let thread = response["thread"].clone();
-        if let Err(error) = self.verify_empty(&thread) {
+        self.guard_empty(&thread)?;
+        Ok(thread)
+    }
+
+    fn guard_empty(&mut self, thread: &Value) -> Result<()> {
+        if let Err(error) = self.verify_empty(thread) {
             self.store
                 .release_native_probe(&self.config.host_id, self.record)?;
             return Err(error.context("已保留并停止操作此会话"));
         }
-        Ok(thread)
+        Ok(())
+    }
+
+    fn paginated_empty(&mut self, identifier: &str) -> Result<Value> {
+        let params = json!({"threadId":identifier,"includeTurns":false});
+        let before = self.backend.call("thread/read",params.clone())?;
+        self.guard_empty(&before["thread"])?;
+        match self.backend.call("thread/turns/list",json!({
+            "threadId":identifier,"limit":1,"sortDirection":"desc","itemsView":"summary"})) {
+            Ok(page) => {
+                let turns = page["data"].as_array().context("校准会话历史响应无效")?;
+                if !turns.is_empty() {
+                    self.store.release_native_probe(&self.config.host_id,self.record)?;
+                    anyhow::bail!("校准会话已被使用，已保留并停止操作此会话");
+                }
+                ensure!(page["nextCursor"].is_null(),"校准会话历史尚未完整确认");
+            }
+            Err(error) if paginated_unmaterialized(&error,identifier) => {}
+            Err(error) => return Err(error),
+        }
+        let after = self.backend.call("thread/read",params)?;
+        ensure!(same_probe_metadata(&after["thread"],&before["thread"]),"校准会话在历史读取期间改变");
+        Ok(after)
     }
 
     fn confirm(
@@ -311,4 +340,21 @@ fn missing(error: &anyhow::Error, identifier: &str) -> bool {
     error.downcast_ref::<crate::rpc::RequestError>().is_some_and(|error|
         error.method == "thread/read" && error.details["code"] == -32600
             && error.details["message"] == format!("thread not loaded: {identifier}"))
+}
+
+fn paginated_unmaterialized(error: &anyhow::Error, identifier: &str) -> bool {
+    error.downcast_ref::<crate::rpc::RequestError>().is_some_and(|error|
+        error.method == "thread/turns/list" && error.details["code"] == -32600
+            && error.details["message"] == format!("thread {identifier} is not materialized yet; thread/turns/list is unavailable before first user message"))
+}
+
+fn same_probe_metadata(left: &Value, right: &Value) -> bool {
+    let normalized = |value: &Value| {
+        let mut value = value.clone();
+        if let Some(fields) = value.as_object_mut() {
+            for field in ["createdAt","updatedAt","recencyAt"] { fields.remove(field); }
+        }
+        value
+    };
+    normalized(left) == normalized(right)
 }
