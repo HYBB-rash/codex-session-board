@@ -6,7 +6,7 @@
 - base_commit: 865fb97
 - worktree_path: /Users/hongyong/.codex/worktrees/package-authority-fix/codex-session-board
 - coordinator: 01a1d38b-1ef8-7392-ba78-caa7935c5ab4
-- status: ready_for_coordinator
+- status: completed
 
 固定主线 04f7d58 与原 PR 头 9667957 无冲突组合为签名复现基线 865fb97。
 先让包内 serve 与 MCP 均由监听端点的同一 fixture 托管，保留原有身份、就绪、协议与清理断言。
@@ -91,3 +91,9 @@ Mac 的 LOCAL_PEERPID 存在偶发 ENOTCONN。旧失败日志保留为 targeted/
 /private/tmp/csb-pr6-package-proof-20261114-r5。业务二进制摘要与前两轮一致。
 若集成分支已带入至 53851fb，只需追加 a0d8001 与 be902aa，再由协调者运行最终双平台 CI。
 本任务随后仅提交此记录；共享 STATE、版本与主线仍未改动，工作树继续保留。
+
+协调者收尾：全部交付提交至 85bcd476 已进入主线 0.3.85/a2d094a。
+最终 MCP 各阶段统一绝对预算和 Clippy 全目标修正由协调者补齐，
+Actions 43604895442 的 Linux 723 项、macOS 712 项及双平台实际包隔离启动清理通过。
+最终归档和身份均由协调者读回；主线确认后已通知原会话归档本任务专用工作树，
+不操作原始 PR 工作区及其他任务。此卡由协调者统一归档，完整验收仍另行安排。
