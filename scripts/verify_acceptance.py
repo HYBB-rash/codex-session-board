@@ -160,7 +160,7 @@ def validate_results(payload, requested):
     return records
 
 
-def execute_adapter(root, bindings, tests):
+def execute_adapter(root, bindings, tests, timings=None):
     adapter = bindings["adapter"]
     command = adapter["command"]
     if not isinstance(command, list) or not command or not all(isinstance(part, str) for part in command):
@@ -177,7 +177,11 @@ def execute_adapter(root, bindings, tests):
         raise ValueError(
             f"Test adapter exited {process.returncode}: {process.stderr[-3000:]}"
         )
-    return validate_results(json.loads(process.stdout), set(tests))
+    payload = json.loads(process.stdout)
+    records = validate_results(payload, set(tests))
+    if timings is not None:
+        timings.extend(payload.get("timings", []))
+    return records
 
 
 def live_result(identifier, evidence, evidence_path, contract_sha, build_sha):
@@ -225,7 +229,8 @@ def verify(root, contract_path, bindings_path, scope, evidence_path=None):
         raise ValueError("The selected contract is not protected by its lock")
     build_sha = fingerprint(root, bindings["fingerprint_paths"])
     evidence = read_json(evidence_path) if evidence_path else {}
-    records = execute_adapter(root, bindings, tests)
+    timings = []
+    records = execute_adapter(root, bindings, tests, timings)
     if fingerprint(root, bindings["fingerprint_paths"]) != build_sha:
         raise ValueError("Implementation files changed during verification")
     items = []
@@ -256,7 +261,7 @@ def verify(root, contract_path, bindings_path, scope, evidence_path=None):
         "contract_sha256": contract_sha, "build_sha256": build_sha,
         "platform": sys.platform, "scope": scope, "passed": passed, "release_ready": complete,
         "automated_passed": automated_ok, "test_count": len(records),
-        "requirements": items, "tests": list(records.values()),
+        "requirements": items, "tests": list(records.values()), "timings": timings,
     }
     exit_code = 0 if passed else 1 if any(item["status"] == "fail" for item in items) else 2
     return report, exit_code

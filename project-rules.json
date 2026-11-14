@@ -32,6 +32,48 @@
         "from": "0.3.77",
         "to": "0.3.78",
         "decision": "冻结发布候选"
+      },
+      {
+        "after_commit": "9023234ff9da7a60368d88ff5fb98370f2827c42",
+        "from": "0.3.78",
+        "to": "0.3.79",
+        "decision": "冻结发布候选"
+      },
+      {
+        "after_commit": "f60cd01273e7561c2378e9b5477fc48a3ad5c32d",
+        "from": "0.3.79",
+        "to": "0.3.80",
+        "decision": "冻结发布候选"
+      },
+      {
+        "after_commit": "75028620d141b6a01ef112fe726d08c148bf80ce",
+        "from": "0.3.80",
+        "to": "0.3.81",
+        "decision": "冻结发布候选"
+      },
+      {
+        "after_commit": "0844eb2cc6d987c3fd7f3ee1546c03c42c1a3d5c",
+        "from": "0.3.81",
+        "to": "0.3.82",
+        "decision": "冻结发布候选"
+      },
+      {
+        "after_commit": "a60c921d1e10d6eee6795054b715da743e7ef759",
+        "from": "0.3.82",
+        "to": "0.3.83",
+        "decision": "冻结发布候选"
+      },
+      {
+        "after_commit": "81bd382b4fc1d009a875bf1c37d58d003a264a3a",
+        "from": "0.3.83",
+        "to": "0.3.84",
+        "decision": "冻结发布候选"
+      },
+      {
+        "after_commit": "faf1bf52d820332b27505535ce7944e645c12234",
+        "from": "0.3.84",
+        "to": "0.3.85",
+        "decision": "冻结发布候选"
       }
     ],
     "rollover_after": "b7acaa72fb62e2ffaf0d44292956a31d34bee036",

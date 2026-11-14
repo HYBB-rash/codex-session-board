@@ -30,7 +30,7 @@ home=pathlib.Path(os.environ['CODEX_HOME'])
 server=socket.socket(socket.AF_UNIX);server.bind(sys.argv[-1].removeprefix('unix://'))
 os.chmod(server.getsockname(),0o600);server.listen()
 while True:
-    stream,_=server.accept();stream.close()
+    stream,_=server.accept();stream.recv(1);stream.close()
 """)
 
     def executable(self, name, body):
@@ -75,6 +75,13 @@ time.sleep(30)
             self.assertEqual(environment["CODEX_APP_SERVER_WS_URL"],
                              f"ws+unix://localhost{report['endpoint']}:/rpc")
         self.assertEqual(report["endpoint_peer_pid"], report["backend_pid"])
+        self.assertEqual(backend["CODEX_SESSION_BOARD_SHARED_AUTHORITY"],
+                         desktop["CODEX_SESSION_BOARD_SHARED_AUTHORITY"])
+        authority = json.loads(Path(backend["CODEX_SESSION_BOARD_SHARED_AUTHORITY"]).read_text())
+        self.assertEqual(authority, report["authority"])
+        self.assertEqual(authority["backend"]["pid"], report["backend_pid"])
+        self.assertEqual(authority["client"]["pid"], report["desktop_pid"])
+        self.assertEqual(authority["launcher"], shared_desktop.process_identity(os.getpid()))
         self.assertTrue(self.stopped_report()["passed"])
 
     def test_wrong_endpoint_process_is_rejected_before_launching_the_desktop(self):

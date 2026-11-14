@@ -18,6 +18,8 @@ mod faults;
 mod remote_isolation;
 #[path = "native_authority/runtime.rs"]
 mod runtime;
+#[path = "native_authority/sidebar_origin.rs"]
+mod sidebar_origin;
 #[path = "native_authority/transport.rs"]
 mod transport;
 

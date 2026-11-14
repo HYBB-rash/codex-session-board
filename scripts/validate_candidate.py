@@ -81,6 +81,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--scope", choices=("pr", "candidate", "preflight"), default="candidate")
     parser.add_argument("--base", default="origin/main")
+    parser.add_argument("--integration-base")
     parser.add_argument("--output", required=True, type=Path)
     arguments = parser.parse_args()
     output = arguments.output.resolve()
@@ -96,11 +97,20 @@ def main():
         ["./scripts/check"],
         ["cargo", "clippy", "--all-targets", "--locked", "--offline", "--", "-D", "warnings"],
     ]
+    strategy = None
+    if arguments.scope == "candidate" and arguments.integration_base:
+        from scripts.integration_plan import plan
+        strategy = plan(arguments.integration_base)
+        record["plan"] = strategy
+    scoped = strategy is not None and strategy["profile"] != "full"
     if arguments.scope == "preflight":
         commands = [["python3", "scripts/package_plugin.py", "--preflight",
                      "--output", str(output / "source-package")]]
     elif arguments.scope == "candidate":
         commands.append([
+            "python3", "scripts/verify_integration.py", "--base", strategy["base"],
+            "--report", str(output / "integration.json"),
+        ] if scoped else [
             "python3", "scripts/verify_acceptance.py", "--scope", "automated",
             "--report", str(output / "automated.json"),
         ])
@@ -112,18 +122,26 @@ def main():
         (output / "VALIDATION.json").write_text(json.dumps(record, indent=2) + "\n")
         accepted = step["returncode"] == 0
         if arguments.scope == "candidate" and number == 2:
-            accepted = acceptance_outcome(
-                json.loads((output / "automated.json").read_text()), step["returncode"])
+            if scoped:
+                from scripts.integration_plan import bound_inventory, validate_report
+                report = json.loads((output / "integration.json").read_text())
+                bindings = json.loads((ROOT / "acceptance/bindings.json").read_text())
+                validate_report(report, strategy, before, bound_inventory(bindings, sys.platform))
+                accepted = accepted and report["passed"] is True
+            else:
+                accepted = acceptance_outcome(
+                    json.loads((output / "automated.json").read_text()), step["returncode"])
         if not accepted:
             print((output / f"{step['name']}.log").read_text()[-12000:], file=sys.stderr)
             return 1
     if identity() != before or git("status", "--porcelain", "--untracked-files=all"):
         raise ValueError("验证期间源码或提交身份发生变化")
     if arguments.scope == "candidate":
-        automatic = json.loads((output / "automated.json").read_text())
-        if automatic["build_sha256"] != before["fingerprint"]:
+        name = "integration" if scoped else "automated"
+        automatic = json.loads((output / f"{name}.json").read_text())
+        if not scoped and automatic["build_sha256"] != before["fingerprint"]:
             raise ValueError("自动报告与候选身份不一致")
-        record["automated_sha256"] = hashlib.sha256((output / "automated.json").read_bytes()).hexdigest()
+        record[f"{name}_sha256"] = hashlib.sha256((output / f"{name}.json").read_bytes()).hexdigest()
         record["release_ready"] = automatic["release_ready"]
         record["acceptance_status"] = "not_performed"
     record.update(passed=True, finished_at=datetime.now(timezone.utc).isoformat())

@@ -3,6 +3,8 @@ use serde::Serialize;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 
+pub(super) mod sidebar;
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LocalAuthority {
     pid: u32,
@@ -33,13 +35,17 @@ impl LocalAuthority {
     }
 
     pub(super) fn verify(&self, stream: &UnixStream) -> Result<()> {
-        #[cfg(target_os = "macos")]
-        let peer = u32::try_from(nix::sys::socket::getsockopt(stream, nix::sys::socket::sockopt::LocalPeerPid)?)?;
-        #[cfg(target_os = "linux")]
-        let peer = rustix::net::sockopt::socket_peercred(stream)?.pid.as_raw_nonzero().get() as u32;
-        ensure!(peer == self.pid, "连接对端不是启动本看板的客户端后台，已拒绝使用其他服务");
+        ensure!(peer_pid(stream)? == self.pid, "连接对端不是启动本看板的客户端后台，已拒绝使用其他服务");
         self.confirm()
     }
+}
+
+fn peer_pid(stream: &UnixStream) -> Result<u32> {
+    #[cfg(target_os = "macos")]
+    let peer = u32::try_from(nix::sys::socket::getsockopt(stream, nix::sys::socket::sockopt::LocalPeerPid)?)?;
+    #[cfg(target_os = "linux")]
+    let peer = rustix::net::sockopt::socket_peercred(stream)?.pid.as_raw_nonzero().get() as u32;
+    Ok(peer)
 }
 
 pub(crate) fn inherit(config: &mut crate::config::Config) -> Result<()> {

@@ -3,16 +3,27 @@ use crate::{config::Config, remote::hosts};
 
 pub(super) struct Guard {
     settings: Config,
+    shared: Option<PathBuf>,
 }
 
 impl Guard {
     pub(super) fn new(settings: &Config) -> Self {
         Self {
             settings: settings.clone(),
+            shared: std::env::var_os("CODEX_SESSION_BOARD_SHARED_AUTHORITY").map(PathBuf::from),
         }
     }
 
-    pub(super) fn verify(&self, params: &Value, deadline: Instant) -> Result<()> {
+    pub(super) fn verify_source(&self, transport: &pipe::Transport) -> Result<()> {
+        let pipe::Transport::Unix(stream) = transport else {
+            bail!("侧栏写入需要可证明来源的本地连接");
+        };
+        let backend = self.settings.local_authority.as_ref().context("侧栏写入缺少客户端后台归属")?;
+        authority::sidebar::verify(backend, stream, self.shared.as_deref())
+    }
+
+    pub(super) fn verify(&self, params: &Value, deadline: Instant, transport: &pipe::Transport) -> Result<()> {
+        self.verify_source(transport)?;
         let host = params["hostId"].as_str().unwrap_or("local");
         if let Some(binding) = &self.settings.remote_binding {
             ensure!(host == binding.host_id, "转发目标与已核验的远端来源不匹配");

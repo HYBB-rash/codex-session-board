@@ -79,6 +79,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       RUSTUP_TOOLCHAIN: 1.99.1
+      EXPECTED_BASE: ${{ needs.classify.outputs.base }}
       GIT_AUTHOR_NAME: Codex plugin publisher
       GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
       GIT_COMMITTER_NAME: Codex plugin publisher
@@ -105,8 +106,7 @@ jobs:
             candidate-${{ matrix.target }}-1.99.1-
       - run: cargo fetch --locked
       - run: ./scripts/install-git-hooks
-      - run: TMPDIR=/tmp node scripts/check-transfer-feedback.mjs "$RUNNER_TEMP/transfer-feedback"
-      - run: TMPDIR=/tmp ./scripts/validate --output "$RUNNER_TEMP/validation"
+      - run: TMPDIR=/tmp ./scripts/validate --integration-base "$EXPECTED_BASE" --output "$RUNNER_TEMP/validation"
       - run: cargo build --locked --offline --example dev_fixture
       - run: |
           gh auth setup-git

@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -9,6 +10,32 @@ import subprocess
 import sys
 import tempfile
 import time
+
+
+def process_identity(pid):
+    if sys.platform == "darwin":
+        output = subprocess.check_output(["/bin/ps", "-p", str(pid), "-o", "stat=", "-o", "lstart="],
+                                         env={**os.environ, "LC_ALL": "C"}, text=True, timeout=3).split()
+        if not output or output[0].startswith("Z"):
+            raise RuntimeError("共享客户端进程已退出")
+        started = int.from_bytes(hashlib.sha256(" ".join(output[1:]).encode()).digest()[:8], "big")
+    else:
+        fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+        if fields[0] in ("Z", "X"):
+            raise RuntimeError("共享客户端进程已退出")
+        started = int(fields[19])
+    return {"pid": pid, "started": started}
+
+
+def publish_authority(root, backend, desktop):
+    proof = {"backend": process_identity(backend.pid), "client": process_identity(desktop.pid),
+             "launcher": process_identity(os.getpid())}
+    pending = root / "client.pending"
+    with pending.open("x") as stream:
+        os.chmod(pending, 0o600)
+        json.dump(proof, stream)
+    pending.replace(root / "client.json")
+    return proof
 
 
 def endpoint_pid(path):
@@ -76,6 +103,7 @@ def launch(app, backend, home, profile, report_path=None, probe=False, timeout=3
         environment.pop(name, None)
     environment.update(CODEX_HOME=str(home), CODEX_ELECTRON_USER_DATA_PATH=str(profile),
                        CODEX_APP_SERVER_WS_URL=f"ws+unix://localhost{endpoint}:/rpc",
+                       CODEX_SESSION_BOARD_SHARED_AUTHORITY=str(root / "client.json"),
                        CODEX_SPARKLE_ENABLED="false")
     server, desktop = None, None
     try:
@@ -94,6 +122,7 @@ def launch(app, backend, home, profile, report_path=None, probe=False, timeout=3
             report["endpoint_peer_pid"] = endpoint_pid(endpoint)
             if report["endpoint_peer_pid"] != server.pid:
                 raise RuntimeError("客户端就绪后共享后台归属发生变化")
+            report["authority"] = publish_authority(root, server, desktop)
             report.update(passed=True, phase="connected")
             print(json.dumps(report, ensure_ascii=False), flush=True)
             if not probe:
