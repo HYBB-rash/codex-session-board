@@ -56,6 +56,7 @@ jobs:
           restore-keys: |
             candidate-x86_64-unknown-linux-gnu-1.99.1-${{ hashFiles('Cargo.lock') }}-
       - run: cargo fetch --locked
+      - run: ./scripts/install-git-hooks
       - run: python3 scripts/validate_context.py --base "$EXPECTED_BASE" --repository "$GITHUB_REPOSITORY" --output "$RUNNER_TEMP/CONTEXT.json"
       - uses: actions/upload-artifact@v4
         with:
