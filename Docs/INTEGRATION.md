@@ -41,6 +41,15 @@ Clippy、业务测试和检查工具自测不在每个提交重复执行。
 它只打包与解包源码、比对完整实现指纹、版本和入口执行权限，不编译或启动插件。
 候选CI也在完整验证前调用此入口。结果不是完整候选门禁，不能用于提升主线。
 
+安装后的独立生效检查运行
+`./scripts/verify-plugin --client-pid CLIENT_APP_SERVER_PID --expected-source RELEASE_SOURCE_SHA --config-id EXPECTED_CONFIG_ID --output /tmp/plugin-proof.json`。
+默认只读，核对安装与缓存全部文件、实际HTTP服务身份、配置和数据目录、
+MCP可执行文件、所选客户端的父子进程关系及检查期间进程身份未变化。
+不根据旧安装回执或无关守护进程宣称当前客户端加载成功。
+退出0表示已核实，退出2表示已安装但仍待当前客户端加载，退出1表示核验失败。
+可选`--reconnect`复用更新工具已有的定向重连；没有受支持的当前桌面连接时仍返回待重连，
+不能启动另一个看板进程冒充成功。报告保存配置摘要，未提供`--config-id`时不代签配置内容已加载。
+
 开发提交运行 `./scripts/check --pre-commit`；PR 运行
 `./scripts/validate --scope pr --base origin/main --output /tmp/pr-result`。
 协调者将固定的原 PR 依次合并到 `codex/integration-*` 分支，解决冲突并审阅最终组合，
