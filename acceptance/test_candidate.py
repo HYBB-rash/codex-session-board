@@ -13,7 +13,7 @@ from scripts import validate_context
 
 
 class CandidateGateTests(unittest.TestCase):
-    def run_candidate(self, *, changed=False, dirty=False, mismatch=False, scoped=False, omitted=False):
+    def run_candidate(self, *, changed=False, dirty=False, mismatch=False, scoped=False, omitted=False, failed=False):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         parent = Path(directory.name)
@@ -29,6 +29,7 @@ class CandidateGateTests(unittest.TestCase):
 
         def execute(name, arguments, destination, **options):
             (destination / f"{name}.log").write_text("actual step transcript\n")
+            (destination / f"{name}.stderr.log").write_text("step diagnostics\n")
             if "--report" in arguments:
                 report = {
                     "automated_passed": True,
@@ -37,6 +38,10 @@ class CandidateGateTests(unittest.TestCase):
                     "tests": [{"status": "pass"}], "requirements": [{"status": "pass"}],
                 }
                 report_name = "automated"
+                if failed:
+                    report.update(automated_passed=False, passed=False, release_ready=False,
+                                  tests=[{"status": "fail"}],
+                                  requirements=[{"id": "R-01", "status": "pending"}])
                 if scoped:
                     from scripts.integration_plan import bound_inventory, selected
                     bindings = json.loads((root / "acceptance/bindings.json").read_text())
@@ -55,7 +60,8 @@ class CandidateGateTests(unittest.TestCase):
             (destination / f"{name}.request.json").write_text("{}")
             (destination / f"{name}.lease.json").write_text(json.dumps({
                 "run_id": options["run_id"], "name": name, "cleanup_confirmed": True}))
-            return {"name": name, "arguments": arguments, "returncode": 0, "seconds": 1,
+            return {"name": name, "arguments": arguments,
+                    "returncode": 7 if failed and name == "step-3" else 0, "seconds": 1,
                     "log_sha256": hashlib.sha256((destination / f"{name}.log").read_bytes()).hexdigest(),
                     "cleanup_confirmed": True}
 
@@ -69,7 +75,7 @@ class CandidateGateTests(unittest.TestCase):
                 mock.patch("scripts.integration_plan.plan", return_value=strategy), \
                 mock.patch.dict(os.environ, {"CARGO_TARGET_DIR": str(root / "target")}), \
                 mock.patch.object(candidate.sys, "argv", arguments):
-            self.assertEqual(candidate.main(), 1 if changed or dirty or mismatch or omitted else 0)
+            self.assertEqual(candidate.main(), 1 if changed or dirty or mismatch or omitted or failed else 0)
         return json.loads((output / "VALIDATION.json").read_text())
 
     def test_candidate_requires_unchanged_commit_even_when_fingerprint_matches(self):
@@ -116,6 +122,12 @@ class CandidateGateTests(unittest.TestCase):
         self.assertFalse(candidate.acceptance_outcome(report, 0))
         report.update(scope="release", passed=False, release_ready=False)
         self.assertFalse(candidate.acceptance_outcome(report, 2))
+        failed = self.run_candidate(failed=True)
+        self.assertEqual(failed["pending"], ["R-01"])
+        self.assertEqual(len(failed["automated_sha256"]), 64)
+        self.assertIn("step-3 退出 7", failed["first_failure"]["message"])
+        self.assertFalse(failed["passed"])
+        self.assertFalse(failed["release_ready"])
 
     def test_candidate_cannot_treat_skipped_tests_as_pending_live_evidence(self):
         report = {

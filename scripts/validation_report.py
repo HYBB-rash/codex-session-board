@@ -25,7 +25,7 @@ def create(output, root, scope):
         "preparation": {"status": "running"}, "finalization": {"status": "not_started"},
         "passed": False, "scope_passed": False, "release_ready": False,
         "acceptance_status": "not_performed", "first_failure": None,
-        "pending": [], "diagnostic_reruns": [], "cleanup_confirmed": False,
+        "pending": ["目标环境验收"], "diagnostic_reruns": [], "cleanup_confirmed": False,
     }
     write(output / "VALIDATION.json", record)
     return record
@@ -51,7 +51,7 @@ def summary(output, record):
     print(f"本范围结果：{record['scope']} {result}")
     unfinished = "无" if record.get("finished_at") else "运行尚未完成；清理状态请查看步骤回执"
     print(f"失败原因：{error.get('message', unfinished)}")
-    print(f"待验证项：{', '.join(map(str, pending)) if pending else '无（完整目标验收未执行）'}")
+    print(f"待验证项：{', '.join(map(str, pending)) if pending else '未列出（完整目标验收未执行）'}")
     print(f"报告位置：{output / 'VALIDATION.json'}")
 
 

@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 
@@ -11,11 +12,29 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ValidationCliTests(unittest.TestCase):
-    def invoke(self, *arguments, environment=None):
+    def invoke(self, *arguments, environment=None, root=ROOT):
         return subprocess.run(
-            [sys.executable, str(ROOT / "scripts/validation_bootstrap.py"), *map(str, arguments)],
+            [sys.executable, str(root / "scripts/validation_bootstrap.py"), *map(str, arguments)],
             env=environment or dict(os.environ, CSB_VALIDATION_PYTHON=sys.executable),
-            cwd=ROOT, text=True, capture_output=True, timeout=60)
+            cwd=root, text=True, capture_output=True, timeout=60)
+
+    def committed_source(self, parent):
+        from scripts.package_migration import build_package
+        archive = parent / "source.tar.gz"
+        build_package(ROOT, archive)
+        with tarfile.open(archive) as source:
+            source.extractall(parent, filter="data")
+        root = parent / "codex-session-board"
+        commands = [
+            ["init", "--quiet"], ["add", "."],
+            ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+             "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null",
+             "commit", "--quiet", "-m", "fixture"],
+        ]
+        for arguments in commands:
+            subprocess.run(["git", *arguments], cwd=root, check=True,
+                           capture_output=True, timeout=10)
+        return root
 
     def test_plan_and_legacy_report_are_read_only_and_do_not_require_environment_setup(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -50,17 +69,18 @@ class ValidationCliTests(unittest.TestCase):
 
     def test_preflight_and_report_reader_verify_actual_source_package_and_cleanup(self):
         with tempfile.TemporaryDirectory() as temporary:
+            root = self.committed_source(Path(temporary))
             output = Path(temporary) / "preflight"
-            result = self.invoke("--scope", "preflight", "--output", output)
+            result = self.invoke("--scope", "preflight", "--output", output, root=root)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             record = json.loads((output / "VALIDATION.json").read_text())
             self.assertTrue(record["scope_passed"])
             self.assertFalse(record["release_ready"])
             self.assertTrue(record["cleanup_confirmed"])
             self.assertTrue((output / "source-package/SOURCE.tar.gz").is_file())
-            read = self.invoke("--report", output)
+            read = self.invoke("--report", output, root=root)
             self.assertEqual(read.returncode, 0, read.stdout + read.stderr)
             (output / "preparation.log").write_text("modified preparation")
-            rejected = self.invoke("--report", output)
+            rejected = self.invoke("--report", output, root=root)
             self.assertEqual(rejected.returncode, 3)
             self.assertIn("摘要不匹配", rejected.stderr)

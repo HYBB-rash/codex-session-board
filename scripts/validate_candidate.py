@@ -104,12 +104,13 @@ def candidate_outcome(output, record, strategy):
             raise run.CheckFailed(str(error)) from error
         record["pending"] = ["完整自动验收", "目标环境验收"]
         record["not_run"] = automatic["not_run"]
-    elif (not acceptance_outcome(automatic, record["steps"][-1]["returncode"])
-          or automatic["build_sha256"] != record["source"]["fingerprint"]):
-        raise run.CheckFailed("自动报告失败或与候选身份不一致")
+    elif automatic["build_sha256"] != record["source"]["fingerprint"]:
+        raise run.CheckFailed("自动报告与候选身份不一致")
     else:
         record["pending"] = [item["id"] for item in automatic["requirements"] if item["status"] == "pending"]
     record[f"{name}_sha256"] = report.digest(output / f"{name}.json")
+    if not scoped and not acceptance_outcome(automatic, record["steps"][-1]["returncode"]):
+        raise run.CheckFailed("自动报告未通过")
     record["release_ready"] = automatic["release_ready"]
 
 
@@ -131,8 +132,11 @@ def main():
             record["plan"] = strategy
         commands = commands_for(arguments, output, strategy)
         child = run.prepare(ROOT, output, record, before, commands)
-        run.steps(ROOT, output, record, commands, child, arguments.timeout)
-        if arguments.scope == "candidate":
+        try:
+            run.steps(ROOT, output, record, commands, child, arguments.timeout)
+        except run.CheckFailed as error:
+            run.reject(output, record, error, 1)
+        if arguments.scope == "candidate" and len(record["steps"]) == len(commands):
             candidate_outcome(output, record, strategy)
     except KeyboardInterrupt:
         run.reject(output, record, "验证被中断", 130)
