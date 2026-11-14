@@ -26,6 +26,7 @@ mod pipe;
 pub(crate) mod multiplex;
 pub(crate) mod runtime;
 pub mod performance;
+pub mod authority;
 
 #[cfg(test)]
 #[path = "rpc/summary_tests.rs"]
@@ -360,20 +361,28 @@ pub struct DesktopConnection {
     title_deadline: Option<Instant>,
     remote_binding: Option<Binding>,
     peer: Option<Peer>,
+    local_authority: Option<authority::LocalAuthority>,
 }
 
 impl DesktopConnection {
     pub fn configured(config: &crate::config::Config, timeout: Duration, role: Role) -> Result<Self> {
         if let Some(binding) = &config.remote_binding {
             Self::remote(binding, timeout, role)
-        } else if config.proxy_command.is_empty() {
-            Self::connect(&config.desktop_socket, timeout, role)
         } else {
-            Self::proxy(&config.proxy_command, timeout, role)
+            ensure!(config.proxy_command.is_empty(), "代理连接缺少已登记主机的归属校验");
+            let authority = config.local_authority.clone()
+                .map_or_else(authority::LocalAuthority::parent, Ok)?;
+            let mut connection = Self::connect_source(&config.desktop_socket, timeout, role, Some(&authority))?;
+            connection.local_authority = Some(authority);
+            Ok(connection)
         }
     }
 
     pub fn connect(path: &Path, timeout: Duration, role: Role) -> Result<Self> {
+        Self::connect_source(path, timeout, role, None)
+    }
+
+    fn connect_source(path: &Path, timeout: Duration, role: Role, source: Option<&authority::LocalAuthority>) -> Result<Self> {
         let budget = if role == Role::TitleWriter {
             timeout.min(Duration::from_secs(3))
         } else {
@@ -383,6 +392,9 @@ impl DesktopConnection {
         let socket = verified_socket(path)
             .and_then(|path| connect_unix(&path, deadline))
             .map_err(|error| unavailable::explain(error, unavailable::Unavailable::Desktop))?;
+        if let Some(source) = source {
+            source.verify(&socket)?;
+        }
         Self::handshake(socket.into(), timeout, role, deadline)
     }
 
@@ -426,6 +438,7 @@ impl DesktopConnection {
             title_deadline: Some(deadline),
             remote_binding: None,
             peer: None,
+            local_authority: None,
         };
         reader.initialize(source)?;
         reader.title_deadline =
@@ -484,6 +497,9 @@ impl DesktopConnection {
 impl Rpc for DesktopConnection {
     fn call(&mut self, method: &str, params: Value) -> Result<Value> {
         self.role.check(method)?;
+        if let Some(authority) = &self.local_authority {
+            authority.confirm()?;
+        }
         let deadline = self.call_deadline()?;
         if matches!(
             method,
@@ -1031,6 +1047,7 @@ mod tests {
             title_deadline: (role != Role::Reader).then_some(deadline),
             remote_binding: None,
             peer: None,
+            local_authority: None,
         };
         Ok((
             client,

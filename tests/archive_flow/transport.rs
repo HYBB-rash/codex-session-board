@@ -13,10 +13,12 @@ fn archive_endpoint_uses_the_isolated_desktop_writer_and_hides_only_after_succes
     let listener = UnixListener::bind(&socket)?;
     std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
     listener.set_nonblocking(true)?;
+    let authority = codex_session_board::rpc::authority::LocalAuthority::owned_listener(&listener)?;
     let server = std::thread::spawn(move || serve_desktop(listener));
     let app = App::new(Config {
         data_dir: directory.path().join("data"),
         desktop_socket: socket,
+        local_authority: Some(authority),
         sync_titles: false,
         ..Config::default()
     })?;

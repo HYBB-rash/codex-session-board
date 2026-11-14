@@ -43,12 +43,13 @@ pub fn runtime_state(status: &Value, turn: &Value) -> Option<(&'static str, &'st
         }
         Some("active") => None,
         Some("systemError") => Some(("blocked", "执行遇到系统异常，需要处理后继续。")),
-        _ => match turn["status"].as_str() {
+        Some("idle") => match turn["status"].as_str() {
             Some("failed") => Some(("blocked", "本轮请求失败，需要处理后重试。")),
             Some("interrupted") => Some(("blocked", "本轮执行已中断，需要检查后继续。")),
             Some("completed") => Some(("review", "本轮执行已结束，等待你审阅结果。")),
             _ => None,
         },
+        _ => None,
     }
 }
 

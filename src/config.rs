@@ -25,6 +25,8 @@ pub struct Config {
     pub remote_binding: Option<crate::remote::hosts::source::Binding>,
     #[serde(skip)]
     pub remote_retry: bool,
+    #[serde(skip)]
+    pub local_authority: Option<crate::rpc::authority::LocalAuthority>,
     pub data_dir: PathBuf,
     pub port: u16,
     pub poll_seconds: u64,
@@ -58,6 +60,7 @@ impl Default for Config {
             ssh_command: vec!["ssh".into()],
             remote_binding: None,
             remote_retry: true,
+            local_authority: None,
             data_dir: PathBuf::new(),
             port: 8767,
             poll_seconds: 30,
@@ -265,6 +268,7 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
         .client_singleton_profile
         .map(|path| resolve_path(&base.join(path)))
         .transpose()?;
+    crate::rpc::authority::inherit(&mut config)?;
     Ok(config)
 }
 

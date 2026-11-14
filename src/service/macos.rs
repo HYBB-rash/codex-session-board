@@ -6,7 +6,7 @@ use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::process::Command;
 
-pub(super) fn process_start(pid: u32) -> Result<Option<u64>> {
+pub(crate) fn process_start(pid: u32) -> Result<Option<u64>> {
     ensure!(pid > 0, "无效进程 PID");
     let output = Command::new("/bin/ps")
         .current_dir("/")
