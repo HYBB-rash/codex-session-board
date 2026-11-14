@@ -111,6 +111,31 @@ class PRDeliveryTests(unittest.TestCase):
         self.assertEqual(saved["error"]["type"], "FileNotFoundError")
         self.assertIn("missing tool", saved["error"]["detail"])
 
+    def test_actual_package_failure_is_reported_before_starting_long_regressions(self):
+        source, destination = self.setup_source()
+        fixture = source / "fixture"
+        fixture.write_bytes(b"fixture")
+
+        def execute(name, _command, output, **_options):
+            if name == "build-fixture":
+                (output / "build-fixture.log").write_text(json.dumps({
+                    "target": {"name": "dev_fixture"}, "executable": str(fixture),
+                }) + "\n")
+            return {"returncode": 1 if name == "package-scenarios" else 0, "seconds": 0}
+
+        strategy = {"profile": "business", "package_required": True, "risks": ["package"]}
+        with mock.patch.object(pr_delivery, "identity", return_value=SOURCE), \
+                mock.patch.object(pr_delivery, "git", return_value=""), \
+                mock.patch.object(pr_plan, "plan", return_value=strategy), \
+                mock.patch.object(pr_delivery, "execute", side_effect=execute) as commands:
+            self.assertEqual(pr_delivery.validate(source, "base", destination), 1)
+        names = [call.args[0] for call in commands.call_args_list]
+        self.assertIn("package-scenarios", names)
+        self.assertNotIn("related-tests", names)
+        saved = json.loads((destination / "VALIDATION.json").read_text())
+        self.assertFalse(saved["passed"])
+        self.assertIn("package-scenarios", saved["error"]["detail"])
+
     def test_evidence_inside_source_and_reused_output_are_rejected(self):
         source, destination = self.setup_source()
         with self.assertRaises(ValueError):

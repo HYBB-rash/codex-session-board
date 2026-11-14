@@ -58,14 +58,6 @@ def validate(project, base, output, expected=None, additions=()):
             sys.executable, str(project / "scripts/package_plugin.py"), "--preflight",
             "--output", str(output / "source-package"),
         ])
-        step("related-tests", [
-            sys.executable, str(ROOT / "scripts/verify_pr_tests.py"),
-            "--plan", str(output / "PLAN.json"), "--report", str(output / "TESTS.json"),
-        ])
-        tests = json.loads((output / "TESTS.json").read_text())
-        bindings = json.loads((project / "acceptance/bindings.json").read_text())
-        pr_plan.validate_report(tests, strategy, source, bound_inventory(bindings, sys.platform))
-        record["tests_sha256"] = hashlib.sha256((output / "TESTS.json").read_bytes()).hexdigest()
         if strategy["package_required"]:
             step("build-fixture", [
                 "cargo", "build", "--locked", "--offline", "--example", "dev_fixture",
@@ -103,6 +95,14 @@ def validate(project, base, output, expected=None, additions=()):
                 raise ValueError("The actual package or fixture differs from the tested PR")
             record["package_checks_sha256"] = hashlib.sha256(
                 (output / "package-checks/SCENARIOS.json").read_bytes()).hexdigest()
+        step("related-tests", [
+            sys.executable, str(ROOT / "scripts/verify_pr_tests.py"),
+            "--plan", str(output / "PLAN.json"), "--report", str(output / "TESTS.json"),
+        ])
+        tests = json.loads((output / "TESTS.json").read_text())
+        bindings = json.loads((project / "acceptance/bindings.json").read_text())
+        pr_plan.validate_report(tests, strategy, source, bound_inventory(bindings, sys.platform))
+        record["tests_sha256"] = hashlib.sha256((output / "TESTS.json").read_bytes()).hexdigest()
         if (identity(project) != source or identity() != record["checker"]
                 or git("status", "--porcelain", "--untracked-files=all", root=project)):
             raise ValueError("PR source changed during delivery checks")
