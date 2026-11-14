@@ -84,6 +84,31 @@ class ValidationEnvironmentTests(unittest.TestCase):
         self.assertEqual(created["first_failure"]["message"], "first")
         self.assertFalse(created["scope_passed"])
 
+    def test_tool_wrappers_preserve_cargo_binary_environment(self):
+        (self.source / "src").mkdir()
+        (self.source / "tests").mkdir()
+        (self.source / "Cargo.toml").write_text(
+            '[package]\nname = "validation-env-probe"\nversion = "0.0.0"\nedition = "2024"\n')
+        (self.source / "src/main.rs").write_text("fn main() {}\n")
+        (self.source / "src/lib.rs").write_text("")
+        (self.source / "tests/binary.rs").write_text(
+            '#[test]\nfn binary_exists() {\n'
+            '    assert!(std::path::Path::new(env!("CARGO_BIN_EXE_validation-env-probe")).is_file());\n'
+            '}\n')
+        output = self.root / "result"
+        report.create(output, self.source, "candidate")
+        with patch.dict(os.environ):
+            os.environ.pop("CARGO_TARGET_DIR", None)
+            child, _ = environment.resolve(self.source, output, "candidate")
+        for arguments in (
+            ["generate-lockfile", "--offline"],
+            ["test", "--locked", "--offline", "--lib", "--test", "binary"],
+        ):
+            result = subprocess.run(["cargo", *arguments], cwd=self.source, env=child,
+                                    capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("1 passed", result.stdout)
+
     def test_bootstrap_persists_an_explicit_interpreter_failure_before_project_initialization(self):
         output = self.root / "broken-environment"
         script = Path(__file__).resolve().parents[1] / "scripts/validation_bootstrap.py"

@@ -6,7 +6,7 @@
 - base_commit: 082a043
 - worktree_path: /Users/hongyong/.codex/worktrees/reliability-foundation/codex-session-board
 - coordinator: 当前会话主代理
-- status: completed
+- status: in_progress
 
 用户授权实施已批准方案的 R1、R2，并直接提交 PR。独立分支最初基于连接归属 PR #6；实施期间 #6/#7 已合并，现同步固定主线 d4b40bb，本次 PR 改以 main 为基线。只推送本任务分支，不合并 PR、安装或重载正式客户端。
 
@@ -39,8 +39,12 @@
 
 `candidate-743df78/VALIDATION.json` 三步均退出 0：项目检查 504.26 秒、全目标 Clippy 8.76 秒、完整自动验收 675.54 秒，总计 1190.30 秒。728 项全部通过，0 失败、0 错误、0 跳过；31 条需求中 17 条通过、14 条目标环境证据待验，release_ready=false。报告读取、自动报告摘要及清理凭据复核通过，cleanup_confirmed=true。并发测试独立观察确认见到四个并发入口，没有达到持续等待采样阈值；未取得新的失败现场。
 
-实现指纹为 bfdb5b3ebf7f197b017bf07ca917789fdb19eacf7c8c98d28e64ba7e717b01e2，验证报告 SHA-256 为 8986d0dbf85e870159d6f4832fa030fad097fb89f21131ba28a94297afbd0f5c。后续归档只修改本任务上下文，不改变实现指纹；上述完整门禁对应固定实现提交，不冒充另一个提交的执行记录。
+实现指纹为 bfdb5b3ebf7f197b017bf07ca917789fdb19eacf7c8c98d28e64ba7e717b01e2，验证报告 SHA-256 为 8986d0dbf85e870159d6f4832fa030fad097fb89f21131ba28a94297afbd0f5c。7fbcff3 归档提交只修改本任务上下文，不改变实现指纹；上述完整门禁对应固定实现提交，不冒充另一个提交的执行记录。
 
 本轮历史检查耗时明显波动；直接调用、既有入口、全新入口和原生别名的对照均已保留。最初的大幅延迟未稳定重现，交错测量只观察到较小的入口启动成本；不据此断言机器负载是根因，也不宣称整体验证已经提速。后续调度优化可使用这些记录，未在本轮临时改变方案。
 
 版本和共享 STATE 仅继承主线，未自行更新；需求、参考模型和锁未修改。R3–R8、真实客户端加载及完整目标环境验收仍为独立后续阶段。
+
+PR #8 的首轮 Linux 检查 43616622168 在相关 Rust 测试编译时失败，报告保留 step-3 的首次退出 101。工具入口使用 /bin/sh；受控实验确认 dash 会移除带连字符的 CARGO_BIN_EXE_codex-session-board，Mac 的 sh 和 Bash 保留。重新打开任务，修正工具入口并加入真实小型 Cargo 项目的回归验证；原本机通过报告和远端失败记录均保留。
+
+工具入口改用验证入口已经要求的 Bash，不改变工具选择或运行参数。七项环境回归通过；真实 Cargo 小项目的成对实验中，dash 入口稳定出现相同缺失变量的编译失败，当前入口通过同一测试，结果记录于 diagnostic-cargo-shell/COMPARISON.json。最终候选和 Linux PR 检查须以新来源重新执行。

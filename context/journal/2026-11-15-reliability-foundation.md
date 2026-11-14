@@ -8,4 +8,8 @@
 
 本机证据根目录：`/Users/hongyong/.codex/visualizations/2026/11/14/01a1da15-3bcd-7e32-9033-8d22bdfb545f/reliability-implementation`。通过报告位于 `candidate-743df78/VALIDATION.json`；实现指纹为 bfdb5b3ebf7f197b017bf07ca917789fdb19eacf7c8c98d28e64ba7e717b01e2。
 
-任务详情见 `context/tasks/completed/reliability-foundation-20261114.md`，使用方法见 `Docs/VALIDATION.md`。归档仅改本任务上下文，不更新版本或共享 STATE。
+任务详情见 `context/tasks/active/reliability-foundation-20261114.md`，使用方法见 `Docs/VALIDATION.md`。归档仅改本任务上下文，不更新版本或共享 STATE。
+
+## 远端检查跟进
+
+创建 PR 后的 Linux 检查暴露工具入口丢失 Cargo 特殊环境变量的问题，任务重新打开。原本机完整通过证据仍对应 743df78；修复后的实现须重新验证，远端首次失败不覆盖。

@@ -97,7 +97,7 @@ def resolve(root, output, scope, python=None, staged=False):
     binary.mkdir(mode=0o700)
     for name, description in tools.items():
         wrapper = binary / name
-        wrapper.write_text("#!/bin/sh\nexec " + shlex.quote(description["path"]) + ' "$@"\n')
+        wrapper.write_text("#!/usr/bin/env bash\nexec " + shlex.quote(description["path"]) + ' "$@"\n')
         wrapper.chmod(0o700)
     environment.update(PATH=str(binary) + os.pathsep + environment.get("PATH", ""),
                        TMPDIR=str(temporary), CSB_VALIDATION_PYTHON=tools["python3"]["path"])
