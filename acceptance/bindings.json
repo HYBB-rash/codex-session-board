@@ -1490,7 +1490,10 @@
       "lib::codex_session_board::rpc::unavailable::tests::missing_desktop_socket_explains_recovery_and_preserves_the_cause",
       "lib::codex_session_board::rpc::unavailable::tests::missing_sidebar_socket_explains_recovery_and_rediscovery_still_works",
       "lib::codex_session_board::rpc::unavailable::tests::refused_desktop_socket_has_the_same_recovery_without_hiding_security_errors",
-      "lib::codex_session_board::rpc::unavailable::tests::unrelated_io_failures_do_not_suggest_restarting_codex"
+      "lib::codex_session_board::rpc::unavailable::tests::unrelated_io_failures_do_not_suggest_restarting_codex",
+      "lib::codex_session_board::app::drafts::tests::native_remote_new_only_navigates_and_preserves_the_selected_host_and_project",
+      "lib::codex_session_board::app::drafts::tests::native_remote_new_rechecks_project_registration_and_never_replays_old_creation",
+      "lib::codex_session_board::app::drafts::tests::native_remote_new_rejects_missing_or_changed_capabilities_before_navigation"
     ],
     "SECURITY-001": [
       "lib::codex_session_board::rpc::multiplex::ssh_options::tests::private_options_preserve_wrapper_identity_and_proxy_arguments",
@@ -1829,7 +1832,9 @@
       "acceptance.test_saved_release.SavedReleaseTests.test_upload_race_consumes_winner_without_replacing_it",
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_cache_provenance_requires_the_native_git_revision_even_without_a_cache_marker",
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_install_uses_the_verified_git_snapshot_without_a_second_marketplace_refresh",
-      "acceptance.test_update_delivery.UpdateDeliveryTests.test_reload_targets_the_installed_mcp_without_global_skill_discovery"
+      "acceptance.test_update_delivery.UpdateDeliveryTests.test_reload_targets_the_installed_mcp_without_global_skill_discovery",
+      "acceptance.test_native_new.NativeNewTests.test_candidate_archive_preserves_other_files_and_rejects_unknown_clients",
+      "acceptance.test_native_new.NativeNewTests.test_native_draft_routes_and_navigation_never_send_input"
     ]
   }
 }
