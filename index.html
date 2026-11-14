@@ -332,10 +332,12 @@ function projectLabel(item) {
   const name = entry => entry.remote && entry.label.endsWith(" · " + entry.hostLabel)
     ? entry.label.slice(0,-(" · " + entry.hostLabel).length) : entry.label;
   const duplicates = hostProjects(item.remote ? "host:" + item.hostId : "local").filter(candidate => name(candidate) === name(item));
-  if (duplicates.length < 2) return name(item);
+  const origin = {targetServer:"主机项目",targetLegacy:"主机旧项目",clientRemote:"本机登记"}[item.origin];
+  const label = name(item) + (origin ? " · " + origin : "");
+  if (duplicates.length < 2) return label;
   const paths = item.paths.join(" · ");
-  const identical = duplicates.filter(candidate => candidate.paths.join(" · ") === paths);
-  return name(item) + " · " + paths + (identical.length > 1 ? " · " + item.id : "");
+  const identical = duplicates.filter(candidate => candidate.origin === item.origin && candidate.paths.join(" · ") === paths);
+  return label + " · " + paths + (identical.length > 1 ? " · " + item.id : "");
 }
 function makeProjectTag(session) {
   const catalog = data.projectCatalog || {loaded:false,items:[]};
@@ -861,8 +863,8 @@ function hostHealth(host) {
   if (blocked || readonly) status = blocked ? "可以查看会话，暂时不能修改" : "部分会话暂时不能修改";
   if (listError) status = rows.length ? "会话列表暂时无法更新，显示已有记录" : "尚未读取会话，请检查连接";
   if (catalog && !listError && !blocked && !readonly && !faults) status = catalog.error ? "主机目录暂时无法更新，保留上次结果" :
-    catalog.pending ? "正在更新主机目录" : !catalog.complete ? "主机目录尚未读取完整" :
-    catalog.cached ? "显示上次主机目录快照" : "主机目录已读取完整";
+    catalog.pending ? "正在更新主机目录" : catalog.cached && catalog.capturedAt ? "显示上次主机目录快照" :
+    !catalog.complete ? "主机目录尚未读取完整" : "主机目录已读取完整";
   if (catalog?.error) status = "主机目录暂时无法更新，保留上次结果";
   if (idle) status = (host.enabled === false ? "尚未连接" : "主机已移除") + (rows.length ? " · 显示缓存" : " · 尚未读取会话");
   if (catalog?.cached) status += " · 缓存时间：" + date(catalog.capturedAt);

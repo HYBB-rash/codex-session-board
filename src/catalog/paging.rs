@@ -112,6 +112,15 @@ impl PageScan {
 }
 
 pub(crate) fn project_fields(entry: &Value, method: &str) -> Result<Value> {
+    if method == "project/list" {
+        ensure!(
+            entry["name"].is_string()
+                && entry["roots"].as_array().is_some_and(|roots| roots
+                    .iter()
+                    .all(|root| root.is_string() || root["path"].is_string())),
+            "目录项目元数据类型无效"
+        );
+    }
     let fields: &[&str] = match method {
         "project/list" => &["id", "name", "roots", "position", "metadata"],
         "threadSection/list" => &["id", "name"],
@@ -142,10 +151,15 @@ pub(crate) fn project_fields(entry: &Value, method: &str) -> Result<Value> {
 
 fn field_value(field: &str, value: &Value) -> Result<Option<Value>> {
     Ok(match field {
-        "name" | "preview" => value.as_str().map(|text| json!(text.chars().take(300).collect::<String>())),
+        "name" | "preview" => value
+            .as_str()
+            .map(|text| json!(text.chars().take(300).collect::<String>())),
         "id" | "cwd" => value.as_str().map(|text| json!(text)),
         "projectId" | "attachedToThreadId" | "threadSource" => {
-            ensure!(value.is_null() || value.is_string(), "目录 {field} 类型无效");
+            ensure!(
+                value.is_null() || value.is_string(),
+                "目录 {field} 类型无效"
+            );
             Some(value.clone())
         }
         "ephemeral" => {
@@ -153,11 +167,19 @@ fn field_value(field: &str, value: &Value) -> Result<Option<Value>> {
             Some(value.clone())
         }
         "updatedAt" | "createdAt" | "position" => value.as_number().map(|number| json!(number)),
-        "roots" => value.as_array().map(|roots| json!(roots.iter()
-            .filter_map(|root| root.as_str().or_else(|| root["path"].as_str()))
-            .map(|path| json!({"path":path})).collect::<Vec<_>>())),
-        "metadata" => Some(value["codex.localProjectId"].as_str()
-            .map_or_else(|| json!({}), |identifier| json!({"codex.localProjectId":identifier}))),
+        "roots" => value.as_array().map(|roots| {
+            json!(
+                roots
+                    .iter()
+                    .filter_map(|root| root.as_str().or_else(|| root["path"].as_str()))
+                    .map(|path| json!({"path":path}))
+                    .collect::<Vec<_>>()
+            )
+        }),
+        "metadata" => Some(value["codex.localProjectId"].as_str().map_or_else(
+            || json!({}),
+            |identifier| json!({"codex.localProjectId":identifier}),
+        )),
         "source" => source_projection(value),
         _ => None,
     })
@@ -165,13 +187,18 @@ fn field_value(field: &str, value: &Value) -> Result<Option<Value>> {
 
 pub(super) fn source_projection(value: &Value) -> Option<Value> {
     if let Some(source) = value.as_str() {
-        return matches!(source, "cli" | "vscode" | "exec" | "mcp" | "appServer" | "unknown")
-            .then(|| json!(source));
+        return matches!(
+            source,
+            "cli" | "vscode" | "exec" | "mcp" | "appServer" | "unknown"
+        )
+        .then(|| json!(source));
     }
     if let Some(custom) = value["custom"].as_str() {
         return matches!(custom, "atlas" | "chatgpt").then(|| json!({"custom":custom}));
     }
-    value.as_object().filter(|fields| fields.contains_key("subAgent"))
+    value
+        .as_object()
+        .filter(|fields| fields.contains_key("subAgent"))
         .map(|_| json!({"subAgent":null}))
 }
 
@@ -183,14 +210,33 @@ mod tests {
 
     #[test]
     fn metadata_projection_never_caches_nested_payloads() -> Result<()> {
-        let thread = project_fields(&json!({"id":"id","name":{"secret":"body"},
+        let thread = project_fields(
+            &json!({"id":"id","name":{"secret":"body"},
             "preview":["body"],"source":{"subAgent":{"thread_spawn":{"secret":"body"}}},
-            "cwd":"/remote","projectId":null,"turns":[{"text":"body"}]}), "thread/list")?;
-        assert_eq!(thread, json!({"id":"id","cwd":"/remote","projectId":null,
-            "source":{"subAgent":null}}));
-        let project = project_fields(&json!({"id":"project","roots":[{"path":"/remote","secret":"body"}],
-            "metadata":{"codex.localProjectId":{"secret":"body"},"other":"body"}}), "project/list")?;
-        assert_eq!(project, json!({"id":"project","roots":[{"path":"/remote"}],"metadata":{}}));
+            "cwd":"/remote","projectId":null,"turns":[{"text":"body"}]}),
+            "thread/list",
+        )?;
+        assert_eq!(
+            thread,
+            json!({"id":"id","cwd":"/remote","projectId":null,
+            "source":{"subAgent":null}})
+        );
+        let project = project_fields(
+            &json!({"id":"project","name":"Project","roots":[{"path":"/remote","secret":"body"}],
+            "metadata":{"codex.localProjectId":{"secret":"body"},"other":"body"}}),
+            "project/list",
+        )?;
+        assert_eq!(
+            project,
+            json!({"id":"project","name":"Project","roots":[{"path":"/remote"}],"metadata":{}})
+        );
+        assert!(
+            project_fields(
+                &json!({"id":"project","name":null,"roots":[]}),
+                "project/list"
+            )
+            .is_err()
+        );
         assert!(project_fields(&json!({"projectId":{"secret":"body"}}), "thread/list").is_err());
         assert!(project_fields(&json!({"attachedToThreadId":false}), "thread/list").is_err());
         Ok(())

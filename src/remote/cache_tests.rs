@@ -38,6 +38,21 @@ fn legacy(root: &App, host: &str) -> Result<()> {
     Ok(())
 }
 
+fn assert_offline_rows(snapshot: &Value) {
+    let rows = snapshot["sessions"].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    for (host, archived) in [("remote:first", true), ("remote:second", false)] {
+        let row = rows.iter().find(|row| row["hostId"] == host).unwrap();
+        assert_eq!(row["archived"], archived);
+        assert_eq!(row["note"], host);
+        assert_eq!(row["title"], "新标题");
+        assert_eq!(row["readOnly"], true);
+        assert_eq!(row["canArchive"], false);
+        assert_eq!(row["presence"], "cachedUnknown");
+        assert_eq!(row["catalogCurrent"], false);
+    }
+}
+
 #[test]
 fn cold_cache_restores_removed_hosts_latest_notes_and_archive_tombstones_without_ssh() -> Result<()>
 {
@@ -52,13 +67,7 @@ fn cold_cache_restores_removed_hosts_latest_notes_and_archive_tombstones_without
     let before = fixture.events();
     let reopened = App::new(fixture.config.clone())?;
     let snapshot = reopened.snapshot()?;
-    let rows = snapshot["sessions"].as_array().unwrap();
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0]["hostId"], "remote:second");
-    assert_eq!(rows[0]["note"], "remote:second");
-    assert_eq!(rows[0]["title"], "新标题");
-    assert_eq!(rows[0]["readOnly"], true);
-    assert_eq!(rows[0]["canArchive"], false);
+    assert_offline_rows(&snapshot);
     assert_eq!(fixture.events(), before);
     assert!(
         reopened

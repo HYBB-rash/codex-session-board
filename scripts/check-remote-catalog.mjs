@@ -65,6 +65,9 @@ try {
   check(await evaluate('byId("count").textContent'),"显示 3 / 当前主机范围共 3 条");
   check(await evaluate('Array.from(byId("project-filter").options).map(option=>option.value)'),
     ["all","default","project:server","project:empty","project:client"]);
+  check(await evaluate('projectLabel(data.projectCatalog.items.find(item=>item.id==="server")).includes("主机项目")'),true);
+  check(await evaluate('projectLabel(data.projectCatalog.items.find(item=>item.id==="client")).includes("本机登记")'),true);
+  check(await evaluate('(()=>{const catalog=data.health.remoteConnections[0].catalog;catalog.cached=true;catalog.complete=false;const status=hostHealth({value:"host:a",hostId:"a",hostLabel:"a",enabled:true}).status;catalog.cached=false;catalog.complete=true;return status.includes("显示上次主机目录快照")})()'),true);
   check(await evaluate('byId("filter-scope").textContent.includes("活动")'),true);
   check(await evaluate('hostHealth({value:"host:a",hostId:"a",hostLabel:"a"}).diagnostics.some(([,message])=>message.includes("b-only"))'),false);
   await evaluate('data.projectCatalog.loaded=false;render()');
