@@ -7,6 +7,7 @@ import unittest
 from unittest import mock
 
 from scripts import integration_plan as planner
+from scripts import verify_integration
 
 
 class IntegrationPlanTests(unittest.TestCase):
@@ -78,6 +79,62 @@ class IntegrationPlanTests(unittest.TestCase):
         self.commit()
         with self.assertRaises(ValueError):
             planner.plan(self.base)
+
+    def test_special_unknown_paths_never_become_ui_paths(self):
+        for name in (" index.html", "\nindex.html", "index.html\n"):
+            with self.subTest(name=name):
+                self.git("reset", "--hard", self.base)
+                self.git("clean", "-fd")
+                self.write("index.html", "after")
+                self.write(name, "unknown")
+                self.commit()
+                self.assertIn(name, planner.changed(self.base, "HEAD"))
+                self.assertEqual(planner.plan(self.base)["profile"], "full")
+
+    def test_wrong_working_directory_cannot_verify_another_implementation(self):
+        with mock.patch.object(verify_integration.rust_adapter, "ROOT", self.root):
+            with self.assertRaises(ValueError):
+                verify_integration.verify(self.base)
+
+    def test_real_replay_retains_ui_scope_even_when_main_already_has_the_pr(self):
+        original_branch = self.git("branch", "--show-current")
+        self.git("switch", "-c", "source")
+        self.write("index.html", "after")
+        source = self.commit()
+        self.git("switch", original_branch)
+        self.git("merge", "--no-ff", "-m", "original merge", source)
+        main = self.git("rev-parse", "HEAD")
+        self.git("switch", "-c", "replay", self.base)
+        self.git("merge", "--no-ff", "-m", "replay merge", source)
+        ingress = self.git("rev-parse", "HEAD")
+        self.git("merge", "--no-ff", "-m", "join main", main)
+        self.write("context/integration-sources.json", json.dumps({
+            "base": main, "ingress": ingress, "replay_base": self.base, "source_head": source,
+        }))
+        self.commit()
+        strategy = planner.plan(main)
+        self.assertEqual(strategy["profile"], "ui")
+        self.assertIn("index.html", strategy["paths"])
+        self.write("unknown.json", "{}")
+        self.commit()
+        self.assertEqual(planner.plan(main)["profile"], "full")
+
+    def test_release_record_must_bind_the_exact_parent_and_preserve_other_rules(self):
+        self.write("project-rules.json", '{"versioning":{"feature_releases":[]},"rule":true}')
+        base = self.commit()
+        self.write("index.html", "after")
+        parent = self.commit()
+        self.write("Cargo.toml", '[package]\nname="codex-session-board"\nversion="0.3.80"\n')
+        record = {"versioning": {"feature_releases": [{
+            "after_commit": parent, "from": "0.3.79", "to": "0.3.80", "decision": "冻结发布候选",
+        }]}, "rule": True}
+        self.write("project-rules.json", json.dumps(record))
+        self.commit()
+        self.assertEqual(planner.plan(base)["profile"], "ui")
+        record["rule"] = False
+        self.write("project-rules.json", json.dumps(record))
+        self.commit()
+        self.assertEqual(planner.plan(base)["profile"], "full")
 
     def test_partial_results_cannot_be_presented_as_complete_or_successful(self):
         inventory = {prefix + "::case" for prefix in planner.UI_GROUPS}

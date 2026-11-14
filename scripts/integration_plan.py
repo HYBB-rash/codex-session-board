@@ -61,13 +61,17 @@ def version_only(base, head, path):
 
 
 def changed(base, head):
-    return set(filter(None, git("diff", "--no-renames", "--name-only", "-z",
-                               base, head).split("\0")))
+    output = subprocess.check_output([
+        "git", "diff", "--no-renames", "--name-only", "-z", base, head,
+    ], cwd=ROOT, text=True)
+    return set(filter(None, output.split("\0")))
 
 
 def modes(reference, paths):
-    records = git("ls-tree", "-r", reference, "--", *sorted(paths))
-    return {line.split("\t", 1)[1]: line.split()[0] for line in records.splitlines()}
+    records = subprocess.check_output(
+        ["git", "ls-tree", "-rz", reference, "--", *sorted(paths)], cwd=ROOT, text=True)
+    return {entry.split("\t", 1)[1]: entry.split("\t", 1)[0].split()[0]
+            for entry in records.split("\0") if entry}
 
 
 def context_path(path):
