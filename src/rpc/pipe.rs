@@ -1,4 +1,5 @@
 use super::*;
+use std::os::fd::{AsFd, BorrowedFd};
 
 #[derive(Debug)]
 pub(super) enum Transport {
@@ -11,6 +12,37 @@ pub(super) enum Transport {
 }
 
 impl Transport {
+    fn descriptor(&self, writable: bool) -> BorrowedFd<'_> {
+        match self {
+            Self::Unix(stream) => stream.as_fd(),
+            Self::Proxy { input, .. } if writable => input.as_fd(),
+            Self::Proxy { output, .. } => output.as_fd(),
+        }
+    }
+
+    pub(super) fn io<Output>(
+        &mut self,
+        deadline: Instant,
+        writable: bool,
+        mut operation: impl FnMut(&mut Self) -> io::Result<Output>,
+    ) -> io::Result<Output> {
+        loop {
+            remaining(deadline)?;
+            match operation(self) {
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    let events = if writable { rustix::event::PollFlags::OUT }
+                        else { rustix::event::PollFlags::IN };
+                    wait_ready(&self.descriptor(writable), events, deadline)?;
+                }
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                result => {
+                    remaining(deadline)?;
+                    return result;
+                }
+            }
+        }
+    }
+
     pub(super) fn proxy(command: &[String]) -> Result<Self> {
         let program = command.first().context("缺少远程代理命令")?;
         let mut process = ManagedChild(
@@ -97,6 +129,27 @@ impl Write for Transport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transport_waits_for_readiness_without_repeated_would_block_reads() -> Result<()> {
+        let (reader, mut writer) = UnixStream::pair()?;
+        reader.set_nonblocking(true)?;
+        let sender = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(80));
+            writer.write_all(b"x")
+        });
+        let mut transport = Transport::Unix(reader);
+        let (mut attempts, mut received) = (0, [0]);
+        let count = transport.io(deadline_after(Duration::from_secs(2))?, false, |stream| {
+            attempts += 1;
+            if attempts == 1 { return Err(io::ErrorKind::Interrupted.into()); }
+            stream.read(&mut received)
+        })?;
+        sender.join().unwrap()?;
+        assert_eq!((count, received), (1, *b"x"));
+        assert!((2..=3).contains(&attempts), "未就绪时重复读取了 {attempts} 次");
+        Ok(())
+    }
 
     #[test]
     fn proxy_deadline_applies_to_a_silent_child_and_drop_reaps_it() -> Result<()> {

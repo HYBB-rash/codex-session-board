@@ -1,7 +1,7 @@
 use super::*;
 use crate::{app::App, config::Config, remote::hosts::Host};
 
-const SSH: &str = r#"import base64,hashlib,json,os,pathlib,re,shlex,struct,sys,time
+const SSH: &str = r#"import base64,hashlib,json,os,pathlib,re,shlex,socket,struct,sys,time
 path=pathlib.Path(sys.argv[1])
 state=json.loads(path.read_text())
 def event(value):
@@ -16,7 +16,19 @@ if "-G" in args:
     sys.stdout.write(state.get("gOutput","hostname "+target["hostname"]+"\nuser "+target["user"]+"\nport "+str(target["port"])+"\nidentityfile NOT-PERSISTED\n"))
     sys.stdout.flush()
     sys.exit(state.get("gStatus",0))
+if "-M" in args:
+    event("master")
+    if state.get("connectDelay"): time.sleep(state["connectDelay"])
+    if state.get("masterFailure"): sys.exit(1)
+    endpoint=next(value.split("=",1)[1] for value in args if value.startswith("ControlPath="))
+    listener=socket.socket(socket.AF_UNIX); listener.bind(endpoint); listener.listen()
+    if args[-1]=="exec cat >/dev/null":
+        sys.stdin.buffer.read(); sys.exit()
+    while True: time.sleep(1)
+if state.get("connectDelay") and not any(value.startswith("ControlPath=") for value in args):
+    time.sleep(state["connectDelay"])
 payload=shlex.split(args[-1])[-1]
+if "def compact(payload):" in payload: event("compact")
 marker=re.findall(r"[0-9a-f]{32}",payload)[-1]
 mode="proxy" if "exec codex app-server proxy" in payload else "clock" if "import time;" in payload else "probe"
 event(mode)
