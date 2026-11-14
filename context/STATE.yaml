@@ -2,12 +2,13 @@
   "schema_version": 1,
   "updated_at": "2026-11-14",
   "current_phase": {
-    "id": "delivery-cli-20261114",
-    "status": "completed",
+    "id": "delivery-cli-release-20261114",
+    "status": "active",
     "as_of": "2026-11-14",
-    "summary": "三个交付CLI已在当前工作树实现并本地提交：源码预检、指定客户端生效核验、带版本保护和恢复记录的真实页面冒烟。4907246最终Mac完整回归670项自动通过；三项串行实跑12.33秒，测试卡片、38条备注和配置保全。完整31条仍17通过14待验，不代签原生容器或实际故障重连；代码尚未推送，主线和日用插件保持0.3.75/e6f186a。"
+    "summary": "用户授权三个交付CLI合入主线并完整部署计时。远端主线e6f186a为当前提交祖先，准备冻结候选，通过双平台门禁后提升主线、安装不可变包并核验当前客户端。保留31条完整验收外部待验边界。"
   },
   "active_tasks": [
+    "context/tasks/active/delivery-cli-release-20261114.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",
