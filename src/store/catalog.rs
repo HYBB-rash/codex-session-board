@@ -1,6 +1,58 @@
 use super::*;
 
 impl Store {
+    pub(crate) fn catalog_drafts(&self, host: &str) -> Result<Vec<Value>> {
+        let database = self.connection()?;
+        let mut query =
+            database.prepare("SELECT value FROM settings WHERE key GLOB 'draft_request:*'")?;
+        let records = query
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut drafts = Vec::new();
+        for record in records {
+            let record: Value = serde_json::from_str(&record)?;
+            if !matches!(record["stage"].as_str(), Some("created" | "complete")) {
+                continue;
+            }
+            let target = record["project"]
+                .as_str()
+                .and_then(|project| project.strip_prefix("remote:"))
+                .and_then(|value| serde_json::from_str::<Vec<String>>(value).ok());
+            if target.is_some_and(|target| {
+                target.len() == 3 && target[0] == "codex" && target[1] == host
+            }) {
+                drafts.push(record);
+            }
+        }
+        Ok(drafts)
+    }
+
+    pub(crate) fn catalog_published_ids(&self) -> Result<std::collections::BTreeSet<String>> {
+        let database = self.connection()?;
+        let mut query = database
+            .prepare("SELECT substr(key,19) FROM settings WHERE key GLOB 'catalog_published:*'")?;
+        Ok(query
+            .query_map([], |row| row.get(0))?
+            .collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub(crate) fn catalog_mark_published(&self, identifiers: &[String]) -> Result<()> {
+        let mut database = self.connection()?;
+        let transaction = database.transaction()?;
+        for identifier in identifiers {
+            ensure!(
+                uuid::Uuid::parse_str(identifier)?.to_string() == *identifier,
+                "发布会话 UUID 无效"
+            );
+            transaction.execute(
+                "INSERT OR IGNORE INTO settings(key,value) VALUES (?, '1')",
+                [format!("catalog_published:{identifier}")],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub(crate) fn catalog_value(&self, key: &str) -> Result<Option<Value>> {
         ensure!(
             matches!(key, "catalog_snapshot_v1" | "catalog_progress_v1"),

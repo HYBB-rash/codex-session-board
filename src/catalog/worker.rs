@@ -1,7 +1,7 @@
 use super::{Snapshot, capture::Capture, input};
 use crate::{app::App, model::now, rpc::Role};
 use anyhow::{Context, Result};
-use serde_json::{Value, json};
+use serde_json::json;
 use std::sync::{Arc, atomic::Ordering};
 use std::time::Duration;
 
@@ -34,18 +34,14 @@ fn run(app: Arc<App>) -> Result<()> {
                 }
             }
         }
-        crate::workers::pause(
-            &app.enabled,
-            Duration::from_secs(2),
-            Some(&app.catalog_refresh),
-        );
+        crate::workers::pause(&app.enabled, Duration::from_secs(2), None);
     }
     Ok(())
 }
 
 pub(crate) fn cycle(app: &App) -> Result<()> {
     let requested = app.catalog_refresh.swap(false, Ordering::SeqCst);
-    let (progress, snapshot, last_check) = {
+    let (progress, snapshot, last_check, recovery) = {
         let mut state = app
             .catalog
             .lock()
@@ -61,6 +57,7 @@ pub(crate) fn cycle(app: &App) -> Result<()> {
             state.progress.clone(),
             state.snapshot.clone(),
             state.last_check,
+            !state.live || state.error.is_some(),
         )
     };
     let mut reader = app.connection(Duration::from_secs(20), Role::CatalogReader)?;
@@ -80,6 +77,7 @@ pub(crate) fn cycle(app: &App) -> Result<()> {
                 .all(|field| snapshot.source[*field] == source[*field])
         });
         if !requested
+            && !recovery
             && same_source
             && snapshot
                 .as_ref()
@@ -141,6 +139,13 @@ fn publish(app: &App, snapshot: Snapshot) -> Result<()> {
         .cloned()
         .collect();
     app.store.discover(&ordinary)?;
+    let published: Vec<_> = snapshot
+        .active
+        .iter()
+        .chain(&snapshot.archived)
+        .filter_map(|row| row["id"].as_str().map(str::to_owned))
+        .collect();
+    app.store.catalog_mark_published(&published)?;
     app.store.save_catalog_value(
         "catalog_snapshot_v1",
         Some(&serde_json::to_value(&snapshot)?),

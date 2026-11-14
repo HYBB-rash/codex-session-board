@@ -255,9 +255,19 @@ impl App {
                 let url = open_conversation(identifier, &self.config)?;
                 Ok(json!({"ok":true,"url":url}))
             }
-            ("/api/refresh", Some(_)) => {
-                self.refresh.store(true, Ordering::Relaxed);
-                self.remote_refresh.store(true, Ordering::Relaxed);
+            ("/api/refresh", Some(body)) => {
+                let host = body.get("hostId").and_then(Value::as_str);
+                if host.is_none_or(|host| host == "local") {
+                    self.refresh.store(true, Ordering::Relaxed);
+                    self.remote_refresh.store(true, Ordering::Relaxed);
+                }
+                for remote in self.remote_instances()? {
+                    if host.is_none_or(|host| host == remote.config.host_id)
+                        && remote.enabled.load(Ordering::SeqCst)
+                    {
+                        remote.catalog_refresh.store(true, Ordering::SeqCst);
+                    }
+                }
                 Ok(json!({"ok":true}))
             }
             _ => bail!("接口不存在"),
@@ -266,6 +276,12 @@ impl App {
 
     fn new_session(&self, body: &Value) -> Result<Value> {
         ensure!(body.is_object(), "请求格式无效");
+        ensure!(
+            !body["projectId"]
+                .as_str()
+                .is_some_and(|project| project.starts_with("target:")),
+            "目标主机目录项目暂不支持新建会话"
+        );
         if body["projectId"]
             .as_str()
             .is_some_and(|project| project.starts_with("remote:"))

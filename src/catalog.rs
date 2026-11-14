@@ -2,7 +2,15 @@ use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+mod capture;
+mod input;
+mod legacy;
+mod membership;
 pub mod paging;
+mod projects;
+pub(crate) mod view;
+mod worker;
+pub(crate) use worker::start;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

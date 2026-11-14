@@ -18,13 +18,13 @@ impl App {
         sessions: &mut Vec<Value>,
         catalog: &mut Value,
     ) -> Result<()> {
-        let projects = self.store.remote_projects()?;
+        let mut projects = self.store.remote_projects()?;
+        let mut remote = self.store.remote_sessions()?;
+        self.append_managed_remote(&mut remote, &mut projects)?;
         let registered: HashSet<_> = projects
             .iter()
             .map(|project| project["id"].clone().to_string())
             .collect();
-        let mut remote = self.store.remote_sessions()?;
-        self.append_managed_remote(&mut remote)?;
         for session in &mut remote {
             if !registered.contains(&session["projectId"].to_string()) {
                 session["projectId"] = Value::Null;
@@ -88,7 +88,11 @@ impl App {
         }
     }
 
-    fn append_managed_remote(&self, sessions: &mut Vec<Value>) -> Result<()> {
+    fn append_managed_remote(
+        &self,
+        sessions: &mut Vec<Value>,
+        projects: &mut Vec<Value>,
+    ) -> Result<()> {
         let legacy = sessions.clone();
         if !self.config.legacy_mode {
             for row in sessions.iter_mut() {
@@ -99,7 +103,7 @@ impl App {
         let mut reports = Vec::new();
         for remote in self.remote_instances()? {
             reports.push(
-                self.append_managed_host(&remote, sessions, &legacy)
+                self.append_managed_host(&remote, sessions, &legacy, projects)
                     .unwrap_or_else(|error| {
                         json!({"hostId":remote.config.host_id,
                     "runtimeVerified":false,"runtimeError":error.to_string()})
@@ -109,7 +113,7 @@ impl App {
         self.update_health(json!({"remoteConnections":reports}))
     }
 
-    fn remote_instances(&self) -> Result<Vec<Arc<App>>> {
+    pub(super) fn remote_instances(&self) -> Result<Vec<Arc<App>>> {
         Ok(self
             .remotes
             .lock()
@@ -127,7 +131,9 @@ impl App {
             None
         };
         let known = match remote {
-            Some(remote) if remote.store.has_session(&thread)? => remote.store.contains(&thread)?,
+            Some(remote) => {
+                remote.store.has_session(&thread)? || crate::catalog::view::known(&remote, &thread)?
+            }
             _ => self.store.remote_session(identifier).is_ok(),
         };
         ensure!(known, "远程会话不在看板中");
