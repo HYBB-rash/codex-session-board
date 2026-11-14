@@ -6,7 +6,7 @@
 - base_commit: 082a043
 - worktree_path: /Users/hongyong/.codex/worktrees/reliability-foundation/codex-session-board
 - coordinator: 当前会话主代理
-- status: in_progress
+- status: completed
 
 用户授权实施已批准方案的 R1、R2，并直接提交 PR。独立分支最初基于连接归属 PR #6；实施期间 #6/#7 已合并，现同步固定主线 d4b40bb，本次 PR 改以 main 为基线。只推送本任务分支，不合并 PR、安装或重载正式客户端。
 
@@ -54,3 +54,9 @@ PR #8 的首轮 Linux 检查 43616622168 在相关 Rust 测试编译时失败，
 Linux 检查 43618475947 已通过原先的编译失败位置，但在 git_hooks 的成功路径失败：fixture 连同源目录的 __pycache__ 一起复制并暂存，运行后这些缓存变成已修改文件。复制入口现排除生成字节码，fixture 复用项目既有 .gitignore；增加有污染输入的复制回归，并在原成功路径确认没有跟踪 pyc，保留提交、暂存候选和最终干净工作区的全部断言。此前的失败保留，不据本机成功覆盖 Linux 结果。
 
 新增复制回归和原先失败的成功路径已分别精确执行，均为 1 项通过、0 失败，没有空过滤。后者实际覆盖暂存候选、提交、重复安装及最终工作区检查，耗时 83.23 秒。
+
+最终实现 2c584e5d2ee2c2becbd55f7c549e46702f75affd 的完整候选通过：项目检查 99.54 秒、全目标 Clippy 1.28 秒、完整自动验收 1088.17 秒。730 项全部通过，0 失败、0 错误、0 跳过；17 条需求通过、14 条目标环境证据待验，release_ready=false。严格报告读取、自动报告摘要和清理凭据复核通过。报告位于 candidate-2c584e5/VALIDATION.json，SHA-256 为 6789d5208e2a8dc5ecb74a5861839ebfeb40aed32f71718ed5c4b7321eee4e9a。
+
+同一实现的 Linux PR 检查 43621186657 全部通过，四步分别为 33.94、15.09、539.61、36.65 秒。CI 检出合并提交 f9099d99ea41095d0e64f89a92a01ef6d788824d，其树 c9240a6aa1edaa7591ab9fca522f5189e79a9fe5 和实现指纹 3ac56af8c3a7da3b80b825b05d89cd42e18cca398d6cc4693a0411353af79104 与本机候选一致。产物 14124357709 下载后核对原始 ZIP 摘要 35b7db80b392087cc0d5e9c6c5c8723dec5ea3e516fca551399e9ae50edcd18a，并在 Mac 上通过同一 --report 入口严格校验。报告位于 ci-2c584e5-pass/VALIDATION.json，摘要为 c6cb8cc1fbf8988c97ff60b00646b9b1ad8969fef0e72147c8d752c84a2244ad。
+
+上一轮 Linux 失败产物也下载保留于 ci-40a9b2e-failure，原始 ZIP、阶段、日志和租约摘要核对一致；仍明确记录 step-3 退出 101，没有被最新成功覆盖。最终归档只修改本任务上下文，完整候选与上述 Linux 通过证据绑定固定实现 2c584e5，不冒充上下文归档提交的执行结果。
