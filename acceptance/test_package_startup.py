@@ -6,6 +6,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import verify_package_startup
@@ -57,6 +58,16 @@ class PackageStartupTests(unittest.TestCase):
     def test_fixture_channel_preserves_all_mcp_startup_requests_and_runtime_identity(self):
         self.assertEqual(self.exchange(self.replies()),
                          {"name": "codex-session-board", "version": "1"})
+
+    def test_mcp_response_stream_keeps_one_total_deadline(self):
+        with patch.object(verify_package_startup.socket, "socket") as factory, \
+                patch.object(verify_package_startup.time, "monotonic", side_effect=[0, 1, 31]):
+            connection = factory.return_value.__enter__.return_value
+            connection.recv.return_value = b'{"id":1}\n'
+            with self.assertRaisesRegex(TimeoutError, "30 seconds"):
+                verify_package_startup.mcp(Path("/unused"), "1", self.runtime)
+            self.assertEqual(connection.recv.call_count, 1)
+            self.assertEqual(connection.settimeout.call_args.args, (29,))
 
     def test_mcp_failure_wrong_backend_or_different_service_cannot_pass(self):
         for arguments in ({"exit_code": 1}, {"parent": 10}):

@@ -30,7 +30,7 @@ home=pathlib.Path(os.environ['CODEX_HOME'])
 server=socket.socket(socket.AF_UNIX);server.bind(sys.argv[-1].removeprefix('unix://'))
 os.chmod(server.getsockname(),0o600);server.listen()
 while True:
-    stream,_=server.accept();stream.close()
+    stream,_=server.accept();stream.recv(1);stream.close()
 """)
 
     def executable(self, name, body):
