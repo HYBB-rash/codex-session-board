@@ -49,7 +49,7 @@ class PromotionTests(unittest.TestCase):
     def artifact(self, directory):
         report = {
             "automated_passed": True, "build_sha256": self.source["fingerprint"],
-            "scope": "release", "passed": True, "release_ready": True,
+            "scope": "automated", "passed": True, "release_ready": True,
             "tests": [{"status": "pass"}], "requirements": [{"status": "pass"}],
         }
         (directory / "automated.json").write_text(json.dumps(report))

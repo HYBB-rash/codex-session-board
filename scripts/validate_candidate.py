@@ -68,9 +68,9 @@ def acceptance_outcome(report, returncode):
     tests = report["tests"]
     ready = report["release_ready"]
     return (
-        report["scope"] == "release" and report["automated_passed"] is True
-        and type(ready) is bool and report["passed"] is ready
-        and returncode == (0 if ready else 2) and bool(tests) and bool(requirements)
+        report["scope"] == "automated" and report["automated_passed"] is True
+        and type(ready) is bool and report["passed"] is True
+        and returncode == 0 and bool(tests) and bool(requirements)
         and all(test["status"] == "pass" for test in tests)
         and all(item["status"] in ("pass", "pending") for item in requirements)
         and ready == all(item["status"] == "pass" for item in requirements)
@@ -101,7 +101,7 @@ def main():
                      "--output", str(output / "source-package")]]
     elif arguments.scope == "candidate":
         commands.append([
-            "python3", "scripts/verify_acceptance.py", "--scope", "release",
+            "python3", "scripts/verify_acceptance.py", "--scope", "automated",
             "--report", str(output / "automated.json"),
         ])
     else:
@@ -125,6 +125,7 @@ def main():
             raise ValueError("自动报告与候选身份不一致")
         record["automated_sha256"] = hashlib.sha256((output / "automated.json").read_bytes()).hexdigest()
         record["release_ready"] = automatic["release_ready"]
+        record["acceptance_status"] = "not_performed"
     record.update(passed=True, finished_at=datetime.now(timezone.utc).isoformat())
     (output / "VALIDATION.json").write_text(json.dumps(record, indent=2) + "\n")
     print(json.dumps(record, ensure_ascii=False))

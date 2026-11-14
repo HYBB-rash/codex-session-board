@@ -2,12 +2,13 @@
   "schema_version": 1,
   "updated_at": "2026-11-14",
   "current_phase": {
-    "id": "delivery-cli-release-20261114",
-    "status": "completed",
+    "id": "merge-package-rehearsal-20261114",
+    "status": "active",
     "as_of": "2026-11-14",
-    "summary": "三个交付CLI已随0.3.76/65aac31进入主线及正式插件；双平台681/670项自动通过，真实SSH门禁通过。用户重启后核对当前客户端15803及其子进程18840实际加载同一不可变包，五组真实页面冒烟11.15秒全过，原生筛选38/38/8/1/38恢复，38条原备注及配置保全。现场核验49分10秒，跨轮交接等待18分42秒单列，最终含收尾总耗时见源码外报告。31条仍17通过14待验。"
+    "summary": "落实合并与验收分阶段规则，再重演原四个固定 PR 头。仅计时到受保护主线更新且双平台可运行不可变包可用；规则实施与收尾单列，不安装或重载日用插件。验收阶段如何组织和记录留待后续研究，31条契约保持。"
   },
   "active_tasks": [
+    "context/tasks/active/merge-package-rehearsal-20261114.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",

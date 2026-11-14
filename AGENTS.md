@@ -6,6 +6,8 @@
 - 版本只在冻结发布候选时由协调者执行 `./scripts/check --prepare-release` 更新；
   开发 PR 不修改版本清单和共享 STATE，任务记录写到本任务文件。
 - 发布部署已经验证的不可变候选产物；主线、候选、发布完成分别判定。
+- 合并阶段完成于最终组合自动门禁通过、主线更新并产出通过隔离启动检查的不可变插件包。
+  安装、客户端重载及目标环境功能验收属于独立阶段，不计入合并阶段耗时。
 
 - 代码应当自解释：优先用清晰的命名、合适的类型、简单的函数结构和测试表达程序行为，不依赖注释解释代码。
 - 做任务时把要做的事情做正确，不要靠打补丁凑合。旧代码自己的行为写错了，就改正它。不要在旧代码旁边补一块，让旧代码继续跑去完成另一件事。
@@ -18,8 +20,8 @@
 - 当前仓库全部业务功能为 Rust Codex 会话看板。原 Notion 功能保留在 Git 历史。
 - 开发前读 `acceptance/requirements.json`、`acceptance/README.md` 和 `Docs/MIGRATION.md`。
 - 保留 31 条需求编号、需求文件、独立参考模型和锁；不得降低断言、跳过失败或测试旧实现来签收新实现。
-- 完成判定执行 `python3 scripts/verify_acceptance.py`。仅 `--scope automated` 通过不算完成。
-- 缺少目标环境证据保持待验证。完整验收退出 0、`release_ready=true` 且证据内容经审阅，才可宣称完成。
+- 验收阶段完成判定执行 `python3 scripts/verify_acceptance.py`。仅 `--scope automated` 通过不算完整验收完成。
+- 缺少目标环境证据保持待验证。完整验收退出 0、`release_ready=true` 且证据内容经审阅，才可宣称完整验收完成；不阻止符合上文条件的合并阶段交付。
 
 <!-- project-context:start -->
 ## Project context
