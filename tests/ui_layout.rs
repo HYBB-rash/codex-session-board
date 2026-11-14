@@ -60,6 +60,20 @@ fn long_content_and_project_filters_preserve_browser_column_geometry() {
     assert_eq!(report["cases"], 38);
     assert_eq!(report["cleanup"]["groupEmpty"], true);
     assert_eq!(report["cleanup"]["profileRemoved"], true);
+    let catalog = Command::new("node")
+        .arg("scripts/check-remote-catalog.mjs")
+        .output()
+        .unwrap();
+    assert!(
+        catalog.status.success(),
+        "远程目录兼容回归失败：\n{}\n{}",
+        String::from_utf8_lossy(&catalog.stdout),
+        String::from_utf8_lossy(&catalog.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&catalog.stdout).unwrap();
+    assert_eq!(report["cases"], 44);
+    assert_eq!(report["cleanup"]["groupEmpty"], true);
+    assert_eq!(report["cleanup"]["profileRemoved"], true);
 }
 
 #[test]
