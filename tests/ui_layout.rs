@@ -46,6 +46,10 @@ fn long_content_and_project_filters_preserve_browser_column_geometry() {
     );
     let report: serde_json::Value = serde_json::from_slice(&filters.stdout).unwrap();
     assert_eq!(report["cases"], 53);
+}
+
+#[test]
+fn light_ui_refresh_health_and_catalog_preserve_interaction() {
     let interaction = Command::new("node")
         .arg("scripts/check-light-ui.mjs")
         .output()
