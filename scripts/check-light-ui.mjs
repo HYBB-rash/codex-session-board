@@ -28,7 +28,7 @@ const server = http.createServer(async (request,response) => {
   response.end(request.url === "/" ? html : JSON.stringify(fixture));
 });
 await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
-let browser, cases = 0, cleanup;
+let browser, cases = 0, cleanup, refreshPerformance;
 const check = (actual,expected) => {assert.deepEqual(actual,expected);cases++;};
 try {
   browser = await launchBrowser();
@@ -96,9 +96,32 @@ try {
     await page.command("Emulation.setEmulatedMedia",{features:[{name:"prefers-color-scheme",value:theme}]});
     check(await evaluate('getComputedStyle(document.body).backgroundColor'),theme === "dark" ? "rgb(28, 29, 32)" : "rgb(255, 255, 255)");
   }
+  await evaluate('data.sessions.forEach(row=>row.readOnly=false);render();window.projectBaseline=structuredClone(data.projectCatalog);window.healthBaseline=structuredClone(data.health)');
+  check(await evaluate('hostHealth({value:"local",hostLabel:"本机"}).ready'),true);
+  for (const patch of [{loaded:false},{pending:true},{cached:true},{incomplete:true},{error:"项目读取失败"}]) {
+    await evaluate(`data.projectCatalog={...projectBaseline,...${JSON.stringify(patch)}};render()`);
+    check(await evaluate('Boolean(hostHealth({value:"local",hostLabel:"本机"}).ready)'),false);
+    check(await evaluate('byId("health-summary").textContent.includes("连接正常")'),false);
+  }
+  for (const patch of [{runtimeVerified:false},{nativeVerified:false},{scanComplete:false},{lastSuccessAt:null}]) {
+    await evaluate(`data.projectCatalog=structuredClone(projectBaseline);data.health={...healthBaseline,...${JSON.stringify(patch)}};render()`);
+    check(await evaluate('Boolean(hostHealth({value:"local",hostLabel:"本机"}).ready)'),false);
+    check(await evaluate('byId("health-summary").textContent.includes("连接正常")'),false);
+  }
+  refreshPerformance = await evaluate(`(() => {
+    data.health=structuredClone(healthBaseline);
+    data.sessions=Array.from({length:1500},(_,index)=>({...data.sessions[0],id:"performance-"+index,note:"",state:"review"}));
+    const initial=performance.now();render();const fullRenderMs=performance.now()-initial;
+    const original=[...document.querySelectorAll(".card")],unchangedRenderMs=[];
+    for(let cycle=0;cycle<8;cycle++){
+      data=structuredClone(data);const start=performance.now();render();unchangedRenderMs.push(performance.now()-start);
+    }
+    return {rows:original.length,retained:original.filter(card=>card.isConnected).length,fullRenderMs,unchangedRenderMs};
+  })()`);
+  check(refreshPerformance.retained,1500);
   check(requests.filter(request=>request.method === "POST").length,1);
 } finally {
   if (browser) cleanup = await browser.close();
   await new Promise(resolve => server.close(resolve));
 }
-console.log(JSON.stringify({cases,writes,cleanup}));
+console.log(JSON.stringify({cases,writes,refreshPerformance,cleanup}));

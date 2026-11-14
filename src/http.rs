@@ -77,7 +77,8 @@ fn web_html(token: &str) -> String {
             concat!(
                 "<link rel=\"manifest\" href=\"/manifest.webmanifest\">\n",
                 "<link rel=\"icon\" href=\"/assets/board.svg\" type=\"image/svg+xml\">\n",
-                "<meta name=\"theme-color\" content=\"#32694b\">\n",
+                "<meta name=\"theme-color\" content=\"#ffffff\" media=\"(prefers-color-scheme:light)\">\n",
+                "<meta name=\"theme-color\" content=\"#1c1d20\" media=\"(prefers-color-scheme:dark)\">\n",
                 "<script src=\"/assets/pwa.js\" defer></script>\n<title>"
             ),
             1,
