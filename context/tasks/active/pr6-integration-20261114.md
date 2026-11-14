@@ -26,6 +26,10 @@ status: active
 要求保留归属、身份、MCP 与清理断言，双平台门禁仍由协调者统一执行。
 候选尚未推送；初次未提交的版本准备已撤回，待修复合入后重新冻结。
 修复及协调时间保留在本次总计时中，不重置时钟。
+第二项审查发现继承实时后台后，本地侧栏写入仍可连接旧配置中的其他客户端。
+已复核 native_reader、SidebarConnection 与 forwarding 的调用链并通知原会话，
+要求写入前证明同一客户端来源，补错误来源零写入及匹配来源成功回归。
+本地五项 rpc::authority 定向测试通过；远端推送通道 dry-run 通过，未更新远端分支。
 
 源码外证据目录：
 /Users/hongyong/.codex/visualizations/2026/11/13/01a1d38b-1ef8-7392-ba78-caa7935c5ab4/pr6-integration-20261114/
