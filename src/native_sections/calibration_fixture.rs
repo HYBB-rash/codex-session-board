@@ -70,9 +70,9 @@ impl Fixture {
 
 impl Surface {
     fn start(&mut self, params: Value) -> Result<Value> {
-        assert_eq!(params,json!({"cwd":"/remote","ephemeral":false,"historyMode":"legacy"}));
+        assert_eq!(params,json!({"cwd":"/remote","ephemeral":false,"historyMode":"paginated"}));
         let id = uuid::Uuid::new_v4().to_string();
-        let thread = json!({"id":id,"name":null,"cwd":"/remote","historyMode":"legacy",
+        let thread = json!({"id":id,"name":null,"cwd":"/remote","historyMode":params["historyMode"],
             "status":{"type":"notLoaded"},"turns":[],"section":null,"archived":false});
         self.threads.insert(id,thread.clone());
         anyhow::ensure!(!std::mem::take(&mut self.lose_start),"lost start receipt");
@@ -82,10 +82,7 @@ impl Surface {
     fn backend_call(&mut self, method: &str, params: Value) -> Result<Value> {
         match method {
             "thread/start" => self.start(params),
-            "thread/read" => {
-                assert_eq!(params["includeTurns"],true);
-                Ok(json!({"thread":self.threads[params["threadId"].as_str().unwrap()]}))
-            }
+            "thread/read" => self.read_thread(params),
             "thread/name/set" => {
                 self.threads.get_mut(params["threadId"].as_str().unwrap()).unwrap()["name"]
                     = params["name"].clone();
@@ -100,12 +97,23 @@ impl Surface {
             }
             "threadSection/list" => Ok(json!({"data":self.sections.values().collect::<Vec<_>>()})),
             "thread/list" => {
-                assert_eq!(params["archived"],true);
-                Ok(json!({"data":self.threads.values().filter(|thread| thread["archived"] == true)
+                Ok(json!({"data":self.threads.values().filter(|thread|
+                    (thread["archived"] == true) == (params["archived"] == true))
                     .collect::<Vec<_>>()}))
             }
             _ => anyhow::bail!("unexpected backend write: {method}"),
         }
+    }
+
+    fn read_thread(&self, params: Value) -> Result<Value> {
+        let id = params["threadId"].as_str().unwrap();
+        let thread = self.threads.get(id).ok_or_else(|| crate::rpc::RequestError {
+            method:"thread/read".into(),details:json!({"code":-32600,"message":format!("thread not loaded: {id}")})})?;
+        if params["includeTurns"] == true && thread["historyMode"] == "legacy" && thread["turns"] == json!([]) {
+            return Err(crate::rpc::RequestError {method:"thread/read".into(),details:json!({
+                "code":-32600,"message":format!("thread {id} is not materialized yet; includeTurns is unavailable before first user message")})}.into());
+        }
+        Ok(json!({"thread":thread}))
     }
 
     fn move_thread(&mut self, params: Value) -> Result<Value> {

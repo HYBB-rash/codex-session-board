@@ -374,6 +374,9 @@
     ],
     "MANUAL-001": [
       "lib::codex_session_board::native_sections::calibration::tests::empty_probe_learns_every_remote_mapping_without_disk_flush_and_reuses_after_restart",
+      "lib::codex_session_board::native_sections::calibration::tests::empty_history_fallback_requires_the_exact_native_unmaterialized_proof_for_this_thread",
+      "lib::codex_session_board::native_sections::calibration::tests::a_known_unmaterialized_legacy_probe_can_finish_after_restart_without_recreation",
+      "lib::codex_session_board::native_sections::calibration::tests::a_known_disappeared_probe_is_independently_retired_before_a_new_empty_probe_is_created",
       "lib::codex_session_board::native_sections::calibration::tests::unknown_creation_never_duplicates_until_explicit_matching_request_reset",
       "lib::codex_session_board::native_sections::calibration::tests::renamed_probe_is_preserved_after_lost_name_receipt_and_a_new_owned_probe_can_finish",
       "lib::codex_session_board::native_sections::calibration::tests::reconnect_cleans_known_probe_but_never_archives_a_probe_adopted_during_disconnect",
@@ -388,6 +391,7 @@
       "lib::codex_session_board::store::native_backfill::tests::backfill_uses_live_active_and_guarded_history_without_promoting_old_failures",
       "lib::codex_session_board::rpc::tests::calibration_connections_can_manage_empty_probes_but_cannot_run_models",
       "lib::codex_session_board::store::mappings::tests::calibration_ownership_and_unknown_creation_survive_restart",
+      "lib::codex_session_board::store::mappings::tests::probe_reclaim_protects_pending_calibration_and_releases_a_completed_owned_thread",
       "lib::codex_session_board::store::mappings::tests::malformed_probe_cannot_partially_publish_a_mapping",
       "test::native_direct::direct_read_uses_the_current_owner_instead_of_legacy_or_other_accounts",
       "test::native_direct::direct_read_never_falls_back_from_a_missing_or_invalid_current_owner",

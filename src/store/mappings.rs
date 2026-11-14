@@ -136,6 +136,7 @@ mod tests {
                 thread: None,
                 prepared: false,
                 initial_name: Value::Null,
+                history_mode: Value::Null,
             }),
         };
         let store = Store::open(directory.path(), false)?;
@@ -163,6 +164,25 @@ mod tests {
     }
 
     #[test]
+    fn probe_reclaim_protects_pending_calibration_and_releases_a_completed_owned_thread() -> Result<()> {
+        let store = Store::open_memory(false)?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let mut record = Record {scope:json!({"host":"mac"}),logical:Default::default(),
+            probe:Some(Probe {request:uuid::Uuid::new_v4().to_string(),thread:Some(id.clone()),
+                prepared:true,initial_name:Value::Null,history_mode:Value::Null})};
+        store.save_native_mapping("mac",&record)?;
+        assert!(!store.reclaim_native_probe("mac",&id)?);
+        assert!(store.is_native_probe("mac",&id)?);
+        assert!(!store.reclaim_native_probe("other",&id)?);
+        record.probe = None;
+        store.save_native_mapping("mac",&record)?;
+        assert!(store.reclaim_native_probe("mac",&id)?);
+        assert!(!store.is_native_probe("mac",&id)?);
+        assert!(!store.reclaim_native_probe("mac",&id)?);
+        Ok(())
+    }
+
+    #[test]
     fn malformed_probe_cannot_partially_publish_a_mapping() -> Result<()> {
         let store = Store::open_memory(false)?;
         let record = Record {
@@ -173,6 +193,7 @@ mod tests {
                 thread: Some("invalid".into()),
                 prepared: false,
                 initial_name: Value::Null,
+                history_mode: Value::Null,
             }),
         };
         assert!(store.save_native_mapping("mac", &record).is_err());

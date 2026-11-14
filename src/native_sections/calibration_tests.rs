@@ -6,6 +6,53 @@ use fixture::{Fixture, Mock};
 use std::sync::Arc;
 
 #[test]
+fn empty_history_fallback_requires_the_exact_native_unmaterialized_proof_for_this_thread() {
+    let id = uuid::Uuid::new_v4().to_string();
+    let message = format!("thread {id} is not materialized yet; includeTurns is unavailable before first user message");
+    let error = |method: &str,code: i64,message: &str| anyhow::Error::new(
+        crate::rpc::RequestError {method:method.into(),details:json!({"code":code,"message":message})});
+    assert!(unmaterialized(&error("thread/read",-32600,&message),&id));
+    assert!(!unmaterialized(&error("thread/read",-32603,&message),&id));
+    assert!(!unmaterialized(&error("thread/list",-32600,&message),&id));
+    assert!(!unmaterialized(&error("thread/read",-32600,"history unavailable"),&id));
+    assert!(!unmaterialized(&error("thread/read",-32600,&message),&uuid::Uuid::new_v4().to_string()));
+    assert!(!unmaterialized(&anyhow::anyhow!(message),&id));
+}
+
+#[test]
+fn a_known_unmaterialized_legacy_probe_can_finish_after_restart_without_recreation() -> Result<()> {
+    let fixture = Fixture::new()?;
+    fixture.surface.lock().unwrap().lose_name = true;
+    assert!(fixture.run().is_err());
+    let store = &fixture.store;
+    let mut record = store.native_mapping("remote:a")?.unwrap();
+    let probe = record.probe.as_mut().unwrap();
+    let identifier = probe.thread.clone().unwrap();
+    probe.history_mode = Value::Null;
+    fixture.surface.lock().unwrap().threads.get_mut(&identifier).unwrap()["historyMode"] = json!("legacy");
+    store.save_native_mapping("remote:a",&record)?;
+    assert!(fixture.run()?.probe.is_none());
+    assert_eq!(fixture.calls("thread/start"),1);
+    assert_eq!(fixture.calls("thread/archive"),1);
+    Ok(())
+}
+
+#[test]
+fn a_known_disappeared_probe_is_independently_retired_before_a_new_empty_probe_is_created() -> Result<()> {
+    let fixture = Fixture::new()?;
+    fixture.surface.lock().unwrap().lose_name = true;
+    assert!(fixture.run().is_err());
+    let record = fixture.store.native_mapping("remote:a")?.unwrap();
+    let identifier = record.probe.unwrap().thread.unwrap();
+    fixture.surface.lock().unwrap().threads.remove(&identifier);
+    assert!(fixture.run()?.probe.is_none());
+    assert!(!fixture.store.is_native_probe("remote:a",&identifier)?);
+    assert_eq!(fixture.calls("thread/start"),2);
+    assert_eq!(fixture.calls("thread/archive"),1);
+    Ok(())
+}
+
+#[test]
 fn empty_probe_learns_every_remote_mapping_without_disk_flush_and_reuses_after_restart() -> Result<()> {
     let fixture = Fixture::new()?;
     let before = std::fs::read(&fixture.config.sidebar_state_file)?;

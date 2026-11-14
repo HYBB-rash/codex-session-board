@@ -69,12 +69,14 @@ impl Calibration<'_> {
     }
 
     fn prepare(&mut self) -> Result<()> {
+        self.retire_missing()?;
         if self.record.probe.is_none() {
             self.record.probe = Some(Probe {
                 request: uuid::Uuid::new_v4().to_string(),
                 thread: None,
                 prepared: false,
                 initial_name: Value::Null,
+                history_mode: Value::Null,
             });
             self.save()?;
             self.start()?;
@@ -101,6 +103,18 @@ impl Calibration<'_> {
         self.save()
     }
 
+    fn retire_missing(&mut self) -> Result<()> {
+        let Some(identifier) = self.record.probe.as_ref().and_then(|probe| probe.thread.clone()) else {
+            return Ok(());
+        };
+        if let Err(error) = self.empty() {
+            if !missing(&error,&identifier) { return Err(error); }
+            self.confirm_absent(&identifier)?;
+            self.store.release_native_probe(&self.config.host_id,self.record)?;
+        }
+        Ok(())
+    }
+
     fn start(&mut self) -> Result<()> {
         self.ensure_scope()?;
         let home = self.record.scope["source"]["peer"]["home"]
@@ -109,7 +123,7 @@ impl Calibration<'_> {
         let response = self.backend.call(
             "thread/start",
             json!({
-            "cwd":home,"ephemeral":false,"historyMode":"legacy"}),
+            "cwd":home,"ephemeral":false,"historyMode":"paginated"}),
         )?;
         let thread = &response["thread"];
         let identifier = thread["id"].as_str().context("空会话创建回执缺少 ID")?;
@@ -119,6 +133,7 @@ impl Calibration<'_> {
         );
         self.record.probe.as_mut().context("缺少创建记录")?.thread = Some(identifier.into());
         self.record.probe.as_mut().context("缺少创建记录")?.initial_name = thread["name"].clone();
+        self.record.probe.as_mut().context("缺少创建记录")?.history_mode = thread["historyMode"].clone();
         self.save()?;
         if let Err(error) = self.verify_empty(thread) {
             self.store.release_native_probe(&self.config.host_id, self.record)?;
@@ -137,9 +152,12 @@ impl Calibration<'_> {
                 ),
             "校准会话已被使用或执行状态不明确"
         );
+        let mode = &self.record.probe.as_ref().context("缺少校准记录")?.history_mode;
+        let expected_mode = if mode.is_null() { "legacy" } else { mode.as_str().unwrap_or("") };
         ensure!(
             thread["cwd"] == self.record.scope["source"]["peer"]["home"]
-                && thread["historyMode"] == "legacy",
+                && matches!(expected_mode,"legacy" | "paginated")
+                && thread["historyMode"] == expected_mode,
             "校准会话目录或历史模式已改变"
         );
         let probe = self.record.probe.as_ref().context("缺少校准记录")?;
@@ -161,10 +179,15 @@ impl Calibration<'_> {
     }
 
     fn empty(&mut self) -> Result<Value> {
+        let identifier = self.identifier()?.to_owned();
         let response = self.backend.call(
             "thread/read",
-            json!({"threadId":self.identifier()?,"includeTurns":true}),
-        )?;
+            json!({"threadId":identifier,"includeTurns":true}),
+        ).or_else(|error| {
+            if unmaterialized(&error,&identifier) {
+                self.backend.call("thread/read",json!({"threadId":identifier,"includeTurns":false}))
+            } else { Err(error) }
+        })?;
         let thread = response["thread"].clone();
         if let Err(error) = self.verify_empty(&thread) {
             self.store
@@ -221,7 +244,13 @@ impl Calibration<'_> {
             return Ok(());
         }
         let identifier = self.identifier()?.to_owned();
-        self.empty()?;
+        if let Err(error) = self.empty() {
+            if missing(&error,&identifier) {
+                self.confirm_absent(&identifier)?;
+                return self.store.release_native_probe(&self.config.host_id,self.record);
+            }
+            return Err(error);
+        }
         let receipt = self
             .backend
             .call("thread/archive", json!({"threadId":identifier}));
@@ -229,6 +258,19 @@ impl Calibration<'_> {
             .with_context(|| format!("校准会话归档未确认，稍后继续清理；回执：{receipt:?}"))?;
         self.record.probe = None;
         self.save()
+    }
+
+    fn confirm_absent(&mut self, identifier: &str) -> Result<()> {
+        for archived in [false,true] {
+            let (threads,complete) = crate::rpc::collect_threads(self.backend,self.config.page_size,
+                self.config.max_pages,archived)?;
+            ensure!(complete && !threads.iter().any(|thread| thread["id"] == identifier),
+                "专用空会话仍存在，保留清理记录");
+        }
+        match self.backend.call("thread/read",json!({"threadId":identifier,"includeTurns":false})) {
+            Err(error) if missing(&error,identifier) => Ok(()),
+            _ => anyhow::bail!("专用空会话的缺失尚未独立确认"),
+        }
     }
 
     fn confirm_archived(&mut self, identifier: &str) -> Result<()> {
@@ -257,4 +299,16 @@ impl Calibration<'_> {
         }
         anyhow::bail!("专用校准会话尚未在归档列表确认")
     }
+}
+
+fn unmaterialized(error: &anyhow::Error, identifier: &str) -> bool {
+    error.downcast_ref::<crate::rpc::RequestError>().is_some_and(|error|
+        error.method == "thread/read" && error.details["code"] == -32600
+            && error.details["message"] == format!("thread {identifier} is not materialized yet; includeTurns is unavailable before first user message"))
+}
+
+fn missing(error: &anyhow::Error, identifier: &str) -> bool {
+    error.downcast_ref::<crate::rpc::RequestError>().is_some_and(|error|
+        error.method == "thread/read" && error.details["code"] == -32600
+            && error.details["message"] == format!("thread not loaded: {identifier}"))
 }
