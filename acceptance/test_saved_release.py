@@ -12,6 +12,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import package_plugin
 import release_plugin
+import verify_package_startup
 
 
 class SavedGitHub:
@@ -202,9 +203,15 @@ class SavedReleaseTests(unittest.TestCase):
         for attempt in range(2):
             directory = self.root / str(attempt)
             directory.mkdir()
-            with patch.object(release_plugin, "build") as build, patch.object(release_plugin, "authorize"):
-                release_plugin.save_platform(self.github, self.tag, self.target, self.github.source, directory)
+            with patch.object(release_plugin, "build") as build, patch.object(release_plugin, "authorize"), \
+                    patch.object(verify_package_startup, "verify") as startup:
+                report, fixture = self.root / f"startup-{attempt}.json", self.root / "fixture"
+                release_plugin.save_platform(self.github, self.tag, self.target, self.github.source, directory,
+                                             report, fixture)
                 build.assert_not_called()
+                saved, supplied_fixture, supplied_report = startup.call_args.args
+                self.assertEqual((supplied_fixture, supplied_report), (fixture, report))
+                self.assertEqual(package_plugin.verify_package(saved)["source_commit"], self.github.source)
         self.assertEqual(self.github.assets, original)
         github = release_plugin.GitHub(self.github.repository)
         with patch.object(github, "api", side_effect=self.github.api), \

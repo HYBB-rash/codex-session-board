@@ -10,12 +10,14 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.validate_candidate import ROOT, acceptance_outcome, git, identity
+from scripts.verify_package_startup import CHECKS
 
 JOBS = {
     "Candidate (linux-x86_64)", "Candidate (macos-arm64)",
     "Finalize candidate", "Candidate gate",
 }
 PLATFORMS = {"linux-x86_64": ("linux", "x86_64"), "macos-arm64": ("darwin", "arm64")}
+TARGETS = {"linux-x86_64": "x86_64-unknown-linux-gnu", "macos-arm64": "aarch64-apple-darwin"}
 
 
 def github(*arguments):
@@ -61,6 +63,17 @@ def validate_artifact(directory, source, label):
         log = directory / f"{step['name']}.log"
         if hashlib.sha256(log.read_bytes()).hexdigest() != step["log_sha256"]:
             raise ValueError("Validation transcript does not match its recorded digest")
+    startup = json.loads((directory / "STARTUP.json").read_text())
+    binary = startup["binary_sha256"]
+    if (startup["scope"] != "package_startup" or startup["passed"] is not True
+            or startup["cleanup_confirmed"] is not True or startup["checks"] != CHECKS
+            or startup["source_commit"] != source["commit"]
+            or startup["build_sha256"] != source["fingerprint"]
+            or startup["target"] != TARGETS[label]
+            or not isinstance(binary, str) or len(binary) != 64
+            or any(character not in "0123456789abcdef" for character in binary)):
+        raise ValueError("Packaged startup does not match the candidate and platform")
+    record["package_startup"] = startup
     return record
 
 

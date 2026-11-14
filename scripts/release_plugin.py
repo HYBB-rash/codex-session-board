@@ -144,7 +144,7 @@ def read_package(github, tag, target, source, directory):
     return package
 
 
-def save_platform(github, tag, target, source, directory):
+def save_platform(github, tag, target, source, directory, startup_report=None, fixture=None):
     package = read_package(github, tag, target, source, directory)
     if package is None:
         if not github.release(tag)["draft"]:
@@ -160,6 +160,9 @@ def save_platform(github, tag, target, source, directory):
     if package is None:
         raise ValueError("Uploaded platform package could not be read back")
     authorize(package, "candidate", None)
+    if startup_report is not None:
+        from verify_package_startup import verify as verify_startup
+        verify_startup(package, fixture, startup_report)
     archive = directory / asset_name(target)
     checksum = archive.with_name(archive.name + ".sha256")
     checksum.write_text(f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n")
@@ -251,7 +254,12 @@ def main():
     parser.add_argument("--target", choices=sorted(TARGETS))
     parser.add_argument("--finalize", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--save-only", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--startup-report", type=Path)
+    parser.add_argument("--fixture", type=Path)
     arguments = parser.parse_args()
+    if bool(arguments.startup_report) != bool(arguments.fixture) or (
+            arguments.startup_report and not (arguments.channel == "candidate" and arguments.local)):
+        parser.error("--startup-report and --fixture require a local candidate")
     repository = arguments.repository or json.loads(command(["gh", "repo", "view", "--json", "nameWithOwner"]))["nameWithOwner"]
     github = GitHub(repository)
     source = command(["git", "rev-parse", "HEAD"])
@@ -274,7 +282,8 @@ def main():
                 target = arguments.target or command(["rustc", "-vV"]).split("host: ")[1].splitlines()[0]
                 if target not in TARGETS:
                     raise ValueError(f"Unsupported native platform: {target}")
-                save_platform(github, tag, target, source, directory)
+                save_platform(github, tag, target, source, directory,
+                              arguments.startup_report, arguments.fixture)
                 if arguments.save_only:
                     print(json.dumps({"status": "saved", "tag": tag, "target": target}))
                     return

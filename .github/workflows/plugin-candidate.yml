@@ -52,9 +52,10 @@ jobs:
       - run: ./scripts/install-git-hooks
       - run: TMPDIR=/tmp node scripts/check-transfer-feedback.mjs "$RUNNER_TEMP/transfer-feedback"
       - run: TMPDIR=/tmp ./scripts/validate --output "$RUNNER_TEMP/validation"
+      - run: cargo build --locked --offline --example dev_fixture
       - run: |
           gh auth setup-git
-          ./scripts/release candidate --local --save-only --target "${{ matrix.target }}" --repository "${{ github.repository }}"
+          ./scripts/release candidate --local --save-only --target "${{ matrix.target }}" --repository "${{ github.repository }}" --fixture target/debug/examples/dev_fixture --startup-report "$RUNNER_TEMP/validation/STARTUP.json"
         env:
           GH_TOKEN: ${{ github.token }}
       - uses: actions/upload-artifact@v4
