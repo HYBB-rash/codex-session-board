@@ -84,16 +84,16 @@ task 运行相关静态检查、测试及源码包预检；提交规模、干净
 
 ## 2. 连接边界
 
-修改范围：`src/app.rs`、`src/preflight.rs`、`src/rpc.rs`、`src/rpc/framing.rs`、相关集成测试及 fixture 支持。
+修改范围：`src/app.rs`、`src/app/connection.rs`、`src/preflight.rs`、`src/rpc.rs`、`src/rpc/framing.rs`、相关集成测试及 fixture 支持。
 `App::connection` 是业务、观察器和集成测试的有归属入口，继续核对启用状态和操作角色。
-`DesktopConnection::configured` 只接收 `app` 模块私有字段的 `ConnectionRequest`，不接受裸 Config。
-凭证只在 app 模块及其子模块构造；外部只能走有归属的业务入口，不能伪造 tuple 字段。
-将 preflight 的模块归属放到 app 下，通过 re-export 保持调用路径；不为了预检创建 App 或数据库。
+`DesktopConnection::configured` 只接收 `app::connection` 模块私有字段的 `ConnectionRequest`，不接受裸 Config。
+凭证只在 connection 模块及其预检子模块构造；app 其他业务子模块与外部模块一样，不能伪造 tuple 字段。
+将 preflight 的模块归属放到 connection 下，通过 re-export 保持调用路径；不为了预检创建 App 或数据库。
 原始 connect/proxy 不暴露在生产构建中，remote 只对 rpc 内部可见。
 fixture 的低层 socket/stdio 客户端独立于生产模块，不增加可误启用的生产 test feature。
 `StdioReader` 的历史补读和 CLI 历史诊断用途保留；不得借本次重构把它变成实时服务。
 
-门禁使用真实 crate 的外部业务模块编译反例，包括别名、空格、裸配置、remote/proxy、伪造凭证。
+门禁使用真实 crate 的外部业务模块及 app 业务子模块编译反例，包括别名、空格、裸配置、remote/proxy、伪造凭证，共六种形式、十二处拒绝位置。
 先证明正向样例可编译，再确认每个反例在指定位置、以指定诊断类别失败；其他编译故障不算拦截成功。
 夹具在源码外隔离副本注入，不改工作树。Rust 隐私约束负责禁止调用，现有词法检查只辅助提示。
 验收保留全目标编译、5个归属测试、36个 native_authority 测试、2个重复远端来源测试及 fixture 历史协议。
@@ -190,7 +190,7 @@ HTTP 增加稳定的 `errorCode`，保留现有 `error` 文案及状态码，避
 | PR | 修改范围与交付 | 前置 | 关闭条件 |
 | --- | --- | --- | --- |
 | R1 验证基础 | validate、报告/环境/命令进程底座、promotion及工具测试 | 无 | 坏解释器、别名路径、错误缓存归属、初始化失败有明确失败报告；命令归属和退出可核对；旧入口兼容，新报告可验证。 |
-| R2 连接边界 | app/rpc/preflight、fixture支持、编译反例 | 无，可与R1独立实施 | 6个反例拒绝；正向构建、归属/原生/远端及fixture回归保持通过；Clippy无警告。 |
+| R2 连接边界 | app/rpc/preflight、fixture支持、编译反例 | 无，可与R1独立实施 | 6种反例在2个模块位置均拒绝；正向构建、归属/原生/远端及fixture回归保持通过；Clippy无警告。 |
 | R3 单次任务验证 | 改动映射、测试清单、资源租约、浏览器/fixture编排、打包预检 | R1 | 干净环境只需一次入口；零/漏/跳过测试拒绝；5种退出清理且不伤旁路进程；未知实现改动不漏检。 |
 | R4 业务错误类型 | store错误、HTTP编码、formal比较器、草稿错误及测试 | R1 | 原预期拒绝全部迁移到类型和参数；技术错误不得被签收；文案/context变化不影响分类。 |
 | R5 状态业务入口 | store/native/runtime_native与调用点 | R2、R4 | 私有写入反例拒绝；原独立模型、版本竞态、重启/归档/丢回执回归全部通过，无数据库迁移。 |

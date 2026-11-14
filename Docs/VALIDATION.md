@@ -62,6 +62,6 @@ CSB_VALIDATION_PYTHON=/path/to/python3.12 ./scripts/validate \
 
 ## 连接边界
 
-业务和集成测试使用 `App::connection`。`configured` 仅接受 app 模块能够构造的凭证；原始 connect/proxy 不作为生产 API，remote 仅在 rpc 内可见。预检属于 app 子模块，并保持原来的公开预检路径。
+业务和集成测试使用 `App::connection`。`configured` 仅接受 app 内独立 connection 模块能够构造的凭证；app 的其他业务子模块也不能伪造。原始 connect/proxy 不作为生产 API，remote 仅在 rpc 内可见。预检属于 connection 子模块，并保持原来的公开预检路径。
 
-低层 fixture 客户端只放在 examples/tests 中；历史 `StdioReader` 的用途保持不变。自动门禁先编译正向样例，再在源码外副本注入六种业务模块绕过，逐项核对错误位置和类别。别名或空格不能绕过 Rust 类型和可见性约束。
+低层 fixture 客户端只放在 examples/tests 中；历史 `StdioReader` 的用途保持不变。自动门禁先编译正向样例，再在源码外副本的 crate 兄弟模块及 app 业务子模块分别注入六种绕过，逐项核对十二处错误位置和类别。别名或空格不能绕过 Rust 类型和可见性约束。
