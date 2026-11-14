@@ -27,7 +27,7 @@ fn long_content_and_project_filters_preserve_browser_column_geometry() {
         String::from_utf8_lossy(&filters.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&filters.stdout).unwrap();
-    assert_eq!(report["cases"], 49);
+    assert_eq!(report["cases"], 53);
 }
 
 #[test]

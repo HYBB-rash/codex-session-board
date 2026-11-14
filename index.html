@@ -149,7 +149,7 @@ textarea{resize:vertical;min-height:90px}
   <div class="toolbar">
     <nav class="jump" id="jump" aria-label="跳转到状态列"></nav>
     <div class="filters">
-      <label class="filter-field">主机<select id="host-filter" aria-label="选择主机"><option value="all">全部主机</option></select></label>
+      <label class="filter-field">主机<select id="host-filter" aria-label="选择主机"><option value="local">本机</option><option value="all">全部主机</option></select></label>
       <div class="filter-field"><span>项目</span>
         <select id="project-filter" aria-label="选择项目" disabled><option value="all">全部项目</option></select>
       </div>
@@ -220,7 +220,7 @@ const csrf = "__CSRF_TOKEN__";
 let data = {states:{},sessions:[],health:{},projectCatalog:{loaded:false,items:[]}}, editing = null, dragging = null;
 let saving = false, requestSerial = 0, dragPoint = null, scrollFrame = null;
 let opening = false, suppressOpenUntil = 0;
-let filterMode = "project", selectedHost = "all", selectedProject = "all", projectOptionsKey = "";
+let filterMode = "project", selectedHost = "local", selectedProject = "all", projectOptionsKey = "";
 let creating = false, recoveringDraft = null;
 let snapshotError = null;
 let moving = null, moveHideTimer = null;
