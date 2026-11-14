@@ -14,10 +14,41 @@ NATIVE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(NATIVE)
 
 
+def verify_dispatch(binding):
+    opener = (ROOT / "scripts/native_new/open.js").read_text().strip()
+    script = """
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const {source, binding} = JSON.parse(fs.readFileSync(0, "utf8"));
+const [projects, state, separateHost] = binding;
+const events = [], selection = {type:"remote", projectId:"project"};
+const keys = {SELECTED_PROJECT:"project"};
+if (separateHost) keys.SELECTED_REMOTE_HOST_ID = "host";
+const invoke = new Function("t", "a", "r", "o", "l", "e", projects, state,
+  `return (async()=>{switch(t.kind){${source}}})();`);
+await invoke({kind:"remoteNewThread",hostId:"remote:a",projectId:"project"},
+  {getRemoteProjects:()=>[{id:"project",hostId:"remote:a",remotePath:"/remote/root"}]},
+  {set:(key,value)=>events.push(["host",key,value])},
+  {sendMessageToAllWindows:message=>events.push(["announce",message.keys])},
+  (window,path,payload)=>{assert.equal(path,"/");events.push(["navigate",payload.project]);},
+  {}, {NR:(store,project)=>events.push(["select",project])}, {Q2Y:keys});
+const expected = [["select",selection]];
+if (separateHost) expected.push(["host","host","remote:a"]);
+expected.push(["announce",separateHost?["project","host"]:["project"]],["navigate",selection]);
+assert.deepEqual(events,expected);
+"""
+    subprocess.run(["node", "--input-type=module", "-e", script], check=True,
+                   input=json.dumps({"source": NATIVE.dispatch(opener, binding),
+                                     "binding": binding}), text=True, capture_output=True, timeout=30)
+
+
 class NativeNewTests(unittest.TestCase):
     def test_native_draft_routes_and_navigation_never_send_input(self):
         subprocess.run(["node", "scripts/check-native-new.mjs"], cwd=ROOT, check=True,
                        capture_output=True, timeout=30)
+        for binding in NATIVE.BINDINGS.values():
+            with self.subTest(binding=binding):
+                verify_dispatch(binding)
 
     def test_candidate_archive_preserves_other_files_and_rejects_unknown_clients(self):
         sources = {
@@ -43,7 +74,9 @@ class NativeNewTests(unittest.TestCase):
             source.write_bytes(archive)
             supported = {name: hashlib.sha256(data).hexdigest()
                          for name, data in sources.items() if name.endswith(".js")}
-            with patch.object(NATIVE, "SUPPORTED_SOURCES", supported):
+            with patch.object(NATIVE, "SUPPORTED_SOURCES", supported), patch.object(
+                NATIVE, "BINDINGS", {"/.vite/build/main.js": ("eX", "es", True)}
+            ):
                 capability = NATIVE.prepare(source, target, ["open", "-a", str(app)])
             candidate, base, patched = NATIVE.read_archive(target)
             self.assertEqual(capability["sha256"], hashlib.sha256(candidate).hexdigest())

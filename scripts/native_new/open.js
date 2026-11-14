@@ -1,5 +1,5 @@
 async function openRemoteDraft({
-  route, projectsManager, selectProject, selectHost, announce, navigate,
+  route, projectsManager, selectProject, announce, navigate,
 }) {
   if (!projectsManager) throw Error("Remote project navigation is unavailable");
   const matches = projectsManager.getRemoteProjects().filter(
@@ -12,7 +12,6 @@ async function openRemoteDraft({
     project.remotePath.includes("\0")) throw Error("The remote project has an invalid root");
   const selection = { type: "remote", projectId: project.id };
   await selectProject(selection);
-  selectHost(project.hostId);
   announce();
   navigate(selection);
 }

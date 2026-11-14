@@ -73,14 +73,7 @@ impl Default for Config {
             max_pages: 100,
             history_per_poll: 20,
             host_id: "local".into(),
-            open_command: vec![
-                if cfg!(target_os = "macos") {
-                    "open"
-                } else {
-                    "xdg-open"
-                }
-                .into(),
-            ],
+            open_command: default_open_command(),
             client_singleton_profile: None,
             native_new_capability: None,
             desktop_socket: env::var_os("CODEX_LINUX_APP_SERVER_BRIDGE_SOCKET")
@@ -99,6 +92,15 @@ impl Default for Config {
             status_sections: BTreeMap::new(),
         }
     }
+}
+
+fn default_open_command() -> Vec<String> {
+    let program = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    vec![program.into()]
 }
 
 impl Config {

@@ -13,6 +13,14 @@ SUPPORTED_SOURCES = {
         "b86b7e90fb910eac2937058bb6787222221a933c158ad622a2e9b26b03349e60",
     "/.vite/build/early-bootstrap-631-9880b56d55f301d1.js":
         "bce29a615bb1ab7019b9db27acdff7018ddaae8a2c7d6ede4b6c983b01f90ebe",
+    "/.vite/build/early-bootstrap-226-2f6bd181558008cf.js":
+        "97adba36c0c0e9e145ab364c82eb3433abe3675ab7c6e3ab282035b67a4d60bb",
+    "/.vite/build/early-bootstrap-631-c364c4eef36b8fb5.js":
+        "3d33823eff6f760caed93a06c7bd580a2ed7631c961bf7f4454622c47205fc2c",
+}
+BINDINGS = {
+    "/.vite/build/early-bootstrap-615-24f1d3fc72897a7a.js": ("eX", "es", True),
+    "/.vite/build/early-bootstrap-226-2f6bd181558008cf.js": ("tw", "e0", False),
 }
 
 
@@ -37,6 +45,21 @@ def replace_once(source, anchor, replacement):
     return source.replace(anchor, replacement)
 
 
+def dispatch(opener, binding):
+    projects, state, separate_host = binding
+    selection = f"project=>(0,{projects}.NR)(r,project)"
+    keys = [f"{state}.Q2Y.SELECTED_PROJECT"]
+    if separate_host:
+        selection = (f"async project=>{{await (0,{projects}.NR)(r,project);"
+                     f"r.set({state}.Q2Y.SELECTED_REMOTE_HOST_ID,t.hostId)}}")
+        keys.append(f"{state}.Q2Y.SELECTED_REMOTE_HOST_ID")
+    return ('case"remoteNewThread":{await(' + opener + ')({route:t,'
+            'projectsManager:a,selectProject:' + selection + ','
+            'announce:()=>o.sendMessageToAllWindows({type:"global-state-updated",'
+            'keys:[' + ",".join(keys) + ']}),navigate:project=>l(e,"/",'
+            '{project,focusComposerNonce:Date.now()})});return}')
+
+
 def patches(tree, raw, base):
     root = Path(__file__).parent
     parser = (root / "route.js").read_text().strip()
@@ -55,12 +78,9 @@ def patches(tree, raw, base):
                 'case"threads":{let e=L(t);if("new-remote"===e[0])return(' + parser + ')(t);')
             result[name] = source.encode()
         if 'case"newThread":{let s=' in source:
-            branch = ('case"remoteNewThread":{await(' + opener + ')({route:t,'
-                'projectsManager:a,selectProject:project=>(0,eX.NR)(r,project),'
-                'selectHost:host=>r.set(es.Q2Y.SELECTED_REMOTE_HOST_ID,host),'
-                'announce:()=>o.sendMessageToAllWindows({type:"global-state-updated",'
-                'keys:[es.Q2Y.SELECTED_PROJECT,es.Q2Y.SELECTED_REMOTE_HOST_ID]}),navigate:project=>l(e,"/",'
-                '{project,focusComposerNonce:Date.now()})});return}')
+            if name not in BINDINGS:
+                raise ValueError(f"Unsupported native dispatcher: {name}")
+            branch = dispatch(opener, BINDINGS[name])
             source = replace_once(source, 'case"newThread":{let s=',
                 branch + 'case"newThread":{let s=')
             result[name] = source.encode()

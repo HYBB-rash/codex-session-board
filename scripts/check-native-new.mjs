@@ -22,13 +22,12 @@ const project = { id: route.projectId, hostId: route.hostId, remotePath: "/remot
 const dependencies = {
   route, projectsManager: { getRemoteProjects: () => [project] },
   selectProject: async selection => events.push(["select", selection]),
-  selectHost: host => events.push(["host", host]),
   announce: () => events.push(["announce"]),
   navigate: selection => events.push(["navigate", selection]),
 };
 await open(dependencies);
 assert.deepEqual(JSON.parse(JSON.stringify(events)), [
-  ["select", { type: "remote", projectId: route.projectId }], ["host", route.hostId],
+  ["select", { type: "remote", projectId: route.projectId }],
   ["announce"], ["navigate", { type: "remote", projectId: route.projectId }],
 ]);
 for (const projects of [
