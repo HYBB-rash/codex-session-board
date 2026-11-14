@@ -169,6 +169,11 @@ try {
   });
 } catch (error) {
   report.error = error.stack;
+  if (page) {
+    try {
+      report.diagnostics = await evaluate('({health:typeof data==="undefined"?null:data?.health,notice:document.querySelector("#notice")?.textContent,feedback:document.querySelector("#feedback")?.textContent})');
+    } catch (diagnosticError) { report.diagnostic_error = diagnosticError.message; }
+  }
 } finally {
   try {
     if (paused && page) {

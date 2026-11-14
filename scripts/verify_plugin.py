@@ -41,7 +41,10 @@ def runtime_info(port):
         response = connection.getresponse()
         if response.status != 200:
             raise ValueError(f"Runtime identity returned HTTP {response.status}")
-        return json.load(response)
+        result = json.load(response)
+        if not isinstance(result, dict):
+            raise ValueError("Runtime identity must be a JSON object")
+        return result
 
 
 def inspect(state, config_path, client_pid, expected_source=None, config_id=None):
@@ -58,6 +61,8 @@ def inspect(state, config_path, client_pid, expected_source=None, config_id=None
     cached = cache_directory(manifest["version"])
     if verify_package(cached, installed=True) != manifest:
         raise ValueError("Client plugin cache differs from the release")
+    if not isinstance(config.get("data_dir"), str) or not Path(config["data_dir"]).is_absolute():
+        raise ValueError("Configuration requires an explicit absolute data directory")
     data_dir = Path(config["data_dir"]).resolve()
     port = config["port"]
     if type(port) is not int or not 0 < port < 65536:
