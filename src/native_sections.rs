@@ -1,19 +1,25 @@
 use crate::{config::Config, rpc::Rpc};
 use anyhow::{Context, Result, ensure};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use std::collections::{HashMap, HashSet};
 
 pub mod direct;
 
-fn client_atoms(state: &Value) -> Result<&serde_json::Map<String, Value>> {
-    let atoms = if let Some(owner) = state.get("electron-renderer-content-owner") {
+fn client_atoms(state: &Value) -> Result<Map<String, Value>> {
+    let owner_atoms = if let Some(owner) = state.get("electron-renderer-content-owner") {
         let owner = owner.as_str().filter(|value| !value.is_empty())
             .context("客户端当前账号标识无效")?;
-        &state[format!("electron-owner-atoms:{owner}")]
+        state.get(format!("electron-owner-atoms:{owner}"))
     } else {
-        &state["electron-persisted-atom-state"]
+        None
     };
-    atoms.as_object().context("客户端当前账号数据无效")
+    let live_atoms = state.get("electron-persisted-atom-state");
+    ensure!(owner_atoms.is_some() || live_atoms.is_some(), "客户端当前账号数据缺失");
+    let mut atoms = Map::new();
+    for source in [owner_atoms, live_atoms].into_iter().flatten() {
+        atoms.extend(source.as_object().context("客户端当前账号数据无效")?.clone());
+    }
+    Ok(atoms)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -334,7 +340,7 @@ mod tests {
     }
 
     #[test]
-    fn aliases_follow_the_current_owner_without_legacy_fallback() -> Result<()> {
+    fn aliases_use_live_atoms_without_falling_back_to_another_owner() -> Result<()> {
         let identifier = "11111111-1111-4111-8111-111111111111";
         let (_directory, config) = alias_config(identifier)?;
         let original: Value = serde_json::from_slice(&std::fs::read(&config.sidebar_state_file)?)?;
@@ -348,8 +354,54 @@ mod tests {
         state["electron-renderer-content-owner"] = json!("missing");
         state["electron-persisted-atom-state"] = original["electron-persisted-atom-state"].clone();
         std::fs::write(&config.sidebar_state_file, state.to_string())?;
-        assert!(aliases(&config).is_err());
+        assert_eq!(aliases(&config)?.get("client-new-thread:alias").map(String::as_str), Some(identifier));
+        state["electron-persisted-atom-state"] = json!({});
+        std::fs::write(&config.sidebar_state_file, state.to_string())?;
+        assert!(aliases(&config)?.is_empty());
         Ok(())
+    }
+
+    #[test]
+    fn live_atoms_replace_whole_atoms_and_preserve_nonoverlapping_entries() -> Result<()> {
+        let state = json!({
+            "electron-renderer-content-owner":"current",
+            "electron-owner-atoms:current":{"shared":{"owner":1,"nested":{"owner":1}},"ownerOnly":1},
+            "electron-persisted-atom-state":{"shared":{"nested":{"live":2}},"liveOnly":2}
+        });
+        assert_eq!(Value::Object(client_atoms(&state)?), json!({
+            "shared":{"nested":{"live":2}},"ownerOnly":1,"liveOnly":2
+        }));
+        Ok(())
+    }
+
+    #[test]
+    fn missing_owner_atoms_can_use_live_data_without_other_owner_fallback() -> Result<()> {
+        let state = json!({
+            "electron-renderer-content-owner":"current",
+            "electron-owner-atoms:other":{"foreign":true},
+            "electron-persisted-atom-state":{"live":true}
+        });
+        assert_eq!(Value::Object(client_atoms(&state)?), json!({"live":true}));
+        assert!(client_atoms(&json!({
+            "electron-renderer-content-owner":"current",
+            "electron-owner-atoms:other":{"foreign":true}
+        })).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn malformed_owner_and_atom_sources_are_rejected() {
+        for state in [
+            json!({"electron-renderer-content-owner":null,"electron-persisted-atom-state":{}}),
+            json!({"electron-renderer-content-owner":123,"electron-persisted-atom-state":{}}),
+            json!({"electron-renderer-content-owner":"","electron-persisted-atom-state":{}}),
+            json!({"electron-renderer-content-owner":"current","electron-owner-atoms:current":[],"electron-persisted-atom-state":{}}),
+            json!({"electron-renderer-content-owner":"current","electron-owner-atoms:current":null,"electron-persisted-atom-state":{}}),
+            json!({"electron-renderer-content-owner":"current","electron-owner-atoms:current":{},"electron-persisted-atom-state":[]}),
+            json!({"electron-persisted-atom-state":null}),
+        ] {
+            assert!(client_atoms(&state).is_err());
+        }
     }
 
     #[test]
