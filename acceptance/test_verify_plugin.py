@@ -1,4 +1,6 @@
+import contextlib
 import hashlib
+import io
 import json
 from pathlib import Path
 import sys
@@ -99,3 +101,17 @@ class VerifyPluginTests(unittest.TestCase):
                 patch.object(verify_plugin, "process_identity", side_effect=identities):
             with self.assertRaisesRegex(ValueError, "changed during"):
                 verify_plugin.inspect(self.state, self.config, 100)
+
+    def test_missing_reconnect_dependency_is_recorded_as_failure(self):
+        output = self.root / "proof.json"
+        arguments = ["verify-plugin", "--state", str(self.state), "--config", str(self.config),
+                     "--client-pid", "100", "--reconnect", "--output", str(output)]
+        with patch.object(sys, "argv", arguments), \
+                patch.object(verify_plugin, "marketplace_file", return_value=self.root / "marketplace.json"), \
+                patch.object(verify_plugin, "reload_plugins", side_effect=ImportError("websocket missing")), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(verify_plugin.main(), 1)
+        report = json.loads(output.read_text())
+        self.assertFalse(report["desktop_loaded"])
+        self.assertEqual(report["phase"], "failed")
+        self.assertIn("websocket missing", report["error"])

@@ -136,7 +136,7 @@ def main():
                 marketplace_file(arguments.codex))
         result.update(inspect(arguments.state, arguments.config.resolve(), arguments.client_pid,
                               arguments.expected_source, arguments.config_id))
-    except (OSError, ValueError, KeyError, RuntimeError, StopIteration, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, KeyError, RuntimeError, ImportError, StopIteration, subprocess.SubprocessError) as error:
         result.update(passed=False, phase="failed", error=str(error))
     result["seconds"] = time.monotonic() - started
     write_record(output, result)

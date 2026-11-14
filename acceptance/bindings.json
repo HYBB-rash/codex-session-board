@@ -1596,6 +1596,7 @@
       "acceptance.test_delivery.DeliveryTests.test_channel_versions_are_monotonic_and_bind_immutable_payloads"
     ],
     "GATE-001": [
+      "acceptance.test_verify_plugin.VerifyPluginTests.test_missing_reconnect_dependency_is_recorded_as_failure",
       "acceptance.test_smoke_cli.SmokeCliTests.test_live_write_and_recovery_reject_other_cards_and_concurrent_changes",
       "acceptance.test_smoke_cli.SmokeCliTests.test_unverified_or_nonlocal_receipts_stop_before_opening_a_browser",
       "acceptance.test_verify_plugin.VerifyPluginTests.test_current_client_is_confirmed_from_live_identity_not_old_receipt",
