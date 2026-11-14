@@ -3,6 +3,8 @@ import os
 import re
 import subprocess
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
@@ -56,39 +58,63 @@ def inventory(targets):
     return names
 
 
-def run_rust(targets, names):
+def run_target(prefix, executable, expected):
+    started = time.monotonic()
+    threads = "2" if prefix in ("test::git_hooks", "example::project_check") else "1"
+    timeout = 1200 if prefix == "test::git_hooks" else 600
+    process = command([str(executable), f"--test-threads={threads}"], timeout=timeout)
     results = {}
-    for prefix, executable in targets.items():
-        expected = {name for name, (target, _) in names.items() if target == prefix}
-        if not expected:
-            continue
-        timeout = 1200 if prefix == "test::git_hooks" else 600
-        process = command([str(executable), "--test-threads=1"], timeout=timeout)
-        for line in process.stdout.splitlines():
-            match = re.fullmatch(r"test (.+) \.\.\. (ok|FAILED|ignored)", line)
-            if match:
-                identifier = prefix + "::" + match[1]
-                if identifier in results:
-                    raise ValueError("Duplicate Rust test outcome")
-                results[identifier] = {
-                    "id": identifier,
-                    "status": {"ok": "pass", "FAILED": "fail", "ignored": "skip"}[match[2]],
-                    "detail": "" if match[2] == "ok" else (process.stdout + process.stderr)[-6000:],
-                }
-        if not expected.issubset(results):
-            raise ValueError("Missing Rust test outcomes: " + repr(sorted(expected - results.keys())))
-        if process.returncode and all(results[name]["status"] == "pass" for name in expected):
-            raise ValueError("Rust test process failed despite passing outcomes")
-    return results
+    for line in process.stdout.splitlines():
+        match = re.fullmatch(r"test (.+) \.\.\. (ok|FAILED|ignored)", line)
+        if match:
+            identifier = prefix + "::" + match[1]
+            if identifier in results or identifier not in expected:
+                raise ValueError("Duplicate or unexpected Rust test outcome")
+            results[identifier] = {
+                "id": identifier,
+                "status": {"ok": "pass", "FAILED": "fail", "ignored": "skip"}[match[2]],
+                "detail": "" if match[2] == "ok" else (process.stdout + process.stderr)[-6000:],
+            }
+    if set(results) != expected:
+        raise ValueError("Missing Rust test outcomes: " + repr(sorted(expected - results.keys())))
+    if process.returncode and all(record["status"] == "pass" for record in results.values()):
+        raise ValueError("Rust test process failed despite passing outcomes")
+    timing = {"group": prefix, "seconds": time.monotonic() - started,
+              "test_count": len(results), "threads": int(threads), "returncode": process.returncode}
+    print(json.dumps(timing), file=sys.stderr, flush=True)
+    return results, timing
 
 
-def run(request):
+def run_rust(targets, names, selected=None):
+    selected = set(names) if selected is None else selected
+    groups = [(prefix, executable, {name for name in selected if names[name][0] == prefix})
+              for prefix, executable in targets.items()]
+    groups = [group for group in groups if group[2]]
+    tools = {"test::git_hooks", "example::project_check"}
+    results, timings = {}, []
+    for group in groups:
+        if group[0] not in tools:
+            records, timing = run_target(*group)
+            results.update(records)
+            timings.append(timing)
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        futures = [workers.submit(run_target, *group) for group in groups if group[0] in tools]
+        for future in futures:
+            records, timing = future.result()
+            results.update(records)
+            timings.append(timing)
+    return results, timings
+
+
+def run(request, prefixes=None):
     if request.get("protocol") != 1:
         raise ValueError("Unsupported adapter protocol")
     requested = request.get("tests")
     if not isinstance(requested, list) or not requested or len(requested) != len(set(requested)):
         raise ValueError("Expected distinct test identifiers")
+    build_started = time.monotonic()
     targets = executables()
+    timings = [{"group": "build", "seconds": time.monotonic() - build_started}]
     names = inventory(targets)
     sys.path.insert(0, str(ROOT))
     import unittest
@@ -99,10 +125,28 @@ def run(request):
         raise ValueError("Test inventory differs from bindings: " + repr(sorted(
             set(requested).symmetric_difference(set(names) | set(python_names))
         )))
-    outcomes = run_rust(targets, names)
-    python_result = python_tests({"protocol": 1, "tests": python_names})
-    outcomes.update({item["id"]: item for item in python_result["results"]})
-    return {"protocol": 1, "results": list(outcomes.values())}
+    available = set(names) | set(python_names)
+    if prefixes is not None and (
+        not prefixes or any(not any(name.startswith(prefix + "::") for name in names)
+                            for prefix in prefixes)
+    ):
+        raise ValueError("An integration test group is missing")
+    selected = available if prefixes is None else {
+        name for name in names if any(name.startswith(prefix + "::") for prefix in prefixes)
+    }
+    outcomes, rust_timings = run_rust(targets, names, selected & set(names))
+    timings.extend(rust_timings)
+    if prefixes is None:
+        started = time.monotonic()
+        python_result = python_tests({"protocol": 1, "tests": python_names})
+        outcomes.update({item["id"]: item for item in python_result["results"]})
+        timings.append({"group": "python", "seconds": time.monotonic() - started,
+                        "test_count": len(python_names)})
+    if set(outcomes) != selected:
+        raise ValueError("Integration test results differ from the selected inventory")
+    return {"protocol": 1, "results": list(outcomes.values()), "timings": timings,
+            "inventory": sorted(available), "selected": sorted(selected),
+            "not_run": sorted(available - selected)}
 
 
 if __name__ == "__main__":
