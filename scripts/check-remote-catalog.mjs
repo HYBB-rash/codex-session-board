@@ -62,6 +62,7 @@ try {
   for (let attempt = 0; attempt < 100 && !writes.length; attempt++) await new Promise(resolve => setTimeout(resolve,25));
   check(writes,[{path:"/api/refresh",body:{hostId:"a"}}]);
   check(await ids(),["active","last-active","legacy"]);
+  check(await evaluate('byId("count").textContent'),"显示 3 / 当前主机范围共 3 条");
   check(await evaluate('Array.from(byId("project-filter").options).map(option=>option.value)'),
     ["all","default","project:server","project:empty","project:client"]);
   check(await evaluate('byId("filter-scope").textContent.includes("活动")'),true);
@@ -73,8 +74,11 @@ try {
   await evaluate('data.health.remoteConnections[0].catalog.pending=false;data.health.remoteConnections[0].catalog.complete=false;render()');
   check(await evaluate('hostHealth({value:"host:a",hostId:"a",hostLabel:"a"}).status'),"主机目录尚未读取完整");
   await evaluate('data.health.remoteConnections[0].catalog.complete=true;render()');
+  await evaluate('data.sessions=data.sessions.map(row=>row.archived || row.presence==="cachedUnknown" ? {...row,readOnly:true} : row);render()');
+  check(await evaluate('hostHealth({value:"host:a",hostId:"a",hostLabel:"a"}).status'),"主机目录已读取完整");
   await select("history-filter","archived");
   check(await ids(),["archived","last-archive"]);
+  check(await evaluate('byId("count").textContent'),"显示 2 / 当前主机范围共 2 条");
   check(await evaluate('document.querySelector("[data-archive-all]").disabled'),true);
   await select("history-filter","all");
   check(await ids(),["active","archived","last-active","last-archive","legacy"]);

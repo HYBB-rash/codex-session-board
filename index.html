@@ -809,7 +809,7 @@ function render(resetState = null) {
     if (card.dataset.id === focusedProject) card.querySelector(".project-tag summary").focus({preventScroll:true});
   }
   for (const column of columns) restoreScroll(column.querySelector(".cards"),scrollPositions.get(column.dataset.state));
-  byId("count").textContent = `显示 ${filtered.length} / 当前主机范围共 ${hostSessions().length} 条`;
+  byId("count").textContent = `显示 ${filtered.length} / 当前主机范围共 ${hostSessions().filter(historyMatches).length} 条`;
   const health = data.health;
   if (data.legacyMode) byId("foot").textContent =
     "拖动卡片修改状态，备注随会话保存。“待归档”和“已完成”均为人工状态。新建会话仅打开输入页。";
@@ -836,8 +836,9 @@ function hostHealth(host) {
   const catalog = local ? null : current.catalog;
   const projectError = local ? data.projectCatalog.error : catalog?.error;
   const listError = current.error || connection?.error || (!scan.connectionRequired && scan.error);
-  const readonly = rows.filter(row => row.readOnly).length;
-  const blocked = Boolean(current.writeError || rows.length && readonly === rows.length);
+  const activeRows = rows.filter(row => !row.archived && row.presence !== "cachedUnknown");
+  const readonly = activeRows.filter(row => row.readOnly).length;
+  const blocked = Boolean(current.writeError || activeRows.length && readonly === activeRows.length);
   const partial = Boolean(current.nativeStageError || current.runtimeVerified && current.runtimeError);
   const catalogIssues = catalog?.issues?.length ? catalog.issues.map(issue => typeof issue === "string" ? issue : JSON.stringify(issue)).join("\n") : null;
   const diagnostics = [["会话列表",listError],["自动状态",current.runtimeError],["状态分组",current.nativeError],
