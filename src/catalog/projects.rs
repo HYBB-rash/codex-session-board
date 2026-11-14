@@ -7,21 +7,9 @@ use serde_json::{Value, json};
 pub(crate) fn catalog(server: &[Value], legacy: &Projection, host: &str) -> Vec<Value> {
     let mut projects = Vec::new();
     for project in server {
-        let Some(identifier) = project["id"].as_str() else {
-            continue;
-        };
-        let deleting = membership::deleting(identifier, legacy);
-        let paths: Vec<_> = project["roots"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|root| root["path"].as_str().or_else(|| root.as_str()))
-            .collect();
-        projects.push(json!({"id":project_key(host,"targetServer",identifier),
-            "nativeId":identifier,"hostId":host,"origin":"targetServer",
-            "remote":host!="local","label":project["name"],"paths":paths,
-            "pendingDeletion":deleting,
-            "canCreate":false,"canMove":false,"canOpenProject":false}));
+        if let Some(project) = backend_project(project, legacy, host) {
+            projects.push(project);
+        }
     }
     for project in &legacy.projects {
         let Some(identifier) = project["id"].as_str() else {
@@ -43,6 +31,17 @@ pub(crate) fn catalog(server: &[Value], legacy: &Projection, host: &str) -> Vec<
             "paths":project["rootPaths"],"canCreate":false,"canMove":false,"canOpenProject":false}));
     }
     projects
+}
+
+fn backend_project(project: &Value, legacy: &Projection, host: &str) -> Option<Value> {
+    let identifier = project["id"].as_str()?;
+    let paths: Vec<_> = project["roots"].as_array().into_iter().flatten()
+        .filter_map(|root| root["path"].as_str().or_else(|| root.as_str())).collect();
+    Some(json!({"id":project_key(host,"targetServer",identifier),
+        "nativeId":identifier,"hostId":host,"origin":"targetServer",
+        "remote":host!="local","label":project["name"],"paths":paths,
+        "pendingDeletion":membership::deleting(identifier, legacy),
+        "canCreate":false,"canMove":false,"canOpenProject":false}))
 }
 
 #[cfg(test)]

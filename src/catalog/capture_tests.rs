@@ -32,7 +32,7 @@ fn uncertain_references_never_become_active_and_remain_visible_as_unresolved() -
     assert_eq!(snapshot.coverage["publishedReferences"], "partial");
     let mut missing = capture("0.169.0");
     let mut thread = thread;
-    thread.as_object_mut().unwrap().remove("attachedToThreadId");
+    thread.as_object_mut().context("测试会话应为对象")?.remove("attachedToThreadId");
     missing.accept_reference(&identifier, &thread)?;
     assert!(missing.snapshot("local")?.active.is_empty());
     assert_eq!(missing.unresolved_references[0]["reason"], "missingVisibilityEvidence");
@@ -83,7 +83,9 @@ fn membership_conflicts_require_targeted_metadata_before_claiming_completeness()
     let snapshot = capture.snapshot("local")?;
     assert_eq!(snapshot.coverage["membership"], "partial");
     assert_eq!(snapshot.active[0]["membership"]["state"], "unresolved");
-    capture.check_membership(&mut Metadata(json!({"id":identifier,"projectId":"backend"})), &identifier)?;
+    let mut reader = Metadata(json!({"id":identifier,"projectId":"backend"}));
+    assert!(capture.step(&mut reader, "local")?);
+    assert!(!capture.step(&mut reader, "local")?);
     assert!(capture.next_conflict("local").is_none());
     let snapshot = capture.snapshot("local")?;
     assert_eq!(snapshot.coverage["membership"], "complete");
@@ -91,5 +93,18 @@ fn membership_conflicts_require_targeted_metadata_before_claiming_completeness()
     let mut missing = conflicting_capture(&identifier);
     missing.check_membership(&mut Metadata(json!({"id":identifier})), &identifier)?;
     assert_eq!(missing.snapshot("local")?.coverage["membership"], "partial");
+    Ok(())
+}
+
+#[test]
+fn references_outside_known_source_scope_keep_archive_status_unresolved() -> Result<()> {
+    let identifier = uuid::Uuid::new_v4().to_string();
+    let mut capture = capture("0.169.0");
+    capture.accept_reference(&identifier, &json!({"id":identifier,"ephemeral":false,
+        "attachedToThreadId":null,"source":{"custom":"unproven-source"}}))?;
+    let snapshot = capture.snapshot("local")?;
+    assert!(snapshot.active.is_empty() && snapshot.archived.is_empty());
+    assert_eq!(snapshot.source["unresolvedReferences"][0]["reason"], "unprovenArchiveScope");
+    assert!(!serde_json::to_string(&snapshot)?.contains("unproven-source"));
     Ok(())
 }

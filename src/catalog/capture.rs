@@ -59,74 +59,62 @@ impl Capture {
             .as_str()
             .context("目录来源缺少主机")?
             .to_owned();
-        let mut remaining = budget.max(1);
-        loop {
-            if let Some(index) = self.jobs.iter().position(|job| !job.complete) {
-                if remaining == 0 {
-                    return Ok(None);
-                }
-                let job = &mut self.jobs[index];
-                job.step(reader, &host)?;
-                if self.archive_check == Some(index) {
-                    for row in &mut job.items {
-                        *row = json!({"id":row["id"]});
-                    }
-                }
-                remaining -= 1;
-                continue;
+        for _ in 0..budget.max(1) {
+            if !self.step(reader, &host)? {
+                let home = self.source["codexHome"].as_str().context("缺少目录来源")?;
+                let final_input = input::read(reader, home)?;
+                ensure!(self.initial.hash == final_input.hash, "目录读取期间来源状态或账户发生变化");
+                return self.snapshot(&host).map(Some);
             }
-            if !self.expanded {
-                self.expand()?;
-                continue;
-            }
-            let candidates = &self.initial.projection.references;
-            if self.reference_index < candidates.len() {
-                let identifier = candidates[self.reference_index]["id"]
-                    .as_str()
-                    .context("持久引用缺少会话身份")?
-                    .to_owned();
-                if !self.listed(&identifier)
-                    && !self.references.iter().any(|row| row["id"] == identifier)
-                {
-                    if remaining == 0 {
-                        return Ok(None);
-                    }
-                    match reader.call(
-                        "thread/read",
-                        json!({"threadId":identifier,"includeTurns":false}),
-                    ) {
-                        Ok(result) => {
-                            let thread = result.get("thread").context("会话元数据响应无效")?;
-                            self.accept_reference(&identifier, thread)?;
-                        }
-                        Err(error) if error.downcast_ref::<RequestError>().is_some() => {
-                            self.issues
-                                .push(format!("referenceUnavailable:{identifier}:{error}"));
-                            self.unresolved_reference(&identifier, "unavailable");
-                        }
-                        Err(error) => return Err(error),
-                    }
-                    remaining -= 1;
+        }
+        Ok(None)
+    }
+
+    fn step(&mut self, reader: &mut dyn Rpc, host: &str) -> Result<bool> {
+        if !self.expanded && self.jobs.iter().all(|job| job.complete) {
+            self.expand()?;
+        }
+        if let Some(index) = self.jobs.iter().position(|job| !job.complete) {
+            let job = &mut self.jobs[index];
+            job.step(reader, host)?;
+            if self.archive_check == Some(index) {
+                for row in &mut job.items {
+                    *row = json!({"id":row["id"]});
                 }
+            }
+            return Ok(true);
+        }
+        if self.step_reference(reader)? {
+            return Ok(true);
+        }
+        if let Some(identifier) = self.next_conflict(host) {
+            self.check_membership(reader, &identifier)?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    fn step_reference(&mut self, reader: &mut dyn Rpc) -> Result<bool> {
+        while let Some(candidate) = self.initial.projection.references.get(self.reference_index) {
+            let identifier = candidate["id"].as_str().context("持久引用缺少会话身份")?.to_owned();
+            if self.listed(&identifier) || self.references.iter().any(|row| row["id"] == identifier)
+                || self.unresolved_references.iter().any(|row| row["id"] == identifier)
+            {
                 self.reference_index += 1;
                 continue;
             }
-            if let Some(identifier) = self.next_conflict(&host) {
-                if remaining == 0 {
-                    return Ok(None);
+            match reader.call("thread/read", json!({"threadId":identifier,"includeTurns":false})) {
+                Ok(result) => self.accept_reference(&identifier, result.get("thread").context("会话元数据响应无效")?)?,
+                Err(error) if error.downcast_ref::<RequestError>().is_some() => {
+                    self.issues.push(format!("referenceUnavailable:{identifier}:{error}"));
+                    self.unresolved_reference(&identifier, "unavailable");
                 }
-                self.check_membership(reader, &identifier)?;
-                remaining -= 1;
-                continue;
+                Err(error) => return Err(error),
             }
-            let home = self.source["codexHome"].as_str().context("缺少目录来源")?;
-            let final_input = input::read(reader, home)?;
-            ensure!(
-                self.initial.hash == final_input.hash,
-                "目录读取期间来源状态或账户发生变化"
-            );
-            return self.snapshot(&host).map(Some);
+            self.reference_index += 1;
+            return Ok(true);
         }
+        Ok(false)
     }
 
     fn supported_sources(&self) -> bool {
@@ -140,7 +128,18 @@ impl Capture {
 
     fn accept_reference(&mut self, identifier: &str, thread: &Value) -> Result<()> {
         ensure!(thread["id"] == identifier, "会话元数据身份不匹配");
-        let reason = if !self.supported_sources() {
+        if let Some(reason) = self.reference_issue(thread) {
+            self.unresolved_reference(identifier, reason);
+        } else if eligible(thread) {
+            let row = super::paging::project_fields(thread, "thread/list")?;
+            self.metadata_checks.insert(identifier.to_owned(), row.clone());
+            self.references.push(row);
+        }
+        Ok(())
+    }
+
+    fn reference_issue(&self, thread: &Value) -> Option<&'static str> {
+        if !self.supported_sources() {
             Some("unsupportedArchiveScope")
         } else if !thread.get("attachedToThreadId").is_some_and(|value| value.is_null() || value.is_string())
             || !thread["ephemeral"].is_boolean()
@@ -152,20 +151,12 @@ impl Capture {
             Some("unprovenArchiveScope")
         } else {
             None
-        };
-        if let Some(reason) = reason {
-            self.unresolved_reference(identifier, reason);
-        } else if eligible(thread) {
-            let row = super::paging::project_fields(thread, "thread/list")?;
-            self.metadata_checks.insert(identifier.to_owned(), row.clone());
-            self.references.push(row);
         }
-        Ok(())
     }
 
     fn rows(&self) -> impl Iterator<Item = &Value> {
         self.jobs.iter().enumerate()
-            .filter(|(index, job)| job.method == "thread/list" && self.archive_check != Some(*index))
+            .filter(move |(index, job)| job.method == "thread/list" && self.archive_check != Some(*index))
             .flat_map(|(_, job)| &job.items).chain(&self.references)
     }
 
@@ -238,6 +229,25 @@ impl Capture {
     fn expand(&mut self) -> Result<()> {
         let supported = self.supported_sources();
         let limit = self.jobs[1].params["limit"].clone();
+        self.expand_sections(supported, &limit)?;
+        let unresolved = self.initial.projection.references.iter().any(|row| {
+            row["id"].as_str().is_some_and(|identifier| !self.listed(identifier))
+        });
+        if unresolved && supported {
+            let mut params = ordinary_params(100, true);
+            params["limit"] = limit;
+            params["sourceKinds"] = json!(ALL_SOURCES);
+            self.archive_check = Some(self.jobs.len());
+            self.jobs.push(PageScan::new("thread/list", params));
+        }
+        if !supported {
+            self.issues.push("sourceKindsUnsupportedVersion".into());
+        }
+        self.expanded = true;
+        Ok(())
+    }
+
+    fn expand_sections(&mut self, supported: bool, limit: &Value) -> Result<()> {
         let sections = self.jobs[3].items.clone();
         for section in sections {
             let identifier = section["id"].as_str().context("分区缺少身份")?;
@@ -262,40 +272,29 @@ impl Capture {
                 }
             }
         }
-        let unresolved = self.initial.projection.references.iter().any(|row| {
-            row["id"]
-                .as_str()
-                .is_some_and(|identifier| !self.listed(identifier))
-        });
-        if unresolved && supported {
-            let mut params = ordinary_params(100, true);
-            params["limit"] = limit;
-            params["sourceKinds"] = json!(ALL_SOURCES);
-            self.archive_check = Some(self.jobs.len());
-            self.jobs.push(PageScan::new("thread/list", params));
-        }
-        if !supported {
-            self.issues.push("sourceKindsUnsupportedVersion".into());
-        }
-        self.expanded = true;
         Ok(())
     }
 
     fn snapshot(&self, host: &str) -> Result<Snapshot> {
-        let projects =
-            super::projects::catalog(&self.jobs[0].items, &self.initial.projection, host);
-        let ordinary: BTreeSet<_> = self.jobs[1..3]
-            .iter()
-            .flat_map(|job| &job.items)
-            .filter_map(|row| row["id"].as_str())
-            .collect();
-        let archived: BTreeSet<_> = self
-            .jobs
-            .iter()
-            .filter(|job| job.params["archived"] == true)
-            .flat_map(|job| &job.items)
-            .filter_map(|row| row["id"].as_str())
-            .collect();
+        let projects = super::projects::catalog(&self.jobs[0].items, &self.initial.projection, host);
+        let (active, archived, membership_issues) = self.snapshot_rows(host)?;
+        let mut issues = self.initial.projection.issues.clone();
+        issues.extend(self.issues.clone());
+        issues.extend(membership_issues.clone());
+        Ok(Snapshot {
+            source: self.snapshot_source()?,
+            captured_at: crate::model::now(), projects, active, archived,
+            coverage: json!({"projects":"complete","ordinaryActive":"complete","ordinaryArchived":"complete",
+                "publishedReferences":if issues.is_empty() {"complete"} else {"partial"},
+                "membership":if membership_issues.is_empty() {"complete"} else {"partial"},
+                "legacy":if self.initial.projection.issues.is_empty() {"complete"} else {"partial"}}),
+            issues,
+        })
+    }
+
+    fn snapshot_rows(&self, host: &str) -> Result<(Vec<Value>, Vec<Value>, Vec<String>)> {
+        let ordinary = self.ordinary_ids();
+        let archived = self.archived_ids();
         let mut active_rows = Vec::new();
         let mut archived_rows = Vec::new();
         let mut seen = BTreeSet::new();
@@ -313,6 +312,9 @@ impl Capture {
             if let Some(issue) = row["membership"]["projectIssue"].as_str() {
                 membership_issues.push(format!("membership:{}:{issue}", row["id"]));
             }
+            if row.get("projectId").is_none() {
+                membership_issues.push(format!("membership:{}:backendProjectMissing", row["id"]));
+            }
             row["catalogProjectId"] = row["membership"]["projectId"].clone();
             if archived {
                 archived_rows.push(row);
@@ -320,9 +322,20 @@ impl Capture {
                 active_rows.push(row);
             }
         }
-        let mut issues = self.initial.projection.issues.clone();
-        issues.extend(self.issues.clone());
-        issues.extend(membership_issues.clone());
+        Ok((active_rows, archived_rows, membership_issues))
+    }
+
+    fn ordinary_ids(&self) -> BTreeSet<&str> {
+        self.jobs[1..3].iter().flat_map(|job| &job.items)
+            .filter_map(|row| row["id"].as_str()).collect()
+    }
+
+    fn archived_ids(&self) -> BTreeSet<&str> {
+        self.jobs.iter().filter(|job| job.params["archived"] == true)
+            .flat_map(|job| &job.items).filter_map(|row| row["id"].as_str()).collect()
+    }
+
+    fn snapshot_source(&self) -> Result<Value> {
         let mut source = self.source.clone();
         source["generation"] = json!(input::digest(&serde_json::to_vec(&json!([
             self.source,
@@ -332,18 +345,7 @@ impl Capture {
         source["stateHash"] = json!(self.initial.hash);
         source["stateMetadata"] = self.initial.metadata.clone();
         source["unresolvedReferences"] = json!(self.unresolved_references);
-        Ok(Snapshot {
-            source,
-            captured_at: crate::model::now(),
-            projects,
-            active: active_rows,
-            archived: archived_rows,
-            coverage: json!({"projects":"complete","ordinaryActive":"complete","ordinaryArchived":"complete",
-                "publishedReferences":if issues.is_empty() {"complete"} else {"partial"},
-                "membership":if membership_issues.is_empty() {"complete"} else {"partial"},
-                "legacy":if self.initial.projection.issues.is_empty() {"complete"} else {"partial"}}),
-            issues,
-        })
+        Ok(source)
     }
 }
 

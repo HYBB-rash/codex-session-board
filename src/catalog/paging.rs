@@ -57,6 +57,24 @@ impl PageScan {
         let mut params = self.params.clone();
         params["cursor"] = json!(self.cursor);
         let result = reader.call(&self.method, params)?;
+        let page = self.page(&result, host)?;
+        let next = self.successor(&result)?;
+        for entry in page {
+            if let Some(previous) = self.items.iter_mut().find(|old| old["id"] == entry["id"]) {
+                *previous = entry;
+            } else {
+                self.items.push(entry);
+            }
+        }
+        if let Some(next) = &next {
+            self.cursors.insert(next.clone());
+        }
+        self.cursor = next;
+        self.complete = self.cursor.is_none();
+        Ok(())
+    }
+
+    fn page(&self, result: &Value, host: &str) -> Result<Vec<Value>> {
         let entries = result["data"].as_array().context("目录分页缺少 data")?;
         let mut page = Vec::new();
         for entry in entries {
@@ -76,6 +94,10 @@ impl PageScan {
             }
             page.push(project_fields(entry, &self.method)?);
         }
+        Ok(page)
+    }
+
+    fn successor(&self, result: &Value) -> Result<Option<String>> {
         let next = match result.get("nextCursor") {
             None | Some(Value::Null) => None,
             Some(Value::String(value)) if value.is_empty() => None,
@@ -85,19 +107,7 @@ impl PageScan {
         if let Some(next) = &next {
             ensure!(!self.cursors.contains(next), "目录分页游标重复");
         }
-        for entry in page {
-            if let Some(previous) = self.items.iter_mut().find(|old| old["id"] == entry["id"]) {
-                *previous = entry;
-            } else {
-                self.items.push(entry);
-            }
-        }
-        if let Some(next) = &next {
-            self.cursors.insert(next.clone());
-        }
-        self.cursor = next;
-        self.complete = self.cursor.is_none();
-        Ok(())
+        Ok(next)
     }
 }
 
@@ -121,10 +131,10 @@ pub(crate) fn project_fields(entry: &Value, method: &str) -> Result<Value> {
     };
     let mut result = serde_json::Map::new();
     for field in fields {
-        if let Some(value) = entry.get(*field) {
-            if let Some(projected) = field_value(field, value)? {
-                result.insert((*field).into(), projected);
-            }
+        if let Some(value) = entry.get(*field)
+            && let Some(projected) = field_value(field, value)?
+        {
+            result.insert((*field).into(), projected);
         }
     }
     Ok(Value::Object(result))
