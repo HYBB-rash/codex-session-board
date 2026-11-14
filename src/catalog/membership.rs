@@ -31,6 +31,10 @@ fn result(
     json!({"state":state,"projectId":key,"basis":basis,"pending":pending,"projectIssue":issue})
 }
 
+fn issue(state: &str, basis: &str, pending: bool, code: &str) -> Value {
+    result(state, None, basis, pending, Some(code))
+}
+
 pub(crate) fn legacy_key(
     identifier: &str,
     projects: &[Value],
@@ -55,11 +59,7 @@ pub(crate) fn legacy_key(
         .collect();
     if candidates.len() == 1 {
         let server = candidates.first()?;
-        if projection
-            .mappings
-            .iter()
-            .any(|(legacy, mapped)| legacy != identifier && mapped == *server)
-        {
+        if association_conflicts(server, identifier, projects, projection) {
             return None;
         }
         return Some(project_key(host, "targetServer", server));
@@ -78,6 +78,24 @@ pub(crate) fn legacy_key(
     None
 }
 
+fn association_conflicts(
+    server: &str,
+    identifier: &str,
+    projects: &[Value],
+    projection: &Projection,
+) -> bool {
+    projection
+        .mappings
+        .iter()
+        .any(|(legacy, mapped)| legacy != identifier && mapped == server)
+        || projects.iter().any(|project| {
+            project["id"] == server
+                && project["metadata"]["codex.localProjectId"]
+                    .as_str()
+                    .is_some_and(|legacy| legacy != identifier)
+        })
+}
+
 pub(crate) fn deleting(server: &str, projection: &Projection) -> bool {
     projection
         .pending_deletions
@@ -89,6 +107,38 @@ pub(crate) fn deleting(server: &str, projection: &Projection) -> bool {
                     .get(legacy)
                     .is_some_and(|value| value == server)
         })
+}
+
+fn legacy_intent<'projection>(
+    identifier: &str,
+    projection: &'projection Projection,
+) -> Result<(Option<&'projection str>, bool), &'static str> {
+    let assignment = projection
+        .assignments
+        .get(identifier)
+        .filter(|value| !value.is_null());
+    if projection
+        .membership_hosts
+        .get(identifier)
+        .is_some_and(|value| value != "local")
+        || assignment
+            .and_then(|value| value["hostId"].as_str())
+            .is_some_and(|host| host != "local")
+    {
+        return Err("foreignMembership");
+    }
+    if assignment.is_some_and(|value| value["projectKind"] != "local") {
+        return Err("foreignAssignment");
+    }
+    let legacy = assignment.and_then(|value| value["projectId"].as_str());
+    if assignment.is_some() && legacy.is_none() {
+        return Err("invalidLegacyAssignment");
+    }
+    let explicit_projectless = projection.projectless.contains(identifier);
+    if explicit_projectless && legacy.is_some() {
+        return Err("conflictingLegacyIntent");
+    }
+    Ok((legacy, explicit_projectless))
 }
 
 pub(crate) fn resolve(
@@ -103,83 +153,18 @@ pub(crate) fn resolve(
         .unwrap_or_default();
     let pending = projection.pending(identifier);
     if thread["hostId"].as_str().is_some_and(|value| value != host) {
-        return result("unresolved", None, "host", pending, Some("hostMismatch"));
+        return issue("unresolved", "host", pending, "hostMismatch");
     }
-    let assignment = projection
-        .assignments
-        .get(identifier)
-        .filter(|value| !value.is_null());
-    if projection
-        .membership_hosts
-        .get(identifier)
-        .is_some_and(|value| value != "local")
-        || assignment
-            .and_then(|value| value["hostId"].as_str())
-            .is_some_and(|host| host != "local")
-    {
-        return result(
-            "unresolved",
-            None,
-            "legacy",
-            pending,
-            Some("foreignMembership"),
-        );
-    }
-    if assignment.is_some_and(|value| value["projectKind"] != "local") {
-        return result(
-            "unresolved",
-            None,
-            "legacy",
-            pending,
-            Some("foreignAssignment"),
-        );
-    }
-    let legacy = assignment.and_then(|value| value["projectId"].as_str());
-    if assignment.is_some() && legacy.is_none() {
-        return result(
-            "unresolved",
-            None,
-            "legacy",
-            pending,
-            Some("invalidLegacyAssignment"),
-        );
-    }
-    let explicit_projectless = projection.projectless.contains(identifier);
-    if explicit_projectless && legacy.is_some() {
-        return result(
-            "unresolved",
-            None,
-            "legacy",
-            pending,
-            Some("conflictingLegacyIntent"),
-        );
-    }
-    let previous = legacy.and_then(|identifier| legacy_key(identifier, projects, projection, host));
+    let (legacy, projectless) = match legacy_intent(identifier, projection) {
+        Ok(intent) => intent,
+        Err(code) => return issue("unresolved", "legacy", pending, code),
+    };
     let backend = BackendProject::from_thread(thread);
-    if pending || backend == BackendProject::Missing {
-        if explicit_projectless {
-            return result(
-                "explicitlyProjectless",
-                None,
-                "legacyProjectless",
-                pending,
-                None,
-            );
-        }
-        if legacy.is_some() {
-            return previous.map_or_else(
-                || {
-                    result(
-                        "unresolved",
-                        None,
-                        "legacy",
-                        pending,
-                        Some("unavailableLegacyProject"),
-                    )
-                },
-                |key| result("assigned", Some(key), "legacyAssignment", pending, None),
-            );
-        }
+    if (pending || backend == BackendProject::Missing)
+        && let Some(resolved) =
+            legacy_result(legacy, projectless, projects, projection, host, pending)
+    {
+        return resolved;
     }
     if let Some(resolved) = backend_result(
         backend,
@@ -187,27 +172,53 @@ pub(crate) fn resolve(
         projection,
         host,
         pending,
-        explicit_projectless,
-        legacy.is_some(),
+        projectless,
+        legacy,
     ) {
         return resolved;
     }
-    if projection.account_status != "verified" {
-        return result(
-            "unassigned",
+    infer_thread(identifier, thread, projects, projection, host, pending)
+}
+
+fn legacy_result(
+    legacy: Option<&str>,
+    projectless: bool,
+    projects: &[Value],
+    projection: &Projection,
+    host: &str,
+    pending: bool,
+) -> Option<Value> {
+    if projectless {
+        return Some(result(
+            "explicitlyProjectless",
             None,
+            "legacyProjectless",
+            pending,
+            None,
+        ));
+    }
+    legacy.map(|identifier| {
+        legacy_key(identifier, projects, projection, host).map_or_else(
+            || issue("unresolved", "legacy", pending, "unavailableLegacyProject"),
+            |key| result("assigned", Some(key), "legacyAssignment", pending, None),
+        )
+    })
+}
+
+fn infer_thread(
+    identifier: &str,
+    thread: &Value,
+    projects: &[Value],
+    projection: &Projection,
+    host: &str,
+    pending: bool,
+) -> Value {
+    if projection.account_status != "verified" {
+        return issue(
+            "unassigned",
             "legacyUnavailable",
             pending,
-            Some("legacyUnavailable"),
-        );
-    }
-    if legacy.is_some() {
-        return result(
-            "unresolved",
-            None,
-            "legacy",
-            pending,
-            Some("unavailableLegacyProject"),
+            "legacyUnavailable",
         );
     }
     if let Some(hint) = projection
@@ -237,44 +248,20 @@ fn backend_result(
     host: &str,
     pending: bool,
     explicit_projectless: bool,
-    has_legacy: bool,
+    legacy: Option<&str>,
 ) -> Option<Value> {
     Some(match backend {
-        BackendProject::Assigned(server) => {
-            if !projects.iter().any(|project| project["id"] == server) {
-                return Some(result(
-                    "unresolved",
-                    None,
-                    "backend",
-                    pending,
-                    Some("unknownBackendProject"),
-                ));
-            }
-            if deleting(server, projection) {
-                return Some(result(
-                    "unresolved",
-                    None,
-                    "backend",
-                    pending,
-                    Some("projectPendingDeletion"),
-                ));
-            }
-            result(
-                "assigned",
-                Some(project_key(host, "targetServer", server)),
-                "backend",
-                pending,
-                None,
-            )
-        }
-        BackendProject::Invalid => result(
-            "unresolved",
-            None,
-            "backend",
+        BackendProject::Assigned(server) => backend_assignment(
+            server,
+            projects,
+            projection,
+            host,
             pending,
-            Some("invalidBackendProject"),
+            explicit_projectless,
+            legacy,
         ),
-        BackendProject::Unassigned if explicit_projectless || has_legacy => result(
+        BackendProject::Invalid => issue("unresolved", "backend", pending, "invalidBackendProject"),
+        BackendProject::Unassigned if explicit_projectless || legacy.is_some() => result(
             "explicitlyProjectless",
             None,
             "backendCleared",
@@ -286,6 +273,37 @@ fn backend_result(
         }
         _ => return None,
     })
+}
+
+fn backend_assignment(
+    server: &str,
+    projects: &[Value],
+    projection: &Projection,
+    host: &str,
+    pending: bool,
+    explicit_projectless: bool,
+    legacy: Option<&str>,
+) -> Value {
+    if !projects.iter().any(|project| project["id"] == server) {
+        return issue("unresolved", "backend", pending, "unknownBackendProject");
+    }
+    if deleting(server, projection) {
+        return issue("unresolved", "backend", pending, "projectPendingDeletion");
+    }
+    let key = project_key(host, "targetServer", server);
+    let conflict = !pending
+        && (explicit_projectless
+            || legacy.is_some_and(|identifier| {
+                legacy_key(identifier, projects, projection, host)
+                    .is_none_or(|previous| previous != key)
+            }));
+    result(
+        "assigned",
+        Some(key),
+        "backend",
+        pending,
+        conflict.then_some("backendLegacyConflict"),
+    )
 }
 
 fn path(value: &str) -> Option<String> {
@@ -305,19 +323,11 @@ fn path(value: &str) -> Option<String> {
     Some(format!("/{}", components.join("/")))
 }
 
-fn infer(
-    cwd: &str,
+fn root_candidates(
     projects: &[Value],
     projection: &Projection,
     host: &str,
-    pending: bool,
-    basis: &str,
-) -> Value {
-    let Some(cwd) = path(cwd) else {
-        return result("unassigned", None, "none", pending, None);
-    };
-    let mut candidates = BTreeSet::new();
-    let mut longest = 0;
+) -> Vec<(String, Value)> {
     let legacy_projects = projection.projects.iter().filter_map(|project| {
         let identifier = project["id"].as_str()?;
         let key = legacy_key(identifier, projects, projection, host)?;
@@ -333,7 +343,23 @@ fn infer(
             project["roots"].clone(),
         ))
     });
-    for (key, roots) in backend_projects.chain(legacy_projects) {
+    backend_projects.chain(legacy_projects).collect()
+}
+
+fn infer(
+    cwd: &str,
+    projects: &[Value],
+    projection: &Projection,
+    host: &str,
+    pending: bool,
+    basis: &str,
+) -> Value {
+    let Some(cwd) = path(cwd) else {
+        return result("unassigned", None, "none", pending, None);
+    };
+    let mut candidates = BTreeSet::new();
+    let mut longest = 0;
+    for (key, roots) in root_candidates(projects, projection, host) {
         for root in roots.as_array().into_iter().flatten() {
             let Some(root) = root
                 .as_str()

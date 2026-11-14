@@ -87,10 +87,16 @@ impl LegacyProjection {
         projection.account_status = "verified".into();
         projection.read_projects(state);
         let identity = format!("local:{codex_home}");
-        projection.checkpoint = projection
-            .owner_value(state, "app-server-projects-migration-by-host")[&identity]
-            .clone();
-        if let Some(checkpoint) = projection.checkpoint.as_object_mut() {
+        projection.read_migration(state, &identity);
+        projection.read_membership(state, &identity);
+        projection.read_references(state, account_id, &identity);
+        Ok(projection)
+    }
+
+    fn read_migration(&mut self, state: &Value, identity: &str) {
+        self.checkpoint =
+            self.owner_value(state, "app-server-projects-migration-by-host")[identity].clone();
+        if let Some(checkpoint) = self.checkpoint.as_object_mut() {
             checkpoint.retain(|key, _| {
                 [
                     "version",
@@ -101,61 +107,61 @@ impl LegacyProjection {
                 ]
                 .contains(&key.as_str())
             });
-        } else if !projection.checkpoint.is_null() {
-            projection.issues.push("invalid:migrationCheckpoint".into());
-            projection.checkpoint = Value::Null;
+        } else if !self.checkpoint.is_null() {
+            self.issues.push("invalid:migrationCheckpoint".into());
+            self.checkpoint = Value::Null;
         }
-        projection.pending_deletions = object(
-            &projection.owner_value(state, "app-server-pending-project-deletions-by-host")
-                [&identity],
-            &mut projection.issues,
+        self.pending_deletions = object(
+            &self.owner_value(state, "app-server-pending-project-deletions-by-host")[identity],
+            &mut self.issues,
             "pendingProjectDeletions",
         );
-        projection.workspace_hints = object(
-            &projection.owner_value(state, "thread-workspace-root-hints"),
-            &mut projection.issues,
+        for deletion in self.pending_deletions.values_mut() {
+            if let Some(fields) = deletion.as_object_mut() {
+                fields.retain(|key, _| ["projectId", "deleteAfterMs"].contains(&key.as_str()));
+            }
+        }
+    }
+
+    fn read_membership(&mut self, state: &Value, identity: &str) {
+        self.workspace_hints = object(
+            &self.owner_value(state, "thread-workspace-root-hints"),
+            &mut self.issues,
             "workspaceHints",
         );
         let mappings = object(
-            &state["app-server-project-id-by-legacy-project-id-by-host"][&identity],
-            &mut projection.issues,
+            &state["app-server-project-id-by-legacy-project-id-by-host"][identity],
+            &mut self.issues,
             "projectMappings",
         );
-        projection.mappings = mappings
+        self.mappings = mappings
             .into_iter()
             .filter(|(identifier, server)| {
                 server.is_string()
-                    && projection
+                    && self
                         .projects
                         .iter()
                         .any(|project| project["id"] == *identifier)
             })
             .collect();
-        projection.assignments = object(
+        self.assignments = object(
             &state["thread-project-assignments"],
-            &mut projection.issues,
+            &mut self.issues,
             "assignments",
         );
-        projection.membership_hosts = object(
+        self.membership_hosts = object(
             &state["thread-project-membership-host-ids"],
-            &mut projection.issues,
+            &mut self.issues,
             "membershipHosts",
         );
-        for assignment in projection.assignments.values_mut() {
+        for assignment in self.assignments.values_mut() {
             if let Some(fields) = assignment.as_object_mut() {
                 fields.retain(|key, _| {
                     ["projectKind", "projectId", "projectOrigin", "hostId"].contains(&key.as_str())
                 });
             }
         }
-        for deletion in projection.pending_deletions.values_mut() {
-            if let Some(fields) = deletion.as_object_mut() {
-                fields.retain(|key, _| ["projectId", "deleteAfterMs"].contains(&key.as_str()));
-            }
-        }
-        projection.projectless = strings(&state["projectless-thread-ids"]);
-        projection.read_references(state, account_id, &identity);
-        Ok(projection)
+        self.projectless = strings(&state["projectless-thread-ids"]);
     }
 
     fn owner_value(&self, state: &Value, key: &str) -> Value {
@@ -171,7 +177,9 @@ impl LegacyProjection {
             .into_iter()
             .filter_map(|(identifier, mut project)| {
                 if project["id"] != identifier
-                    || !project["rootPaths"].is_array()
+                    || !project["rootPaths"]
+                        .as_array()
+                        .is_some_and(|roots| roots.iter().all(Value::is_string))
                     || !project["name"].is_string()
                 {
                     self.issues.push(format!("invalidProject:{identifier}"));
@@ -234,6 +242,15 @@ impl LegacyProjection {
                 self.add_reference(&identifier, "pinned", None, &hosts, &membership_hosts);
             }
         }
+        self.read_sections(&custom, &hosts, &membership_hosts);
+    }
+
+    fn read_sections(
+        &mut self,
+        custom: &Value,
+        hosts: &Map<String, Value>,
+        membership_hosts: &Map<String, Value>,
+    ) {
         self.deleted_section_ids = strings(&custom["appServerDeletedSectionIds"]);
         let migrated = strings(&custom["appServerMigratedHostIds"]).contains("local");
         for section in custom["sections"].as_array().into_iter().flatten() {
@@ -261,8 +278,8 @@ impl LegacyProjection {
                         thread_id,
                         "custom",
                         Some(identifier),
-                        &hosts,
-                        &membership_hosts,
+                        hosts,
+                        membership_hosts,
                     );
                 }
             }
