@@ -74,7 +74,7 @@ impl PageScan {
                     "目录会话 UUID 非规范格式"
                 );
             }
-            page.push(project_fields(entry, &self.method));
+            page.push(project_fields(entry, &self.method)?);
         }
         let next = match result.get("nextCursor") {
             None | Some(Value::Null) => None,
@@ -101,7 +101,7 @@ impl PageScan {
     }
 }
 
-pub(crate) fn project_fields(entry: &Value, method: &str) -> Value {
+pub(crate) fn project_fields(entry: &Value, method: &str) -> Result<Value> {
     let fields: &[&str] = match method {
         "project/list" => &["id", "name", "roots", "position", "metadata"],
         "threadSection/list" => &["id", "name"],
@@ -122,20 +122,47 @@ pub(crate) fn project_fields(entry: &Value, method: &str) -> Value {
     let mut result = serde_json::Map::new();
     for field in fields {
         if let Some(value) = entry.get(*field) {
-            let value = if matches!(*field, "preview" | "name") {
-                value
-                    .as_str()
-                    .map(|text| json!(text.chars().take(300).collect::<String>()))
-                    .unwrap_or_else(|| value.clone())
-            } else if *field == "metadata" {
-                json!({"codex.localProjectId":value.get("codex.localProjectId")})
-            } else {
-                value.clone()
-            };
-            result.insert((*field).into(), value);
+            if let Some(projected) = field_value(field, value)? {
+                result.insert((*field).into(), projected);
+            }
         }
     }
-    Value::Object(result)
+    Ok(Value::Object(result))
+}
+
+fn field_value(field: &str, value: &Value) -> Result<Option<Value>> {
+    Ok(match field {
+        "name" | "preview" => value.as_str().map(|text| json!(text.chars().take(300).collect::<String>())),
+        "id" | "cwd" => value.as_str().map(|text| json!(text)),
+        "projectId" | "attachedToThreadId" | "threadSource" => {
+            ensure!(value.is_null() || value.is_string(), "目录 {field} 类型无效");
+            Some(value.clone())
+        }
+        "ephemeral" => {
+            ensure!(value.is_boolean(), "目录 ephemeral 类型无效");
+            Some(value.clone())
+        }
+        "updatedAt" | "createdAt" | "position" => value.as_number().map(|number| json!(number)),
+        "roots" => value.as_array().map(|roots| json!(roots.iter()
+            .filter_map(|root| root.as_str().or_else(|| root["path"].as_str()))
+            .map(|path| json!({"path":path})).collect::<Vec<_>>())),
+        "metadata" => Some(value["codex.localProjectId"].as_str()
+            .map_or_else(|| json!({}), |identifier| json!({"codex.localProjectId":identifier}))),
+        "source" => source_projection(value),
+        _ => None,
+    })
+}
+
+fn source_projection(value: &Value) -> Option<Value> {
+    if let Some(source) = value.as_str() {
+        return matches!(source, "cli" | "vscode" | "exec" | "mcp" | "appServer" | "unknown")
+            .then(|| json!(source));
+    }
+    if let Some(custom) = value["custom"].as_str() {
+        return matches!(custom, "atlas" | "chatgpt").then(|| json!({"custom":custom}));
+    }
+    value.as_object().filter(|fields| fields.contains_key("subAgent"))
+        .map(|_| json!({"subAgent":null}))
 }
 
 #[cfg(test)]
@@ -143,6 +170,21 @@ mod tests {
     use super::*;
 
     struct Pages(Vec<Value>);
+
+    #[test]
+    fn metadata_projection_never_caches_nested_payloads() -> Result<()> {
+        let thread = project_fields(&json!({"id":"id","name":{"secret":"body"},
+            "preview":["body"],"source":{"subAgent":{"thread_spawn":{"secret":"body"}}},
+            "cwd":"/remote","projectId":null,"turns":[{"text":"body"}]}), "thread/list")?;
+        assert_eq!(thread, json!({"id":"id","cwd":"/remote","projectId":null,
+            "source":{"subAgent":null}}));
+        let project = project_fields(&json!({"id":"project","roots":[{"path":"/remote","secret":"body"}],
+            "metadata":{"codex.localProjectId":{"secret":"body"},"other":"body"}}), "project/list")?;
+        assert_eq!(project, json!({"id":"project","roots":[{"path":"/remote"}],"metadata":{}}));
+        assert!(project_fields(&json!({"projectId":{"secret":"body"}}), "thread/list").is_err());
+        assert!(project_fields(&json!({"attachedToThreadId":false}), "thread/list").is_err());
+        Ok(())
+    }
 
     impl Rpc for Pages {
         fn call(&mut self, method: &str, params: Value) -> Result<Value> {

@@ -95,7 +95,7 @@ impl Capture {
                             ensure!(thread["id"] == identifier, "会话元数据身份不匹配");
                             if eligible(thread) {
                                 self.references
-                                    .push(super::paging::project_fields(thread, "thread/list"));
+                                    .push(super::paging::project_fields(thread, "thread/list")?);
                             }
                         }
                         Err(error) if error.downcast_ref::<RequestError>().is_some() => {
