@@ -194,6 +194,12 @@ pub(crate) fn scan_runtime_page(
     since: f64,
 ) -> Result<()> {
     let mut progress = Progress::load(app)?;
+    let catalog = if app.config.native_sections {
+        let _operation = app.operation()?;
+        Some(app.native_catalog(reader)?)
+    } else {
+        None
+    };
     let archived = if app.config.native_sections {
         HashMap::new()
     } else {
@@ -209,8 +215,8 @@ pub(crate) fn scan_runtime_page(
     }
     let complete = progress.advance(&entries, &response["nextCursor"], app.config.max_pages)?;
     app.store.discover(&entries)?;
-    if app.config.native_sections {
-        app.cache_native_page(generation, reader, &entries)?;
+    if let Some(catalog) = catalog {
+        app.cache_native_page(generation, &catalog, &entries)?;
     }
     let restoration_error = progress.reconcile_restoration(app, reader, &entries, &archived);
     let observed = observer::observe_runtime_threads(app, reader, revisions, since, &entries);

@@ -21,6 +21,45 @@ pub(crate) struct Record {
     pub probe: Option<Probe>,
 }
 
+pub(crate) fn usable(
+    config: &Config,
+    sections: &HashMap<String, Value>,
+    logical: HashMap<String, String>,
+) -> HashMap<String, String> {
+    let mut usable: HashMap<_, _> = logical.into_iter().filter(|(backend, logical)| {
+        sections.get(backend).is_some_and(|section| {
+            config.section_bindings().find(|(_, _, target)| *target == logical)
+                .is_none_or(|(_, label, _)| section["name"] == label)
+        })
+    }).collect();
+    let mut counts = HashMap::new();
+    for logical in usable.values() {
+        *counts.entry(logical.clone()).or_insert(0) += 1;
+    }
+    usable.retain(|_, logical| counts[logical.as_str()] == 1);
+    usable
+}
+
+pub(crate) fn merge_saved(
+    mut saved: HashMap<String, String>,
+    disk: HashMap<String, String>,
+) -> HashMap<String, String> {
+    let conflicts: HashSet<_> = disk.iter().filter(|(backend, logical)| {
+        saved.get(*backend).is_some_and(|previous| previous != *logical)
+            || saved.iter().any(|(other, previous)| previous == *logical && other != *backend)
+    }).flat_map(|(backend, logical)| {
+        std::iter::once(logical.clone()).chain(saved.get(backend).cloned())
+    }).collect();
+    saved.extend(disk);
+    saved.retain(|_, logical| !conflicts.contains(logical));
+    saved
+}
+
+pub(crate) fn complete(config: &Config, record: &Record) -> bool {
+    config.section_bindings().all(|(_, _, target)|
+        record.logical.values().any(|logical| logical == target))
+}
+
 pub(crate) fn seed(config: &Config) -> Result<Seed> {
     let state: Value = serde_json::from_reader(std::io::BufReader::new(std::fs::File::open(
         &config.sidebar_state_file,

@@ -286,6 +286,7 @@ fn runtime_step(
 ) -> Result<()> {
     if reader.is_none() {
         *reader = Some(RuntimeConnection::connect(app)?);
+        app.invalidate_native_mapping()?;
         revisions.clear();
     }
     let scan = if app.config.proxy_command.is_empty() {

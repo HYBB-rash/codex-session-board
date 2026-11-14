@@ -17,6 +17,7 @@ use std::sync::{
 use std::time::Duration;
 
 mod native;
+mod native_mapping;
 mod remote;
 mod remote_snapshot;
 mod drafts;
