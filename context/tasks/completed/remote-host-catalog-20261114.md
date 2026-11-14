@@ -6,7 +6,7 @@
 - base_commit: d4b40bb3aae98569a310f1e412defbb1f20dddbb
 - worktree_path: /Users/hongyong/Developer/codex-session-board-remote-catalog-impl-20261114
 - coordinator: root
-- status: in_progress
+- status: completed
 
 ## 授权与目标
 
@@ -36,5 +36,12 @@ root 独占本树整合、任务记录、索引与提交。不修改版本清单
 再比较拒绝前后的完整传输日志，消除 initialized 通知的竞态；单项连续 10 次通过。
 原有四进程选主用例出现一次启动就绪窗口失败，独立运行及连续 10 次复跑通过。
 选主路径与主线相同，尚无证据确定窗口耗在哪个阶段；不在本 PR 改动选主协议。
-保留失败报告，重新冻结测试源码后再执行完整验收及最终 PR 检查。
+保留失败报告。冻结代码头 8b4224ce15bf9ad0fb2e6d8d354d7eabd457ed2f 后，
+默认完整验收的 770 项自动测试全部通过；17 条需求通过、14 条缺少真实客户端证据，
+automated_passed=true、release_ready=false，退出 2，不能宣称完整验收通过。
+同一代码头隔离联调 10/10、全目标 Clippy 和 GitHub changes 检查通过。
+独立只读审查无阻塞，权限测试同步修复也已单独复核。
+PR 为 https://github.com/HYBB-rash/codex-session-board/pull/11。
+交付记录见 context/results/remote-catalog-implementation-20261115.md；
+最终交付核对归档提交自身的 PR 检查，不以上述代码头检查替代。
 保持原 31 条需求、参考模型及锁；真实客户端缺证继续待验证。
