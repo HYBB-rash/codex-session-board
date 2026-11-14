@@ -79,7 +79,7 @@ def acceptance_outcome(report, returncode):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--scope", choices=("pr", "candidate"), default="candidate")
+    parser.add_argument("--scope", choices=("pr", "candidate", "preflight"), default="candidate")
     parser.add_argument("--base", default="origin/main")
     parser.add_argument("--output", required=True, type=Path)
     arguments = parser.parse_args()
@@ -96,7 +96,10 @@ def main():
         ["./scripts/check"],
         ["cargo", "clippy", "--all-targets", "--locked", "--offline", "--", "-D", "warnings"],
     ]
-    if arguments.scope == "candidate":
+    if arguments.scope == "preflight":
+        commands = [["python3", "scripts/package_plugin.py", "--preflight",
+                     "--output", str(output / "source-package")]]
+    elif arguments.scope == "candidate":
         commands.append([
             "python3", "scripts/verify_acceptance.py", "--scope", "release",
             "--report", str(output / "automated.json"),

@@ -2,12 +2,13 @@
   "schema_version": 1,
   "updated_at": "2026-11-14",
   "current_phase": {
-    "id": "batch-policy-delivery-20261114",
-    "status": "completed",
+    "id": "delivery-cli-20261114",
+    "status": "in_progress",
     "as_of": "2026-11-14",
-    "summary": "分层规则已落地并完成原四PR到日用插件的完整重演。修复首轮打包遗漏后，0.3.75/e6f186a双平台670/659项全过，主线正常快进，固定不可变包已在当前ChatGPT客户端加载并现场验证；配置、38条原备注及测试卡片保全。完整31条仍有14项缺证，release_ready=false。收尾context为独立本地记录，主线保持已验证发布源码。"
+    "summary": "复用已有打包、更新和浏览器逻辑，落实三个交付CLI并对当前0.3.75实际运行计时；不重新发布业务插件，保留现有外部待验证边界。"
   },
   "active_tasks": [
+    "context/tasks/active/delivery-cli-20261114.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",

@@ -49,6 +49,7 @@ jobs:
             candidate-${{ matrix.target }}-1.99.1-
       - run: cargo fetch --locked
       - run: ./scripts/install-git-hooks
+      - run: ./scripts/validate --scope preflight --output "$RUNNER_TEMP/preflight"
       - run: TMPDIR=/tmp node scripts/check-transfer-feedback.mjs "$RUNNER_TEMP/transfer-feedback"
       - run: TMPDIR=/tmp ./scripts/validate --output "$RUNNER_TEMP/validation"
       - run: |

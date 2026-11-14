@@ -1569,6 +1569,8 @@
       "lib::codex_session_board::remote::connections::tests::failed_manual_connection_stops_when_auto_connect_is_off"
     ],
     "DELIVERY-001": [
+      "acceptance.test_delivery.DeliveryTests.test_source_preflight_checks_relocated_fingerprint_without_building_a_binary",
+      "acceptance.test_delivery.DeliveryTests.test_source_preflight_detects_an_omitted_extensionless_entry",
       "acceptance.test_saved_release.SavedReleaseTests.test_local_then_ci_reuses_exact_archive_without_building",
       "acceptance.test_saved_release.SavedReleaseTests.test_missing_platform_stays_draft_without_channel_writes",
       "acceptance.test_saved_release.SavedReleaseTests.test_actions_token_checks_immutability_before_channel_writes",

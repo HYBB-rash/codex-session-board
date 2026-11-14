@@ -37,6 +37,10 @@ Clippy、业务测试和检查工具自测不在每个提交重复执行。
 
 ## 实际入口
 
+发布前快速检查运行 `./scripts/validate --scope preflight --output /tmp/preflight-result`。
+它只打包与解包源码、比对完整实现指纹、版本和入口执行权限，不编译或启动插件。
+候选CI也在完整验证前调用此入口。结果不是完整候选门禁，不能用于提升主线。
+
 开发提交运行 `./scripts/check --pre-commit`；PR 运行
 `./scripts/validate --scope pr --base origin/main --output /tmp/pr-result`。
 协调者将固定的原 PR 依次合并到 `codex/integration-*` 分支，解决冲突并审阅最终组合，
