@@ -11,8 +11,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from scripts.validate_candidate import ROOT, acceptance_outcome, git, identity
+from scripts.validate_candidate import ROOT, acceptance_outcome, commands_for, git, identity
 from scripts.verify_package_startup import CHECKS
+from scripts.validation_report import verify_complete
 
 JOBS = {
     "Candidate (linux-x86_64)", "Candidate (macos-arm64)",
@@ -47,6 +48,7 @@ def validate_run(run, jobs, source, repository):
 
 def validate_artifact(directory, source, label, base=None):
     record = json.loads((directory / "VALIDATION.json").read_text())
+    verify_complete(directory, record)
     expected = {key: source[key] for key in ("commit", "tree", "fingerprint")}
     observed = record["source"]
     if (record["scope"] != "candidate" or record["passed"] is not True
@@ -58,9 +60,13 @@ def validate_artifact(directory, source, label, base=None):
     automatic = json.loads(report.read_text())
     report_key = "integration_sha256" if scoped else "automated_sha256"
     if (hashlib.sha256(report.read_bytes()).hexdigest() != record[report_key]
+            or record["release_ready"] is not automatic["release_ready"]
+            or record["acceptance_status"] != "not_performed"
+            or (record["environment"]["platform"], record["environment"]["machine"]) != PLATFORMS[label]
             or [step["name"] for step in record["steps"]] != ["step-1", "step-2", "step-3"]
             or any(step["returncode"] != 0 for step in record["steps"])):
         raise ValueError("Candidate report is missing, unsuccessful or modified")
+    strategy = None
     if scoped:
         from scripts.integration_plan import bound_inventory, plan, validate_report
         if base is None:
@@ -75,10 +81,21 @@ def validate_artifact(directory, source, label, base=None):
             raise ValueError("Validation plan differs from actual candidate changes")
         validate_report(automatic, strategy, expected_source,
                         bound_inventory(bindings, PLATFORMS[label][0]))
+        if record.get("not_run") != automatic["not_run"]:
+            raise ValueError("Scoped validation must preserve its omitted checks")
     elif (automatic["automated_passed"] is not True
           or automatic["build_sha256"] != source["fingerprint"]
           or not acceptance_outcome(automatic, record["steps"][2]["returncode"])):
         raise ValueError("Full automated acceptance did not pass")
+    pending = (["完整自动验收", "目标环境验收"] if scoped else
+               [item["id"] for item in automatic["requirements"] if item["status"] == "pending"])
+    commands = [step["arguments"] for step in record["steps"]]
+    expected_commands = commands_for(argparse.Namespace(scope="candidate"), Path("report"), strategy)
+    if (record["pending"] != pending or len(commands) != 3
+            or commands[:2] != expected_commands[:2]
+            or commands[2][:-1] != expected_commands[2][:-1]
+            or Path(commands[2][-1]).name != Path(expected_commands[2][-1]).name):
+        raise ValueError("Candidate steps or pending evidence do not preserve the required checks")
     for step in record["steps"]:
         log = directory / f"{step['name']}.log"
         if hashlib.sha256(log.read_bytes()).hexdigest() != step["log_sha256"]:

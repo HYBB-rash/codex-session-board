@@ -1,16 +1,14 @@
-import argparse
-from datetime import datetime, timezone
-import hashlib
 import json
 from pathlib import Path
 import platform
 import subprocess
 import sys
-import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts.verify_acceptance import fingerprint
+from scripts.validation_bootstrap import parse
+from scripts import validation_run as run, validation_report as report
 
 
 def git(*arguments):
@@ -50,19 +48,6 @@ def related_commands(base):
     return commands
 
 
-def execute(name, arguments, output):
-    started = time.monotonic()
-    print(f"[候选验证] {name}", flush=True)
-    log = output / f"{name}.log"
-    with log.open("w") as stream:
-        process = subprocess.run(arguments, cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT)
-    return {
-        "name": name, "arguments": arguments, "returncode": process.returncode,
-        "seconds": time.monotonic() - started,
-        "log_sha256": hashlib.sha256(log.read_bytes()).hexdigest(),
-    }
-
-
 def acceptance_outcome(report, returncode):
     requirements = report["requirements"]
     tests = report["tests"]
@@ -77,31 +62,18 @@ def acceptance_outcome(report, returncode):
     )
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--scope", choices=("pr", "candidate", "preflight"), default="candidate")
-    parser.add_argument("--base", default="origin/main")
-    parser.add_argument("--integration-base")
-    parser.add_argument("--output", required=True, type=Path)
-    arguments = parser.parse_args()
-    output = arguments.output.resolve()
-    if output.is_relative_to(ROOT):
-        raise ValueError("验证记录必须放在源码之外")
-    output.mkdir(parents=True, exist_ok=False)
-    before = identity()
-    record = {
-        "schema_version": 1, "scope": arguments.scope, "source": before,
-        "started_at": datetime.now(timezone.utc).isoformat(), "steps": [], "passed": False,
-    }
+def integration_strategy(arguments):
+    if arguments.scope == "candidate" and arguments.integration_base:
+        from scripts.integration_plan import plan
+        return plan(arguments.integration_base)
+    return None
+
+
+def commands_for(arguments, output, strategy=None):
     commands = [
         ["./scripts/check"],
         ["cargo", "clippy", "--all-targets", "--locked", "--offline", "--", "-D", "warnings"],
     ]
-    strategy = None
-    if arguments.scope == "candidate" and arguments.integration_base:
-        from scripts.integration_plan import plan
-        strategy = plan(arguments.integration_base)
-        record["plan"] = strategy
     scoped = strategy is not None and strategy["profile"] != "full"
     if arguments.scope == "preflight":
         commands = [["python3", "scripts/package_plugin.py", "--preflight",
@@ -116,43 +88,74 @@ def main():
         ])
     else:
         commands.extend(related_commands(arguments.base))
-    for number, command in enumerate(commands):
-        step = execute(f"step-{number + 1}", command, output)
-        record["steps"].append(step)
-        (output / "VALIDATION.json").write_text(json.dumps(record, indent=2) + "\n")
-        accepted = step["returncode"] == 0
-        if arguments.scope == "candidate" and number == 2:
-            if scoped:
-                from scripts.integration_plan import bound_inventory, validate_report
-                report = json.loads((output / "integration.json").read_text())
-                bindings = json.loads((ROOT / "acceptance/bindings.json").read_text())
-                validate_report(report, strategy, before, bound_inventory(bindings, sys.platform))
-                accepted = accepted and report["passed"] is True
-            else:
-                accepted = acceptance_outcome(
-                    json.loads((output / "automated.json").read_text()), step["returncode"])
-        if not accepted:
-            print((output / f"{step['name']}.log").read_text()[-12000:], file=sys.stderr)
-            return 1
-    if identity() != before or git("status", "--porcelain", "--untracked-files=all"):
-        raise ValueError("验证期间源码或提交身份发生变化")
-    if arguments.scope == "candidate":
-        name = "integration" if scoped else "automated"
-        automatic = json.loads((output / f"{name}.json").read_text())
-        if not scoped and automatic["build_sha256"] != before["fingerprint"]:
-            raise ValueError("自动报告与候选身份不一致")
-        record[f"{name}_sha256"] = hashlib.sha256((output / f"{name}.json").read_bytes()).hexdigest()
-        record["release_ready"] = automatic["release_ready"]
-        record["acceptance_status"] = "not_performed"
-    record.update(passed=True, finished_at=datetime.now(timezone.utc).isoformat())
-    (output / "VALIDATION.json").write_text(json.dumps(record, indent=2) + "\n")
-    print(json.dumps(record, ensure_ascii=False))
-    return 0
+    return commands
+
+
+def candidate_outcome(output, record, strategy):
+    scoped = strategy is not None and strategy["profile"] != "full"
+    name = "integration" if scoped else "automated"
+    automatic = json.loads((output / f"{name}.json").read_text())
+    if scoped:
+        from scripts.integration_plan import bound_inventory, validate_report
+        bindings = json.loads((ROOT / "acceptance/bindings.json").read_text())
+        try:
+            validate_report(automatic, strategy, record["source"], bound_inventory(bindings, sys.platform))
+        except ValueError as error:
+            raise run.CheckFailed(str(error)) from error
+        record["pending"] = ["完整自动验收", "目标环境验收"]
+        record["not_run"] = automatic["not_run"]
+    elif automatic["build_sha256"] != record["source"]["fingerprint"]:
+        raise run.CheckFailed("自动报告与候选身份不一致")
+    else:
+        record["pending"] = [item["id"] for item in automatic["requirements"] if item["status"] == "pending"]
+    record[f"{name}_sha256"] = report.digest(output / f"{name}.json")
+    if not scoped and not acceptance_outcome(automatic, record["steps"][-1]["returncode"]):
+        raise run.CheckFailed("自动报告未通过")
+    record["release_ready"] = automatic["release_ready"]
+
+
+def main():
+    arguments = parse()
+    output = arguments.output.resolve() if arguments.output else Path("<report-directory>")
+    if arguments.plan:
+        strategy = integration_strategy(arguments)
+        print(json.dumps({"scope": arguments.scope, "executed": False,
+                          "plan": strategy, "commands": commands_for(arguments, output, strategy)},
+                         ensure_ascii=False, indent=2))
+        return 0
+    record = run.begin(arguments, ROOT, arguments.scope)
+    before = None
+    try:
+        before = identity()
+        strategy = integration_strategy(arguments)
+        if strategy is not None:
+            record["plan"] = strategy
+        commands = commands_for(arguments, output, strategy)
+        child = run.prepare(ROOT, output, record, before, commands)
+        try:
+            run.steps(ROOT, output, record, commands, child, arguments.timeout)
+        except run.CheckFailed as error:
+            run.reject(output, record, error, 1)
+        if arguments.scope == "candidate" and len(record["steps"]) == len(commands):
+            candidate_outcome(output, record, strategy)
+    except KeyboardInterrupt:
+        run.reject(output, record, "验证被中断", 130)
+    except run.CheckFailed as error:
+        run.reject(output, record, error, 1)
+    except Exception as error:
+        run.reject(output, record, error, 3)
+    unchanged = None
+    if before is not None:
+        try:
+            unchanged = identity() == before and not git("status", "--porcelain", "--untracked-files=all")
+        except Exception as error:
+            run.reject(output, record, error, 3)
+    return run.finish(output, record, unchanged)
 
 
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"候选验证失败：{error}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(3)
