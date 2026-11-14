@@ -68,6 +68,7 @@ def inspect(state, config_path, client_pid, expected_source=None, config_id=None
         "binary_sha256": manifest["binary_sha256"], "revision": record["revision"],
         "url": f"http://127.0.0.1:{port}", "data_dir": str(data_dir),
         "config": str(config_path), "config_sha256": hashlib.sha256(original).hexdigest(),
+        "installation_state": str(state.resolve()),
         "client_pid": client_pid, "package_verified": True,
     }
     try:
