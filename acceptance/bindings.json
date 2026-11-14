@@ -1596,6 +1596,10 @@
       "acceptance.test_delivery.DeliveryTests.test_channel_versions_are_monotonic_and_bind_immutable_payloads"
     ],
     "GATE-001": [
+      "acceptance.test_integration_plan.IntegrationPlanTests.test_ui_scope_rejects_unknown_dependency_deletion_and_mode_changes",
+      "acceptance.test_integration_plan.IntegrationPlanTests.test_only_version_fields_are_exempted",
+      "acceptance.test_integration_plan.IntegrationPlanTests.test_replay_cannot_invent_an_ingress_or_hide_actual_changes",
+      "acceptance.test_integration_plan.IntegrationPlanTests.test_partial_results_cannot_be_presented_as_complete_or_successful",
       "acceptance.test_rust_adapter.RustAdapterTests.test_target_rejects_missing_duplicate_unexpected_and_false_success",
       "acceptance.test_rust_adapter.RustAdapterTests.test_target_preserves_failed_and_ignored_outcomes",
       "acceptance.test_rust_adapter.RustAdapterTests.test_only_isolated_tools_receive_multiple_threads",
