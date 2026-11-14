@@ -3,12 +3,11 @@
   "updated_at": "2026-11-14",
   "current_phase": {
     "id": "delivery-cli-20261114",
-    "status": "in_progress",
+    "status": "completed",
     "as_of": "2026-11-14",
-    "summary": "复用已有打包、更新和浏览器逻辑，落实三个交付CLI并对当前0.3.75实际运行计时；不重新发布业务插件，保留现有外部待验证边界。"
+    "summary": "三个交付CLI已在当前工作树实现并本地提交：源码预检、指定客户端生效核验、带版本保护和恢复记录的真实页面冒烟。4907246最终Mac完整回归670项自动通过；三项串行实跑12.33秒，测试卡片、38条备注和配置保全。完整31条仍17通过14待验，不代签原生容器或实际故障重连；代码尚未推送，主线和日用插件保持0.3.75/e6f186a。"
   },
   "active_tasks": [
-    "context/tasks/active/delivery-cli-20261114.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",
@@ -23,6 +22,7 @@
     "context/tasks/active/state-incident-20261112.md"
   ],
   "known_open_issues": [
+    "交付CLI工具在当前工作树4907246本地实现，尚未推送主线。实际连跑12.33秒仅覆盖预检、生效检查和五组HTTP页面冒烟；不含新安装、故障重连或双平台发布。Mac670项自动检查通过，31条仍14项外部待验证。复用现有交付Python，缺少受支持的桌面连接时保持待重连，不启动无关进程代签。",
     "0.3.75/e6f186a已在当前客户端验证，原生筛选及实际HTTP交互通过，真实SSH性能门禁通过；这不代签原生容器指针拖动、所有远端主机及完整31条外部证据。完整报告17通过、14待验，release_ready=false。首轮0.3.74打包遗漏失败和Mac取消均保留，后续只依据0.3.75的同源码报告。",
     "远端性能和私有SSH参数策略已整合；0.3.71整合源码真实SSH隔离门禁通过，20次保存中位96.8ms、p95 159.9ms，36次摘要470ms。两次并行完整套件的原生隔离长尾仍未定位，受控父调度为单线程，内部并发和原阈值保留；不代签全部主机及原生UI。",
     "主机筛选已整合，49项筛选和48组布局通过；0.3.71当前客户端已接管，实际原生面板本机/全部主机切换、项目8条、搜索1条及恢复38条均通过。日用配置仅本机，未启用远程来代签多主机现场证据。原分支记录见context/handoffs/host-project-filter-20261113.md。",
@@ -43,7 +43,7 @@
     "PWA安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。",
     "本机和M1专用会话真实归档已通过。正式进程已是 v0.2.63，原生侧栏取消归档后，下一次本机位置读回会恢复本地已确认卡片并保留备注。这次启动还没有完成一次本机位置读回。0.3.38 已实现 SQLite 兼容锁下私有副本热日志恢复，原库与日志不变；两项子进程回归通过，候选交付证据单独保留。"
   ],
-  "last_completed_task": "context/tasks/completed/batch-policy-delivery-20261114.md",
+  "last_completed_task": "context/tasks/completed/delivery-cli-20261114.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
