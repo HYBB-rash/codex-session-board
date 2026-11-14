@@ -64,12 +64,14 @@ print('outcome=success transportKind=websocket next=connected',flush=True)
 time.sleep(30)
 """
         with patch.dict(os.environ, {"CODEX_CLI_PATH": "/wrong/backend",
-                                    "CODEX_APP_SERVER_WS_URL": "ws://wrong/rpc"}):
+                                    "CODEX_APP_SERVER_WS_URL": "ws://wrong/rpc",
+                                    "OPENAI_API_KEY": "probe-must-not-inherit"}):
             report = self.launch(body)
         backend = json.loads((self.home / "backend.json").read_text())
         desktop = json.loads((self.home / "desktop.json").read_text())
         for environment in (backend, desktop):
             self.assertNotIn("CODEX_CLI_PATH", environment)
+            self.assertNotIn("OPENAI_API_KEY", environment)
             self.assertEqual(environment["CODEX_APP_SERVER_WS_URL"],
                              f"ws+unix://localhost{report['endpoint']}:/rpc")
         self.assertEqual(report["endpoint_peer_pid"], report["backend_pid"])

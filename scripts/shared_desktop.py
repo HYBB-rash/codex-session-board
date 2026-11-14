@@ -68,7 +68,10 @@ def launch(app, backend, home, profile, report_path=None, probe=False, timeout=3
     root = Path(tempfile.mkdtemp(prefix="csb-shared-", dir="/private/tmp" if sys.platform == "darwin" else None))
     endpoint = root / "rpc.sock"
     report = {"passed": False, "root": str(root), "endpoint": str(endpoint)}
-    environment = dict(os.environ)
+    environment = ({"PATH": os.environ.get("PATH", "/usr/bin:/bin:/usr/sbin:/sbin"),
+                    "LANG": os.environ.get("LANG", "en_US.UTF-8"),
+                    "HOME": str(home.parent), "TMPDIR": str(root)}
+                   if probe else dict(os.environ))
     for name in ("CODEX_CLI_PATH", "CODEX_APP_SERVER_FORCE_CLI", "CODEX_APP_SERVER_USE_LOCAL_DAEMON"):
         environment.pop(name, None)
     environment.update(CODEX_HOME=str(home), CODEX_ELECTRON_USER_DATA_PATH=str(profile),
