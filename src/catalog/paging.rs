@@ -128,7 +128,7 @@ fn project_fields(entry: &Value, method: &str) -> Value {
                     .map(|text| json!(text.chars().take(300).collect::<String>()))
                     .unwrap_or_else(|| value.clone())
             } else if *field == "metadata" {
-                json!({"localProjectId":value.get("localProjectId")})
+                json!({"codex.localProjectId":value.get("codex.localProjectId")})
             } else {
                 value.clone()
             };
