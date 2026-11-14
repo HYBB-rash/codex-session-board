@@ -48,10 +48,25 @@ pub fn sweep(app: &App) -> Result<Value> {
 fn sweep_with(app: &App, mut operation: impl FnMut(&Value) -> Result<Value>) -> Result<Value> {
     let mut archived = Vec::new();
     let mut deferred = Vec::new();
+    let eligible = if app.config.host_id == "local" {
+        None
+    } else {
+        Some(
+            crate::catalog::view::read(app, &[])?
+                .rows
+                .into_iter()
+                .filter(|row| row["readOnly"] != true && row["ordinary"] == true)
+                .filter_map(|row| row["id"].as_str().map(str::to_owned))
+                .collect::<std::collections::HashSet<_>>(),
+        )
+    };
     for session in app.store.sessions()? {
         let identifier = session["id"].as_str().unwrap_or("");
         if crate::model::board_state(session["state"].as_str().unwrap_or("")) != "to_archive"
             || identifier.starts_with("remote:")
+            || eligible
+                .as_ref()
+                .is_some_and(|eligible| !eligible.contains(identifier))
             || app.config.native_sections && !app.is_active(identifier)?
         {
             continue;

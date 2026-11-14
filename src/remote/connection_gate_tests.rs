@@ -29,9 +29,7 @@ fn managed_write_gate_requires_initialization_and_preserves_notes_after_home_cha
     let fixture = Fixture::new()?;
     let (root, remote) = managed(&fixture)?;
     let identifier = uuid::Uuid::new_v4().to_string();
-    remote
-        .store
-        .discover(&[json!({"id":identifier,"name":"test"})])?;
+    remote.discover(&[json!({"id":identifier,"name":"test"})], true)?;
     let mut body = json!({
         "id":crate::store::remote::identity(&fixture.host.host_id, &identifier),
         "state":"review","note":"keep","version":0,"inputVersion":0
