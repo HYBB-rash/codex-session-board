@@ -8,6 +8,7 @@
     "summary": "合并与验收已分阶段，原四固定 PR 头重演完成，0.3.77/fe149b5 已进受保护主线并产出双平台可运行不可变包。合并段28分14秒，规则修改及本地验证另计6分40秒，调查和收尾不混入。Linux681/Mac670项自动全过，包启动0.299/0.849秒且清理完成。本次未安装或重载日用插件；31条仍17通过14待验，验收组织与记录留待后续研究。"
   },
   "active_tasks": [
+    "context/tasks/active/closeout-sync-20261114.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",

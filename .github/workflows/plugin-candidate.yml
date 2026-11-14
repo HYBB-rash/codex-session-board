@@ -9,8 +9,62 @@ concurrency:
   group: plugin-candidate-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  classify:
+    name: Classify integration
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      context_only: ${{ steps.classify.outputs.context_only }}
+      base: ${{ steps.classify.outputs.base }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - id: classify
+        run: python3 scripts/validate_context.py --github-output "$GITHUB_OUTPUT" --output "$RUNNER_TEMP/classification.json"
+  context:
+    name: Validate context records
+    needs: classify
+    if: needs.classify.outputs.context_only == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      checks: read
+    env:
+      RUSTUP_TOOLCHAIN: 1.99.1
+      GH_TOKEN: ${{ github.token }}
+      EXPECTED_BASE: ${{ needs.classify.outputs.base }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: rustup toolchain install 1.99.1 --profile minimal
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: context-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            candidate-x86_64-unknown-linux-gnu-1.99.1-${{ hashFiles('Cargo.lock') }}-
+      - run: cargo fetch --locked
+      - run: python3 scripts/validate_context.py --base "$EXPECTED_BASE" --repository "$GITHUB_REPOSITORY" --output "$RUNNER_TEMP/CONTEXT.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: context-validation
+          path: ${{ runner.temp }}/CONTEXT.json
   candidate:
     name: Candidate (${{ matrix.label }})
+    needs: classify
+    if: needs.classify.outputs.context_only == 'false'
     strategy:
       fail-fast: false
       matrix:
@@ -94,12 +148,26 @@ jobs:
   gate:
     name: Candidate gate
     if: always()
-    needs: [candidate, publish]
+    needs: [classify, context, candidate, publish]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
-      - name: Require every validation and publication job
+      - name: Require the complete validation path
         env:
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+          CONTEXT_ONLY: ${{ needs.classify.outputs.context_only }}
+          CONTEXT_RESULT: ${{ needs.context.result }}
           CANDIDATE_RESULT: ${{ needs.candidate.result }}
           PUBLISH_RESULT: ${{ needs.publish.result }}
-        run: test "$CANDIDATE_RESULT" = success && test "$PUBLISH_RESULT" = success
+        run: |
+          test "$CLASSIFY_RESULT" = success
+          if [ "$CONTEXT_ONLY" = true ]; then
+            test "$CONTEXT_RESULT" = success
+            test "$CANDIDATE_RESULT" = skipped
+            test "$PUBLISH_RESULT" = skipped
+          else
+            test "$CONTEXT_ONLY" = false
+            test "$CONTEXT_RESULT" = skipped
+            test "$CANDIDATE_RESULT" = success
+            test "$PUBLISH_RESULT" = success
+          fi

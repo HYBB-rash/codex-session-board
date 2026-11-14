@@ -1,10 +1,13 @@
+from contextlib import chdir
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
 
 from scripts import validate_candidate as candidate
+from scripts import validate_context
 
 
 class CandidateGateTests(unittest.TestCase):
@@ -78,3 +81,57 @@ class CandidateGateTests(unittest.TestCase):
             "requirements": [{"status": "pending"}],
         }
         self.assertFalse(candidate.acceptance_outcome(report, 0))
+
+
+class ContextGateTests(unittest.TestCase):
+    def classify_changes(self, path, *, symlink=False):
+        with tempfile.TemporaryDirectory() as directory, chdir(directory):
+            subprocess.run(["git", "init", "--quiet"], check=True)
+            Path("runtime.rs").write_text("original runtime\n")
+            validate_context.git("add", ".")
+            commit = ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                      "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "fixture"]
+            validate_context.git(*commit)
+            base = validate_context.git("rev-parse", "HEAD")
+            target = Path(path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if symlink:
+                target.symlink_to("../runtime.rs")
+            else:
+                target.write_text("changed\n")
+            validate_context.git("add", ".")
+            validate_context.git(*commit)
+            return validate_context.context_only(base)
+
+    def test_context_records_preserve_the_entire_implementation(self):
+        self.assertTrue(self.classify_changes("context/journal/closeout.md"))
+
+    def test_code_workflow_and_nonrecord_changes_require_full_candidate(self):
+        for path in ("runtime.rs", ".github/workflows/gate.yml", "context/runtime.rs"):
+            with self.subTest(path=path):
+                self.assertFalse(self.classify_changes(path))
+
+    def test_context_symlink_cannot_enter_the_records_path(self):
+        self.assertFalse(self.classify_changes("context/linked.md", symlink=True))
+
+    def check_base(self, *, observed_base=None, app=15368, conclusion="success", check_source=None):
+        base = "a" * 40
+        remote = {"object": {"sha": observed_base or base}}
+        pages = [{"check_runs": [{
+            "name": "Candidate gate", "head_sha": check_source or base,
+            "app": {"id": app}, "status": "completed", "conclusion": conclusion,
+        }]}]
+        with mock.patch.object(subprocess, "check_output",
+                               side_effect=[json.dumps(remote), json.dumps(pages)]):
+            validate_context.require_base_gate("owner/repository", base)
+
+    def test_records_require_a_successful_actions_gate_for_the_exact_base(self):
+        self.check_base()
+        for options in ({"app": 1}, {"conclusion": "skipped"},
+                        {"conclusion": "failure"}, {"check_source": "b" * 40}):
+            with self.subTest(options=options), self.assertRaises(ValueError):
+                self.check_base(**options)
+
+    def test_records_reject_main_advancing_during_validation(self):
+        with self.assertRaises(ValueError):
+            self.check_base(observed_base="b" * 40)
