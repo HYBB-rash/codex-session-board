@@ -44,5 +44,7 @@ Linux 全量自动回归 499.075 秒，Mac 788.365 秒，是本轮主要等待�
 完整报告、各平台原始记录、合并日志、主线回执及可直接交付的两个插件包保存在：
 /Users/hongyong/.codex/visualizations/2026/11/13/01a1d38b-1ef8-7392-ba78-caa7935c5ab4/merge-package-rehearsal-20261114/
 演练工作树为 /Users/hongyong/.codex/worktrees/merge-package-replay/codex-session-board，
-结果已进入主线，后续归档该演练工作树；本工作树保留上下文收尾提交。
-收尾仅改 context，不重新发布，不用原候选的身份检查冒充新提交的候选门禁。
+该工作树已归档；当时的上下文收尾提交8de52d6随后随0.3.78/5b905ec进入远端主线。
+0.3.77包保持原样。后续补充记录专用门禁的工作流改动单独通过完整验证，
+冻结0.3.78，不用原候选的身份检查冒充新提交的候选门禁。
+两条演练分支的最终清理读回见closeout-sync-20261114任务及源码外completion.json。
