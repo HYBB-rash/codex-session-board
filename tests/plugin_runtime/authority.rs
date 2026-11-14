@@ -48,9 +48,10 @@ impl Backend {
         Plugin::launch(command, Some(&profile.path), None)
     }
 
-    fn set(&self, kind: &str, phase: &str) {
-        let mut state = self.phase.lock().unwrap();
+    fn set(&self, kind: &str, phase: &str) -> Result<()> {
+        let mut state = self.phase.lock().map_err(|_| anyhow::anyhow!("测试状态锁已损坏"))?;
         *state = (kind.into(), phase.into(), state.2 + 1);
+        Ok(())
     }
 }
 
@@ -58,7 +59,9 @@ impl Drop for Backend {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
         if let Some(worker) = self.worker.take() {
-            worker.join().unwrap().unwrap();
+            let result = worker.join().map_err(|_| anyhow::anyhow!("测试后台线程失败"))
+                .and_then(|result| result);
+            assert!(result.is_ok(), "{result:?}");
         }
     }
 }
@@ -70,7 +73,7 @@ fn connection(stream: UnixStream, phase: Arc<Mutex<(String, String, u64)>>) -> R
         if message.is_close() { break; }
         let request: Value = serde_json::from_slice(&message.into_data())?;
         if request["id"].is_null() { continue; }
-        let state = phase.lock().unwrap().clone();
+        let state = phase.lock().map_err(|_| anyhow::anyhow!("测试状态锁已损坏"))?.clone();
         let started = codex_session_board::model::now() + 1.0;
         let result = match request["method"].as_str().unwrap_or("") {
             "initialize" => json!({}),
@@ -108,12 +111,12 @@ fn inherited_shared_backend_drives_new_tasks_and_unloaded_projection_cannot_bloc
     let active = until(&mut plugin, |snapshot| snapshot["sessions"][0]["state"] == "in_progress")?;
     assert_eq!(active["health"]["runtimeVerified"], true);
     assert_eq!(active["runtime"]["authority"]["pid"], std::process::id());
-    backend.set("notLoaded", "interrupted");
+    backend.set("notLoaded", "interrupted")?;
     let unloaded = until(&mut plugin, |snapshot| snapshot["sessions"][0]["turnStatus"] == "interrupted")?;
     assert_eq!(unloaded["sessions"][0]["state"], "in_progress");
-    backend.set("idle", "completed");
+    backend.set("idle", "completed")?;
     until(&mut plugin, |snapshot| snapshot["sessions"][0]["state"] == "review")?;
-    backend.set("idle", "interrupted");
+    backend.set("idle", "interrupted")?;
     until(&mut plugin, |snapshot| snapshot["sessions"][0]["state"] == "blocked")?;
     plugin.close()
 }

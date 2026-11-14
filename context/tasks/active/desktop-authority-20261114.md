@@ -21,3 +21,7 @@ Mac 首阶段已通过：原装 ChatGPT.app 的独立 profile 在私有 CODEX_HO
 失败证据保留：只设置 CODEX_APP_SERVER_USE_LOCAL_DAEMON 时，当前 Mac 应用因注入配置覆盖而退回 stdio（/private/tmp/csb-host-zdfg4urf）；只隔离环境而未传 --user-data-dir 时被现有单实例接管（/private/tmp/csb-host-z6_6g4n3）。后续入口必须使用显式 Unix WebSocket，并同时隔离测试 profile，不能依赖该 daemon 开关。
 
 实现入口 scripts/shared_desktop.py 的真实隔离复验已通过，使用客户端自带的 0.167.0-alpha.4.1，GUI 53650 和外部连接共同使用后台 53643，退出清理已确认；证据 /private/tmp/csb-shared-desktop-final.json。首个本地检查点 d8fde27 包含父后台进程归属、复用约束、notLoaded 状态保护及四项回归，未升版。
+
+统一入口和四项启动回归、两项 MCP 跨进程状态及隔离回归均通过。随后清除 probe 继承的日用环境再做真实 Mac 复验通过（GUI 2894 / 后台 2890；/private/tmp/csb-shared-desktop-sanitized.json）；原装后台的 initialize、thread/list、thread/turns/list 和 mcpServerStatus/list 接口已独立核对（/private/tmp/csb-shared-protocol-methods.json）。临时隔离开发环境启动、归属检查及停止通过，cleanup_confirmed=true，报告 /private/tmp/csb-dev-authority-fpz_52_0/proof.json。
+
+首次完整候选检查 /private/tmp/csb-authority-candidate-20261114 在 Clippy 阶段拒绝新测试中的四处 unwrap，保留失败记录并改用显式错误处理；业务断言、阈值、需求和参考模型未放宽。待重新执行完整候选检查。
