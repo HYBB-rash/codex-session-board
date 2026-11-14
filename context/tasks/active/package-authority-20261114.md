@@ -6,7 +6,7 @@
 - base_commit: 865fb97
 - worktree_path: /Users/hongyong/.codex/worktrees/package-authority-fix/codex-session-board
 - coordinator: 01a1d38b-1ef8-7392-ba78-caa7935c5ab4
-- status: verifying_final_deadline
+- status: verifying_fixture_lifecycle
 
 固定主线 04f7d58 与原 PR 头 9667957 无冲突组合为签名复现基线 865fb97。
 先让包内 serve 与 MCP 均由监听端点的同一 fixture 托管，保留原有身份、就绪、协议与清理断言。
@@ -29,11 +29,11 @@ requestToken 当作共享身份，导致验证拒绝。失败及 cleanup_confirm
 
 ## 交付给协调者
 
-三个代码修复提交依次为 9ac11e8、af7082a、53851fb，均已用本机 Agent 密钥签名并验证。
+前三个代码修复提交依次为 9ac11e8、af7082a、53851fb，均已用本机 Agent 密钥签名并验证。
 当前分支 codex/package-startup-authority-20261114；协调者可只带入上述三条及本任务收尾记录，
 不必重放固定主线与原 PR 的复现合并基线 865fb97。
 
-最终实际包绑定代码提交 53851fb8ce58ece8be108bdf006cd9c3d36d8eeb，
+前一轮实际包绑定代码提交 53851fb8ce58ece8be108bdf006cd9c3d36d8eeb，
 源码指纹 2b463d4540384589be7c5336a4536a08b260361e1a2dd4289d3c8b8df6d3506f，
 二进制摘要 af0d47ef75f9a037463ec3907e7d3a9ad13aea05162b5bd392fd26012ff57c02。
 私有归档经过实际解包及完整 verify()，五个场景按预期通过：
@@ -62,3 +62,20 @@ Mac 日志记录真实私有客户端验证。完整双平台候选门禁仍由�
 最终复核补回原 MCP 子进程验证的 30 秒总时限：改用单一截止时间读取 Unix 通道，
 避免零碎输出不断重置 socket 超时；新增慢流截止回归。此变化后将再次固定源码、
 构建并执行同一组实际包场景，不能沿用上面 53851fb 的包给新验证器签收。
+
+最终代码固定为 a0d80015f3dd6608cf9762d2c892ed29146428d4，第四条修复提交为 a0d8001。
+其源码指纹 187df7c768705b8837eb4d55930eb39f979355b0dfffde7cd2ab2739387a8342；
+实际私有包重新构建、归档与解包后，五个场景全部按预期通过，逐场景清理均确认。
+最终归档摘要 a918dbf8fdecd6fc48625422121b199241869ce594050cdb0acc212fd25335e2。
+持久证据目录的 SUMMARY.json 已指向 final-package/summary.json；
+该目录包含最终原始归档、原始报告、进程身份、故障注入器及日志。
+原始执行目录 /private/tmp/csb-pr6-package-proof-20261114-r4，注入器正常退出 0。
+包启动和发布 14 项回归通过；此前 Rust、fixture、
+转发和远程验证仍对应未变化的 Rust 实现。仅保留必要边界修复，没有运行全量验收。
+协调者可依次带入 9ac11e8、af7082a、53851fb、a0d8001；之后的本任务收尾提交只改 context。
+工作树按协调者要求保留，待其主线确认后通知清理；不自行推动合并或部署。
+
+最终 30 项组合 Python 复验发现共享启动测试的模拟后台在 accept 后立即关闭连接，
+Mac 的 LOCAL_PEERPID 存在偶发 ENOTCONN。旧失败日志保留为 targeted/final-python.log。
+修正此模拟后台等待客户端关闭后再关闭，保持真实连接生命周期及全部原断言；
+业务源码仍固定 a0d8001。只补这一处测试 fixture 修正及记录后重新固定最终交付。
