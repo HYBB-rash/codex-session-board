@@ -6,7 +6,7 @@
 - base_commit: d4b40bb3aae98569a310f1e412defbb1f20dddbb
 - worktree_path: /Users/hongyong/Developer/codex-session-board-light-ui-implementation-20261115
 - coordinator: 后续集成协调者
-- status: implemented_awaiting_integration
+- status: integrated_awaiting_target_acceptance
 
 用户于 2026-11-15 授权按已调查的轻量方案实施。
 方案来源为 light-ui-plan-20261115 的 3d7308f；原型为 6a53ff7。
@@ -51,3 +51,12 @@ https://github.com/HYBB-rash/codex-session-board/pull/12。
 系统 WebKit 补验发现 min-content 仍遗漏滚动条空间，改用自动 flex 基准且禁止压缩；
 320×256、16px 滚动条、深浅深主题实验的可用高度为 286px。
 后续 PR 检查必须核对修复后的最终头，不能用 3c9b578 的旧报告签收新实现。
+
+## 协调者集成结果
+
+PR12 原头 3d1d0e7 已随 0.3.90/015580a 于 2026-11-15 合入远端主线。
+与最终目录、原生新建和验证底座重新组合并审阅冲突；
+CI 43707533207 的 macOS 835 项、Linux 846 项全部通过，
+双平台不可变插件包及隔离启动核验通过。
+上述历史失败和旧源码报告保留，目标客户端验收仍未执行。
+本次集成计时和证据见 context/tasks/completed/pr12-integration-20261115.md。
