@@ -1737,6 +1737,7 @@
       "acceptance.test_rust_adapter.RustAdapterTests.test_target_preserves_failed_and_ignored_outcomes",
       "acceptance.test_rust_adapter.RustAdapterTests.test_only_isolated_tools_receive_multiple_threads",
       "acceptance.test_rust_adapter.RustAdapterTests.test_selection_does_not_execute_unselected_groups",
+      "acceptance.test_rust_adapter.RustAdapterEntryTests.test_script_and_module_entries_preserve_target_outcomes_without_pythonpath",
       "acceptance.test_verify_plugin.VerifyPluginTests.test_missing_reconnect_dependency_is_recorded_as_failure",
       "acceptance.test_smoke_cli.SmokeCliTests.test_live_write_and_recovery_reject_other_cards_and_concurrent_changes",
       "acceptance.test_smoke_cli.SmokeCliTests.test_unverified_or_nonlocal_receipts_stop_before_opening_a_browser",

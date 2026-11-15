@@ -1,4 +1,10 @@
+import json
+import os
+from pathlib import Path
+import shutil
 import subprocess
+import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -53,3 +59,67 @@ class RustAdapterTests(unittest.TestCase):
             )
         self.assertEqual(run.call_count, 1)
         self.assertEqual(run.call_args.args[0], "test::first")
+
+
+class RustAdapterEntryTests(unittest.TestCase):
+    def fixture(self, root):
+        acceptance = root / "acceptance"
+        acceptance.mkdir()
+        (acceptance / "__init__.py").touch()
+        shutil.copy2(Path(__file__).with_name("unittest_adapter.py"),
+                     acceptance / "unittest_adapter.py")
+        executable = root / "rust-test"
+        executable.write_text(
+            f"#!{sys.executable}\nimport sys\n"
+            "print('native: test' if '--list' in sys.argv else 'test native ... ok')\n")
+        executable.chmod(0o700)
+        artifact = {"executable": str(executable), "profile": {"test": True},
+                    "target": {"kind": ["test"], "name": "fixture"}}
+        cargo = root / "cargo"
+        cargo.write_text(f"#!{sys.executable}\nprint({json.dumps(artifact)!r})\n")
+        cargo.chmod(0o700)
+        environment = dict(os.environ, PATH=str(root) + os.pathsep + os.environ["PATH"])
+        environment.pop("PYTHONPATH", None)
+        return environment
+
+    def test_script_and_module_entries_preserve_target_outcomes_without_pythonpath(self):
+        checker = Path(__file__).resolve().parents[1]
+        entries = {
+            "script": [sys.executable, str(checker / "scripts/rust_adapter.py")],
+            "module": [
+                sys.executable, "-c",
+                "import json,sys\nsys.path.insert(0,sys.argv[1])\n"
+                "from scripts import rust_adapter\n"
+                "print(json.dumps(rust_adapter.run(json.load(sys.stdin))))\n",
+                str(checker),
+            ],
+        }
+        native = "test::fixture::native"
+        target = "acceptance.test_target.TargetTests.test_target"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            environment = self.fixture(root)
+            for status, assertion in (("pass", "self.assertEqual(2 + 2, 4)"),
+                                      ("fail", "self.fail('target failure preserved')")):
+                (root / "acceptance/test_target.py").write_text(
+                    "import unittest\nclass TargetTests(unittest.TestCase):\n"
+                    f" def test_target(self):\n  {assertion}\n")
+                for name, arguments in entries.items():
+                    with self.subTest(entry=name, status=status):
+                        process = subprocess.run(
+                            arguments, cwd=root, env=environment,
+                            input=json.dumps({"protocol": 1, "tests": [native, target]}),
+                            text=True, capture_output=True, timeout=30)
+                        self.assertEqual(process.returncode, 0, process.stderr)
+                        report = json.loads(process.stdout)
+                        self.assertEqual(report["protocol"], 1)
+                        self.assertEqual(set(report["inventory"]), {native, target})
+                        self.assertEqual(set(report["selected"]), {native, target})
+                        self.assertEqual(report["not_run"], [])
+                        self.assertEqual(len(report["results"]), 2)
+                        records = {item["id"]: item for item in report["results"]}
+                        self.assertEqual(
+                            {identifier: item["status"] for identifier, item in records.items()},
+                            {native: "pass", target: status})
+                        if status == "fail":
+                            self.assertIn("target failure preserved", records[target]["detail"])
