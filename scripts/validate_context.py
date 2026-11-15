@@ -109,7 +109,7 @@ def main():
     arguments.output.write_text(json.dumps(report, indent=2) + "\n")
     if arguments.github_output:
         with arguments.github_output.open("a") as stream:
-            stream.write(f"context_only={str(records_only).lower()}\nbase={base}\n")
+            stream.write(f"context_only={str(records_only).lower()}\nbase={base}\nreference={reference}\n")
     print(json.dumps(report))
 
 

@@ -115,11 +115,11 @@ def validate_artifact(directory, source, label, base=None):
     return record
 
 
-def verify_saved_package(repository, label, source, startup, directory):
+def verify_saved_package(repository, label, source, startup, directory, reference="refs/heads/main"):
     from release_plugin import GitHub, asset_name, read_package
     from package_plugin import verify_package
     service = GitHub(repository)
-    tag = "v" + startup["version"]
+    tag = "v" + startup["version"] if reference == "refs/heads/main" else "rehearsal-" + source["commit"]
     release = service.release(tag)
     if not release or release["draft"] or release.get("immutable") is not True:
         raise ValueError("The actual candidate release must be immutable")
@@ -134,13 +134,13 @@ def verify_saved_package(repository, label, source, startup, directory):
             "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest()}
 
 
-def collect_platform(repository, run, label, source, base, directory):
+def collect_platform(repository, run, label, source, base, directory, reference="refs/heads/main"):
     validation = directory / "validation" / label
     github("run", "download", str(run), "--repo", repository,
            "--name", f"acceptance-{label}", "--dir", str(validation))
     record = validate_artifact(validation, source, label, base)
     package = verify_saved_package(
-        repository, label, source, record["package_startup"], directory / "packages" / label)
+        repository, label, source, record["package_startup"], directory / "packages" / label, reference)
     return label, record, package
 
 
@@ -165,7 +165,7 @@ def promote(candidate, base, run_id, repository, output, reference="refs/heads/m
     validations, packages = {}, {}
     with ThreadPoolExecutor(max_workers=2) as workers:
         futures = [workers.submit(collect_platform, repository, run_id, label, source,
-                                  base, directory) for label in PLATFORMS]
+                                  base, directory, reference) for label in PLATFORMS]
         for future in futures:
             label, record, package = future.result()
             validations[label], packages[label] = record, package

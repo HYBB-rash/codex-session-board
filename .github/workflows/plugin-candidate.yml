@@ -17,6 +17,7 @@ jobs:
     outputs:
       context_only: ${{ steps.classify.outputs.context_only }}
       base: ${{ steps.classify.outputs.base }}
+      reference: ${{ steps.classify.outputs.reference }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -80,6 +81,7 @@ jobs:
     env:
       RUSTUP_TOOLCHAIN: 1.99.1
       EXPECTED_BASE: ${{ needs.classify.outputs.base }}
+      EXPECTED_REFERENCE: ${{ needs.classify.outputs.reference }}
       GIT_AUTHOR_NAME: Codex plugin publisher
       GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
       GIT_COMMITTER_NAME: Codex plugin publisher
@@ -110,7 +112,7 @@ jobs:
       - run: cargo build --locked --offline --example dev_fixture
       - run: |
           gh auth setup-git
-          ./scripts/release candidate --local --save-only --target "${{ matrix.target }}" --repository "${{ github.repository }}" --fixture target/debug/examples/dev_fixture --startup-report "$RUNNER_TEMP/validation/STARTUP.json"
+          ./scripts/release candidate --local --save-only --reference "$EXPECTED_REFERENCE" --target "${{ matrix.target }}" --repository "${{ github.repository }}" --fixture target/debug/examples/dev_fixture --startup-report "$RUNNER_TEMP/validation/STARTUP.json"
         env:
           GH_TOKEN: ${{ github.token }}
       - uses: actions/upload-artifact@v4
@@ -127,10 +129,11 @@ jobs:
             ${{ runner.temp }}/preflight/
   publish:
     name: Finalize candidate
-    needs: candidate
+    needs: [classify, candidate]
     runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ github.token }}
+      EXPECTED_REFERENCE: ${{ needs.classify.outputs.reference }}
       GIT_AUTHOR_NAME: Codex plugin publisher
       GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
       GIT_COMMITTER_NAME: Codex plugin publisher
@@ -145,7 +148,7 @@ jobs:
       - run: python3 -m pip install -r requirements-delivery.txt
       - run: |
           gh auth setup-git
-          ./scripts/release candidate --finalize --repository "${{ github.repository }}"
+          ./scripts/release candidate --finalize --reference "$EXPECTED_REFERENCE" --repository "${{ github.repository }}"
   gate:
     name: Candidate gate
     if: always()

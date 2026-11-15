@@ -1,6 +1,7 @@
 from argparse import Namespace
 from contextlib import chdir
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -10,6 +11,7 @@ from unittest.mock import Mock, patch
 from scripts import integrate_candidate as integrate
 from scripts import promote_candidate as promotion
 from scripts import validate_context as context
+import release_plugin
 
 
 class RehearsalTargetTests(unittest.TestCase):
@@ -120,6 +122,17 @@ class RehearsalTargetTests(unittest.TestCase):
                                           reference="refs/heads/main"))
             proceed.assert_not_called()
 
+    def test_rehearsal_release_tag_requires_configured_source_and_unchanged_remote(self):
+        source = context.git("rev-parse", "HEAD")
+        with patch.dict(os.environ, {"GITHUB_REF_NAME": self.branch}), \
+                patch.object(release_plugin, "command", side_effect=lambda args: context.git(*args[1:])):
+            self.assertEqual(release_plugin.release_tag(source, self.reference), f"rehearsal-{source}")
+            with self.assertRaises(ValueError):
+                release_plugin.release_tag(source)
+            context.git("push", "--quiet", "origin", f":{self.reference}")
+            with self.assertRaises(ValueError):
+                release_plugin.release_tag(source, self.reference)
+
     def test_promotion_keeps_both_platform_checks_and_targets_only_the_rehearsal_ref(self):
         source = {"commit": context.git("rev-parse", "HEAD")}
         run = {"head_branch": self.branch}
@@ -127,7 +140,8 @@ class RehearsalTargetTests(unittest.TestCase):
         checks = []
         original_run = subprocess.run
 
-        def collect(repository, run_id, label, observed, base, directory):
+        def collect(repository, run_id, label, observed, base, directory, reference):
+            self.assertEqual(reference, self.reference)
             checks.append((label, observed, base))
             return label, {"validated": True}, {"package": True}
 
