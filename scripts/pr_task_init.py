@@ -1,0 +1,81 @@
+import os
+from pathlib import Path
+import re
+import time
+import uuid
+
+from scripts import pr_task_github as forge
+from scripts import pr_task_native as native
+from scripts.pr_task_state import ROOT, digest, git, load, locked, now, persist, record, save
+
+
+def initialize(arguments):
+    directory = Path(arguments.state).resolve()
+    project = Path(arguments.project).resolve(strict=True)
+    if directory.is_relative_to(project) or directory.is_relative_to(ROOT):
+        raise ValueError("Task runtime records must stay outside source")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", arguments.repository):
+        raise ValueError("Expected OWNER/REPOSITORY")
+    if not 60 <= arguments.interval <= 86400 or not 1 <= arguments.max_rounds <= 20:
+        raise ValueError("Use a polling interval of 60..86400 seconds and 1..20 repair rounds")
+    if not 1 <= arguments.max_hours <= 720:
+        raise ValueError("Task lifetime must be 1..720 hours")
+    branch = git(project, "branch", "--show-current")
+    if not branch.startswith("codex/") or branch == arguments.base:
+        raise ValueError("Register an isolated codex/ development branch")
+    remote_url = git(project, "remote", "get-url", arguments.remote)
+    match = re.fullmatch(r"(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)(.+?)(?:\.git)?",
+                         remote_url)
+    if not match or match[1].lower() != arguments.repository.lower():
+        raise ValueError("The selected remote must identify the registered GitHub.com repository")
+    repository = forge.api(f"repos/{arguments.repository}")["full_name"]
+    login = forge.api("user")["login"]
+    registry = Path(git(project, "rev-parse", "--path-format=absolute", "--git-common-dir")) / "pr-tasks"
+    with locked(registry):
+        owner_path = registry / f"{digest([repository, branch])}.json"
+        if owner_path.exists():
+            import json
+            previous = Path(json.loads(owner_path.read_text())["directory"])
+            if previous != directory and load(previous)["phase"] != "complete":
+                raise ValueError(f"This branch already has a PR task: {previous}")
+        with locked(directory):
+            if (directory / "task.json").exists():
+                state = load(directory)
+                if (state["repository"], state["project"], state["route"]["thread_id"]) != (
+                        repository, str(project), arguments.thread):
+                    raise ValueError("Existing task belongs to a different repository, worktree or session")
+                return state
+            route, anchor = native.register(arguments.socket, arguments.thread, project)
+            state = {
+                "schema_version": 1, "id": str(uuid.uuid4()), "directory": str(directory),
+                "project": str(project), "repository": repository, "branch": branch,
+                "base": arguments.base, "base_commit": git(project, "rev-parse", f"{arguments.remote}/{arguments.base}"),
+                "remote": arguments.remote, "remote_url": remote_url,
+                "route": route, "session_anchor": anchor, "archive": arguments.archive,
+                "reviewers": sorted(set(arguments.reviewer or [login])),
+                "checks": sorted(set(arguments.check or ["changes"])), "pr": None,
+                "phase": "developing", "events": [], "completed": [], "active_event": None,
+                "interval": arguments.interval, "max_rounds": arguments.max_rounds, "rounds": 0,
+                "created_at": now(), "deadline": time.time() + arguments.max_hours * 3600,
+                "next_poll_at": 0, "scheduler": None,
+            }
+            persist(state)
+            save(owner_path, {"directory": str(directory), "thread": arguments.thread})
+            record(state, "registered", branch=branch)
+            return state
+
+
+def rebind(state, socket_path, accept_input=False):
+    if state["phase"] == "complete":
+        raise ValueError("Completed tasks require a new registration")
+    if state["active_event"]:
+        event = next(entry for entry in state["events"] if entry["id"] == state["active_event"])
+        if event.get("delivery", {}).get("state") in {"delivery_unknown", "sent", "acknowledged"}:
+            raise ValueError("Reconcile the outstanding delivery on its original backend before rebinding")
+    route, anchor = native.register(socket_path, state["route"]["thread_id"], Path(state["project"]))
+    if anchor != state["session_anchor"] and not accept_input:
+        raise ValueError("Session inputs changed; explicitly accept the new task input")
+    state.update(route=route, session_anchor=anchor, phase="watching" if state["pr"] else "developing",
+                 next_poll_at=0)
+    persist(state)
+    record(state, "rebound", accepted_input=accept_input)

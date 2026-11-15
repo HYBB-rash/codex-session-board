@@ -56,7 +56,7 @@ class Rpc:
 
 
 @contextmanager
-def connect(route):
+def connect_endpoint(route):
     import websocket
     path = Path(route["socket"])
     metadata = path.stat()
@@ -79,15 +79,21 @@ def connect(route):
                 "capabilities": {"experimentalApi": True},
             })
             connection.send(json.dumps({"method": "initialized"}))
-            current = rpc.request("thread/read", {
-                "threadId": route["coordinator_thread"], "includeTurns": False,
-            })["thread"]
-            if (current["id"] != route["coordinator_thread"]
-                    or current["status"]["type"] not in {"idle", "active"}):
-                raise ValueError("Coordinator is not loaded in this backend")
             yield rpc
         finally:
             connection.close()
+
+
+@contextmanager
+def connect(route):
+    with connect_endpoint(route) as rpc:
+        current = rpc.request("thread/read", {
+            "threadId": route["coordinator_thread"], "includeTurns": False,
+        })["thread"]
+        if (current["id"] != route["coordinator_thread"]
+                or current["status"]["type"] not in {"idle", "active"}):
+            raise ValueError("Coordinator is not loaded in this backend")
+        yield rpc
 
 
 def read_author(rpc, route, check_cwd=True):
@@ -210,7 +216,7 @@ def observe_items(rpc, route, receipt):
             raise ValueError("Delivered turn is missing from the original thread")
 
 
-def send(rpc, route, request, receipt, output):
+def send(rpc, route, request, receipt, output, prompt=None):
     if receipt["state"] not in {"pending", "waiting_idle", "rejected"}:
         observe(rpc, route, receipt)
         return
@@ -223,7 +229,7 @@ def send(rpc, route, request, receipt, output):
     if thread["status"]["type"] != "idle":
         receipt.update(state="waiting_idle", observed_status=thread["status"])
         return
-    prompt = (f"用户已授权PR修复闭环。先单独回复精确回执：\nPR_QUEUE_ACK {request['id']}\n"
+    prompt = prompt or (f"用户已授权PR修复闭环。先单独回复精确回执：\nPR_QUEUE_ACK {request['id']}\n"
               f"然后处理以下反馈。源码仅允许在指定修复工作树 {route['repair_cwd']} 写入；"
               "验证日志和回执可写入反馈指定的源码外目录。"
               "保留其他工作树及日用客户端。完成回执不表示修复已通过检查。\n\n"
