@@ -92,7 +92,7 @@ try {
   check(await evaluate(`${card("readonly")}.querySelector('[data-action="adjust"]').disabled`),true);
   check(await evaluate(`${card("readonly")}.draggable`),false);
   await evaluate(`${card("long")}.querySelector('[data-action="open"]').click()`);
-  await wait('!saving');
+  await wait('!opening');
   check(writes.map(write=>[write.path,write.body.id]),[["/api/open","long"]]);
   await evaluate(`${card("long")}.querySelector('[data-action="adjust"]').focus();
     data.sessions=data.sessions.filter(row=>row.id!=="long");render()`);
