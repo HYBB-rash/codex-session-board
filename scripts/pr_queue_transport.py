@@ -1,0 +1,229 @@
+import argparse
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import socket
+import stat
+import sys
+import time
+import uuid
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.integrate_candidate import save
+from scripts.shared_desktop import endpoint_pid, process_identity
+
+
+def now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+class Rejected(RuntimeError):
+    pass
+
+
+class Rpc:
+    def __init__(self, connection):
+        self.connection = connection
+        self.identifier = 0
+
+    def request(self, method, params):
+        self.identifier += 1
+        self.connection.send(json.dumps({
+            "id": self.identifier, "method": method, "params": params,
+        }))
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            self.connection.settimeout(max(0.001, deadline - time.monotonic()))
+            reply = json.loads(self.connection.recv())
+            if reply.get("id") != self.identifier or "method" in reply:
+                continue
+            if "error" in reply:
+                raise Rejected(f"{method}: {reply['error']}")
+            return reply["result"]
+        raise TimeoutError(f"No receipt for {method}")
+
+
+@contextmanager
+def connect(route):
+    import websocket
+    path = Path(route["socket"])
+    metadata = path.stat()
+    if (not stat.S_ISSOCK(metadata.st_mode) or metadata.st_uid != os.getuid()
+            or metadata.st_mode & 0o077):
+        raise ValueError("Author endpoint must be a private socket owned by this user")
+    identity = route["backend"]
+    if (endpoint_pid(path) != identity["pid"]
+            or process_identity(identity["pid"]) != identity):
+        raise ValueError("Author backend identity changed")
+    with socket.socket(socket.AF_UNIX) as transport:
+        transport.settimeout(30)
+        transport.connect(str(path))
+        connection = websocket.create_connection(
+            "ws://localhost/rpc", socket=transport, timeout=30, suppress_origin=True)
+        try:
+            rpc = Rpc(connection)
+            rpc.request("initialize", {
+                "clientInfo": {"name": "pr_queue", "version": "1"},
+                "capabilities": {"experimentalApi": True},
+            })
+            connection.send(json.dumps({"method": "initialized"}))
+            current = rpc.request("thread/read", {
+                "threadId": route["coordinator_thread"], "includeTurns": False,
+            })["thread"]
+            if current["status"]["type"] not in {"idle", "active"}:
+                raise ValueError("Coordinator is not loaded in this backend")
+            yield rpc
+        finally:
+            connection.close()
+
+
+def read_author(rpc, route):
+    thread = rpc.request("thread/read", {
+        "threadId": route["thread_id"], "includeTurns": False,
+    })["thread"]
+    if (thread["id"] != route["thread_id"]
+            or thread["cwd"] not in {route["expected_cwd"], route["repair_cwd"]}):
+        raise ValueError("Author thread or working directory does not match its route")
+    return thread
+
+
+def observe(rpc, route, receipt):
+    if not receipt.get("turn_id"):
+        if receipt["state"] != "delivery_unknown":
+            return
+        page = rpc.request("thread/items/list", {
+            "threadId": route["thread_id"], "limit": 100, "sortDirection": "desc",
+        })
+        matches = {entry["turnId"] for entry in page["data"]
+                   if entry["item"]["type"] == "userMessage"
+                   and entry["item"].get("clientId") == receipt["request_id"]}
+        if len(matches) > 1:
+            raise ValueError("A feedback ID appears in multiple turns")
+        if not matches:
+            return
+        receipt.update(turn_id=matches.pop(), state="sent", reconciled_at=now())
+    cursor = None
+    while True:
+        page = rpc.request("thread/items/list", {
+            "threadId": route["thread_id"], "turnId": receipt["turn_id"],
+            "limit": 100, "cursor": cursor,
+        })
+        for entry in page["data"]:
+            if entry["turnId"] != receipt["turn_id"]:
+                raise ValueError("Item does not belong to the delivered turn")
+            item = entry["item"]
+            if (item["type"] == "agentMessage"
+                    and f"PR_QUEUE_ACK {receipt['request_id']}" in item["text"].splitlines()):
+                receipt.setdefault("acknowledged_at", now())
+                receipt["ack_item_id"] = item["id"]
+                receipt["state"] = "acknowledged"
+        cursor = page.get("nextCursor")
+        if not cursor:
+            break
+    cursor = None
+    while True:
+        page = rpc.request("thread/turns/list", {
+            "threadId": route["thread_id"], "limit": 20, "cursor": cursor,
+            "itemsView": "summary",
+        })
+        found = next((turn for turn in page["data"] if turn["id"] == receipt["turn_id"]), None)
+        if found:
+            receipt["turn_status"] = found["status"]
+            if found["status"] == "completed" and receipt.get("acknowledged_at"):
+                receipt.update(state="completed", completed_at=now())
+            elif found["status"] in {"failed", "interrupted"}:
+                receipt.update(state="author_failed", author_error=found.get("error"))
+            break
+        cursor = page.get("nextCursor")
+        if not cursor:
+            raise ValueError("Delivered turn is missing from the original thread")
+
+
+def send(rpc, route, request, receipt, output):
+    if receipt["state"] not in {"pending", "waiting_idle", "rejected"}:
+        observe(rpc, route, receipt)
+        return
+    thread = read_author(rpc, route)
+    if thread["status"]["type"] == "notLoaded":
+        rpc.request("thread/resume", {"threadId": route["thread_id"], "excludeTurns": True})
+        thread = read_author(rpc, route)
+    if thread["status"]["type"] != "idle":
+        receipt.update(state="waiting_idle", observed_status=thread["status"])
+        return
+    prompt = (f"用户已授权PR修复闭环。先单独回复精确回执：\nPR_QUEUE_ACK {request['id']}\n"
+              f"然后处理以下反馈。仅允许在指定修复工作树 {route['repair_cwd']} 写入，"
+              "保留其他工作树及日用客户端。完成回执不表示修复已通过检查。\n\n"
+              + request["body"])
+    receipt.update(state="delivery_unknown", attempted_at=now())
+    receipt.setdefault("attempts", []).append({"at": now(), "state": "sending"})
+    save(output, receipt)
+    try:
+        response = rpc.request("turn/start", {
+            "threadId": route["thread_id"], "clientUserMessageId": request["id"],
+            "cwd": route["repair_cwd"],
+            "input": [{"type": "text", "text": prompt, "text_elements": []}],
+        })
+    except Rejected:
+        receipt["state"] = "rejected"
+        raise
+    receipt.update(state="sent", turn_id=response["turn"]["id"], sent_at=now())
+
+
+def execute(action, route, request, output):
+    uuid.UUID(request["id"])
+    if not request["body"].strip() or not Path(route["repair_cwd"]).is_dir():
+        raise ValueError("Feedback and an existing isolated repair directory are required")
+    expected = {
+        "request_id": request["id"], "thread_id": route["thread_id"],
+        "body_sha256": hashlib.sha256(request["body"].encode()).hexdigest(),
+        "route_sha256": hashlib.sha256(json.dumps(route, sort_keys=True).encode()).hexdigest(),
+    }
+    receipt = json.loads(output.read_text()) if output.exists() else {
+        **expected, "state": "pending", "created_at": now(),
+    }
+    if any(receipt.get(key) != value for key, value in expected.items()):
+        raise ValueError("Feedback identity or route changed; use a new feedback ID")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    save(output, receipt)
+    try:
+        with connect(route) as rpc:
+            read_author(rpc, route)
+            if action == "send":
+                send(rpc, route, request, receipt, output)
+            else:
+                observe(rpc, route, receipt)
+    except Exception as error:
+        receipt.setdefault("errors", []).append({
+            "at": now(), "type": type(error).__name__, "detail": str(error),
+        })
+        raise
+    finally:
+        save(output, receipt)
+    return receipt
+
+
+def run(action, route, request, output):
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.with_suffix(".lock").open("a") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return execute(action, route, request, output)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="将明确授权的PR反馈投递至已核验的原会话")
+    parser.add_argument("action", choices=("send", "poll"))
+    parser.add_argument("--route", required=True, type=Path)
+    parser.add_argument("--request", required=True, type=Path)
+    parser.add_argument("--output", required=True, type=Path)
+    arguments = parser.parse_args()
+    result = run(arguments.action, json.loads(arguments.route.read_text()),
+                 json.loads(arguments.request.read_text()), arguments.output.resolve())
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()
