@@ -17,6 +17,7 @@ PATTERNS = (
     "AGENTS.md", "README.md", "Docs/*.md", "assets/*", "skills/**/*",
     "scripts/*.py", "scripts/*.rs", "scripts/*.mjs", "scripts/check", "scripts/install-git-hooks",
     "scripts/build-plugin", "scripts/run-plugin", "scripts/update-plugin", "scripts/release", ".github/workflows/*.yml",
+    ".github/pull_request_template.md", "scripts/pr-queue",
     "scripts/dev", "scripts/dev_environment/*.py", "scripts/validate", "scripts/promote",
     "scripts/verify-plugin", "scripts/smoke-plugin", "scripts/integrate",
     "scripts/native_new/*.py", "scripts/native_new/*.js", "scripts/native_new/*.mjs",
