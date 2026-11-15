@@ -85,7 +85,7 @@ fn verify_section(app: &App, body: &Value) -> Result<()> {
         .as_str()
         .context("缺少原生位置，请刷新后重试")?;
     let mut reader = app.native_reader()?;
-    let native = crate::native_sections::direct::read(
+    let native = app.native_catalog(&mut reader)?.read(
         &mut reader,
         &app.config,
         body["id"].as_str().context("缺少会话 ID")?,

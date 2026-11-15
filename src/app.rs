@@ -17,6 +17,9 @@ use std::sync::{
 use std::time::Duration;
 
 mod native;
+mod native_backfill;
+mod native_mapping;
+mod native_probes;
 mod remote;
 mod remote_snapshot;
 mod drafts;
@@ -27,6 +30,8 @@ pub(crate) use connection::ConnectionRequest;
 pub struct App {
     pub config: Config,
     pub store: Arc<Store>,
+    pub(crate) mapping_store: Arc<Store>,
+    pub(crate) native_mapping_scope: Mutex<Option<Value>>,
     pub refresh: AtomicBool,
     pub remote_refresh: AtomicBool,
     pub health: Mutex<Value>,
@@ -59,6 +64,8 @@ impl App {
         let native_sections = config.native_sections;
         Ok(Self {
             config,
+            mapping_store: Arc::clone(&store),
+            native_mapping_scope: Mutex::new(None),
             store,
             refresh: AtomicBool::new(false),
             remote_refresh: AtomicBool::new(false),
@@ -144,7 +151,9 @@ impl App {
     }
 
     pub fn discover(&self, threads: &[Value], complete: bool) -> Result<()> {
-        self.store.discover(threads)?;
+        let mut threads = threads.to_vec();
+        self.retain_business_threads(&mut threads)?;
+        self.store.discover(&threads)?;
         if complete {
             let mut active = self
                 .active_sessions
@@ -197,6 +206,7 @@ impl App {
         let mut catalog = serde_json::to_value(&*projects)?;
         drop(projects);
         self.append_remote(&mut sessions, &mut catalog)?;
+        self.retain_business_rows(&mut sessions)?;
         self.annotate_connections(&mut sessions);
         Ok(
             json!({"states":states,"sessions":sessions,"projectCatalog":catalog,"columnSorts":self.store.column_sorts()?,
@@ -222,6 +232,7 @@ impl App {
             ("/api/new", Some(body)) => self.new_session(body),
             ("/api/new/reset", Some(body)) => self.reset_remote_draft(body),
             ("/api/connect", Some(body)) => self.connect_remote(body),
+            ("/api/native-calibration/reset", Some(body)) => self.reset_native_calibration(body),
             ("/api/open", Some(body)) => {
                 let identifier = body["id"].as_str().context("缺少会话 ID")?;
                 if identifier.starts_with("remote:") {
@@ -305,6 +316,8 @@ impl App {
     }
 
     pub fn sync_title(&self, identifier: &str) -> Result<()> {
+        if self.is_native_probe(identifier)? { return Ok(()); }
+        if self.needs_native_backfill(identifier)? { return Ok(()); }
         let Ok(_guard) = self.title_lock.try_lock() else {
             return Ok(());
         };

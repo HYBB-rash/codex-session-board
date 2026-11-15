@@ -13,6 +13,9 @@ type Client = reqwest::blocking::Client;
 mod remote_fixture;
 use remote_fixture::RemoteFixture;
 
+#[path = "remote_backfill.rs"]
+mod backfill;
+
 struct Gate(Arc<(Mutex<bool>, Condvar)>);
 
 impl Drop for Gate {
@@ -57,7 +60,7 @@ fn wait_remote(live: &Live, client: &Client, complete: bool, after: Option<f64>)
         }
         anyhow::ensure!(
             Instant::now() < deadline,
-            "remote scan did not reach expected state"
+            "remote scan did not reach expected state: {}",snapshot["health"]
         );
         live.post_path(client, "/api/refresh", &json!({}))?
             .error_for_status()?;

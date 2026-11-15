@@ -26,3 +26,6 @@ candidate、preflight、staged 使用 R1 第二版凭据与托管清理；边界
 新增真实 CLI 回归覆盖一次初始化、固定来源、只读计划、参数隔离及失败报告读取。
 向 PR8、PR9 原会话投递修复请求均被应用拒绝，返回 already has an active writer，
 未视为已送达；协调者继续修正，保留此协调失败记录。
+PR9 的已归档但 thread/read missing 恢复组合通过真实 Rust fixture 稳定复现失败，
+新增重启、归档列表断连、用户接手及未完成映射回归。修复只在明确 missing 后
+独立确认归档并清理本地 pending，保留所有权标记，不重复创建或归档。

@@ -21,8 +21,9 @@ pub fn scan_history(app: &App, reader: &mut dyn Rpc) -> Result<()> {
 }
 
 fn history_pass(app: &App, reader: &mut dyn Rpc) -> Result<()> {
-    let (threads, complete) =
+    let (mut threads, complete) =
         rpc::list_threads(reader, app.config.page_size, app.config.max_pages)?;
+    app.retain_business_threads(&mut threads)?;
     app.store.discover(&threads)?;
     let ids: HashSet<_> = threads
         .iter()
@@ -160,6 +161,7 @@ fn observe_one(
 ) -> Result<Seen> {
     ensure!(app.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
     let identifier = thread["id"].as_str().context("会话缺少 ID")?;
+    if app.is_native_probe(identifier)? { return Ok(Seen::Same); }
     if !app.store.contains(identifier)? {
         return Ok(Seen::Same);
     }
@@ -172,7 +174,8 @@ fn observe_one(
     }
     let status = &thread["status"];
     let revision = json!([thread["updatedAt"], status]).to_string();
-    if status["type"] != "active" && revisions.get(identifier) == Some(&revision) {
+    if status["type"] != "active" && revisions.get(identifier) == Some(&revision)
+        && !app.needs_native_backfill(identifier)? {
         return Ok(Seen::Same);
     }
     match rpc::latest_turn(reader, identifier) {
@@ -198,6 +201,13 @@ fn apply_observed_turn(
     let _operation = app.operation()?;
     ensure!(app.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
     app.store.observe(identifier, turn, None)?;
+    if let Err(error) = app.backfill_native(identifier, status) {
+        return Ok(Seen::Phase(error.to_string()));
+    }
+    let since = app.native_runtime_since(identifier,since)?;
+    if app.baseline_native_backfill(identifier,status,turn,since)? {
+        return Ok(Seen::Saved(identifier.to_owned(), revision));
+    }
     if crate::model::runtime_state(status, turn).is_none() {
         return Ok(Seen::Same);
     }
@@ -286,6 +296,7 @@ fn runtime_step(
 ) -> Result<()> {
     if reader.is_none() {
         *reader = Some(RuntimeConnection::connect(app)?);
+        app.invalidate_native_mapping()?;
         revisions.clear();
     }
     let scan = if app.config.proxy_command.is_empty() {

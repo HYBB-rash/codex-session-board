@@ -54,8 +54,8 @@ fn unpublished_empty_chat_survives_complete_scan_and_restart_as_read_only() -> R
     assert_eq!(rows[0]["state"], "unknown");
     assert_eq!(rows[0]["inputVersion"], 0);
     assert_eq!(rows[0]["sectionVersion"], Value::Null);
-    assert_eq!(rows[0]["readOnly"], false);
-    assert_eq!(rows[0]["canArchive"], Value::Null);
+    assert_eq!(rows[0]["readOnly"], true);
+    assert_eq!(rows[0]["canArchive"], false);
     let remote_config = remote.config.clone();
     let root_config = root.config.clone();
     drop(remote);
