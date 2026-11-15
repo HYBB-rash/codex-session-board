@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from scripts.validate_candidate import ROOT, acceptance_outcome, commands_for, git, identity
 from scripts.verify_package_startup import CHECKS
 from scripts.validation_report import verify_complete
+from scripts.validate_context import require_remote_target, require_target
 
 JOBS = {
     "Candidate (linux-x86_64)", "Candidate (macos-arm64)",
@@ -143,7 +144,7 @@ def collect_platform(repository, run, label, source, base, directory):
     return label, record, package
 
 
-def promote(candidate, base, run_id, repository, output):
+def promote(candidate, base, run_id, repository, output, reference="refs/heads/main"):
     output = output.resolve()
     if output.is_relative_to(ROOT) or output.exists():
         raise ValueError("Promotion receipt must use a new path outside the source")
@@ -156,6 +157,9 @@ def promote(candidate, base, run_id, repository, output):
     run = json.loads(github("api", api))
     jobs = json.loads(github("api", api + "/jobs?filter=latest&per_page=100"))
     validate_run(run, jobs, source, repository)
+    require_target(reference, base, run["head_branch"], candidate, git_command=git)
+    if reference != "refs/heads/main":
+        require_remote_target(reference, (base, candidate), git_command=git)
     output.parent.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix="verified-candidate-", dir=output.parent))
     validations, packages = {}, {}
@@ -167,16 +171,14 @@ def promote(candidate, base, run_id, repository, output):
             validations[label], packages[label] = record, package
     if identity() != source or git("status", "--porcelain", "--untracked-files=all"):
         raise ValueError("Candidate changed while checking remote validation")
-    remote = git("ls-remote", "origin", "refs/heads/main").split()
-    if len(remote) != 2 or remote[0] not in (base, candidate):
-        raise ValueError("Main advanced; recombine and revalidate the candidate")
-    if remote[0] == base:
-        subprocess.run(["git", "push", "origin", f"{candidate}:refs/heads/main"],
+    remote = require_remote_target(reference, (base, candidate), git_command=git)
+    if remote == base:
+        lease = [] if reference == "refs/heads/main" else [f"--force-with-lease={reference}:{base}"]
+        subprocess.run(["git", "push", *lease, "origin", f"{candidate}:{reference}"],
                        cwd=ROOT, check=True)
-    if git("ls-remote", "origin", "refs/heads/main").split()[0] != candidate:
-        raise ValueError("Main did not confirm the promoted candidate")
+    require_remote_target(reference, (candidate,), git_command=git)
     receipt = {
-        "schema_version": 1, "source": source, "base": base,
+        "schema_version": 1, "source": source, "base": base, "reference": reference,
         "repository": repository, "run": run_id,
         "validated_platforms": validations, "packages": packages,
         "artifacts": str(directory),
@@ -192,11 +194,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--candidate", required=True)
     parser.add_argument("--base", required=True)
+    parser.add_argument("--reference", default="refs/heads/main")
     parser.add_argument("--run", required=True, type=int)
     parser.add_argument("--repository", required=True)
     parser.add_argument("--output", required=True, type=Path)
     arguments = parser.parse_args()
-    promote(arguments.candidate, arguments.base, arguments.run, arguments.repository, arguments.output)
+    promote(arguments.candidate, arguments.base, arguments.run, arguments.repository,
+            arguments.output, arguments.reference)
 
 
 if __name__ == "__main__":

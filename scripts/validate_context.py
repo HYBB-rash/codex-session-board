@@ -1,11 +1,46 @@
 import argparse
 import json
 from pathlib import Path
+import re
 import subprocess
 
 
 def git(*arguments):
     return subprocess.check_output(["git", *arguments], text=True).strip()
+
+
+def require_target(reference, base, branch, source="HEAD", git_command=git):
+    rehearsal = branch.startswith("codex/integration-rehearsal-")
+    if reference == "refs/heads/main":
+        if rehearsal:
+            raise ValueError("Rehearsal candidates require an explicit rehearsal target")
+        return
+    if (not rehearsal or not re.fullmatch(
+            r"refs/heads/codex/rehearsal-main-[A-Za-z0-9][A-Za-z0-9._-]*", reference)
+            or not re.fullmatch(r"[0-9a-f]{40}", base)):
+        raise ValueError("Only fixed rehearsal targets are supported")
+    git_command("check-ref-format", reference)
+    configuration = json.loads(git_command("show", f"{source}:context/integration-target.json"))
+    if configuration != {"reference": reference, "base": base}:
+        raise ValueError("Candidate target configuration does not match the explicit target and base")
+    git_command("merge-base", "--is-ancestor", base, source)
+
+
+def require_remote_target(reference, allowed, git_command=git):
+    remote = git_command("ls-remote", "origin", reference).split()
+    if len(remote) != 2 or remote[1] != reference or remote[0] not in allowed:
+        raise ValueError("Integration target advanced or is missing; recombine and revalidate")
+    return remote[0]
+
+
+def classification_target(branch, base):
+    if not branch.startswith("codex/integration-rehearsal-"):
+        return git("rev-parse", f"{base}^{{commit}}"), "refs/heads/main"
+    configuration = json.loads(git("show", "HEAD:context/integration-target.json"))
+    reference, fixed_base = configuration["reference"], configuration["base"]
+    require_target(reference, fixed_base, branch)
+    require_remote_target(reference, (fixed_base,))
+    return fixed_base, reference
 
 
 def context_only(base):
@@ -50,13 +85,14 @@ def require_base_gate(repository, base):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="origin/main")
+    parser.add_argument("--branch", default="")
     parser.add_argument("--github-output", type=Path)
     parser.add_argument("--repository")
     parser.add_argument("--output", required=True, type=Path)
     arguments = parser.parse_args()
-    base = git("rev-parse", f"{arguments.base}^{{commit}}")
+    base, reference = classification_target(arguments.branch, arguments.base)
     source = git("rev-parse", "HEAD")
-    records_only = context_only(base)
+    records_only = context_only(base) if reference == "refs/heads/main" else False
     if arguments.repository:
         if not records_only:
             raise ValueError("Context validation cannot admit implementation or workflow changes")
@@ -67,7 +103,7 @@ def main():
         raise ValueError("Context validation requires an unchanged clean checkout")
     report = {
         "scope": "context" if arguments.repository else "classification",
-        "context_only": records_only, "base": base, "source_commit": source,
+        "context_only": records_only, "base": base, "source_commit": source, "reference": reference,
         "implementation_unchanged": records_only,
     }
     arguments.output.write_text(json.dumps(report, indent=2) + "\n")

@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: "3.12"
       - id: classify
-        run: python3 scripts/validate_context.py --github-output "$GITHUB_OUTPUT" --output "$RUNNER_TEMP/classification.json"
+        run: python3 scripts/validate_context.py --branch "$GITHUB_REF_NAME" --github-output "$GITHUB_OUTPUT" --output "$RUNNER_TEMP/classification.json"
   context:
     name: Validate context records
     needs: classify
