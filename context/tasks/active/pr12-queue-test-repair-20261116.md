@@ -1,0 +1,35 @@
+# PR12 打开会话测试竞态修复
+
+owner: 01a1da86-d345-7f73-aa75-70fa97d46d41
+execution_mode: isolated_write
+allowed_write_set: scripts/check-light-ui.mjs, scripts/check-light-ui-open-wait.mjs, context/tasks/active/pr12-queue-test-repair-20261116.md
+base_commit: 4e2a26151fc45598274725c463017a26fd0f9773
+worktree_path: /Users/hongyong/.codex/worktrees/pr-queue-author12-20261116/codex-session-board
+coordinator: 01a1d38b-1ef8-7392-ba78-caa7935c5ab4
+status: ready_for_validation
+
+反馈编号 ebdbd0ff-9e99-46de-83df-7e9cc934c301。开始时固定 HEAD 与分支符合反馈，
+工作区干净。只修复轻量界面检查的完成条件及必要独立回归，不修改业务源码、
+版本、共享状态、需求、参考模型和锁，不推送、不操作日用客户端。
+
+原检查在点击打开后等待 !saving；业务 openSession 只维护 opening。
+独立夹具预加载原检查脚本，扣住请求处理与响应完成两个阶段，通过真实 CDP
+条件求值结果再逐次放行，不用固定 sleep 或重试掩盖失败。保留完整 writes 断言。
+
+证据与最终 ready.json、result.json 位于源码外：
+/Users/hongyong/.codex/visualizations/2026/11/13/01a1d38b-1ef8-7392-ba78-caa7935c5ab4/pr-queue-20261115/author-12
+
+先保存原同步逻辑的失败、命令、退出码、源码头及补丁，再提交修复。
+提交后先写 ready.json，再对冻结头执行定向 Rust 测试及独立延迟回归。
+所有 cargo/check/validate 继承 CARGO_BUILD_JOBS=2。最终组合 CI 与独立审阅由协调者安排。
+
+基线复现已保存 baseline-delay.json、baseline-delay.stdout.log、
+baseline-delay.stderr.log、baseline.patch：原脚本第 96 行完整 writes 断言真实失败，
+退出码 1，耗时 1.240 秒。请求处理被扣住时，实际 !saving 求值为 true，
+写入记录仍为空。修复仅改为等待 !opening，保留原 80 个断言及完整写入校验。
+独立夹具不改变原条件、CDP 返回值或断言参数；阻断期必须观察到条件为 false，
+才能放行对应阶段，并核对完整写入断言发生在响应完成之后。
+进一步记录 CDP 求值的发出阶段与收到结果的阶段，两者须相同才能放行。
+同一最终夹具再次在未改原脚本上确定性失败，证据为 baseline-controlled.json
+及对应日志、补丁，退出码 1，耗时 1.201 秒。
+后续冻结头、逐项耗时、退出码与结论统一写入源码外 result.json，不自签独立审阅。
