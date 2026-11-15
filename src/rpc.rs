@@ -59,7 +59,7 @@ pub enum Role {
     Reader,
     NativeReader,
     RemoteObserver,
-    DraftWriter,
+    DraftReader,
     TitleWriter,
     ArchiveWriter,
 }
@@ -76,10 +76,7 @@ impl Role {
                 method,
                 "initialize" | "thread/list" | "thread/turns/list" | "threadSection/list"
             ),
-            Self::DraftWriter => matches!(
-                method,
-                "initialize" | "thread/start" | "thread/read" | "thread/name/set"
-            ),
+            Self::DraftReader => matches!(method, "initialize" | "thread/read"),
             Self::TitleWriter => matches!(method, "initialize" | "thread/read" | "thread/name/set"),
             Self::ArchiveWriter => matches!(
                 method,
@@ -847,25 +844,22 @@ mod tests {
 
     #[test]
     fn empty_draft_connections_cannot_send_turns_or_modify_sidebar_sections() -> Result<()> {
-        for method in [
-            "initialize",
-            "thread/start",
-            "thread/read",
-            "thread/name/set",
-        ] {
-            Role::DraftWriter.check(method)?;
+        for method in ["initialize", "thread/read"] {
+            Role::DraftReader.check(method)?;
         }
         let (mut client, mut server) = sidebar_pair()?;
         client.project_only = true;
         client.check("move_thread_to_project")?;
         for method in [
+            "thread/start",
+            "thread/name/set",
             "turn/start",
             "turn/resume",
             "send_message_to_thread",
             "thread/archive",
             "move_thread_to_sidebar_section",
         ] {
-            assert!(Role::DraftWriter.check(method).is_err());
+            assert!(Role::DraftReader.check(method).is_err());
             assert!(client.call(method, json!({})).is_err());
         }
         assert!(client.call("thread/name/set", json!({})).is_err());

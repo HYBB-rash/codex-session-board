@@ -6,6 +6,7 @@ pub mod http;
 pub mod mcp;
 pub mod model;
 pub mod native_sections;
+mod native_new;
 pub mod observer;
 pub use app::preflight;
 pub mod projects;

@@ -252,9 +252,20 @@ class PackageTests(unittest.TestCase):
             for script in ROOT.glob("scripts/*.mjs"):
                 self.assertIn(script.relative_to(ROOT).as_posix(), files)
             self.assertIn("scripts/rust_adapter.py", files)
+            for script in (ROOT / "scripts/native_new").iterdir():
+                if script.suffix in {".py", ".js", ".mjs"}:
+                    self.assertIn(script.relative_to(ROOT).as_posix(), files)
             self.assertIn("Docs/MIGRATION.md", files)
             self.assertNotIn("main.py", files)
             self.assertNotIn("data", {Path(name).parts[0] for name in files})
+            with tarfile.open(first) as archive:
+                archive.extractall(directory, filter="data")
+            extracted = Path(directory) / "codex-session-board"
+            native = subprocess.run(
+                [sys.executable, "-m", "unittest", "acceptance.test_native_new"],
+                cwd=extracted, capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(native.returncode, 0, native.stdout + native.stderr)
 
     def test_package_requires_the_fingerprinted_build_gate_and_preserves_its_rejection(self):
         with tempfile.TemporaryDirectory() as directory:

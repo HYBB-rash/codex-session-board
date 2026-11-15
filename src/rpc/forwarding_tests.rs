@@ -83,7 +83,7 @@ fn project_forwarder_rechecks_registered_origin_even_after_draft_connection_succ
 {
     let fixture = Fixture::new()?;
     let app = fixture.app()?;
-    drop(runtime::RuntimeConnection::draft(&app)?);
+    drop(runtime::RuntimeConnection::draft_recovery(&app)?);
     let settings = registered(&fixture)?;
     let (mut writer, mut server) = writer(&settings, true)?;
     fixture.update("port", json!(2222))?;
