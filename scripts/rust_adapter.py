@@ -9,6 +9,8 @@ from pathlib import Path
 
 
 ROOT = Path.cwd().resolve()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.verify_acceptance import validate_results
 
 
 def command(arguments, timeout=600, input=None):
@@ -125,7 +127,6 @@ def run_python(names):
                       input=json.dumps({"protocol": 1, "tests": names}))
     if process.returncode:
         raise ValueError(process.stderr)
-    from scripts.verify_acceptance import validate_results
     return validate_results(json.loads(process.stdout), set(names))
 
 

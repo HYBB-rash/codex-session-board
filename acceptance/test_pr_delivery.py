@@ -2,6 +2,8 @@ import copy
 import json
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -177,3 +179,19 @@ class PRDeliveryTests(unittest.TestCase):
             outcomes = rust_adapter.run_python(names)
         self.assertEqual(names, ["acceptance.test_target.TargetTests.test_target"])
         self.assertEqual(outcomes[names[0]]["status"], "pass")
+        probe = (
+            "import json,runpy,sys\n"
+            "adapter=runpy.run_path(sys.argv[1])\n"
+            "names=adapter['python_inventory']()\n"
+            "print(json.dumps(adapter['run_python'](names)))\n"
+        )
+        isolated = subprocess.run(
+            [sys.executable, "-I", "-c", probe, str(Path(rust_adapter.__file__).resolve())],
+            cwd=source, capture_output=True, text=True, timeout=30)
+        self.assertEqual(isolated.returncode, 0, isolated.stdout + isolated.stderr)
+        self.assertEqual(json.loads(isolated.stdout)[names[0]]["status"], "pass")
+        entry = subprocess.run(
+            [sys.executable, "-I", str(Path(rust_adapter.__file__).resolve())],
+            cwd=source, input='{"protocol":0}', capture_output=True, text=True, timeout=30)
+        self.assertEqual(entry.returncode, 1)
+        self.assertIn("Unsupported adapter protocol", entry.stderr)
