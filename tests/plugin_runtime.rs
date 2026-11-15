@@ -67,7 +67,7 @@ impl Plugin {
                 ensure!(status.success(), "插件关闭失败：{status}");
                 return Ok(());
             }
-            ensure!(Instant::now() < deadline, "插件未随输入关闭退出");
+            ensure!(Instant::now() < deadline, "插件未随输入关闭退出（PID {}）", self.child.id());
             std::thread::sleep(Duration::from_millis(10));
         }
     }
@@ -98,9 +98,11 @@ impl Profile {
         let config = Config {
             data_dir: root.join("data"), port: port.port, sync_titles: false,
             desktop_socket: PathBuf::new(), sidebar_socket: PathBuf::new(),
+            sidebar_state_file: root.join("projects.json"),
             sidebar_caller: String::new(), codex_command: vec!["/usr/bin/false".into()],
             rpc_timeout_seconds: 1, poll_seconds: 1, ..Config::default()
         };
+        std::fs::write(&config.sidebar_state_file, "{\"local-projects\":{}}")?;
         let path = root.join("config.json");
         std::fs::write(&path, serde_json::to_vec(&config)?)?;
         Ok(Self { _port: port, config, path })
@@ -171,11 +173,18 @@ fn simultaneous_plugin_entries_elect_one_business_owner() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let profile = Profile::new(directory.path())?;
     profile.seed("one shared runtime")?;
+    let ambient = directory.path().join("ambient-codex");
+    std::fs::create_dir(&ambient)?;
+    ensure!(Command::new("python3").args(["-c", "import os,sys;os.mkfifo(sys.argv[1])"])
+        .arg(ambient.join(".codex-global-state.json")).status()?.success(), "无法准备阻塞登记表");
     let mut entries = Vec::new();
     for _ in 0..4 {
         let path = profile.path.clone();
+        let ambient = ambient.clone();
         entries.push(std::thread::spawn(move || -> Result<(Plugin, Value)> {
-            let mut plugin = Plugin::start(Some(&path), None)?;
+            let mut command = Command::new(env!("CARGO_BIN_EXE_codex-session-board"));
+            command.env_remove("CODEX_APP_SERVER_WS_URL").env("CODEX_HOME", ambient);
+            let mut plugin = Plugin::launch(command, Some(&path), None)?;
             let snapshot = plugin.snapshot()?;
             Ok((plugin, snapshot))
         }));
@@ -192,7 +201,7 @@ fn simultaneous_plugin_entries_elect_one_business_owner() -> Result<()> {
     }
     plugins.sort_by_key(|(plugin, _)| u64::from(plugin.child.id()) == owner);
     for (mut plugin, _) in plugins {
-        plugin.close()?;
+        plugin.close().with_context(|| format!("关闭插件，业务所有者 {owner}"))?;
     }
     Ok(())
 }
