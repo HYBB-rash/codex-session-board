@@ -32,6 +32,118 @@ class QueueTransportTests(unittest.TestCase):
             raise AssertionError(method)
         return mock.Mock(request=mock.Mock(side_effect=request))
 
+    def rpc_without_items(self, route, thread, error=None):
+        original = self.rpc(route).request.side_effect
+        error = error or {"code": -32601, "message": "thread/items/list is not supported yet"}
+        def request(method, parameters):
+            if method == "thread/read" and parameters.get("includeTurns"):
+                return {"thread": thread}
+            if method == "thread/items/list":
+                connection = mock.Mock()
+                if isinstance(error, Exception):
+                    connection.recv.side_effect = error
+                else:
+                    connection.recv.return_value = json.dumps({"id": 1, "error": error})
+                return transport.Rpc(connection).request(method, parameters)
+            return original(method, parameters)
+        return mock.Mock(request=mock.Mock(side_effect=request))
+
+    def test_unsupported_items_reads_only_the_exact_original_turn_assistant_ack(self):
+        output, route, request = self.setup_case()
+        ack = {"type": "agentMessage", "id": "ack",
+               "text": f"PR_QUEUE_ACK {request['id']}", "completedAtMs": None}
+        target = {"id": "delivered", "status": "inProgress",
+                  "items": [{**ack, "type": "userMessage"}, {**ack, "text": "PR_QUEUE_ACK wrong"}]}
+        thread = {"id": route["thread_id"], "turns": [
+            {"id": "unrelated", "status": "completed", "items": [ack]}, target]}
+        rpc = self.rpc_without_items(route, thread)
+        with mock.patch.object(transport, "connect") as connection:
+            connection.return_value.__enter__.return_value = rpc
+            transport.run("send", route, request, output)
+            self.assertEqual(transport.run("poll", route, request, output)["state"], "sent")
+            target["items"].append(ack)
+            accepted = transport.run("poll", route, request, output)
+            self.assertEqual(accepted["state"], "acknowledged")
+            self.assertEqual(accepted["ack_item_id"], "ack")
+            self.assertEqual(accepted["ack_time_basis"], "observed_upper_bound")
+            self.assertEqual(accepted["observation_method"], "thread/read")
+            target["status"] = "completed"
+            completed = transport.run("poll", route, request, output)
+            self.assertEqual(completed["state"], "author_turn_completed")
+            repeated = transport.run("poll", route, request, output)
+            self.assertEqual(repeated["acknowledged_at"], accepted["acknowledged_at"])
+            self.assertEqual(repeated["completed_at"], completed["completed_at"])
+        self.assertEqual([call.args[0] for call in rpc.request.call_args_list].count("turn/start"), 1)
+        self.assertNotIn("thread/turns/list", [call.args[0] for call in rpc.request.call_args_list])
+
+    def test_unsupported_items_keeps_unknown_delivery_until_unique_user_receipt(self):
+        output, route, request = self.setup_case()
+        target = {"id": "delivered", "status": "inProgress", "items": [
+            {"type": "agentMessage", "id": "ack", "text": f"PR_QUEUE_ACK {request['id']}"}]}
+        thread = {"id": route["thread_id"], "turns": [target]}
+        rpc = self.rpc_without_items(route, thread)
+        original = rpc.request.side_effect
+        def lost_start(method, parameters):
+            if method == "turn/start":
+                raise TimeoutError("start response lost")
+            return original(method, parameters)
+        rpc.request.side_effect = lost_start
+        with mock.patch.object(transport, "connect") as connection:
+            connection.return_value.__enter__.return_value = rpc
+            with self.assertRaises(TimeoutError):
+                transport.run("send", route, request, output)
+            unknown = transport.run("send", route, request, output)
+            self.assertEqual(unknown["state"], "delivery_unknown")
+            self.assertNotIn("turn_id", unknown)
+            self.assertNotIn("acknowledged_at", unknown)
+            user = {"type": "userMessage", "clientId": request["id"]}
+            target["items"].append(user)
+            thread["turns"].append({"id": "other", "status": "completed", "items": [user]})
+            with self.assertRaisesRegex(ValueError, "multiple turns"):
+                transport.run("poll", route, request, output)
+            self.assertEqual(json.loads(output.read_text())["state"], "delivery_unknown")
+            thread["turns"].pop()
+            accepted = transport.run("poll", route, request, output)
+            self.assertEqual(accepted["state"], "acknowledged")
+            self.assertEqual(accepted["turn_id"], "delivered")
+        self.assertEqual([call.args[0] for call in rpc.request.call_args_list].count("turn/start"), 1)
+
+    def test_fallback_does_not_hide_rpc_errors_or_accept_wrong_thread_or_turn(self):
+        failures = [
+            ("wrong_thread", None),
+            ("missing_turn", None),
+            ("duplicate_turn", None),
+            ("permission", {"code": -32601, "message": "permission denied"}),
+            ("other_code", {"code": -32000, "message": "thread/items/list is not supported yet"}),
+            ("timeout", TimeoutError("items timeout")),
+        ]
+        for scenario, error in failures:
+            with self.subTest(scenario=scenario):
+                output, route, request = self.setup_case()
+                target = {"id": "delivered", "status": "completed", "items": [
+                    {"type": "agentMessage", "id": "ack", "text": f"PR_QUEUE_ACK {request['id']}"}]}
+                thread = {"id": route["thread_id"], "turns": [target]}
+                if scenario == "wrong_thread":
+                    thread["id"] = "another"
+                elif scenario == "missing_turn":
+                    target["id"] = "another"
+                elif scenario == "duplicate_turn":
+                    thread["turns"].append(target)
+                rpc = self.rpc_without_items(route, thread, error)
+                with mock.patch.object(transport, "connect") as connection:
+                    connection.return_value.__enter__.return_value = rpc
+                    transport.run("send", route, request, output)
+                    expected = TimeoutError if scenario == "timeout" else (
+                        transport.Rejected if error else ValueError)
+                    with self.assertRaises(expected):
+                        transport.run("poll", route, request, output)
+                receipt = json.loads(output.read_text())
+                self.assertEqual(receipt["state"], "sent")
+                self.assertNotIn("acknowledged_at", receipt)
+                if error:
+                    self.assertFalse(any(call.args[1].get("includeTurns")
+                                         for call in rpc.request.call_args_list))
+
     def test_busy_author_is_not_interrupted_or_reported_as_delivered(self):
         output, route, request = self.setup_case()
         rpc = self.rpc(route, "active")
