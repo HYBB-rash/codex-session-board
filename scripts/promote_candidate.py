@@ -24,12 +24,12 @@ PLATFORMS = {"linux-x86_64": ("linux", "x86_64"), "macos-arm64": ("darwin", "arm
 TARGETS = {"linux-x86_64": "x86_64-unknown-linux-gnu", "macos-arm64": "aarch64-apple-darwin"}
 
 
-def github(*arguments):
+def github(*arguments, timeout=60):
     command = json.loads(os.environ.get("CODEX_GITHUB_COMMAND", '["gh"]'))
     if not isinstance(command, list) or not command or not all(isinstance(part, str) for part in command):
         raise ValueError("GitHub command must be a nonempty argument array")
     return subprocess.check_output([*command, *arguments], cwd=ROOT, text=True,
-                                   stderr=subprocess.PIPE)
+                                   stderr=subprocess.PIPE, timeout=timeout)
 
 
 def validate_run(run, jobs, source, repository):

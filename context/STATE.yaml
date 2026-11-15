@@ -2,12 +2,13 @@
   "schema_version": 1,
   "updated_at": "2026-11-16",
   "current_phase": {
-    "id": "pr-queue-20261115",
-    "status": "completed",
+    "id": "pr-task-20261116",
+    "status": "in_progress",
     "as_of": "2026-11-16",
-    "summary": "PR队列及原会话修复闭环已随0.3.93/61d9d280进入真实主线。历史PR8至11以debf396e完成隔离演练，双平台不可变包通过。连续3小时8分9秒，未达1至2小时；通知有效，首轮约27分钟协调空档保留，第二轮连续冻结至推送2分29秒。安装和完整验收仍独立。"
+    "summary": "参考外部 PR 巡检实现和回归案例，落地项目内作者生命周期 CLI。纯代码巡检，有新问题才唤起原会话，合并或关闭后收尾；合并方独立推进，安装和验收仍独立。"
   },
   "active_tasks": [
+    "context/tasks/active/pr-task-20261116.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",
