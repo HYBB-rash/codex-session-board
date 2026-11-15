@@ -82,12 +82,12 @@ def connect(route):
             connection.close()
 
 
-def read_author(rpc, route):
+def read_author(rpc, route, check_cwd=True):
     thread = rpc.request("thread/read", {
         "threadId": route["thread_id"], "includeTurns": False,
     })["thread"]
     if (thread["id"] != route["thread_id"]
-            or thread["cwd"] not in {route["expected_cwd"], route["repair_cwd"]}):
+            or check_cwd and thread["cwd"] not in {route["expected_cwd"], route["repair_cwd"]}):
         raise ValueError("Author thread or working directory does not match its route")
     return thread
 
@@ -159,6 +159,8 @@ def send(rpc, route, request, receipt, output):
     if receipt["state"] not in {"pending", "waiting_idle", "rejected"}:
         observe(rpc, route, receipt)
         return
+    if not Path(route["repair_cwd"]).is_dir():
+        raise ValueError("An existing isolated repair directory is required")
     thread = read_author(rpc, route)
     if thread["status"]["type"] == "notLoaded":
         rpc.request("thread/resume", {"threadId": route["thread_id"], "excludeTurns": True})
@@ -187,8 +189,8 @@ def send(rpc, route, request, receipt, output):
 
 def execute(action, route, request, output):
     uuid.UUID(request["id"])
-    if not request["body"].strip() or not Path(route["repair_cwd"]).is_dir():
-        raise ValueError("Feedback and an existing isolated repair directory are required")
+    if not request["body"].strip():
+        raise ValueError("Nonempty feedback is required")
     expected = {
         "request_id": request["id"], "thread_id": route["thread_id"],
         "body_sha256": hashlib.sha256(request["body"].encode()).hexdigest(),
@@ -203,7 +205,7 @@ def execute(action, route, request, output):
     save(output, receipt)
     try:
         with connect(route) as rpc:
-            read_author(rpc, route)
+            read_author(rpc, route, check_cwd=False)
             if action == "send":
                 send(rpc, route, request, receipt, output)
             else:

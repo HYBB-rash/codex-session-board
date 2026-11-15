@@ -122,6 +122,36 @@ class QueueTransportTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "identity or route changed"):
                     transport.run("send", changed_route, changed_request, output)
 
+    def test_receipt_remains_readable_after_author_moves_to_another_directory(self):
+        output, route, request = self.setup_case()
+        repair = output.parent / "repair"
+        repair.mkdir()
+        route["repair_cwd"] = str(repair)
+        rpc = self.rpc(route)
+        original = rpc.request.side_effect
+        with mock.patch.object(transport, "connect") as connection:
+            connection.return_value.__enter__.return_value = rpc
+            transport.run("send", route, request, output)
+            repair.rmdir()
+            def moved(method, parameters):
+                if method == "thread/read":
+                    thread = original(method, parameters)["thread"]
+                    return {"thread": {**thread, "cwd": "/another/project"}}
+                if method == "thread/items/list":
+                    return {"data": [{"turnId": "delivered", "item": {
+                        "type": "agentMessage", "id": "ack",
+                        "text": f"PR_QUEUE_ACK {request['id']}"}}]}
+                if method == "thread/turns/list":
+                    return {"data": [{"id": "delivered", "status": "completed"}]}
+                return original(method, parameters)
+            rpc.request.side_effect = moved
+            rpc.request.reset_mock()
+            self.assertEqual(transport.run("poll", route, request, output)["state"],
+                             "author_turn_completed")
+            self.assertEqual(transport.run("send", route, request, output)["state"],
+                             "author_turn_completed")
+            self.assertNotIn("turn/start", [call.args[0] for call in rpc.request.call_args_list])
+
 
 if __name__ == "__main__":
     unittest.main()

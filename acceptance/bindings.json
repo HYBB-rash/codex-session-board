@@ -1676,6 +1676,18 @@
       "lib::codex_session_board::observer::tests::runtime_disconnect_retires_catalog_liveness_but_frame_limit_does_not"
     ],
     "DELIVERY-001": [
+      "acceptance.test_pr_queue_transport.QueueTransportTests.test_receipt_remains_readable_after_author_moves_to_another_directory",
+      "acceptance.test_rehearsal_target.RehearsalTargetTests.test_normal_target_never_reads_rehearsal_configuration",
+      "acceptance.test_rehearsal_target.RehearsalTargetTests.test_rehearsal_classification_uses_fixed_base_and_requires_full_candidate_path",
+      "acceptance.test_rehearsal_target.RehearsalTargetTests.test_target_rejects_wrong_branch_reference_base_and_configuration",
+      "acceptance.test_rehearsal_target.RehearsalTargetTests.test_classification_rejects_advanced_or_missing_remote_target",
+      "acceptance.test_rehearsal_target.RehearsalTargetTests.test_target_rejects_a_fixed_base_outside_candidate_ancestry",
+      "acceptance.test_rehearsal_target.RehearsalTargetTests.test_stale_lease_cannot_overwrite_a_concurrently_advanced_target",
+      "acceptance.test_rehearsal_target.RehearsalTargetTests.test_resume_requires_explicit_matching_rehearsal_reference",
+      "acceptance.test_rehearsal_target.RehearsalTargetTests.test_rehearsal_release_tag_requires_configured_source_and_unchanged_remote",
+      "acceptance.test_rehearsal_target.RehearsalTargetTests.test_promotion_keeps_both_platform_checks_and_targets_only_the_rehearsal_ref",
+      "acceptance.test_saved_release.SavedReleaseTests.test_rehearsal_release_verifies_both_packages_without_publishing_channels",
+      "acceptance.test_saved_release.SavedReleaseTests.test_rehearsal_release_rejects_channel_promotion_and_wrong_source_tag",
       "acceptance.test_pr_queue_transport.QueueTransportTests.test_busy_author_is_not_interrupted_or_reported_as_delivered",
       "acceptance.test_pr_queue_transport.QueueTransportTests.test_lost_start_receipt_is_not_retried_and_can_be_reconciled",
       "acceptance.test_pr_queue_transport.QueueTransportTests.test_only_original_turn_assistant_acknowledges_and_completed_is_separate",
