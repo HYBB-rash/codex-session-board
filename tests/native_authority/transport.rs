@@ -456,14 +456,13 @@ pub(super) fn body(app: &App, state: &str, note: &str) -> Result<Value> {
 fn direct_transport_reads_shared_backend_positions_without_sidebar_projection() -> Result<()> {
     use codex_session_board::{
         native_sections::direct,
-        rpc::{DesktopConnection, Role},
+        rpc::Role,
     };
     let directory = tempfile::tempdir()?;
     let server = Server::new(directory.path())?;
-    let _app = server.app()?;
+    let app = server.app()?;
     server.surface.lock().unwrap().calls.clear();
-    let mut reader = DesktopConnection::connect(
-        &server.config.desktop_socket,
+    let mut reader = app.connection(
         Duration::from_secs(2),
         Role::NativeReader,
     )?;

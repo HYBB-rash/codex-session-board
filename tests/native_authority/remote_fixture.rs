@@ -7,7 +7,7 @@ use anyhow::Result;
 use codex_session_board::{
     config::Config,
     remote::hosts::Host,
-    rpc::{DesktopConnection, Role, Rpc},
+    rpc::Rpc,
     store::Store,
 };
 use serde_json::{Value, json};
@@ -18,6 +18,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 const HOSTS: [&str; 2] = ["mac", "other"];
+#[path = "../../examples/dev_fixture/client.rs"]
+mod fixture_client;
+#[path = "fixture_proxy.rs"]
+mod fixture_proxy;
 const SSH: &str = r#"import json,os,pathlib,re,socket,struct,sys,threading,time
 root=pathlib.Path(sys.argv[1])
 args=sys.argv[2:]
@@ -169,8 +173,8 @@ impl RemoteFixture {
                 host.into(),
                 "exec codex app-server proxy".into(),
             ]);
-            let mut connection =
-                DesktopConnection::proxy(&command, Duration::from_secs(6), Role::RemoteObserver)?;
+            let mut connection = fixture_client::FixtureConnection::open(
+                fixture_proxy::Proxy::new(&command, Duration::from_secs(6))?)?;
             let result = connection.call("thread/list", json!({"archived":false}))?;
             assert_eq!(result["data"].as_array().unwrap().len(), 2);
             assert!(
