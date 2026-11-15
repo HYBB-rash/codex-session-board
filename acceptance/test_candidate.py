@@ -1,5 +1,7 @@
 from contextlib import chdir
+import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -11,18 +13,23 @@ from scripts import validate_context
 
 
 class CandidateGateTests(unittest.TestCase):
-    def run_candidate(self, *, changed=False, dirty=False, mismatch=False):
+    def run_candidate(self, *, changed=False, dirty=False, mismatch=False, scoped=False, omitted=False, failed=False):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         parent = Path(directory.name)
         root = parent / "source"
         root.mkdir()
+        (root / "acceptance").mkdir()
+        (root / "acceptance/bindings.json").write_bytes(
+            (candidate.ROOT / "acceptance/bindings.json").read_bytes())
         output = parent / "result"
         identity = {"commit": "a" * 40, "tree": "b" * 40, "fingerprint": "c" * 64}
         after = {**identity, **({"commit": "d" * 40} if changed else {})}
+        strategy = {"profile": "ui", "base": "f" * 40, "paths": ["index.html"], "replay": None}
 
-        def execute(name, arguments, destination):
+        def execute(name, arguments, destination, **options):
             (destination / f"{name}.log").write_text("actual step transcript\n")
+            (destination / f"{name}.stderr.log").write_text("step diagnostics\n")
             if "--report" in arguments:
                 report = {
                     "automated_passed": True,
@@ -30,19 +37,45 @@ class CandidateGateTests(unittest.TestCase):
                     "scope": "automated", "passed": True, "release_ready": True,
                     "tests": [{"status": "pass"}], "requirements": [{"status": "pass"}],
                 }
-                (destination / "automated.json").write_text(json.dumps(report))
-            return {"name": name, "arguments": arguments, "returncode": 0, "seconds": 1}
+                report_name = "automated"
+                if failed:
+                    report.update(automated_passed=False, passed=False, release_ready=False,
+                                  tests=[{"status": "fail"}],
+                                  requirements=[{"id": "R-01", "status": "pending"}])
+                if scoped:
+                    from scripts.integration_plan import bound_inventory, selected
+                    bindings = json.loads((root / "acceptance/bindings.json").read_text())
+                    inventory = bound_inventory(bindings, candidate.sys.platform)
+                    chosen = selected(inventory, "ui")
+                    report = {
+                        "scope": "integration", "plan": strategy, "source": identity,
+                        "passed": True, "release_ready": False, "inventory": sorted(inventory),
+                        "selected": sorted(chosen), "not_run": sorted(inventory - chosen),
+                        "tests": [{"id": item, "status": "pass"} for item in sorted(chosen)],
+                    }
+                    if omitted:
+                        report["tests"].pop()
+                    report_name = "integration"
+                (destination / f"{report_name}.json").write_text(json.dumps(report))
+            (destination / f"{name}.request.json").write_text("{}")
+            (destination / f"{name}.lease.json").write_text(json.dumps({
+                "run_id": options["run_id"], "name": name, "cleanup_confirmed": True}))
+            return {"name": name, "arguments": arguments,
+                    "returncode": 7 if failed and name == "step-3" else 0, "seconds": 1,
+                    "log_sha256": hashlib.sha256((destination / f"{name}.log").read_bytes()).hexdigest(),
+                    "cleanup_confirmed": True}
 
+        arguments = ["validate", "--output", str(output)]
+        if scoped:
+            arguments.extend(["--integration-base", strategy["base"]])
         with mock.patch.object(candidate, "ROOT", root), \
                 mock.patch.object(candidate, "identity", side_effect=[identity, after]), \
                 mock.patch.object(candidate, "git", return_value="dirty" if dirty else ""), \
-                mock.patch.object(candidate, "execute", side_effect=execute), \
-                mock.patch.object(candidate.sys, "argv", ["validate", "--output", str(output)]):
-            if changed or dirty or mismatch:
-                with self.assertRaises(ValueError):
-                    candidate.main()
-            else:
-                self.assertEqual(candidate.main(), 0)
+                mock.patch.object(candidate.run.processes, "execute", side_effect=execute), \
+                mock.patch("scripts.integration_plan.plan", return_value=strategy), \
+                mock.patch.dict(os.environ, {"CARGO_TARGET_DIR": str(root / "target")}), \
+                mock.patch.object(candidate.sys, "argv", arguments):
+            self.assertEqual(candidate.main(), 1 if changed or dirty or mismatch or omitted or failed else 0)
         return json.loads((output / "VALIDATION.json").read_text())
 
     def test_candidate_requires_unchanged_commit_even_when_fingerprint_matches(self):
@@ -60,6 +93,22 @@ class CandidateGateTests(unittest.TestCase):
         self.assertEqual(report["scope"], "candidate")
         self.assertEqual(len(report["automated_sha256"]), 64)
         self.assertEqual(len(report["steps"]), 3)
+        self.assertEqual(report["schema_version"], 2)
+        self.assertEqual(report["preparation"]["status"], "pass")
+        self.assertEqual(report["finalization"]["status"], "pass")
+        self.assertTrue(report["cleanup_confirmed"])
+
+    def test_scoped_candidate_preserves_plan_and_pending_checks_and_rejects_omissions(self):
+        report = self.run_candidate(scoped=True)
+        self.assertTrue(report["passed"])
+        self.assertFalse(report["release_ready"])
+        self.assertNotIn("automated_sha256", report)
+        self.assertEqual(len(report["integration_sha256"]), 64)
+        self.assertEqual(report["pending"], ["完整自动验收", "目标环境验收"])
+        self.assertTrue(report["not_run"])
+        self.assertEqual(report["steps"][2]["arguments"][:4],
+                         ["python3", "scripts/verify_integration.py", "--base", "f" * 40])
+        self.assertFalse(self.run_candidate(scoped=True, omitted=True)["passed"])
 
     def test_candidate_retains_pending_live_evidence_without_claiming_release_ready(self):
         report = {
@@ -73,6 +122,12 @@ class CandidateGateTests(unittest.TestCase):
         self.assertFalse(candidate.acceptance_outcome(report, 0))
         report.update(scope="release", passed=False, release_ready=False)
         self.assertFalse(candidate.acceptance_outcome(report, 2))
+        failed = self.run_candidate(failed=True)
+        self.assertEqual(failed["pending"], ["R-01"])
+        self.assertEqual(len(failed["automated_sha256"]), 64)
+        self.assertIn("step-3 退出 7", failed["first_failure"]["message"])
+        self.assertFalse(failed["passed"])
+        self.assertFalse(failed["release_ready"])
 
     def test_candidate_cannot_treat_skipped_tests_as_pending_live_evidence(self):
         report = {

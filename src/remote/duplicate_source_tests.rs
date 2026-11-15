@@ -1,5 +1,5 @@
 use super::*;
-use crate::rpc::{DesktopConnection, Role, Rpc, identity_fixture::Fixture};
+use crate::rpc::{Role, Rpc, identity_fixture::Fixture};
 use serde_json::json;
 
 fn registry(fixture: &Fixture, duplicate: bool) -> Result<()> {
@@ -30,7 +30,10 @@ fn setup() -> Result<(Fixture, Binding, Binding)> {
 fn duplicate_observable_data_sources_keep_reads_but_reject_writes_until_registration_is_unique()
 -> Result<()> {
     let (fixture, first, second) = setup()?;
-    let mut writer = DesktopConnection::remote(&first, Duration::from_secs(3), Role::TitleWriter)?;
+    let mut config = fixture.config.clone();
+    config.remote_binding = Some(first.clone());
+    let app = crate::app::App::new(config)?;
+    let mut writer = app.connection(Duration::from_secs(3), Role::TitleWriter)?;
     second.confirm(&fixture.peer()?, Instant::now() + Duration::from_secs(1))?;
     let before = std::fs::read(&first.path)?;
     assert!(first.require_confirmed().is_err());
