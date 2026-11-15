@@ -50,6 +50,12 @@ try {
   };
   const select = (id,value) => evaluate(`byId(${JSON.stringify(id)}).value=${JSON.stringify(value)};byId(${JSON.stringify(id)}).dispatchEvent(new Event("change"))`);
   const ids = () => evaluate("visibleSessions().map(row=>row.id)");
+  let snapshotRevision = 0;
+  const reload = async () => {
+    fixture.health.fixtureRevision = ++snapshotRevision;
+    await evaluate("load()");
+    await wait(`data.health.fixtureRevision === ${snapshotRevision}`);
+  };
   await wait('typeof data !== "undefined" && data.sessions.length === 5');
   check(await evaluate('[selectedHost,byId("host-filter").value]'),["local","local"]);
   check(await ids(),["local"]);
@@ -128,7 +134,7 @@ try {
     remoteConnections:[{hostId:"a",lastSuccessAt:20,lastScanAt:20,scanComplete:true,runtimeVerified:true,writeError:"source check <script> failure"},
       {hostId:"b",lastSuccessAt:5,scanComplete:true,runtimeVerified:true}]});
   fixture.sessions.filter(row=>row.hostId === "a").forEach(row=>{row.readOnly=true;row.canArchive=false;});
-  await evaluate("load()");
+  await reload();
   check(await evaluate('hostHealth(hostOptions().find(host=>host.hostId==="a")).status'),"可以查看会话，暂时不能修改");
   check(await evaluate('hostHealth(hostOptions().find(host=>host.hostId==="b")).attention'),false);
   check(await evaluate('hostHealth(hostOptions().find(host=>host.hostId==="b")).status'),"尚未连接 · 显示缓存");
@@ -154,28 +160,28 @@ try {
   fixture.health.remoteConnections[0].writeError = null;
   fixture.sessions.filter(row=>row.hostId === "a").forEach(row=>{row.readOnly=false;row.canArchive=true;});
   fixture.health.remoteConnections[0].nativeStageError = "partial fixture";
-  await evaluate("load()");
+  await reload();
   check(await evaluate('hostHealth(hostOptions().find(host=>host.hostId==="a")).status'),"部分自动状态更新未完成");
   fixture.health.remoteError = "another host project failure";
-  await evaluate("load()");
+  await reload();
   check(await evaluate('document.querySelector("[data-id=a1] .project-tag summary").textContent.includes("待确认")'),false);
   rejectReads = true;await evaluate("load()");
   check(await evaluate('byId("health-summary").textContent.startsWith("看板连接暂时断开")'),true);
-  rejectReads = false;await evaluate("load()");
+  rejectReads = false;await reload();
   check(await evaluate("snapshotError"),null);
   await select("host-filter","host:empty");
   check(await evaluate('document.querySelector(".empty-column").textContent.includes("尚未读取")'),true);
   fixture.health.remoteRegistry.find(host=>host.hostId === "empty").enabled = true;
   fixture.health.remoteConnections.push({hostId:"empty",lastSuccessAt:30,lastScanAt:30,scanComplete:true,runtimeVerified:true});
-  await evaluate("load()");
+  await reload();
   check(await evaluate('document.querySelector(".empty-column").textContent'),"暂无匹配的会话");
   await select("host-filter","local");
   fixture.health.runtimeVerified = false;fixture.health.runtimeError = "waiting";fixture.health.lastSuccessAt = fixture.health.lastScanAt = null;
-  await evaluate("load()");
+  await reload();
   check(await evaluate('hostHealth(hostOptions()[0]).attention'),false);
   check(await evaluate('byId("health-summary").textContent.includes("自动状态已连接")'),false);
   fixture.health.remoteConnections.push({hostId:"cached-only",hostLabel:"只留缓存的主机"});
-  await evaluate("load()");
+  await reload();
   check(await evaluate('hostOptions().some(host=>host.hostId==="cached-only")'),true);
   await evaluate('byId("new-target-cancel").click()');
   console.log(JSON.stringify({cases}));
