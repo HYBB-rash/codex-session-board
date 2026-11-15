@@ -1,12 +1,8 @@
 use super::*;
 
-fn client_atoms(state: &Value) -> Result<serde_json::Map<String, Value>> {
+pub(super) fn client_atoms(state: &Value) -> Result<serde_json::Map<String, Value>> {
     Ok(super::client_atoms(state)?.to_owned())
 }
-
-#[allow(dead_code)]
-#[path = "mapping.rs"]
-mod owned_mapping;
 
 #[test]
 fn seed_keeps_owned_atoms_alive_while_reading_account_sections() -> Result<()> {
@@ -30,7 +26,7 @@ fn seed_keeps_owned_atoms_alive_while_reading_account_sections() -> Result<()> {
         }
     });
     std::fs::write(&config.sidebar_state_file, state.to_string())?;
-    let seed = owned_mapping::seed(&config)?;
+    let seed = mapping::seed(&config)?;
     assert_eq!(seed.logical, [("backend-review".into(), identifier)].into());
     assert_eq!(seed.scope, json!({
         "owner": "owner", "account": "account",

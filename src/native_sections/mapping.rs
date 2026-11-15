@@ -1,6 +1,9 @@
 use super::*;
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+use super::mapping_owned_tests::client_atoms;
+
 pub(crate) struct Seed {
     pub scope: Value,
     pub logical: HashMap<String, String>,
