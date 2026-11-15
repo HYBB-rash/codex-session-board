@@ -38,13 +38,17 @@ def publish_authority(root, backend, desktop):
     return proof
 
 
+def socket_peer_pid(connection):
+    if sys.platform == "darwin":
+        return struct.unpack("i", connection.getsockopt(0, 2, 4))[0]
+    return struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))[0]
+
+
 def endpoint_pid(path):
     with socket.socket(socket.AF_UNIX) as connection:
         connection.settimeout(1)
         connection.connect(str(path))
-        if sys.platform == "darwin":
-            return struct.unpack("i", connection.getsockopt(0, 2, 4))[0]
-        return struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))[0]
+        return socket_peer_pid(connection)
 
 
 def wait_backend(process, endpoint, timeout):

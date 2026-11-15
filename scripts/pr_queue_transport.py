@@ -14,7 +14,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.integrate_candidate import save
-from scripts.shared_desktop import endpoint_pid, process_identity
+from scripts.shared_desktop import process_identity, socket_peer_pid
 
 
 def now():
@@ -56,12 +56,12 @@ def connect(route):
             or metadata.st_mode & 0o077):
         raise ValueError("Author endpoint must be a private socket owned by this user")
     identity = route["backend"]
-    if (endpoint_pid(path) != identity["pid"]
-            or process_identity(identity["pid"]) != identity):
-        raise ValueError("Author backend identity changed")
     with socket.socket(socket.AF_UNIX) as transport:
         transport.settimeout(30)
         transport.connect(str(path))
+        if (socket_peer_pid(transport) != identity["pid"]
+                or process_identity(identity["pid"]) != identity):
+            raise ValueError("Author backend identity changed")
         connection = websocket.create_connection(
             "ws://localhost/rpc", socket=transport, timeout=30, suppress_origin=True)
         try:
@@ -74,7 +74,8 @@ def connect(route):
             current = rpc.request("thread/read", {
                 "threadId": route["coordinator_thread"], "includeTurns": False,
             })["thread"]
-            if current["status"]["type"] not in {"idle", "active"}:
+            if (current["id"] != route["coordinator_thread"]
+                    or current["status"]["type"] not in {"idle", "active"}):
                 raise ValueError("Coordinator is not loaded in this backend")
             yield rpc
         finally:
@@ -95,12 +96,18 @@ def observe(rpc, route, receipt):
     if not receipt.get("turn_id"):
         if receipt["state"] != "delivery_unknown":
             return
-        page = rpc.request("thread/items/list", {
-            "threadId": route["thread_id"], "limit": 100, "sortDirection": "desc",
-        })
-        matches = {entry["turnId"] for entry in page["data"]
-                   if entry["item"]["type"] == "userMessage"
-                   and entry["item"].get("clientId") == receipt["request_id"]}
+        cursor, matches = None, set()
+        while True:
+            page = rpc.request("thread/items/list", {
+                "threadId": route["thread_id"], "limit": 100, "sortDirection": "desc",
+                "cursor": cursor, "deferOutput": {"commandExecution": True, "mcpToolCall": True},
+            })
+            matches.update(entry["turnId"] for entry in page["data"]
+                           if entry["item"]["type"] == "userMessage"
+                           and entry["item"].get("clientId") == receipt["request_id"])
+            cursor = page.get("nextCursor")
+            if not cursor:
+                break
         if len(matches) > 1:
             raise ValueError("A feedback ID appears in multiple turns")
         if not matches:
@@ -118,7 +125,9 @@ def observe(rpc, route, receipt):
             item = entry["item"]
             if (item["type"] == "agentMessage"
                     and f"PR_QUEUE_ACK {receipt['request_id']}" in item["text"].splitlines()):
-                receipt.setdefault("acknowledged_at", now())
+                timestamp = entry.get("completedAtMs")
+                receipt.setdefault("acknowledged_at", datetime.fromtimestamp(
+                    timestamp / 1000, timezone.utc).isoformat() if timestamp else now())
                 receipt["ack_item_id"] = item["id"]
                 receipt["state"] = "acknowledged"
         cursor = page.get("nextCursor")
@@ -134,7 +143,10 @@ def observe(rpc, route, receipt):
         if found:
             receipt["turn_status"] = found["status"]
             if found["status"] == "completed" and receipt.get("acknowledged_at"):
-                receipt.update(state="completed", completed_at=now())
+                receipt["state"] = "author_turn_completed"
+                timestamp = found.get("completedAt")
+                receipt.setdefault("completed_at", datetime.fromtimestamp(
+                    timestamp, timezone.utc).isoformat() if timestamp else now())
             elif found["status"] in {"failed", "interrupted"}:
                 receipt.update(state="author_failed", author_error=found.get("error"))
             break

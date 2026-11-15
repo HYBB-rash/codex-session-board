@@ -70,7 +70,10 @@ MCP可执行文件、所选客户端的父子进程关系及检查期间进程�
 
 开发提交运行 `./scripts/check --pre-commit`；PR 运行
 `./scripts/validate --scope pr --base origin/main --output /tmp/pr-result`。
-协调者将固定的原 PR 依次合并到 `codex/integration-*` 分支，解决冲突并审阅最终组合，
+协调者将合格的固定 PR 头依次机械合并到 `codex/integration-*` 分支。
+冲突、失败及缺少证据的 PR 退回原作者会话，作者修复后由独立审阅者确认，
+协调者核对新头对应的证据后重新入队；不在合并任务中接手业务修复。
+独立项继续，有依赖的项一起等待。最终组合没有未处理的失败时，
 运行 `./scripts/check --prepare-release`，提交后推送候选分支。
 
 候选工作流在 Linux 与 macOS 分别运行组合门禁，保存绑定当前提交和平台的记录，

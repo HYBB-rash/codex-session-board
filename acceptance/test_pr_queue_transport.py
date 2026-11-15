@@ -62,6 +62,8 @@ class QueueTransportTests(unittest.TestCase):
             self.assertNotIn("turn/start", [call.args[0] for call in rpc.request.call_args_list])
             def recovered(method, parameters):
                 if method == "thread/items/list" and not parameters.get("turnId"):
+                    if not parameters.get("cursor"):
+                        return {"data": [], "nextCursor": "older"}
                     return {"data": [{"turnId": "delivered", "item": {
                         "type": "userMessage", "clientId": request["id"]}}]}
                 return initial(method, parameters)
@@ -88,7 +90,24 @@ class QueueTransportTests(unittest.TestCase):
             item["type"] = "agentMessage"
             self.assertEqual(transport.run("poll", route, request, output)["state"], "acknowledged")
             status = "completed"
-            self.assertEqual(transport.run("poll", route, request, output)["state"], "completed")
+            completed = transport.run("poll", route, request, output)
+            self.assertEqual(completed["state"], "author_turn_completed")
+            self.assertEqual(transport.run("poll", route, request, output)["completed_at"],
+                             completed["completed_at"])
+
+    def test_wrong_author_identity_or_directory_prevents_turn_start(self):
+        output, route, request = self.setup_case()
+        for field, value in (("id", "unrelated"), ("cwd", "/another/project")):
+            rpc = self.rpc(route)
+            thread = rpc.request("thread/read", {})["thread"]
+            thread[field] = value
+            rpc.request.side_effect = None
+            rpc.request.return_value = {"thread": thread}
+            with mock.patch.object(transport, "connect") as connection:
+                connection.return_value.__enter__.return_value = rpc
+                with self.assertRaisesRegex(ValueError, "does not match"):
+                    transport.run("send", route, request, output)
+            self.assertNotIn("turn/start", [call.args[0] for call in rpc.request.call_args_list])
 
     def test_changed_feedback_cannot_reuse_receipt_or_write_to_another_thread(self):
         output, route, request = self.setup_case()
