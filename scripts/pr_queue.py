@@ -1,0 +1,340 @@
+import argparse
+from datetime import datetime, timezone
+import fcntl
+import hashlib
+import json
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import uuid
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from scripts import pr_plan
+from scripts.integration_plan import bound_inventory
+from scripts.promote_candidate import github
+from scripts.validate_candidate import identity
+
+
+def now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def save(path, value):
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+    temporary.replace(path)
+
+
+def git(project, *arguments):
+    return subprocess.check_output(["git", *arguments], cwd=project, text=True).strip()
+
+
+def clean(project, expected):
+    if (git(project, "rev-parse", "HEAD") != expected
+            or git(project, "status", "--porcelain", "--untracked-files=all")
+            or not git(project, "branch", "--show-current").startswith("codex/")):
+        raise ValueError("Queue needs its exact clean dedicated codex/ worktree")
+
+
+def initialize(manifest, directory):
+    state = json.loads(manifest.read_text())
+    project = Path(state["project"]).resolve(strict=True)
+    if directory.exists() or directory.is_relative_to(project) or directory.is_relative_to(ROOT):
+        raise ValueError("Use a new queue directory outside source and checker")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", state["repository"]):
+        raise ValueError("Expected an explicit owner/repository")
+    base = git(project, "rev-parse", f"{state['base']}^{{commit}}")
+    clean(project, base)
+    known = set()
+    for item in state["items"]:
+        number = item["number"]
+        if type(number) is not int or number <= 0 or number in known:
+            raise ValueError("PR numbers must be distinct positive integers")
+        if not set(item.get("dependencies", [])) <= known:
+            raise ValueError("Dependencies must precede their dependent PR")
+        known.add(number)
+        item["head"] = git(project, "rev-parse", f"{item['head']}^{{commit}}")
+        item["base"] = git(project, "rev-parse", f"{item.get('base', base)}^{{commit}}")
+        if not item["route"]["thread_id"]:
+            raise ValueError("PR must identify its original author conversation")
+        item.update(status="submitted", attempts=[])
+    if not known:
+        raise ValueError("Queue needs at least one PR")
+    state.update(schema_version=1, project=str(project), base=base, prefix=base,
+                 checker=git(ROOT, "rev-parse", "HEAD"), started_at=now(), events=[])
+    directory.mkdir(parents=True)
+    save(directory / "queue.json", state)
+    return state
+
+
+def verify_entry(state, item):
+    review = json.loads(Path(item["review"]).read_text())
+    if (review.get("head") != item["head"] or review.get("passed") is not True
+            or not review.get("reviewer")
+            or review["reviewer"] == item["route"]["thread_id"]):
+        raise ValueError("Current PR head needs an independent passing review")
+    directory = Path(item["validation"])
+    record = json.loads((directory / "VALIDATION.json").read_text())
+    project = Path(record["project"]).resolve(strict=True)
+    source = identity(project)
+    strategy = pr_plan.plan(project, item["base"])
+    if (record.get("scope") != "pr" or record.get("passed") is not True
+            or record.get("release_ready") is not False or record.get("acceptance_status") != "not_performed"
+            or source["commit"] != item["head"] or record.get("source") != source
+            or record.get("checker", {}).get("commit") != state["checker"]
+            or record.get("plan") != strategy
+            or git(project, "status", "--porcelain", "--untracked-files=all")):
+        raise ValueError("PR evidence must identify the current clean source and queue checker")
+    names = ["project-check", "all-target-clippy", "source-package"]
+    if strategy["package_required"]:
+        names += ["build-fixture", "build-plugin", "package-scenarios"]
+        scenarios = directory / "package-checks/SCENARIOS.json"
+        package = json.loads(scenarios.read_text())
+        if (hashlib.sha256(scenarios.read_bytes()).hexdigest() != record["package_checks_sha256"]
+                or package["passed"] is not True
+                or package["manifest"]["source_commit"] != source["commit"]
+                or package["manifest"]["build_sha256"] != source["fingerprint"]
+                or package["fixture_sha256"] != record["fixture_sha256"]):
+            raise ValueError("Actual package evidence differs from the PR source")
+    names.append("related-tests")
+    if [step["name"] for step in record["steps"]] != names:
+        raise ValueError("PR evidence omitted required delivery steps")
+    for step in record["steps"]:
+        if (step["returncode"] != 0 or hashlib.sha256(
+                (directory / f"{step['name']}.log").read_bytes()).hexdigest() != step["log_sha256"]):
+            raise ValueError("PR step failed or its transcript changed")
+    tests = directory / "TESTS.json"
+    if hashlib.sha256(tests.read_bytes()).hexdigest() != record["tests_sha256"]:
+        raise ValueError("PR test report changed")
+    bindings = json.loads((project / "acceptance/bindings.json").read_text())
+    pr_plan.validate_report(json.loads(tests.read_text()), strategy, source,
+                            bound_inventory(bindings, source["platform"]))
+
+
+def comment(state, item, feedback):
+    marker = f"<!-- pr-queue:{feedback['id']} -->"
+    endpoint = f"repos/{state['repository']}/issues/{item['number']}/comments"
+    pages = json.loads(github("api", "--paginate", "--slurp", endpoint + "?per_page=100"))
+    existing = next((entry for page in pages for entry in page
+                     if marker in entry.get("body", "")), None)
+    if existing:
+        return existing["html_url"]
+    label = "历史演练" if state.get("rehearsal") else "合并队列"
+    body = (f"{marker}\n{label}暂未通过，请原作者修复后重新交付。\n\n"
+            f"PR head: `{feedback['head']}`\n组合前置提交: `{feedback['prefix']}`\n"
+            f"问题: {feedback['detail']}\n"
+            f"冲突文件: {', '.join(feedback['files']) or '无文本冲突'}\n"
+            f"复现: `git merge --no-ff --no-commit {feedback['head']}`，"
+            f"在前置提交的独立工作树执行。\n"
+            f"请求编号: `{feedback['id']}`")
+    return json.loads(github("api", endpoint, "--method", "POST", "--raw-field", f"body={body}"))["html_url"]
+
+
+def notify(state, item, directory):
+    feedback = item["feedback"]
+    folder = directory / feedback["id"]
+    folder.mkdir(exist_ok=True)
+    if not feedback.get("comment"):
+        try:
+            feedback["comment"] = comment(state, item, feedback)
+        except Exception as error:
+            feedback.setdefault("errors", []).append({"at": now(), "comment": str(error)})
+    try:
+        request = {"id": feedback["id"], "body": feedback["body"]}
+        save(folder / "request.json", request)
+        save(folder / "route.json", item["route"])
+        receipt_path = folder / "receipt.json"
+        command = "poll" if receipt_path.exists() else "send"
+        process = subprocess.run([
+            sys.executable, str(ROOT / "scripts/pr_queue_transport.py"), command,
+            "--route", str(folder / "route.json"), "--request", str(folder / "request.json"),
+            "--output", str(receipt_path),
+        ], text=True, capture_output=True, timeout=60)
+        with (folder / "transport.log").open("a") as stream:
+            stream.write(process.stdout + process.stderr)
+        if not receipt_path.exists():
+            raise ValueError("Transport produced no receipt")
+        receipt = json.loads(receipt_path.read_text())
+        if (receipt.get("thread_id") != item["route"]["thread_id"]
+                or receipt.get("request_id") != feedback["id"]
+                or receipt.get("body_sha256") != hashlib.sha256(feedback["body"].encode()).hexdigest()
+                or receipt.get("state") not in (
+                    "waiting_idle", "sent", "acknowledged", "completed", "rejected", "delivery_unknown")):
+            raise ValueError("Transport did not prove the intended author turn")
+        acknowledged = receipt["state"] in ("acknowledged", "completed")
+        if acknowledged and (not receipt.get("turn_id") or not receipt.get("acknowledged_at")):
+            raise ValueError("Author acknowledgement has no native turn evidence")
+        feedback["receipt"] = receipt
+        feedback["notification"] = "acknowledged" if acknowledged else receipt["state"]
+    except Exception as error:
+        feedback.setdefault("errors", []).append({"at": now(), "notification": str(error)})
+        feedback.setdefault("notification", "pending")
+    save(folder / "feedback.json", feedback)
+    save(directory / "queue.json", state)
+
+
+def reject(state, item, directory, kind, detail, files=()):
+    payload = {"number": item["number"], "head": item["head"], "prefix": state["prefix"],
+               "kind": kind, "detail": detail, "files": list(files)}
+    payload["id"] = str(uuid.uuid5(uuid.NAMESPACE_URL,
+        json.dumps([state["repository"], payload], sort_keys=True)))
+    payload["body"] = (
+        f"用户授权的PR合并队列{'历史演练' if state.get('rehearsal') else '修复'}，"
+        f"仓库{state['repository']}，PR#{item['number']}。\n"
+        f"固定PR头{item['head']}，组合前置提交{state['prefix']}。\n"
+        f"问题类型{kind}：{detail}\n冲突文件：{', '.join(payload['files']) or '无文本冲突'}。\n"
+        f"请仅在指定修复工作树 {item['route'].get('repair_cwd', '')} 修复本PR，"
+        "不要修改协调者工作树、真实main、正式插件或其他作者分支。"
+        "先确认接单，再复现、修复、提交，完成独立审阅及当前源码交付检查。"
+        "返回新提交、审阅与验证报告路径；不要降低原测试或覆盖首次失败证据。"
+        f"\n反馈编号：{payload['id']}")
+    payload.update(created_at=now(), notification="pending")
+    previous = next((entry for entry in item["attempts"] if entry.get("id") == payload["id"]), None)
+    if previous:
+        payload = previous
+    else:
+        item["attempts"].append(payload)
+    item.update(status="needs-fix", feedback=payload)
+    save(directory / "queue.json", state)
+    notify(state, item, directory)
+
+
+def commit(project, message):
+    command = [shutil.which("agent-git") or "git", "commit", "-m", message]
+    subprocess.run(command, cwd=project, check=True)
+
+
+def attempt(state, directory):
+    project = Path(state["project"])
+    clean(project, state["prefix"])
+    for item in state["items"]:
+        if item["status"] not in ("submitted", "blocked-dependency"):
+            continue
+        dependencies = [other for other in state["items"] if other["number"] in item.get("dependencies", [])]
+        if any(other["status"] not in ("accepted", "merged") for other in dependencies):
+            item["status"] = "blocked-dependency"
+            continue
+        try:
+            verify_entry(state, item)
+        except Exception as error:
+            reject(state, item, directory, "delivery", str(error))
+            continue
+        prefix = state["prefix"]
+        if subprocess.run(["git", "merge-base", "--is-ancestor", item["head"], prefix], cwd=project).returncode == 0:
+            reject(state, item, directory, "source", "PR is already in the prefix; no new integration occurred")
+            continue
+        merged = subprocess.run(["git", "merge", "--no-ff", "--no-commit", item["head"]],
+                                cwd=project, text=True, capture_output=True)
+        if merged.returncode:
+            files = git(project, "diff", "--name-only", "--diff-filter=U", "-z").split("\0")
+            if subprocess.run(["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"],
+                              cwd=project, stdout=subprocess.DEVNULL).returncode == 0:
+                subprocess.run(["git", "merge", "--abort"], cwd=project, check=True)
+            clean(project, prefix)
+            if not any(files):
+                raise RuntimeError("Git merge failed without a source conflict: " + merged.stderr)
+            reject(state, item, directory, "merge", merged.stdout + merged.stderr, filter(None, files))
+            continue
+        try:
+            commit(project, f"merge: queue PR {item['number']}")
+        except Exception:
+            subprocess.run(["git", "merge", "--abort"], cwd=project, check=True)
+            raise
+        state["prefix"] = git(project, "rev-parse", "HEAD")
+        item.update(status="accepted", ingress=state["prefix"])
+        state["events"].append({"at": now(), "number": item["number"], "head": item["head"],
+                                "prefix": prefix, "ingress": state["prefix"]})
+        save(directory / "queue.json", state)
+    save(directory / "queue.json", state)
+
+
+def requeue(state, incoming, directory):
+    item = next(entry for entry in state["items"] if entry["number"] == incoming["number"])
+    if item["status"] != "needs-fix" or incoming["head"] == item["head"]:
+        raise ValueError("Requeue requires a changed source for a rejected PR")
+    notify(state, item, directory)
+    if item["feedback"].get("notification") != "acknowledged":
+        raise ValueError("The original author has not acknowledged this repair request")
+    replacement = {**item, **{key: incoming[key] for key in ("head", "review", "validation")}}
+    replacement["head"] = git(state["project"], "rev-parse", f"{replacement['head']}^{{commit}}")
+    replacement["base"] = incoming.get("base", item["base"])
+    verify_entry(state, replacement)
+    item.update(replacement, status="submitted")
+    item.pop("feedback", None)
+    save(directory / "queue.json", state)
+
+
+def finish(state, directory):
+    reference = state.get("main_reference", "refs/heads/main")
+    if ((state.get("rehearsal") and not re.fullmatch(
+            r"refs/heads/codex/rehearsal-main-[A-Za-z0-9._-]+", reference))
+            or (not state.get("rehearsal") and reference != "refs/heads/main")
+            or not any(item["status"] == "accepted" for item in state["items"])):
+        raise ValueError("Only an accepted queue with its permitted main reference can promote")
+    project = Path(state["project"])
+    candidate = git(project, "rev-parse", "HEAD")
+    clean(project, candidate)
+    subprocess.run(["git", "merge-base", "--is-ancestor", state["prefix"], candidate], cwd=project, check=True)
+    state["prefix"] = candidate
+    save(directory / "queue.json", state)
+    output = directory / f"candidate-{candidate}"
+    command = [str(project / "scripts/integrate"), "--output", str(output)]
+    command += ["--resume"] if output.exists() else [
+        "--base", state["base"], "--repository", state["repository"], "--started-at", state["started_at"],
+    ]
+    if reference != "refs/heads/main":
+        command += ["--main-reference", reference]
+    try:
+        subprocess.run(command, cwd=project, check=True)
+    except subprocess.CalledProcessError:
+        report = output / "integration.json"
+        details = json.loads(report.read_text()) if report.exists() else {}
+        state["events"].append({"at": now(), "candidate_failed": candidate, "report": str(report)})
+        error = details.get("last_error", {}).get("detail", "集成命令未完成")
+        if re.fullmatch(r"Candidate run \d+ finished: failure", error):
+            for item in state["items"]:
+                if item["status"] == "accepted":
+                    reject(state, item, directory, "candidate",
+                           f"组合候选 {candidate} 未通过，不能据此归责单一PR。"
+                           f"共同复现材料 {report}；{error}")
+        save(directory / "queue.json", state)
+        raise
+    for item in state["items"]:
+        if item["status"] == "accepted":
+            item["status"] = "merged"
+    state.update(base=candidate, prefix=candidate, delivered_at=now())
+    save(directory / "queue.json", state)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("command", choices=("init", "attempt", "notify", "requeue", "finish", "status"))
+    parser.add_argument("--state", required=True, type=Path)
+    parser.add_argument("--manifest", type=Path)
+    parser.add_argument("--item", type=Path)
+    arguments = parser.parse_args()
+    directory = arguments.state.resolve()
+    if arguments.command == "init":
+        state = initialize(arguments.manifest, directory)
+    else:
+        with (directory / "queue.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            state = json.loads((directory / "queue.json").read_text())
+            if arguments.command == "attempt":
+                attempt(state, directory)
+            elif arguments.command == "notify":
+                for item in state["items"]:
+                    if item.get("feedback"):
+                        notify(state, item, directory)
+            elif arguments.command == "requeue":
+                requeue(state, json.loads(arguments.item.read_text()), directory)
+            elif arguments.command == "finish":
+                finish(state, directory)
+    print(json.dumps(state, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()
