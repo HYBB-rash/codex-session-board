@@ -23,15 +23,49 @@ fn managed(fixture: &Fixture) -> Result<(App, Arc<App>)> {
     Ok((app, remote))
 }
 
+fn draft_row(root: &App, remote: &App) -> Result<serde_json::Value> {
+    let drafts = root.store.catalog_drafts(&remote.config.host_id)?;
+    Ok(crate::catalog::view::read(remote, &drafts)?.rows[0].clone())
+}
+
+#[test]
+fn failed_runtime_keeps_own_pending_drafts_visible_but_rejects_state_writes() -> Result<()> {
+    let fixture = Fixture::new()?;
+    let (root, remote) = managed(&fixture)?;
+    drop(remote.connection(Duration::from_secs(3), Role::RemoteObserver)?);
+    let thread = uuid::Uuid::new_v4().to_string();
+    let request = uuid::Uuid::new_v4().to_string();
+    let project = crate::store::remote::identity(&fixture.host.host_id, "project");
+    root.store.draft_begin(&project, &request)?;
+    root.store.draft_update(&request, Some(&thread), "complete")?;
+    remote.store.discover(&[json!({"id":thread})])?;
+    remote.update_health(json!({"runtimeVerified":true}))?;
+    assert_eq!(draft_row(&root, &remote)?["readOnly"], false);
+    remote.update_health(json!({"runtimeVerified":false,"runtimeError":"connection closed"}))?;
+    let row = draft_row(&root, &remote)?;
+    assert_eq!(row["catalogEvidence"], "pendingDraft");
+    assert_eq!(row["catalogCurrent"], true);
+    assert_eq!(row["catalogProjectId"], project);
+    assert_eq!(row["readOnly"], true);
+    assert_eq!(row["canArchive"], false);
+    let before = remote.store.sessions()?;
+    let body = json!({"id":crate::store::remote::identity(&fixture.host.host_id,&thread),
+        "state":"blocked","note":"must not write","version":0,"inputVersion":0});
+    let error = root.route_remote("/api/state", &body).unwrap_err();
+    assert!(error.to_string().contains("当前不可修改"), "{error:#}");
+    assert_eq!(remote.store.sessions()?, before);
+    remote.update_health(json!({"runtimeVerified":true,"runtimeError":null}))?;
+    assert_eq!(draft_row(&root, &remote)?["readOnly"], false);
+    Ok(())
+}
+
 #[test]
 fn managed_write_gate_requires_initialization_and_preserves_notes_after_home_change() -> Result<()>
 {
     let fixture = Fixture::new()?;
     let (root, remote) = managed(&fixture)?;
     let identifier = uuid::Uuid::new_v4().to_string();
-    remote
-        .store
-        .discover(&[json!({"id":identifier,"name":"test"})])?;
+    remote.discover(&[json!({"id":identifier,"name":"test"})], true)?;
     let mut body = json!({
         "id":crate::store::remote::identity(&fixture.host.host_id, &identifier),
         "state":"review","note":"keep","version":0,"inputVersion":0
@@ -39,6 +73,7 @@ fn managed_write_gate_requires_initialization_and_preserves_notes_after_home_cha
     assert!(root.route_remote("/api/state", &body).is_err());
     assert_eq!(remote.store.note(&identifier)?, "");
     drop(remote.connection(Duration::from_secs(3), Role::RemoteObserver)?);
+    remote.update_health(json!({"runtimeVerified":true}))?;
     root.route_remote("/api/state", &body)?;
     assert_eq!(remote.store.note(&identifier)?, "keep");
     let source = remote.config.data_dir.join("source.json");

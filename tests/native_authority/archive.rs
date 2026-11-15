@@ -114,18 +114,31 @@ fn engine_connection(
             let block = surface.lock().unwrap().read_blocked.clone();
             wait_for_release(block)?;
         }
-        let result = engine_reply(&request, &archived, &mut surface.lock().unwrap())?;
-        if request["method"] == "thread/archive"
-            && std::mem::take(&mut surface.lock().unwrap().lose_archive_receipt) {
+        let Some(response) = engine_response(&request, &archived, &mut surface.lock().unwrap()) else {
             return Ok(());
-        }
+        };
         socket.send(tungstenite::Message::Text(
-            json!({"id":request["id"],"result":result})
-                .to_string()
-                .into(),
+            response.to_string().into(),
         ))?;
     }
     Ok(())
+}
+
+fn engine_response(
+    request: &Value,
+    archived: &Mutex<HashSet<String>>,
+    surface: &mut Surface,
+) -> Option<Value> {
+    let response = match engine_reply(request, archived, surface) {
+        Ok(result) => json!({"id":request["id"],"result":result}),
+        Err(error) => json!({"id":request["id"],
+            "error":{"code":-32601,"message":error.to_string()}}),
+    };
+    if request["method"] == "thread/archive"
+        && std::mem::take(&mut surface.lose_archive_receipt) {
+        return None;
+    }
+    Some(response)
 }
 
 fn engine_reply(
@@ -190,6 +203,34 @@ fn probe_reply(request: &Value, surface: &mut Surface) -> Result<Value> {
             request["params"]["name"].clone();
         Ok(json!({}))
     }
+}
+
+#[test]
+fn unsupported_engine_methods_return_errors_without_disconnecting() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("engine.sock");
+    let _engine = Engine::new(&path, Arc::new(Mutex::new(Surface::default())))?;
+    let stream = UnixStream::connect(&path)?;
+    stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+    let (mut client, _) = tungstenite::client("ws://localhost", stream)?;
+    client.send(tungstenite::Message::Text(
+        json!({"id":1,"method":"account/read","params":{"refreshToken":false}})
+            .to_string().into(),
+    ))?;
+    let rejected: Value = serde_json::from_str(client.read()?.to_text()?)?;
+    assert_eq!(rejected["id"], 1);
+    assert_eq!(rejected["error"]["code"], -32601);
+    assert!(rejected.get("result").is_none());
+    client.send(tungstenite::Message::Text(
+        json!({"id":2,"method":"thread/list","params":{"archived":false}})
+            .to_string().into(),
+    ))?;
+    let accepted: Value = serde_json::from_str(client.read()?.to_text()?)?;
+    assert_eq!(accepted["id"], 2);
+    assert_eq!(accepted["result"]["data"], json!([]));
+    assert!(accepted.get("error").is_none());
+    client.close(None)?;
+    Ok(())
 }
 
 #[test]

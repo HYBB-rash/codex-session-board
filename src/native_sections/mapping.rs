@@ -68,7 +68,8 @@ pub(crate) fn seed(config: &Config) -> Result<Seed> {
     let state: Value = serde_json::from_reader(std::io::BufReader::new(std::fs::File::open(
         &config.sidebar_state_file,
     )?))?;
-    let accounts = client_atoms(&state)?["sidebar-custom-sections-v3"]
+    let atoms = client_atoms(&state)?;
+    let accounts = atoms["sidebar-custom-sections-v3"]
         .as_object()
         .context("客户端分区映射无效")?;
     let (account, entries) = super::direct::account_sections(config, accounts)?;

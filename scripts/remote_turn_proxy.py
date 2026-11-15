@@ -43,7 +43,7 @@ def frame(output, opcode, payload):
     output.flush()
 
 
-def relay(source, output):
+def relay(source, output, compact_turns=True):
     header = bytearray()
     while not header.endswith(b"\r\n\r\n"):
         if len(header) >= 65536:
@@ -76,7 +76,7 @@ def relay(source, output):
             raise ValueError("unexpected proxy continuation")
         fragments.extend(payload)
         if first & 0x80:
-            frame(output, kind, compact(fragments) if kind == 1 else fragments)
+            frame(output, kind, compact(fragments) if kind == 1 and compact_turns else fragments)
             fragments, kind = bytearray(), None
 
 
@@ -101,7 +101,7 @@ def main():
     )
     try:
         threading.Thread(target=upstream, args=(process,), daemon=True).start()
-        relay(process.stdout, sys.stdout.buffer)
+        relay(process.stdout, sys.stdout.buffer, compact_turns="--catalog" not in sys.argv[1:])
     except (EOFError, BrokenPipeError):
         pass
     finally:
