@@ -1,0 +1,9 @@
+{
+  "name": "codex-session-board-ui-build",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "2.0.4",
+    "esbuild": "0.28.2"
+  }
+}
