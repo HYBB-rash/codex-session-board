@@ -1008,10 +1008,7 @@ async function createSession(projectId) {
   if (creating || dragging || saving || byId("editor").open) return;
   const remote = data.projectCatalog.items.find(item => item.id === projectId)?.remote || draftRequests.has(projectId);
   const body = projectId === null ? {} : {projectId};
-  if (remote) {
-    body.requestId = draftRequests.get(projectId) || crypto.randomUUID();
-    draftRequests.set(projectId,body.requestId);
-  }
+  if (remote && draftRequests.has(projectId)) body.requestId = draftRequests.get(projectId);
   creating = true;button.disabled = true;++requestSerial;render();
   try {
     const result = await post("/api/new",body);
@@ -1023,7 +1020,7 @@ async function createSession(projectId) {
       return;
     }
     draftRequests.delete(projectId);
-    announce(remote ? "已打开远程新会话，尚未发送输入。" : "已发送新建会话页面打开请求。");
+    announce(remote ? "已发送远程项目新建页面打开请求，尚未发送输入。" : "已发送新建会话页面打开请求。");
   } catch(error) {announce(error.message,true);}
   finally {creating=false;button.disabled=false;render();await load();}
 }

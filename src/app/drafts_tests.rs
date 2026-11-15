@@ -1,5 +1,7 @@
 use super::*;
 use std::collections::VecDeque;
+use sha2::Digest;
+use std::os::unix::fs::PermissionsExt;
 
 struct Reader {
     responses: VecDeque<Result<Value>>,
@@ -53,20 +55,19 @@ impl Reader {
 }
 
 fn draft<'app>(remote: &'app App, request: &str) -> Result<Draft<'app>> {
-    let (record, fresh) = remote.store.draft_begin("remote:project", request)?;
+    let (record, _) = remote.store.draft_begin("remote:project", request)?;
     Ok(Draft {
         remote,
         project: json!({"id":"remote:project","paths":["/remote/root"]}),
         record,
         request: request.into(),
-        fresh,
     })
 }
 
 #[test]
 fn lost_empty_draft_receipts_never_replay_thread_start() -> Result<()> {
-    assert!(draft_params(&json!({"paths":["relative"]})).is_err());
-    assert!(draft_params(&json!({"paths":[]})).is_err());
+    assert!(validate_remote_project(&json!({"paths":["relative"]})).is_err());
+    assert!(validate_remote_project(&json!({"paths":[]})).is_err());
     let (_directory, app) = isolated()?;
     let request = uuid::Uuid::new_v4().to_string();
     let mut reader = Reader {
@@ -76,13 +77,11 @@ fn lost_empty_draft_receipts_never_replay_thread_start() -> Result<()> {
     for _attempt in 0..2 {
         assert!(
             draft(&app, &request)?
-                .thread(&app.store, &mut reader)
+                .thread(&mut reader)
                 .is_err()
         );
     }
-    assert_eq!(reader.calls.len(), 1);
-    assert_eq!(reader.calls[0].0, "thread/start");
-    assert!(reader.calls[0].1.get("input").is_none());
+    assert!(reader.calls.is_empty());
     assert!(
         app.store
             .draft_begin("another-project", &uuid::Uuid::new_v4().to_string())?
@@ -97,39 +96,38 @@ fn acknowledged_empty_drafts_only_read_the_same_thread_on_retry() -> Result<()> 
     let request = uuid::Uuid::new_v4().to_string();
     let identifier = uuid::Uuid::new_v4().to_string();
     let wrong = uuid::Uuid::new_v4().to_string();
+    app.store.draft_begin("remote:project", &request)?;
+    app.store.draft_update(&request, Some(&identifier), "created")?;
     let mut reader = Reader {
         responses: VecDeque::from([
             Ok(json!({"thread":{"id":identifier,"turns":[],
                 "cwd":"/remote/root","historyMode":"legacy"}})),
-            Ok(json!({})),
-            Ok(json!({"thread":{"id":identifier,"name":"新会话","turns":[]}})),
             Ok(json!({"thread":{"id":wrong,"turns":[]}})),
             Ok(json!({"thread":{"id":identifier,"turns":[{"id":"user-turn"}]}})),
-            Ok(json!({"thread":{"id":identifier,"turns":[]}})),
+            Ok(json!({"thread":{"id":identifier,"historyMode":"legacy","turns":[]}})),
         ]),
         calls: Vec::new(),
     };
     assert_eq!(
-        draft(&app, &request)?.thread(&app.store, &mut reader)?["id"],
+        draft(&app, &request)?.thread(&mut reader)?["id"],
         identifier
     );
     for _attempt in 0..2 {
         assert!(
             draft(&app, &request)?
-                .thread(&app.store, &mut reader)
+                .thread(&mut reader)
                 .is_err()
         );
     }
     assert_eq!(
-        draft(&app, &request)?.thread(&app.store, &mut reader)?["id"],
+        draft(&app, &request)?.thread(&mut reader)?["id"],
         identifier
     );
     assert_eq!(
         reader.methods(),
-        ["thread/start", "thread/name/set", "thread/read",
-            "thread/read", "thread/read", "thread/read"]
+        ["thread/read", "thread/read", "thread/read", "thread/read"]
     );
-    assert!(reader.calls.iter().skip(2)
+    assert!(reader.calls.iter()
         .all(|call| call.1["threadId"] == identifier && call.1["includeTurns"] == true));
     Ok(())
 }
@@ -139,21 +137,20 @@ fn lost_initial_title_receipts_keep_the_created_id_without_replaying_creation() 
     let (_directory, app) = isolated()?;
     let request = uuid::Uuid::new_v4().to_string();
     let identifier = uuid::Uuid::new_v4().to_string();
+    app.store.draft_begin("remote:project", &request)?;
+    app.store.draft_update(&request, Some(&identifier), "created")?;
     let mut reader = Reader {
         responses: VecDeque::from([
-            Ok(json!({"thread":{"id":identifier,"turns":[],
-                "cwd":"/remote/root","historyMode":"legacy"}})),
             Err(anyhow::anyhow!("初始标题回执丢失")),
-            Ok(json!({"thread":{"id":identifier,"name":"已确认空会话","turns":[]}})),
+            Ok(json!({"thread":{"id":identifier,"name":"已确认空会话","historyMode":"legacy","turns":[]}})),
         ]),
         calls: Vec::new(),
     };
-    assert!(draft(&app,&request)?.thread(&app.store,&mut reader).is_err());
+    assert!(draft(&app,&request)?.thread(&mut reader).is_err());
     assert_eq!(app.store.draft(&request)?["threadId"],identifier);
-    assert_eq!(draft(&app,&request)?.thread(&app.store,&mut reader)?["id"],identifier);
-    assert_eq!(reader.methods(),["thread/start","thread/name/set","thread/read"]);
-    assert_eq!(reader.calls[0].1["historyMode"],"legacy");
-    assert_eq!(reader.calls[1].1,json!({"threadId":identifier,"name":"新会话"}));
+    assert_eq!(draft(&app,&request)?.thread(&mut reader)?["id"],identifier);
+    assert_eq!(reader.methods(),["thread/read","thread/read"]);
+    assert!(reader.calls.iter().all(|call| call.1["threadId"] == identifier));
     Ok(())
 }
 
@@ -164,19 +161,19 @@ fn initial_draft_readback_rejects_new_turns_and_unconfirmed_history() -> Result<
         let (_directory,app) = isolated()?;
         let request = uuid::Uuid::new_v4().to_string();
         let identifier = uuid::Uuid::new_v4().to_string();
+        app.store.draft_begin("remote:project", &request)?;
+        app.store.draft_update(&request, Some(&identifier), "created")?;
         let mut reader = Reader {
             responses: VecDeque::from([
-                Ok(json!({"thread":{"id":identifier,"turns":[],
+                Ok(json!({"thread":{"id":identifier,"turns":turns,
                     "cwd":"/remote/root","historyMode":history}})),
-                Ok(json!({})),
-                Ok(json!({"thread":{"id":identifier,"name":"新会话","turns":turns}})),
             ]),
             calls: Vec::new(),
         };
-        assert!(draft(&app,&request)?.thread(&app.store,&mut reader).is_err());
+        assert!(draft(&app,&request)?.thread(&mut reader).is_err());
         assert_eq!(app.store.draft(&request)?["stage"],"created");
         assert!(!reader.methods().contains(&"turn/start"));
-        if history!="legacy" {assert_eq!(reader.methods(),["thread/start"]);}
+        assert_eq!(reader.methods(),["thread/read"]);
     }
     Ok(())
 }
@@ -229,4 +226,94 @@ fn project_confirmation_handles_implicit_membership_but_rejects_ambiguous_or_for
     assert!(!project_bound(&state,&project,&thread,true));
     assert!(!unique_project_root(&[project.clone(),project.clone()],&project));
     assert!(unique_project_root(std::slice::from_ref(&project),&project));
+}
+
+fn native_app() -> Result<(tempfile::TempDir, App, Value)> {
+    let (directory, mut app) = isolated()?;
+    let path = directory.path();
+    std::fs::create_dir(path.join("resources"))?;
+    let archive = path.join("resources/app.asar");
+    std::fs::write(&archive, b"isolated native candidate")?;
+    let registry = json!({"remote-projects":[{"id":"project & 中","hostId":"remote:a",
+        "label":"项目","remotePath":"/not-a-local-path"}]});
+    app.config.sidebar_state_file = path.join("projects.json");
+    std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&registry)?)?;
+    let executable = path.join("codex");
+    std::fs::write(&executable, format!(
+        "#!/bin/sh\nprintf '%s\\n' \"$1\" >> '{}'\n", path.join("opens").display()))?;
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))?;
+    app.config.open_command = vec![executable.to_string_lossy().into()];
+    app.config.native_new_capability = Some(path.join("capability.json"));
+    let capability = json!({"protocol":"codex-remote-draft-v1","archive":archive,
+        "sha256":format!("{:x}", sha2::Sha256::digest(b"isolated native candidate")),
+        "openCommand":app.config.open_command});
+    std::fs::write(app.config.native_new_capability.as_ref().unwrap(),
+        serde_json::to_vec(&capability)?)?;
+    Ok((directory, app, capability))
+}
+
+fn native_body() -> Value {
+    json!({"projectId":crate::store::remote::identity("remote:a","project & 中")})
+}
+
+#[test]
+fn native_remote_new_only_navigates_and_preserves_the_selected_host_and_project() -> Result<()> {
+    let (directory, app, _) = native_app()?;
+    let response = app.request("/api/new", Some(&native_body()))?;
+    assert_eq!(response["native"], true);
+    let url = url::Url::parse(response["url"].as_str().unwrap())?;
+    assert_eq!(url.path(), "/new-remote");
+    assert_eq!(url.query_pairs().collect::<Vec<_>>(),
+        [("hostId".into(),"remote:a".into()),("projectId".into(),"project & 中".into())]);
+    assert!(app.store.pending_drafts()?.is_empty());
+    assert!(app.store.sessions()?.is_empty());
+    assert!(app.remotes.lock().unwrap().is_empty());
+    assert_eq!(std::fs::read_to_string(directory.path().join("opens"))?.lines().count(),1);
+    Ok(())
+}
+
+#[test]
+fn native_remote_new_rejects_missing_or_changed_capabilities_before_navigation() -> Result<()> {
+    let (directory, app, capability) = native_app()?;
+    let path = app.config.native_new_capability.as_ref().unwrap();
+    for (key, value) in [("protocol",json!("unknown")),
+        ("sha256",json!("wrong")),("openCommand",json!(["another-client"]))] {
+        let mut changed = capability.clone();
+        changed[key] = value;
+        std::fs::write(path, serde_json::to_vec(&changed)?)?;
+        assert!(app.request("/api/new", Some(&native_body())).is_err());
+    }
+    let unrelated = directory.path().join("unrelated.asar");
+    std::fs::copy(capability["archive"].as_str().unwrap(), &unrelated)?;
+    let mut changed = capability.clone();
+    changed["archive"] = json!(unrelated);
+    std::fs::write(path, serde_json::to_vec(&changed)?)?;
+    assert!(app.request("/api/new", Some(&native_body())).is_err());
+    std::fs::remove_file(path)?;
+    assert!(app.request("/api/new", Some(&native_body())).is_err());
+    assert!(!directory.path().join("opens").exists());
+    assert!(app.store.pending_drafts()?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn native_remote_new_rechecks_project_registration_and_never_replays_old_creation() -> Result<()> {
+    let (directory, app, _) = native_app()?;
+    let mut wrong = native_body();
+    wrong["hostId"] = json!("remote:b");
+    assert!(app.request("/api/new", Some(&wrong)).is_err());
+    let mut old = native_body();
+    old["requestId"] = json!(uuid::Uuid::new_v4().to_string());
+    assert!(app.request("/api/new", Some(&old)).is_err());
+    let mut registry: Value = serde_json::from_slice(&std::fs::read(&app.config.sidebar_state_file)?)?;
+    let mut duplicate = registry["remote-projects"][0].clone();
+    duplicate["hostId"] = json!("remote:b");
+    registry["remote-projects"].as_array_mut().unwrap().push(duplicate);
+    std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&registry)?)?;
+    assert!(app.request("/api/new", Some(&native_body())).is_err());
+    std::fs::write(&app.config.sidebar_state_file, r#"{"remote-projects":[]}"#)?;
+    assert!(app.request("/api/new", Some(&native_body())).is_err());
+    assert!(!directory.path().join("opens").exists());
+    assert!(app.store.pending_drafts()?.is_empty());
+    Ok(())
 }

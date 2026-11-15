@@ -8,6 +8,7 @@
   "max_pages": 100,
   "history_per_poll": 20,
   "host_id": "local",
+  "native_new_capability": null,
   "desktop_socket": "",
   "runtime_poll_seconds": 2,
   "auto_archive_seconds": null,
