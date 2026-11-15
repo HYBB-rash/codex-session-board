@@ -25,6 +25,10 @@ class Rejected(RuntimeError):
     pass
 
 
+class UnsupportedItems(Rejected):
+    pass
+
+
 class Rpc:
     def __init__(self, connection):
         self.connection = connection
@@ -42,6 +46,10 @@ class Rpc:
             if reply.get("id") != self.identifier or "method" in reply:
                 continue
             if "error" in reply:
+                error = reply["error"]
+                if (method == "thread/items/list" and error.get("code") == -32601
+                        and error.get("message") == "thread/items/list is not supported yet"):
+                    raise UnsupportedItems(f"{method}: {error}")
                 raise Rejected(f"{method}: {reply['error']}")
             return reply["result"]
         raise TimeoutError(f"No receipt for {method}")
@@ -92,7 +100,70 @@ def read_author(rpc, route, check_cwd=True):
     return thread
 
 
+def acknowledge(receipt, item, timestamp):
+    if (item["type"] == "agentMessage"
+            and f"PR_QUEUE_ACK {receipt['request_id']}" in item["text"].splitlines()):
+        if "acknowledged_at" not in receipt:
+            receipt["acknowledged_at"] = datetime.fromtimestamp(
+                timestamp / 1000, timezone.utc).isoformat() if timestamp is not None else now()
+            receipt["ack_time_basis"] = (
+                "item_completed_at" if timestamp is not None else "observed_upper_bound")
+        receipt["ack_item_id"] = item["id"]
+        receipt["state"] = "acknowledged"
+
+
+def observe_turn(receipt, turn):
+    receipt["turn_status"] = turn["status"]
+    if turn["status"] == "completed" and receipt.get("acknowledged_at"):
+        receipt["state"] = "author_turn_completed"
+        timestamp = turn.get("completedAt")
+        receipt.setdefault("completed_at", datetime.fromtimestamp(
+            timestamp, timezone.utc).isoformat() if timestamp else now())
+    elif turn["status"] in {"failed", "interrupted"}:
+        receipt.update(state="author_failed", author_error=turn.get("error"))
+
+
+def reconcile_turn(receipt, matches):
+    if len(matches) > 1:
+        raise ValueError("A feedback ID appears in multiple turns")
+    if matches:
+        receipt.update(turn_id=matches.pop(), state="sent", reconciled_at=now())
+
+
+def observe_thread(rpc, route, receipt):
+    thread = rpc.request("thread/read", {
+        "threadId": route["thread_id"], "includeTurns": True,
+    })["thread"]
+    if thread["id"] != route["thread_id"]:
+        raise ValueError("Author thread does not match its route")
+    if not receipt.get("turn_id"):
+        matches = {turn["id"] for turn in thread["turns"] for item in turn["items"]
+                   if item["type"] == "userMessage"
+                   and item.get("clientId") == receipt["request_id"]}
+        reconcile_turn(receipt, matches)
+        if not receipt.get("turn_id"):
+            return
+    turns = [turn for turn in thread["turns"] if turn["id"] == receipt["turn_id"]]
+    if len(turns) != 1:
+        raise ValueError("Delivered turn is missing or duplicated in the original thread")
+    turn = turns[0]
+    for item in turn["items"]:
+        acknowledge(receipt, item, item.get("completedAtMs"))
+    observe_turn(receipt, turn)
+    receipt["observation_method"] = "thread/read"
+
+
 def observe(rpc, route, receipt):
+    observation = receipt.copy()
+    try:
+        observe_items(rpc, route, observation)
+    except UnsupportedItems:
+        observation = receipt.copy()
+        observe_thread(rpc, route, observation)
+    receipt.update(observation)
+
+
+def observe_items(rpc, route, receipt):
     if not receipt.get("turn_id"):
         if receipt["state"] != "delivery_unknown":
             return
@@ -108,11 +179,9 @@ def observe(rpc, route, receipt):
             cursor = page.get("nextCursor")
             if not cursor:
                 break
-        if len(matches) > 1:
-            raise ValueError("A feedback ID appears in multiple turns")
-        if not matches:
+        reconcile_turn(receipt, matches)
+        if not receipt.get("turn_id"):
             return
-        receipt.update(turn_id=matches.pop(), state="sent", reconciled_at=now())
     cursor = None
     while True:
         page = rpc.request("thread/items/list", {
@@ -122,14 +191,7 @@ def observe(rpc, route, receipt):
         for entry in page["data"]:
             if entry["turnId"] != receipt["turn_id"]:
                 raise ValueError("Item does not belong to the delivered turn")
-            item = entry["item"]
-            if (item["type"] == "agentMessage"
-                    and f"PR_QUEUE_ACK {receipt['request_id']}" in item["text"].splitlines()):
-                timestamp = entry.get("completedAtMs")
-                receipt.setdefault("acknowledged_at", datetime.fromtimestamp(
-                    timestamp / 1000, timezone.utc).isoformat() if timestamp else now())
-                receipt["ack_item_id"] = item["id"]
-                receipt["state"] = "acknowledged"
+            acknowledge(receipt, entry["item"], entry.get("completedAtMs"))
         cursor = page.get("nextCursor")
         if not cursor:
             break
@@ -141,14 +203,7 @@ def observe(rpc, route, receipt):
         })
         found = next((turn for turn in page["data"] if turn["id"] == receipt["turn_id"]), None)
         if found:
-            receipt["turn_status"] = found["status"]
-            if found["status"] == "completed" and receipt.get("acknowledged_at"):
-                receipt["state"] = "author_turn_completed"
-                timestamp = found.get("completedAt")
-                receipt.setdefault("completed_at", datetime.fromtimestamp(
-                    timestamp, timezone.utc).isoformat() if timestamp else now())
-            elif found["status"] in {"failed", "interrupted"}:
-                receipt.update(state="author_failed", author_error=found.get("error"))
+            observe_turn(receipt, found)
             break
         cursor = page.get("nextCursor")
         if not cursor:
