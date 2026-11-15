@@ -4,74 +4,77 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>会话状态 · Codex</title>
 <style>
-:root{color-scheme:light;--bg:#fff;--subtle:#f5f5f5;--ink:#202020;--muted:#6b6b6b;--line:#e6e6e6;--danger:#b42318;--warning:#b54708}
+:root{color-scheme:light dark;--bg:light-dark(#fff,#1c1d20);--subtle:light-dark(#f5f5f3,#26272a);--ink:light-dark(#242526,#eeedeb);--muted:light-dark(#656663,#adada9);--line:light-dark(#e3e5e0,#3b3d40);--hover:light-dark(#b9bdb6,#737770);--danger:light-dark(#b42318,#f0a298);--warning:light-dark(#966315,#dfb574);--blue:light-dark(#336b96,#8ebde0);--purple:light-dark(#78618f,#bba8d0);--shadow:0 12px 36px #00000020;--move-line:light-dark(#d6c2a3,#76613f);--move-bg:light-dark(#fffcf6,#302b24);--move-ink:light-dark(#88683c,#e4c890)}
 *{box-sizing:border-box}[hidden]{display:none!important}
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans CJK SC",sans-serif}
 button,input,select,textarea{font:inherit;color:inherit}
-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 11px;cursor:pointer;white-space:nowrap}
+button{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 11px;cursor:pointer;white-space:nowrap}
 button:hover{background:var(--subtle)}
 button:disabled{opacity:.5;cursor:default}
-button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #202020;outline-offset:1px}
+button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 button.quiet{border-color:transparent;background:transparent;color:var(--muted)}
 button.quiet:hover{background:var(--subtle);color:var(--ink)}
-button.primary{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:600}
+button.primary{background:var(--ink);border-color:var(--ink);color:var(--bg);font-weight:600}
 button.primary:hover{background:var(--ink);opacity:.86}
-.shell{height:100dvh;display:flex;flex-direction:column;min-height:0;padding:16px 20px 12px}
-.page-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:2px 0 8px}
-h1{font-size:18px;font-weight:600;margin:0}
+.shell{height:100dvh;display:flex;flex-direction:column;min-height:0;padding:calc(20px + var(--host-inset-top,0px)) calc(20px + var(--host-inset-right,0px)) calc(12px + var(--host-inset-bottom,0px)) calc(20px + var(--host-inset-left,0px))}
+.page-header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:0 0 16px}
+h1{font-size:20px;font-weight:600;margin:0}
+.page-header .health{flex:1 1 220px;margin:0}
 .header-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;min-width:0}
 #new-session{white-space:nowrap}
 .health{margin:0 0 8px;padding:0;background:transparent;border:0;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
 .health.error{background:transparent;border:0;color:var(--danger)}
+.health.ready #health-summary::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:light-dark(#53745c,#a3c6aa);margin-right:6px}
 .health-host{margin:12px 0;padding:10px;border:1px solid var(--line);border-radius:8px;overflow-wrap:anywhere}
 .health-host summary{cursor:pointer;font-weight:600}
 .health-host p{margin:8px 0;white-space:pre-wrap}
 .health-host .diagnostics{color:var(--muted);font-size:11px;user-select:text}
-.toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin:0 0 8px}
-.filters{display:flex;flex:1 1 520px;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;min-width:0;margin-left:auto}
-.filter-field{display:grid;grid-template-columns:auto minmax(0,180px);align-items:center;gap:8px;min-width:0;max-width:100%;color:var(--muted);font-size:11px}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:0 0 8px}
+.filters{display:flex;flex:1;flex-wrap:wrap;align-items:center;gap:8px;min-width:0}
+.filter-field{display:grid;grid-template-columns:auto minmax(0,180px);align-items:center;gap:8px;min-width:0;max-width:100%;color:var(--muted);font-size:12px}
 .filter-field select{min-width:0;width:100%}
-#filter-scope{margin:0 0 8px;color:var(--muted);font-size:11px;overflow-wrap:anywhere}
+.scope-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin-bottom:8px}
+#filter-scope{color:var(--muted);font-size:11px;overflow-wrap:anywhere}
 .filter-field:has(select[hidden]){display:none}
-select,input[type=search]{height:32px;border:1px solid var(--line);border-radius:8px;background:var(--subtle);padding:0 10px}
+select,input[type=search]{height:34px;border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:0 10px}
 input[type=search]{width:180px}
-.count{font-size:12px;color:var(--muted);white-space:nowrap}
-.jump{display:flex;gap:2px;min-width:0;overflow-x:auto}
-.jump button{border:0;background:transparent;color:var(--muted);white-space:nowrap;font-size:12px;font-weight:600;padding:6px 10px}
+.count{margin-left:auto;font-size:12px;color:var(--muted);white-space:nowrap}
+.jump{display:flex;flex:1;gap:2px;min-width:0;overflow-x:auto}
+.jump button{border:0;background:transparent;color:var(--muted);white-space:nowrap;font-size:12px;padding:5px 8px}
 .jump button:hover{background:var(--subtle);color:var(--ink)}
 .feedback{min-height:0;margin:0 0 6px;font-size:12px;color:var(--ink)}.feedback:empty{display:none}.feedback.error{color:var(--danger)}
-.board-viewport{flex:1;min-height:0;overflow-x:auto;overflow-y:hidden;padding-bottom:6px}
-.board{display:flex;gap:12px;height:100%;min-width:0}
-.column{--accent:#8a8a8a;flex:1 0 240px;min-width:0;display:flex;flex-direction:column;height:100%;background:color-mix(in srgb,var(--subtle) 78%,transparent);border:1px solid var(--line);border-radius:10px;overflow:hidden}
-.column.unknown{--accent:#3b82f6}.column.in_progress{--accent:#202020}.column.review{--accent:#d97706}
-.column.blocked{--accent:#c45c4a}.column.to_archive{--accent:#7c6a9a}.column.completed{--accent:#202020}
-.column.drop-target{background:#f3f3f3;border-color:#bdbdbd;box-shadow:inset 0 0 0 1px #20202022}
-.column-heading{display:flex;align-items:center;gap:6px;padding:9px 12px;border-bottom:1px solid var(--line);background:color-mix(in srgb,#fff 72%,transparent)}
-.column h2{display:flex;align-items:center;gap:7px;margin:0;font-size:12px;font-weight:650;white-space:nowrap}
+.board-viewport{flex:1 0 auto;min-height:0;overflow-x:auto;overflow-y:hidden;padding-bottom:6px}
+.board{display:flex;gap:12px;height:100%;min-height:280px;min-width:0;contain:size}
+.column{--accent:var(--muted);flex:1 0 240px;min-width:0;display:flex;flex-direction:column;height:100%;border:1px solid transparent;border-radius:10px;overflow:hidden}
+.column.in_progress{--accent:var(--blue)}.column.review{--accent:var(--warning)}
+.column.blocked{--accent:var(--danger)}.column.to_archive{--accent:var(--purple)}.column.completed{--accent:var(--ink)}
+.column.drop-target{background:var(--subtle);border-color:var(--hover)}
+.column-heading{display:flex;align-items:center;gap:6px;padding:10px 8px 12px}
+.column h2{display:flex;align-items:center;gap:7px;margin:0;font-size:12px;font-weight:600;white-space:nowrap}
 .column h2::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none}
-.column.in_progress h2::before,.column.completed h2::before{box-shadow:0 0 0 3px #20202014}
-.column-count{margin-left:auto;min-width:20px;padding:1px 6px;border-radius:10px;background:#e8e8e8;color:var(--muted);font-size:11px;text-align:center}
+.column.in_progress h2::before{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent)}
+.column-count{margin-left:auto;min-width:20px;padding:1px 6px;color:var(--muted);font-size:12px;text-align:center;font-variant-numeric:tabular-nums}
 .column-sort{padding:3px 6px;border-color:transparent;background:transparent;color:var(--muted);white-space:nowrap;font-size:11px}
 .column-sort[aria-expanded=true]{background:var(--subtle);color:var(--ink)}
 .sort-caret{margin-left:4px;color:var(--muted)}
-.sort-menu{position:fixed;inset:auto;width:174px;max-height:calc(100dvh - 16px);margin:0;overflow:auto;padding:6px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);box-shadow:0 12px 36px #00000020}
+.sort-menu{position:fixed;inset:auto;width:174px;max-height:calc(100dvh - 16px);margin:0;overflow:auto;padding:6px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);box-shadow:var(--shadow)}
 .sort-menu-title{padding:5px 9px;font-size:11px;color:var(--muted)}
 .sort-option{display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;border:0;border-radius:6px;background:transparent;text-align:left;font-size:12px}
 .sort-option::before{content:"";width:14px;flex:none}
 .sort-option[aria-checked=true]{background:var(--subtle)}
 .sort-option[aria-checked=true]::before{content:"✓"}
-.cards{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;overflow-y:auto;overscroll-behavior:contain;padding:8px;scrollbar-width:thin}
-.card{margin:0;padding:9px;border:1px solid var(--line);border-radius:9px;background:#fff;cursor:grab;user-select:none}
-.card:hover{border-color:#c8c8c8}
+.cards{flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;overflow-y:auto;overscroll-behavior:contain;padding:4px;scrollbar-width:thin}
+.card{flex:none;margin:0;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--bg);cursor:grab;user-select:none}
+.card:hover{border-color:var(--hover)}
 .card:not([draggable=true]){cursor:default}
-.card:focus-within{outline:2px solid #202020;outline-offset:1px}.card.drag-source{opacity:.35}
+.card:focus-within{outline:2px solid var(--ink);outline-offset:1px}.card.drag-source{opacity:.35}
 @property --move-angle{syntax:"<angle>";initial-value:0deg;inherits:false}
-.card.move-pending{position:relative;border-color:#d6c2a3;cursor:progress}
+.card.move-pending{position:relative;border-color:var(--move-line);cursor:progress}
 .card.move-pending::after{content:"";position:absolute;inset:-1px;padding:2px;border-radius:inherit;pointer-events:none;background:conic-gradient(from var(--move-angle),transparent 65%,#e4c890,#bd8955,transparent);mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;opacity:0;animation:move-glow 2.4s linear .18s infinite}
-.move-label,.move-origin{margin-top:8px;font-size:11px;color:#88683c;overflow-wrap:anywhere}
-.move-origin{margin:0;padding:12px;border:1px dashed #d6c2a3;border-radius:9px;color:var(--muted)}
-.move-feedback{--courier:#bd693d;position:fixed;right:16px;bottom:16px;z-index:10;display:flex;align-items:center;gap:12px;width:min(360px,calc(100vw - 24px));padding:16px 12px;border:1px solid #e8dbca;border-radius:16px;background:#fffcf6;box-shadow:0 8px 32px #563d2b18}
+.move-label,.move-origin{margin-top:8px;font-size:12px;color:var(--move-ink);overflow-wrap:anywhere}
+.move-origin{margin:0;padding:12px;border:1px dashed var(--move-line);border-radius:10px;color:var(--muted)}
+.move-feedback{--courier:#bd693d;position:fixed;right:16px;bottom:16px;z-index:10;display:flex;align-items:center;gap:12px;width:min(360px,calc(100vw - 24px));padding:16px 12px;border:1px solid var(--move-line);border-radius:12px;background:var(--move-bg);box-shadow:var(--shadow)}
 .move-copy{flex:1;min-width:0}.move-copy strong{font-size:12px;font-weight:650}.move-copy p{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;margin:4px 0 0;color:var(--muted);font-size:11px;white-space:pre-line;overflow-wrap:anywhere}
 .move-feedback .quiet{align-self:flex-start;padding:2px 5px;font-size:11px}
 #edit-form .move-feedback{position:static;width:100%;margin-top:14px;box-shadow:none}
@@ -86,35 +89,45 @@ input[type=search]{width:180px}
 .courier-parcel::after{content:"";position:absolute;inset:4px 10px;border-left:1px solid #bd693d80;border-right:1px solid #bd693d80}
 .move-feedback.waiting .courier{animation:move-trot .65s ease-in-out infinite}
 .move-feedback.waiting .courier-foot{animation:move-step .65s ease-in-out infinite}.move-feedback.waiting .right{animation-delay:-.325s}
-.move-feedback.saved{--courier:#648063;border-color:#cdddc8}.move-feedback.saved .courier{animation:move-hop .5s ease-out}
+.move-feedback.saved{--courier:#648063;border-color:light-dark(#cdddc8,#648063)}.move-feedback.saved .courier{animation:move-hop .5s ease-out}
 .move-feedback.saved .courier-parcel{transform:translate(18px,20px) rotate(0);transition:transform .4s}
 @keyframes move-glow{from{--move-angle:0deg;opacity:1}to{--move-angle:360deg;opacity:1}}
 @keyframes move-trot{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-3px) rotate(4deg)}}
 @keyframes move-step{0%,100%{transform:rotate(-24deg)}50%{transform:rotate(24deg)}}
 @keyframes move-hop{0%,100%{transform:translateY(0)}45%{transform:translateY(-9px) rotate(5deg)}}
 @media(prefers-reduced-motion:reduce){.card.move-pending::after,.move-feedback .courier,.move-feedback .courier-foot{animation:none!important}.move-feedback.saved .courier-parcel{transition:none}}
-.title{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:12px;font-weight:650;line-height:1.45;word-break:break-word}
+.title{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:14px;font-weight:600;line-height:1.5;word-break:break-word}
 .card-title{width:100%;padding:0;border:0;border-radius:0;background:none;color:var(--ink);text-align:left;white-space:normal}
 .card-title:hover{background:none;color:inherit}
-.meta{margin-top:6px;overflow-wrap:anywhere;color:var(--muted);font-size:11px}
-.project{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2}
-.project-tag{min-width:0;margin-top:8px;font-size:11px}
-.project-tag summary{display:block;width:fit-content;max-width:100%;padding:2px 6px;overflow:hidden;border:0;border-radius:10px;background:var(--subtle);color:var(--muted);font-weight:600;white-space:nowrap;text-overflow:ellipsis;cursor:pointer}
-.project-tag summary::-webkit-details-marker{display:none}
-.project-tag.pending summary{background:#f8efdf;color:#9a6700}
-.project-info{margin-top:5px;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere;user-select:text}
-.card-note{margin-top:8px;color:#5c5c5c;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
-.source{display:inline-flex;align-items:center;min-height:19px;padding:2px 6px;border-radius:10px;background:var(--subtle);color:var(--muted);font-size:10px;font-weight:600}
+.project-tag{min-width:0;margin-top:10px;font-size:12px}
+.project-tag summary{max-width:100%;overflow:hidden;border-radius:4px;color:var(--muted);white-space:nowrap;text-overflow:ellipsis;cursor:pointer}
+.project-tag summary::marker{font-size:9px}
+.project-tag.pending summary{color:var(--warning)}
+.project-info{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere;user-select:text}
+.card-note{margin-top:10px;color:var(--muted);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.note-details{user-select:text}
+.note-details summary{display:block;cursor:text;list-style:none}
+.note-details summary::-webkit-details-marker{display:none}
+.note-preview{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
+.note-toggle{display:none;margin-top:4px;color:var(--ink)}
+.note-details.expandable summary{cursor:pointer}
+.note-details.expandable .note-toggle{display:block}
+.note-details[open] .note-preview,.note-details[open] .note-more{display:none}
+.note-details:not([open]) .note-less{display:none}
+.note-full{padding-top:6px}
 .follow{margin-top:6px;color:var(--warning);font-size:12px}
-.card-footer{display:flex;align-items:center;gap:8px;margin-top:8px}
-.card-footer time{color:var(--muted);font-size:11px}
+.card-footer{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin-top:12px}
+.card-footer time{color:var(--muted);font-size:11px;white-space:nowrap}
 .card-actions{display:flex;gap:2px;margin-left:auto}
-.row-action{min-height:25px;padding:0 7px;border-color:transparent;background:transparent;color:var(--muted);font-size:11px;font-weight:650;white-space:nowrap}
+.row-action{min-height:28px;padding:0 7px;border-color:transparent;background:transparent;color:var(--muted);font-size:12px;white-space:nowrap}
 .row-action:hover{border-color:transparent;background:var(--subtle);color:var(--ink)}
-.empty-column{display:grid;place-items:center;min-height:74px;margin:0;padding:16px 12px;border:1px dashed var(--line);border-radius:10px;color:#a3a3a3;font-size:12px;text-align:center}
-.drag-active .empty-column{border-color:#bdbdbd;color:var(--muted)}
+.empty-column{display:grid;place-items:center;min-height:74px;margin:0;padding:16px 12px;border:1px dashed transparent;border-radius:10px;color:var(--muted);font-size:12px;text-align:center}
+.drag-active .empty-column{border-color:var(--hover)}
+.board-help{margin-top:8px;color:var(--muted);font-size:12px}
+.board-help>summary{width:fit-content;cursor:pointer}
+.board-help[open]{max-height:25dvh;overflow:auto}
 .foot{margin:8px 0 0;color:var(--muted);font-size:11px}
-dialog{width:min(520px,calc(100vw - 32px));max-height:80dvh;overflow:auto;padding:20px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);box-shadow:0 12px 36px #00000020}
+dialog{width:min(520px,calc(100vw - 32px));max-height:80dvh;overflow:auto;padding:20px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);box-shadow:var(--shadow)}
 dialog::backdrop{background:#2020204d}dialog h2{margin:0 0 8px;font-size:15px;font-weight:600}
 .dialog-title{overflow-wrap:anywhere;color:var(--muted);font-size:12px}
 dialog label{display:block;margin:16px 0 6px;color:var(--muted);font-size:12px}
@@ -124,10 +137,12 @@ textarea{resize:vertical;min-height:90px}
 .reason{margin-top:12px;color:var(--muted);font-size:12px}
 .notice{min-height:18px;margin-top:8px;color:var(--danger);font-size:12px}
 @media(max-width:800px){
-  .shell{padding:14px 12px 10px}
+  .shell{padding:calc(14px + var(--host-inset-top,0px)) calc(12px + var(--host-inset-right,0px)) calc(10px + var(--host-inset-bottom,0px)) calc(12px + var(--host-inset-left,0px))}
   .page-header,.toolbar{flex-wrap:wrap}
   .toolbar{align-items:stretch}
-  .filters{flex:1 1 280px;flex-wrap:wrap;margin-left:0}
+  .page-header .health{order:3;flex-basis:100%}
+  .header-actions{margin-left:auto}
+  .filters{flex:1 1 280px}
   .jump{flex:1 1 220px}
   .filter-field{width:100%;grid-template-columns:auto minmax(0,1fr)}
   input[type=search]{flex:1 1 140px;width:auto;min-width:0}
@@ -137,17 +152,15 @@ textarea{resize:vertical;min-height:90px}
 <main class="shell">
   <header class="page-header">
     <h1>会话</h1>
+    <div id="health" class="health"><span id="health-summary" role="status">正在读取会话…</span> <button id="health-more" type="button" class="row-action" aria-label="查看连接详情">详情</button></div>
     <div class="header-actions">
-      <button id="connection-help" class="quiet" type="button">连接帮助</button>
       <button id="refresh" class="quiet" type="button">刷新</button>
       <button id="install-app" class="quiet" type="button" hidden>安装应用</button>
       <button id="new-session" class="primary" type="button">＋ 新建会话</button>
     </div>
   </header>
-  <div id="health" class="health"><span id="health-summary" role="status">正在读取会话…</span> <button id="health-more" type="button" class="row-action">查看连接详情</button></div>
   <div id="archive-status" class="health" role="status" hidden></div>
   <div class="toolbar">
-    <nav class="jump" id="jump" aria-label="跳转到状态列"></nav>
     <div class="filters">
       <label class="filter-field">主机<select id="host-filter" aria-label="选择主机"><option value="local">本机</option><option value="all">全部主机</option></select></label>
       <div class="filter-field"><span>项目</span>
@@ -159,7 +172,7 @@ textarea{resize:vertical;min-height:90px}
       <span id="count" class="count"></span>
     </div>
   </div>
-  <div id="filter-scope"></div>
+  <div class="scope-row"><nav class="jump" id="jump" aria-label="跳转到状态列"></nav><div id="filter-scope"></div></div>
   <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
   <div class="board-viewport" id="board-viewport" tabindex="0" aria-label="横向滚动查看全部状态列">
     <div class="board" id="board" aria-label="会话状态看板"></div>
@@ -169,7 +182,10 @@ textarea{resize:vertical;min-height:90px}
     <div class="move-copy"><strong id="move-heading"></strong><p id="move-detail"></p></div>
     <button id="move-dismiss" type="button" class="quiet" aria-label="收起提示，保存会继续">收起</button>
   </aside></div>
-  <p class="foot" id="foot">拖动卡片修改状态。“待归档”列的一键归档处理当前筛选下本机和远程主机中的可归档会话，也可以逐张归档。只读记录不会归档。新建会话只打开输入页，不发送输入。</p>
+  <details class="board-help"><summary>使用说明与连接帮助</summary>
+    <p class="foot" id="foot">拖动卡片修改状态。“待归档”列的一键归档处理当前筛选下本机和远程主机中的可归档会话，也可以逐张归档。只读记录不会归档。新建会话只打开输入页，不发送输入。</p>
+    <button id="connection-help" class="quiet" type="button">连接帮助</button>
+  </details>
 </main>
 <dialog id="health-details" aria-labelledby="health-details-title">
   <h2 id="health-details-title">连接与会话读取</h2>
@@ -348,16 +364,41 @@ function makeProjectTag(session) {
   const label = item ? projectLabel(item) : pending ? "项目待确认" :
     "默认工作区" + (session.remote ? " · " + (session.hostLabel || session.hostId) : "");
   const tag = element("details",undefined,"project-tag" + (pending || cached ? " pending" : ""));
-  const summary = element("summary",label + (pending && item ? " · 归属待确认" : cached ? " · 缓存" : ""));
+  const hostSuffix = session.remote && selectedHost === "all" ? " · " + (session.hostLabel || session.hostId) : "";
+  const summaryLabel = hostSuffix && !label.includes(hostSuffix) ? label + hostSuffix : label;
+  const summary = element("summary",summaryLabel + (pending && item ? " · 归属待确认" : cached ? " · 缓存" : ""));
   summary.title = summary.textContent + "，点击查看项目详情";
   summary.setAttribute("aria-label",summary.title);
   const info = [label];
   if (item) info.push("项目目录：" + item.paths.join(" · "));
   info.push("工作目录：" + (session.cwd || "未记录"));
+  info.push("状态来源：" + (session.manual ? "人工确认" : session.source === "runtime" ? "自动流转" : session.source === "codex" ? "原生状态" : "历史状态"));
+  if (session.remote) info.push("主机：" + (session.hostLabel || session.hostId));
   if (pending || cached) info.push(session.projectIssue || "项目资料尚未确认更新，当前显示上次可用信息。");
   tag.append(summary,element("div",info.join("\n"),"project-info"));
   return tag;
 }
+function makeNote(note) {
+  const details = element("details",undefined,"card-note note-details");
+  const summary = element("summary");
+  summary.dataset.action = "note";
+  summary.append(element("span",note,"note-preview"),element("span","查看完整备注","note-toggle note-more"),
+    element("span","收起备注","note-toggle note-less"));
+  summary.onclick = event => {if (!details.classList.contains("expandable")) event.preventDefault();};
+  details.append(summary,element("div",note,"note-full"));
+  return details;
+}
+function updateNotePreviews() {
+  const notes = [...document.querySelectorAll(".note-details:not([open])")].map(details => {
+    const preview = details.querySelector(".note-preview");
+    return {details,overflow:preview.scrollHeight > preview.clientHeight + 1};
+  });
+  for (const {details,overflow} of notes) {
+    details.classList.toggle("expandable",overflow);
+    details.querySelector("summary").tabIndex = overflow ? 0 : -1;
+  }
+}
+new ResizeObserver(updateNotePreviews).observe(byId("board-viewport"));
 function sessionReadOnly(session) {
   return session.readOnly || session.remote && (session.archived || session.presence === "cachedUnknown");
 }
@@ -370,19 +411,17 @@ function makeCard(session) {
   card.setAttribute("aria-label",session.title);
   const title = element("button",session.title,"title card-title");
   title.type = "button";
+  title.dataset.action = "open";
   title.disabled = pending;
   title.title = "打开会话：" + session.title;
   title.onclick = () => openSession(session.id);
-  const project = element("div",session.cwd || "未记录项目路径","meta project");
-  project.title = session.cwd;
-  card.append(title,makeProjectTag(session),project);
-  if (session.remote) card.append(element("div",session.hostLabel || session.hostId,"meta"));
+  card.append(title,makeProjectTag(session));
   if (session.remote && session.archived) card.append(element("div","已归档","meta"));
   if (session.remote && session.presence === "cachedUnknown") card.append(element("div",
     session.catalogCurrent ? "上次目录快照，当前状态待确认" : "历史缓存，当前目录未确认此会话","follow"));
   if (pending) card.append(element("div","等待保存确认 · 临时落位","move-label"));
   else if (unconfirmedMoves.has(session.id)) card.append(element("div","上次保存未收到确认，请核对实际位置","move-label"));
-  if (session.note) card.append(element("div",session.note,"card-note"));
+  if (session.note) card.append(makeNote(session.note));
   if (!session.manual && session.state === "blocked") card.append(element("div",session.reason,"card-note"));
   if (session.followUp) card.append(element("div","有新输入，待复核","follow"));
   if (sessionReadOnly(session)) card.append(element("div","当前仅供查看","follow"));
@@ -390,25 +429,25 @@ function makeCard(session) {
   if (session.projectIssue) card.append(element("div","项目归属待确认","follow"));
   if (session.titleSyncPending) card.append(element("div",session.titleSyncError ? "状态已保存，标题同步待重试：" + session.titleSyncError : "状态已保存，标题正在同步","follow"));
   const footer = element("div",undefined,"card-footer");
-  const details = element("div");
-  details.append(element("div",session.manual ? "人工确认" : session.source === "runtime" ? "自动流转" : session.source === "codex" ? "原生状态" : "历史状态","source"),
-    element("time",date(session.updatedAt)));
+  const updated = element("time",date(session.updatedAt));
   const actions = element("div",undefined,"card-actions");
-  const open = element("button","打开原会话","row-action");
-  open.type = "button";
-  open.disabled = pending;
-  open.title = "打开会话：" + session.title;
-  open.onclick = () => openSession(session.id);
-  actions.append(open);
+  const adjust = element("button","调整","row-action");
+  adjust.type = "button";adjust.dataset.action = "adjust";
+  adjust.disabled = saving || creating || pending || sessionReadOnly(session);
+  adjust.title = "调整状态或备注：" + session.title;
+  adjust.setAttribute("aria-label",adjust.title);
+  adjust.onclick = () => openEditor(session.id);
+  actions.append(adjust);
   if (canArchiveSession(session)) {
     const archive = element("button",session.followUp ? "确认待归档" : "归档","row-action");
     archive.type = "button";
+    archive.dataset.action = "archive";
     archive.disabled = saving || creating || pending;
     archive.title = session.followUp ? "请先打开会话核对输入；确认仅保存待归档状态，不执行归档" : "直接归档此 Codex 会话";
     archive.onclick = () => session.followUp ? confirmArchiveInputs(session,archive) : archiveSession(session,archive);
     actions.append(archive);
   }
-  footer.append(details,actions);
+  footer.append(updated,actions);
   card.append(footer);
   card.onclick = event => {
     if (!event.target.closest("button,a,input,select,textarea,details")) openSession(session.id);
@@ -587,6 +626,7 @@ function restoreScroll(cards, position) {
   const anchor = position?.id && Array.from(cards.querySelectorAll(".card")).find(card => card.dataset.id === position.id);
   if (anchor) cards.scrollTop += anchor.getBoundingClientRect().top - cards.getBoundingClientRect().top - position.offset;
 }
+const columnContent = new WeakMap();
 function updateColumn(column, state, sessions) {
   const pending = sessions.some(session => session.id === moving?.id);
   column.querySelector(".column-count").textContent = pending ? `${sessions.length - 1} + 1` : String(sessions.length);
@@ -610,13 +650,18 @@ function updateColumn(column, state, sessions) {
     archiveAll.onclick = () => archiveSessions(sessions,archiveAll);
   }
   const cards = column.querySelector(".cards");
-  cards.replaceChildren(...sessions.map(makeCard));
+  const unread = !hostSessions().length && healthReports().some(host => (selectedHost === "all" || host.key === selectedHost) && !host.lastRead);
   const origin = moving?.from === state && visibleSessions().some(session => session.id === moving.id);
+  const signature = JSON.stringify([sessions,data.projectCatalog,data.states,selectedHost,data.legacyMode,
+    moving,[...unconfirmedMoves],saving,creating,unread,origin]);
+  if (columnContent.get(column) === signature) return false;
+  columnContent.set(column,signature);
+  cards.replaceChildren(...sessions.map(makeCard));
   if (origin) cards.append(element("div",`移往${data.states[moving.state]} · 等待确认`,"move-origin"));
   if (!sessions.length && !origin) {
-    const unread = !hostSessions().length && healthReports().some(host => (selectedHost === "all" || host.key === selectedHost) && !host.lastRead);
     cards.append(element("div",unread ? "尚未读取会话，可查看连接详情" : "暂无匹配的会话","empty-column"));
   }
+  return true;
 }
 function makeColumn(state, label) {
   const column = element("section",undefined,"column " + state);
@@ -780,37 +825,57 @@ function render(resetState = null) {
   const scrollPositions = new Map(
     Array.from(document.querySelectorAll(".column")).map(column =>
       [column.dataset.state,column.dataset.state === resetState ? null : captureScroll(column.querySelector(".cards"))]));
-  const expandedProjects = new Set(Array.from(document.querySelectorAll(".project-tag[open]"))
-    .map(tag => tag.closest(".card").dataset.id));
-  const focusedProject = document.activeElement?.closest(".project-tag")?.closest(".card")?.dataset.id;
+  const active = document.activeElement;
+  const focusedCard = active?.closest(".card");
+  const focus = focusedCard && {id:focusedCard.dataset.id,state:focusedCard.closest(".column").dataset.state,
+    action:active.dataset.action || (active.closest(".project-tag") ? "project" : "open")};
+  const expanded = new Map([...document.querySelectorAll(".card")].map(card => [card.dataset.id,
+    {project:card.querySelector(".project-tag").open,note:Boolean(card.querySelector(".note-details[open]"))}]));
   const filtered = visibleSessions().map(session => moving?.id === session.id ? {...session,state:moving.state} : session);
   const columns = [];
   const mode = data.legacyMode ? "legacy" : "native";
   byId("board").style.setProperty("--columns",Object.keys(data.states).length);
-  byId("jump").replaceChildren();
+  const jumps = [];
+  let changed = false;
   for (const [state,label] of Object.entries(data.states)) {
     const sessions = filtered.filter(session => session.state === state);
     sessions.sort((first,second) => compareSessions(first,second,columnSort(state)));
     const current = byId("column-" + state);
     const column = current?.dataset.mode === mode ? current : makeColumn(state,label);
-    updateColumn(column,state,sessions);
+    changed = updateColumn(column,state,sessions) || changed;
     columns.push(column);
-    const jump = element("button",`${label} ${column.querySelector(".column-count").textContent}`);
+    const jump = [...byId("jump").children].find(button => button.dataset.state === state) || element("button");
+    jump.dataset.state = state;
+    const jumpLabel = `${label} ${column.querySelector(".column-count").textContent}`;
+    if (jump.textContent !== jumpLabel) jump.textContent = jumpLabel;
     jump.onclick = () => {
       const viewport = byId("board-viewport");
       viewport.scrollTo({left:byId("column-" + state).offsetLeft - byId("board").offsetLeft,behavior:"smooth"});
     };
-    byId("jump").append(jump);
+    jumps.push(jump);
   }
+  if (jumps.length !== byId("jump").children.length ||
+      jumps.some((jump,index) => byId("jump").children[index] !== jump)) byId("jump").replaceChildren(...jumps);
   if (columns.length !== byId("board").children.length ||
       columns.some((column,index) => byId("board").children[index] !== column)) {
     byId("board").replaceChildren(...columns);
   }
   for (const card of byId("board").querySelectorAll(".card")) {
-    card.querySelector(".project-tag").open = expandedProjects.has(card.dataset.id);
-    if (card.dataset.id === focusedProject) card.querySelector(".project-tag summary").focus({preventScroll:true});
+    const previous = expanded.get(card.dataset.id);
+    if (previous) {
+      card.querySelector(".project-tag").open = previous.project;
+      const note = card.querySelector(".note-details");
+      if (note) {note.open = previous.note;if (note.open) note.classList.add("expandable");}
+    }
+  }
+  if (focus && !active.isConnected) {
+    const card = [...byId("board").querySelectorAll(".card")].find(card => card.dataset.id === focus.id);
+    const target = card?.querySelector(focus.action === "project" ? ".project-tag summary" : `[data-action="${focus.action}"]`);
+    const fallback = byId("column-" + focus.state)?.querySelector(".column-sort") || byId("host-filter");
+    (target && !target.disabled ? target : fallback).focus({preventScroll:true});
   }
   for (const column of columns) restoreScroll(column.querySelector(".cards"),scrollPositions.get(column.dataset.state));
+  if (changed) updateNotePreviews();
   byId("count").textContent = `显示 ${filtered.length} / 当前主机范围共 ${hostSessions().filter(historyMatches).length} 条`;
   const health = data.health;
   if (data.legacyMode) byId("foot").textContent =
@@ -866,6 +931,12 @@ function hostHealth(host) {
     catalog.pending ? "正在更新主机目录" : catalog.cached && catalog.capturedAt ? "显示上次主机目录快照" :
     !catalog.complete ? "主机目录尚未读取完整" : "主机目录已读取完整";
   if (catalog?.error) status = "主机目录暂时无法更新，保留上次结果";
+  if (local && !faults && !blocked && !readonly) {
+    if (!data.projectCatalog.loaded) status = "项目列表尚未读取";
+    else if (data.projectCatalog.pending) status = "正在更新项目列表";
+    else if (data.projectCatalog.incomplete) status = "项目列表尚未读取完整";
+    else if (data.projectCatalog.cached) status = "显示上次项目列表";
+  }
   if (idle) status = (host.enabled === false ? "尚未连接" : "主机已移除") + (rows.length ? " · 显示缓存" : " · 尚未读取会话");
   if (catalog?.cached) status += " · 缓存时间：" + date(catalog.capturedAt);
   const effects = [
@@ -881,7 +952,11 @@ function hostHealth(host) {
     if (catalog.pending) effects.push("目录正在刷新，当前先显示上次可用结果。");
   }
   if (current.autoArchiveSeconds) effects.push(`后台每 ${current.autoArchiveSeconds / 60} 分钟自动归档，下次 ${date(current.autoArchiveNextAt)}；不受筛选影响。`);
-  return {key:host.value,label:hostName(host),status,attention,effects,diagnostics,lastRead:catalog?.capturedAt || current.lastSuccessAt,
+  const projectReady = catalog ? catalog.complete && !catalog.cached && !catalog.pending && !catalog.error && !catalog.issues?.length :
+    data.projectCatalog.loaded && !data.projectCatalog.error && !data.projectCatalog.cached && !data.projectCatalog.incomplete && !data.projectCatalog.pending;
+  const ready = !idle && !attention && projectReady && Boolean(current.lastSuccessAt && current.scanComplete && current.runtimeVerified &&
+    (!current.nativeSections || current.nativeVerified)) && !hostProjects(host.value).some(item => item.cached);
+  return {key:host.value,label:hostName(host),status,ready,attention,effects,diagnostics,lastRead:catalog?.capturedAt || current.lastSuccessAt,
     canConnect:host.enabled === false && !data.legacyMode,hostId:host.hostId};
 }
 function healthReports() {
@@ -898,12 +973,13 @@ function healthReports() {
 function renderHealth() {
   const reports = healthReports(), current = reports.find(host => host.key === selectedHost);
   const others = reports.filter(host => host.key !== selectedHost && host.key !== "service" && host.attention).length;
-  const summary = snapshotError ? "看板连接暂时断开，显示上次结果" : current ? current.label + "：" + current.status :
+  const ready = current?.ready && !reports.some(host => host.attention);
+  const summary = snapshotError ? "看板连接暂时断开，显示上次结果" : ready ? current.label + " · 连接正常" : current ? current.label + "：" + current.status :
     others ? `有 ${others} 台主机需要处理` : "请选择主机查看读取与连接情况";
   const message = summary + (current && others ? ` · 另有 ${others} 台主机需要处理` : "") +
     (reports.some(host => host.key === "service") ? " · 另有资料读取问题" : "");
   if (byId("health-summary").textContent !== message) byId("health-summary").textContent = message;
-  byId("health").className = "health" + (reports.some(host => host.attention) ? " error" : "");
+  byId("health").className = "health" + (reports.some(host => host.attention) ? " error" : ready ? " ready" : "");
   if (byId("health-details").open) renderHealthDetails(reports);
 }
 function renderHealthDetails(reports = healthReports()) {
@@ -1178,19 +1254,11 @@ byId("history-filter").onchange = () => {
   selectedHistory = byId("history-filter").value;
   resetFilterScroll();render();
 };
-byId("host-filter").onchange = async () => {
+byId("host-filter").onchange = () => {
   if (filtersLocked()) {byId("host-filter").value = selectedHost;return;}
   selectedHost = byId("host-filter").value;selectedProject = "all";projectOptionsKey = "";
   if (selectedHost === "local") selectedHistory = "active";
   announce("");resetFilterScroll();render();
-  const hostId = selectedHost.startsWith("host:") ? selectedHost.slice(5) : null;
-  const current = (data.health.remoteConnections || []).find(host => host.hostId === hostId);
-  const registered = (data.health.remoteRegistry || []).some(host => host.hostId === hostId);
-  if (registered && current && current.connected !== false && current.enabled !== false &&
-      (current.connected === true || current.runtimeVerified === true)) {
-    try {await post("/api/refresh",{hostId});await load();}
-    catch (error) {if (selectedHost === "host:" + hostId) announce(error.message,true);}
-  }
 };
 document.addEventListener("dragover",event => {
   if (dragging) dragPoint = {x:event.clientX,y:event.clientY};
