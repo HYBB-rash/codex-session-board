@@ -1,0 +1,23 @@
+# PR 9：归档回执丢失后的清理恢复
+
+owner: codex-pr9-author
+execution_mode: isolated_write
+allowed_write_set: 原生校准清理、隔离 fixture 和测试、验收绑定、本任务记录
+base_commit: fbe2100583a713ccd08b84740f78f7dba43ba158
+worktree_path: /Users/hongyong/.codex/worktrees/pr-queue-author9-20261115/codex-session-board
+coordinator: pr-queue-20261115
+status: active
+started_at: 2026-11-15
+
+反馈 ec1c3b05-196c-54a8-96a7-ea21c14d840a。仅合入指定前置提交
+22b9dc4e45c872d91e921c2f636d256001241ac6，保留原 PR 祖先关系。
+不修改共享 STATE、版本、需求、参考模型或锁；不操作日用客户端或其他工作树。
+
+先提交独立回归，不修改生产实现，实际运行并保存失败头、命令和原始日志。
+场景为归档已经执行但回执丢失，归档列表暂时不可用，重开存储后会话读取返回缺失，
+列表恢复后应独立确认归档，保留五个映射，不重复创建、命名、移动或归档。
+列表仍不可用时保留清理记录。
+
+修复后使用固定 ec4e9c6 检查器、固定比较 base，在源码外保存新报告。
+干净提交后写 ready.json，由协调者分派独立审阅；不自行签发通过记录。
+本任务全部 Cargo、check、validate 设置 CARGO_BUILD_JOBS=2。

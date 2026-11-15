@@ -378,6 +378,8 @@
       "lib::codex_session_board::native_sections::calibration::tests::empty_history_fallback_requires_the_exact_native_unmaterialized_proof_for_this_thread",
       "lib::codex_session_board::native_sections::calibration::tests::a_known_unmaterialized_legacy_probe_can_finish_after_restart_without_recreation",
       "lib::codex_session_board::native_sections::calibration::tests::a_known_disappeared_probe_is_independently_retired_before_a_new_empty_probe_is_created",
+      "lib::codex_session_board::native_sections::calibration::tests::archived_probe_with_lost_receipt_recovers_from_listing_after_store_reopen",
+      "lib::codex_session_board::native_sections::calibration::tests::archived_probe_is_retired_before_recalibration_after_backend_rebuild",
       "lib::codex_session_board::native_sections::calibration::tests::unknown_creation_never_duplicates_until_explicit_matching_request_reset",
       "lib::codex_session_board::native_sections::calibration::tests::renamed_probe_is_preserved_after_lost_name_receipt_and_a_new_owned_probe_can_finish",
       "lib::codex_session_board::native_sections::calibration::tests::reconnect_cleans_known_probe_but_never_archives_a_probe_adopted_during_disconnect",

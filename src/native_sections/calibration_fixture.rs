@@ -13,6 +13,9 @@ pub(super) struct Surface {
     pub lose_name: bool,
     pub lose_move: bool,
     pub reject_archive: bool,
+    pub lose_archive: bool,
+    pub reject_archived_list: bool,
+    pub unreadable_archived: bool,
     pub cross_read: bool,
     pub unmaterialized: bool,
     pub changing_read_times: bool,
@@ -96,10 +99,13 @@ impl Surface {
                 anyhow::ensure!(!self.reject_archive,"archive disconnected");
                 self.threads.get_mut(params["threadId"].as_str().unwrap()).unwrap()["archived"]
                     = json!(true);
+                anyhow::ensure!(!std::mem::take(&mut self.lose_archive),"lost archive receipt");
                 Ok(json!({}))
             }
             "threadSection/list" => Ok(json!({"data":self.sections.values().collect::<Vec<_>>()})),
             "thread/list" => {
+                anyhow::ensure!(!(params["archived"] == true && self.reject_archived_list),
+                    "archived list unavailable");
                 Ok(json!({"data":self.threads.values().filter(|thread|
                     (thread["archived"] == true) == (params["archived"] == true))
                     .collect::<Vec<_>>()}))
@@ -122,7 +128,9 @@ impl Surface {
 
     fn read_thread(&self, params: Value) -> Result<Value> {
         let id = params["threadId"].as_str().unwrap();
-        let thread = self.threads.get(id).ok_or_else(|| crate::rpc::RequestError {
+        let thread = self.threads.get(id)
+            .filter(|thread| !(self.unreadable_archived && thread["archived"] == true))
+            .ok_or_else(|| crate::rpc::RequestError {
             method:"thread/read".into(),details:json!({"code":-32600,"message":format!("thread not loaded: {id}")})})?;
         if params["includeTurns"] == true && thread["historyMode"] == "paginated" {
             return Err(crate::rpc::RequestError {method:"thread/read".into(),

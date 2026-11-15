@@ -43,6 +43,65 @@ fn a_known_unmaterialized_legacy_probe_can_finish_after_restart_without_recreati
 }
 
 #[test]
+fn archived_probe_with_lost_receipt_recovers_from_listing_after_store_reopen() -> Result<()> {
+    let mut fixture = Fixture::new()?;
+    {
+        let mut surface = fixture.surface.lock().unwrap();
+        surface.lose_archive = true;
+        surface.reject_archived_list = true;
+        surface.unreadable_archived = true;
+    }
+    assert!(fixture.run().is_err());
+    let saved = fixture.record()?;
+    assert_eq!(saved.logical.len(),5);
+    let identifier = saved.probe.as_ref().unwrap().thread.as_ref().unwrap();
+    assert_eq!(fixture.surface.lock().unwrap().threads[identifier]["archived"],true);
+    assert!(fixture.run().is_err());
+    assert!(fixture.record()?.probe.is_some());
+    fixture.surface.lock().unwrap().reject_archived_list = false;
+    fixture.store = Store::open(&fixture.config.data_dir,false)?;
+    let restored = fixture.run()?;
+    assert!(restored.probe.is_none());
+    assert_eq!(restored.logical,saved.logical);
+    assert!(!fixture.store.is_native_probe(&fixture.config.host_id,identifier)?);
+    assert_eq!(fixture.run()?.logical,saved.logical);
+    assert_eq!(fixture.calls("thread/start"),1);
+    assert_eq!(fixture.calls("thread/name/set"),1);
+    assert_eq!(fixture.calls("move_thread_to_sidebar_section"),5);
+    assert_eq!(fixture.calls("thread/archive"),1);
+    Ok(())
+}
+
+#[test]
+fn archived_probe_is_retired_before_recalibration_after_backend_rebuild() -> Result<()> {
+    let fixture = Fixture::new()?;
+    {
+        let mut surface = fixture.surface.lock().unwrap();
+        surface.lose_archive = true;
+        surface.reject_archived_list = true;
+        surface.unreadable_archived = true;
+    }
+    assert!(fixture.run().is_err());
+    let saved = fixture.record()?;
+    let identifier = saved.probe.as_ref().unwrap().thread.as_ref().unwrap();
+    {
+        let mut surface = fixture.surface.lock().unwrap();
+        surface.reject_archived_list = false;
+        surface.sections.clear();
+        surface.backend.clear();
+    }
+    let rebuilt = fixture.run()?;
+    assert!(rebuilt.probe.is_none());
+    assert_eq!(rebuilt.logical.len(),5);
+    assert!(rebuilt.logical.keys().all(|id| !saved.logical.contains_key(id)));
+    assert!(!fixture.store.is_native_probe(&fixture.config.host_id,identifier)?);
+    assert_eq!(fixture.calls("thread/start"),2);
+    assert_eq!(fixture.calls("thread/archive"),2);
+    assert_eq!(fixture.surface.lock().unwrap().threads.len(),2);
+    Ok(())
+}
+
+#[test]
 fn a_known_disappeared_probe_is_independently_retired_before_a_new_empty_probe_is_created() -> Result<()> {
     let fixture = Fixture::new()?;
     fixture.surface.lock().unwrap().lose_name = true;
