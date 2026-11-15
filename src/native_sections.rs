@@ -7,6 +7,9 @@ pub mod direct;
 pub(crate) mod calibration;
 pub(crate) mod mapping;
 
+#[cfg(test)]
+mod mapping_owned_tests;
+
 fn client_atoms(state: &Value) -> Result<&serde_json::Map<String, Value>> {
     let atoms = if let Some(owner) = state.get("electron-renderer-content-owner") {
         let owner = owner.as_str().filter(|value| !value.is_empty())
