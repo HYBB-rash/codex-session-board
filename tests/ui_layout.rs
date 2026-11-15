@@ -61,7 +61,7 @@ fn light_ui_refresh_health_and_catalog_preserve_interaction() {
         String::from_utf8_lossy(&interaction.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&interaction.stdout).unwrap();
-    assert_eq!(report["cases"], 58);
+    assert_eq!(report["cases"], 80);
     assert_eq!(report["cleanup"]["groupEmpty"], true);
     assert_eq!(report["cleanup"]["profileRemoved"], true);
     let catalog = Command::new("node")

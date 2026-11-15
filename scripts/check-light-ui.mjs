@@ -29,7 +29,7 @@ const server = http.createServer(async (request,response) => {
 });
 await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
 let browser, cases = 0, cleanup, refreshPerformance;
-const check = (actual,expected) => {assert.deepEqual(actual,expected);cases++;};
+const check = (actual,expected,message) => {assert.deepEqual(actual,expected,message);cases++;};
 try {
   browser = await launchBrowser();
   const page = await browser.page(`http://127.0.0.1:${server.address().port}/`);
@@ -42,13 +42,21 @@ try {
     assert.fail("界面状态未就绪："+expression);
   };
   await wait('typeof data !== "undefined" && data.sessions.length === 4');
-  for (const [width,height] of [[320,256],[390,320],[1280,800]]) {
-    await page.command("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:1,mobile:false});
-    await evaluate("new Promise(requestAnimationFrame)");
-    check(await evaluate('byId("board-viewport").clientHeight >= 280'),true);
-    check(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true);
-    if (height < 400) check(await evaluate('document.documentElement.scrollHeight > innerHeight'),true);
+  await evaluate('window.scrollbarStyle=document.createElement("style");document.head.append(scrollbarStyle)');
+  for (const scrollbarSize of [0,16,32]) {
+    await evaluate(`scrollbarStyle.textContent=${JSON.stringify(scrollbarSize ?
+      `::-webkit-scrollbar{width:${scrollbarSize}px;height:${scrollbarSize}px}` : "")}`);
+    for (const [width,height] of [[320,256],[390,320],[1280,800]]) {
+      await page.command("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:1,mobile:false});
+      await evaluate("new Promise(requestAnimationFrame)");
+      const viewport = await evaluate('({client:byId("board-viewport").clientHeight,outer:byId("board-viewport").offsetHeight})');
+      check(viewport.client >= 280,true,JSON.stringify({width,height,scrollbarSize,viewport}));
+      if (scrollbarSize) check(viewport.outer - viewport.client,scrollbarSize);
+      check(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true);
+      if (height < 400) check(await evaluate('document.documentElement.scrollHeight > innerHeight'),true);
+    }
   }
+  await evaluate("scrollbarStyle.remove()");
   const card = id => `document.querySelector('.card[data-id="${id}"]')`;
   await wait(`${card("long")}.querySelector(".note-details").classList.contains("expandable")`);
   check(await evaluate(`${card("long")}.querySelector(".note-preview").clientHeight <= 54`),true);

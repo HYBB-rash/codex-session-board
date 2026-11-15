@@ -44,8 +44,8 @@ input[type=search]{width:180px}
 .jump button{border:0;background:transparent;color:var(--muted);white-space:nowrap;font-size:12px;padding:5px 8px}
 .jump button:hover{background:var(--subtle);color:var(--ink)}
 .feedback{min-height:0;margin:0 0 6px;font-size:12px;color:var(--ink)}.feedback:empty{display:none}.feedback.error{color:var(--danger)}
-.board-viewport{flex:1;min-height:280px;overflow-x:auto;overflow-y:hidden;padding-bottom:6px}
-.board{display:flex;gap:12px;height:100%;min-width:0}
+.board-viewport{flex:1;min-height:min-content;overflow-x:auto;overflow-y:hidden;padding-bottom:6px}
+.board{display:flex;gap:12px;height:100%;min-height:280px;min-width:0;contain:size}
 .column{--accent:var(--muted);flex:1 0 240px;min-width:0;display:flex;flex-direction:column;height:100%;border:1px solid transparent;border-radius:10px;overflow:hidden}
 .column.in_progress{--accent:var(--blue)}.column.review{--accent:var(--warning)}
 .column.blocked{--accent:var(--danger)}.column.to_archive{--accent:var(--purple)}.column.completed{--accent:var(--ink)}
