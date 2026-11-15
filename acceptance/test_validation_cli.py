@@ -67,6 +67,61 @@ class ValidationCliTests(unittest.TestCase):
             self.assertIn("git", record["first_failure"]["message"])
             self.assertTrue(record["cleanup_confirmed"])
 
+    def test_pr_entry_preserves_foreign_plan_and_records_wrong_head_before_checks(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            root = self.committed_source(parent)
+            head = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+            other = subprocess.check_output(
+                ["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                 "-c", "commit.gpgsign=false", "commit-tree", "HEAD^{tree}", "-m", "other"],
+                cwd=root, text=True).strip()
+            output = parent / "pr"
+            plan = self.invoke("--scope", "pr", "--project", root, "--base", head,
+                               "--risk", "connection", "--plan", "--output", output)
+            self.assertEqual(plan.returncode, 0, plan.stdout + plan.stderr)
+            strategy = json.loads(plan.stdout)
+            self.assertFalse(strategy["executed"])
+            self.assertEqual(strategy["plan"]["base"], head)
+            self.assertEqual(strategy["plan"]["profile"], "records")
+            self.assertEqual(strategy["plan"]["risks"], ["connection", "package"])
+            self.assertFalse(output.exists())
+            result = self.invoke("--scope", "pr", "--project", root, "--base", head,
+                                 "--expect-head", other, "--output", output, root=root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            record = json.loads((output / "VALIDATION.json").read_text())
+            self.assertEqual(record["scope"], "pr")
+            self.assertEqual(record["source"]["commit"], head)
+            self.assertEqual(record["checker"], record["source"])
+            self.assertEqual(record["steps"], [])
+            self.assertFalse(record["passed"])
+            self.assertIn("PR head", record["error"]["detail"])
+            self.assertNotIn("initialized-run", result.stderr)
+            before = (output / "VALIDATION.json").read_bytes()
+            reused = self.invoke("--scope", "pr", "--base", head,
+                                 "--output", output, root=root)
+            self.assertNotEqual(reused.returncode, 0)
+            self.assertEqual((output / "VALIDATION.json").read_bytes(), before)
+
+    def test_pr_options_cannot_bypass_scope_initialization_or_total_budget(self):
+        cases = [
+            ("--scope", "candidate", "--project", str(ROOT)),
+            ("--scope", "preflight", "--expect-head", "HEAD"),
+            ("--scope", "pr", "--staged"),
+            ("--scope", "pr", "--integration-base", "HEAD"),
+            ("--scope", "pr", "--initialized-run", "forged"),
+            ("--scope", "pr", "--timeout", "1"),
+            ("--scope", "pr", "--risk", "none"),
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "uncreated"
+            for arguments in cases:
+                with self.subTest(arguments=arguments):
+                    result = self.invoke(*arguments, "--plan", "--output", output)
+                    self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                    self.assertFalse(output.exists())
+
     def test_preflight_and_report_reader_verify_actual_source_package_and_cleanup(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = self.committed_source(Path(temporary))

@@ -1,8 +1,12 @@
 import json
+import hashlib
 from pathlib import Path
 import platform
+import os
+import signal
 import subprocess
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -11,15 +15,16 @@ from scripts.validation_bootstrap import parse
 from scripts import validation_run as run, validation_report as report
 
 
-def git(*arguments):
-    return subprocess.check_output(["git", *arguments], cwd=ROOT, text=True).strip()
+def git(*arguments, root=None):
+    return subprocess.check_output(["git", *arguments], cwd=root or ROOT, text=True).strip()
 
 
-def identity():
-    bindings = json.loads((ROOT / "acceptance/bindings.json").read_text())
+def identity(root=None):
+    root = root or ROOT
+    bindings = json.loads((root / "acceptance/bindings.json").read_text())
     return {
-        "commit": git("rev-parse", "HEAD"), "tree": git("rev-parse", "HEAD^{tree}"),
-        "fingerprint": fingerprint(ROOT, bindings["fingerprint_paths"]),
+        "commit": git("rev-parse", "HEAD", root=root), "tree": git("rev-parse", "HEAD^{tree}", root=root),
+        "fingerprint": fingerprint(root, bindings["fingerprint_paths"]),
         "platform": sys.platform, "machine": platform.machine(),
     }
 
@@ -46,6 +51,31 @@ def related_commands(base):
     if any(path.endswith(".py") for path in changed):
         commands.append(["python3", "-m", "unittest", "discover", "-s", "acceptance"])
     return commands
+
+
+def execute(name, arguments, output, root=None, timeout=1800):
+    started = time.monotonic()
+    print(f"[候选验证] {name}", flush=True)
+    log = output / f"{name}.log"
+    with log.open("w") as stream:
+        process = subprocess.Popen(arguments, cwd=root or ROOT, stdout=stream,
+                                   stderr=subprocess.STDOUT, start_new_session=True)
+        try:
+            process.wait(timeout=timeout)
+        except BaseException:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGINT)
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=5)
+            raise
+    return {
+        "name": name, "arguments": arguments, "returncode": process.returncode,
+        "seconds": time.monotonic() - started,
+        "log_sha256": hashlib.sha256(log.read_bytes()).hexdigest(),
+    }
 
 
 def acceptance_outcome(report, returncode):
@@ -117,6 +147,16 @@ def candidate_outcome(output, record, strategy):
 def main():
     arguments = parse()
     output = arguments.output.resolve() if arguments.output else Path("<report-directory>")
+    if arguments.scope == "pr":
+        project = (arguments.project or ROOT).resolve()
+        if arguments.plan:
+            from scripts.pr_plan import plan
+            print(json.dumps({"scope": "pr", "executed": False,
+                              "plan": plan(project, arguments.base, arguments.risk)},
+                             ensure_ascii=False, indent=2))
+            return 0
+        from scripts.pr_delivery import validate
+        return validate(project, arguments.base, output, arguments.expect_head, arguments.risk)
     if arguments.plan:
         strategy = integration_strategy(arguments)
         print(json.dumps({"scope": arguments.scope, "executed": False,
