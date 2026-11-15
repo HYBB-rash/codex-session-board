@@ -6,7 +6,7 @@ allowed_write_set: scripts/check-light-ui.mjs, scripts/check-light-ui-open-wait.
 base_commit: 4e2a26151fc45598274725c463017a26fd0f9773
 worktree_path: /Users/hongyong/.codex/worktrees/pr-queue-author12-20261116/codex-session-board
 coordinator: 01a1d38b-1ef8-7392-ba78-caa7935c5ab4
-status: ready_for_validation
+status: completed
 
 反馈编号 ebdbd0ff-9e99-46de-83df-7e9cc934c301。开始时固定 HEAD 与分支符合反馈，
 工作区干净。只修复轻量界面检查的完成条件及必要独立回归，不修改业务源码、
@@ -41,3 +41,8 @@ baseline-delay.stderr.log、baseline.patch：原脚本第 96 行完整 writes �
 原脚本 80 项检查、原 Rust 测试及其全部断言不改。新提交立即更新 ready.json，
 随后以 ui_layout 整个常规 Rust 测试入口验证调用，不以手工 Node 单脚本代替。
 基线失败证据与已审阅的等待修复、独立夹具保留，最终组合 CI 仍由协调者执行。
+
+最终头64dc948ad6c47635aaf71e1854beb6765cc43013经独立审阅通过。
+常规ui_layout组实跑24.242秒通过，清单与绑定审计通过；随0.3.93、
+61d9d280进入真实主线，CI43746211763双平台组合及实际包启动通过。
+原会话修复工作树保留，未安装或重载日用插件。

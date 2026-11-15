@@ -6,7 +6,7 @@ allowed_write_set: scripts/package_migration.py; context/tasks/active/pr-queue-p
 base_commit: ec4e9c6bd73f477a6baf5d1ff6bceea6ed0a5e3b
 worktree_path: /Users/hongyong/.codex/worktrees/pr-queue-release-20261115/codex-session-board
 coordinator: 01a1d38b-1ef8-7392-ba78-caa7935c5ab4
-status: implemented
+status: completed
 
 工具发布运行 43731189754 的两个平台均在源码包 preflight 失败。
 实现指纹包含 `.github/pull_request_template.md` 和 `scripts/pr-queue`，
@@ -23,3 +23,6 @@ status: implemented
 518 次提交的版本步进检查通过。提交后从干净源码再次运行统一 preflight 和项目检查，
 最终证据分别写入 preflight-committed/VALIDATION.json 和 check-committed.log。
 暂存快检记录为 pre-commit.log，任务归档和共享状态更新交由协调者完成。
+
+最终随0.3.93、61d9d280进入真实主线。CI43746211763双平台门禁通过，
+源码包清单、实际不可变包读回和隔离启动均通过，首次缺项失败继续保留。

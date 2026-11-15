@@ -6,7 +6,7 @@ allowed_write_set: scripts/pr_queue_transport.py; acceptance/test_pr_queue_trans
 base_commit: 4e2a26151fc45598274725c463017a26fd0f9773
 worktree_path: /Users/hongyong/.codex/worktrees/pr-queue-transport-fallback-20261116/codex-session-board
 coordinator: 01a1d38b-1ef8-7392-ba78-caa7935c5ab4
-status: ready_for_independent_review
+status: completed
 
 协调者要求修复 PR12 真实派单暴露的兼容问题。建树前工具发布树干净，
 固定为上面的 0.3.92 源码。冻结 checker、业务、版本及共享 STATE 均不修改。
@@ -34,3 +34,7 @@ status: ready_for_independent_review
 /Users/hongyong/.codex/visualizations/2026/11/13/01a1d38b-1ef8-7392-ba78-caa7935c5ab4/pr-queue-20261115/transport-fallback/
 其中 baseline-regression.log、targeted-tests.json、real-poll.json 与
 real-poll-receipt-copy.json 分别保留旧失败、回归、只读实测和新回执复制件。
+
+20029ec修复经独立审阅通过，最终随0.3.93、61d9d280进入真实主线。
+CI43746211763双平台组合与实际包隔离启动通过。无时间戳的ACK仍只记录
+观测上界，未据此声称精确通知延迟。
