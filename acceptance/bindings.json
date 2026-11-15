@@ -1206,10 +1206,12 @@
       "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions"
     ],
     "UI-003": [
+      "test::ui_layout::light_ui_refresh_health_and_catalog_preserve_interaction",
       "test::ui_layout::long_content_and_project_filters_preserve_browser_column_geometry",
       "test::ui_layout::transfer_feedback_waits_for_receipts_and_preserves_interaction"
     ],
     "MCP-001": [
+      "test::ui_layout::mcp_bridge_preserves_routes_results_and_host_theme",
       "test::column_sort::column_sort_app_and_mcp_expose_separate_settings_operation",
       "test::column_sort::column_sort_real_http_and_stdio_mcp_share_persistent_settings",
       "test::board_io::remote_cards_use_the_same_http_and_mcp_annotations_without_native_writes",

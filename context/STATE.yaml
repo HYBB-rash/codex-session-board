@@ -2,12 +2,13 @@
   "schema_version": 1,
   "updated_at": "2026-11-15",
   "current_phase": {
-    "id": "pr-delivery-rollout-20261115",
-    "status": "completed",
+    "id": "pr12-integration-20261115",
+    "status": "active",
     "as_of": "2026-11-15",
-    "summary": "PR交付流程及PR8至11已随0.3.89/c477d5f进入远端主线；最终同头本机833项、CI macOS833项与Linux844项全部通过，实际不可变包隔离启动通过。核心73分18秒含两轮失败及修复，记录收尾另计；执行中新来的PR12单列下一批，日用安装和真实客户端验收独立。"
+    "summary": "用户授权合并PR12并实测新流程；固定主线d75e5f2、PR头3d1d0e7，保留PR8至11组合行为，含离线依赖及工具变更走完整门禁。核心计时包含审查、冲突修复与失败重跑；收尾、日用安装和真实客户端验收独立。"
   },
   "active_tasks": [
+    "context/tasks/active/pr12-integration-20261115.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",

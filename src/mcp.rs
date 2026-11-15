@@ -88,12 +88,7 @@ fn schema(name: &str, legacy: bool) -> (Value, Value) {
 }
 
 pub fn resource() -> Value {
-    let bridge = include_str!("../assets/app-bridge.js")
-        .replace(
-            "\"/api/refresh\":\"board_refresh\"",
-            "\"/api/refresh\":\"board_refresh\",\"/api/new\":\"board_new\",\"/api/new/reset\":\"board_new_reset\",\"/api/connect\":\"board_connect\",\"/api/archive\":\"board_archive\",\"/api/column-sort\":\"board_sort\"",
-        )
-        .replace("</script", "<\\/script");
+    let bridge = include_str!("../assets/app-bridge.js").replace("</script", "<\\/script");
     let html = include_str!("../index.html")
         .replace("__CSRF_TOKEN__", "")
         .replacen(

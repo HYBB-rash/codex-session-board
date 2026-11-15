@@ -45,7 +45,7 @@ export async function launchBrowser() {
     fail(new Error("本次 Chrome 已关闭"));
     socket?.close();
     const signal = name => {
-      if (!chrome.pid || chrome.exitCode !== null || chrome.signalCode !== null) return;
+      if (!chrome.pid) return;
       try { process.kill(-chrome.pid, name); } catch (error) { if (error.code !== "ESRCH") throw error; }
     };
     let exit = await Promise.race([exited, delay(5000, null, { ref: false })]);
@@ -61,9 +61,11 @@ export async function launchBrowser() {
           .filter(([, pgid, state]) => Number(pgid) === chrome.pid && state && !state.startsWith("Z"))
           .map(([pid]) => Number(pid));
         if (!survivors.length) break;
+        if (attempt === 5) signal("SIGTERM");
+        if (attempt === 25) signal("SIGKILL");
         await delay(100);
       }
-      assert(survivors.length === 0, `Chrome 进程组 ${chrome.pid} 仍有存活进程 ${survivors.join(",")}，保留 profile`);
+      assert(survivors.length === 0, `Chrome 进程组 ${chrome.pid} 仍有存活进程 ${survivors.join(",")}，保留 profile：${profile}`);
     }
     await fs.rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     return { pid: chrome.pid, pgid: chrome.pid, exited: true, ...exit, groupEmpty: true, profileRemoved: true };

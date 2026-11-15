@@ -59,8 +59,7 @@ try {
   check(await evaluate('byId("history-filter").disabled'),true);
   await select("host-filter","host:a");
   await wait('!byId("host-filter").disabled');
-  for (let attempt = 0; attempt < 100 && !writes.length; attempt++) await new Promise(resolve => setTimeout(resolve,25));
-  check(writes,[{path:"/api/refresh",body:{hostId:"a"}}]);
+  check(writes,[]);
   check(await ids(),["active","last-active","legacy"]);
   check(await evaluate('byId("count").textContent'),"显示 3 / 当前主机范围共 3 条");
   check(await evaluate('Array.from(byId("project-filter").options).map(option=>option.value)'),
@@ -74,11 +73,17 @@ try {
   check(await evaluate('byId("project-filter").disabled'),false);
   await evaluate('data.projectCatalog.loaded=true;data.health.remoteConnections[0].catalog.pending=true;render()');
   check(await evaluate('hostHealth({value:"host:a",hostId:"a",hostLabel:"a"}).status'),"正在更新主机目录");
+  check(await evaluate('hostHealth({value:"host:a",hostId:"a",hostLabel:"a"}).ready'),false);
   await evaluate('data.health.remoteConnections[0].catalog.pending=false;data.health.remoteConnections[0].catalog.complete=false;render()');
   check(await evaluate('hostHealth({value:"host:a",hostId:"a",hostLabel:"a"}).status'),"主机目录尚未读取完整");
+  check(await evaluate('hostHealth({value:"host:a",hostId:"a",hostLabel:"a"}).ready'),false);
   await evaluate('data.health.remoteConnections[0].catalog.complete=true;render()');
   await evaluate('data.sessions=data.sessions.map(row=>row.archived || row.presence==="cachedUnknown" ? {...row,readOnly:true} : row);render()');
   check(await evaluate('hostHealth({value:"host:a",hostId:"a",hostLabel:"a"}).status'),"主机目录已读取完整");
+  check(await evaluate('hostHealth({value:"host:a",hostId:"a",hostLabel:"a"}).ready'),true);
+  await evaluate('data.health.remoteConnections[0].catalog.cached=true;render()');
+  check(await evaluate('hostHealth({value:"host:a",hostId:"a",hostLabel:"a"}).ready'),false);
+  await evaluate('data.health.remoteConnections[0].catalog.cached=false;render()');
   await select("history-filter","archived");
   check(await ids(),["archived","last-archive"]);
   check(await evaluate('byId("count").textContent'),"显示 2 / 当前主机范围共 2 条");
@@ -112,7 +117,7 @@ try {
   await select("host-filter","host:b");
   check(await ids(),["other"]);
   check(writes.filter(row=>row.path === "/api/connect"),[]);
-  check(writes.filter(row=>row.path === "/api/refresh").length,1);
+  check(writes.filter(row=>row.path === "/api/refresh").length,0);
   check(await evaluate('hostHealth({value:"host:b",hostId:"b",hostLabel:"b",enabled:false}).status.includes("缓存时间")'),true);
   check(await evaluate('hostHealth({value:"host:b",hostId:"b",hostLabel:"b",enabled:false}).diagnostics.some(([,message])=>message.includes("b-only-error"))'),true);
   await evaluate('data.health.remoteConnections[1].catalog.error="b-only-error";selectedProject="project:missing";projectOptionsKey="";render()');

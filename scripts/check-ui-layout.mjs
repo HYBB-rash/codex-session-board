@@ -12,7 +12,8 @@ await fs.mkdir(output, { recursive: true });
 const html = await fs.readFile(process.env.CODEX_BOARD_TEST_HTML || path.join(root, "index.html"), "utf8");
 const states = { unknown: "待判断", in_progress: "进行中", review: "待审阅", blocked: "已阻塞", to_archive: "待归档" };
 const fixture = {
-  states, health: {remoteRegistry:[{hostId:"long",hostLabel:"很长的远程主机".repeat(12)+"remote".repeat(18),enabled:false}]}, projectCatalog: { loaded: true, items: [
+  states, health: {lastSuccessAt:1760000000,lastScanAt:1760000000,scanComplete:true,runtimeVerified:true,nativeSections:true,nativeVerified:true,
+    remoteRegistry:[{hostId:"long",hostLabel:"很长的远程主机".repeat(12)+"remote".repeat(18),enabled:false}]}, projectCatalog: { loaded: true, items: [
     { id: "first", label: "第一个项目", paths: ["/projects/first"] },
     { id: "second", label: "第二个项目", paths: ["/projects/second"] },
   ] },
@@ -22,8 +23,9 @@ const fixture = {
     version: 1, inputVersion: 1, sectionVersion: "fixture", canArchive: false,
   })),
 };
+let writes = 0;
 const server = http.createServer((request, response) => {
-  if (request.method !== "GET") return response.writeHead(405).end();
+  if (request.method !== "GET") { writes++; return response.writeHead(405).end(); }
   const api = request.url === "/api/sessions";
   response.writeHead(200, { "Content-Type": api ? "application/json" : "text/html; charset=utf-8" });
   response.end(api ? JSON.stringify(fixture) : html);
@@ -89,6 +91,8 @@ try {
       const viewport=byId("board-viewport"), columns=[...document.querySelectorAll(".column")];
       return {theme:matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light",window:innerWidth,viewport:viewport.clientWidth,scroll:viewport.scrollWidth,
         documentWidth:document.documentElement.scrollWidth,columns:columns.map(node=>node.getBoundingClientRect().width),
+        cards:[...document.querySelectorAll(".card")].map(node=>({bottom:node.getBoundingClientRect().bottom,
+          footerBottom:node.querySelector(".card-footer").getBoundingClientRect().bottom})),
         count:document.querySelectorAll(".card").length,titles:[...document.querySelectorAll(".card-title")].map(node=>({
           width:node.clientWidth,scroll:node.scrollWidth,height:node.getBoundingClientRect().height,
           lineHeight:parseFloat(getComputedStyle(node).lineHeight)}))};
@@ -96,6 +100,7 @@ try {
     assert.equal(result.columns.length, fixture.legacyMode ? 6 : 5, name);
     assert(Math.max(...result.columns) - Math.min(...result.columns) < 1, `${name}: 列宽不一致`);
     assert(result.documentWidth <= result.window, `${name}: 横向滚动泄漏到页面`);
+    assert(result.cards.every(card=>card.footerBottom<=card.bottom),`${name}: 长内容把操作按钮挤出卡片`);
     for (const title of result.titles) {
       assert(title.scroll <= title.width + 1, `${name}: 标题未在卡片内换行`);
       assert(title.height <= title.lineHeight * 2 + 1, `${name}: 标题超过两行`);
@@ -105,6 +110,12 @@ try {
   };
   const select = value => evaluate(`byId("project-filter").value=${JSON.stringify(value)};
     byId("project-filter").dispatchEvent(new Event("change"))`);
+  const toggleDetails = async () => {
+    for (const type of ["keyDown","keyUp"])
+      await command("Input.dispatchKeyEvent",{type,key:"Enter",code:"Enter",windowsVirtualKeyCode:13,
+        ...(type === "keyDown" ? {text:"\r"} : {})},sessionId);
+    await evaluate("new Promise(resolve=>requestAnimationFrame(resolve))");
+  };
   for (const [legacy,theme] of [[false,"light"],[true,"light"],[false,"dark"],[true,"dark"]]) {
     await command("Emulation.setEmulatedMedia",{features:[{name:"prefers-color-scheme",value:theme}]},sessionId);
     fixture.legacyMode = legacy;
@@ -112,12 +123,33 @@ try {
     await resize(1474);
     await evaluate(`data=${JSON.stringify(fixture)};selectedHost="local";selectedProject="all";filterMode="project";projectOptionsKey="";render()`);
     const baseline = await measure(`${legacy ? "six" : "five"}-short`);
+    assert.match(await evaluate('byId("health-summary").textContent'),/连接正常/);
+    for (const [field,message] of [["scanComplete","尚未读取完整"],["runtimeVerified","尚未连接"],["nativeVerified","尚未确认"]]) {
+      await evaluate(`data.health.${field}=false;renderHealth()`);
+      assert((await evaluate('byId("health-summary").textContent')).includes(message),"未确认的连接被缩写为正常");
+      assert.equal(await evaluate('byId("health").classList.contains("ready")'),false);
+      await evaluate(`data.health.${field}=true;renderHealth()`);
+    }
+    assert.equal(await evaluate('document.querySelector(".project-info").checkVisibility()'),false,"完整目录默认应收起");
+    await evaluate('document.querySelector(".project-tag summary").focus()');
+    await toggleDetails();
+    assert(await evaluate('document.querySelector(".project-info").checkVisibility()'),"键盘无法展开详情");
+    assert.match(await evaluate('document.querySelector(".project-info").textContent'),/工作目录：\/projects\/example\n状态来源：原生状态/);
+    await evaluate("render()");
+    assert.equal(await evaluate('document.activeElement.matches(".project-tag summary") && document.activeElement.parentElement.open'),true,
+      "刷新丢失展开详情或键盘焦点");
+    await toggleDetails();
+    assert.equal(await evaluate('document.querySelector(".project-tag").open'),false,"键盘无法收起详情");
+    assert.equal(writes,0,"浏览详情触发了业务写入");
+    await evaluate('data.sessions.push({...data.sessions[0],id:"remote-missing-project",remote:true,hostId:"long",hostLabel:"测试远程主机",projectId:"missing"});selectedHost="all";render()');
+    assert.match(await evaluate('document.querySelector(\'[data-id="remote-missing-project"] .project-tag summary\').textContent'),
+      /项目待确认 · 测试远程主机/,"全部主机视图丢失了归属待确认会话的主机");
     const long = structuredClone(fixture);
     long.sessions[1].title = "长标题与不可断开的文本".repeat(40) + "x".repeat(400);
     long.sessions[1].cwd = "/projects/" + "very-long-path/".repeat(50);
     long.sessions[1].note = "很长的备注".repeat(100);
     long.projectCatalog.items[1].label = "长项目标签".repeat(80);
-    await evaluate(`data=${JSON.stringify(long)};projectOptionsKey="";render()`);
+    await evaluate(`data=${JSON.stringify(long)};selectedHost="local";projectOptionsKey="";render();document.querySelector('[data-id="layout-1"] .project-tag').open=true`);
     const expanded = await measure(`${legacy ? "six" : "five"}-long`);
     assert(Math.abs(baseline.columns[0] - expanded.columns[0]) < 1, "长内容改变列宽");
     assert.equal(expanded.scroll, baseline.scroll, "长内容扩大看板");
@@ -135,6 +167,7 @@ try {
     await evaluate(`byId("filter-toggle").click();render()`);
     await evaluate('byId("host-filter").value="host:long";byId("host-filter").dispatchEvent(new Event("change"))');
     await measure(`${legacy ? "six" : "five"}-long-host`);
+    await evaluate('byId("host-filter").value="local";byId("host-filter").dispatchEvent(new Event("change"))');
     for (const width of [801, 800, 600, 390, 320]) {
       await resize(width);
       const narrow = await measure(`${legacy ? "six" : "five"}-${width}`);
@@ -146,6 +179,8 @@ try {
       "横向滚动无法到达最后一列");
     }
     await resize(1474);
+    await evaluate(`data=${JSON.stringify(fixture)};projectOptionsKey="";render();byId("board-viewport").scrollLeft=0`);
+    await evaluate('document.querySelectorAll(".cards").forEach(node=>node.scrollTop=0);document.querySelectorAll(".project-tag").forEach(node=>node.open=false);new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
     const image = await command("Page.captureScreenshot", { format: "png" }, sessionId);
     await fs.writeFile(path.join(output, `${legacy ? "six" : "five"}-${theme}-columns.png`), Buffer.from(image.data, "base64"));
   }
