@@ -29,9 +29,14 @@ class PRQueueTests(unittest.TestCase):
             "fingerprint_paths": ["README.md"], "requirements": {"DELIVERY-001": [self.test_name]},
         })
         self.base = self.commit()
+        self.checker = {"commit": "checker", "tree": "checker-tree", "fingerprint": "checker-fingerprint"}
+        self.real_checker_identity = pr_queue.checker_identity
+        self.checker_patch = mock.patch.object(pr_queue, "checker_identity", return_value=self.checker)
+        self.checker_patch.start()
+        self.addCleanup(self.checker_patch.stop)
         self.state = {
             "repository": "owner/repo", "project": str(self.project), "base": self.base,
-            "prefix": self.base, "checker": "checker", "items": [], "events": [],
+            "prefix": self.base, "checker": self.checker, "items": [], "events": [],
             "started_at": pr_queue.now(), "rehearsal": True,
         }
         self.queue = self.directory / "queue"
@@ -68,6 +73,7 @@ class PRQueueTests(unittest.TestCase):
         self.write_json(manifest, original)
         initialized = pr_queue.initialize(manifest, self.directory / "initialized")
         self.assertEqual(initialized["prefix"], self.base)
+        self.assertEqual(initialized["checker"], self.checker)
         self.assertEqual(initialized["items"][0]["status"], "submitted")
         invalid = copy.deepcopy(original)
         invalid["items"][0]["dependencies"] = [2]
@@ -75,6 +81,9 @@ class PRQueueTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Dependencies"):
             pr_queue.initialize(manifest, self.directory / "bad-dependency")
         self.write_json(manifest, original)
+        with mock.patch.object(pr_queue, "ROOT", self.project), \
+                self.assertRaisesRegex(ValueError, "independent checker"):
+            pr_queue.initialize(manifest, self.directory / "same-worktree")
         (self.project / "README.md").write_text("dirty")
         with self.assertRaisesRegex(ValueError, "clean"):
             pr_queue.initialize(manifest, self.directory / "dirty")
@@ -189,7 +198,7 @@ class PRQueueTests(unittest.TestCase):
         self.write_json(directory / "TESTS.json", tests)
         record = {"scope": "pr", "passed": True, "source": identity, "plan": strategy,
                   "release_ready": False, "acceptance_status": "not_performed",
-                  "checker": {"commit": "checker"}, "project": str(self.project), "steps": [],
+                  "checker": copy.deepcopy(self.checker), "project": str(self.project), "steps": [],
                   "tests_sha256": hashlib.sha256((directory / "TESTS.json").read_bytes()).hexdigest()}
         for name in ("project-check", "all-target-clippy", "source-package", "related-tests"):
             (directory / f"{name}.log").write_text("passed\n")
@@ -226,6 +235,7 @@ class PRQueueTests(unittest.TestCase):
 
     def test_identical_feedback_reuses_the_original_request_and_attempt(self):
         item = self.item(1, self.base)
+        item["repair_instructions"] = "Reproduce from the original failure transcript."
         self.state["items"] = [item]
         with mock.patch.object(pr_queue, "notify"):
             pr_queue.reject(self.state, item, self.queue, "merge", "conflict")
@@ -235,6 +245,9 @@ class PRQueueTests(unittest.TestCase):
         self.assertIs(item["feedback"], original)
         self.assertEqual(len(item["attempts"]), 1)
         self.assertEqual(item["feedback"]["comment"], "existing-comment")
+        self.assertIn(str(pr_queue.ROOT), original["body"])
+        self.assertIn("--scope pr --project", original["body"])
+        self.assertIn(item["repair_instructions"], original["body"])
         self.state["started_at"] = pr_queue.now()
         next_item = self.item(1, self.base)
         self.state["items"] = [next_item]
@@ -255,10 +268,11 @@ class PRQueueTests(unittest.TestCase):
             self.write_json(output / "integration.json", {"last_error": {"detail": detail}})
             with self.subTest(detail=detail), mock.patch.object(pr_queue, "clean"), \
                     mock.patch.object(pr_queue, "git", return_value=self.base), \
+                    mock.patch.object(pr_queue, "validate_freeze", return_value="0.3.91"), \
                     mock.patch.object(pr_queue, "notify") as notify, \
-                    mock.patch.object(pr_queue.subprocess, "run", side_effect=[
-                        subprocess.CompletedProcess([], 0), subprocess.CalledProcessError(1, "integrate"),
-                    ]), self.assertRaises(subprocess.CalledProcessError):
+                    mock.patch.object(pr_queue.subprocess, "run",
+                                      side_effect=subprocess.CalledProcessError(1, "integrate")), \
+                    self.assertRaises(subprocess.CalledProcessError):
                 pr_queue.finish(self.state, self.queue)
             self.assertEqual(item["status"], "accepted")
             self.assertEqual(notify.call_count, int(should_notify))
@@ -276,15 +290,21 @@ class PRQueueTests(unittest.TestCase):
     def test_rehearsal_only_passes_the_restricted_reference_to_integrate(self):
         item = self.item(1, self.base)
         item["status"] = "accepted"
-        self.state["items"] = [item]
-        self.state["main_reference"] = "refs/heads/codex/rehearsal-main-test"
+        blocked = self.item(2, self.base)
+        blocked["status"] = "needs-fix"
+        self.state["items"] = [item, blocked]
+        self.state["reference"] = "refs/heads/codex/rehearsal-main-test"
         with mock.patch.object(pr_queue, "clean"), \
                 mock.patch.object(pr_queue, "git", return_value=self.base), \
+                mock.patch.object(pr_queue, "validate_freeze", return_value="0.3.91"), \
                 mock.patch.object(pr_queue.subprocess, "run") as run:
             pr_queue.finish(self.state, self.queue)
         command = run.call_args.args[0]
-        self.assertEqual(command[-2:], ["--main-reference", self.state["main_reference"]])
+        self.assertEqual(command[-2:], ["--reference", self.state["reference"]])
         self.assertEqual(item["status"], "merged")
+        self.assertTrue(self.state["batch_delivered"])
+        self.assertFalse(self.state["all_items_merged"])
+        self.assertEqual(self.state["initial_base"], self.base)
 
     def test_repair_must_retain_the_original_source_commit(self):
         original = self.branch("original", "original.txt", "original")
@@ -296,3 +316,165 @@ class PRQueueTests(unittest.TestCase):
                 self.assertRaises(subprocess.CalledProcessError):
             pr_queue.requeue(self.state, {"number": 1, "head": replacement}, self.queue)
         notify.assert_not_called()
+
+    def test_preview_reports_conflicts_and_missing_evidence_together(self):
+        first = self.branch("first", "README.md", "first\n")
+        second = self.branch("second", "README.md", "second\n")
+        self.git("merge", "--no-ff", "-m", "prefix", first)
+        self.state["prefix"] = self.git("rev-parse", "HEAD")
+        item = self.item(2, second)
+        self.state["items"] = [item]
+        with mock.patch.object(pr_queue, "notify"):
+            pr_queue.attempt(self.state, self.queue)
+        self.assertEqual(item["status"], "needs-fix")
+        self.assertEqual(item["feedback"]["files"], ["README.md"])
+        self.assertIn("Mechanical conflicts", item["feedback"]["detail"])
+        self.assertIn("Delivery:", item["feedback"]["detail"])
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.state["prefix"])
+
+    def test_delivery_evidence_can_be_repaired_without_an_empty_commit(self):
+        item = self.item(1, self.base)
+        item.update(status="needs-fix", feedback={"kind": "delivery", "notification": "acknowledged"})
+        self.state["items"] = [item]
+        incoming = {"number": 1, "head": self.base, "review": "new-review", "validation": "new-report"}
+        with mock.patch.object(pr_queue, "notify"), mock.patch.object(pr_queue, "verify_entry") as verify:
+            pr_queue.requeue(self.state, incoming, self.queue)
+        verify.assert_called_once()
+        self.assertEqual(item["status"], "submitted")
+        self.assertEqual(item["head"], self.base)
+
+    def test_repair_cannot_narrow_the_fixed_validation_base(self):
+        item = self.item(1, self.base)
+        self.state["items"] = [item]
+        replacement = self.branch("repair", "repair.txt", "repair")
+        with mock.patch.object(pr_queue, "notify") as notify, \
+                self.assertRaisesRegex(ValueError, "comparison base"):
+            pr_queue.requeue(self.state, {"number": 1, "head": replacement, "base": replacement}, self.queue)
+        notify.assert_not_called()
+
+    def test_checker_identity_rejects_dirty_tree_and_same_commit_fingerprint_drift(self):
+        with mock.patch.object(pr_queue, "ROOT", self.project):
+            clean = self.real_checker_identity()
+            (self.project / "README.md").write_text("dirty checker")
+            with self.assertRaisesRegex(ValueError, "remain clean"):
+                self.real_checker_identity()
+        self.state["checker"] = clean
+        for field in ("commit", "tree", "fingerprint"):
+            changed = {**clean, field: "different"}
+            with self.subTest(field=field), \
+                    mock.patch.object(pr_queue, "checker_identity", return_value=changed), \
+                    self.assertRaisesRegex(ValueError, "identity changed"):
+                pr_queue.verify_checker(self.state)
+
+    def release_fixture(self):
+        (self.project / "Cargo.toml").write_text('[package]\nname = "fixture"\nversion = "0.3.90"\n')
+        (self.project / "Cargo.lock").write_text('version = 3\n[[package]]\nname = "fixture"\nversion = "0.3.90"\n')
+        (self.project / ".codex-plugin").mkdir()
+        for path in ("plugin.json", ".codex-plugin/plugin.json"):
+            self.write_json(self.project / path, {"name": "fixture", "version": "0.3.90"})
+        self.write_json(self.project / "project-rules.json", {
+            "versioning": {"release_only": True, "rollover_after": self.base, "feature_releases": []},
+        })
+        self.base = self.commit()
+        self.state.update(base=self.base, prefix=self.base, initial_base=self.base, rehearsal=False)
+        return self.base
+
+    def freeze(self, version, target=None):
+        prefix = self.git("rev-parse", "HEAD")
+        old = pr_queue.tomllib.loads((self.project / "Cargo.toml").read_text())["package"]["version"]
+        for path in ("Cargo.toml", "Cargo.lock"):
+            source = self.project / path
+            source.write_text(source.read_text().replace(f'"{old}"', f'"{version}"'))
+        for path in ("plugin.json", ".codex-plugin/plugin.json"):
+            source = self.project / path
+            self.write_json(source, {**json.loads(source.read_text()), "version": version})
+        rules = self.project / "project-rules.json"
+        content = json.loads(rules.read_text())
+        content["versioning"]["feature_releases"].append({
+            "after_commit": prefix, "from": old, "to": version, "decision": "冻结发布候选",
+        })
+        self.write_json(rules, content)
+        if target is not None:
+            (self.project / "context").mkdir(exist_ok=True)
+            self.write_json(self.project / "context/integration-target.json", target)
+        return self.commit()
+
+    def test_freeze_accepts_only_the_exact_release_fields_and_rehearsal_target(self):
+        prefix = self.release_fixture()
+        reference = "refs/heads/codex/rehearsal-main-test"
+        target = {"reference": reference, "base": prefix}
+        candidate = self.freeze("0.3.91", target)
+        self.assertEqual(pr_queue.validate_freeze(self.project, prefix, candidate, target), "0.3.91")
+        with self.assertRaisesRegex(ValueError, "outside release"):
+            pr_queue.validate_freeze(self.project, prefix, candidate)
+        with self.assertRaisesRegex(ValueError, "target differs"):
+            pr_queue.validate_freeze(self.project, prefix, candidate, {**target, "base": candidate})
+        manifest = self.project / "plugin.json"
+        self.write_json(manifest, {**json.loads(manifest.read_text()), "mcpServers": "unaudited"})
+        self.git("add", ".")
+        self.git("commit", "--amend", "-qm", "tampered freeze")
+        with self.assertRaisesRegex(ValueError, "Plugin manifest"):
+            pr_queue.validate_freeze(self.project, prefix, self.git("rev-parse", "HEAD"), target)
+
+    def test_freeze_rejects_unreviewed_code_and_intermediate_commits(self):
+        prefix = self.release_fixture()
+        (self.project / "README.md").write_text("unreviewed implementation")
+        candidate = self.freeze("0.3.91")
+        with self.assertRaisesRegex(ValueError, "outside release"):
+            pr_queue.validate_freeze(self.project, prefix, candidate)
+        (self.project / "README.md").write_text("base\n")
+        self.commit()
+        with self.assertRaisesRegex(ValueError, "directly after"):
+            pr_queue.validate_freeze(self.project, prefix, self.git("rev-parse", "HEAD"))
+
+    def test_failed_frozen_candidate_accepts_author_repair_and_a_new_version(self):
+        prefix = self.release_fixture()
+        item = self.item(1, prefix)
+        item["status"] = "accepted"
+        self.state["items"] = [item]
+        first_candidate = self.freeze("0.3.91")
+        actual_run = subprocess.run
+        outputs = []
+
+        def integrate(arguments, **options):
+            if len(arguments) < 2 or not str(arguments[1]).endswith("/integrate_candidate.py"):
+                return actual_run(arguments, **options)
+            output = Path(arguments[arguments.index("--output") + 1])
+            outputs.append(output)
+            output.mkdir()
+            if len(outputs) == 1:
+                self.write_json(output / "integration.json", {
+                    "last_error": {"detail": "Candidate run 42 finished: failure"},
+                })
+                raise subprocess.CalledProcessError(1, arguments)
+            return subprocess.CompletedProcess(arguments, 0)
+
+        def acknowledge(state, source, directory):
+            source["feedback"]["notification"] = "acknowledged"
+
+        with mock.patch.object(pr_queue.subprocess, "run", side_effect=integrate), \
+                mock.patch.object(pr_queue, "notify", side_effect=acknowledge), \
+                mock.patch.object(pr_queue, "verify_entry"), \
+                mock.patch.object(pr_queue, "commit", side_effect=lambda project, message: self.commit()):
+            with self.assertRaises(subprocess.CalledProcessError):
+                pr_queue.finish(self.state, self.queue)
+            self.assertEqual(self.state["frozen_candidate"]["reviewed_prefix"], prefix)
+            with self.assertRaisesRegex(ValueError, "author repair"):
+                pr_queue.finish(self.state, self.queue)
+            source = self.branch("author-repair", "README.md", "repaired implementation")
+            pr_queue.requeue(self.state, {
+                "number": 1, "head": source, "review": "review", "validation": "validation",
+            }, self.queue)
+            pr_queue.attempt(self.state, self.queue)
+            repaired_prefix = self.state["prefix"]
+            self.assertNotEqual(repaired_prefix, first_candidate)
+            second_candidate = self.freeze("0.3.92")
+            pr_queue.finish(self.state, self.queue)
+        self.assertEqual(item["status"], "merged")
+        self.assertEqual(self.state["frozen_candidate"]["candidate"], second_candidate)
+        self.assertEqual(self.state["frozen_candidate"]["reviewed_prefix"], repaired_prefix)
+        self.assertEqual(self.state["frozen_candidate"]["version"], "0.3.92")
+        self.assertEqual(len(set(outputs)), 2)
+        self.assertTrue(self.state["all_items_merged"])
+        self.assertEqual(self.git("status", "--porcelain"), "")

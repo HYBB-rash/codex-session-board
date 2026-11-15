@@ -5,9 +5,11 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
+import tomllib
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,9 +41,23 @@ def clean(project, expected):
         raise ValueError("Queue needs its exact clean dedicated codex/ worktree")
 
 
+def checker_identity():
+    if git(ROOT, "status", "--porcelain", "--untracked-files=all"):
+        raise ValueError("Queue checker must remain clean")
+    return identity(ROOT)
+
+
+def verify_checker(state):
+    if checker_identity() != state["checker"]:
+        raise ValueError("Queue checker identity changed; use the original frozen checker")
+
+
 def initialize(manifest, directory):
+    checker = checker_identity()
     state = json.loads(manifest.read_text())
     project = Path(state["project"]).resolve(strict=True)
+    if project == ROOT.resolve():
+        raise ValueError("Queue source needs an independent checker worktree")
     if directory.exists() or directory.is_relative_to(project) or directory.is_relative_to(ROOT):
         raise ValueError("Use a new queue directory outside source and checker")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", state["repository"]):
@@ -63,14 +79,16 @@ def initialize(manifest, directory):
         item.update(status="submitted", attempts=[])
     if not known:
         raise ValueError("Queue needs at least one PR")
-    state.update(schema_version=1, project=str(project), base=base, prefix=base,
-                 checker=git(ROOT, "rev-parse", "HEAD"), started_at=now(), events=[])
+    state.update(schema_version=1, project=str(project), base=base, initial_base=base, prefix=base,
+                 checker=checker, started_at=now(), events=[],
+                 batch_delivered=False, all_items_merged=False)
     directory.mkdir(parents=True)
     save(directory / "queue.json", state)
     return state
 
 
 def verify_entry(state, item):
+    verify_checker(state)
     review = json.loads(Path(item["review"]).read_text())
     if (review.get("head") != item["head"] or review.get("passed") is not True
             or not review.get("reviewer")
@@ -84,7 +102,7 @@ def verify_entry(state, item):
     if (record.get("scope") != "pr" or record.get("passed") is not True
             or record.get("release_ready") is not False or record.get("acceptance_status") != "not_performed"
             or source["commit"] != item["head"] or record.get("source") != source
-            or record.get("checker", {}).get("commit") != state["checker"]
+            or record.get("checker") != state["checker"]
             or record.get("plan") != strategy
             or git(project, "status", "--porcelain", "--untracked-files=all")):
         raise ValueError("PR evidence must identify the current clean source and queue checker")
@@ -134,6 +152,7 @@ def comment(state, item, feedback):
 
 
 def notify(state, item, directory):
+    verify_checker(state)
     feedback = item["feedback"]
     folder = directory / feedback["id"]
     folder.mkdir(exist_ok=True)
@@ -183,6 +202,8 @@ def reject(state, item, directory, kind, detail, files=()):
                "kind": kind, "detail": detail, "files": list(files)}
     payload["id"] = str(uuid.uuid5(uuid.NAMESPACE_URL,
         json.dumps([state["repository"], state["started_at"], payload], sort_keys=True)))
+    repair = shlex.quote(item["route"].get("repair_cwd", ""))
+    checker = shlex.quote(str(ROOT / "scripts/validate"))
     payload["body"] = (
         f"用户授权的PR合并队列{'历史演练' if state.get('rehearsal') else '修复'}，"
         f"仓库{state['repository']}，PR#{item['number']}。\n"
@@ -192,7 +213,12 @@ def reject(state, item, directory, kind, detail, files=()):
         "不要修改协调者工作树、真实main、正式插件或其他作者分支。"
         "先确认接单，再复现、修复、提交，完成独立审阅及当前源码交付检查。"
         "返回新提交、审阅与验证报告路径；不要降低原测试或覆盖首次失败证据。"
-        f"\n反馈编号：{payload['id']}")
+        f"\n固定检查器：{ROOT}，commit {state['checker']['commit']}。使用它检查修复树，不使用历史树的旧入口：\n"
+        f'{checker} --scope pr --project {repair} --base {item["base"]} '
+        f'--expect-head "$(git -C {repair} rev-parse HEAD)" --output "$(mktemp -d)/pr"\n'
+        '审阅JSON：{"head":"最终完整SHA","passed":true,"reviewer":"独立审阅会话ID"}，'
+        "reviewer必须不同于原作者会话。验证报告目录和审阅JSON均写在源码树之外。\n"
+        f"补充修复要求：{item.get('repair_instructions', '无')}\n反馈编号：{payload['id']}")
     payload.update(created_at=now(), notification="pending")
     previous = next((entry for entry in item["attempts"] if entry.get("id") == payload["id"]), None)
     if previous:
@@ -210,6 +236,7 @@ def commit(project, message):
 
 
 def attempt(state, directory):
+    verify_checker(state)
     project = Path(state["project"])
     clean(project, state["prefix"])
     for item in state["items"]:
@@ -219,14 +246,24 @@ def attempt(state, directory):
         if any(other["status"] not in ("accepted", "merged") for other in dependencies):
             item["status"] = "blocked-dependency"
             continue
+        prefix = state["prefix"]
+        preview = subprocess.run([
+            "git", "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", prefix, item["head"],
+        ], cwd=project, text=True, capture_output=True)
+        if preview.returncode not in (0, 1):
+            raise RuntimeError("Git merge preview failed: " + preview.stderr)
+        files = list(filter(None, preview.stdout.split("\0")[1:])) if preview.returncode else []
+        blockers = ["Mechanical conflicts: " + ", ".join(files)] if preview.returncode else []
+        kind = "merge" if preview.returncode else "delivery"
+        if subprocess.run(["git", "merge-base", "--is-ancestor", item["head"], prefix], cwd=project).returncode == 0:
+            blockers.append("PR is already in the prefix; no new integration occurred")
+            kind = "source"
         try:
             verify_entry(state, item)
         except Exception as error:
-            reject(state, item, directory, "delivery", str(error))
-            continue
-        prefix = state["prefix"]
-        if subprocess.run(["git", "merge-base", "--is-ancestor", item["head"], prefix], cwd=project).returncode == 0:
-            reject(state, item, directory, "source", "PR is already in the prefix; no new integration occurred")
+            blockers.append("Delivery: " + str(error))
+        if blockers:
+            reject(state, item, directory, kind, "\n".join(blockers), files)
             continue
         merged = subprocess.run(["git", "merge", "--no-ff", "--no-commit", item["head"]],
                                 cwd=project, text=True, capture_output=True)
@@ -254,10 +291,15 @@ def attempt(state, directory):
 
 
 def requeue(state, incoming, directory):
+    verify_checker(state)
     item = next(entry for entry in state["items"] if entry["number"] == incoming["number"])
+    if incoming.get("base", item["base"]) != item["base"]:
+        raise ValueError("Repair cannot change its fixed comparison base")
     source = git(state["project"], "rev-parse", f"{incoming['head']}^{{commit}}")
     candidate_failure = item.get("feedback", {}).get("kind") == "candidate"
-    if (item["status"] != "needs-fix" and not candidate_failure) or source == item["head"]:
+    evidence_only = item.get("feedback", {}).get("kind") == "delivery"
+    if ((item["status"] != "needs-fix" and not candidate_failure)
+            or (source == item["head"] and not evidence_only)):
         raise ValueError("Requeue requires a changed source for a rejected PR")
     subprocess.run(["git", "merge-base", "--is-ancestor", item["head"], source],
                    cwd=state["project"], check=True)
@@ -266,15 +308,78 @@ def requeue(state, incoming, directory):
         raise ValueError("The original author has not acknowledged this repair request")
     replacement = {**item, **{key: incoming[key] for key in ("head", "review", "validation")}}
     replacement["head"] = source
-    replacement["base"] = git(state["project"], "rev-parse", f"{incoming.get('base', item['base'])}^{{commit}}")
+    replacement["base"] = item["base"]
     verify_entry(state, replacement)
     item.update(replacement, status="submitted")
     item.pop("feedback", None)
+    state.update(batch_delivered=False, all_items_merged=False)
     save(directory / "queue.json", state)
 
 
+def validate_freeze(project, prefix, candidate, target=None):
+    if git(project, "rev-list", "--parents", "-n", "1", candidate).split() != [candidate, prefix]:
+        raise ValueError("Freeze must be one release-only commit directly after the reviewed prefix")
+    paths = set(git(project, "diff", "--name-only", prefix, candidate).splitlines())
+    required = {"Cargo.toml", "Cargo.lock", "project-rules.json"}
+    plugins = set(git(project, "ls-tree", "-r", "--name-only", prefix, "--",
+                      "plugin.json", ".codex-plugin/plugin.json").splitlines())
+    required |= plugins
+    target_path = "context/integration-target.json"
+    optional = {target_path} if target is not None else set()
+    if len(plugins) not in (0, 2) or not required <= paths or not paths <= required | optional:
+        raise ValueError("Frozen candidate changed files outside release version manifests")
+    if target is not None and json.loads(git(project, "show", f"{candidate}:{target_path}")) != target:
+        raise ValueError("Rehearsal target differs from the fixed queue reference and integration base")
+    for line in git(project, "diff", "--raw", prefix, candidate).splitlines():
+        fields = line.split()
+        added_target = target is not None and line.split("\t", 1)[1] == target_path and (
+            fields[0] == ":000000" and fields[1] == "100644")
+        if fields[0][1:] != fields[1] and not added_target:
+            raise ValueError("Freeze cannot change file modes")
+    before = tomllib.loads(git(project, "show", f"{prefix}:Cargo.toml"))
+    after = tomllib.loads(git(project, "show", f"{candidate}:Cargo.toml"))
+    old = before["package"]["version"]
+    name = before["package"]["name"]
+    rules = json.loads(git(project, "show", f"{prefix}:project-rules.json"))
+    if rules["versioning"].get("release_only") is not True:
+        raise ValueError("Freeze needs the existing release-only version policy")
+    major, minor, patch = map(int, old.split("."))
+    if rules["versioning"].get("rollover_after"):
+        if minor >= 10 or patch >= 100:
+            raise ValueError("Release version is outside the configured rollover range")
+        major, minor, patch = (major + int(minor == 9), (minor + 1) % 10, 0) if patch == 99 else (
+            major, minor, patch + 1)
+    else:
+        patch += 1
+    version = f"{major}.{minor}.{patch}"
+    before["package"]["version"] = version
+    if before != after:
+        raise ValueError("Cargo manifest changed beyond the next release version")
+    lock = tomllib.loads(git(project, "show", f"{prefix}:Cargo.lock"))
+    local = [package for package in lock["package"] if package["name"] == name and "source" not in package]
+    if len(local) != 1 or local[0]["version"] != old:
+        raise ValueError("Freeze needs exactly one matching local lockfile package")
+    local[0]["version"] = version
+    if lock != tomllib.loads(git(project, "show", f"{candidate}:Cargo.lock")):
+        raise ValueError("Lockfile changed beyond the local release version")
+    rules["versioning"]["feature_releases"].append({
+        "after_commit": prefix, "from": old, "to": version, "decision": "冻结发布候选",
+    })
+    if rules != json.loads(git(project, "show", f"{candidate}:project-rules.json")):
+        raise ValueError("Freeze changed policy beyond its exact release record")
+    for path in paths & plugins:
+        manifest = json.loads(git(project, "show", f"{prefix}:{path}"))
+        if manifest["version"] != old:
+            raise ValueError("Plugin version differs from the reviewed prefix")
+        manifest["version"] = version
+        if manifest != json.loads(git(project, "show", f"{candidate}:{path}")):
+            raise ValueError("Plugin manifest changed beyond the release version")
+    return version
+
+
 def finish(state, directory):
-    reference = state.get("main_reference", "refs/heads/main")
+    verify_checker(state)
+    reference = state.get("reference", "refs/heads/main")
     if ((state.get("rehearsal") and not re.fullmatch(
             r"refs/heads/codex/rehearsal-main-[A-Za-z0-9._-]+", reference))
             or (not state.get("rehearsal") and reference != "refs/heads/main")
@@ -283,16 +388,24 @@ def finish(state, directory):
     project = Path(state["project"])
     candidate = git(project, "rev-parse", "HEAD")
     clean(project, candidate)
-    subprocess.run(["git", "merge-base", "--is-ancestor", state["prefix"], candidate], cwd=project, check=True)
+    frozen = state.get("frozen_candidate", {})
+    if frozen.get("status") == "failed" and state["prefix"] == frozen["candidate"]:
+        raise ValueError("Failed candidate needs an author repair merged before freezing a new version")
+    prefix = frozen["reviewed_prefix"] if frozen.get("candidate") == candidate else state["prefix"]
+    target = {"reference": reference, "base": state["base"]} if state.get("rehearsal") else None
+    version = validate_freeze(project, prefix, candidate, target)
+    state["frozen_candidate"] = {
+        "candidate": candidate, "reviewed_prefix": prefix, "version": version, "status": "pending",
+    }
     state["prefix"] = candidate
     save(directory / "queue.json", state)
     output = directory / f"candidate-{candidate}"
-    command = [str(project / "scripts/integrate"), "--output", str(output)]
+    command = [sys.executable, str(project / "scripts/integrate_candidate.py"), "--output", str(output)]
     command += ["--resume"] if output.exists() else [
         "--base", state["base"], "--repository", state["repository"], "--started-at", state["started_at"],
     ]
     if reference != "refs/heads/main":
-        command += ["--main-reference", reference]
+        command += ["--reference", reference]
     try:
         subprocess.run(command, cwd=project, check=True)
     except subprocess.CalledProcessError:
@@ -301,6 +414,7 @@ def finish(state, directory):
         state["events"].append({"at": now(), "candidate_failed": candidate, "report": str(report)})
         error = details.get("last_error", {}).get("detail", "集成命令未完成")
         if re.fullmatch(r"Candidate run \d+ finished: failure", error):
+            state["frozen_candidate"]["status"] = "failed"
             for item in state["items"]:
                 if item["status"] == "accepted":
                     reject(state, item, directory, "candidate",
@@ -312,7 +426,10 @@ def finish(state, directory):
     for item in state["items"]:
         if item["status"] == "accepted":
             item["status"] = "merged"
-    state.update(base=candidate, prefix=candidate, delivered_at=now())
+    state.setdefault("initial_base", state["base"])
+    state["frozen_candidate"]["status"] = "delivered"
+    state.update(base=candidate, prefix=candidate, delivered_at=now(), batch_delivered=True,
+                 all_items_merged=all(item["status"] == "merged" for item in state["items"]))
     save(directory / "queue.json", state)
 
 
@@ -330,6 +447,7 @@ def main():
         with (directory / "queue.lock").open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             state = json.loads((directory / "queue.json").read_text())
+            verify_checker(state)
             if arguments.command == "attempt":
                 attempt(state, directory)
             elif arguments.command == "notify":

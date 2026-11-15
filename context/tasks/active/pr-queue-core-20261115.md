@@ -15,3 +15,8 @@ status: ready_for_coordinator
 评论与 transport receipt 路径，必须原会话 ACK 后才允许新来源重新入队。
 历史演练仅允许 refs/heads/codex/rehearsal-main-*，真实队列只允许 refs/heads/main。
 针对性验证：python3 -m unittest acceptance.test_pr_queue。测试绑定由协调者维护。
+
+安全收口：重新入队不得改变来源比较基线；检查器完整身份与干净状态在每操作核验。
+冻结仅接受紧接已审阅前缀的单个版本提交，逐字段检查 Cargo、插件及发布规则；
+演练配置必须精确匹配固定目标和集成基线。失败冻结保留审阅前缀，作者修复后
+机械合并、再次升版并使用新候选目录；真实 Git 回归已覆盖该闭环。
