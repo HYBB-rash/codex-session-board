@@ -2,12 +2,13 @@
   "schema_version": 1,
   "updated_at": "2026-11-15",
   "current_phase": {
-    "id": "pr-delivery-checks-20261115",
-    "status": "completed",
+    "id": "pr-delivery-rollout-20261115",
+    "status": "active",
     "as_of": "2026-11-15",
-    "summary": "PR交付前检查已在当前工作树实现、提交并演练：最终Mac完整检查13分46秒，724项及实际包六场景通过。按风险将实际包提前到长回归前，原始PR启动故障2分20秒拒绝，侧栏、全目标Clippy及两处时限边界分别复现。多版本演练含失败和顺序调整60分32秒；尚未进入远端主线，未操作日用客户端。"
+    "summary": "用户授权将PR交付流程发布主线，再用PR8至11实测。已固定当前主线d4b40bb与四项PR头，先发布流程再验证最终组合；保留全部失败、耗时和独立真实客户端验收边界。"
   },
   "active_tasks": [
+    "context/tasks/active/pr-delivery-rollout-20261115.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",
