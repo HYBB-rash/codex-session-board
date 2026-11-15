@@ -2,7 +2,7 @@
 
 owner: 01a1da86-d345-7f73-aa75-70fa97d46d41
 execution_mode: isolated_write
-allowed_write_set: scripts/check-light-ui.mjs, scripts/check-light-ui-open-wait.mjs, context/tasks/active/pr12-queue-test-repair-20261116.md
+allowed_write_set: scripts/check-light-ui.mjs, scripts/check-light-ui-open-wait.mjs, tests/ui_layout.rs, acceptance/bindings.json, context/tasks/active/pr12-queue-test-repair-20261116.md
 base_commit: 4e2a26151fc45598274725c463017a26fd0f9773
 worktree_path: /Users/hongyong/.codex/worktrees/pr-queue-author12-20261116/codex-session-board
 coordinator: 01a1d38b-1ef8-7392-ba78-caa7935c5ab4
@@ -33,3 +33,11 @@ baseline-delay.stderr.log、baseline.patch：原脚本第 96 行完整 writes �
 同一最终夹具再次在未改原脚本上确定性失败，证据为 baseline-controlled.json
 及对应日志、补丁，退出码 1，耗时 1.201 秒。
 后续冻结头、逐项耗时、退出码与结论统一写入源码外 result.json，不自签独立审阅。
+
+01fee032 的独立审阅指出新夹具没有常规调用者，该头暂未通过。
+用户追加授权修改 tests/ui_layout.rs 和 acceptance/bindings.json 中必要内容。
+新增 Rust 测试直接调用双阶段夹具并检查成功报告、请求与响应阶段等待结果，
+绑定至 NAV-001 的 common 列表，覆盖 macOS 与 Linux 的常规验收发现路径。
+原脚本 80 项检查、原 Rust 测试及其全部断言不改。新提交立即更新 ready.json，
+随后以 ui_layout 整个常规 Rust 测试入口验证调用，不以手工 Node 单脚本代替。
+基线失败证据与已审阅的等待修复、独立夹具保留，最终组合 CI 仍由协调者执行。

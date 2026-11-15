@@ -85,6 +85,24 @@ fn light_ui_refresh_health_and_catalog_preserve_interaction() {
 }
 
 #[test]
+fn light_ui_open_waits_for_request_and_response_completion() {
+    let regression = Command::new("node")
+        .arg("scripts/check-light-ui-open-wait.mjs")
+        .output()
+        .unwrap();
+    assert!(
+        regression.status.success(),
+        "打开会话双阶段等待回归失败：\n{}\n{}",
+        String::from_utf8_lossy(&regression.stdout),
+        String::from_utf8_lossy(&regression.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&regression.stdout).unwrap();
+    assert_eq!(report["passed"], true);
+    assert_eq!(report["requestBlockedWait"], true);
+    assert_eq!(report["responseBlockedWait"], true);
+}
+
+#[test]
 fn transfer_feedback_waits_for_receipts_and_preserves_interaction() {
     let output = tempfile::tempdir().unwrap();
     let result = Command::new("node")

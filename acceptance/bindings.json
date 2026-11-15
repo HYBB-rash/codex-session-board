@@ -1145,6 +1145,7 @@
         "test::board_io::real_http_pwa_manifest_and_assets_are_local_and_uncached",
         "test::board_io::open_and_new_survive_removed_service_working_directory",
         "test::board_io::open_reports_exit_status_and_unavailable_stable_directory",
+        "test::ui_layout::light_ui_open_waits_for_request_and_response_completion",
         "test::singleton_platform::disabled_protection_preserves_navigation",
         "test::singleton_platform::singleton_protection_defaults_off"
       ],
