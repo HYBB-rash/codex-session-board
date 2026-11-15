@@ -26,6 +26,7 @@ mod pipe;
 pub(crate) mod multiplex;
 pub(crate) mod runtime;
 pub mod performance;
+pub mod section_probe;
 pub mod authority;
 
 #[cfg(test)]
@@ -60,6 +61,7 @@ pub enum Role {
     NativeReader,
     RemoteObserver,
     DraftReader,
+    CalibrationWriter,
     TitleWriter,
     ArchiveWriter,
 }
@@ -77,6 +79,9 @@ impl Role {
                 "initialize" | "thread/list" | "thread/turns/list" | "threadSection/list"
             ),
             Self::DraftReader => matches!(method, "initialize" | "thread/read"),
+            Self::CalibrationWriter => matches!(method, "initialize" | "thread/start"
+                | "thread/read" | "thread/name/set" | "thread/archive"
+                | "thread/list" | "threadSection/list" | "thread/turns/list"),
             Self::TitleWriter => matches!(method, "initialize" | "thread/read" | "thread/name/set"),
             Self::ArchiveWriter => matches!(
                 method,
@@ -868,6 +873,20 @@ mod tests {
             server.read(&mut [0; 1]).unwrap_err().kind(),
             io::ErrorKind::WouldBlock
         );
+        Ok(())
+    }
+
+    #[test]
+    fn calibration_connections_can_manage_empty_probes_but_cannot_run_models() -> Result<()> {
+        for method in ["initialize", "thread/start", "thread/read", "thread/name/set",
+            "thread/archive", "thread/list", "threadSection/list", "thread/turns/list"] {
+            Role::CalibrationWriter.check(method)?;
+        }
+        for method in ["turn/start", "turn/resume", "send_message_to_thread",
+            "thread/resume", "thread/fork", "thread/unarchive", "threadSection/create",
+            "threadSection/moveThread", "move_thread_to_sidebar_section"] {
+            assert!(Role::CalibrationWriter.check(method).is_err());
+        }
         Ok(())
     }
 

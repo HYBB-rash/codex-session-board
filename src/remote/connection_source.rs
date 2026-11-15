@@ -144,6 +144,11 @@ fn publish(path: &Path, record: &Record, replace: bool) -> Result<()> {
 }
 
 impl Binding {
+    pub(crate) fn mapping_identity(&self) -> Result<serde_json::Value> {
+        self.require_confirmed()?;
+        Ok(serde_json::to_value(self.record()?)?)
+    }
+
     pub(crate) fn existing(host: &Host, settings: &config::Config) -> Result<Self> {
         let path = host.directory(settings).join("source.json");
         let record = load(&path)?;
