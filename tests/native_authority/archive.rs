@@ -1,5 +1,6 @@
 use super::transport::{BlockingMove, Server, Surface, body, section_id, wait_for_release};
 use super::*;
+use anyhow::Context;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::os::unix::{
@@ -118,6 +119,10 @@ fn engine_connection(
             Err(error) => json!({"id":request["id"],
                 "error":{"code":-32601,"message":error.to_string()}}),
         };
+        if request["method"] == "thread/archive"
+            && std::mem::take(&mut surface.lock().unwrap().lose_archive_receipt) {
+            return Ok(());
+        }
         socket.send(tungstenite::Message::Text(
             response.to_string().into(),
         ))?;
@@ -149,13 +154,21 @@ fn engine_reply(
             json!({"data":values})
         }
         "threadSection/list" => surface.catalog(),
-        "thread/read" => json!({"thread":{"id":identifier,"status":{"type":surface.thread_status.as_deref().unwrap_or("idle")},
-            "section":surface.backend_section(identifier)}}),
+        "thread/read" => {
+            let mut thread = surface.probe_threads.get(identifier).cloned().unwrap_or(
+                json!({"id":identifier,"status":{"type":surface.thread_status.as_deref().unwrap_or("idle")}}));
+            thread["section"] = surface.backend_section(identifier);
+            json!({"thread":thread})
+        }
+        "thread/start" | "thread/name/set" => probe_reply(request,surface)?,
         "thread/turns/list" => {
             if request["params"]["itemsView"] != "summary" {
                 assert_eq!(request["params"]["itemsView"], "full");
             }
-            json!({"data":surface.latest_turn.iter().cloned().collect::<Vec<_>>()})
+            let turns = surface.probe_threads.get(identifier)
+                .map(|thread| thread["turns"].as_array().unwrap().clone())
+                .unwrap_or_else(|| surface.latest_turn.iter().cloned().collect::<Vec<_>>());
+            json!({"data":turns})
         }
         "thread/archive" => {
             archived.lock().unwrap().insert(identifier.into());
@@ -163,6 +176,22 @@ fn engine_reply(
         }
         method => anyhow::bail!("unexpected engine method {method}"),
     })
+}
+
+fn probe_reply(request: &Value, surface: &mut Surface) -> Result<Value> {
+    if request["method"] == "thread/start" {
+        let id = uuid::Uuid::new_v4().to_string();
+        let thread = json!({"id":id,"name":null,"cwd":request["params"]["cwd"],
+            "historyMode":request["params"]["historyMode"],"turns":[],"status":{"type":"notLoaded"}});
+        surface.slots.insert(id.clone(),"unsectioned".into());
+        surface.probe_threads.insert(id,thread.clone());
+        Ok(json!({"thread":thread}))
+    } else {
+        let identifier = request["params"]["threadId"].as_str().context("missing probe")?;
+        surface.probe_threads.get_mut(identifier).context("unknown probe")?["name"] =
+            request["params"]["name"].clone();
+        Ok(json!({}))
+    }
 }
 
 #[test]

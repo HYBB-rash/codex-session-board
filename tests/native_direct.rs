@@ -241,15 +241,21 @@ fn delayed_mapping(config: &Config, published: Value) -> Result<DelayedMapping> 
 fn remote_first_move_waits_for_the_real_mapping_without_repeating_the_write() -> Result<()> {
     let (_directory, mut config, published) = setup()?;
     config.host_id = "mac".into();
+    let remote_section = json!({"id":"backend-remote","name":"待审阅","appearance":null});
+    let mut initial = Reader {
+        replies: [json!({"data":[remote_section.clone()],"nextCursor":null})].into(),
+        calls: vec![],
+    };
+    let catalog = direct::Catalog::load(&mut initial, &config)?;
     let mut reader = delayed_mapping(&config, published)?;
+    reader.reader.replies = [
+        json!({"thread":{"id":THREAD,"section":null}}),
+        json!({"thread":{"id":THREAD,"section":null}}),
+        json!({"thread":{"id":THREAD,"section":remote_section}}),
+    ].into();
     let mut writer = Writer::default();
-    let observed = direct::move_checked(
-        &mut reader,
-        &mut writer,
-        &config,
-        THREAD,
-        "unsectioned",
-        Some("review"),
+    let observed = catalog.move_checked(
+        &mut reader, &mut writer, &config, THREAD, "unsectioned", Some("review"),
     )?;
     assert_eq!(observed.state, "review");
     assert_eq!(observed.version, "logical-review");
@@ -264,12 +270,30 @@ fn remote_first_move_waits_for_the_real_mapping_without_repeating_the_write() ->
 }
 
 #[test]
+fn missing_remote_mapping_never_guesses_the_target_or_writes_business_threads() -> Result<()> {
+    let (_directory, mut config, published) = setup()?;
+    config.host_id = "mac".into();
+    let mut reader = delayed_mapping(&config, published)?;
+    let mut writer = Writer::default();
+    assert!(direct::move_checked(
+        &mut reader,
+        &mut writer,
+        &config,
+        THREAD,
+        "unsectioned",
+        Some("review"),
+    ).is_err());
+    assert_eq!(reader.reads, 1);
+    assert!(writer.calls.is_empty());
+    Ok(())
+}
+
+#[test]
 fn expired_native_confirmation_does_not_replay_or_accept_a_different_position() -> Result<()> {
     let (_directory, mut config, _) = setup()?;
     config.rpc_timeout_seconds = 0;
     let mut reader = reader(Value::Null);
-    let repeated = reader.replies.clone();
-    reader.replies.extend(repeated);
+    reader.replies.push_back(json!({"thread":{"id":THREAD,"section":null}}));
     let mut writer = Writer::default();
     assert!(
         direct::move_checked(
@@ -288,9 +312,31 @@ fn expired_native_confirmation_does_not_replay_or_accept_a_different_position() 
         [
             "threadSection/list",
             "thread/read",
-            "threadSection/list",
             "thread/read"
         ]
     );
+    Ok(())
+}
+
+#[test]
+fn verified_catalog_confirms_a_move_without_reopening_the_desktop_state_file() -> Result<()> {
+    let (_directory, config, _) = setup()?;
+    struct WriterWithDelayedPersistence(std::path::PathBuf, usize);
+    impl Rpc for WriterWithDelayedPersistence {
+        fn call(&mut self, method: &str, _: Value) -> Result<Value> {
+            assert_eq!(method, "move_thread_to_sidebar_section");
+            self.1 += 1;
+            std::fs::remove_file(&self.0)?;
+            Ok(json!({}))
+        }
+    }
+    let mut reader = reader(Value::Null);
+    reader.replies.push_back(json!({"thread":{"id":THREAD,"section":section()}}));
+    let mut writer = WriterWithDelayedPersistence(config.sidebar_state_file.clone(), 0);
+    let observed = direct::move_checked(&mut reader, &mut writer, &config,
+        THREAD, "unsectioned", Some("review"))?;
+    assert_eq!(observed.version, "logical-review");
+    assert_eq!(writer.1, 1);
+    assert_eq!(reader.calls, ["threadSection/list", "thread/read", "thread/read"]);
     Ok(())
 }

@@ -2,6 +2,13 @@ use super::remote::remote_value;
 use super::*;
 
 impl App {
+    fn calibration_health(&self, host: &str) -> Result<Value> {
+        Ok(self.mapping_store.native_mapping(host)?.and_then(|record| record.probe)
+            .map(|probe| json!({"requestId":probe.request,
+                "resetAllowed":probe.thread.is_none(),"cleanupPending":probe.thread.is_some()}))
+            .unwrap_or(Value::Null))
+    }
+
     pub(super) fn append_managed_host(
         &self,
         remote: &App,
@@ -25,6 +32,7 @@ impl App {
             .map(|binding| binding.require_confirmed())
             .transpose();
         let writable = remote.enabled.load(Ordering::SeqCst) && checked.is_ok();
+        health["nativeCalibration"] = self.calibration_health(host)?;
         health["writeError"] = json!(checked.err().map(|error| error.to_string()));
         health["catalog"] = view.health;
         health["connected"] = json!(writable);
@@ -42,7 +50,8 @@ impl App {
             if let Some(project) = project {
                 row["projectId"] = project;
             }
-            row["readOnly"] = json!(!writable || read_only);
+            row["readOnly"] = json!(!writable || read_only
+                || remote.config.native_sections && !row["sectionVersion"].is_string());
             sessions.retain(|previous| previous["id"] != row["id"]);
             sessions.push(row);
         }

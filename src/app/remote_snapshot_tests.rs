@@ -77,6 +77,14 @@ fn published_chat_uses_confirmed_position_and_existing_missing_record_filter() -
         &[json!({"id":thread,"name":"已保存的空会话","updatedAt":1})],
         true,
     )?;
+    let mut unconfirmed = Vec::new();
+    root.append_managed_host(&remote, &mut unconfirmed, &[], &mut Vec::new())?;
+    assert_eq!(unconfirmed.len(), 1);
+    assert_eq!(unconfirmed[0]["catalogCurrent"], true);
+    assert_eq!(unconfirmed[0]["sectionVersion"], Value::Null);
+    assert_eq!(unconfirmed[0]["readOnly"], true);
+    root.annotate_connections(&mut unconfirmed);
+    assert_eq!(unconfirmed[0]["canArchive"], false);
     remote.store.cache_native(
         &thread,
         &Observation {

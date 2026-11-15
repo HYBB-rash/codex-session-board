@@ -2,7 +2,7 @@
 
 - owner: root
 - execution_mode: isolated_write
-- allowed_write_set: scripts/check-host-filter.mjs, acceptance/bindings.json, src/app.rs, src/rpc.rs, src/rpc/authority/tests.rs, context/tasks/active/pr11-historical-delivery-712e352c-20261116.md
+- allowed_write_set: scripts/check-host-filter.mjs, acceptance/bindings.json, src/app.rs, src/rpc.rs, src/rpc/authority/tests.rs, src/app/remote_snapshot.rs, src/app/remote_snapshot_tests.rs, src/native_sections/direct.rs, tests/native_authority/archive.rs, tests/native_direct.rs, context/tasks/active/pr11-historical-delivery-712e352c-20261116.md
 - base_commit: 0a71260f2c1e8e6ecfa06d0f9689e606318f95a3
 - worktree_path: /Users/hongyong/.codex/worktrees/pr-queue-author11-20261115/codex-session-board
 - coordinator: historical-four-pr-queue
@@ -69,3 +69,25 @@ RPC 自动合并保留 CatalogReader 读限制、来源绑定和 DraftReader 只
 使用规范临时目录重跑全部 12 个失败项及连接、目录、草稿回归，共 36/36 通过。
 该结果仅覆盖局部组合回归，不替代 PR9 衔接后的最终完整验证。
 两侧测试绑定并集保留 830 项、全部 31 条需求，无删减旧测试绑定。
+
+## 衔接固定 PR9
+
+新授权仅合入 1810acd3a0a53cee7be3bf25af4a31ad5b1339bc；
+它包含固定 PR8 和 PR10，PR8 已由协调者确认完整门禁通过（759.295 秒）。
+PR9 自己的审阅与完整验证仍待协调者放行，不能由本作者代签。
+四处合并冲突的首次日志为源码外 merge-pr9-1810acd3-first.log。
+
+远程快照同时保留目录项目归属、目录只读和原生位置尚未确认时的只读约束；
+补强原有回归，证明已发现但尚无 sectionVersion 的行也禁止修改和归档。
+保留缓存存在性与目录新鲜度的全部断言，不删除任何旧用例。
+分区逻辑目录复用 PR9 mapping::seed，它保留拥有所有权的 atoms 变量后才借用账号项；
+继续支持 PR11 合并当前账号持久化 atoms 的行为，不恢复仅 owner 的旧路径。
+归档 fixture 同时保留未知方法 JSON-RPC 错误回执和归档成功但回执丢失的模拟。
+错误后台拒绝测试扩展覆盖 CalibrationWriter，保留 CatalogReader 与 DraftReader；
+所有八种角色继续经 PR8 私有 ConnectionRequest 边界构造业务连接。
+最终源码提交并写 ready.json 后，再使用固定 checker / base 对该确切头运行完整验证。
+
+绑定并集审计发现 PR9 改名替换了旧的首次远程移动用例，故恢复原测试名及绑定。
+新 fixture 先校验真实映射目录再模拟延迟位置读回，使用 PR9 校验后的 Catalog；
+保留旧的状态、位置、读取三次、仅写一次及精确请求体全部断言，
+同时保留 PR9 新增的未校准禁止写入和无需重读客户端状态文件两项用例。

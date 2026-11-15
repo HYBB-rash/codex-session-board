@@ -4,6 +4,11 @@ use serde_json::{Map, Value, json};
 use std::collections::{HashMap, HashSet};
 
 pub mod direct;
+pub(crate) mod calibration;
+pub(crate) mod mapping;
+
+#[cfg(test)]
+mod mapping_owned_tests;
 
 fn client_atoms(state: &Value) -> Result<Map<String, Value>> {
     let owner_atoms = if let Some(owner) = state.get("electron-renderer-content-owner") {
