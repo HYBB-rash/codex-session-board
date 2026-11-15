@@ -47,10 +47,10 @@ impl Progress {
     }
 
     fn page(&self, app: &App, reader: &mut dyn Rpc) -> Result<Value> {
-        let result = reader.call(
-            "thread/list",
-            rpc::thread_list_params(app.config.page_size, json!(self.cursor)),
-        );
+        let mut params = rpc::thread_list_params(app.config.page_size, json!(self.cursor));
+        params["sourceKinds"] = json!([]);
+        params["currentAccountOnly"] = json!(false);
+        let result = reader.call("thread/list", params);
         if let Err(error) = &result
             && self.cursor.is_some()
             && error

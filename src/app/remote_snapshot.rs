@@ -14,14 +14,12 @@ impl App {
         remote: &App,
         sessions: &mut Vec<Value>,
         legacy: &[Value],
+        projects: &mut Vec<Value>,
     ) -> Result<Value> {
         let host = &remote.config.host_id;
-        let rows = remote.store.sessions()?;
+        let view = crate::catalog::view::read(remote, &self.store.catalog_drafts(host)?)?;
+        let rows = view.rows;
         let known = remote.store.saved_session_ids()?;
-        let active = remote
-            .active_sessions
-            .lock()
-            .map_err(|_| anyhow::anyhow!("会话发现锁已损坏"))?;
         let mut health = remote
             .health
             .lock()
@@ -36,19 +34,23 @@ impl App {
         let writable = remote.enabled.load(Ordering::SeqCst) && checked.is_ok();
         health["nativeCalibration"] = self.calibration_health(host)?;
         health["writeError"] = json!(checked.err().map(|error| error.to_string()));
+        health["catalog"] = view.health;
+        health["connected"] = json!(writable);
+        for mut project in view.projects {
+            project["hostLabel"] = health["hostLabel"].clone();
+            projects.push(project);
+        }
         sessions.retain(|row| {
             row["hostId"] != *host || !known.contains(row["threadId"].as_str().unwrap_or(""))
         });
         for row in rows {
-            if active
-                .as_ref()
-                .is_some_and(|active| !active.contains(row["id"].as_str().unwrap_or("")))
-                && row["sectionVersion"].is_string()
-            {
-                continue;
-            }
+            let project = row.get("catalogProjectId").cloned();
+            let read_only = row["readOnly"] == true;
             let mut row = remote_value(host, &health["hostLabel"], row, legacy)?;
-            row["readOnly"] = json!(!writable
+            if let Some(project) = project {
+                row["projectId"] = project;
+            }
+            row["readOnly"] = json!(!writable || read_only
                 || remote.config.native_sections && !row["sectionVersion"].is_string());
             sessions.retain(|previous| previous["id"] != row["id"]);
             sessions.push(row);

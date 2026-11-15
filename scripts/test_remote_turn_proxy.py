@@ -38,6 +38,20 @@ def wire(payload, opcode=1, final=True):
 
 
 class RemoteSummaryTests(unittest.TestCase):
+    def test_catalog_mode_preserves_json_payloads_including_turn_shaped_metadata(self):
+        header = b"HTTP/1.1 101 Switching Protocols\r\n\r\n"
+        for value in (
+            message(),
+            {"id": 1, "result": {"data": [{"id": "project", "metadata": {"items": [1]}}]}},
+            {"id": 2, "result": {"dataBase64": "a" * 1800000}},
+        ):
+            payload = json.dumps(value).encode()
+            source = io.BytesIO(header + wire(payload[:17], final=False)
+                                + wire(payload[17:], 0) + wire(b"", 8))
+            output = io.BytesIO()
+            proxy.relay(source, output, compact_turns=False)
+            self.assertEqual(output.getvalue(), header + wire(payload) + wire(b"", 8))
+
     def test_preserves_all_inputs_final_evidence_and_each_execution_status(self):
         for status in ("inProgress", "completed", "failed", "interrupted"):
             original = message(status)

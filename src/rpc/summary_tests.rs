@@ -11,7 +11,8 @@ fn remote_summary_projection_and_wire_performance_gate() -> Result<()> {
 
 #[test]
 fn observer_uses_remote_summary_and_archive_writer_keeps_full_input_verification() -> Result<()> {
-    for (role, compact) in [(Role::RemoteObserver, true), (Role::ArchiveWriter, false)] {
+    for (role, compact) in [(Role::RemoteObserver, true), (Role::CatalogReader, true),
+        (Role::ArchiveWriter, false)] {
         let fixture = identity_fixture::Fixture::new()?;
         let app = fixture.app()?;
         let _connection = app.connection(Duration::from_secs(3), role)?;

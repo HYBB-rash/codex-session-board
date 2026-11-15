@@ -2,15 +2,50 @@ use super::*;
 use crate::store::remote::identity;
 use std::collections::BTreeMap;
 
+#[cfg(test)]
+#[path = "remote_catalog_tests.rs"]
+mod catalog_tests;
+
 impl App {
     pub(crate) fn route_remote(&self, path: &str, body: &Value) -> Result<Value> {
         let identifier = body["id"].as_str().context("缺少会话 ID")?;
         let (host, thread) = remote_identity(identifier)?;
         let remote = self.remote_app(&host)?;
+        let drafts = self.store.catalog_drafts(&host)?;
+        let rows = crate::catalog::view::read(&remote, &drafts)?.rows;
+        ensure!(
+            rows.iter()
+                .any(|row| row["id"] == thread && row["readOnly"] != true),
+            "会话只有目录或历史缓存记录，当前不可修改"
+        );
         remote.store.note(&thread)?;
         let mut request = body.clone();
         request["id"] = json!(thread);
         remote.request(path, Some(&request))
+    }
+
+    pub(super) fn refresh_hosts(&self, body: &Value) -> Result<Value> {
+        ensure!(body.is_object(), "请求格式无效");
+        let host = body
+            .get("hostId")
+            .map(|host| host.as_str().context("主机 ID 必须是文本"))
+            .transpose()?;
+        if host.is_none_or(|host| host == "local") {
+            self.refresh.store(true, Ordering::Relaxed);
+        }
+        if host.is_none() {
+            self.remote_refresh.store(true, Ordering::Relaxed);
+        }
+        let mut scheduled = Vec::new();
+        for remote in self.remote_instances()? {
+            if host.is_none_or(|host| host == remote.config.host_id)
+                && remote.enabled.load(Ordering::SeqCst)
+            {
+                remote.catalog_refresh.store(true, Ordering::SeqCst);
+                scheduled.push(remote.config.host_id.clone());
+            }
+        }
+        Ok(json!({"ok":true,"catalogScheduled":scheduled}))
     }
 
     pub(crate) fn append_remote(
@@ -18,13 +53,16 @@ impl App {
         sessions: &mut Vec<Value>,
         catalog: &mut Value,
     ) -> Result<()> {
-        let projects = self.store.remote_projects()?;
+        let mut projects = self.store.remote_projects()?;
+        for project in &mut projects {
+            project["origin"] = json!("clientRemote");
+        }
+        let mut remote = self.store.remote_sessions()?;
+        self.append_managed_remote(&mut remote, &mut projects)?;
         let registered: HashSet<_> = projects
             .iter()
             .map(|project| project["id"].clone().to_string())
             .collect();
-        let mut remote = self.store.remote_sessions()?;
-        self.append_managed_remote(&mut remote)?;
         for session in &mut remote {
             if !registered.contains(&session["projectId"].to_string()) {
                 session["projectId"] = Value::Null;
@@ -88,18 +126,24 @@ impl App {
         }
     }
 
-    fn append_managed_remote(&self, sessions: &mut Vec<Value>) -> Result<()> {
+    fn append_managed_remote(
+        &self,
+        sessions: &mut Vec<Value>,
+        projects: &mut Vec<Value>,
+    ) -> Result<()> {
         let legacy = sessions.clone();
         if !self.config.legacy_mode {
             for row in sessions.iter_mut() {
                 row["readOnly"] = json!(true);
                 row["canArchive"] = json!(false);
+                row["presence"] = json!("cachedUnknown");
+                row["catalogCurrent"] = json!(false);
             }
         }
         let mut reports = Vec::new();
         for remote in self.remote_instances()? {
             reports.push(
-                self.append_managed_host(&remote, sessions, &legacy)
+                self.append_managed_host(&remote, sessions, &legacy, projects)
                     .unwrap_or_else(|error| {
                         json!({"hostId":remote.config.host_id,
                     "runtimeVerified":false,"runtimeError":error.to_string()})
@@ -109,7 +153,7 @@ impl App {
         self.update_health(json!({"remoteConnections":reports}))
     }
 
-    fn remote_instances(&self) -> Result<Vec<Arc<App>>> {
+    pub(super) fn remote_instances(&self) -> Result<Vec<Arc<App>>> {
         Ok(self
             .remotes
             .lock()
@@ -127,7 +171,9 @@ impl App {
             None
         };
         let known = match remote {
-            Some(remote) if remote.store.has_session(&thread)? => remote.store.contains(&thread)?,
+            Some(remote) => {
+                remote.store.has_session(&thread)? || crate::catalog::view::known(&remote, &thread)?
+            }
             _ => self.store.remote_session(identifier).is_ok(),
         };
         ensure!(known, "远程会话不在看板中");
@@ -236,11 +282,16 @@ mod tests {
             .unwrap()
             .insert("remote:a".into(), reopened);
         let rows = root.snapshot()?["sessions"].as_array().unwrap().clone();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0]["hostId"], "remote:b");
-        assert_eq!(rows[0]["threadId"], thread);
-        assert!(first.store.has_session(&thread)?);
-        assert!(!first.store.contains(&thread)?);
+        assert_eq!(rows.len(), 2);
+        let archived = rows.iter().find(|row| row["hostId"] == "remote:a").unwrap();
+        assert_eq!(archived["threadId"], thread);
+        assert_eq!(archived["archived"], true);
+        assert_eq!(archived["readOnly"], true);
+        assert_eq!(archived["catalogCurrent"], false);
+        let other = rows.iter().find(|row| row["hostId"] == "remote:b").unwrap();
+        assert_eq!(other["threadId"], thread);
+        assert_eq!(other["note"], "remote:b");
+        assert!(first.store.has_session(&thread)? && !first.store.contains(&thread)?);
         assert!(
             root.store
                 .remote_session(&identity("remote:a", &thread))
@@ -309,7 +360,10 @@ mod tests {
             .is_err()
         );
         assert_eq!(app.store.remote_session(&identifier)?, before);
-        assert_eq!(app.snapshot()?["sessions"][0]["readOnly"], true);
+        let row = &app.snapshot()?["sessions"][0];
+        assert_eq!(row["readOnly"], true);
+        assert_eq!(row["presence"], "cachedUnknown");
+        assert_eq!(row["catalogCurrent"], false);
         assert!(app.remotes.lock().unwrap().is_empty());
         Ok(())
     }

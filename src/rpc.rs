@@ -17,6 +17,7 @@ use tungstenite::{Message, WebSocket};
 
 pub(crate) mod capture;
 mod forwarding;
+mod catalog_guard;
 pub(crate) mod framing;
 #[cfg(test)]
 #[path = "rpc/connection_identity_fixture.rs"]
@@ -60,6 +61,7 @@ pub enum Role {
     Reader,
     NativeReader,
     RemoteObserver,
+    CatalogReader,
     DraftReader,
     CalibrationWriter,
     TitleWriter,
@@ -78,6 +80,10 @@ impl Role {
                 method,
                 "initialize" | "thread/list" | "thread/turns/list" | "threadSection/list"
             ),
+            Self::CatalogReader => matches!(method,
+                "initialize" | "project/list" | "project/read" | "thread/list"
+                    | "thread/read" | "threadSection/list" | "account/read"
+                    | "fs/getMetadata" | "fs/readFile"),
             Self::DraftReader => matches!(method, "initialize" | "thread/read"),
             Self::CalibrationWriter => matches!(method, "initialize" | "thread/start"
                 | "thread/read" | "thread/name/set" | "thread/archive"
@@ -364,6 +370,7 @@ pub struct DesktopConnection {
     remote_binding: Option<Binding>,
     peer: Option<Peer>,
     local_authority: Option<authority::LocalAuthority>,
+    catalog_guard: Option<catalog_guard::CatalogGuard>,
 }
 
 impl DesktopConnection {
@@ -380,6 +387,9 @@ impl DesktopConnection {
                 .map_or_else(authority::LocalAuthority::parent, Ok)?;
             let mut connection = Self::connect_source(config.desktop_endpoint(), timeout, role, Some(&authority))?;
             connection.local_authority = Some(authority);
+            if let Some(guard) = &mut connection.catalog_guard {
+                guard.bind_local(connection.local_authority.as_ref().context("缺少本机来源")?)?;
+            }
             Ok(connection)
         }
     }
@@ -436,6 +446,7 @@ impl DesktopConnection {
             remote_binding: None,
             peer: None,
             local_authority: None,
+            catalog_guard: None,
         };
         reader.initialize(source)?;
         reader.title_deadline =
@@ -455,8 +466,23 @@ impl DesktopConnection {
             peer.initialize(&response)?;
             binding.confirm(peer, self.call_deadline()?)?;
         }
+        if self.role == Role::CatalogReader {
+            let mut guard = catalog_guard::CatalogGuard::initialized(&response)?;
+            if let Some((binding, peer)) = source {
+                guard.bind(Path::new(&peer.codex_home), json!({"ssh":binding.endpoint, "peer":peer}))?;
+            }
+            self.catalog_guard = Some(guard);
+        }
         self.send_json(&json!({"method": "initialized"}), self.call_deadline()?)?;
         Ok(())
+    }
+
+    pub(crate) fn catalog_source(&self) -> Result<Value> {
+        ensure!(self.role == Role::CatalogReader, "此连接不是目录读取连接");
+        if let Some(authority) = &self.local_authority {
+            authority.confirm()?;
+        }
+        self.catalog_guard.as_ref().context("目录连接尚未初始化")?.source()
     }
 
     fn call_deadline(&self) -> Result<Instant> {
@@ -494,6 +520,10 @@ impl DesktopConnection {
 impl Rpc for DesktopConnection {
     fn call(&mut self, method: &str, params: Value) -> Result<Value> {
         self.role.check(method)?;
+        if self.role == Role::CatalogReader && method != "initialize" {
+            self.catalog_source()?;
+            self.catalog_guard.as_ref().context("目录连接尚未初始化")?.check(method, &params)?;
+        }
         if let Some(authority) = &self.local_authority {
             authority.confirm()?;
         }
@@ -1061,6 +1091,7 @@ mod tests {
             remote_binding: None,
             peer: None,
             local_authority: None,
+            catalog_guard: None,
         };
         Ok((
             client,

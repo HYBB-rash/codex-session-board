@@ -29,13 +29,14 @@ fn fixture() -> Result<(tempfile::TempDir, App, App, String)> {
         })],
     )?;
     remote.discover(&[], true)?;
+    remote.update_health(json!({"runtimeVerified":true}))?;
     Ok((directory, root, remote, thread))
 }
 
 fn merged(root: &App, remote: &App) -> Result<Vec<Value>> {
     let mut rows = root.store.remote_sessions()?;
     let legacy = rows.clone();
-    root.append_managed_host(remote, &mut rows, &legacy)?;
+    root.append_managed_host(remote, &mut rows, &legacy, &mut Vec::new())?;
     root.annotate_connections(&mut rows);
     Ok(rows)
 }
@@ -56,6 +57,8 @@ fn unpublished_empty_chat_survives_complete_scan_and_restart_as_read_only() -> R
     assert_eq!(rows[0]["sectionVersion"], Value::Null);
     assert_eq!(rows[0]["readOnly"], true);
     assert_eq!(rows[0]["canArchive"], false);
+    assert_eq!(rows[0]["presence"], "cachedUnknown");
+    assert_eq!(rows[0]["catalogCurrent"], false);
     let remote_config = remote.config.clone();
     let root_config = root.config.clone();
     drop(remote);
@@ -74,6 +77,14 @@ fn published_chat_uses_confirmed_position_and_existing_missing_record_filter() -
         &[json!({"id":thread,"name":"已保存的空会话","updatedAt":1})],
         true,
     )?;
+    let mut unconfirmed = Vec::new();
+    root.append_managed_host(&remote, &mut unconfirmed, &[], &mut Vec::new())?;
+    assert_eq!(unconfirmed.len(), 1);
+    assert_eq!(unconfirmed[0]["catalogCurrent"], true);
+    assert_eq!(unconfirmed[0]["sectionVersion"], Value::Null);
+    assert_eq!(unconfirmed[0]["readOnly"], true);
+    root.annotate_connections(&mut unconfirmed);
+    assert_eq!(unconfirmed[0]["canArchive"], false);
     remote.store.cache_native(
         &thread,
         &Observation {
@@ -87,7 +98,12 @@ fn published_chat_uses_confirmed_position_and_existing_missing_record_filter() -
     assert_eq!(rows[0]["sectionVersion"], "confirmed-section");
     assert_eq!(rows[0]["readOnly"], false);
     remote.discover(&[], true)?;
-    assert!(merged(&root, &remote)?.is_empty());
+    let history = merged(&root, &remote)?;
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0]["state"], "review");
+    assert_eq!(history[0]["presence"], "cachedUnknown");
+    assert_eq!(history[0]["catalogCurrent"], false);
+    assert_eq!(history[0]["readOnly"], true);
     assert!(remote.store.contains(&thread)?);
     Ok(())
 }
@@ -99,12 +115,20 @@ fn archived_unpublished_chat_never_reappears_from_the_root_cache() -> Result<()>
     legacy.set_state(&thread, Some("to_archive"), "", 0, Some(0))?;
     let row = &legacy.sessions()?[0];
     legacy.archive(&thread, row["version"].as_i64().unwrap(), 0, |_| Ok(()))?;
-    assert!(merged(&root, &remote)?.is_empty());
+    let archived = merged(&root, &remote)?;
+    assert_eq!(archived.len(), 1);
+    assert_eq!(archived[0]["archived"], true);
+    assert_eq!(archived[0]["catalogCurrent"], false);
+    assert_eq!(archived[0]["canArchive"], false);
     remote.discover(
         &[json!({"id":thread,"name":"重复发现","updatedAt":2})],
         true,
     )?;
-    assert!(merged(&root, &remote)?.is_empty());
+    let rediscovered = merged(&root, &remote)?;
+    assert_eq!(rediscovered.len(), 1);
+    assert_eq!(rediscovered[0]["archived"], true);
+    assert_eq!(rediscovered[0]["readOnly"], true);
+    assert_eq!(rediscovered[0]["catalogCurrent"], false);
     assert!(remote.store.has_session(&thread)?);
     assert!(!remote.store.contains(&thread)?);
     assert!(

@@ -238,6 +238,38 @@ fn delayed_mapping(config: &Config, published: Value) -> Result<DelayedMapping> 
 }
 
 #[test]
+fn remote_first_move_waits_for_the_real_mapping_without_repeating_the_write() -> Result<()> {
+    let (_directory, mut config, published) = setup()?;
+    config.host_id = "mac".into();
+    let remote_section = json!({"id":"backend-remote","name":"待审阅","appearance":null});
+    let mut initial = Reader {
+        replies: [json!({"data":[remote_section.clone()],"nextCursor":null})].into(),
+        calls: vec![],
+    };
+    let catalog = direct::Catalog::load(&mut initial, &config)?;
+    let mut reader = delayed_mapping(&config, published)?;
+    reader.reader.replies = [
+        json!({"thread":{"id":THREAD,"section":null}}),
+        json!({"thread":{"id":THREAD,"section":null}}),
+        json!({"thread":{"id":THREAD,"section":remote_section}}),
+    ].into();
+    let mut writer = Writer::default();
+    let observed = catalog.move_checked(
+        &mut reader, &mut writer, &config, THREAD, "unsectioned", Some("review"),
+    )?;
+    assert_eq!(observed.state, "review");
+    assert_eq!(observed.version, "logical-review");
+    assert_eq!(reader.reads, 3);
+    assert_eq!(writer.calls.len(), 1);
+    assert_eq!(
+        writer.calls[0].1,
+        json!({"threadId":THREAD,"sectionId":"logical-review",
+        "source":"codex","hostId":"mac"})
+    );
+    Ok(())
+}
+
+#[test]
 fn missing_remote_mapping_never_guesses_the_target_or_writes_business_threads() -> Result<()> {
     let (_directory, mut config, published) = setup()?;
     config.host_id = "mac".into();
