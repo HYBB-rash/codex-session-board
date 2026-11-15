@@ -11,10 +11,13 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       RUSTUP_TOOLCHAIN: 1.99.1
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -31,7 +34,7 @@ jobs:
             pr-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-
       - run: cargo fetch --locked
       - run: ./scripts/install-git-hooks
-      - run: ./scripts/validate --scope pr --base origin/main --output "$RUNNER_TEMP/validation"
+      - run: ./scripts/validate --scope pr --base "$EXPECTED_BASE" --expect-head "$EXPECTED_HEAD" --output "$RUNNER_TEMP/validation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -2,7 +2,7 @@
 
 - owner: root
 - execution_mode: isolated_write
-- allowed_write_set: scripts/check-host-filter.mjs, context/tasks/active/pr11-historical-delivery-712e352c-20261116.md
+- allowed_write_set: scripts/check-host-filter.mjs, acceptance/bindings.json, src/app.rs, src/rpc.rs, src/rpc/authority/tests.rs, context/tasks/active/pr11-historical-delivery-712e352c-20261116.md
 - base_commit: 0a71260f2c1e8e6ecfa06d0f9689e606318f95a3
 - worktree_path: /Users/hongyong/.codex/worktrees/pr-queue-author11-20261115/codex-session-board
 - coordinator: historical-four-pr-queue
@@ -31,3 +31,19 @@ UI 三项独立复跑通过，不能替代首轮失败。
 竞态复现在 ui-snapshot-race-reproduction.log。提交后更新 ready.json，
 由协调者再次分派绑定新头的独立审阅，使用新的源码外目录重跑固定门禁。
 PR 9 所有权借用和 PR 10 新建请求的组合风险仍由精确组合候选验证。
+
+## 第二轮冲突反馈 8ffd574d
+
+固定原头 e9e4760841cc2fc363e87f425879c3c29a275e0a，
+仅合入授权的组合前置 b27e164b6b034e270aab2fcde319246c99230ef9。
+四处实际文本冲突保留在源码外 merge-8ffd574d-first.log。
+该前置包含 PR10 和交付工具；不合入当前 main、PR9 或其他完整候选。
+前置自带的版本清单、规则和共享 STATE 保持前置原值，不另做升版或共享记录修改。
+
+RPC 同时保留限权 CatalogReader 和 PR10 的只读 DraftReader，删除旧 DraftWriter；
+兼容模式继续禁止草稿读取与归档，错误后台拒绝测试覆盖全部七个角色。
+测试绑定取两侧并集，保留目录、草稿及新增原生新建回归，不改需求或锁。
+自动合并后的 createSession 已同时保留目录项目新建门禁及 PR10 的请求契约：
+首次原生新建不带 requestId，只有已有草稿恢复携带旧 requestId。
+主机筛选测试也保留前轮快照同步和 PR10 新建/恢复断言。
+提交前运行组合编译和相关回归；冻结新头后重新请求独立审阅及固定检查器验证。

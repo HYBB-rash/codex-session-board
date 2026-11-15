@@ -9,6 +9,7 @@ from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.promote_candidate import ROOT, git, github, identity, promote
+from scripts.validate_context import require_remote_target, require_target
 
 
 def now():
@@ -43,9 +44,9 @@ def continue_candidate(state, directory, timeout):
     if state.get("completed_at"):
         return state
     candidate, base = state["source"]["commit"], state["base"]
-    remote = git("ls-remote", "origin", "refs/heads/main").split()
-    if len(remote) != 2 or remote[0] not in (base, candidate):
-        raise ValueError("Main advanced; recombine and revalidate")
+    reference = state.get("reference", "refs/heads/main")
+    require_target(reference, base, state["branch"], candidate, git_command=git)
+    require_remote_target(reference, (base, candidate), git_command=git)
     subprocess.run(["git", "merge-base", "--is-ancestor", base, candidate], cwd=ROOT, check=True)
     if not state.get("pushed_at"):
         subprocess.run(["git", "push", "origin", f"{candidate}:refs/heads/{state['branch']}"],
@@ -71,12 +72,12 @@ def continue_candidate(state, directory, timeout):
     if receipt.exists():
         saved = json.loads(receipt.read_text())
         if (saved["source"] != state["source"] or saved["base"] != base
-                or saved["run"] != run["id"] or saved["repository"] != state["repository"]):
+                or saved["run"] != run["id"] or saved["repository"] != state["repository"]
+                or saved.get("reference", "refs/heads/main") != reference):
             raise ValueError("Existing promotion receipt belongs to another integration")
-        if git("ls-remote", "origin", "refs/heads/main").split()[0] != candidate:
-            raise ValueError("Existing promotion receipt does not match current main")
+        require_remote_target(reference, (candidate,), git_command=git)
     else:
-        promote(candidate, base, run["id"], state["repository"], receipt)
+        promote(candidate, base, run["id"], state["repository"], receipt, reference)
     state["completed_at"] = now()
     state["seconds"] = (datetime.fromisoformat(state["completed_at"])
                         - datetime.fromisoformat(state["started_at"])).total_seconds()
@@ -90,8 +91,11 @@ def start(arguments):
     if directory.is_relative_to(ROOT):
         raise ValueError("Integration records must remain outside the source")
     path = directory / "integration.json"
+    reference = getattr(arguments, "reference", "refs/heads/main")
     if arguments.resume:
         state = json.loads(path.read_text())
+        if state.get("reference", "refs/heads/main") != reference:
+            raise ValueError("Resume must explicitly select the recorded integration target")
     else:
         if not arguments.base or not arguments.repository or directory.exists():
             raise ValueError("A new integration needs fixed base, repository and a new output directory")
@@ -104,6 +108,7 @@ def start(arguments):
         state = {
             "schema_version": 1, "source": identity(), "branch": branch,
             "base": git("rev-parse", f"{arguments.base}^{{commit}}"),
+            "reference": reference,
             "repository": arguments.repository, "started_at": started.isoformat(),
         }
         require_checkout(state)
@@ -123,6 +128,7 @@ def start(arguments):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base")
+    parser.add_argument("--reference", default="refs/heads/main")
     parser.add_argument("--repository")
     parser.add_argument("--started-at")
     parser.add_argument("--output", required=True, type=Path)

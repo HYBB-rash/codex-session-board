@@ -124,8 +124,8 @@ impl RuntimeConnection {
         )
     }
 
-    pub(crate) fn draft(app: &App) -> Result<Self> {
-        Self::connect_role(app, Role::DraftWriter)
+    pub(crate) fn draft_recovery(app: &App) -> Result<Self> {
+        Self::connect_role(app, Role::DraftReader)
     }
 
     fn connect_role(app: &App, role: Role) -> Result<Self> {

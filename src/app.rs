@@ -150,7 +150,7 @@ impl App {
             "主机登记已改变，请刷新核对"
         );
         ensure!(
-            !self.config.legacy_mode || !matches!(role, Role::DraftWriter | Role::ArchiveWriter),
+            !self.config.legacy_mode || !matches!(role, Role::DraftReader | Role::ArchiveWriter),
             "六状态兼容模式不允许创建或归档远程会话"
         );
         DesktopConnection::configured(&self.config, timeout, role)
