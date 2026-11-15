@@ -6,7 +6,7 @@
 - base_commit: d4b40bb3aae98569a310f1e412defbb1f20dddbb
 - worktree_path: /Users/hongyong/Developer/codex-session-board-light-ui-implementation-20261115
 - coordinator: 后续集成协调者
-- status: in_progress
+- status: implemented_awaiting_integration
 
 用户于 2026-11-15 授权按已调查的轻量方案实施。
 方案来源为 light-ui-plan-20261115 的 3d7308f；原型为 6a53ff7。
@@ -32,7 +32,13 @@
 健康判断额外要求项目资料就绪，保留缓存、错误、未完成与刷新等待状态。
 
 独立浏览器已通过桥接 31、轻量交互与健康 58、目录兼容 44、主机筛选 53、
-布局 48、保存等待 42 项检查。完整 Rust 自动门禁与 fixture 尚待本任务后续执行。
+布局 48、保存等待 42 项检查。完整自动门禁 714 项通过，Clippy 通过。
+系统 WebKit 浅深色探针、真实 Rust fixture 6 项交互与 10 项可选后台隔离检查通过。
+独立浏览器和 fixture 已清理，最终停止回执 cleanup_confirmed=true。
 1500 张卡片不变时全部保留，八次 render 为 4–21ms；首次构建约 138ms，非日用容器计时。
 测试发现并修正来源占位未纳入列签名，以及浏览器主进程退出后子进程回收遗漏。
-失败报告与后续通过记录分别保留，最终证据写入本任务 result。
+全量回归曾出现 3 项后端失败，单独复跑及随后整轮复跑通过，原失败记录保留；
+不能据此认定启动与性能失败的根因已消除。本轮没有修改对应后端代码或断言。
+代码验收头为 3c9b578，完整证据与后续组合边界见
+context/results/light-ui-implementation-20261115.md。
+后续协调者冻结目录最终头、执行组合门禁并归档本任务；日用原生容器验收仍待安排。
