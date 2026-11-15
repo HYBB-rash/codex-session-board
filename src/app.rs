@@ -23,6 +23,9 @@ mod native_probes;
 mod remote;
 mod remote_snapshot;
 mod drafts;
+mod connection;
+pub use connection::preflight;
+pub(crate) use connection::ConnectionRequest;
 
 pub struct App {
     pub config: Config,
@@ -134,13 +137,6 @@ impl App {
             errors.push(format!("{error:#}"));
         }
         crate::workers::finish(errors)
-    }
-
-    pub(crate) fn connection(&self, timeout: Duration, role: Role) -> Result<DesktopConnection> {
-        ensure!(self.enabled.load(Ordering::SeqCst), "主机登记已改变，请刷新核对");
-        ensure!(!self.config.legacy_mode || !matches!(role, Role::DraftWriter | Role::CalibrationWriter | Role::ArchiveWriter),
-            "六状态兼容模式不允许创建或归档远程会话");
-        DesktopConnection::configured(&self.config, timeout, role)
     }
 
     pub fn update_health(&self, updates: Value) -> Result<()> {

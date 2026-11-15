@@ -60,7 +60,7 @@ pub enum Role {
     Reader,
     NativeReader,
     RemoteObserver,
-    DraftWriter,
+    DraftReader,
     CalibrationWriter,
     TitleWriter,
     ArchiveWriter,
@@ -78,10 +78,7 @@ impl Role {
                 method,
                 "initialize" | "thread/list" | "thread/turns/list" | "threadSection/list"
             ),
-            Self::DraftWriter => matches!(
-                method,
-                "initialize" | "thread/start" | "thread/read" | "thread/name/set"
-            ),
+            Self::DraftReader => matches!(method, "initialize" | "thread/read"),
             Self::CalibrationWriter => matches!(method, "initialize" | "thread/start"
                 | "thread/read" | "thread/name/set" | "thread/archive"
                 | "thread/list" | "threadSection/list" | "thread/turns/list"),
@@ -370,7 +367,11 @@ pub struct DesktopConnection {
 }
 
 impl DesktopConnection {
-    pub fn configured(config: &crate::config::Config, timeout: Duration, role: Role) -> Result<Self> {
+    pub(crate) fn configured(request: crate::app::ConnectionRequest<'_>, timeout: Duration, role: Role) -> Result<Self> {
+        Self::from_config(request.config(), timeout, role)
+    }
+
+    fn from_config(config: &crate::config::Config, timeout: Duration, role: Role) -> Result<Self> {
         if let Some(binding) = &config.remote_binding {
             Self::remote(binding, timeout, role)
         } else {
@@ -383,7 +384,8 @@ impl DesktopConnection {
         }
     }
 
-    pub fn connect(path: &Path, timeout: Duration, role: Role) -> Result<Self> {
+    #[cfg(test)]
+    fn connect(path: &Path, timeout: Duration, role: Role) -> Result<Self> {
         Self::connect_source(path, timeout, role, None)
     }
 
@@ -401,16 +403,6 @@ impl DesktopConnection {
             source.verify(&socket)?;
         }
         Self::handshake(socket.into(), timeout, role, deadline)
-    }
-
-    pub fn proxy(command: &[String], timeout: Duration, role: Role) -> Result<Self> {
-        let budget = if role == Role::TitleWriter {
-            timeout.min(Duration::from_secs(3))
-        } else {
-            timeout
-        };
-        let deadline = deadline_after(budget)?;
-        Self::handshake(pipe::Transport::proxy(command)?, timeout, role, deadline)
     }
 
     fn handshake(
@@ -857,25 +849,22 @@ mod tests {
 
     #[test]
     fn empty_draft_connections_cannot_send_turns_or_modify_sidebar_sections() -> Result<()> {
-        for method in [
-            "initialize",
-            "thread/start",
-            "thread/read",
-            "thread/name/set",
-        ] {
-            Role::DraftWriter.check(method)?;
+        for method in ["initialize", "thread/read"] {
+            Role::DraftReader.check(method)?;
         }
         let (mut client, mut server) = sidebar_pair()?;
         client.project_only = true;
         client.check("move_thread_to_project")?;
         for method in [
+            "thread/start",
+            "thread/name/set",
             "turn/start",
             "turn/resume",
             "send_message_to_thread",
             "thread/archive",
             "move_thread_to_sidebar_section",
         ] {
-            assert!(Role::DraftWriter.check(method).is_err());
+            assert!(Role::DraftReader.check(method).is_err());
             assert!(client.call(method, json!({})).is_err());
         }
         assert!(client.call("thread/name/set", json!({})).is_err());

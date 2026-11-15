@@ -89,7 +89,7 @@ try {
   for (let attempt = 0; attempt < 100 && !releaseNew; attempt++) await new Promise(resolve => setTimeout(resolve,25));
   assert(releaseNew,"远程新建请求未送达");
   check(writes.at(-1).body.projectId,"a1");
-  check(typeof writes.at(-1).body.requestId,"string");
+  check(Object.hasOwn(writes.at(-1).body,"requestId"),false);
   await select("host-filter","host:b");
   check(await evaluate("selectedHost"),"host:a");
   pendingNew = false;releaseNew();
@@ -113,17 +113,21 @@ try {
   check(writes.at(-1).body,{});
   await select("host-filter","host:a");
   await select("project-filter","project:a1");
+  const legacyRequest = "00000000-0000-4000-8000-000000000001";
+  fixture.pendingDrafts = [{project:"a1",requestId:legacyRequest}];
+  await evaluate("load()");
   pendingReply = true;
   await evaluate('byId("new-session").click()');
   await wait('byId("draft-recovery").open && !creating');
   const draft = writes.at(-1).body;
-  check(draft.projectId,"a1");
+  check(draft,{projectId:"a1",requestId:legacyRequest});
   await select("host-filter","host:b");
   check(await evaluate("selectedHost"),"host:a");
   pendingReply = false;
   await evaluate('data.projectCatalog.items=[];byId("draft-retry").click()');
   await wait('!creating && !byId("draft-recovery").open');
   check(writes.at(-1).body,draft);
+  delete fixture.pendingDrafts;
   Object.assign(fixture.health,{lastSuccessAt:10,lastScanAt:10,scanComplete:true,runtimeVerified:true,
     remoteConnections:[{hostId:"a",lastSuccessAt:20,lastScanAt:20,scanComplete:true,runtimeVerified:true,writeError:"source check <script> failure"},
       {hostId:"b",lastSuccessAt:5,scanComplete:true,runtimeVerified:true}]});

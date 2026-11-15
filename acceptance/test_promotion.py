@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from scripts import promote_candidate as promotion
+from scripts import validation_report
 
 
 class PromotionTests(unittest.TestCase):
@@ -62,7 +63,7 @@ class PromotionTests(unittest.TestCase):
         }))
         for number in range(1, 4):
             (directory / f"step-{number}.log").write_text("validation transcript")
-        return {
+        record = {
             "scope": "candidate", "passed": True,
             "source": {**self.source, "platform": "darwin", "machine": "arm64"},
             "automated_sha256": hashlib.sha256((directory / "automated.json").read_bytes()).hexdigest(),
@@ -72,6 +73,88 @@ class PromotionTests(unittest.TestCase):
                 for number in range(1, 4)
             ],
         }
+        return self.complete_record(directory, record)
+
+    def complete_record(self, directory, record, commands=None):
+        commands = commands or [
+            ["./scripts/check"],
+            ["cargo", "clippy", "--all-targets", "--locked", "--offline", "--", "-D", "warnings"],
+            ["python3", "scripts/verify_acceptance.py", "--scope", "automated",
+             "--report", str(directory / "automated.json")],
+        ]
+        environment = {
+            "source_directory": "/candidate", "platform": "darwin", "machine": "arm64",
+            "temporary_directory": "/private/tmp", "cargo_target": "/candidate/target",
+            "cargo_owner": {"schema_version": 1, "source_directory": "/candidate",
+                            "source_device": 1, "source_inode": 1},
+            "tools": {name: {"path": f"/tools/{name}", "version": "fixture"}
+                      for name in ("python3", "git", "cargo", "rustc", "node")},
+        }
+        record.update(schema_version=2, run_id="fixture", scope_passed=True, exit_code=0,
+                      cleanup_confirmed=True, first_failure=None, finished_at="fixture",
+                      environment=environment, selected_checks=commands, release_ready=True,
+                      pending=[], acceptance_status="not_performed")
+        receipts = {}
+        for step, command in zip(record["steps"], commands):
+            name = step["name"]
+            path = directory / f"{name}.lease.json"
+            path.write_text(json.dumps({
+                "schema_version": 1, "run_id": "fixture", "name": name,
+                "command": command, "cwd": "/candidate", "reason": "completed",
+                "cleanup_confirmed": True, "command_returncode": 0, "group_started_at": "fixture",
+                "group_pid": 1, "command_pid": 2, "supervisor_pid": 3, "owner_pid": 4}))
+            (directory / f"{name}.stderr.log").write_text("diagnostic transcript")
+            receipts[name] = validation_report.digest(path)
+            step.update(arguments=command, seconds=1, cleanup_confirmed=True,
+                        lease_sha256=receipts[name],
+                        stderr_sha256=validation_report.digest(directory / f"{name}.stderr.log"))
+        record["preparation"] = validation_report.phase(directory, "preparation", "pass", {
+            "source": record["source"], "environment": environment, "selected_checks": commands})
+        record["finalization"] = validation_report.phase(directory, "finalization", "pass", {
+            "source_unchanged": True, "receipts": receipts})
+        return record
+
+    def test_promotion_rejects_legacy_incomplete_or_failed_new_phases(self):
+        mutations = [
+            lambda record: record.update(schema_version=1),
+            lambda record: record.pop("preparation"),
+            lambda record: record.pop("first_failure"),
+            lambda record: record.update(first_failure={"message": "failed before retry"}),
+            lambda record: record.update(cleanup_confirmed=False),
+            lambda record: record["preparation"].update(status="fail"),
+            lambda record: record["finalization"].update(status="fail"),
+            lambda record: record["steps"].pop(),
+            lambda record: record["steps"][0].update(cleanup_confirmed=False),
+            lambda record: record["steps"][0].update(stderr_sha256="0" * 64),
+        ]
+        for number, mutate in enumerate(mutations):
+            with self.subTest(number=number), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                record = self.artifact(directory)
+                mutate(record)
+                (directory / "VALIDATION.json").write_text(json.dumps(record))
+                with self.assertRaises((ValueError, KeyError)):
+                    promotion.validate_artifact(directory, self.source, "macos-arm64")
+
+    def test_rehashed_receipts_cannot_hide_wrong_ownership_or_unconfirmed_cleanup(self):
+        for field, value in (("run_id", "another-run"), ("cleanup_confirmed", False),
+                             ("reason", "owner_lost"), ("command_returncode", 7),
+                             ("command", ["true"]), ("group_started_at", "")):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                record = self.artifact(directory)
+                path = directory / "step-1.lease.json"
+                lease = json.loads(path.read_text())
+                lease[field] = value
+                path.write_text(json.dumps(lease))
+                record["steps"][0]["lease_sha256"] = validation_report.digest(path)
+                finalized = json.loads((directory / "finalization.log").read_text())
+                finalized["receipts"]["step-1"] = validation_report.digest(path)
+                record["finalization"] = validation_report.phase(
+                    directory, "finalization", "pass", finalized)
+                (directory / "VALIDATION.json").write_text(json.dumps(record))
+                with self.assertRaises(ValueError):
+                    promotion.validate_artifact(directory, self.source, "macos-arm64")
 
     def test_promotion_requires_both_platform_identity_and_unchanged_reports(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -149,6 +232,12 @@ class PromotionTests(unittest.TestCase):
             record.pop("automated_sha256")
             record["plan"] = strategy
             path = directory / "integration.json"
+            commands = record["selected_checks"][:2] + [[
+                "python3", "scripts/verify_integration.py", "--base", strategy["base"],
+                "--report", str(path)]]
+            self.complete_record(directory, record, commands)
+            record.update(release_ready=False, pending=["完整自动验收", "目标环境验收"],
+                          not_run=report["not_run"])
             with patch("scripts.integration_plan.plan", return_value=strategy):
                 for change in ({}, {"tests": report["tests"][:-1]}, {"not_run": []},
                                {"tests": [{**test, "status": "fail"} for test in report["tests"]]}):

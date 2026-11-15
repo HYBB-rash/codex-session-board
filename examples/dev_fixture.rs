@@ -8,6 +8,8 @@ use std::time::Duration;
 
 #[path = "dev_fixture/state.rs"]
 mod state;
+#[path = "dev_fixture/client.rs"]
+mod client;
 #[path = "dev_fixture/hosted.rs"]
 mod hosted;
 
@@ -32,9 +34,11 @@ fn main() -> Result<()> {
 }
 
 fn history(root: &Path) -> Result<()> {
-    use codex_session_board::rpc::{DesktopConnection, Role, Rpc};
-    let mut connection = DesktopConnection::connect(
-        &root.join("desktop/rpc.sock"), Duration::from_secs(3), Role::Reader)?;
+    use codex_session_board::rpc::Rpc;
+    let socket = UnixStream::connect(root.join("desktop/rpc.sock"))?;
+    socket.set_read_timeout(Some(Duration::from_secs(3)))?;
+    socket.set_write_timeout(Some(Duration::from_secs(3)))?;
+    let mut connection = client::FixtureConnection::open(socket)?;
     for line in std::io::stdin().lock().lines() {
         let request: Value = serde_json::from_str(&line?)?;
         if request["id"].is_null() {
@@ -172,6 +176,34 @@ fn shared_reply(surface: &Mutex<state::Surface>, request: &Value, framed: bool) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn history_fixture_uses_its_own_socket_client_and_preserves_rpc_responses() -> Result<()> {
+        use codex_session_board::rpc::Rpc;
+        let (stream, server) = UnixStream::pair()?;
+        stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+        stream.set_write_timeout(Some(Duration::from_secs(2)))?;
+        let worker = std::thread::spawn(move || -> Result<()> {
+            let mut socket = tungstenite::accept(server).map_err(|error| anyhow::anyhow!("{error}"))?;
+            for method in ["initialize", "thread/list"] {
+                let request: Value = serde_json::from_str(socket.read()?.to_text()?)?;
+                assert_eq!(request["method"], method);
+                socket.send(tungstenite::Message::Text(json!({
+                    "id":request["id"],"result":{"data":[{"id":"fixture-history"}]}
+                }).to_string().into()))?;
+                if method == "initialize" {
+                    let notice: Value = serde_json::from_str(socket.read()?.to_text()?)?;
+                    assert_eq!(notice["method"], "initialized");
+                }
+            }
+            Ok(())
+        });
+        let mut reader = client::FixtureConnection::open(stream)?;
+        assert_eq!(reader.call("thread/list", json!({}))?["data"][0]["id"], "fixture-history");
+        drop(reader);
+        worker.join().expect("fixture history server")?;
+        Ok(())
+    }
 
     #[test]
     fn accepted_nonblocking_stream_serves_a_delayed_sidebar_frame() -> Result<()> {
