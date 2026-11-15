@@ -147,7 +147,8 @@ def notify(state, item, directory):
         save(folder / "request.json", request)
         save(folder / "route.json", item["route"])
         receipt_path = folder / "receipt.json"
-        command = "poll" if receipt_path.exists() else "send"
+        previous = json.loads(receipt_path.read_text()) if receipt_path.exists() else {"state": "pending"}
+        command = "send" if previous["state"] in ("pending", "waiting_idle", "rejected") else "poll"
         process = subprocess.run([
             sys.executable, str(ROOT / "scripts/pr_queue_transport.py"), command,
             "--route", str(folder / "route.json"), "--request", str(folder / "request.json"),
@@ -162,9 +163,10 @@ def notify(state, item, directory):
                 or receipt.get("request_id") != feedback["id"]
                 or receipt.get("body_sha256") != hashlib.sha256(feedback["body"].encode()).hexdigest()
                 or receipt.get("state") not in (
-                    "waiting_idle", "sent", "acknowledged", "completed", "rejected", "delivery_unknown")):
+                    "pending", "waiting_idle", "sent", "acknowledged", "author_turn_completed",
+                    "author_failed", "rejected", "delivery_unknown")):
             raise ValueError("Transport did not prove the intended author turn")
-        acknowledged = receipt["state"] in ("acknowledged", "completed")
+        acknowledged = receipt["state"] in ("acknowledged", "author_turn_completed")
         if acknowledged and (not receipt.get("turn_id") or not receipt.get("acknowledged_at")):
             raise ValueError("Author acknowledgement has no native turn evidence")
         feedback["receipt"] = receipt
@@ -180,7 +182,7 @@ def reject(state, item, directory, kind, detail, files=()):
     payload = {"number": item["number"], "head": item["head"], "prefix": state["prefix"],
                "kind": kind, "detail": detail, "files": list(files)}
     payload["id"] = str(uuid.uuid5(uuid.NAMESPACE_URL,
-        json.dumps([state["repository"], payload], sort_keys=True)))
+        json.dumps([state["repository"], state["started_at"], payload], sort_keys=True)))
     payload["body"] = (
         f"用户授权的PR合并队列{'历史演练' if state.get('rehearsal') else '修复'}，"
         f"仓库{state['repository']}，PR#{item['number']}。\n"
@@ -253,14 +255,18 @@ def attempt(state, directory):
 
 def requeue(state, incoming, directory):
     item = next(entry for entry in state["items"] if entry["number"] == incoming["number"])
-    if item["status"] != "needs-fix" or incoming["head"] == item["head"]:
+    source = git(state["project"], "rev-parse", f"{incoming['head']}^{{commit}}")
+    candidate_failure = item.get("feedback", {}).get("kind") == "candidate"
+    if (item["status"] != "needs-fix" and not candidate_failure) or source == item["head"]:
         raise ValueError("Requeue requires a changed source for a rejected PR")
+    subprocess.run(["git", "merge-base", "--is-ancestor", item["head"], source],
+                   cwd=state["project"], check=True)
     notify(state, item, directory)
     if item["feedback"].get("notification") != "acknowledged":
         raise ValueError("The original author has not acknowledged this repair request")
     replacement = {**item, **{key: incoming[key] for key in ("head", "review", "validation")}}
-    replacement["head"] = git(state["project"], "rev-parse", f"{replacement['head']}^{{commit}}")
-    replacement["base"] = incoming.get("base", item["base"])
+    replacement["head"] = source
+    replacement["base"] = git(state["project"], "rev-parse", f"{incoming.get('base', item['base'])}^{{commit}}")
     verify_entry(state, replacement)
     item.update(replacement, status="submitted")
     item.pop("feedback", None)
@@ -300,6 +306,7 @@ def finish(state, directory):
                     reject(state, item, directory, "candidate",
                            f"组合候选 {candidate} 未通过，不能据此归责单一PR。"
                            f"共同复现材料 {report}；{error}")
+                    item["status"] = "accepted"
         save(directory / "queue.json", state)
         raise
     for item in state["items"]:
