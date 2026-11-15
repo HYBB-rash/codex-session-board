@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from scripts.validate_candidate import ROOT, acceptance_outcome, git, identity
 from scripts.verify_package_startup import CHECKS
+from scripts.validate_context import require_remote_target, require_target
 
 JOBS = {
     "Candidate (linux-x86_64)", "Candidate (macos-arm64)",
@@ -97,11 +98,11 @@ def validate_artifact(directory, source, label, base=None):
     return record
 
 
-def verify_saved_package(repository, label, source, startup, directory):
+def verify_saved_package(repository, label, source, startup, directory, reference="refs/heads/main"):
     from release_plugin import GitHub, asset_name, read_package
     from package_plugin import verify_package
     service = GitHub(repository)
-    tag = "v" + startup["version"]
+    tag = "v" + startup["version"] if reference == "refs/heads/main" else "rehearsal-" + source["commit"]
     release = service.release(tag)
     if not release or release["draft"] or release.get("immutable") is not True:
         raise ValueError("The actual candidate release must be immutable")
@@ -116,17 +117,17 @@ def verify_saved_package(repository, label, source, startup, directory):
             "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest()}
 
 
-def collect_platform(repository, run, label, source, base, directory):
+def collect_platform(repository, run, label, source, base, directory, reference="refs/heads/main"):
     validation = directory / "validation" / label
     github("run", "download", str(run), "--repo", repository,
            "--name", f"acceptance-{label}", "--dir", str(validation))
     record = validate_artifact(validation, source, label, base)
     package = verify_saved_package(
-        repository, label, source, record["package_startup"], directory / "packages" / label)
+        repository, label, source, record["package_startup"], directory / "packages" / label, reference)
     return label, record, package
 
 
-def promote(candidate, base, run_id, repository, output):
+def promote(candidate, base, run_id, repository, output, reference="refs/heads/main"):
     output = output.resolve()
     if output.is_relative_to(ROOT) or output.exists():
         raise ValueError("Promotion receipt must use a new path outside the source")
@@ -139,27 +140,28 @@ def promote(candidate, base, run_id, repository, output):
     run = json.loads(github("api", api))
     jobs = json.loads(github("api", api + "/jobs?filter=latest&per_page=100"))
     validate_run(run, jobs, source, repository)
+    require_target(reference, base, run["head_branch"], candidate, git_command=git)
+    if reference != "refs/heads/main":
+        require_remote_target(reference, (base, candidate), git_command=git)
     output.parent.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix="verified-candidate-", dir=output.parent))
     validations, packages = {}, {}
     with ThreadPoolExecutor(max_workers=2) as workers:
         futures = [workers.submit(collect_platform, repository, run_id, label, source,
-                                  base, directory) for label in PLATFORMS]
+                                  base, directory, reference) for label in PLATFORMS]
         for future in futures:
             label, record, package = future.result()
             validations[label], packages[label] = record, package
     if identity() != source or git("status", "--porcelain", "--untracked-files=all"):
         raise ValueError("Candidate changed while checking remote validation")
-    remote = git("ls-remote", "origin", "refs/heads/main").split()
-    if len(remote) != 2 or remote[0] not in (base, candidate):
-        raise ValueError("Main advanced; recombine and revalidate the candidate")
-    if remote[0] == base:
-        subprocess.run(["git", "push", "origin", f"{candidate}:refs/heads/main"],
+    remote = require_remote_target(reference, (base, candidate), git_command=git)
+    if remote == base:
+        lease = [] if reference == "refs/heads/main" else [f"--force-with-lease={reference}:{base}"]
+        subprocess.run(["git", "push", *lease, "origin", f"{candidate}:{reference}"],
                        cwd=ROOT, check=True)
-    if git("ls-remote", "origin", "refs/heads/main").split()[0] != candidate:
-        raise ValueError("Main did not confirm the promoted candidate")
+    require_remote_target(reference, (candidate,), git_command=git)
     receipt = {
-        "schema_version": 1, "source": source, "base": base,
+        "schema_version": 1, "source": source, "base": base, "reference": reference,
         "repository": repository, "run": run_id,
         "validated_platforms": validations, "packages": packages,
         "artifacts": str(directory),
@@ -175,11 +177,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--candidate", required=True)
     parser.add_argument("--base", required=True)
+    parser.add_argument("--reference", default="refs/heads/main")
     parser.add_argument("--run", required=True, type=int)
     parser.add_argument("--repository", required=True)
     parser.add_argument("--output", required=True, type=Path)
     arguments = parser.parse_args()
-    promote(arguments.candidate, arguments.base, arguments.run, arguments.repository, arguments.output)
+    promote(arguments.candidate, arguments.base, arguments.run, arguments.repository,
+            arguments.output, arguments.reference)
 
 
 if __name__ == "__main__":
