@@ -6,7 +6,7 @@ allowed_write_set: scripts/pr_queue.py、scripts/pr-queue、acceptance/test_pr_q
 base_commit: 2a750fe283887a831db87ecac718ddadc424cb7e
 worktree_path: /Users/hongyong/.codex/worktrees/pr-queue-core-20261115/codex-session-board
 coordinator: 01a1d38b-1ef8-7392-ba78-caa7935c5ab4
-status: ready_for_coordinator
+status: completed
 
 实现固定来源、作者反馈、机械合并、依赖阻塞和重入队。复用现有交付报告与候选工具，
 不修改业务代码，不修改共享状态和测试绑定。通知传输由协调者提供。
@@ -20,3 +20,5 @@ status: ready_for_coordinator
 冻结仅接受紧接已审阅前缀的单个版本提交，逐字段检查 Cargo、插件及发布规则；
 演练配置必须精确匹配固定目标和集成基线。失败冻结保留审阅前缀，作者修复后
 机械合并、再次升版并使用新候选目录；真实 Git 回归已覆盖该闭环。
+纯基础设施失败可复用已有 workflow 重跑，再通过 retry-candidate 校验同一源码的新
+成功 run_attempt 后继续冻结候选；保留首次失败报告，不要求空提交或无意义升版。

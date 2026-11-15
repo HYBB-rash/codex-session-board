@@ -15,12 +15,17 @@
 ./scripts/pr-queue requeue --item /tmp/repaired-pr.json --state /tmp/queue-run
 ./scripts/pr-queue status --state /tmp/queue-run
 ./scripts/pr-queue finish --state /tmp/queue-run
+./scripts/pr-queue retry-candidate --state /tmp/queue-run
 ```
 
 `attempt` 检查固定输入并尝试机械合并。失败项保留 PR 评论、反馈编号与原始日志，
 有依赖的项等待，独立项继续。`notify` 对同一反馈补发或读取原会话回执，不创建新反馈。
 `requeue` 验证作者交回的来源、审阅和检查。所有目标项准备好后，协调者按既有规则
 冻结版本并提交，再调用 `finish`。该命令复用 `integrate`，不安装插件。
+冻结必须紧接已接纳前缀，只提交发布版本字段和精确发布记录；不得夹带新业务代码。
+代码失败回到作者新头、审阅和验证后重新冻结。基础设施失败可以通过既有 GitHub 工具
+重跑原 workflow，再用 `retry-candidate` 核对同一源码、同一 run 的新成功 attempt，
+继续原候选；首次失败保留，不需要空提交或另造版本。
 
 输入清单包含仓库、干净的独立候选工作树、固定主线与按依赖排序的 PR：
 
@@ -87,3 +92,6 @@ PR 检查通过统一入口执行，检查器在本轮队列中固定。作者�
 演练主线限定为 `refs/heads/codex/rehearsal-main-*`，候选使用
 `codex/integration-rehearsal-*`。演练产物与正常安装渠道分开，
 仍运行同样的组合、实际包及启动门禁；不回退真实主线或修改日用客户端。
+清单设置 `rehearsal: true` 和 `reference`；最终冻结同时添加
+`context/integration-target.json`，内容必须精确等于清单中的 `reference` 和 `base`。
+演练 Release 使用 `rehearsal-<完整候选SHA>`，不更新候选或稳定安装渠道。

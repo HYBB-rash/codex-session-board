@@ -395,6 +395,7 @@ def finish(state, directory):
     target = {"reference": reference, "base": state["base"]} if state.get("rehearsal") else None
     version = validate_freeze(project, prefix, candidate, target)
     state["frozen_candidate"] = {
+        **(frozen if frozen.get("candidate") == candidate else {}),
         "candidate": candidate, "reviewed_prefix": prefix, "version": version, "status": "pending",
     }
     state["prefix"] = candidate
@@ -414,7 +415,14 @@ def finish(state, directory):
         state["events"].append({"at": now(), "candidate_failed": candidate, "report": str(report)})
         error = details.get("last_error", {}).get("detail", "集成命令未完成")
         if re.fullmatch(r"Candidate run \d+ finished: failure", error):
+            snapshot = output / f"failed-run-{details.get('run')}-{details.get('run_attempt')}.json"
+            if not snapshot.exists():
+                save(snapshot, details)
             state["frozen_candidate"]["status"] = "failed"
+            state["frozen_candidate"]["failed_run"] = {
+                "id": details.get("run"), "attempt": details.get("run_attempt"), "report": str(snapshot),
+            }
+            state["events"][-1]["failure_report"] = str(snapshot)
             for item in state["items"]:
                 if item["status"] == "accepted":
                     reject(state, item, directory, "candidate",
@@ -433,9 +441,29 @@ def finish(state, directory):
     save(directory / "queue.json", state)
 
 
+def retry_candidate(state, directory):
+    verify_checker(state)
+    frozen = state["frozen_candidate"]
+    clean(Path(state["project"]), frozen["candidate"])
+    previous = frozen.get("failed_run", {})
+    if (frozen["status"] != "failed" or state["prefix"] != frozen["candidate"]
+            or type(previous.get("id")) is not int or type(previous.get("attempt")) is not int):
+        raise ValueError("Retry needs the exact unchanged failed candidate and its recorded workflow attempt")
+    run = json.loads(github("api", f"repos/{state['repository']}/actions/runs/{previous['id']}"))
+    if (run["id"] != previous["id"] or run["head_sha"] != frozen["candidate"]
+            or run["run_attempt"] <= previous["attempt"]
+            or run["status"] != "completed" or run["conclusion"] != "success"):
+        raise ValueError("Rerun the recorded workflow, then retry-candidate after a newer attempt succeeds")
+    frozen["status"] = "retry-ready"
+    state["events"].append({"at": now(), "candidate_retry": frozen["candidate"],
+                            "run": run["id"], "run_attempt": run["run_attempt"]})
+    save(directory / "queue.json", state)
+    finish(state, directory)
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("init", "attempt", "notify", "requeue", "finish", "status"))
+    parser.add_argument("command", choices=("init", "attempt", "notify", "requeue", "finish", "retry-candidate", "status"))
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--item", type=Path)
@@ -458,6 +486,8 @@ def main():
                 requeue(state, json.loads(arguments.item.read_text()), directory)
             elif arguments.command == "finish":
                 finish(state, directory)
+            elif arguments.command == "retry-candidate":
+                retry_candidate(state, directory)
     print(json.dumps(state, ensure_ascii=False, indent=2))
 
 

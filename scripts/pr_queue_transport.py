@@ -169,7 +169,8 @@ def send(rpc, route, request, receipt, output):
         receipt.update(state="waiting_idle", observed_status=thread["status"])
         return
     prompt = (f"用户已授权PR修复闭环。先单独回复精确回执：\nPR_QUEUE_ACK {request['id']}\n"
-              f"然后处理以下反馈。仅允许在指定修复工作树 {route['repair_cwd']} 写入，"
+              f"然后处理以下反馈。源码仅允许在指定修复工作树 {route['repair_cwd']} 写入；"
+              "验证日志和回执可写入反馈指定的源码外目录。"
               "保留其他工作树及日用客户端。完成回执不表示修复已通过检查。\n\n"
               + request["body"])
     receipt.update(state="delivery_unknown", attempted_at=now())

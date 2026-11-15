@@ -445,6 +445,7 @@ class PRQueueTests(unittest.TestCase):
             output.mkdir()
             if len(outputs) == 1:
                 self.write_json(output / "integration.json", {
+                    "run": 42, "run_attempt": 1,
                     "last_error": {"detail": "Candidate run 42 finished: failure"},
                 })
                 raise subprocess.CalledProcessError(1, arguments)
@@ -460,6 +461,8 @@ class PRQueueTests(unittest.TestCase):
             with self.assertRaises(subprocess.CalledProcessError):
                 pr_queue.finish(self.state, self.queue)
             self.assertEqual(self.state["frozen_candidate"]["reviewed_prefix"], prefix)
+            failure = self.state["frozen_candidate"]["failed_run"]
+            self.assertEqual(json.loads(Path(failure["report"]).read_text())["run_attempt"], 1)
             with self.assertRaisesRegex(ValueError, "author repair"):
                 pr_queue.finish(self.state, self.queue)
             source = self.branch("author-repair", "README.md", "repaired implementation")
@@ -478,3 +481,26 @@ class PRQueueTests(unittest.TestCase):
         self.assertEqual(len(set(outputs)), 2)
         self.assertTrue(self.state["all_items_merged"])
         self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_infrastructure_retry_requires_a_new_successful_attempt_of_the_identical_source(self):
+        prefix = self.release_fixture()
+        candidate = self.freeze("0.3.91")
+        self.state["prefix"] = candidate
+        self.state["frozen_candidate"] = {
+            "candidate": candidate, "reviewed_prefix": prefix, "status": "failed",
+            "failed_run": {"id": 42, "attempt": 1, "report": "original-failure.json"},
+        }
+        record = {"id": 42, "head_sha": candidate, "run_attempt": 1,
+                  "status": "completed", "conclusion": "success"}
+        for changes in ({}, {"run_attempt": 2, "head_sha": prefix}, {"run_attempt": 2, "conclusion": "failure"}):
+            with self.subTest(changes=changes), \
+                    mock.patch.object(pr_queue, "github", return_value=json.dumps({**record, **changes})), \
+                    self.assertRaisesRegex(ValueError, "newer attempt succeeds"):
+                pr_queue.retry_candidate(self.state, self.queue)
+        with mock.patch.object(pr_queue, "github", return_value=json.dumps({**record, "run_attempt": 2})), \
+                mock.patch.object(pr_queue, "finish") as finish:
+            pr_queue.retry_candidate(self.state, self.queue)
+        finish.assert_called_once_with(self.state, self.queue)
+        self.assertEqual(self.state["frozen_candidate"]["status"], "retry-ready")
+        self.assertEqual(self.state["frozen_candidate"]["failed_run"]["attempt"], 1)
+        self.assertEqual(self.state["events"][-1]["run_attempt"], 2)
