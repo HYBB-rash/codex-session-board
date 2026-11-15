@@ -6,7 +6,6 @@ struct Draft<'app> {
     project: Value,
     record: Value,
     request: String,
-    fresh: bool,
 }
 
 impl App {
@@ -28,15 +27,27 @@ impl App {
 
     pub(crate) fn new_remote_session(&self, body: &Value) -> Result<Value> {
         ensure!(!self.config.legacy_mode, "六状态兼容模式不支持远程新建");
+        let mut caller = self.config.clone();
+        caller.host_id = "local".into();
+        let timeout = Duration::from_secs(caller.rpc_timeout_seconds);
+        let project = self.remote_draft_project(body, &caller, timeout)?;
+        if body["requestId"].is_null() {
+            let url = crate::native_new::remote_url(&self.config, &project)?;
+            let url = open_client_url(url, &self.config)?;
+            return Ok(json!({"ok":true,"url":url,"native":true}));
+        }
+        self.recover_remote_draft(body, &caller, project)
+    }
+
+    fn recover_remote_draft(&self, body: &Value, caller: &Config, project: Value) -> Result<Value> {
         let request = body["requestId"].as_str().context("缺少新建请求 ID")?;
         ensure!(
             uuid::Uuid::parse_str(request)?.to_string() == request,
             "新建请求 ID 无效"
         );
-        let mut caller = self.config.clone();
-        caller.host_id = "local".into();
-        let timeout = Duration::from_secs(caller.rpc_timeout_seconds);
-        let project = self.remote_draft_project(body, &caller, timeout)?;
+        let record = self.store.draft(request)?;
+        ensure!(record["project"] == project["id"], "新建请求项目不一致");
+        ensure!(record["threadId"].is_string(), "旧版新建结果未确认，请先在客户端核对");
         let host = project["hostId"].as_str().context("项目缺少主机")?;
         self.connect_draft_host(host)?;
         let remote = self.remote_app(host)?;
@@ -45,18 +56,14 @@ impl App {
         let _guard = operation
             .lock()
             .map_err(|_| anyhow::anyhow!("新建会话锁已损坏"))?;
-        let mut reader = RuntimeConnection::draft(&remote)?;
-        let (record, fresh) = self
-            .store
-            .draft_begin(project["id"].as_str().context("项目 ID 无效")?, request)?;
+        let mut reader = RuntimeConnection::draft_recovery(&remote)?;
         let draft = Draft {
             remote: &remote,
             project,
             record,
             request: request.into(),
-            fresh,
         };
-        match self.finish_remote_draft(&draft, &mut reader, &caller) {
+        match self.finish_remote_draft(&draft, &mut reader, caller) {
             Ok(result) => Ok(result),
             Err(error) => Ok(json!({"ok":false,"pending":true,"requestId":request,
                 "error":error.to_string()})),
@@ -76,9 +83,14 @@ impl App {
         let project = projects.iter()
             .find(|project| project["id"] == body["projectId"])
             .cloned().context("远程项目已移除，请刷新")?;
-        ensure!(unique_project_root(&projects,&project),
-            "此主机有多个项目使用同一目录，无法安全确定新建归属，请先在客户端区分项目目录");
-        draft_params(&project)?;
+        if !body["requestId"].is_null() {
+            ensure!(unique_project_root(&projects,&project),
+                "旧版新建目录对应多个项目，请先在客户端核对归属");
+        } else {
+            ensure!(projects.iter().filter(|current|current["nativeId"]==project["nativeId"]).count()==1,
+                "多个远程项目使用同一原生 ID，请在客户端重新登记后重试");
+        }
+        validate_remote_project(&project)?;
         ensure!(
             body["hostId"].is_null() || body["hostId"] == project["hostId"],
             "新建目标主机不一致"
@@ -105,7 +117,7 @@ impl App {
             draft.record["stage"] != "abandoned",
             "此前的新建请求已放弃，请重新新建"
         );
-        let thread = draft.thread(&self.store, reader)?;
+        let thread = draft.thread(reader)?;
         let identifier = thread["id"].as_str().context("新建会话缺少 ID")?;
         if draft.record["stage"] != "complete" {
             move_draft_project(draft,reader,caller,identifier)?;
@@ -155,43 +167,22 @@ fn move_draft_project(draft: &Draft<'_>, reader: &mut dyn Rpc, caller: &Config,
 }
 
 impl Draft<'_> {
-    fn thread(&self, store: &Store, reader: &mut dyn Rpc) -> Result<Value> {
-        let thread = if self.fresh {
-            self.start(store, reader)?
-        } else {
-            let identifier = self.record["threadId"]
+    fn thread(&self, reader: &mut dyn Rpc) -> Result<Value> {
+        let identifier = self.record["threadId"]
                 .as_str()
                 .context("新建结果未确认，请先在客户端核对；不会再次发送创建请求")?;
             if self.record["stage"] == "complete" {
                 return Ok(json!({"id":identifier}));
             }
-            let thread = reader.call(
+        let thread = reader.call(
                 "thread/read",
                 json!({"threadId":identifier,"includeTurns":true}),
             )?["thread"]
                 .clone();
-            ensure!(thread["id"] == identifier, "新建会话读回 ID 不一致");
-            thread
-        };
+        ensure!(thread["id"] == identifier, "新建会话读回 ID 不一致");
+        ensure!(thread["historyMode"] == "legacy", "旧版空会话历史模式尚不支持安全读回");
         empty_thread(&thread)?;
         Ok(thread)
-    }
-
-    fn start(&self, store: &Store, reader: &mut dyn Rpc) -> Result<Value> {
-        let thread = reader.call("thread/start", draft_params(&self.project)?)?["thread"].clone();
-        let identifier = thread["id"].as_str().context("新建回执缺少会话 ID")?;
-        ensure!(uuid::Uuid::parse_str(identifier)?.to_string()==identifier,"新建会话 ID 无效");
-        store.draft_update(&self.request, Some(identifier), "created")?;
-        empty_thread(&thread)?;
-        ensure!(thread["cwd"]==self.project["paths"][0],"新建会话目录不一致");
-        ensure!(thread["historyMode"]=="legacy","空会话历史模式尚不支持安全读回");
-        let name = thread["name"].as_str().filter(|name| !name.is_empty()).unwrap_or("新会话");
-        reader.call("thread/name/set",json!({"threadId":identifier,"name":name}))?;
-        let current = reader.call("thread/read",json!({
-            "threadId":identifier,"includeTurns":true}))?["thread"].clone();
-        ensure!(current["id"]==identifier && current["name"]==name,
-            "初始标题尚未确认，请在客户端核对");
-        Ok(current)
     }
 }
 
@@ -203,7 +194,7 @@ fn empty_thread(thread: &Value) -> Result<()> {
     Ok(())
 }
 
-fn draft_params(project: &Value) -> Result<Value> {
+fn validate_remote_project(project: &Value) -> Result<()> {
     let paths = project["paths"].as_array().context("远程项目路径无效")?;
     ensure!(
         !paths.is_empty()
@@ -212,8 +203,7 @@ fn draft_params(project: &Value) -> Result<Value> {
                 .all(|path| path.as_str().is_some_and(|path| path.starts_with('/'))),
         "远程项目路径必须为绝对路径"
     );
-    Ok(json!({"cwd":paths[0],"runtimeWorkspaceRoots":paths,
-        "ephemeral":false,"historyMode":"legacy"}))
+    Ok(())
 }
 
 fn unique_project_root(projects: &[Value], target: &Value) -> bool {

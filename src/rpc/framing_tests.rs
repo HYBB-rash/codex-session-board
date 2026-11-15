@@ -124,7 +124,7 @@ fn cached_writer_rechecks_alias_and_peer_before_any_mutating_rpc() -> Result<()>
         let fixture = Fixture::new()?;
         let binding = fixture.binding()?;
         let mut connection =
-            DesktopConnection::remote(&binding, Duration::from_secs(3), Role::DraftWriter)?;
+            DesktopConnection::remote(&binding, Duration::from_secs(3), Role::DraftReader)?;
         let before = std::fs::read(&binding.path)?;
         fixture.update(key, value)?;
         assert!(connection.call("thread/start", json!({})).is_err());
@@ -205,10 +205,15 @@ fn draft_factory_keeps_clock_validation_for_thread_start_and_thread_read_metadat
             json!({"thread":{"createdAt":"invalid","updatedAt":1}}),
         )?;
         let app = fixture.app()?;
-        let mut connection = runtime::RuntimeConnection::draft(&app)?;
+        let mut connection = runtime::RuntimeConnection::draft_recovery(&app)?;
         let error = connection.call(method, json!({})).unwrap_err();
-        assert!(error.to_string().contains("时间格式"));
-        assert!(fixture.events().lines().any(|event| event == method));
+        if method == "thread/start" {
+            assert!(error.to_string().contains("不允许"));
+            assert!(!fixture.events().lines().any(|event| event == method));
+        } else {
+            assert!(error.to_string().contains("时间格式"));
+            assert!(fixture.events().lines().any(|event| event == method));
+        }
     }
     Ok(())
 }

@@ -59,7 +59,7 @@ mod tests {
                 Role::Reader,
                 Role::NativeReader,
                 Role::TitleWriter,
-                Role::DraftWriter,
+                Role::DraftReader,
                 Role::ArchiveWriter,
             ] {
                 let error = DesktopConnection::connect(path, Duration::from_millis(100), role)

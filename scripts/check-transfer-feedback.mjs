@@ -147,7 +147,7 @@ try {
   for (let attempt = 0; attempt < 150 && !pendingNew; attempt++) await delay(40);
   assert.equal(writes.length, 0);assert.equal(mutations.length, 1);
   assert.equal(mutations[0].path, "/api/new");assert.equal(mutations[0].body.projectId, "project");
-  assert.match(mutations[0].body.requestId, /^[0-9a-f-]{36}$/);
+  assert.equal(Object.hasOwn(mutations[0].body,"requestId"), false);
   const expectedMutations = structuredClone(mutations);
   assert(pendingNew, "必须实际挂起新建请求");
   pendingNew.setHeader("Content-Type", "application/json");pendingNew.end('{"ok":true}');
