@@ -109,7 +109,7 @@ impl Calibration<'_> {
         };
         if let Err(error) = self.empty() {
             if !missing(&error,&identifier) { return Err(error); }
-            self.confirm_absent(&identifier)?;
+            self.confirm_retired(&identifier)?;
             self.store.release_native_probe(&self.config.host_id,self.record)?;
         }
         Ok(())
@@ -275,7 +275,7 @@ impl Calibration<'_> {
         let identifier = self.identifier()?.to_owned();
         if let Err(error) = self.empty() {
             if missing(&error,&identifier) {
-                self.confirm_absent(&identifier)?;
+                self.confirm_retired(&identifier)?;
                 return self.store.release_native_probe(&self.config.host_id,self.record);
             }
             return Err(error);
@@ -289,11 +289,15 @@ impl Calibration<'_> {
         self.save()
     }
 
-    fn confirm_absent(&mut self, identifier: &str) -> Result<()> {
+    fn confirm_retired(&mut self, identifier: &str) -> Result<()> {
         for archived in [false,true] {
             let (threads,complete) = crate::rpc::collect_threads(self.backend,self.config.page_size,
                 self.config.max_pages,archived)?;
-            ensure!(complete && !threads.iter().any(|thread| thread["id"] == identifier),
+            let found = threads.iter().any(|thread| thread["id"] == identifier);
+            if archived && found {
+                return Ok(());
+            }
+            ensure!(complete && !found,
                 "专用空会话仍存在，保留清理记录");
         }
         match self.backend.call("thread/read",json!({"threadId":identifier,"includeTurns":false})) {
