@@ -1790,6 +1790,7 @@
       "acceptance.test_pr_task_lifecycle.PRTaskLifecycleTests.test_unknown_or_running_delivery_cannot_be_explicitly_retried",
       "acceptance.test_pr_task_lifecycle.PRTaskLifecycleTests.test_completed_task_cannot_attach_or_resume",
       "acceptance.test_pr_task_native.PRTaskNativeTests.test_unrelated_input_blocks_delivery_and_archive",
+      "acceptance.test_pr_task_native.PRTaskNativeTests.test_registration_preserves_original_cwd_and_limits_repairs_to_same_repository",
       "acceptance.test_pr_task_native.PRTaskNativeTests.test_busy_author_or_child_is_never_archived",
       "acceptance.test_pr_task_native.PRTaskNativeTests.test_archive_response_alone_does_not_confirm_completion",
       "acceptance.test_pr_task_native.PRTaskNativeTests.test_new_input_between_archive_checks_blocks_mutation",

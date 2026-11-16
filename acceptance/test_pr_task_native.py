@@ -1,4 +1,5 @@
 import copy
+from pathlib import Path
 import unittest
 from unittest import mock
 
@@ -8,6 +9,27 @@ from scripts.pr_task_state import digest
 
 
 class PRTaskNativeTests(unittest.TestCase):
+    def test_registration_preserves_original_cwd_and_limits_repairs_to_same_repository(self):
+        state, _ = task(self)
+        original = Path(state["directory"])
+        author = original / "author"
+        author.mkdir()
+        socket = original / "rpc.sock"
+        socket.touch()
+        thread = {"id": state["route"]["thread_id"], "cwd": str(original), "status": {"type": "active"}}
+        with mock.patch.object(native, "endpoint_pid", return_value=1), mock.patch.object(
+                native, "process_identity", return_value={"pid": 1}), mock.patch.object(
+                native.transport, "connect_endpoint") as connection, mock.patch.object(
+                native, "latest", return_value=(thread, None, [])), mock.patch.object(
+                native, "git", return_value="/same/common") as git:
+            connection.return_value.__enter__.return_value.request.return_value = {"thread": thread}
+            route, _ = native.register(socket, thread["id"], author)
+            self.assertEqual(route["expected_cwd"], str(original))
+            self.assertEqual(route["repair_cwd"], str(author))
+            git.side_effect = ["/original/common", "/different/common"]
+            with self.assertRaisesRegex(ValueError, "different repositories"):
+                native.register(socket, thread["id"], author)
+
     def archive_case(self):
         state, _ = task(self)
         state["archive"] = True

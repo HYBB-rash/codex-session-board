@@ -3,7 +3,7 @@ import time
 import uuid
 
 from scripts import pr_queue_transport as transport
-from scripts.pr_task_state import digest, now, persist, save
+from scripts.pr_task_state import digest, git, now, persist, save
 from scripts.shared_desktop import endpoint_pid, process_identity
 
 
@@ -30,6 +30,14 @@ def register(socket_path, thread_id, project):
     route = {"socket": str(socket_path), "backend": process_identity(endpoint_pid(socket_path)),
              "thread_id": thread_id, "expected_cwd": str(project), "repair_cwd": str(project)}
     with transport.connect_endpoint(route) as rpc:
+        observed = rpc.request("thread/read", {"threadId": thread_id, "includeTurns": False})["thread"]
+        if observed["id"] != thread_id:
+            raise ValueError("The backend returned a different author session")
+        original = Path(observed["cwd"]).resolve(strict=True)
+        if original != project and git(original, "rev-parse", "--path-format=absolute", "--git-common-dir") != git(
+                project, "rev-parse", "--path-format=absolute", "--git-common-dir"):
+            raise ValueError("Original session and author worktree belong to different repositories")
+        route["expected_cwd"] = str(original)
         thread, turn, users = latest(rpc, route)
     if thread["status"]["type"] not in {"active", "idle"}:
         raise ValueError("Register from the original loaded author session")
