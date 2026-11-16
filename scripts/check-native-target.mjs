@@ -20,10 +20,12 @@ const projects = new Map(["canonical-a", "canonical-b"].map(id => [
 ]));
 const threads = new Map();
 const requests = [];
+const account = { accountId: "account", userId: "user" };
 const runtime = factory({
   createId: () => "client-new-thread:random",
   scopeId: scope => scope.id,
   existing: () => undefined,
+  readContext: () => account,
   request: async (scope, hostId, method, params) => {
     requests.push({ hostId, method, params });
     if (method === "project/read") {
@@ -69,6 +71,21 @@ projects.get(second.projectId).roots.reverse();
 await assert.rejects(runtime.resolve({}, second), /roots changed/);
 projects.delete(first.projectId);
 await assert.rejects(runtime.beforeFirstTurn({}, first), /Deleted/);
+const ownerTarget = runtime.register({ ...route,
+  operationId: "019a1111-2222-4333-8444-777777777777" });
+projects.set(route.projectId, { id: route.projectId, roots: [{ path: "/same" }],
+  metadata: { "codex.chatGptBacking": JSON.stringify({ accountId: "other", userId: "user" }) } });
+await assert.rejects(runtime.resolve({}, ownerTarget), /another native account/);
+projects.get(route.projectId).metadata = {};
+await runtime.resolve({}, ownerTarget);
+account.accountId = "other";
+await assert.rejects(runtime.resolve({}, ownerTarget), /native account changed/);
+account.accountId = "account";
+await assert.rejects(runtime.resolve({}, ownerTarget), /native account changed/);
+const pendingTarget = runtime.register({ ...route,
+  operationId: "019a1111-2222-4333-8444-888888888888" });
+account.pendingDeletion = true;
+await assert.rejects(runtime.resolve({}, pendingTarget), /pending deletion/);
 assert(requests.every(request => ["project/read", "thread/read"].includes(request.method)));
 assert(requests.every(request => request.hostId === route.hostId));
 console.log(JSON.stringify({ passed: true, concurrentProjects: 2, writes: 0 }));
