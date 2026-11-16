@@ -551,7 +551,7 @@ impl Rpc for DesktopConnection {
         let deadline = self.call_deadline()?;
         if matches!(
             method,
-            "thread/start" | "thread/name/set" | "thread/archive" | "project/import"
+            "thread/start" | "thread/name/set" | "thread/archive" | "project/import" | "thread/metadata/update"
         ) && let Some(binding) = &self.remote_binding
         {
             binding.require_confirmed()?;
