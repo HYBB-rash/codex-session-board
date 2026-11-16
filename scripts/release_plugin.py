@@ -250,6 +250,8 @@ def publish_saved(github, tag, source, channel, evidence, directory, reference="
     if channel == "stable" and evidence is None:
         raise ValueError("Stable promotion requires reviewed evidence for both platforms")
     release = github.release(tag)
+    if not isinstance(release, dict):
+        raise ValueError("Release has not been saved")
     if github.api(f"commits/{tag}")["sha"] != source:
         raise ValueError("Version tag belongs to different source; use a new version")
     required = {asset_name(target) + suffix for target in TARGETS for suffix in ("", ".sha256")}
@@ -295,18 +297,20 @@ def publish_saved(github, tag, source, channel, evidence, directory, reference="
         except RuntimeError:
             if github.release(tag)["draft"]:
                 raise
-    if not github.release(tag).get("immutable"):
-        raise ValueError("Release must be immutable before updating channels")
+    published = github.release(tag)
+    if (not isinstance(published, dict) or published.get("immutable") is not True
+            or published.get("draft") is not False):
+        raise ValueError("Release must be immutable and published before updating channels")
     if rehearsal:
         return {"status": "published", "channel": None, "reference": reference,
                 "tag": tag, "source": source}
+    arguments = [sys.executable, str(checkout / "scripts/publish_plugin.py"),
+                 "--repository", f"https://github.com/{github.repository}.git", "--channel", channel]
     for package, platform_evidence in packages:
-        arguments = [sys.executable, str(checkout / "scripts/publish_plugin.py"),
-                     "--repository", f"https://github.com/{github.repository}.git",
-                     "--package", str(package), "--channel", channel]
+        arguments.extend(["--package", str(package)])
         if platform_evidence:
             arguments.extend(["--evidence", str(platform_evidence)])
-        subprocess.run(arguments, cwd=checkout, check=True)
+    subprocess.run(arguments, cwd=checkout, check=True)
     if channel == "stable":
         github.edit(tag, prerelease=False, make_latest="true")
     return {"status": "published", "channel": channel, "tag": tag, "source": source}

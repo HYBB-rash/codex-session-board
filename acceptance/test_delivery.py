@@ -1,5 +1,8 @@
 import json
 import hashlib
+import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import tarfile
@@ -45,6 +48,79 @@ class DeliveryTests(unittest.TestCase):
 
     def write_manifest(self):
         (self.package / "RELEASE.json").write_text(json.dumps(self.manifest))
+
+    def platform_package(self, target, version):
+        package = self.root / f"{target}-{version}"
+        shutil.copytree(self.package, package)
+        for name in ("plugin.json", ".codex-plugin/plugin.json"):
+            (package / name).write_text(json.dumps({"version": version}))
+        manifest = {**self.manifest, "target": target, "version": version,
+                    "files": package_plugin.hashes(package)}
+        (package / "RELEASE.json").write_text(json.dumps(manifest))
+        return package
+
+    def test_platform_channel_updates_are_atomic_and_retries_reuse_commits(self):
+        repository = self.root / "remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(repository)], check=True)
+        targets = ("aarch64-apple-darwin", self.manifest["target"])
+        def references():
+            return package_plugin.command(["git", "ls-remote", "--heads", str(repository)])
+        environment = {
+            "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_COUNT": "3",
+            "GIT_CONFIG_KEY_0": "user.name", "GIT_CONFIG_VALUE_0": "Release fixture",
+            "GIT_CONFIG_KEY_1": "user.email", "GIT_CONFIG_VALUE_1": "fixture@example.invalid",
+            "GIT_CONFIG_KEY_2": "commit.gpgsign", "GIT_CONFIG_VALUE_2": "false",
+        }
+        with patch.dict(os.environ, environment), \
+                patch.object(publish_plugin, "authorize", side_effect=lambda package, *_: package_plugin.verify_package(package)), \
+                patch.object(publish_plugin.shutil, "which", return_value=None):
+            packages = [(self.platform_package(target, "0.2.93"), None) for target in targets]
+            publish_plugin.publish_many(str(repository), packages, "candidate")
+            previous = references()
+            packages = [(self.platform_package(target, "0.2.94"), None) for target in targets]
+            contents = {str(package): (package / "RELEASE.json").read_bytes() for package, _ in packages}
+            with patch.object(publish_plugin, "remote_revisions", return_value={}):
+                with self.assertRaisesRegex(ValueError, "changed while preparing"):
+                    publish_plugin.publish_many(str(repository), packages, "candidate")
+            self.assertEqual(references(), previous)
+            hook = repository / "hooks/update"
+            hook.write_text(f'#!/bin/sh\n[ "$1" != "refs/heads/candidate/{targets[1]}" ]\n')
+            hook.chmod(0o755)
+            with self.assertRaises(subprocess.CalledProcessError):
+                publish_plugin.publish_many(str(repository), packages, "candidate")
+            self.assertEqual(references(), previous)
+            hook.unlink()
+            original_run = subprocess.run
+            with patch.object(publish_plugin.subprocess, "run", wraps=original_run) as run:
+                published = publish_plugin.publish_many(str(repository), packages, "candidate")
+            pushes = [call.args[0] for call in run.call_args_list if call.args[0][:2] == ["git", "push"]]
+            self.assertEqual(len(pushes), 1)
+            self.assertIn("--atomic", pushes[0])
+            self.assertEqual(sum(":refs/heads/candidate/" in argument for argument in pushes[0]), 2)
+            updated = references()
+            self.assertNotEqual(updated, previous)
+            self.assertEqual(publish_plugin.publish_many(str(repository), packages, "candidate"), published)
+            self.assertEqual(references(), updated)
+            self.assertEqual({str(package): (package / "RELEASE.json").read_bytes() for package, _ in packages}, contents)
+            single = publish_plugin.publish(str(repository), packages[0][0], "candidate")
+            self.assertEqual(single, published[0])
+
+    def test_second_platform_rejection_cannot_change_either_channel(self):
+        second = self.platform_package("aarch64-apple-darwin", "0.2.93")
+        with patch.object(publish_plugin, "authorize", side_effect=[self.manifest, ValueError("second platform")]), \
+                patch.object(publish_plugin, "prepare") as prepare:
+            with self.assertRaisesRegex(ValueError, "second platform"):
+                publish_plugin.publish_many("unused", [(self.package, None), (second, None)], "candidate")
+            prepare.assert_not_called()
+        for packages in (
+            [(self.package, None), (self.package, None)],
+            [(self.package, None), (self.platform_package("aarch64-apple-darwin", "0.2.94"), None)],
+        ):
+            with patch.object(publish_plugin, "authorize", side_effect=lambda package, *_: package_plugin.verify_package(package)), \
+                    patch.object(publish_plugin, "prepare") as prepare:
+                with self.assertRaises(ValueError):
+                    publish_plugin.publish_many("unused", packages, "candidate")
+                prepare.assert_not_called()
 
     def test_package_hashes_bind_assets_binary_and_version(self):
         self.assertEqual(package_plugin.verify_package(self.package), self.manifest)

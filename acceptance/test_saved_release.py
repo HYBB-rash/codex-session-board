@@ -262,7 +262,7 @@ class SavedReleaseTests(unittest.TestCase):
             self.save_existing(target)
         name = release_plugin.startup_name(self.target)
         original = self.github.assets[name]
-        variants = [None] + [
+        variants = [None, b"[]"] + [
             json.dumps({**self.startup(), field: value}).encode()
             for field, value in (
                 ("schema_version", 0), ("scope", "other"), ("passed", False),
@@ -318,16 +318,23 @@ class SavedReleaseTests(unittest.TestCase):
                 patch.object(release_plugin.subprocess, "run") as run:
             release_plugin.publish_saved(self.github, self.tag, self.github.source, "candidate", None, self.root)
         self.assertFalse(self.github.draft)
-        self.assertEqual(run.call_count, 4)
+        self.assertEqual(run.call_count, 3)
+        publication = run.call_args_list[-1].args[0]
+        self.assertEqual(publication.count("--package"), len(package_plugin.TARGETS))
         observed_release = self.github.release
-        with patch.object(self.github, "release", side_effect=lambda tag: {**observed_release(tag), "immutable": False}), \
-                patch.object(release_plugin, "source_checkout", side_effect=checkout), \
-                patch.object(release_plugin.subprocess, "run") as run:
-            retry = self.root / "mutable"
-            retry.mkdir()
-            with self.assertRaisesRegex(ValueError, "must be immutable"):
-                release_plugin.publish_saved(self.github, self.tag, self.github.source, "candidate", None, retry)
-            self.assertEqual(run.call_count, 2)
+        for draft, immutable in ((False, False), (True, True)):
+            with patch.object(self.github, "release", side_effect=lambda tag: {
+                **observed_release(tag), "draft": draft, "immutable": immutable,
+            }), patch.object(release_plugin, "source_checkout", side_effect=checkout), \
+                    patch.object(release_plugin.subprocess, "run") as run:
+                retry = self.root / f"mutable-{draft}"
+                retry.mkdir()
+                with self.assertRaisesRegex(ValueError, "must be immutable"):
+                    release_plugin.publish_saved(self.github, self.tag, self.github.source, "candidate", None, retry)
+                self.assertEqual(run.call_count, 2)
+        with patch.object(self.github, "release", return_value=None):
+            with self.assertRaisesRegex(ValueError, "has not been saved"):
+                release_plugin.publish_saved(self.github, self.tag, self.github.source, "candidate", None, self.root)
 
     def test_mismatched_source_is_rejected_before_build_or_upload(self):
         self.github.assets[release_plugin.asset_name(self.target)] = self.archive(source="b" * 40)
