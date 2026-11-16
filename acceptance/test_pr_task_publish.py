@@ -86,3 +86,21 @@ class PRTaskPublishTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "changed during validation"):
                 publish.submit(state)
         run.assert_not_called()
+
+    def test_lost_creation_reply_recovers_terminal_pr_and_schedules_idle_cleanup(self):
+        state, snapshot = task(self)
+        state.update(pr=None, phase="developing")
+        closed = pull()
+        closed.update(state="closed", merged=True)
+        snapshot.update(state="merged", merge_commit="d" * 40)
+        arguments = cli.parser().parse_args(["submit", "--state", state["directory"]])
+        with mock.patch.object(publish, "checkout", return_value=HEAD), mock.patch.object(
+                publish, "published_pr", return_value=closed), mock.patch.object(
+                cli.lifecycle.forge, "snapshot", return_value=snapshot), mock.patch.object(
+                cli.lifecycle.native, "archive", return_value=False), mock.patch.object(
+                cli.scheduler, "install") as install:
+            result = cli.execute(state, arguments)
+        self.assertEqual(result["phase"], "finalizing")
+        self.assertEqual(state["outcome"]["result"], "merged")
+        self.assertIn("finalize", result["recovery"])
+        install.assert_called_once_with(state)

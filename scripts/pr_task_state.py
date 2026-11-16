@@ -100,6 +100,8 @@ def summary(state):
         snapshot = result["last_snapshot"]
         result["last_snapshot"] = {key: snapshot[key] for key in ("head", "state", "ci", "url")}
         result["last_snapshot"]["feedback_count"] = len(snapshot["items"])
+    if state.get("cleanup_pending") and state["phase"] != "complete":
+        result["recovery"] = "Run pr-task finalize --state with this task directory to reconcile cleanup"
     return result
 
 

@@ -74,10 +74,7 @@ def parser():
 def execute(state, arguments):
     action = arguments.command
     if action == "status":
-        result = summary(state)
-        if state.get("cleanup_pending"):
-            result["recovery"] = "Run pr-task finalize --state with this task directory to reconcile cleanup"
-        return result
+        return summary(state)
     if action == "tick":
         lifecycle.tick(state, arguments.force)
     elif action == "claim":
@@ -86,7 +83,9 @@ def execute(state, arguments):
         lifecycle.complete(state, arguments.event, arguments.result, arguments.message_file.read_text())
     elif action == "submit":
         publish.submit(state, arguments.title, arguments.body_file.read_text() if arguments.body_file else None)
-        if not arguments.no_schedule and state["phase"] != "finalizing":
+        if state["phase"] == "finalizing":
+            lifecycle.tick(state, force=True)
+        if not arguments.no_schedule and state["phase"] != "complete":
             scheduler.install(state)
     elif action == "attach":
         if state["phase"] in {"complete", "finalizing"}:
@@ -156,6 +155,8 @@ def main():
         state = load(directory)
         snapshot = forge.snapshot(state)
         if snapshot["state"] != "open":
+            if state["phase"] == "finalizing":
+                return {"cleanup_only": True, "terminal": snapshot["state"]}
             raise ValueError("Cannot enable monitoring for an ended PR")
         publish.ensure_labels(state["repository"])
         return {"comment": publish.comment_once(

@@ -34,7 +34,7 @@ def present(state):
 def install(state):
     if sys.platform != "darwin":
         raise ValueError("Built-in scheduling currently supports macOS; invoke tick with an external scheduler")
-    if state["phase"] in {"complete", "finalizing"}:
+    if state["phase"] == "complete":
         raise ValueError("Cannot schedule an ended task")
     if not state["pr"]:
         raise ValueError("Publish or attach a PR before enabling its watcher")
@@ -125,7 +125,7 @@ def finalizer_running(state):
 
 def finish(state):
     if not state["scheduler"]:
-        state.update(phase="complete", completed_at=now())
+        state.update(phase="complete", cleanup_pending=False, completed_at=now())
         persist(state)
         record(state, "completed", outcome=state["outcome"])
         return

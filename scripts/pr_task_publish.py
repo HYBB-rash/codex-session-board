@@ -91,7 +91,7 @@ def submit(state, title=None, body=None):
     head = checkout(state, clean=True)
     remote_pr = published_pr(state)
     if remote_pr and remote_pr["state"] != "open":
-        state.update(pr=remote_pr["number"], phase="finalizing")
+        state.update(pr=remote_pr["number"], phase="finalizing", cleanup_pending=True)
         persist(state)
         return
     if remote_pr and state["pr"] not in (None, remote_pr["number"]):
