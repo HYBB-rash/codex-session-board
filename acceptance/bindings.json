@@ -2115,7 +2115,15 @@
       "acceptance.test_pr_task_github.PRTaskGithubTests.test_revalidated_same_head_feedback_resolves_only_its_exact_original_body",
       "acceptance.test_pr_task_lifecycle.PRTaskLifecycleTests.test_terminal_only_tick_does_not_start_a_repair_for_an_open_pr",
       "acceptance.test_promotion.PromotionTests.test_context_promotion_requires_exact_exclusive_evidence_and_never_rebuilds_packages",
-      "acceptance.test_promotion.PromotionTests.test_pr_ci_is_checked_again_after_artifacts_and_before_the_main_push"
+      "acceptance.test_promotion.PromotionTests.test_pr_ci_is_checked_again_after_artifacts_and_before_the_main_push",
+      "acceptance.test_main_release.MainReleaseTests.test_pending_requests_select_latest_main_and_pin_its_implementation",
+      "acceptance.test_main_release.MainReleaseTests.test_selection_race_or_dirty_tree_cannot_publish_a_mixed_source",
+      "acceptance.test_main_release.MainReleaseTests.test_only_regular_context_records_share_the_previous_implementation",
+      "acceptance.test_main_release.MainReleaseTests.test_main_must_have_a_successful_frozen_merge_run",
+      "acceptance.test_main_release.MainReleaseTests.test_release_reuses_both_merge_reports_without_rebuilding_or_running_tests",
+      "acceptance.test_main_release.MainReleaseTests.test_dispatch_error_keeps_merge_complete_and_release_pending",
+      "acceptance.test_main_release.MainReleaseTests.test_channel_status_requires_both_exact_sources_and_preserves_previous_release",
+      "acceptance.test_main_release.MainReleaseTests.test_channel_manifest_reads_existing_candidate_branches"
     ]
   }
 }
