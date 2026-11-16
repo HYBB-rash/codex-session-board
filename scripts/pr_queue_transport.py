@@ -39,7 +39,7 @@ class Rpc:
         self.connection.send(json.dumps({
             "id": self.identifier, "method": method, "params": params,
         }))
-        deadline = time.monotonic() + 30
+        deadline = min(time.monotonic() + 30, getattr(self, "deadline", float("inf")))
         while time.monotonic() < deadline:
             self.connection.settimeout(max(0.001, deadline - time.monotonic()))
             reply = json.loads(self.connection.recv())

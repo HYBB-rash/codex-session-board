@@ -1,4 +1,5 @@
 from pathlib import Path
+import time
 import uuid
 
 from scripts import pr_queue_transport as transport
@@ -7,6 +8,8 @@ from scripts.shared_desktop import endpoint_pid, process_identity
 
 
 def latest(rpc, route):
+    if not hasattr(rpc, "deadline"):
+        rpc.deadline = time.monotonic() + 60
     thread = transport.read_author(rpc, route)
     page = rpc.request("thread/turns/list", {
         "threadId": route["thread_id"], "limit": 1, "sortDirection": "desc", "itemsView": "full",
@@ -98,16 +101,82 @@ def is_archived(rpc, route):
     raise ValueError("Native archive listing exceeded its bound")
 
 
+def collection(rpc, method, parameters):
+    cursor, seen, entries = None, set(), []
+    for _ in range(100):
+        page = rpc.request(method, {**parameters, "limit": 100, "cursor": cursor})
+        if not isinstance(page["data"], list):
+            raise ValueError("Native descendant listing is incomplete")
+        entries.extend(page["data"])
+        cursor = page.get("nextCursor")
+        if not cursor:
+            return entries
+        if cursor in seen:
+            raise ValueError("Native descendant listing repeated a cursor")
+        seen.add(cursor)
+    raise ValueError("Native descendant listing exceeded its bound")
+
+
+def descendants_idle(rpc, route):
+    root = route["thread_id"]
+    descendants = set()
+    for archived in (False, True):
+        descendants.update(entry["id"] for entry in collection(
+            rpc, "thread/list", {"ancestorThreadId": root, "archived": archived}))
+    loaded = collection(rpc, "thread/loaded/list", {})
+    nodes = {}
+
+    def read(identifier):
+        if identifier not in nodes:
+            nodes[identifier] = rpc.request("thread/read", {
+                "threadId": identifier, "includeTurns": False,
+            })["thread"]
+        thread = nodes[identifier]
+        if thread["id"] != identifier or "parentThreadId" not in thread:
+            raise ValueError("Backend cannot prove the native archive descendant graph")
+        return thread
+
+    def belongs(identifier):
+        visited = set()
+        while identifier and identifier != root:
+            if identifier in visited or len(visited) >= 100:
+                raise ValueError("Native parent graph is cyclic or exceeds its bound")
+            visited.add(identifier)
+            identifier = read(identifier)["parentThreadId"]
+        return identifier == root
+
+    for identifier in loaded:
+        if identifier != root and belongs(identifier):
+            descendants.add(identifier)
+    for identifier in descendants:
+        if identifier == root or not belongs(identifier):
+            raise ValueError("Backend did not apply the ancestor scope")
+        status = read(identifier)["status"]["type"]
+        if status == "active":
+            return False
+        if status not in {"idle", "notLoaded"}:
+            raise ValueError("Descendant status is not known to be idle")
+    return True
+
+
 def archive(state):
     if not state["archive"]:
         state["archive_receipt"] = {"status": "not_requested"}
         persist(state)
         return True
     with transport.connect_endpoint(state["route"]) as rpc:
+        rpc.deadline = time.monotonic() + 90
         if is_archived(rpc, state["route"]):
             state["archive_receipt"] = {"status": "confirmed", "at": now()}
             persist(state)
             return True
+        thread, turn, users = latest(rpc, state["route"])
+        owned(state, turn, users)
+        if (thread["status"]["type"] not in {"idle", "notLoaded"}
+                or turn and turn["status"] not in {"completed", "failed", "interrupted"}):
+            return False
+        if not descendants_idle(rpc, state["route"]):
+            return False
         thread, turn, users = latest(rpc, state["route"])
         owned(state, turn, users)
         if (thread["status"]["type"] not in {"idle", "notLoaded"}
