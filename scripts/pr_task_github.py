@@ -12,7 +12,8 @@ class ForgeError(RuntimeError):
         super().__init__(message)
         headers = headers or {}
         self.permission = status in (401, 403, 404) and not (
-            headers.get("x-ratelimit-remaining") == "0" or "retry-after" in headers)
+            headers.get("x-ratelimit-remaining") == "0" or "retry-after" in headers
+            or "rate limit" in message.lower())
         self.retry_after = max(60, int(headers.get("retry-after", "60")))
         if headers.get("x-ratelimit-remaining") == "0":
             self.retry_after = max(self.retry_after,
@@ -34,7 +35,7 @@ def api(endpoint, *arguments, deadline=None):
     if deadline is not None and time.monotonic() >= deadline:
         raise ForgeError("GitHub snapshot exceeded its time budget")
     try:
-        raw = github("api", "--include", endpoint, *arguments, timeout=timeout)
+        raw = github("api", "--hostname", "github.com", "--include", endpoint, *arguments, timeout=timeout)
         status, headers, value = response(raw)
     except subprocess.CalledProcessError as error:
         try:
@@ -106,9 +107,14 @@ def item(kind, entry, head=None):
 def feedback(pr, reviews, comments, inline, roots, reviewers):
     result = []
     published = {entry["id"]: entry for entry in reviews if entry["state"] != "PENDING"}
+    decisive = {}
+    for entry in sorted(reviews, key=lambda value: value["id"]):
+        if entry["state"] in {"CHANGES_REQUESTED", "APPROVED"}:
+            decisive[entry["user"]["login"]] = entry["id"]
     for entry in reviews:
         if (entry["state"] == "CHANGES_REQUESTED" and entry.get("body", "").strip()
-                and entry["user"]["login"] in reviewers):
+                and entry["user"]["login"] in reviewers
+                and decisive.get(entry["user"]["login"]) == entry["id"]):
             result.append(item("review", entry, entry.get("commit_id")))
     for entry in inline:
         if entry["pull_request_review_id"] not in published or entry["user"]["login"] not in reviewers:

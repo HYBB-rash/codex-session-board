@@ -36,7 +36,7 @@ def create_event(state, snapshot, items):
         "不要仅在聊天中宣称完成，不得在尚未领取时发送修复或覆盖他人提交。"
     )
     state["events"].append(event)
-    state.update(active_event=identifier, phase="repairing", rounds=state["rounds"] + 1)
+    state.update(active_event=identifier, phase="repairing")
     persist(state)
     record(state, "feedback_discovered", event=identifier, head=event["head"],
            keys=[item["key"] for item in items])
@@ -52,6 +52,9 @@ def poll_event(state, event, snapshot):
         persist(state)
         return
     receipt = native.delivery(state, event)
+    if receipt.get("attempted_at") and not event.get("counted"):
+        event["counted"] = True
+        state["rounds"] += 1
     if receipt.get("turn_status") in {"failed", "interrupted"}:
         state["phase"] = "needs-human"
         record(state, "author_failed", event=event["id"], receipt=receipt)
@@ -67,7 +70,8 @@ def tick(state, force=False):
     if not force and time.time() < state.get("next_poll_at", 0):
         return
     snapshot = forge.snapshot(state)
-    state.update(last_snapshot=snapshot, next_poll_at=time.time() + state["interval"], last_error=None)
+    state.update(last_snapshot=snapshot, next_poll_at=time.time() + state["interval"],
+                 last_error=None, error_backoff=0)
     persist(state)
     if snapshot["state"] in {"merged", "closed"}:
         state.update(phase="finalizing", outcome={
@@ -92,6 +96,12 @@ def tick(state, force=False):
     if state["phase"] == "needs-human":
         return
     event = active(state)
+    if (time.time() >= state["deadline"] and (not event or event.get("delivery", {}).get("state", "pending")
+                                            in {"pending", "waiting_idle", "rejected"})):
+        state["phase"] = "needs-human"
+        record(state, "lifetime_exhausted")
+        persist(state)
+        return
     if event:
         poll_event(state, event, snapshot)
         if active(state):
@@ -142,7 +152,8 @@ def claim(state, identifier):
 
 def complete(state, identifier, result, message):
     event = active(state)
-    if not event or event["id"] != identifier or event["status"] != "claimed":
+    if (not event or event["id"] != identifier or event["status"] != "claimed"
+            or state["phase"] in {"paused", "complete", "finalizing"}):
         raise ValueError("Complete only the currently claimed feedback")
     if os.environ.get("CODEX_THREAD_ID") != state["route"]["thread_id"] or not message.strip():
         raise ValueError("The original author must provide a nonempty disposition")

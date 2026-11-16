@@ -38,6 +38,12 @@ def install(state):
         raise ValueError("Cannot schedule an ended task")
     if not state["pr"]:
         raise ValueError("Publish or attach a PR before enabling its watcher")
+    if state["scheduler"] and state["scheduler"]["status"] == "installed":
+        path = Path(state["scheduler"]["plist"])
+        if not path.exists() or digest(plistlib.loads(path.read_bytes())) != state["scheduler"]["sha256"]:
+            raise ValueError("Installed LaunchAgent ownership changed")
+        if present(state):
+            return
     launch_agents = Path.home() / "Library/LaunchAgents"
     launch_agents.mkdir(parents=True, exist_ok=True)
     label = f"com.codex-session-board.pr-task.{digest([state['repository'], state['branch']])[:20]}"
@@ -60,8 +66,11 @@ def install(state):
         raise ValueError("GitHub CLI is missing from the background environment")
     definition["EnvironmentVariables"]["CODEX_GITHUB_COMMAND"] = json.dumps([executable])
     environment = definition["EnvironmentVariables"]
-    subprocess.run([executable, "api", f"repos/{state['repository']}", "--jq", ".full_name"],
-                   env=environment, check=True, capture_output=True, timeout=30)
+    observed = subprocess.run([executable, "api", "--hostname", "github.com",
+                               f"repos/{state['repository']}", "--jq", ".full_name"],
+                              env=environment, check=True, capture_output=True, text=True, timeout=30)
+    if observed.stdout.strip() != state["repository"]:
+        raise ValueError("Background GitHub authentication resolved a different repository")
     encoded = plistlib.dumps(definition)
     if path.exists() and path.read_bytes() != encoded:
         raise ValueError("An existing LaunchAgent differs; do not overwrite it")

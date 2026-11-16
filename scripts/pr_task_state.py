@@ -50,10 +50,10 @@ def private_directory(directory):
 
 
 @contextmanager
-def locked(directory):
+def locked(directory, wait=False):
     directory = private_directory(directory)
     with (directory / "task.lock").open("a") as stream:
-        fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
         yield directory
 
 
@@ -91,11 +91,16 @@ def checkout(state, clean=False):
 
 
 def summary(state):
-    return {key: state.get(key) for key in (
+    result = {key: state.get(key) for key in (
         "id", "repository", "pr", "phase", "directory", "project", "branch",
         "last_snapshot", "active_event", "last_error", "next_poll_at", "outcome",
         "scheduler", "updated_at",
     )}
+    if result["last_snapshot"]:
+        snapshot = result["last_snapshot"]
+        result["last_snapshot"] = {key: snapshot[key] for key in ("head", "state", "ci", "url")}
+        result["last_snapshot"]["feedback_count"] = len(snapshot["items"])
+    return result
 
 
 def defer(state, error, seconds, pause=False):
