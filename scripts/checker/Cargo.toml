@@ -12,6 +12,10 @@ path = "../project_check.rs"
 
 [dependencies]
 anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+ra-ap-rustc_lexer = "=0.183.0"
+regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 tempfile = "3"
+toml = "=1.1.2"
