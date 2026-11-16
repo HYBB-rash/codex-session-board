@@ -2143,7 +2143,8 @@
       "acceptance.test_main_release.MainReleaseTests.test_published_descendant_covers_coalesced_and_older_main_commits",
       "acceptance.test_main_release.MainReleaseTests.test_missing_immutable_release_or_wrong_tag_cannot_skip_publication",
       "acceptance.test_main_release.MainReleaseTests.test_changed_implementation_needs_a_fresh_unclaimed_version",
-      "acceptance.test_main_release_feedback.MainReleaseFeedbackTests.test_infrastructure_recovery_does_not_require_an_unrelated_business_regression"
+      "acceptance.test_main_release_feedback.MainReleaseFeedbackTests.test_infrastructure_recovery_does_not_require_an_unrelated_business_regression",
+      "acceptance.test_main_release.MainReleaseTests.test_old_success_status_without_delivery_evidence_cannot_claim_publication"
     ]
   }
 }

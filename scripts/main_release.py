@@ -29,6 +29,10 @@ def dispatch(repository, source):
     result["automatic_retry"] = "plugin-release.yml scheduled reconciliation"
     try:
         from scripts.main_release_feedback import failure
+        GitHub(repository).api(
+            f"statuses/{source}", "POST", state="failure", context="Plugin release",
+            description="代码已合并，发布触发失败；自动调和将重试",
+            target_url=f"https://github.com/{repository}/actions/workflows/plugin-release.yml")
         result["feedback"] = failure(repository, source, "dispatch",
                                      f"https://github.com/{repository}/actions/workflows/plugin-release.yml",
                                      phase="dispatch")
@@ -75,10 +79,11 @@ def status(repository, source):
     covered = coherent and ancestor(canonical, next(iter(origins)))
     complete = covered and canonical in origins
     state = ("published" if complete else "covered" if covered else
-             {"success": "published", "failure": "failed", "pending": "pending"}.get(
+             {"success": "inconsistent", "failure": "failed", "pending": "pending"}.get(
                  latest["state"] if latest else "", "pending"))
     return {"source": source, "merge_status": "merged" if merged else "not_merged", "published": published,
-            "release_status": state, "covered_by": next(iter(origins)) if covered else None,
+            "release_status": state if merged else "not_requested",
+            "covered_by": next(iter(origins)) if covered else None,
             "latest_attempt": latest}
 
 

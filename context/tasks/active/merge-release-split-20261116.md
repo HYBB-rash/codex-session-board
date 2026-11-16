@@ -23,3 +23,16 @@ checker在暂存快照及git_hooks独立fixture重复编译已确认，
 协调者独占共享状态与发布改动；缓存独立隔离checkout开发，返回提交供审阅取用。
 分别记录PR就绪到main、main到发布、缓存首次/命中/变更重建，
 真实验证发布失败及连续main更新；不将模拟、单测或估算冒充真实流水线结果。
+
+已实现并定向验证：
+- candidate门禁保留项目规则、全目标Clippy及完整/按风险的组合回归，移走发布构建。
+- integrate/promote及queue分别记录merge与release，closeout不等待发布或客户端。
+- main push/dispatch/同工作流定时补偿自动发布，保留running并合并pending。
+  API读main的时点固定源码，context记录复用原实现提交；旧实现可由已发布后继覆盖。
+- 已有不可变双平台包+STARTUP后幂等复用，双渠道原子push失败不会部分前进。
+- GitHub故障工单由发布成功独占关单，使用Release-Fix非自动关单标记。
+  故障区分phase，确认merge-gate-gap才强制对应合并前回归；其余基础设施修复可单独恢复。
+- 固定checker独立Cargo锁和内容缓存已合入；staged旧example入口改为相同scripts/check。
+- 112项阶段回归、后续32项修正回归通过；337项Python清单与绑定无缺失。
+  此处不是最终冻结头的组合通过证据；工具缓存快照/外部配置独立审阅问题正在修复。
+  source-preflight通过，尚未进行真实新流水线计时，不宣称主线或发布完成。

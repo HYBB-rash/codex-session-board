@@ -75,7 +75,8 @@ class MainReleaseTests(unittest.TestCase):
 
     def test_dispatch_error_keeps_merge_complete_and_release_pending(self):
         with patch.object(release, "github", side_effect=RuntimeError("transport failed")):
-            with patch("scripts.main_release_feedback.failure", side_effect=RuntimeError("offline")):
+            with patch("scripts.main_release_feedback.failure", side_effect=RuntimeError("offline")), \
+                    patch.object(release, "GitHub"):
                 result = release.dispatch("owner/repo", "source")
         self.assertEqual(result["status"], "pending")
         self.assertEqual(result["requested_source"], "source")
@@ -143,6 +144,18 @@ class MainReleaseTests(unittest.TestCase):
                 self.assertRaisesRegex(ValueError, "different immutable source"):
             evidence.require_version("owner/repo", "base")
 
+    def test_old_success_status_without_delivery_evidence_cannot_claim_publication(self):
+        forge = Mock()
+        forge.api.return_value = [{"context": "Plugin release", "state": "success"}]
+        with patch.object(release, "GitHub", return_value=forge), \
+                patch.object(release, "channels", return_value={target: None for target in release.TARGETS}), \
+                patch.object(release, "git", return_value="main"), \
+                patch.object(release, "implementation", return_value="source"), \
+                patch.object(release, "ancestor", return_value=True):
+            result = release.status("owner/repo", "source")
+        self.assertEqual(result["release_status"], "inconsistent")
+        self.assertIsNone(result["covered_by"])
+        self.assertEqual(result["latest_attempt"]["state"], "success")
     def test_channel_manifest_reads_existing_candidate_branches(self):
         forge = Mock()
         forge.api.return_value = {"content": base64.b64encode(b'{"source_commit":"fixed"}').decode()}

@@ -52,6 +52,28 @@ CSB_VALIDATION_PYTHON=/path/to/python3.12 ./scripts/validate \
 
 普通验证默认使用本工作树 `target/validation/<工作树身份>`，凭据绑定源码目录的真实路径、设备和目录身份。同一路径删除后重建也使用新缓存。显式 `CARGO_TARGET_DIR` 中已有内容却没有归属凭据，或归属其他源码副本，均拒绝使用；请提供新的空目录，不要删除或伪造凭据。暂存快照使用自己的临时 target，不继承工作树缓存。因此新副本和暂存完整检查有独立编译成本；开发提交仍使用 `./scripts/check --pre-commit` 快检。
 
+### 固定工具缓存
+
+`scripts/check` 自动经现有 Cargo 入口构建独立的 `scripts/checker/Cargo.toml`，
+复用原 `project_check.rs`，不再为了运行固定检查器编译整个业务 crate。
+缓存默认在 `${XDG_CACHE_HOME:-$HOME/.cache}/codex-session-board/checker`，
+可用 `CSB_CHECKER_CACHE_DIR` 指定。三个工作流继续使用 actions/cache 保存该目录。
+每次仍在当前工作树或索引快照实际执行检查；命中只表示工具无需重新编译。
+
+| 程序 | 复用边界 |
+| --- | --- |
+| 固定项目检查器 | 工具源码、独立锁、实际 Cargo/Rustc、平台、配置和编译条件相同才复用不可变二进制 |
+| 检查器与 hooks 自测 | 工具改动仍由现有 Rust 测试运行；普通业务范围不重复执行无关工具自测 |
+| 业务库及 Rust 测试驱动 | Cargo 在当前候选的独立业务 target 中构建和执行，不复用其他候选的测试可执行文件 |
+| release fixture | 依赖业务代码，按固定发布源码构建；只在发布阶段使用 |
+| Python 与 Node 检查 | 保持现有解释执行入口，不另建测试调度器 |
+
+缓存条目校验输入身份和二进制摘要，私有暂存后原子发布。
+同构建条件只锁构建过程，等待者读回同一条目；不同构建条件使用独立 Cargo 目录。
+工具输入变化自动生成新键，损坏条目拒绝运行，不会静默作为验证成功。
+`CSB_CHECKER_CACHE_REPORT=/absolute/outside/source.json` 可记录键、是否命中、
+二进制摘要和解析/构建耗时；完整进程耗时另计，不能把工具级收益外推为整条流水线。
+
 ## 结果和清理
 
 `VALIDATION.json` 第二版包含来源提交/树/指纹、工具环境、执行计划、逐步耗时、首次失败、日志摘要、待验证项和清理结论。准备及收尾位于独立字段，候选三个 `steps` 的含义不变。标准输出和错误输出分别保存；失败时仍在终端显示相应诊断。
