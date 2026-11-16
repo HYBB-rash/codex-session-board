@@ -8,6 +8,8 @@ struct Backend {
     account: Value,
     projects: Vec<Value>,
     imports: Vec<Value>,
+    on_list: Option<fn(&mut Self)>,
+    on_state: Option<fn(&mut Self)>,
 }
 
 impl Backend {
@@ -20,7 +22,7 @@ impl Backend {
                 "project-appearances":{"old":{"color":"green","marker":{"kind":"emoji","emoji":"🌱"}}},
                 (format!("electron-owner-value:app-server-projects-migration-by-host:{owner}")):{
                     "local:/target/codex":{"version":1,"projectsMigrated":false}}}),
-            projects: vec![], imports: vec![],
+            projects: vec![], imports: vec![], on_list: None, on_state: None,
         }
     }
 
@@ -44,8 +46,15 @@ impl Rpc for Backend {
         match method {
             "account/read" => Ok(self.account.clone()),
             "fs/getMetadata" => Ok(json!({"isFile":true,"isSymlink":false})),
-            "fs/readFile" => Ok(json!({"dataBase64":STANDARD.encode(serde_json::to_vec(&self.state)?)})),
-            "project/list" => Ok(json!({"data":self.projects,"nextCursor":null})),
+            "fs/readFile" => {
+                if let Some(change) = self.on_state.take() { change(self); }
+                Ok(json!({"dataBase64":STANDARD.encode(serde_json::to_vec(&self.state)?)}))
+            }
+            "project/list" => {
+                let response = json!({"data":self.projects,"nextCursor":null});
+                if let Some(change) = self.on_list.take() { change(self); }
+                Ok(response)
+            }
             "project/read" => {
                 let project = self.projects.iter().find(|project| project["id"] == params["projectId"])
                     .context("project not found")?;
@@ -186,6 +195,120 @@ fn owner_account_source_and_deletion_changes_fail_before_opening() -> Result<()>
             _ => unreachable!(),
         }
         assert!(fresh.verify_after(&mut backend, &source, Some("old"), &project).is_err(), "{change}");
+    }
+    Ok(())
+}
+
+#[test]
+fn changes_during_project_scan_reject_before_import() -> Result<()> {
+    let changes: [fn(&mut Backend); 5] = [
+        |backend| { backend.state["local-projects"] = json!({}); },
+        Backend::pending,
+        |backend| {
+            backend.account["userId"] = json!("other");
+            backend.state["electron-renderer-content-owner"] =
+                json!(input::digest(br#"["other","account"]"#));
+        },
+        |backend| { backend.state["local-projects"]["old"]["rootPaths"] = json!(["/changed"]); },
+        |backend| {
+            let owner = input::digest(br#"["user","account"]"#);
+            backend.state[format!("electron-owner-value:app-server-projects-migration-by-host:{owner}")]
+                ["local:/target/codex"]["projectsMigrated"] = json!(true);
+        },
+    ];
+    for change in changes {
+        let mut backend = Backend::new();
+        let fresh = backend.read()?;
+        backend.on_list = Some(change);
+        assert!(fresh.prepare_legacy(&mut backend, "old", 1).is_err());
+        assert!(backend.imports.is_empty());
+    }
+    Ok(())
+}
+
+#[test]
+fn mapping_completed_during_scan_reuses_new_canonical_without_import() -> Result<()> {
+    let mut backend = Backend::new();
+    let fresh = backend.read()?;
+    backend.on_list = Some(|backend| {
+        backend.state["app-server-project-id-by-legacy-project-id-by-host"] =
+            json!({"local:/target/codex":{"old":CANONICAL}});
+        backend.projects.push(json!({"id":CANONICAL,"roots":[{"path":"/native"}],"metadata":{}}));
+    });
+    let project = fresh.prepare_legacy(&mut backend, "old", 1)?;
+    assert_eq!(roots(&project)?, vec![json!({"path":"/native"})]);
+    assert!(backend.imports.is_empty());
+    Ok(())
+}
+
+#[test]
+fn final_read_returns_current_roots_after_state_revalidation() -> Result<()> {
+    for legacy in [None,Some("old")] {
+        let mut backend = Backend::new();
+        let fresh = backend.read()?;
+        let project = fresh.prepare_legacy(&mut backend, "old", 1)?;
+        backend.on_state = Some(|backend| {
+            backend.projects[0]["roots"] = json!([{"path":"/latest"},{"path":"/latest-second"}]);
+        });
+        let current = fresh.verify_after(&mut backend, &Backend::source(), legacy, &project)?;
+        assert_eq!(roots(&current)?, vec![json!({"path":"/latest"}),json!({"path":"/latest-second"})]);
+    }
+    Ok(())
+}
+
+#[test]
+fn final_read_rejects_deleted_canonical_and_foreign_backing() -> Result<()> {
+    for change in [|backend: &mut Backend| { backend.projects.clear(); },
+        |backend: &mut Backend| {
+            backend.projects[0]["metadata"]["codex.chatGptBacking"] =
+                json!(r#"{"accountId":"account","userId":"other","projectId":"g-p-test"}"#);
+        }] {
+        let mut backend = Backend::new();
+        let fresh = backend.read()?;
+        let project = fresh.prepare_legacy(&mut backend, "old", 1)?;
+        backend.on_state = Some(change);
+        assert!(fresh.verify_after(&mut backend, &Backend::source(), Some("old"), &project).is_err());
+    }
+    Ok(())
+}
+
+#[test]
+fn unrelated_legacy_thread_and_project_diagnostics_do_not_block_target_actions() -> Result<()> {
+    let mut backend = Backend::new();
+    backend.state["thread-project-assignments"] = json!({"stale":{"projectKind":false}});
+    backend.state["thread-workspace-root-hints"] = json!(false);
+    backend.state["local-projects"]["unrelated"] = json!({"id":false,"rootPaths":false});
+    backend.state["project-appearances"]["unrelated"] = json!(false);
+    backend.projects.push(json!({"id":CANONICAL,"roots":[{"path":"/target"}],"metadata":{}}));
+    let fresh = backend.read()?;
+    fresh.server(&mut backend, CANONICAL)?;
+    fresh.legacy("old")?;
+    backend.state["local-projects"] = json!(false);
+    backend.state["project-appearances"] = json!(false);
+    let fresh = backend.read()?;
+    fresh.server(&mut backend, CANONICAL)?;
+    assert!(fresh.legacy("old").is_err());
+    assert!(backend.imports.is_empty());
+    Ok(())
+}
+
+#[test]
+fn malformed_project_identity_deletion_and_checkpoint_fields_remain_rejected() -> Result<()> {
+    let owner = input::digest(br#"["user","account"]"#);
+    for (field,value) in [
+        ("app-server-project-id-by-legacy-project-id-by-host".to_owned(),
+            json!({"local:/target/codex":{"old":false}})),
+        (format!("electron-owner-value:app-server-pending-project-deletions-by-host:{owner}"),
+            json!({"local:/target/codex":{"old":{}}})),
+        (format!("electron-owner-value:app-server-projects-migration-by-host:{owner}"),
+            json!({"local:/target/codex":{"version":"1","projectsMigrated":false}})),
+        (format!("electron-owner-value:app-server-projects-migration-by-host:{owner}"),
+            json!({"local:/target/codex":{"version":1,"projectsMigrated":"false"}})),
+    ] {
+        let mut backend = Backend::new();
+        backend.state[field] = value;
+        assert!(backend.read().is_err());
+        assert!(backend.imports.is_empty());
     }
     Ok(())
 }

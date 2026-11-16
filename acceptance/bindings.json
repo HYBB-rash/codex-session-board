@@ -1410,6 +1410,12 @@
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_wrong_architecture_is_rejected_before_stopping_or_installing"
     ],
     "BOUNDARY-001": [
+      "lib::codex_session_board::catalog::preparation::tests::changes_during_project_scan_reject_before_import",
+      "lib::codex_session_board::catalog::preparation::tests::mapping_completed_during_scan_reuses_new_canonical_without_import",
+      "lib::codex_session_board::catalog::preparation::tests::final_read_returns_current_roots_after_state_revalidation",
+      "lib::codex_session_board::catalog::preparation::tests::final_read_rejects_deleted_canonical_and_foreign_backing",
+      "lib::codex_session_board::catalog::preparation::tests::unrelated_legacy_thread_and_project_diagnostics_do_not_block_target_actions",
+      "lib::codex_session_board::catalog::preparation::tests::malformed_project_identity_deletion_and_checkpoint_fields_remain_rejected",
       "lib::codex_session_board::app::target_drafts::tests::canonical_target_request_uses_verified_rpc_and_only_opens_native_input",
       "lib::codex_session_board::app::target_drafts::tests::lost_navigation_retry_reuses_prepared_target_without_reimport_or_thread_start",
       "lib::codex_session_board::catalog::preparation::metadata::tests::native_metadata_preserves_appearance_backing_creation_and_retirement",

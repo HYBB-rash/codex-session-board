@@ -140,7 +140,7 @@ fn prepare_target(
     } else {
         fresh.server(reader, &request.identifier)?
     };
-    fresh.verify_after(reader, source, legacy, &project)?;
+    let project = fresh.verify_after(reader, source, legacy, &project)?;
     let canonical = project["id"].as_str().context("规范项目缺少 ID")?;
     let roots = roots(&project)?;
     let cwd = roots.first().context("项目没有根目录")?["path"].clone();
