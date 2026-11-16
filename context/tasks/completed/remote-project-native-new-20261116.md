@@ -6,6 +6,7 @@ allowed_write_set: src/, tests/, scripts/native_new/, scripts/check-native-new.m
 base_commit: d7c1717428e0fb56312afa74f82db942d7813d3a
 worktree_path: /Users/hongyong/.codex/worktrees/remote-project-native-new/codex-session-board
 coordinator: codex
+status: completed
 
 用户授权按照已验证方案实现、验证并提交 PR，使用项目 pr-task 技能。
 不修改 Codex 后台，不安装或重载日用插件和客户端。
@@ -59,3 +60,11 @@ coordinator: codex
   要求显式身份后，确定复现其第二次提交退出 128、Author identity unknown；
   fixture 原先仅给首次提交设置身份。现在只为临时测试仓库写入本地身份，
   原有回归同时隔离全局配置并要求显式身份，继续核对错误头拒绝和报告完整性。
+
+2026-11-16 主线集成收尾：
+最终头 f00282aa7c49e4484cfef90a1466119d5963fe07 的本机971项及Linux PR CI982项全过，
+两个独立审阅通过；PR13随0.3.95/3629405合入远端main，组合双平台门禁一次通过。
+作者任务complete，原生归档读回confirmed，定时器removed、plist删除及launchctl113确认。
+实现与PR交付完成，不代签客户端候选安装、真实GUI、Fedora在线或完整目标环境验收。
+协调经过、首次失败、准确证据与自动唤醒未覆盖边界见
+context/tasks/completed/pr13-integration-20261116.md。

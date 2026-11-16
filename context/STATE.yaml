@@ -3,12 +3,11 @@
   "updated_at": "2026-11-16",
   "current_phase": {
     "id": "pr13-integration-20261116",
-    "status": "active",
+    "status": "completed",
     "as_of": "2026-11-16",
-    "summary": "开始处理真实PR13，冻结基线d7c1717和当前头5d1ae43。最新Linux CI失败，作者巡检已发现并等待原会话；先核对失败及独立审阅，GitHub反馈后等待作者新头，不接手业务修复。合并结束于主线与可运行不可变插件包，不部署日用客户端。"
+    "summary": "PR13已随0.3.95/3629405合入主线，双平台不可变包隔离启动通过，macOS971/Linux982项全过。作者修复临时Git身份后交付f00282a，PR及候选CI并行，核心50分58秒。作者任务complete、归档confirmed、定时器removed且读回113；空闲会话自动唤醒本轮未实证。未部署日用插件或客户端，收尾记录走专用门禁。"
   },
   "active_tasks": [
-    "context/tasks/active/pr13-integration-20261116.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",
@@ -23,7 +22,8 @@
     "context/tasks/active/state-incident-20261112.md"
   ],
   "known_open_issues": [
-    "pr-task已随0.3.94/79e23fc进入远端主线，CI macOS942/Linux953项和双平台不可变包启动通过，新增65项回归。工具与队列需共用冻结检查器，作者代码使用独立树。当前仅macOS内置定时器；真实PR/原会话完整闭环尚未实跑，原生archive缺少原子空闲条件，自动归档仅用于专用会话。未安装或重载日用插件；详见context/tasks/completed/pr-task-main-20261116.md和Docs/PR-TASK.md。",
+    "PR13已随0.3.95/3629405合入主线，macOS971/Linux982项及双平台包启动通过；核心50分58秒。目标项目新建依赖匹配的codex-remote-draft-v2客户端候选，未安装或重载日用客户端；多窗口、Fedora在线首轮及完整目标验收仍独立。Linux临时Git fixture身份失败由原作者修复，原失败保留；见context/tasks/completed/pr13-integration-20261116.md。",
+    "pr-task已在真实PR13验证自动发现CI失败、作者领取/修复/回执、PR ready和终态收尾，原会话归档confirmed、定时器removed并读回113。两次修复运输仍为waiting_idle且无turn_id，作者在既有活动轮次领取，空闲原会话自动唤醒未被本轮实证。工具与队列共用冻结检查器，作者代码使用独立树；原生archive缺少原子空闲条件，自动归档仅用于专用会话，其他平台需外部调度。原0.3.94开发记录和未覆盖范围保留。",
     "CI43787315021首轮Linux旧UI测试在check-light-ui.mjs:102失败；受控load复现服务端fixture覆盖页面局部readOnly修改的竞态，未直接观测CI定时器事件。UI及测试相对原main未改；Mac三次定向复验和Linux一次失败任务重跑通过，不代表竞态已修复。保留failed-linux和ui-diagnosis原始证据，后续由UI作者同步fixture输入并补轮询交错回归；此次没有削弱断言或夹带UI修复。",
     "PR队列已落地并完成真实原会话回修演练；真实工具CI43746211763为macOS877/Linux888项，历史CI43746660070为846/857项，双平台包均读回并通过隔离启动。演练3小时8分9秒没有证明整体提速；依赖确认太晚、重复完整验证、历史校验入口失败及协调空档均计入。GitHub CLI评论403仍由已授权连接器补发；已有性能阈值偶发失败根因未定，失败和原阈值保留。原会话修复工作树须保留，未安装或重载日用插件，完整验收仍独立。详见pr-queue-rehearsal-20261116结果记录。",
     "PR12已随0.3.90/015580a合入，保留最终目录、新建和只读边界。合并核心28分50秒；本地新交付入口835项及实际包五场景全过，11分39秒；CI macOS835、Linux846项全过，18分15秒，一次通过。本地首轮冲突残留已在CI前修正并整组复验，原日志保留。依赖、SDK锁和新检查脚本要求完整门禁，不能将本次当作普通UI快路径或推导加速比例。31条仍17通过14待验，未安装或重载日用插件。",
@@ -54,7 +54,7 @@
     "PWA安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。",
     "本机和M1专用会话真实归档已通过。正式进程已是 v0.2.63，原生侧栏取消归档后，下一次本机位置读回会恢复本地已确认卡片并保留备注。这次启动还没有完成一次本机位置读回。0.3.38 已实现 SQLite 兼容锁下私有副本热日志恢复，原库与日志不变；两项子进程回归通过，候选交付证据单独保留。"
   ],
-  "last_completed_task": "context/tasks/completed/pr-task-main-20261116.md",
+  "last_completed_task": "context/tasks/completed/pr13-integration-20261116.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
