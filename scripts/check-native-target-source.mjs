@@ -241,6 +241,31 @@ const values = new Proxy({}, {
 });
 const prewarm = new Function("values", `with(values){return(${expression})}`)(values);
 assert.equal(prewarm.submitDisabled, true);
+const prewarmFunction = extractFunction(submitSource,
+  "function(e){let t,n,o,r,i,l,s,d,m,h,p=(0,a.c)(82),{activeCollaborationMode:");
+function runPrewarm(disabled) {
+  let produced = 0;
+  let cleared = 0;
+  const reservation = { clear: () => cleared++, schedule: callback => callback() };
+  const prewarmHook = prewarmFunction.runInNewContext({
+    a: { c: size => Array(size).fill(Symbol.for("react.memo_cache_sentinel")) },
+    c: { gh: () => ({}), _U: () => ({ data: {}, isPending: false }) },
+    D: {}, R: { tn: () => ({ authMethod: "fixture" }) }, V: {},
+    dt: { iW: () => ({ draftSettings: { isManuallyChanged: false } }) },
+    hQ: { Y: () => false }, nO: { K: value => value },
+    f: { useEffect: callback => callback() }, i3: { OX: () => false },
+    le: { V: () => ({ prewarmConversation: () => produced++ }) },
+  });
+  prewarmHook({ ...prewarm, hasText: true, composerMode: "local",
+    localThreadPrewarmReservation: reservation, getExecutionBlockReason: noop,
+    submitDisabled: disabled });
+  return { produced, cleared };
+}
+const targetPrewarm = runPrewarm(prewarm.submitDisabled);
+const ordinaryPrewarm = runPrewarm(false);
+assert.equal(targetPrewarm.produced, 0);
+assert(targetPrewarm.cleared > 0);
+assert(ordinaryPrewarm.produced > 0);
 const guarded = native.registerNativeTargetDraft({
   hostId: "remote:target", projectId: "project-a",
   operationId: "019a1111-2222-4333-8444-777777777777",
