@@ -99,7 +99,9 @@ jobs:
           restore-keys: |
             release-${{ matrix.target }}-1.99.1-${{ hashFiles('Cargo.lock') }}-
             candidate-${{ matrix.target }}-1.99.1-${{ hashFiles('Cargo.lock') }}-
-      - run: cargo fetch --locked
+      - run: |
+          cargo fetch --locked
+          cargo fetch --locked --manifest-path scripts/checker/Cargo.toml
       - run: cargo build --locked --offline --example dev_fixture
       - run: TMPDIR=/tmp ./scripts/release candidate --local --save-only --target "${{ matrix.target }}" --fixture "$PWD/target/debug/examples/dev_fixture" --startup-report "$RUNNER_TEMP/startup/STARTUP.json"
       - uses: actions/upload-artifact@v4

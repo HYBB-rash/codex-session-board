@@ -33,7 +33,9 @@ jobs:
           key: pr-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
           restore-keys: |
             pr-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-
-      - run: cargo fetch --locked
+      - run: |
+          cargo fetch --locked
+          cargo fetch --locked --manifest-path scripts/checker/Cargo.toml
       - run: ./scripts/install-git-hooks
       - run: ./scripts/validate --scope pr --base "$EXPECTED_BASE" --expect-head "$EXPECTED_HEAD" --output "$RUNNER_TEMP/validation"
       - uses: actions/upload-artifact@v4

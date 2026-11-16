@@ -59,6 +59,8 @@ CSB_VALIDATION_PYTHON=/path/to/python3.12 ./scripts/validate \
 缓存默认在 `${XDG_CACHE_HOME:-$HOME/.cache}/codex-session-board/checker`，
 可用 `CSB_CHECKER_CACHE_DIR` 指定。三个工作流继续使用 actions/cache 保存该目录。
 每次仍在当前工作树或索引快照实际执行检查；命中只表示工具无需重新编译。
+CI 与 `dev setup` 的现有在线准备步骤分别 fetch 根锁和工具锁，之后继续离线构建。
+两份锁可以独立演进，不依赖缓存中碰巧存在的旧依赖。手动准备环境同样执行两次 fetch。
 
 | 程序 | 复用边界 |
 | --- | --- |

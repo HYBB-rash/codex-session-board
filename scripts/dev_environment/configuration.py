@@ -118,6 +118,8 @@ def setup(source, root):
         environment["TMPDIR"] = "/private/tmp"
     subprocess.run(["cargo", "fetch", "--locked"], cwd=source, env=environment, check=True,
                    stdout=sys.stderr)
+    subprocess.run(["cargo", "fetch", "--locked", "--manifest-path", "scripts/checker/Cargo.toml"],
+                   cwd=source, env=environment, check=True, stdout=sys.stderr)
     subprocess.run(["cargo", "build", "--locked", "--offline", "--bin", "codex-session-board",
                     "--example", "dev_fixture"], cwd=source, env=environment, check=True,
                    stdout=sys.stderr)

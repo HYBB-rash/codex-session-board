@@ -93,6 +93,7 @@ Mac 原有 Rust 1.78.0 无法满足当前代码，已升级工具链并准备依
 ```zsh
 ./scripts/install-git-hooks
 cargo fetch --locked
+cargo fetch --locked --manifest-path scripts/checker/Cargo.toml
 cargo clippy --locked --offline --all-targets -- -D warnings
 python3 scripts/verify_acceptance.py --scope automated --report outputs/mac-automated.json
 ./scripts/check
