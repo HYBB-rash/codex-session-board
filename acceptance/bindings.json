@@ -1234,6 +1234,8 @@
       "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation"
     ],
     "DATA-001": [
+      "lib::codex_session_board::store::native_drafts::tests::native_draft_retries_preserve_source_target_and_operation_after_restart",
+      "lib::codex_session_board::store::native_drafts::tests::native_drafts_allow_distinct_operations_without_reusing_legacy_receipts",
       "acceptance.test_dev_environment.DevEnvironmentTests.test_boundary_accepts_a_system_parent_directory_alias",
       "acceptance.test_dev_environment.DevEnvironmentTests.test_private_directories_reject_symlinks_and_shared_permissions",
       "acceptance.test_dev_environment.DevEnvironmentTests.test_child_environment_does_not_inherit_desktop_or_credentials",

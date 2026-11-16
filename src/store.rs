@@ -10,6 +10,7 @@ mod drafts;
 mod mappings;
 mod native;
 mod native_backfill;
+mod native_drafts;
 pub mod remote;
 mod runtime_native;
 mod sorting;
