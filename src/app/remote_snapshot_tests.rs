@@ -41,6 +41,48 @@ fn merged(root: &App, remote: &App) -> Result<Vec<Value>> {
     Ok(rows)
 }
 
+fn creation_projects(root: &App, remote: &App) -> Result<Vec<Value>> {
+    let mut projects = Vec::new();
+    root.append_managed_host(remote, &mut Vec::new(), &[], &mut projects)?;
+    Ok(projects)
+}
+
+#[test]
+fn native_project_creation_requires_a_live_connected_non_deleting_target() -> Result<()> {
+    let (_directory, root, remote, _thread) = fixture()?;
+    let project = json!({"id":"target:[\"remote:a\",\"targetServer\",\"p\"]",
+        "nativeId":"p","hostId":"remote:a","origin":"targetServer","paths":["/target"],
+        "canCreate":false,"canMove":false,"canOpenProject":false});
+    remote.catalog.lock().unwrap().snapshot = Some(crate::catalog::Snapshot {
+        source: json!({}),
+        captured_at: crate::model::now(),
+        projects: vec![project],
+        active: Vec::new(),
+        archived: Vec::new(),
+        coverage: json!({}),
+        issues: Vec::new(),
+    });
+    assert_eq!(creation_projects(&root, &remote)?[0]["canCreate"], false);
+    remote.catalog.lock().unwrap().live = true;
+    assert_eq!(creation_projects(&root, &remote)?[0]["canCreate"], true);
+    {
+        let mut catalog = remote.catalog.lock().unwrap();
+        catalog.snapshot.as_mut().unwrap().projects[0]["pendingDeletion"] = json!(true);
+    }
+    assert_eq!(creation_projects(&root, &remote)?[0]["canCreate"], false);
+    remote
+        .catalog
+        .lock()
+        .unwrap()
+        .snapshot
+        .as_mut()
+        .unwrap()
+        .projects[0]["pendingDeletion"] = json!(false);
+    remote.deactivate()?;
+    assert_eq!(creation_projects(&root, &remote)?[0]["canCreate"], false);
+    Ok(())
+}
+
 #[test]
 fn unpublished_empty_chat_survives_complete_scan_and_restart_as_read_only() -> Result<()> {
     let (_directory, root, remote, thread) = fixture()?;

@@ -64,6 +64,7 @@ pub enum Role {
     DraftReader,
     CalibrationWriter,
     CatalogReader,
+    TargetProjectPreparer,
     TitleWriter,
     ArchiveWriter,
 }
@@ -88,6 +89,9 @@ impl Role {
                 "initialize" | "project/list" | "project/read" | "thread/list"
                     | "thread/read" | "threadSection/list" | "account/read"
                     | "fs/getMetadata" | "fs/readFile"),
+            Self::TargetProjectPreparer => matches!(method,
+                "initialize" | "project/list" | "project/read" | "project/import"
+                    | "account/read" | "fs/getMetadata" | "fs/readFile"),
             Self::TitleWriter => matches!(method, "initialize" | "thread/read" | "thread/name/set"),
             Self::ArchiveWriter => matches!(
                 method,
@@ -466,7 +470,7 @@ impl DesktopConnection {
             peer.initialize(&response)?;
             binding.confirm(peer, self.call_deadline()?)?;
         }
-        if self.role == Role::CatalogReader {
+        if matches!(self.role, Role::CatalogReader | Role::TargetProjectPreparer) {
             let mut guard = catalog_guard::CatalogGuard::initialized(&response)?;
             if let Some((binding, peer)) = source {
                 guard.bind(Path::new(&peer.codex_home), json!({"ssh":binding.endpoint, "peer":peer}))?;
@@ -478,7 +482,8 @@ impl DesktopConnection {
     }
 
     pub(crate) fn catalog_source(&self) -> Result<Value> {
-        ensure!(self.role == Role::CatalogReader, "此连接不是目录读取连接");
+        ensure!(matches!(self.role, Role::CatalogReader | Role::TargetProjectPreparer),
+            "此连接不是项目目录连接");
         if let Some(authority) = &self.local_authority {
             authority.confirm()?;
         }
@@ -520,7 +525,7 @@ impl DesktopConnection {
 impl Rpc for DesktopConnection {
     fn call(&mut self, method: &str, params: Value) -> Result<Value> {
         self.role.check(method)?;
-        if self.role == Role::CatalogReader && method != "initialize" {
+        if matches!(self.role, Role::CatalogReader | Role::TargetProjectPreparer) && method != "initialize" {
             self.catalog_source()?;
             self.catalog_guard.as_ref().context("目录连接尚未初始化")?.check(method, &params)?;
         }
@@ -530,7 +535,7 @@ impl Rpc for DesktopConnection {
         let deadline = self.call_deadline()?;
         if matches!(
             method,
-            "thread/start" | "thread/name/set" | "thread/archive"
+            "thread/start" | "thread/name/set" | "thread/archive" | "project/import"
         ) && let Some(binding) = &self.remote_binding
         {
             binding.require_confirmed()?;

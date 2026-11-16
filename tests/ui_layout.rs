@@ -1,7 +1,7 @@
 use std::process::Command;
 
 #[test]
-fn host_catalog_filters_keep_cached_rows_and_projects_read_only() {
+fn host_catalog_filters_preserve_cached_rows_and_isolated_native_drafts() {
     let result = Command::new("node")
         .arg("scripts/check-remote-catalog.mjs")
         .output()
@@ -13,7 +13,7 @@ fn host_catalog_filters_keep_cached_rows_and_projects_read_only() {
         String::from_utf8_lossy(&result.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(report["cases"], 49);
+    assert_eq!(report["cases"], 65);
     assert_eq!(report["cleanup"]["groupEmpty"], true);
     assert_eq!(report["cleanup"]["profileRemoved"], true);
 }

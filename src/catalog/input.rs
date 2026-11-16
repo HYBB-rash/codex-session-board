@@ -77,7 +77,7 @@ fn account_fingerprint(account: &Value) -> Result<Option<String>> {
     Ok(Some(digest(&serde_json::to_vec(&[user, workspace])?)))
 }
 
-fn state_file(reader: &mut dyn Rpc, path: &str) -> Result<(Vec<u8>, Value)> {
+pub(super) fn state_file(reader: &mut dyn Rpc, path: &str) -> Result<(Vec<u8>, Value)> {
     let metadata = metadata(reader, path)?;
     ensure!(
         metadata["isFile"] == true && metadata["isSymlink"] != true,

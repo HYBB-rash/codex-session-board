@@ -240,7 +240,7 @@ fn native_app() -> Result<(tempfile::TempDir, App, Value)> {
     std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&registry)?)?;
     let executable = path.join("codex");
     std::fs::write(&executable, format!(
-        "#!/bin/sh\nprintf '%s\\n' \"$1\" >> '{}'\n", path.join("opens").display()))?;
+        "#!/bin/sh\nsleep 1.1\nprintf '%s\\n' \"$1\" >> '{}'\n", path.join("opens").display()))?;
     std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))?;
     app.config.open_command = vec![executable.to_string_lossy().into()];
     app.config.native_new_capability = Some(path.join("capability.json"));
@@ -256,6 +256,21 @@ fn native_body() -> Value {
     json!({"projectId":crate::store::remote::identity("remote:a","project & 中")})
 }
 
+fn native_navigation_receipt(directory: &std::path::Path) -> Result<String> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        match std::fs::read_to_string(directory.join("opens")) {
+            Ok(record) if record.ends_with('\n') => return Ok(record),
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                return Err(error.into());
+            }
+            _ => {}
+        }
+        ensure!(std::time::Instant::now() < deadline, "原生跳转 fixture 未写入回执");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
 #[test]
 fn native_remote_new_only_navigates_and_preserves_the_selected_host_and_project() -> Result<()> {
     let (directory, app, _) = native_app()?;
@@ -268,7 +283,8 @@ fn native_remote_new_only_navigates_and_preserves_the_selected_host_and_project(
     assert!(app.store.pending_drafts()?.is_empty());
     assert!(app.store.sessions()?.is_empty());
     assert!(app.remotes.lock().unwrap().is_empty());
-    assert_eq!(std::fs::read_to_string(directory.path().join("opens"))?.lines().count(),1);
+    assert_eq!(native_navigation_receipt(directory.path())?.lines().collect::<Vec<_>>(),
+        [response["url"].as_str().unwrap()]);
     Ok(())
 }
 

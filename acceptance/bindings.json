@@ -1018,7 +1018,7 @@
       "lib::codex_session_board::catalog::projects::tests::pending_deletion_keeps_backend_project_visible_without_actions",
       "lib::codex_session_board::app::remote::catalog_tests::draft_receipts_are_scoped_to_their_remote_host_and_survive_completion",
       "lib::codex_session_board::app::remote::catalog_tests::selected_host_refresh_never_connects_other_or_disabled_hosts",
-      "lib::codex_session_board::app::remote::catalog_tests::target_directory_projects_cannot_enter_either_creation_route",
+      "lib::codex_session_board::app::remote::catalog_tests::target_creation_requires_operation_and_v2_capability_before_remote_actions",
       "lib::codex_session_board::catalog::capture::tests::archive_checks_classify_references_without_publishing_the_check_inventory",
       "lib::codex_session_board::catalog::capture::tests::membership_conflicts_require_targeted_metadata_before_claiming_completeness",
       "lib::codex_session_board::catalog::capture::tests::references_outside_known_source_scope_keep_archive_status_unresolved",
@@ -1176,7 +1176,8 @@
       "test::board_io::saved_state_reports_pending_title_without_rollback"
     ],
     "UI-001": [
-      "test::ui_layout::host_catalog_filters_keep_cached_rows_and_projects_read_only"
+      "lib::codex_session_board::app::remote_snapshot::tests::native_project_creation_requires_a_live_connected_non_deleting_target",
+      "test::ui_layout::host_catalog_filters_preserve_cached_rows_and_isolated_native_drafts"
     ],
     "UI-002": [
       "test::native_authority::entrypoints::built_binary_distinguishes_omitted_and_empty_notes_over_http_and_mcp",
@@ -1234,6 +1235,8 @@
       "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation"
     ],
     "DATA-001": [
+      "lib::codex_session_board::store::native_drafts::tests::native_draft_retries_preserve_source_target_and_operation_after_restart",
+      "lib::codex_session_board::store::native_drafts::tests::native_drafts_allow_distinct_operations_without_reusing_legacy_receipts",
       "acceptance.test_dev_environment.DevEnvironmentTests.test_boundary_accepts_a_system_parent_directory_alias",
       "acceptance.test_dev_environment.DevEnvironmentTests.test_private_directories_reject_symlinks_and_shared_permissions",
       "acceptance.test_dev_environment.DevEnvironmentTests.test_child_environment_does_not_inherit_desktop_or_credentials",
@@ -1407,6 +1410,28 @@
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_wrong_architecture_is_rejected_before_stopping_or_installing"
     ],
     "BOUNDARY-001": [
+      "lib::codex_session_board::catalog::preparation::tests::changes_during_project_scan_reject_before_import",
+      "lib::codex_session_board::catalog::preparation::tests::mapping_completed_during_scan_reuses_new_canonical_without_import",
+      "lib::codex_session_board::catalog::preparation::tests::final_read_returns_current_roots_after_state_revalidation",
+      "lib::codex_session_board::catalog::preparation::tests::final_read_rejects_deleted_canonical_and_foreign_backing",
+      "lib::codex_session_board::catalog::preparation::tests::unrelated_legacy_thread_and_project_diagnostics_do_not_block_target_actions",
+      "lib::codex_session_board::catalog::preparation::tests::malformed_project_identity_deletion_and_checkpoint_fields_remain_rejected",
+      "lib::codex_session_board::app::target_drafts::tests::canonical_target_request_uses_verified_rpc_and_only_opens_native_input",
+      "lib::codex_session_board::app::target_drafts::tests::lost_navigation_retry_reuses_prepared_target_without_reimport_or_thread_start",
+      "lib::codex_session_board::catalog::preparation::metadata::tests::native_metadata_preserves_appearance_backing_creation_and_retirement",
+      "lib::codex_session_board::catalog::preparation::metadata::tests::invalid_owner_backing_and_appearance_fail_before_import",
+      "lib::codex_session_board::catalog::preparation::tests::action_import_uses_exact_key_complete_metadata_without_thread_migration",
+      "lib::codex_session_board::catalog::preparation::tests::same_key_retry_preserves_canonical_metadata_and_uses_fresh_roots",
+      "lib::codex_session_board::catalog::preparation::tests::direct_server_read_does_not_require_legacy_mapping_or_import",
+      "lib::codex_session_board::catalog::preparation::tests::existing_mapping_uses_current_backend_roots_without_overwrite",
+      "lib::codex_session_board::catalog::preparation::tests::missing_legacy_and_foreign_owner_reject_before_import",
+      "lib::codex_session_board::catalog::preparation::tests::missing_canonical_mapping_and_pending_deletion_never_import",
+      "lib::codex_session_board::catalog::preparation::tests::conflicting_mapping_and_alias_never_import",
+      "lib::codex_session_board::catalog::preparation::tests::owner_account_source_and_deletion_changes_fail_before_opening",
+      "lib::codex_session_board::rpc::catalog_guard::tests::preparation_role_permits_only_target_import_without_threads",
+      "lib::codex_session_board::rpc::catalog_guard::tests::preparation_connection_binds_source_and_denies_raw_thread_creation_before_transport",
+      "lib::codex_session_board::native_new::tests::target_route_contains_only_bound_identifiers",
+      "lib::codex_session_board::native_new::tests::only_v2_capability_can_open_target_projects",
       "test::native_authority::sidebar_origin::active_backend_b_never_writes_sections_or_projects_to_same_user_client_a",
       "lib::codex_session_board::rpc::authority::sidebar::tests::shared_sibling_client_requires_explicit_backend_client_and_launcher_epochs",
       "lib::codex_session_board::formal::tests::remote_draft_stages_match_the_store_on_every_edge",
@@ -1573,7 +1598,7 @@
       "lib::codex_session_board::app::drafts::tests::native_remote_new_rejects_missing_or_changed_capabilities_before_navigation",
       "lib::codex_session_board::app::remote::catalog_tests::draft_receipts_are_scoped_to_their_remote_host_and_survive_completion",
       "lib::codex_session_board::app::remote::catalog_tests::selected_host_refresh_never_connects_other_or_disabled_hosts",
-      "lib::codex_session_board::app::remote::catalog_tests::target_directory_projects_cannot_enter_either_creation_route",
+      "lib::codex_session_board::app::remote::catalog_tests::target_creation_requires_operation_and_v2_capability_before_remote_actions",
       "lib::codex_session_board::native_sections::tests::live_atoms_replace_whole_atoms_and_preserve_nonoverlapping_entries",
       "lib::codex_session_board::native_sections::tests::malformed_owner_and_atom_sources_are_rejected",
       "lib::codex_session_board::native_sections::tests::missing_owner_atoms_can_use_live_data_without_other_owner_fallback",
@@ -1721,6 +1746,8 @@
       "acceptance.test_pr_queue_transport.QueueTransportTests.test_fallback_does_not_hide_rpc_errors_or_accept_wrong_thread_or_turn",
       "acceptance.test_package_startup.PackageStartupTests.test_connect_and_send_share_the_total_startup_budget",
       "acceptance.test_package_startup.PackageStartupTests.test_child_exit_after_total_deadline_cannot_pass",
+      "acceptance.test_package_startup.PackageStartupTests.test_transport_failure_keeps_native_exit_and_backend_rejections",
+      "acceptance.test_package_startup.PackageStartupTests.test_transport_failure_with_successful_exit_cannot_pass",
       "acceptance.test_package_startup.PackageStartupTests.test_mcp_response_stream_keeps_one_total_deadline",
       "acceptance.test_package_startup.PackageStartupTests.test_fixture_channel_preserves_all_mcp_startup_requests_and_runtime_identity",
       "acceptance.test_package_startup.PackageStartupTests.test_mcp_failure_wrong_backend_or_different_service_cannot_pass",
@@ -2065,7 +2092,9 @@
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_install_uses_the_verified_git_snapshot_without_a_second_marketplace_refresh",
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_reload_targets_the_installed_mcp_without_global_skill_discovery",
       "acceptance.test_native_new.NativeNewTests.test_candidate_archive_preserves_other_files_and_rejects_unknown_clients",
-      "acceptance.test_native_new.NativeNewTests.test_native_draft_routes_and_navigation_never_send_input"
+      "acceptance.test_native_new.NativeNewTests.test_native_draft_routes_and_navigation_never_send_input",
+      "acceptance.test_native_target.NativeTargetTests.test_target_navigation_never_changes_operator_project_or_sends_input",
+      "acceptance.test_native_target.NativeTargetTests.test_target_candidate_requires_complete_exact_renderer_profile"
     ]
   }
 }

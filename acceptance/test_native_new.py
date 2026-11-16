@@ -76,6 +76,11 @@ class NativeNewTests(unittest.TestCase):
                          for name, data in sources.items() if name.endswith(".js")}
             with patch.object(NATIVE, "SUPPORTED_SOURCES", supported), patch.object(
                 NATIVE, "BINDINGS", {"/.vite/build/main.js": ("eX", "es", True)}
+            ), patch.object(
+                NATIVE.runpy, "run_path", return_value={
+                    "MAIN": "/.vite/build/main.js", "normalize": lambda source: source,
+                    "patch_sources": lambda sources: {},
+                }
             ):
                 capability = NATIVE.prepare(source, target, ["open", "-a", str(app)])
             candidate, base, patched = NATIVE.read_archive(target)

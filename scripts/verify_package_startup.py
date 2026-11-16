@@ -32,32 +32,7 @@ def remaining_time(deadline):
     return remaining
 
 
-def mcp(root, version, runtime):
-    deadline = time.monotonic() + 30
-    requests = [
-        {"id": 1, "method": "initialize", "params": {
-            "protocolVersion": "2025-06-18",
-            "clientInfo": {"name": "package-startup", "version": "1"},
-        }},
-        {"method": "notifications/initialized"},
-        {"id": 2, "method": "resources/read", "params": {"uri": "ui://session-board/index.html"}},
-        {"id": 3, "method": "tools/call", "params": {"name": "board_snapshot", "arguments": {}}},
-    ]
-    with socket.socket(socket.AF_UNIX) as connection:
-        connection.settimeout(remaining_time(deadline))
-        connection.connect(str(root / "mcp.sock"))
-        connection.settimeout(remaining_time(deadline))
-        connection.sendall("".join(json.dumps({"jsonrpc": "2.0", **request}) + "\n"
-                                   for request in requests).encode())
-        connection.shutdown(socket.SHUT_WR)
-        output = bytearray()
-        while True:
-            connection.settimeout(remaining_time(deadline))
-            chunk = connection.recv(65536)
-            if not chunk:
-                break
-            output.extend(chunk)
-        replies = [json.loads(line) for line in output.decode().splitlines()]
+def confirm_mcp_exit(root, runtime, deadline):
     exit_deadline = min(deadline, time.monotonic() + 3)
     while True:
         remaining_time(deadline)
@@ -70,6 +45,39 @@ def mcp(root, version, runtime):
         time.sleep(min(0.01, remaining_time(deadline)))
     if child["exit"] != 0 or child["parent"] != runtime["authority"]["pid"]:
         raise ValueError("Packaged MCP exited unsuccessfully or belongs to another backend")
+
+
+def mcp(root, version, runtime):
+    deadline = time.monotonic() + 30
+    requests = [
+        {"id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2025-06-18",
+            "clientInfo": {"name": "package-startup", "version": "1"},
+        }},
+        {"method": "notifications/initialized"},
+        {"id": 2, "method": "resources/read", "params": {"uri": "ui://session-board/index.html"}},
+        {"id": 3, "method": "tools/call", "params": {"name": "board_snapshot", "arguments": {}}},
+    ]
+    try:
+        with socket.socket(socket.AF_UNIX) as connection:
+            connection.settimeout(remaining_time(deadline))
+            connection.connect(str(root / "mcp.sock"))
+            connection.settimeout(remaining_time(deadline))
+            connection.sendall("".join(json.dumps({"jsonrpc": "2.0", **request}) + "\n"
+                                       for request in requests).encode())
+            connection.shutdown(socket.SHUT_WR)
+            output = bytearray()
+            while True:
+                connection.settimeout(remaining_time(deadline))
+                chunk = connection.recv(65536)
+                if not chunk:
+                    break
+                output.extend(chunk)
+            replies = [json.loads(line) for line in output.decode().splitlines()]
+    except (BrokenPipeError, ConnectionResetError):
+        confirm_mcp_exit(root, runtime, deadline)
+        raise
+    confirm_mcp_exit(root, runtime, deadline)
     if [reply.get("id") for reply in replies] != [1, 2, 3] or any("error" in reply for reply in replies):
         raise ValueError("Packaged MCP did not answer all startup requests")
     initialized, resource, snapshot = [reply["result"] for reply in replies]

@@ -63,8 +63,9 @@ while True:
     if mask: data=bytes(value^mask[index%4] for index,value in enumerate(data))
     message=json.loads(data)
     method=message["method"]; event(method)
+    if state.get("rpcEvents"): event(json.dumps({"method":method,"params":message.get("params")}))
     if "id" not in message: continue
-    result={"codexHome":state.get("initializeHome",state["peer"]["declaredCodexHome"])} if method=="initialize" else state.get("result",{"ok":True})
+    result={"codexHome":state.get("initializeHome",state["peer"]["declaredCodexHome"])} if method=="initialize" else state.get("results",{}).get(method,state.get("result",{"ok":True}))
     data=json.dumps({"id":message["id"],"result":result}).encode()
     prefix=bytes([129,len(data)]) if len(data)<126 else bytes([129,126])+struct.pack("!H",len(data))
     out.write(prefix+data); out.flush()
