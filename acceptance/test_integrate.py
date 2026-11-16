@@ -12,6 +12,24 @@ from scripts import integrate_candidate as integrate
 
 
 class IntegrateTests(unittest.TestCase):
+    def test_unfrozen_version_fails_before_pushing_or_starting_ci(self):
+        from argparse import Namespace
+        from scripts import main_release_evidence
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / "candidate"
+            arguments = Namespace(output=directory, resume=False, base="base",
+                                  repository="owner/repo", started_at=None)
+            with patch.object(integrate, "git", side_effect=["codex/integration-fixture", "base"]), \
+                    patch.object(integrate, "identity", return_value={"commit": "candidate"}), \
+                    patch.object(integrate, "require_checkout"), \
+                    patch.object(integrate, "context_only", return_value=False), \
+                    patch.object(main_release_evidence, "require_version", side_effect=ValueError("fresh version")), \
+                    patch.object(integrate.subprocess, "run") as run, \
+                    self.assertRaisesRegex(ValueError, "fresh version"):
+                integrate.start(arguments)
+            run.assert_not_called()
+            self.assertFalse(directory.exists())
+
     def test_launcher_uses_the_existing_delivery_environment_before_default_python(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)

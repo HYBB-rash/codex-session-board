@@ -55,4 +55,20 @@ class MainReleaseFeedbackTests(unittest.TestCase):
                 patch.object(feedback.forge, "api") as api:
             self.assertEqual(feedback.recovered("owner/repo", source, 8), [19])
         self.assertEqual(comment.call_count, 1)
-        self.assertEqual(api.call_count, 1)
+        self.assertEqual(api.call_count, 2)
+
+    def test_closed_unacknowledged_incident_still_blocks_and_gate_gap_needs_a_regression(self):
+        source = "a" * 40
+        issue = {"number": 19, "state": "closed", "body": f"<!-- main-release:failure {source} -->",
+                 "labels": [{"name": "release-blocker"}, {"name": "merge-gate-gap"}]}
+        with patch.object(feedback.forge, "pages", return_value=[issue]), \
+                patch.object(feedback, "git", side_effect=["", "Unrelated change", "src/main.rs"]), \
+                patch.object(feedback.forge, "api") as api, \
+                patch.object(feedback, "comment_once"):
+            self.assertEqual(feedback.recovered("owner/repo", "newer", 8), [])
+            api.assert_not_called()
+        issue["labels"].append({"name": "release-published"})
+        with patch.object(feedback.forge, "pages", return_value=[issue]), \
+                patch.object(feedback, "git") as git:
+            feedback.require_recovery("owner/repo", "base")
+            git.assert_not_called()

@@ -83,6 +83,14 @@ def configuration(root, environment):
     return {str(path): digest(path) for path in sorted(paths) if path.is_file()}
 
 
+def validate_flags(flags):
+    words = shlex.split(flags) if isinstance(flags, str) else flags
+    if not isinstance(words, list) or any(not isinstance(word, str) for word in words):
+        raise ValueError("Cannot fingerprint Cargo rustflags representation")
+    if any("linker=" in word or "fuse-ld=" in word or "@" in word for word in words):
+        raise ValueError("Use explicit target linker config; rustflags external tool/response references are unsupported")
+
+
 def configured_programs(paths, root, environment):
     programs = {}
     for filename in paths:
@@ -109,13 +117,7 @@ def configured_programs(paths, root, environment):
                 references[f"target.{target}.linker"] = settings["linker"]
         for section, settings in [("build", build), *targets.items()]:
             flags = settings.get("rustflags", [])
-            if not isinstance(flags, (str, list)):
-                raise ValueError("Cannot fingerprint Cargo rustflags representation")
-            words = shlex.split(flags) if isinstance(flags, str) else flags
-            if any(not isinstance(word, str) for word in words):
-                raise ValueError("Cannot fingerprint Cargo rustflags representation")
-            if any("linker=" in word or "fuse-ld=" in word for word in words):
-                raise ValueError(f"Use target linker config instead of tool references in {section}.rustflags")
+            validate_flags(flags)
         injected = configuration.get("env", {})
         if not isinstance(injected, dict):
             raise ValueError("Cargo env config must be a table")
@@ -151,6 +153,9 @@ def describe(root, environment):
                                  "LDFLAGS", "SDKROOT", "DEVELOPER_DIR", "MACOSX_DEPLOYMENT_TARGET", "LIBRARY_PATH",
                                  "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "CPATH"})}
     commands = {"cc", "clang", "gcc", "ar", "ld"}
+    for name, value in selected.items():
+        if name.endswith("RUSTFLAGS"):
+            validate_flags(value.replace("\x1f", " "))
     programs = {name: program(name, environment, root) for name in sorted(commands)
                 if name and shutil.which(name, path=environment.get("PATH"))}
     for name, value in selected.items():

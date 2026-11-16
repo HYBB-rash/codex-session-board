@@ -131,6 +131,7 @@ GitHub 不保证等待任务顺序，因此不能按触发事件的旧 SHA 发�
 
 队列的 `batch_merged` 和 `merge_status=merged` 表示已进入 main；
 `release_status=pending/failed/published` 单独表示发布进度。
+`pr-queue status` 会读回发布状态；后继发布包含该提交时显示 covered。
 旧 `batch_delivered` 仅兼容历史记录，不再作为新合并完成条件。
 发布失败不会回退 main 或覆盖上一可用包；GitHub 的 `Plugin release` 状态和
 `release-blocker` 工单保存源码、失败运行及上一可用版本，相关已合并 PR 收到作者反馈。

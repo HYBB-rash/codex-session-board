@@ -88,6 +88,22 @@ class PRQueueTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "clean"):
             pr_queue.initialize(manifest, self.directory / "dirty")
 
+    def test_merged_queue_refreshes_publication_without_reopening_merge_or_acceptance(self):
+        from scripts import main_release
+        self.state.update(batch_merged=True, rehearsal=False, release_status="pending",
+                          frozen_candidate={"candidate": self.base})
+        with mock.patch.object(main_release, "status", return_value={
+                "release_status": "covered", "covered_by": "newer"}) as status:
+            pr_queue.refresh_release(self.state)
+        status.assert_called_once_with("owner/repo", self.base)
+        self.assertTrue(self.state["batch_merged"])
+        self.assertEqual(self.state["release_status"], "covered")
+        self.assertIn("release_checked_at", self.state)
+        self.state["rehearsal"] = True
+        with mock.patch.object(main_release, "status") as status:
+            pr_queue.refresh_release(self.state)
+        status.assert_not_called()
+
     def test_conflict_rolls_back_and_independent_pr_continues(self):
         first = self.branch("first", "README.md", "first\n")
         conflict = self.branch("conflict", "README.md", "conflict\n")

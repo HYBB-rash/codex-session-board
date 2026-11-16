@@ -13,9 +13,28 @@ from scripts.promote_candidate import git
 def ensure_label(repository):
     prefix = f"repos/{repository}"
     labels = forge.pages(f"{prefix}/labels", time.monotonic() + 60)
-    if not any(item["name"] == "release-blocker" for item in labels):
-        forge.api(f"{prefix}/labels", "--method", "POST", "-f", "name=release-blocker",
-                  "-f", "color=b60205", "-f", "description=已合并但未发布，需要修复及对应回归门禁")
+    for name, color in (("release-blocker", "b60205"), ("release-published", "0e8a16"),
+                        ("merge-gate-gap", "d93f0b")):
+        if not any(item["name"] == name for item in labels):
+            forge.api(f"{prefix}/labels", "--method", "POST", "-f", f"name={name}",
+                      "-f", f"color={color}")
+
+
+def incidents(repository):
+    issues = forge.pages(f"repos/{repository}/issues?state=all&labels=release-blocker",
+                         time.monotonic() + 60)
+    return [issue for issue in issues if not any(
+        label["name"] == "release-published" for label in issue.get("labels", []))]
+
+
+def repair_covers(issue, base, source):
+    commits = git("log", "--format=%B", f"{base}..{source}")
+    paths = git("diff", "--name-only", base, source).splitlines()
+    regression = any(path.startswith(("tests/", "acceptance/test_", "scripts/check-"))
+                     and path != "acceptance/bindings.json" for path in paths)
+    reference = rf"Release-Fix:\s+#{issue['number']}\b"
+    gap = any(label["name"] == "merge-gate-gap" for label in issue.get("labels", []))
+    return bool(re.search(reference, commits, re.IGNORECASE)) and (not gap or regression)
 
 
 def affected_prs(repository, source, previous):
@@ -40,8 +59,7 @@ def failure(repository, source, run, url, exercise=False, phase="unknown"):
     previous = channels(GitHub(repository))
     ensure_label(repository)
     marker = f"<!-- main-release:{'exercise' if exercise else 'failure'} {source} -->"
-    issues = forge.pages(f"repos/{repository}/issues?state=open&labels=release-blocker",
-                         time.monotonic() + 60)
+    issues = incidents(repository)
     matches = [issue for issue in issues if marker in (issue["body"] or "")]
     if len(matches) > 1:
         raise ValueError("Duplicate release incident records need manual reconciliation")
@@ -76,27 +94,19 @@ def failure(repository, source, run, url, exercise=False, phase="unknown"):
 
 
 def require_recovery(repository, base):
-    issues = forge.pages(f"repos/{repository}/issues?state=open&labels=release-blocker",
-                         time.monotonic() + 60)
-    incidents = [issue for issue in issues
-                 if "<!-- main-release:failure " in (issue["body"] or "")]
-    if not incidents:
+    issues = incidents(repository)
+    unresolved = [issue for issue in issues
+                  if "<!-- main-release:failure " in (issue["body"] or "")]
+    if not unresolved:
         return
-    commits = git("log", "--format=%B", f"{base}..HEAD")
-    paths = git("diff", "--name-only", base, "HEAD").splitlines()
-    regression = any(path.startswith(("tests/", "acceptance/test_", "scripts/check-"))
-                     and path != "acceptance/bindings.json" for path in paths)
-    for issue in incidents:
-        reference = rf"Release-Fix:\s+#{issue['number']}\b"
-        gap = any(label["name"] == "merge-gate-gap" for label in issue.get("labels", []))
-        if (gap and not regression) or not re.search(reference, commits, re.IGNORECASE):
+    for issue in unresolved:
+        if not repair_covers(issue, base, "HEAD"):
             raise ValueError(f"Main has an unresolved release incident #{issue['number']}; "
                              "merge a Release-Fix first; confirmed gate gaps also need a regression")
 
 
 def recovered(repository, source, run):
-    issues = forge.pages(f"repos/{repository}/issues?state=open&labels=release-blocker",
-                         time.monotonic() + 60)
+    issues = incidents(repository)
     closed = []
     for issue in issues:
         match = re.search(r"<!-- main-release:(?:failure|exercise) ([0-9a-f]{40}) -->", issue["body"] or "")
@@ -106,10 +116,15 @@ def recovered(repository, source, run):
             git("merge-base", "--is-ancestor", match[1], source)
         except Exception:
             continue
+        if (any(label["name"] == "merge-gate-gap" for label in issue.get("labels", []))
+                and not repair_covers(issue, match[1], source)):
+            continue
         comment_once(repository, issue["number"], f"<!-- main-release:recovered {source} {run} -->",
                      f"双平台发布渠道已读回同一源码 `{source}`；发布故障已恢复。"
                      "\n这不表示已安装、重载或完成客户端验收。")
         forge.api(f"repos/{repository}/issues/{issue['number']}", "--method", "PATCH",
                   "-f", "state=closed")
+        forge.api(f"repos/{repository}/issues/{issue['number']}/labels", "--method", "POST",
+                  "-f", "labels[]=release-published")
         closed.append(issue["number"])
     return closed

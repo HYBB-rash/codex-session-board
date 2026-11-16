@@ -142,6 +142,9 @@ def start(arguments):
         }
         require_checkout(state)
         state["records_only"] = reference == "refs/heads/main" and context_only(state["base"])
+        if reference == "refs/heads/main" and not state["records_only"]:
+            from scripts.main_release_evidence import require_version
+            require_version(arguments.repository, state["base"])
         if getattr(arguments, "pr_gates", None):
             state["pr_gates"] = pr_queue_gates.from_queue(
                 arguments.pr_gates, ROOT, arguments.repository, state["source"]["commit"])

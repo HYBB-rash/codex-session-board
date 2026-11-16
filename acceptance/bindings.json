@@ -2144,7 +2144,21 @@
       "acceptance.test_main_release.MainReleaseTests.test_missing_immutable_release_or_wrong_tag_cannot_skip_publication",
       "acceptance.test_main_release.MainReleaseTests.test_changed_implementation_needs_a_fresh_unclaimed_version",
       "acceptance.test_main_release_feedback.MainReleaseFeedbackTests.test_infrastructure_recovery_does_not_require_an_unrelated_business_regression",
-      "acceptance.test_main_release.MainReleaseTests.test_old_success_status_without_delivery_evidence_cannot_claim_publication"
+      "acceptance.test_main_release.MainReleaseTests.test_old_success_status_without_delivery_evidence_cannot_claim_publication",
+      "acceptance.test_saved_release.SavedReleaseTests.test_scenarios_bind_all_cases_fixture_verifiers_and_actual_package",
+      "acceptance.test_saved_release.SavedReleaseTests.test_existing_startup_without_scenarios_runs_all_cases_and_preserves_startup",
+      "acceptance.test_saved_release.SavedReleaseTests.test_failed_scenarios_keep_diagnostics_and_never_upload_success_proofs",
+      "acceptance.test_saved_release.SavedReleaseTests.test_missing_or_failed_scenarios_never_finalize_a_candidate",
+      "acceptance.test_saved_release.SavedReleaseTests.test_cli_incomplete_finalize_fails_and_automatic_candidate_dispatches_main",
+      "acceptance.test_saved_release.SavedReleaseTests.test_unmerged_candidate_cannot_freeze_or_publish_channels",
+      "acceptance.test_pr_queue.PRQueueTests.test_merged_queue_refreshes_publication_without_reopening_merge_or_acceptance",
+      "acceptance.test_integrate.IntegrateTests.test_unfrozen_version_fails_before_pushing_or_starting_ci",
+      "acceptance.test_checker_cache.CheckerCacheTests.test_configured_compiler_wrappers_and_linkers_content_changes_invalidate",
+      "acceptance.test_checker_cache.CheckerCacheTests.test_unsupported_config_tool_references_are_rejected",
+      "acceptance.test_checker_cache.CheckerCacheTests.test_transient_source_change_during_copy_cannot_publish_a_snapshot",
+      "acceptance.test_checker_cache.CheckerCacheTests.test_snapshot_changes_during_compilation_cannot_publish_an_entry",
+      "acceptance.test_checker_cache.CheckerCacheTests.test_non_object_cache_records_return_a_check_error",
+      "acceptance.test_main_release_feedback.MainReleaseFeedbackTests.test_closed_unacknowledged_incident_still_blocks_and_gate_gap_needs_a_regression"
     ]
   }
 }

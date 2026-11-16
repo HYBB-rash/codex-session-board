@@ -71,6 +71,9 @@ CSB_VALIDATION_PYTHON=/path/to/python3.12 ./scripts/validate \
 缓存条目校验输入身份和二进制摘要，私有暂存后原子发布。
 同构建条件只锁构建过程，等待者读回同一条目；不同构建条件使用独立 Cargo 目录。
 工具输入变化自动生成新键，损坏条目拒绝运行，不会静默作为验证成功。
+配置直接指定的编译器、wrapper 和 target linker 同样按内容失效。
+当前不支持 Cargo config include、配置 env 重定向工具/PATH、非字符串工具引用，
+以及 rustflags 中的外部 linker 引用；这些情况明确拒绝复用，而非执行身份不明的缓存。
 `CSB_CHECKER_CACHE_REPORT=/absolute/outside/source.json` 可记录键、是否命中、
 二进制摘要和解析/构建耗时；完整进程耗时另计，不能把工具级收益外推为整条流水线。
 

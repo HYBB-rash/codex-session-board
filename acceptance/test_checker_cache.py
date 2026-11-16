@@ -177,12 +177,22 @@ class CheckerCacheTests(unittest.TestCase):
             "include=['other.toml']\n",
             "[build]\nrustc-wrapper=['sh','wrapper']\n",
             "[build]\nrustflags=['-Clinker=unknown']\n",
+            "[build]\nrustflags=['@external-flags']\n",
             "[env]\nRUSTC_WRAPPER='unknown'\n",
         ):
             with self.subTest(configuration=contents):
                 configuration.write_text(contents)
                 with self.assertRaises(ValueError):
                     self.resolve()
+        configuration.write_text("")
+        for name, value in (
+            ("RUSTFLAGS", "-Clinker=untracked"),
+            ("RUSTFLAGS", "@external-flags"),
+            ("CARGO_ENCODED_RUSTFLAGS", "-C\x1flinker=untracked"),
+            ("CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS", "-C link-arg=-fuse-ld=untracked"),
+        ):
+            with self.subTest(environment=name), self.assertRaises(ValueError):
+                self.resolve(**{name: value})
         self.assertFalse(self.log.exists())
 
     def test_transient_source_change_during_copy_cannot_publish_a_snapshot(self):

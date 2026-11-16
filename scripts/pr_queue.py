@@ -461,6 +461,16 @@ def finish(state, directory):
     save(directory / "queue.json", state)
 
 
+def refresh_release(state):
+    if not state.get("batch_merged") or state.get("rehearsal"):
+        return
+    from scripts.main_release import status
+    source = state["frozen_candidate"]["candidate"]
+    observed = status(state["repository"], source)
+    state.update(release_status=observed["release_status"], release=observed,
+                 release_checked_at=now())
+
+
 def retry_candidate(state, directory):
     verify_checker(state)
     frozen = state["frozen_candidate"]
@@ -513,6 +523,9 @@ def main():
                 save(directory / "queue.json", state)
             elif arguments.command == "retry-candidate":
                 retry_candidate(state, directory)
+            elif arguments.command == "status":
+                refresh_release(state)
+                save(directory / "queue.json", state)
     print(json.dumps(state, ensure_ascii=False, indent=2))
     return 2 if arguments.command == "closeout" and not state["closeout"]["complete"] else 0
 

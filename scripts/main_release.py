@@ -82,6 +82,7 @@ def status(repository, source):
              {"success": "inconsistent", "failure": "failed", "pending": "pending"}.get(
                  latest["state"] if latest else "", "pending"))
     return {"source": source, "merge_status": "merged" if merged else "not_merged", "published": published,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
             "release_status": state if merged else "not_requested",
             "covered_by": next(iter(origins)) if covered else None,
             "latest_attempt": latest}
@@ -107,9 +108,11 @@ def record(repository, source, state, run, exercise=False, phase="unknown"):
     if state == "failure":
         from scripts.main_release_feedback import failure
         return failure(repository, source, run, url, phase=phase)
-    result = {"source": source, "status": state, "run": run}
+    result = {"source": source, "status": state, "run": run,
+              "observed_at": datetime.now(timezone.utc).isoformat()}
     if state == "success":
         from scripts.main_release_feedback import recovered
+        result["published"] = current
         result["resolved_incidents"] = recovered(repository, source, run)
     return result
 
