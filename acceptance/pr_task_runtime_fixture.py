@@ -6,6 +6,7 @@ import sys
 
 from acceptance.pr_task_fixtures import pull, task
 from scripts.pr_task_state import ROOT, persist
+from scripts.validate_candidate import identity
 
 
 def runtime(test):
@@ -21,7 +22,7 @@ def runtime(test):
     git("-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "fixture")
     git("remote", "add", "origin", "https://github.com/owner/repo")
     head = git("rev-parse", "HEAD")
-    state.update(project=str(project), base_commit=head)
+    state.update(project=str(project), base_commit=head, checker=identity(ROOT), checker_project=str(ROOT))
     state["route"].update(expected_cwd=str(project), repair_cwd=str(project))
     persist(state)
     pr = pull()

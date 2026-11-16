@@ -1808,6 +1808,7 @@
       "acceptance.test_pr_task_recovery.PRTaskRecoveryTests.test_cleanup_preserves_foreign_plist_and_retries_after_bootout",
       "acceptance.test_pr_task_recovery.PRTaskRecoveryTests.test_finalizer_uses_new_terminal_outcome_and_handles_no_scheduler",
       "acceptance.test_pr_task_publish.PRTaskPublishTests.test_registration_is_idempotent_and_one_branch_has_one_owner",
+      "acceptance.test_pr_task_publish.PRTaskPublishTests.test_author_cannot_register_self_as_checker_and_changed_checker_is_rejected",
       "acceptance.test_pr_task_publish.PRTaskPublishTests.test_first_submit_validates_before_push_and_creates_draft",
       "acceptance.test_pr_task_publish.PRTaskPublishTests.test_failed_validation_cannot_push_or_create_pr",
       "acceptance.test_pr_task_publish.PRTaskPublishTests.test_changed_remote_after_validation_prevents_push",

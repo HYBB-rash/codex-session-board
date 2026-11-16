@@ -27,14 +27,29 @@ class PRTaskPublishTests(unittest.TestCase):
         def api(endpoint):
             return {"login": "owner"} if endpoint == "user" else {"full_name": "owner/repo"}
         with mock.patch.object(setup.forge, "api", side_effect=api), mock.patch.object(
-                setup.native, "register", return_value=(old["route"], old["session_anchor"])) as register:
+                setup.native, "register", return_value=(old["route"], old["session_anchor"])) as register, mock.patch.object(
+                setup, "checker_identity", return_value={"commit": "frozen-checker"}):
             first = setup.initialize(arguments)
             second = setup.initialize(arguments)
             self.assertEqual(first, second)
+            self.assertEqual(first["checker"]["commit"], "frozen-checker")
             self.assertEqual(register.call_count, 1)
             arguments.state = Path(old["directory"]) / "duplicate"
             with self.assertRaisesRegex(ValueError, "already has a PR task"):
                 setup.initialize(arguments)
+
+    def test_author_cannot_register_self_as_checker_and_changed_checker_is_rejected(self):
+        state, _ = task(self)
+        arguments = cli.parser().parse_args([
+            "init", "--state", state["directory"], "--project", str(setup.ROOT),
+            "--repository", "owner/repo", "--thread", state["route"]["thread_id"], "--socket", "/fixture",
+        ])
+        with self.assertRaisesRegex(ValueError, "separate author worktree"):
+            setup.initialize(arguments)
+        state["checker"] = {"commit": "frozen"}
+        with mock.patch.object(setup, "checker_identity", return_value={"commit": "changed"}):
+            with self.assertRaisesRegex(ValueError, "checker changed"):
+                setup.verify_checker(state)
 
     def test_first_submit_validates_before_push_and_creates_draft(self):
         state, _ = task(self)

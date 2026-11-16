@@ -95,6 +95,7 @@ def summary(state):
         "id", "repository", "pr", "phase", "directory", "project", "branch",
         "last_snapshot", "active_event", "last_error", "next_poll_at", "outcome",
         "scheduler", "updated_at",
+        "checker", "checker_project",
     )}
     if result["last_snapshot"]:
         snapshot = result["last_snapshot"]

@@ -6,18 +6,22 @@ GitHub PR 是反馈来源，合并方打回后继续看下一个，作者的监�
 
 ## 开始任务与提 PR
 
-在独立工作树和专用作者会话里登记；所有运行记录放在源码外的私有目录：
+保留一个干净且版本固定的检查器工作树，队列和作者共用相同检查器版本及运行平台。
+作者代码放在另一个独立工作树；所有运行记录放在源码外的私有目录：
 
 ```zsh
-./scripts/pr-task init --state /absolute/private/task-state \
-  --project "$PWD" --repository OWNER/REPO --thread "$CODEX_THREAD_ID" \
+/absolute/frozen-checker/scripts/pr-task init --state /absolute/private/task-state \
+  --project /absolute/author-worktree --repository OWNER/REPO --thread "$CODEX_THREAD_ID" \
   --socket /absolute/verified-client.sock --reviewer REVIEWER_LOGIN --archive
-./scripts/pr-task submit --state /absolute/private/task-state \
+/absolute/frozen-checker/scripts/pr-task submit --state /absolute/private/task-state \
   --title '本次改动' --body-file /absolute/pr-body.md
-./scripts/pr-task status --state /absolute/private/task-state
+/absolute/frozen-checker/scripts/pr-task status --state /absolute/private/task-state
 ```
 
 `init` 固定分支、比较基线、原会话、端点对端 PID/启动身份、信任的审阅账号和预算。
+同时固定检查器身份，拒绝把作者树本身当检查器。后续命令、定时器及作者唤起消息
+均沿用这个入口；检查器变化会停下，不把过期报告交给队列。队列逐项 base 应沿用作者
+报告的比较基线。后文相对命令均从冻结检查器目录执行；开发仍在作者树进行。
 一个仓库分支只允许一个未结束的作者任务；已有目录重复登记不会刷新预算。
 默认必需检查名是本仓库的 `changes`，可重复 `--check` / `--reviewer` 显式设置。
 不提供 reviewer 时使用当前 GitHub 登录账号；其他审阅账号必须显式登记。

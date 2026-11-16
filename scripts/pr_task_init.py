@@ -6,12 +6,16 @@ import uuid
 
 from scripts import pr_task_github as forge
 from scripts import pr_task_native as native
+from scripts.pr_queue import checker_identity
 from scripts.pr_task_state import ROOT, digest, git, load, locked, now, persist, record, save
 
 
 def initialize(arguments):
     directory = Path(arguments.state).resolve()
     project = Path(arguments.project).resolve(strict=True)
+    if project == ROOT.resolve():
+        raise ValueError("Run the frozen checker CLI with --project pointing to a separate author worktree")
+    checker = checker_identity()
     if directory.is_relative_to(project) or directory.is_relative_to(ROOT):
         raise ValueError("Task runtime records must stay outside source")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", arguments.repository):
@@ -44,11 +48,15 @@ def initialize(arguments):
                 if (state["repository"], state["project"], state["route"]["thread_id"]) != (
                         repository, str(project), arguments.thread):
                     raise ValueError("Existing task belongs to a different repository, worktree or session")
+                if (state["checker"], state["branch"], state["base"], state["remote"]) != (
+                        checker, branch, arguments.base, arguments.remote):
+                    raise ValueError("Existing task checker, branch or base changed")
                 return state
             route, anchor = native.register(arguments.socket, arguments.thread, project)
             state = {
                 "schema_version": 1, "id": str(uuid.uuid4()), "directory": str(directory),
                 "project": str(project), "repository": repository, "branch": branch,
+                "checker": checker, "checker_project": str(ROOT),
                 "base": arguments.base, "base_commit": git(project, "rev-parse", f"{arguments.remote}/{arguments.base}"),
                 "remote": arguments.remote, "remote_url": remote_url,
                 "route": route, "session_anchor": anchor, "archive": arguments.archive,
@@ -63,6 +71,11 @@ def initialize(arguments):
             save(owner_path, {"directory": str(directory), "thread": arguments.thread})
             record(state, "registered", branch=branch)
             return state
+
+
+def verify_checker(state):
+    if checker_identity() != state.get("checker"):
+        raise ValueError("Task checker changed; use the original frozen checker version and platform")
 
 
 def rebind(state, socket_path, accept_input=False):

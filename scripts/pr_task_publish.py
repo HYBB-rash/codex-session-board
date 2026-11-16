@@ -64,7 +64,7 @@ def published_pr(state):
 def validation(state, report_path, head):
     report = json.loads((report_path / "VALIDATION.json").read_text())
     verify_pr_validation({"head": head, "base": state["base_commit"],
-                          "validation": str(report_path)}, identity(ROOT))
+                          "validation": str(report_path)}, state["checker"])
     if report["project"] != state["project"]:
         raise ValueError("Validation belongs to a different worktree")
     return report

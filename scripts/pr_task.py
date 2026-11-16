@@ -153,6 +153,7 @@ def main():
     directory = arguments.state.resolve()
     if arguments.command == "probe":
         state = load(directory)
+        setup.verify_checker(state)
         snapshot = forge.snapshot(state)
         if snapshot["state"] != "open":
             if state["phase"] == "finalizing":
@@ -165,6 +166,8 @@ def main():
     with locked(directory, wait=arguments.command == "finalize"):
         state = load(directory)
         try:
+            if arguments.command not in {"status", "pause"}:
+                setup.verify_checker(state)
             return execute(state, arguments)
         except Exception as error:
             if arguments.command not in {"status", "claim"}:
