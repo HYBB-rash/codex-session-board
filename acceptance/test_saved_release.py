@@ -113,6 +113,7 @@ class SavedReleaseTests(unittest.TestCase):
             (package / "RELEASE.json").write_text(json.dumps({
                 "schema_version": 1, "target": target or self.target, "version": "0.2.93",
                 "source_commit": source or self.github.source, "files": files,
+                "build_sha256": "b" * 64,
                 "binary_sha256": files["bin/codex-session-board"],
             }))
             output = io.BytesIO()
@@ -121,12 +122,23 @@ class SavedReleaseTests(unittest.TestCase):
                     contents.add(path, arcname=path.name)
             return output.getvalue()
 
-    def save_existing(self, target=None):
+    def startup(self, target=None):
+        return {
+            "schema_version": 1, "scope": "package_startup", "passed": True,
+            "source_commit": self.github.source, "build_sha256": "b" * 64,
+            "binary_sha256": hashlib.sha256(b"executable").hexdigest(),
+            "version": "0.2.93", "target": target or self.target,
+            "checks": verify_package_startup.CHECKS, "cleanup_confirmed": True,
+        }
+
+    def save_existing(self, target=None, startup=True):
         target = target or self.target
         name = release_plugin.asset_name(target)
         body = self.archive(target)
         self.github.assets[name] = body
         self.github.assets[name + ".sha256"] = f"{hashlib.sha256(body).hexdigest()}  {name}\n".encode()
+        if startup:
+            self.github.assets[release_plugin.startup_name(target)] = json.dumps(self.startup(target)).encode()
 
     def test_first_release_checks_tag_reference_before_resolving_commit(self):
         github = release_plugin.GitHub("owner/plugin")
@@ -203,15 +215,16 @@ class SavedReleaseTests(unittest.TestCase):
         for attempt in range(2):
             directory = self.root / str(attempt)
             directory.mkdir()
-            with patch.object(release_plugin, "build") as build, patch.object(release_plugin, "authorize"), \
+            with patch.object(release_plugin, "build") as build, \
+                    patch.object(release_plugin, "authorize", side_effect=lambda package, *_: package_plugin.verify_package(package)), \
                     patch.object(verify_package_startup, "verify") as startup:
                 report, fixture = self.root / f"startup-{attempt}.json", self.root / "fixture"
                 release_plugin.save_platform(self.github, self.tag, self.target, self.github.source, directory,
                                              report, fixture)
                 build.assert_not_called()
-                saved, supplied_fixture, supplied_report = startup.call_args.args
-                self.assertEqual((supplied_fixture, supplied_report), (fixture, report))
-                self.assertEqual(package_plugin.verify_package(saved)["source_commit"], self.github.source)
+                startup.assert_not_called()
+                self.assertEqual(json.loads(report.read_text()), self.startup())
+                self.assertEqual(package_plugin.verify_package(directory / "package")["source_commit"], self.github.source)
         self.assertEqual(self.github.assets, original)
         github = release_plugin.GitHub(self.github.repository)
         with patch.object(github, "api", side_effect=self.github.api), \
@@ -226,6 +239,63 @@ class SavedReleaseTests(unittest.TestCase):
         self.assertEqual(self.github.api_calls.count(("GET", f"releases/tags/{self.tag}")), 1)
         self.assertEqual(self.github.api_calls.count(("GET", "releases?per_page=100&page=1")), 1)
         self.assertEqual(self.github.assets, original)
+
+    def test_startup_asset_is_uploaded_once_and_canonical_winner_is_read_back(self):
+        self.save_existing(startup=False)
+        report = self.root / "startup.json"
+        def startup(package, fixture, output):
+            output.write_text(json.dumps(self.startup()))
+        with patch.object(release_plugin, "authorize", side_effect=lambda package, *_: package_plugin.verify_package(package)), \
+                patch.object(verify_package_startup, "verify", side_effect=startup) as verify:
+            directory = self.root / "saved"
+            directory.mkdir()
+            release_plugin.save_platform(self.github, self.tag, self.target, self.github.source,
+                                         directory, report, self.root / "fixture")
+            verify.assert_called_once()
+        name = release_plugin.startup_name(self.target)
+        self.assertEqual(report.read_bytes(), self.github.assets[name])
+        self.assertEqual(self.github.uploaded, [name])
+        self.assertEqual(json.loads((directory / name).read_text()), self.startup())
+
+    def test_missing_or_mismatched_startup_evidence_never_publishes(self):
+        for target in package_plugin.TARGETS:
+            self.save_existing(target)
+        name = release_plugin.startup_name(self.target)
+        original = self.github.assets[name]
+        variants = [None] + [
+            json.dumps({**self.startup(), field: value}).encode()
+            for field, value in (
+                ("schema_version", 0), ("scope", "other"), ("passed", False),
+                ("cleanup_confirmed", False), ("checks", []), ("source_commit", "c" * 40),
+                ("build_sha256", "c" * 64), ("binary_sha256", "d" * 64),
+                ("version", "0.2.94"), ("target", "other"),
+            )
+        ]
+        for index, variant in enumerate(variants):
+            with self.subTest(index=index):
+                if variant is None:
+                    self.github.assets.pop(name, None)
+                else:
+                    self.github.assets[name] = variant
+                directory = self.root / str(index)
+                directory.mkdir()
+                def checkout(source, destination):
+                    (destination / "scripts").mkdir(parents=True)
+                with patch.object(release_plugin, "source_checkout", side_effect=checkout), \
+                        patch.object(release_plugin.subprocess, "run") as run:
+                    with self.assertRaisesRegex(ValueError, "startup"):
+                        release_plugin.publish_saved(self.github, self.tag, self.github.source,
+                                                     "candidate", None, directory)
+                    self.assertTrue(all(call.args[0][1] == "-c" for call in run.call_args_list))
+                self.assertTrue(self.github.draft)
+                self.assertEqual(self.github.edits, [])
+        self.github.assets[name] = original
+        observed = self.github.release
+        with patch.object(self.github, "release", side_effect=lambda tag: {
+            **observed(tag), "assets": [{**asset, "digest": "sha256:wrong"} for asset in observed(tag)["assets"]]
+        }):
+            with self.assertRaisesRegex(ValueError, "digest"):
+                release_plugin.read_startup(self.github, self.tag, self.startup(), self.root)
 
     def test_missing_platform_stays_draft_without_channel_writes(self):
         self.save_existing()

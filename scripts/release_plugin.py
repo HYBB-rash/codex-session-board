@@ -2,6 +2,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -12,6 +13,7 @@ from urllib.parse import quote
 from package_plugin import ROOT, TARGETS, build, command, verify_package, versions
 from publish_plugin import authorize
 from validate_context import require_remote_target, require_target
+from verify_package_startup import CHECKS
 
 
 def release_tag(source, reference="refs/heads/main"):
@@ -132,6 +134,33 @@ def asset_name(target):
     return f"plugin-{target}.tar.gz"
 
 
+def startup_name(target):
+    return f"STARTUP-{target}.json"
+
+
+def validate_startup(report, manifest):
+    if (not isinstance(report, dict) or report.get("schema_version") != 1
+            or report.get("scope") != "package_startup"
+            or report.get("passed") is not True or report.get("cleanup_confirmed") is not True
+            or report.get("checks") != CHECKS):
+        raise ValueError("Saved startup evidence is incomplete or failed")
+    for field in ("source_commit", "build_sha256", "binary_sha256", "version", "target"):
+        if not manifest.get(field) or report.get(field) != manifest[field]:
+            raise ValueError(f"Saved startup evidence differs from package: {field}")
+
+
+def read_startup(github, tag, manifest, directory):
+    name = startup_name(manifest["target"])
+    asset = next((entry for entry in github.release(tag)["assets"] if entry["name"] == name), None)
+    if asset is None:
+        return None
+    saved = github.download(tag, name, directory)
+    if asset.get("digest") != "sha256:" + hashlib.sha256(saved.read_bytes()).hexdigest():
+        raise ValueError("GitHub startup asset digest is missing or differs")
+    validate_startup(json.loads(saved.read_text()), manifest)
+    return saved
+
+
 def unpack(archive, destination):
     destination.mkdir()
     with tarfile.open(archive) as contents:
@@ -174,10 +203,28 @@ def save_platform(github, tag, target, source, directory, startup_report=None, f
         package = read_package(github, tag, target, source, directory)
     if package is None:
         raise ValueError("Uploaded platform package could not be read back")
-    authorize(package, "candidate", None)
+    manifest = authorize(package, "candidate", None)
     if startup_report is not None:
-        from verify_package_startup import verify as verify_startup
-        verify_startup(package, fixture, startup_report)
+        saved = read_startup(github, tag, manifest, directory)
+        if saved is None:
+            if not github.release(tag)["draft"]:
+                raise ValueError("Published release is missing startup evidence; use a new version")
+            from verify_package_startup import verify as verify_startup
+            verify_startup(package, fixture, startup_report)
+            validate_startup(json.loads(startup_report.read_text()), manifest)
+            saved = directory / startup_name(target)
+            if saved.resolve() != startup_report.resolve():
+                shutil.copyfile(startup_report, saved)
+            github.upload(tag, saved)
+            saved = read_startup(github, tag, manifest, directory)
+            if saved is None:
+                raise ValueError("Uploaded startup evidence could not be read back")
+        else:
+            output = startup_report.resolve()
+            if output.exists() or output.is_relative_to(ROOT) or output.is_relative_to(package.resolve()):
+                raise ValueError("Startup report must use a new path outside the source and package")
+        if saved.resolve() != startup_report.resolve():
+            shutil.copyfile(saved, startup_report)
     archive = directory / asset_name(target)
     checksum = archive.with_name(archive.name + ".sha256")
     checksum.write_text(f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n")
@@ -217,6 +264,10 @@ def publish_saved(github, tag, source, channel, evidence, directory, reference="
         platform_directory = directory / target
         platform_directory.mkdir()
         package = read_package(github, tag, target, source, platform_directory)
+        manifest = verify_package(package)
+        startup = read_startup(github, tag, manifest, platform_directory)
+        if startup is None and channel == "candidate":
+            raise ValueError(f"Release is missing required startup evidence for {target}")
         checksum = github.download(tag, asset_name(target) + ".sha256", platform_directory)
         archive = platform_directory / asset_name(target)
         expected = f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n"
