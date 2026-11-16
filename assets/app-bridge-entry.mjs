@@ -24,6 +24,7 @@ const routes = {
   "/api/refresh": "board_refresh",
   "/api/new": "board_new",
   "/api/new/reset": "board_new_reset",
+  "/api/project/assign": "board_project_assign",
   "/api/connect": "board_connect",
   "/api/archive": "board_archive",
   "/api/column-sort": "board_sort",
