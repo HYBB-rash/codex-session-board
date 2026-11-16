@@ -1410,6 +1410,8 @@
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_wrong_architecture_is_rejected_before_stopping_or_installing"
     ],
     "BOUNDARY-001": [
+      "lib::codex_session_board::app::target_drafts::tests::canonical_target_request_uses_verified_rpc_and_only_opens_native_input",
+      "lib::codex_session_board::app::target_drafts::tests::lost_navigation_retry_reuses_prepared_target_without_reimport_or_thread_start",
       "lib::codex_session_board::catalog::preparation::metadata::tests::native_metadata_preserves_appearance_backing_creation_and_retirement",
       "lib::codex_session_board::catalog::preparation::metadata::tests::invalid_owner_backing_and_appearance_fail_before_import",
       "lib::codex_session_board::catalog::preparation::tests::action_import_uses_exact_key_complete_metadata_without_thread_migration",

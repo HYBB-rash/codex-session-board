@@ -2,6 +2,9 @@ use super::*;
 use crate::catalog::preparation::{Fresh, roots};
 use crate::rpc::Rpc;
 
+#[cfg(test)]
+mod tests;
+
 struct TargetRequest<'a> {
     key: &'a str,
     operation: &'a str,
