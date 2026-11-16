@@ -16,6 +16,7 @@ PATTERNS = (
     ".agents/plugins/marketplace.json", ".agents/skills/**/*", ".gitignore", ".githooks/*",
     "AGENTS.md", "README.md", "Docs/*.md", "assets/*", "skills/**/*",
     "scripts/*.py", "scripts/*.rs", "scripts/*.mjs", "scripts/check", "scripts/install-git-hooks",
+    "scripts/checker/Cargo.toml", "scripts/checker/Cargo.lock",
     "scripts/build-plugin", "scripts/run-plugin", "scripts/update-plugin", "scripts/release", ".github/workflows/*.yml",
     ".github/pull_request_template.md", "scripts/pr-queue", "scripts/pr-task",
     "scripts/dev", "scripts/dev_environment/*.py", "scripts/validate", "scripts/promote",

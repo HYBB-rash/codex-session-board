@@ -39,7 +39,7 @@ if "$check_staged"; then
     cd -- "$check_snapshot"
 fi
 check_status=0
-cargo run --quiet --offline --locked --example project_check -- "$@" || check_status=$?
+python3 "$PWD/scripts/checker_cache.py" --project "$PWD" -- "$@" || check_status=$?
 if (( check_status > 2 )); then
     printf '%s\n' '[检查错误] 检查器未能运行完成。请先修复上方 Cargo 或工具链错误，再重新运行。' >&2
     exit 2
