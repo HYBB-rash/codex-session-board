@@ -1,4 +1,5 @@
 import json
+import hashlib
 import re
 import subprocess
 import time
@@ -106,6 +107,12 @@ def item(kind, entry, head=None):
 
 def feedback(pr, reviews, comments, inline, roots, reviewers):
     result = []
+    resolved = set()
+    for entry in comments:
+        marker = re.search(r"<!-- pr-queue:resolved ([0-9a-f-]{36}) ([0-9a-f]{40}) ([0-9a-f]{64}) -->",
+                           entry.get("body", ""))
+        if marker and marker[2] == pr["head"]["sha"] and entry["user"]["login"] in reviewers:
+            resolved.add((marker[1], marker[3]))
     published = {entry["id"]: entry for entry in reviews if entry["state"] != "PENDING"}
     decisive = {}
     for entry in sorted(reviews, key=lambda value: value["id"]):
@@ -130,8 +137,49 @@ def feedback(pr, reviews, comments, inline, roots, reviewers):
             continue
         marker = re.search(r"<!-- (?:pr-queue:|pr-task:feedback )([0-9a-f-]{36}) -->", body)
         source = re.search(r"PR head: `([0-9a-f]{40})`", body)
-        if marker and source and source[1] == pr["head"]["sha"]:
+        body_sha256 = hashlib.sha256(body.encode()).hexdigest()
+        if (marker and source and source[1] == pr["head"]["sha"]
+                and (marker[1], body_sha256) not in resolved):
             result.append(item("feedback", entry, source[1]))
+    return result
+
+
+def check_state(repository, head, required, deadline):
+    endpoint = f"repos/{repository}"
+    result = {"ci": "pending", "items": []}
+    checks = pages(f"{endpoint}/commits/{head}/check-runs?filter=latest",
+                   deadline, "check_runs")
+    statuses = pages(f"{endpoint}/commits/{head}/statuses", deadline)
+    latest = {}
+    for entry in statuses:
+        latest.setdefault(entry["context"], entry)
+    for entry in checks:
+        if entry["head_sha"] != head:
+            raise ForgeError("Check run belongs to a different commit")
+        if entry["status"] == "completed" and entry["conclusion"] in {
+            "failure", "timed_out", "cancelled", "action_required", "startup_failure", "stale",
+        }:
+            result["items"].append({
+                "kind": "check", "id": str(entry["id"]), "head": head,
+                "key": digest(["check", head, entry["id"], entry.get("completed_at")]),
+                "body": f"{entry['name']}: {entry['conclusion']}", "url": entry["html_url"],
+            })
+    for entry in latest.values():
+        if entry["state"] in {"failure", "error"}:
+            result["items"].append({
+                "kind": "check", "id": str(entry["id"]), "head": head,
+                "key": digest(["status", head, entry["id"]]),
+                "body": f"{entry['context']}: {entry['state']}", "url": entry.get("target_url"),
+            })
+    conclusions = {entry["name"]: entry["conclusion"] if entry["status"] == "completed" else "pending"
+                   for entry in checks}
+    conclusions.update({name: entry["state"] for name, entry in latest.items()})
+    if any(entry["kind"] == "check" for entry in result["items"]):
+        result["ci"] = "failed"
+    elif (conclusions and all(conclusions.get(name) == "success" for name in required)
+          and all(entry["status"] == "completed" and entry["conclusion"] == "success" for entry in checks)
+          and all(entry["state"] == "success" for entry in latest.values())):
+        result["ci"] = "passed"
     return result
 
 
@@ -156,39 +204,9 @@ def snapshot(state):
     inline = pages(f"{pull}/comments", deadline)
     roots = thread_roots(state["repository"], number, deadline) if inline else {}
     result["items"] = feedback(pr, reviews, comments, inline, roots, state["reviewers"])
-    checks = pages(f"{endpoint}/commits/{result['head']}/check-runs?filter=latest",
-                   deadline, "check_runs")
-    statuses = pages(f"{endpoint}/commits/{result['head']}/statuses", deadline)
-    latest = {}
-    for entry in statuses:
-        latest.setdefault(entry["context"], entry)
-    for entry in checks:
-        if entry["head_sha"] != result["head"]:
-            raise ForgeError("Check run belongs to a different commit")
-        if entry["status"] == "completed" and entry["conclusion"] in {
-            "failure", "timed_out", "cancelled", "action_required", "startup_failure", "stale",
-        }:
-            result["items"].append({
-                "kind": "check", "id": str(entry["id"]), "head": result["head"],
-                "key": digest(["check", result["head"], entry["id"], entry.get("completed_at")]),
-                "body": f"{entry['name']}: {entry['conclusion']}", "url": entry["html_url"],
-            })
-    for entry in latest.values():
-        if entry["state"] in {"failure", "error"}:
-            result["items"].append({
-                "kind": "check", "id": str(entry["id"]), "head": result["head"],
-                "key": digest(["status", result["head"], entry["id"]]),
-                "body": f"{entry['context']}: {entry['state']}", "url": entry.get("target_url"),
-            })
-    conclusions = {entry["name"]: entry["conclusion"] if entry["status"] == "completed" else "pending"
-                   for entry in checks}
-    conclusions.update({name: entry["state"] for name, entry in latest.items()})
-    if any(entry["kind"] == "check" for entry in result["items"]):
-        result["ci"] = "failed"
-    elif (conclusions and all(conclusions.get(name) == "success" for name in state["checks"])
-          and all(entry["status"] == "completed" and entry["conclusion"] == "success" for entry in checks)
-          and all(entry["state"] == "success" for entry in latest.values())):
-        result["ci"] = "passed"
+    checks = check_state(state["repository"], result["head"], state["checks"], deadline)
+    result["ci"] = checks["ci"]
+    result["items"].extend(checks["items"])
     after = api(pull, deadline=deadline)
     if (after["head"]["sha"], after["base"]["sha"], after["state"], after["merged"]) != (
             result["head"], result["base"], pr["state"], pr["merged"]):

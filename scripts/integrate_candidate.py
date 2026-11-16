@@ -8,8 +8,9 @@ import time
 from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.promote_candidate import ROOT, git, github, identity, promote
-from scripts.validate_context import require_remote_target, require_target
+from scripts.promote_candidate import ROOT, git, github, identity, promote, promote_context
+from scripts.validate_context import context_only, require_remote_target, require_target
+from scripts import pr_queue_gates
 
 
 def now():
@@ -68,6 +69,15 @@ def continue_candidate(state, directory, timeout):
             raise TimeoutError("Candidate is still pending; resume this same output directory")
         time.sleep(10)
     require_checkout(state)
+    if state.get("pr_gates"):
+        while True:
+            state["pr_checks"] = pr_queue_gates.verify(state["pr_gates"])
+            save(state_path, state)
+            if state["pr_checks"] is not None:
+                break
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Final PR checks are still pending; resume this same integration")
+            time.sleep(10)
     receipt = directory / "promotion.json"
     if receipt.exists():
         saved = json.loads(receipt.read_text())
@@ -77,7 +87,13 @@ def continue_candidate(state, directory, timeout):
             raise ValueError("Existing promotion receipt belongs to another integration")
         require_remote_target(reference, (candidate,), git_command=git)
     else:
-        promote(candidate, base, run["id"], state["repository"], receipt, reference)
+        if state.get("records_only"):
+            promote_context(candidate, base, run["id"], state["repository"], receipt)
+        elif state.get("pr_gates"):
+            promote(candidate, base, run["id"], state["repository"], receipt, reference,
+                    pr_gates=state["pr_gates"])
+        else:
+            promote(candidate, base, run["id"], state["repository"], receipt, reference)
     state["completed_at"] = now()
     state["seconds"] = (datetime.fromisoformat(state["completed_at"])
                         - datetime.fromisoformat(state["started_at"])).total_seconds()
@@ -96,6 +112,15 @@ def start(arguments):
         state = json.loads(path.read_text())
         if state.get("reference", "refs/heads/main") != reference:
             raise ValueError("Resume must explicitly select the recorded integration target")
+        if getattr(arguments, "pr_gates", None):
+            gates = pr_queue_gates.from_queue(
+                arguments.pr_gates, ROOT, state["repository"], state["source"]["commit"])
+            if state.get("pr_gates", gates) != gates:
+                raise ValueError("Resumed PR gates differ from the frozen source heads")
+            if state.get("completed_at") and not state.get("pr_gates"):
+                raise ValueError("An old completed integration cannot acquire PR gates retroactively")
+            state["pr_gates"] = gates
+            save(path, state)
     else:
         if not arguments.base or not arguments.repository or directory.exists():
             raise ValueError("A new integration needs fixed base, repository and a new output directory")
@@ -112,6 +137,10 @@ def start(arguments):
             "repository": arguments.repository, "started_at": started.isoformat(),
         }
         require_checkout(state)
+        state["records_only"] = reference == "refs/heads/main" and context_only(state["base"])
+        if getattr(arguments, "pr_gates", None):
+            state["pr_gates"] = pr_queue_gates.from_queue(
+                arguments.pr_gates, ROOT, arguments.repository, state["source"]["commit"])
         directory.mkdir(parents=True)
         save(path, state)
     try:
@@ -131,6 +160,7 @@ def main():
     parser.add_argument("--reference", default="refs/heads/main")
     parser.add_argument("--repository")
     parser.add_argument("--started-at")
+    parser.add_argument("--pr-gates", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--timeout", type=int, default=3600)

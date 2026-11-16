@@ -32,7 +32,7 @@ def github(*arguments, timeout=None):
                                    stderr=subprocess.PIPE, timeout=timeout)
 
 
-def validate_run(run, jobs, source, repository):
+def validate_run(run, jobs, source, repository, required=JOBS):
     if (run["head_sha"] != source["commit"] or run["status"] != "completed"
             or run["conclusion"] != "success" or run["repository"]["full_name"] != repository
             or run["path"] != ".github/workflows/plugin-candidate.yml"
@@ -40,9 +40,9 @@ def validate_run(run, jobs, source, repository):
             or not run["head_branch"].startswith("codex/integration-")):
         raise ValueError("Actions run does not identify a successful integration candidate")
     records = {job["name"]: job for job in jobs["jobs"]}
-    if not JOBS.issubset(records) or any(
+    if not required.issubset(records) or any(
         records[name]["status"] != "completed" or records[name]["conclusion"] != "success"
-        for name in JOBS
+        for name in required
     ):
         raise ValueError("Required candidate jobs must each finish successfully")
 
@@ -144,7 +144,7 @@ def collect_platform(repository, run, label, source, base, directory, reference=
     return label, record, package
 
 
-def promote(candidate, base, run_id, repository, output, reference="refs/heads/main"):
+def promote(candidate, base, run_id, repository, output, reference="refs/heads/main", *, pr_gates=None):
     output = output.resolve()
     if output.is_relative_to(ROOT) or output.exists():
         raise ValueError("Promotion receipt must use a new path outside the source")
@@ -171,6 +171,12 @@ def promote(candidate, base, run_id, repository, output, reference="refs/heads/m
             validations[label], packages[label] = record, package
     if identity() != source or git("status", "--porcelain", "--untracked-files=all"):
         raise ValueError("Candidate changed while checking remote validation")
+    pr_checks = None
+    if pr_gates:
+        from scripts.pr_queue_gates import verify
+        pr_checks = verify(pr_gates)
+        if pr_checks is None:
+            raise ValueError("Final PR checks are pending; refusing main promotion")
     remote = require_remote_target(reference, (base, candidate), git_command=git)
     if remote == base:
         lease = [] if reference == "refs/heads/main" else [f"--force-with-lease={reference}:{base}"]
@@ -182,11 +188,50 @@ def promote(candidate, base, run_id, repository, output, reference="refs/heads/m
         "repository": repository, "run": run_id,
         "validated_platforms": validations, "packages": packages,
         "artifacts": str(directory),
+        "pr_checks": pr_checks,
         "promoted_at": datetime.now(timezone.utc).isoformat(),
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(receipt, indent=2) + "\n")
     print(json.dumps({"promoted": candidate, "receipt": str(output)}))
+    return receipt
+
+
+def promote_context(candidate, base, run_id, repository, output):
+    from scripts.validate_context import context_only
+    output = output.resolve()
+    source = identity()
+    if (output.is_relative_to(ROOT) or output.exists() or source["commit"] != candidate
+            or git("status", "--porcelain", "--untracked-files=all") or not context_only(base)):
+        raise ValueError("Record promotion requires this exact clean context-only descendant")
+    endpoint = f"repos/{repository}/actions/runs/{run_id}"
+    run = json.loads(github("api", endpoint))
+    jobs = json.loads(github("api", endpoint + "/jobs?filter=latest&per_page=100"))
+    required = {"Classify integration", "Validate context records", "Candidate gate"}
+    validate_run(run, jobs, source, repository, required)
+    if any(job["name"] not in required and job["conclusion"] != "skipped"
+           for job in jobs["jobs"]):
+        raise ValueError("Record promotion requires the exclusive context validation path")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    directory = Path(tempfile.mkdtemp(prefix="verified-context-", dir=output.parent))
+    github("run", "download", str(run_id), "--repo", repository,
+           "--name", "context-validation", "--dir", str(directory))
+    path = directory / "CONTEXT.json"
+    report = json.loads(path.read_text())
+    expected = {"scope": "context", "context_only": True, "base": base,
+                "source_commit": candidate, "reference": "refs/heads/main",
+                "implementation_unchanged": True}
+    if report != expected or identity() != source or git("status", "--porcelain", "--untracked-files=all"):
+        raise ValueError("Context evidence differs from the unchanged implementation and exact source")
+    remote = require_remote_target("refs/heads/main", (base, candidate), git_command=git)
+    if remote == base:
+        subprocess.run(["git", "push", "origin", f"{candidate}:refs/heads/main"], cwd=ROOT, check=True)
+    require_remote_target("refs/heads/main", (candidate,), git_command=git)
+    receipt = {"schema_version": 1, "scope": "context", "source": source, "base": base,
+               "reference": "refs/heads/main", "repository": repository, "run": run_id,
+               "context_report": str(path), "context_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+               "promoted_at": datetime.now(timezone.utc).isoformat()}
+    output.write_text(json.dumps(receipt, indent=2) + "\n")
     return receipt
 
 

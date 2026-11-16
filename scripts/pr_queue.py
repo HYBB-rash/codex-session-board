@@ -104,7 +104,7 @@ def verify_pr_validation(item, checker):
     record = json.loads((directory / "VALIDATION.json").read_text())
     project = Path(record["project"]).resolve(strict=True)
     source = identity(project)
-    strategy = pr_plan.plan(project, item["base"])
+    strategy = pr_plan.plan(project, item["base"], stage=record.get("stage", "ci"))
     if (record.get("scope") != "pr" or record.get("passed") is not True
             or record.get("release_ready") is not False or record.get("acceptance_status") != "not_performed"
             or source["commit"] != item["head"] or record.get("source") != source
@@ -322,6 +322,19 @@ def requeue(state, incoming, directory):
     replacement["head"] = source
     replacement["base"] = item["base"]
     verify_entry(state, replacement)
+    if evidence_only and source == item["head"] and item["feedback"].get("comment"):
+        from scripts.pr_task_publish import comment_once
+        from scripts.pr_task_github import api
+        feedback = item["feedback"]
+        comment_id = feedback["comment"].rstrip("/").rsplit("-", 1)[-1]
+        original = api(f"repos/{state['repository']}/issues/comments/{comment_id}")
+        if (f"<!-- pr-queue:{feedback['id']} -->" not in original["body"]
+                or f"PR head: `{source}`" not in original["body"]):
+            raise ValueError("Resolved feedback must match the original PR comment and source")
+        body_sha256 = hashlib.sha256(original["body"].encode()).hexdigest()
+        marker = f"<!-- pr-queue:resolved {feedback['id']} {source} {body_sha256} -->"
+        comment_once(state["repository"], item["number"], marker,
+                     "同一源码的独立审阅和交付证据已重新核验，解除该条交付反馈；原始失败评论保留。")
     item.update(replacement, status="submitted")
     item.pop("feedback", None)
     state.update(batch_delivered=False, all_items_merged=False)
@@ -419,6 +432,8 @@ def finish(state, directory):
     ]
     if reference != "refs/heads/main":
         command += ["--reference", reference]
+    if not state.get("rehearsal"):
+        command += ["--pr-gates", str(directory / "queue.json")]
     try:
         subprocess.run(command, cwd=project, check=True)
     except subprocess.CalledProcessError:
@@ -475,7 +490,8 @@ def retry_candidate(state, directory):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("init", "attempt", "notify", "requeue", "finish", "retry-candidate", "status"))
+    parser.add_argument("command", choices=("init", "attempt", "notify", "requeue", "finish",
+                                          "retry-candidate", "closeout", "status"))
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--item", type=Path)
@@ -498,10 +514,15 @@ def main():
                 requeue(state, json.loads(arguments.item.read_text()), directory)
             elif arguments.command == "finish":
                 finish(state, directory)
+            elif arguments.command == "closeout":
+                from scripts.pr_queue_closeout import closeout
+                closeout(state)
+                save(directory / "queue.json", state)
             elif arguments.command == "retry-candidate":
                 retry_candidate(state, directory)
     print(json.dumps(state, ensure_ascii=False, indent=2))
+    return 2 if arguments.command == "closeout" and not state["closeout"]["complete"] else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
