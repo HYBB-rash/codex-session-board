@@ -114,6 +114,35 @@ class PackageStartupTests(unittest.TestCase):
             with self.assertRaisesRegex(TimeoutError, "30 seconds"):
                 verify_package_startup.mcp(Path("/unused"), "1", self.runtime)
 
+    def test_transport_failure_keeps_native_exit_and_backend_rejections(self):
+        for phase in ("sendall", "shutdown", "recv"):
+            for exit_code, parent in ((1, 9), (0, 10)):
+                with self.subTest(phase=phase, exit=exit_code, parent=parent), \
+                        patch.object(verify_package_startup.socket, "socket") as factory, \
+                        patch.object(Path, "read_text", return_value=json.dumps({
+                            "pid": 26, "parent": parent, "exit": exit_code})):
+                    connection = factory.return_value.__enter__.return_value
+                    connection.recv.return_value = b""
+                    error_type = BrokenPipeError if phase == "sendall" else ConnectionResetError
+                    getattr(connection, phase).side_effect = error_type("fixture transport")
+                    with self.assertRaisesRegex(ValueError, "unsuccessfully|backend"):
+                        verify_package_startup.mcp(Path("/unused"), "1", self.runtime)
+
+    def test_transport_failure_with_successful_exit_cannot_pass(self):
+        for phase in ("sendall", "shutdown", "recv"):
+            with self.subTest(phase=phase), \
+                    patch.object(verify_package_startup.socket, "socket") as factory, \
+                    patch.object(Path, "read_text", return_value=json.dumps({
+                        "pid": 26, "parent": 9, "exit": 0})):
+                connection = factory.return_value.__enter__.return_value
+                connection.recv.return_value = b""
+                error_type = BrokenPipeError if phase == "sendall" else ConnectionResetError
+                error = error_type("fixture transport")
+                getattr(connection, phase).side_effect = error
+                with self.assertRaises(type(error)) as raised:
+                    verify_package_startup.mcp(Path("/unused"), "1", self.runtime)
+                self.assertIs(raised.exception, error)
+
     def test_mcp_failure_wrong_backend_or_different_service_cannot_pass(self):
         for arguments in ({"exit_code": 1}, {"parent": 10}):
             with self.subTest(arguments=arguments), self.assertRaisesRegex(ValueError, "unsuccessfully|backend"):

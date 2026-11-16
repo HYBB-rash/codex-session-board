@@ -1746,6 +1746,8 @@
       "acceptance.test_pr_queue_transport.QueueTransportTests.test_fallback_does_not_hide_rpc_errors_or_accept_wrong_thread_or_turn",
       "acceptance.test_package_startup.PackageStartupTests.test_connect_and_send_share_the_total_startup_budget",
       "acceptance.test_package_startup.PackageStartupTests.test_child_exit_after_total_deadline_cannot_pass",
+      "acceptance.test_package_startup.PackageStartupTests.test_transport_failure_keeps_native_exit_and_backend_rejections",
+      "acceptance.test_package_startup.PackageStartupTests.test_transport_failure_with_successful_exit_cannot_pass",
       "acceptance.test_package_startup.PackageStartupTests.test_mcp_response_stream_keeps_one_total_deadline",
       "acceptance.test_package_startup.PackageStartupTests.test_fixture_channel_preserves_all_mcp_startup_requests_and_runtime_identity",
       "acceptance.test_package_startup.PackageStartupTests.test_mcp_failure_wrong_backend_or_different_service_cannot_pass",

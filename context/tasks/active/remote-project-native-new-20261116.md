@@ -2,7 +2,7 @@
 
 owner: codex
 execution_mode: coordinated_parallel
-allowed_write_set: src/, tests/, scripts/native_new/, scripts/check-native-new.mjs, scripts/check-native-target*.mjs, scripts/check-remote-catalog.mjs, scripts/check-app-bridge.mjs, index.html, acceptance/bindings.json, acceptance/test_native_new.py, acceptance/test_native_target.py, Docs/REMOTE-NATIVE-NEW.md, 本任务文件
+allowed_write_set: src/, tests/, scripts/native_new/, scripts/check-native-new.mjs, scripts/check-native-target*.mjs, scripts/check-remote-catalog.mjs, scripts/check-app-bridge.mjs, scripts/verify_package_startup.py, index.html, acceptance/bindings.json, acceptance/test_native_new.py, acceptance/test_native_target.py, acceptance/test_package_startup.py, Docs/REMOTE-NATIVE-NEW.md, 本任务文件
 base_commit: d7c1717428e0fb56312afa74f82db942d7813d3a
 worktree_path: /Users/hongyong/.codex/worktrees/remote-project-native-new/codex-session-board
 coordinator: codex
@@ -50,4 +50,8 @@ coordinator: codex
 - 最终 PR 门禁的旧导航回归曾抢先读取尚未发布的 launcher 回执。加入 1.1 秒延迟
   可确定复现相同 ENOENT；回归现在有界等待实际回执并核对唯一完整 URL，
   同时覆盖 launcher 在生产的一秒等待窗口后继续运行的分支。
+- PR #13 的首个 Linux CI 在预期 MCP 配置拒绝场景先收到连接重置，掩盖了实际退出码 1；
+  日志保留 poll_seconds 拒绝且 cleanup_confirmed=true。领取原 CI 事件后修复作者侧
+  启动验证器，在 reset/broken pipe 后沿用同一截止时间确认退出和后台归属；
+  退出成功仍重抛传输错误，不降低失败断言。冻结检查器保持原版本。
 - 真实日用客户端候选安装、多窗口 GUI、远程在线首轮与完整目标环境验收仍待部署阶段。
