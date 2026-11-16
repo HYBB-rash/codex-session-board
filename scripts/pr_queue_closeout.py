@@ -20,8 +20,10 @@ def author(state, item):
             or Path(task["project"]).resolve() != Path(item["route"]["repair_cwd"]).resolve()):
         raise ValueError("Author cleanup must match the registered task, source, route and checker")
     if task["phase"] != "complete":
+        action = ["finalize"] if task.get("mode", "automatic") == "manual" else [
+            "tick", "--force", "--terminal-only"]
         result = subprocess.run([
-            sys.executable, str(ROOT / "scripts/pr_task.py"), "tick", "--force", "--terminal-only",
+            sys.executable, str(ROOT / "scripts/pr_task.py"), *action,
             "--state", str(directory),
         ], cwd=ROOT, text=True, capture_output=True, timeout=150)
         if result.returncode not in (0, 75):

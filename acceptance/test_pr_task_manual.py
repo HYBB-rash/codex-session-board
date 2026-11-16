@@ -116,3 +116,32 @@ class PRTaskManualTests(unittest.TestCase):
         with mock.patch.object(manual.forge, "snapshot", return_value=snapshot):
             with self.assertRaisesRegex(ValueError, "reopened"):
                 manual.finalize(state)
+
+    def test_refresh_terminal_or_failed_request_never_finalizes(self):
+        state, snapshot = task(self)
+        state.update(mode="manual", published={"head": HEAD})
+        persist(state)
+        before = saved(state)
+        arguments = cli.parser().parse_args(["status", "--refresh", "--state", state["directory"]])
+        snapshot["state"] = "merged"
+        with mock.patch.object(manual.forge, "snapshot", return_value=snapshot):
+            self.assertEqual(cli.execute(state, arguments)["handoff"]["next_action"], "finalize")
+        with mock.patch.object(manual.forge, "snapshot", side_effect=manual.forge.ForgeError("offline")):
+            with self.assertRaisesRegex(manual.forge.ForgeError, "offline"):
+                cli.execute(state, arguments)
+        self.assertEqual(saved(state), before)
+
+    def test_attach_and_refresh_do_not_reuse_readiness_for_changed_head_or_ci(self):
+        state, snapshot = task(self)
+        state.update(mode="manual", published={"head": HEAD}, ready_head=HEAD)
+        snapshot["ci"] = "passed"
+        arguments = cli.parser().parse_args(["attach", "--state", state["directory"], "--pr", "7"])
+        with mock.patch.object(cli.forge, "snapshot", return_value=snapshot), mock.patch.object(
+                cli, "checkout", return_value=HEAD), mock.patch.object(
+                cli.scheduler, "install", side_effect=AssertionError("No scheduler")):
+            cli.execute(state, arguments)
+            self.assertEqual(manual.observe(state)["handoff"]["next_action"], "independent-review")
+            snapshot["ci"] = "pending"
+            self.assertEqual(manual.observe(state)["handoff"]["next_action"], "wait-ci")
+            snapshot.update(head="c" * 40, ci="passed")
+            self.assertEqual(manual.observe(state)["handoff"]["next_action"], "submit")

@@ -1,9 +1,14 @@
 # PR 合并队列与原会话修复
 
-作者使用项目内 `pr-task` 自动巡检时，队列清单设置 `"feedback_mode": "github"`。
+作者使用项目内 `pr-task` 手动交接或自动巡检时，队列清单设置 `"feedback_mode": "github"`。
 协调者只留下 PR 反馈继续处理其他项，不直接唤起作者或等待聊天 ACK。
 作者新头仍须独立审阅和验证。详见 [PR-TASK.md](PR-TASK.md)；
 没有此字段的旧队列保留本文原生通知模式。
+
+手动交接时由用户转发反馈链接，作者读取 PR 后修复，队列不等待聊天 ACK。
+清单及审阅/验证路径由合并会话准备；用户无需操作各内部命令或手填 JSON。
+手动作者的 route 沿用 task.json 中的作者身份与 repair_cwd，无需 socket/backend。
+该身份只用于来源与独立审阅核对，不能用于原生通知。
 
 作者交付最终头的代码、独立审阅和 PR 检查；协调者核对证据并机械合并。
 冲突和失败反馈交回原作者，协调者不接手业务实现。最后复用 `integrate`、
@@ -47,6 +52,7 @@
 ```json
 {
   "repository": "OWNER/REPO",
+  "feedback_mode": "github",
   "project": "/absolute/candidate-worktree",
   "base": "FIXED_MAIN_SHA",
   "items": [{
@@ -81,7 +87,8 @@ resolved 记录。原始失败保留；修改过的旧评论、新反馈及其�
 ## 收尾
 
 主线确认合并后运行 `closeout`，不等待发布。它核对作者任务的仓库、PR、源码、原会话、
-工作树和冻结检查器，复用 `pr-task tick --force --terminal-only` 处理终态，
+工作树和冻结检查器。手动任务调用 `pr-task finalize`，只结束任务记录，不归档或删除工作树；
+自动任务复用 `pr-task tick --force --terminal-only` 处理终态，
 由既有 finalizer 归档和移除定时器，不另写归档或删除实现。
 开放或重新打开的 PR 不从这个入口启动修复模型；繁忙、离线和身份不符记录 pending。
 已完成任务再次执行不会重复归档。不清理作者分支、源码、工作树或原始运行记录。
