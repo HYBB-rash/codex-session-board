@@ -2,7 +2,7 @@
 
 owner: codex
 execution_mode: coordinated_parallel
-allowed_write_set: src/, tests/, scripts/native_new/, scripts/check-native-new.mjs, scripts/check-native-target*.mjs, scripts/check-remote-catalog.mjs, scripts/check-app-bridge.mjs, scripts/verify_package_startup.py, index.html, acceptance/bindings.json, acceptance/test_native_new.py, acceptance/test_native_target.py, acceptance/test_package_startup.py, Docs/REMOTE-NATIVE-NEW.md, 本任务文件
+allowed_write_set: src/, tests/, scripts/native_new/, scripts/check-native-new.mjs, scripts/check-native-target*.mjs, scripts/check-remote-catalog.mjs, scripts/check-app-bridge.mjs, scripts/verify_package_startup.py, index.html, acceptance/bindings.json, acceptance/test_native_new.py, acceptance/test_native_target.py, acceptance/test_package_startup.py, acceptance/test_validation_cli.py, Docs/REMOTE-NATIVE-NEW.md, 本任务文件
 base_commit: d7c1717428e0fb56312afa74f82db942d7813d3a
 worktree_path: /Users/hongyong/.codex/worktrees/remote-project-native-new/codex-session-board
 coordinator: codex
@@ -55,3 +55,7 @@ coordinator: codex
   启动验证器，在 reset/broken pipe 后沿用同一截止时间确认退出和后台归属；
   退出成功仍重抛传输错误，不降低失败断言。冻结检查器保持原版本。
 - 真实日用客户端候选安装、多窗口 GUI、远程在线首轮与完整目标环境验收仍待部署阶段。
+- 第二次 Linux CI 的 982 项测试仅验证器 foreign-source 回归出错。隔离全局 Git 配置并
+  要求显式身份后，确定复现其第二次提交退出 128、Author identity unknown；
+  fixture 原先仅给首次提交设置身份。现在只为临时测试仓库写入本地身份，
+  原有回归同时隔离全局配置并要求显式身份，继续核对错误头拒绝和报告完整性。
