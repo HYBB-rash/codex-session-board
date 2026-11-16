@@ -3,9 +3,9 @@
   "updated_at": "2026-11-16",
   "current_phase": {
     "id": "pr-validation-efficiency-20261116",
-    "status": "active",
+    "status": "blocked",
     "as_of": "2026-11-16",
-    "summary": "优化PR验证和收尾，复用现有工具分离业务与提交工具自测，缩短本机完整验证的串行等待，保留最终头CI、双平台候选与包启动门禁。完成后由用户以全新真实PR测量，不重演旧PR或宣称未测的提速。"
+    "summary": "PR验证和收尾优化已实现并推到集成分支，冻结0.3.96/7ccdc64。完整Mac门禁两轮被未改动的业务回归挡住，原阈值及断言保留；已建工单14/15并回贴PR1/12，送达已读回、尚未确认接单。main仍0aeb0db/0.3.95，停止重复取绿和推广；待原作者修复后继续交付，再由用户以全新真实PR测量。"
   },
   "active_tasks": [
     "context/tasks/active/pr-validation-efficiency-20261116.md",
@@ -23,6 +23,7 @@
     "context/tasks/active/state-incident-20261112.md"
   ],
   "known_open_issues": [
+    "验证效率工具已在集成分支冻结0.3.96/7ccdc64，309项Python两平台相关回归通过，完整Mac992项两轮仍失败；首轮远端隔离1661ms及筛选状态，第二轮目录断连后目标写入7对6。原业务源码、测试执行器及工作流未改；本机远端及筛选定向复验通过不代表根因修复。工单14/15及PR1/12反馈已读回，待作者新修复任务接单；main仍0aeb0db/0.3.95，不以失败报告或拼接通过项推广。见context/handoffs/pr-validation-efficiency-20261116.md。新真实PR的提速实测尚未开始。",
     "PR13已随0.3.95/3629405合入主线，macOS971/Linux982项及双平台包启动通过；核心50分58秒。目标项目新建依赖匹配的codex-remote-draft-v2客户端候选，未安装或重载日用客户端；多窗口、Fedora在线首轮及完整目标验收仍独立。Linux临时Git fixture身份失败由原作者修复，原失败保留；见context/tasks/completed/pr13-integration-20261116.md。",
     "pr-task已在真实PR13验证自动发现CI失败、作者领取/修复/回执、PR ready和终态收尾，原会话归档confirmed、定时器removed并读回113。两次修复运输仍为waiting_idle且无turn_id，作者在既有活动轮次领取，空闲原会话自动唤醒未被本轮实证。工具与队列共用冻结检查器，作者代码使用独立树；原生archive缺少原子空闲条件，自动归档仅用于专用会话，其他平台需外部调度。原0.3.94开发记录和未覆盖范围保留。",
     "CI43787315021首轮Linux旧UI测试在check-light-ui.mjs:102失败；受控load复现服务端fixture覆盖页面局部readOnly修改的竞态，未直接观测CI定时器事件。UI及测试相对原main未改；Mac三次定向复验和Linux一次失败任务重跑通过，不代表竞态已修复。保留failed-linux和ui-diagnosis原始证据，后续由UI作者同步fixture输入并补轮询交错回归；此次没有削弱断言或夹带UI修复。",
