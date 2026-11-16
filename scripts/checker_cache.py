@@ -41,6 +41,8 @@ def path_identity(environment):
     entries = []
     for value in environment.get("PATH", "").split(os.pathsep):
         directory = Path(value or ".").resolve()
+        if not directory.is_dir():
+            continue
         files = sorted(directory.iterdir()) if directory.name == "tools" and directory.is_dir() else []
         wrappers = {}
         for path in files:
@@ -166,6 +168,9 @@ def build(root, environment, identity, cache, destination):
 def resolve(root, environment=None):
     root = Path(root).resolve(strict=True)
     environment = dict(os.environ if environment is None else environment)
+    environment["PATH"] = os.pathsep.join(
+        str(Path(value) if Path(value).is_absolute() else root / value)
+        for value in environment.get("PATH", "").split(os.pathsep))
     started = time.monotonic()
     identity = describe(root, environment)
     key = hashlib.sha256(encoded(identity)).hexdigest()

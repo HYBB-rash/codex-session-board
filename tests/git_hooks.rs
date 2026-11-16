@@ -57,6 +57,16 @@ fn successful_git(root: &Path, arguments: &[&str]) -> Result<Output> {
     Ok(output)
 }
 
+fn successful_check(root: &Path, arguments: &[&str]) -> Result<Output> {
+    let output = Command::new(root.join("scripts/check"))
+        .current_dir(root)
+        .env("CARGO_TARGET_DIR", root.join("target"))
+        .args(arguments)
+        .output()?;
+    ensure!(output.status.success(), "{}", transcript(&output));
+    Ok(output)
+}
+
 fn install(root: &Path) -> Result<Output> {
     Ok(Command::new("bash")
         .arg(root.join("scripts/install-git-hooks"))
@@ -117,19 +127,7 @@ fn activate_checks(root: &Path, baseline: &str) -> Result<()> {
         "rust_comments": {"baseline_commit": baseline}
     });
     fs::write(root.join("project-rules.json"), serde_json::to_vec(&rules)?)?;
-    successful_cargo(
-        root,
-        &[
-            "run",
-            "--quiet",
-            "--locked",
-            "--offline",
-            "--example",
-            "project_check",
-            "--",
-            "--prepare-commit",
-        ],
-    )?;
+    successful_check(root, &["--prepare-commit"])?;
     let installed = install(root)?;
     ensure!(
         installed.status.success(),
@@ -171,17 +169,8 @@ fn fixture_manifest(root: &Path) -> Result<()> {
     fs::write(
         root.join("Cargo.toml"),
         "[package]\nname='hook-fixture'\nversion='0.1.1'\nedition='2024'\n\
-         \n[[example]]\nname='project_check'\npath='scripts/project_check.rs'\ntest=false\n\
          \n[lints.clippy]\nunwrap_used='deny'\nexpect_used='deny'\ntoo_many_lines='deny'\n\
-         \n[lints.rust]\nunsafe_code='forbid'\n\
-         \n[dependencies]\nanyhow='1'\nserde_json='1'\nra-ap-rustc_lexer='=0.183.0'\n\
-         clap={version='4',features=['derive']}\nregex='1'\ntoml='=1.1.2'\n\
-         serde={version='1',features=['derive']}\n\
-         \n[dev-dependencies]\ntempfile='3'\n",
-    )?;
-    fs::copy(
-        std::env::current_dir()?.join("Cargo.lock"),
-        root.join("Cargo.lock"),
+         \n[lints.rust]\nunsafe_code='forbid'\n",
     )?;
     Ok(())
 }
@@ -681,19 +670,7 @@ fn hooks_reject_an_unstaged_version_preparation() -> Result<()> {
         root,
         &["checkout", "HEAD", "--", "Cargo.toml", "Cargo.lock"],
     )?;
-    successful_cargo(
-        root,
-        &[
-            "run",
-            "--quiet",
-            "--locked",
-            "--offline",
-            "--example",
-            "project_check",
-            "--",
-            "--prepare-commit",
-        ],
-    )?;
+    successful_check(root, &["--prepare-commit"])?;
     let text = transcript(&blocked_commit(root, "version not staged")?);
     assert!(text.contains("暂存区版本") && text.contains("v0.1.2"));
     assert!(!text.contains("正在运行 Clippy"));
