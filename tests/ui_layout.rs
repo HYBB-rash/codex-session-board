@@ -19,6 +19,24 @@ fn host_catalog_filters_preserve_cached_rows_and_isolated_native_drafts() {
 }
 
 #[test]
+fn catalog_load_waits_for_latest_snapshot_before_native_creation() {
+    let result = Command::new("node")
+        .arg("scripts/check-catalog-load-wait.mjs")
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "目录快照加载交错回归失败：\n{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(report["passed"], true);
+    assert_eq!(report["cleanup"]["groupEmpty"], true);
+    assert_eq!(report["cleanup"]["profileRemoved"], true);
+}
+
+#[test]
 fn mcp_bridge_preserves_routes_results_and_host_theme() {
     let result = Command::new("node")
         .arg("scripts/check-app-bridge.mjs")
