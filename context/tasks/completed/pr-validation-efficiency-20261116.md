@@ -6,7 +6,13 @@ allowed_write_set: 验证计划、PR 作者交付与队列收尾入口、对应�
 base_commit: 0aeb0db7edab43db6f47d0a79be274c0673dbe32
 worktree_path: /Users/hongyong/.codex/worktrees/four-pr-rehearsal/codex-session-board
 coordinator: 01a1d38b-1ef8-7392-ba78-caa7935c5ab4
-status: blocked
+status: completed
+
+2026-11-17完成记录：本任务工具改动已随PR17/81fa140/0.3.98进入远端main，
+最终macOS1038/Linux1049项和双平台候选发布通过。历史两轮失败及工单14/15保留，
+未夹带业务修复，也未以新通过记录宣称旧偶发故障根因已修复。
+全新真实业务PR的提速测量仍待用户发起；本轮工具PR采用full门禁，不代替该样本。
+以下“交付阻塞”为0.3.96开发阶段原始记录，最终结果另见merge-release-split-20261116。
 
 用户批准复用现有工具，优化无关提交规则自测、本机串行完整验证及合并收尾。
 完成后由用户提供全新真实 PR 测量，不重演旧 PR，也不将推算当作实测收益。

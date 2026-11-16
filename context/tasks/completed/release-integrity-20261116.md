@@ -6,7 +6,13 @@ allowed_write_set: scripts/release_plugin.py、scripts/publish_plugin.py、scrip
 base_commit: aa1f5663eb09add4aef2624b070935462d25342b
 worktree_path: /Users/hongyong/.codex/worktrees/merge-release-publish-20261116
 coordinator: /root
-status: ready_for_integration
+status: completed
+
+协调者已取用并独立复核，随PR17/81fa140/0.3.98进入main。
+完整macOS1038/Linux1049项通过，真实双平台发布43903547266成功，
+实际包、六场景、STARTUP和不可变资产均再次下载核验。
+故障演练43906236333的两个渠道引用均未变化，正常重试43908518671自动恢复关单。
+下方为开发期交付记录，最终组合与真实流水线结果见merge-release-split-20261116结果。
 
 沿用 save_platform 和 publish_saved，启动报告保存为 STARTUP-<target>.json，
 读回核对 GitHub 资产摘要和包身份，候选发布必须具备两平台成功且清理完成的报告。

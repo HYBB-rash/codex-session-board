@@ -1,7 +1,7 @@
 # PR 合并与自动发布分离实测
 
 owner: codex
-status: measuring_release
+status: completed
 source: 81fa1408dba69d02104e5b33cf4c6d5d62a89786
 version: 0.3.98
 
@@ -52,7 +52,9 @@ macOS验证15:50:25.038177Z到16:03:35.676298Z，共790.638秒。
 并发只锁编译，校验和原子发布保护不可变工具条目。
 完整工具缓存记录另见merge-release-tool-cache-20261116结果。
 
-## 自动发布与连续更新
+## 自动发布与连续更新的过程记录
+
+以下记录保留发布前的观察时点，最终结果见后文完成记录。
 
 main push自动启动43903547266；推广CLI的补偿dispatch43903553401处于等待。
 16:05:50.096497Z已读回merge_status=merged、release_status=pending，
@@ -68,3 +70,41 @@ main push自动启动43903547266；推广CLI的补偿dispatch43903553401处于�
 原等待dispatch43903553401已被取消，原正在运行43903547266仍为in_progress，
 Linux包成功、macOS包正在运行。没有取消正在产包的任务，也没有额外升版。
 接下来提交本次已发生的队列观察，作为第二次main更新验证等待任务继续合并。
+
+## 发布完成与失败恢复
+
+自动发布43903547266成功，两个渠道于16:16:59.347256Z读回相同
+81fa1408dba69d02104e5b33cf4c6d5d62a89786/0.3.98；
+main更新到成功回执707.776秒，即11分47.776秒。
+macOS发布任务创建至runner启动303秒，实际fixture构建61秒，
+包构建、上传、读回及六场景174秒；Linux对应40秒及129秒。
+发布阶段没有重跑Clippy或完整业务测试。
+
+第二次context更新9e2f64e4010787338a6a61851a3a4a07bf6dafc4通过
+CI43904872252，于16:14:45.018102Z进入main，CLI154.878秒。
+它的自动发布43905335526替换等待中的43904509825；原43903547266持续运行至成功。
+最新等待任务于16:17:17.623624Z固定最新main9e2f64e，实现仍为81fa140，
+published=true，产包及发布作业按设计跳过，16:17:33.955769Z再次确认成功。
+本次实测是两次真实context更新，未伪称多个新增业务PR的产包性能对照。
+
+独立下载两个实际平台包、STARTUP和SCENARIOS，既有验证器全部通过，
+每平台六场景均通过且清理确认。v0.3.98为immutable，版本标签指向81fa140。
+两个渠道引用分别为macOS dd1ee05924b39f61e5c5cb562c1d054b66c95094、
+Linux d73f962711b31bad736fce056ed924311f0cac43。
+
+发布前故障注入43906236333中，两平台准备均成功，明确在
+Exercise before publication失败；result作业成功创建源码绑定的演练工单18。
+16:30:02.518543Z读回工单open，两个渠道引用和清单、八个不可变资产均不变。
+两个平台STARTUP.json和STARTUP.scenarios.json相对首次发布逐字节一致。
+原CLI dispatch触发43908518671，正常读回成功后于16:32:27Z自动关闭工单，
+添加release-published；没有人工关单或重建新版本。
+
+演练安全边界：这是已发布可用版本的失败重试，不是新业务源码首次发版失败；
+没有制造业务缺陷、作者接单或作者修复。正常失败的source/package/publish阶段、
+作者反馈、未发布状态及确认门禁缺口须补回归已由当前自动回归覆盖。
+合并后发布pending状态与上一版本保留则已在首次真实发布前现场读回。
+
+原始包、引用、工单前后状态和逐项断言见源码外published-snapshot.json、
+failure-verification.json、recovery-verification.json及MEASUREMENTS.json。
+剩余主要耗时为macOS runner排队、必要业务回归与项目规则历史检查；
+本轮存在多次开发回修，未取得同源同机的整体基线，不能宣称普通PR提速比例。

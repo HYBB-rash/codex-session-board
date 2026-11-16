@@ -1,15 +1,13 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-11-16",
+  "updated_at": "2026-11-17",
   "current_phase": {
     "id": "merge-release-split-20261116",
-    "status": "active",
-    "as_of": "2026-11-16",
-    "summary": "拆分PR合并和main自动发布，复用现有validate/integrate/release及Cargo缓存。0.3.97两线程已保留；固定checker预编译复用，业务候选仍独立构建。实测合并、发布、缓存及失败/连续更新，目标客户端独立。"
+    "status": "completed",
+    "as_of": "2026-11-17",
+    "summary": "PR17/81fa140/0.3.98已合并并自动发布双平台不可变候选。合并与发布独立；完整1038/1049项、固定工具缓存、连续main更新合并等待任务及真实发布失败恢复已验证。两线程保持，日用插件未安装或重载，完整客户端验收仍独立。"
   },
   "active_tasks": [
-    "context/tasks/active/merge-release-split-20261116.md",
-    "context/tasks/active/pr-validation-efficiency-20261116.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",
@@ -24,7 +22,7 @@
     "context/tasks/active/state-incident-20261112.md"
   ],
   "known_open_issues": [
-    "验证效率工具已在集成分支冻结0.3.96/7ccdc64，309项Python两平台相关回归通过，完整Mac992项两轮仍失败；首轮远端隔离1661ms及筛选状态，第二轮目录断连后目标写入7对6。原业务源码、测试执行器及工作流未改；本机远端及筛选定向复验通过不代表根因修复。工单14/15及PR1/12反馈已读回，待作者新修复任务接单；main仍0aeb0db/0.3.95，不以失败报告或拼接通过项推广。见context/handoffs/pr-validation-efficiency-20261116.md。新真实PR的提速实测尚未开始。",
+    "验证效率与合并发布分离工具已随PR17/81fa140/0.3.98进入远端main，最终Mac1038/Linux1049项及双平台发布通过；两线程保留。首次PR ready到main85分55.571秒含回修重跑，最终冻结入口到main26分29.629秒含macOS排队10分02秒，main到发布11分47.776秒。工具冷启动9.274秒、复用0.305秒、变更重建2.331秒；连续main更新与演练失败保留渠道、正常恢复自动关单已验证。旧工单14/15及Draft PR16仍保留，不以本轮通过冒称历史偶发故障根因修复。全新普通业务PR提速样本未测；见context/results/merge-release-split-20261116.md。",
     "PR13已随0.3.95/3629405合入主线，macOS971/Linux982项及双平台包启动通过；核心50分58秒。目标项目新建依赖匹配的codex-remote-draft-v2客户端候选，未安装或重载日用客户端；多窗口、Fedora在线首轮及完整目标验收仍独立。Linux临时Git fixture身份失败由原作者修复，原失败保留；见context/tasks/completed/pr13-integration-20261116.md。",
     "pr-task已在真实PR13验证自动发现CI失败、作者领取/修复/回执、PR ready和终态收尾，原会话归档confirmed、定时器removed并读回113。两次修复运输仍为waiting_idle且无turn_id，作者在既有活动轮次领取，空闲原会话自动唤醒未被本轮实证。工具与队列共用冻结检查器，作者代码使用独立树；原生archive缺少原子空闲条件，自动归档仅用于专用会话，其他平台需外部调度。原0.3.94开发记录和未覆盖范围保留。",
     "CI43787315021首轮Linux旧UI测试在check-light-ui.mjs:102失败；受控load复现服务端fixture覆盖页面局部readOnly修改的竞态，未直接观测CI定时器事件。UI及测试相对原main未改；Mac三次定向复验和Linux一次失败任务重跑通过，不代表竞态已修复。保留failed-linux和ui-diagnosis原始证据，后续由UI作者同步fixture输入并补轮询交错回归；此次没有削弱断言或夹带UI修复。",
@@ -57,7 +55,7 @@
     "PWA安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。",
     "本机和M1专用会话真实归档已通过。正式进程已是 v0.2.63，原生侧栏取消归档后，下一次本机位置读回会恢复本地已确认卡片并保留备注。这次启动还没有完成一次本机位置读回。0.3.38 已实现 SQLite 兼容锁下私有副本热日志恢复，原库与日志不变；两项子进程回归通过，候选交付证据单独保留。"
   ],
-  "last_completed_task": "context/tasks/completed/test-parallelism-main-20261116.md",
+  "last_completed_task": "context/tasks/completed/merge-release-split-20261116.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
@@ -68,7 +66,7 @@
   },
   "verification": {
     "status": "passed",
-    "last_checked_at": "2026-11-16",
+    "last_checked_at": "2026-11-17",
     "method": "sh scripts/verify_context.sh",
     "boundary": "Project-local context files and declared local paths only."
   }
