@@ -38,6 +38,8 @@ impl App {
         health["connected"] = json!(writable);
         for mut project in view.projects {
             project["hostLabel"] = health["hostLabel"].clone();
+            project["canCreate"] = json!(writable && health["catalog"]["cached"] == false
+                && project["pendingDeletion"] != true && host != "local");
             projects.push(project);
         }
         sessions.retain(|row| {

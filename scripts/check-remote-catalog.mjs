@@ -31,10 +31,16 @@ const fixture = {
     note:"",version:1,inputVersion:1,canArchive:true,...row})),
 };
 const writes = [];
+let nativePending = false;
 const server = http.createServer(async (request,response) => {
   let body = "";
   for await (const chunk of request) body += chunk;
   if (request.method === "POST") writes.push({path:request.url,body:JSON.parse(body)});
+  if (request.url === "/api/new" && JSON.parse(body).operationId && nativePending) {
+    response.writeHead(200,{"Content-Type":"application/json"});
+    response.end(JSON.stringify({ok:false,pending:true,error:"隔离输入页尚未确认"}));
+    return;
+  }
   response.writeHead(200,{"Content-Type":request.url === "/" ? "text/html; charset=utf-8" : "application/json"});
   response.end(request.url === "/" ? html : JSON.stringify(request.method === "POST" ? {ok:true} : fixture));
 });
@@ -99,7 +105,7 @@ try {
   check(await ids(),[]);
   await evaluate('byId("new-session").click()');
   check(writes.filter(row=>row.path === "/api/new"),[]);
-  check(await evaluate('byId("feedback").textContent.includes("仅供查看")'),true);
+  check(await evaluate('byId("feedback").textContent.includes("暂不可新建")'),true);
   await evaluate('createSession("server")');
   check(writes.filter(row=>row.path === "/api/new"),[]);
   await select("project-filter","all");
@@ -136,6 +142,48 @@ try {
   check(await evaluate("[selectedHistory,byId('history-filter').disabled]"),["active",true]);
   check(await ids(),["local"]);
   check(writes.some(row=>row.path === "/api/connect"),false);
+  fixture.projectCatalog.items.find(project=>project.id==="server").canCreate=true;
+  fixture.projectCatalog.items.find(project=>project.id==="empty").canCreate=true;
+  await evaluate("load()");
+  nativePending = true;
+  await evaluate('createSession("server")');
+  const targetWrites = () => writes.filter(row=>row.path==="/api/new" && row.body.operationId);
+  const originalOperation = targetWrites()[0].body.operationId;
+  check(/^[0-9a-f-]{36}$/.test(originalOperation),true);
+  check(targetWrites()[0].body,{projectId:"server",operationId:originalOperation});
+  check(await evaluate('byId("draft-recovery").open'),true);
+  check(await evaluate('draftRequests.has("server")'),false);
+  const reloaded = page.event("Page.loadEventFired");
+  await page.command("Page.reload");
+  await reloaded;
+  await wait('typeof data !== "undefined" && data.sessions.length === 8');
+  nativePending = false;
+  await evaluate('createSession("server")');
+  check(targetWrites()[1].body.operationId,originalOperation);
+  check(await evaluate('sessionStorage.getItem("native-draft-operation:server")'),null);
+  await evaluate('createSession("server")');
+  check(targetWrites()[2].body.operationId !== originalOperation,true);
+  await evaluate('createSession("empty")');
+  check(targetWrites()[3].body.projectId,"empty");
+  check(new Set(targetWrites().map(row=>row.body.operationId)).size,3);
+  nativePending = true;
+  await evaluate('createSession("server")');
+  const uncertainOperation = targetWrites().at(-1).body.operationId;
+  nativePending = false;
+  await evaluate('byId("draft-restart").click()');
+  await wait("!creating");
+  check(targetWrites().at(-1).body.operationId !== uncertainOperation,true);
+  check(writes.filter(row=>row.path==="/api/new/reset"),[]);
+  fixture.projectCatalog.items.find(project=>project.id==="server").pendingDeletion=true;
+  await evaluate("load()");
+  const beforeDeletion = targetWrites().length;
+  await evaluate('createSession("server")');
+  check(targetWrites().length,beforeDeletion);
+  fixture.projectCatalog.items.find(project=>project.id==="server").pendingDeletion=false;
+  fixture.health.remoteConnections[0].connected=false;
+  await evaluate("load()");
+  await evaluate('createSession("server")');
+  check(targetWrites().length,beforeDeletion);
   await evaluate('data.health.remoteConnections[0].connected=false;data.health.remoteConnections[0].runtimeVerified=false;render()');
   const beforeOffline = writes.length;
   await select("host-filter","host:a");
