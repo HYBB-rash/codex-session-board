@@ -36,12 +36,7 @@ impl App {
         health["writeError"] = json!(checked.err().map(|error| error.to_string()));
         health["catalog"] = view.health;
         health["connected"] = json!(writable);
-        for mut project in view.projects {
-            project["hostLabel"] = health["hostLabel"].clone();
-            project["canCreate"] = json!(writable && health["catalog"]["cached"] == false
-                && project["pendingDeletion"] != true && host != "local");
-            projects.push(project);
-        }
+        append_projects(projects, view.projects, &health, writable, host);
         sessions.retain(|row| {
             row["hostId"] != *host || !known.contains(row["threadId"].as_str().unwrap_or(""))
         });
@@ -59,6 +54,16 @@ impl App {
         }
         health["hostId"] = json!(host);
         Ok(health)
+    }
+}
+
+fn append_projects(projects: &mut Vec<Value>, targets: Vec<Value>, health: &Value,
+    writable: bool, host: &str) {
+    for mut project in targets {
+        project["hostLabel"] = health["hostLabel"].clone();
+        project["canCreate"] = json!(writable && health["catalog"]["cached"] == false
+            && project["pendingDeletion"] != true && host != "local");
+        projects.push(project);
     }
 }
 

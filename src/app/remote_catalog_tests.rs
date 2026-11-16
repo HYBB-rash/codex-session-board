@@ -60,14 +60,19 @@ fn selected_host_refresh_never_connects_other_or_disabled_hosts() -> Result<()> 
 }
 
 #[test]
-fn target_directory_projects_cannot_enter_either_creation_route() -> Result<()> {
+fn target_creation_requires_operation_and_v2_capability_before_remote_actions() -> Result<()> {
     let (_directory, root, _first, _second) = fixture()?;
     for origin in ["targetServer", "targetLegacy"] {
         let project = format!("target:{}", json!(["remote:a", origin, "native-project"]));
         let error = root
             .request("/api/new", Some(&json!({"projectId":project})))
             .unwrap_err();
-        assert!(error.to_string().contains("目录项目暂不支持新建"));
+        assert!(error.to_string().contains("缺少新建操作 ID"));
+        let error = root
+            .request("/api/new", Some(&json!({"projectId":project,
+                "operationId":uuid::Uuid::new_v4().to_string()})))
+            .unwrap_err();
+        assert!(error.to_string().contains("尚未配置远程原生新建入口"));
     }
     assert!(root.store.pending_drafts()?.is_empty());
     assert!(root.remote_requested.lock().unwrap().is_empty());

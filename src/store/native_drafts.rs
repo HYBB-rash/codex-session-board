@@ -118,27 +118,33 @@ mod tests {
         );
         store.native_draft_prepared(&operation, &target)?;
         store.native_draft_opened(&operation)?;
+        assert_opened_target_is_immutable(&store, project, &operation, &target)
+    }
+
+    fn assert_opened_target_is_immutable(
+        store: &Store, project: &str, operation: &str, target: &Value,
+    ) -> Result<()> {
         assert_eq!(
-            store.native_draft_begin(project, &operation)?["stage"],
+            store.native_draft_begin(project, operation)?["stage"],
             "opened"
         );
         assert_eq!(
-            store.native_draft_prepared(&operation, &target)?["stage"],
+            store.native_draft_prepared(operation, target)?["stage"],
             "opened"
         );
         assert!(
             store
-                .native_draft_prepared(&operation, &json!({"projectId":"other"}))
+                .native_draft_prepared(operation, &json!({"projectId":"other"}))
                 .is_err()
         );
         assert!(
             store
-                .native_draft_begin("target:other", &operation)
+                .native_draft_begin("target:other", operation)
                 .is_err()
         );
         assert_eq!(
-            store.native_draft_begin(project, &operation)?["target"],
-            target
+            store.native_draft_begin(project, operation)?["target"],
+            *target
         );
         Ok(())
     }

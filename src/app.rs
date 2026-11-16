@@ -23,6 +23,7 @@ mod native_mapping;
 mod native_probes;
 mod remote;
 mod remote_snapshot;
+mod target_drafts;
 mod connection;
 pub use connection::preflight;
 pub(crate) use connection::ConnectionRequest;
@@ -268,12 +269,12 @@ impl App {
 
     fn new_session(&self, body: &Value) -> Result<Value> {
         ensure!(body.is_object(), "请求格式无效");
-        ensure!(
-            !body["projectId"]
-                .as_str()
-                .is_some_and(|project| project.starts_with("target:")),
-            "目标主机目录项目暂不支持新建会话"
-        );
+        if body["projectId"]
+            .as_str()
+            .is_some_and(|project| project.starts_with("target:"))
+        {
+            return self.prepare_target_native_draft(body);
+        }
         if body["projectId"]
             .as_str()
             .is_some_and(|project| project.starts_with("remote:"))
