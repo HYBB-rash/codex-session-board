@@ -125,7 +125,7 @@ try {
   await wait("!creating");
   check(writes.filter(row=>row.path === "/api/new").map(row=>row.body.projectId),["client"]);
   check(writes.filter(row=>row.path === "/api/new").map(row=>row.body),[{projectId:"client"}]);
-  check(await evaluate('byId("feedback").textContent.includes("远程项目新建页面打开请求")'),true);
+  check(await evaluate('byId("feedback").textContent.includes("远程原生输入页")'),true);
   await select("host-filter","host:b");
   check(await ids(),["other"]);
   check(writes.filter(row=>row.path === "/api/connect"),[]);

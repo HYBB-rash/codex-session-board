@@ -83,6 +83,7 @@ try {
     "/api/sessions": "board_snapshot", "/api/state": "board_update", "/api/open": "board_open",
     "/api/refresh": "board_refresh", "/api/new": "board_new", "/api/new/reset": "board_new_reset",
     "/api/connect": "board_connect", "/api/archive": "board_archive", "/api/column-sort": "board_sort",
+    "/api/project/assign": "board_project_assign",
   };
   for (const [route, name] of Object.entries(routes)) {
     const body = route === "/api/new" ? {

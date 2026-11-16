@@ -25,10 +25,11 @@ pub fn tools_for(legacy: bool) -> Value {
         ("board_open", "打开已有会话", true),
         ("board_new", "打开新建会话页", false),
         ("board_new_reset", "确认已核对新建结果", false),
+        ("board_project_assign", "确认新会话项目归属", false),
         ("board_connect", "连接已登记的远程主机", false),
         ("board_refresh", "重新发现", false),
     ] {
-        if legacy && matches!(name, "board_archive" | "board_new_reset" | "board_connect") {
+        if legacy && matches!(name, "board_archive" | "board_new_reset" | "board_connect" | "board_project_assign") {
             continue;
         }
         let (properties, required) = schema(name, legacy);
@@ -68,6 +69,11 @@ fn schema(name: &str, legacy: bool) -> (Value, Value) {
         ),
         "board_open" => (json!({"id":{"type":"string"}}), json!(["id"])),
         "board_connect" => (json!({"hostId":{"type":"string"}}), json!(["hostId"])),
+        "board_project_assign" => (
+            json!({"id":{"type":"string"},"projectId":{"type":"string"},
+                "confirmed":{"type":"boolean","const":true}}),
+            json!(["id","projectId","confirmed"]),
+        ),
         "board_archive" => (
             json!({"id":{"type":"string"},"version":{"type":"integer","minimum":0},
                 "inputVersion":{"type":"integer","minimum":0},"sectionVersion":{"type":["string","null"]}}),
@@ -113,6 +119,7 @@ fn backend(runtime: &mut RuntimeHandle, name: &str, arguments: &Value) -> Result
         "board_open" => "/api/open",
         "board_new" => "/api/new",
         "board_new_reset" => "/api/new/reset",
+        "board_project_assign" => "/api/project/assign",
         "board_connect" => "/api/connect",
         "board_refresh" => "/api/refresh",
         _ => bail!("未知看板工具"),

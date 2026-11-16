@@ -16,6 +16,10 @@ class NativeNewTests(unittest.TestCase):
         self.assertNotIn("codex://threads/new-remote", source)
 
     def test_native_navigation_and_assignment_do_not_create_or_send_input(self):
+        subprocess.run(["node", "scripts/check-native-new.mjs"], cwd=ROOT,
+                       check=True, capture_output=True, timeout=30)
+        subprocess.run(["node", "scripts/check-native-new.mjs"], cwd=ROOT, check=True,
+                       capture_output=True, timeout=30)
         for name in ("src/native_new.rs", "src/app/project_assignment.rs"):
             source = (ROOT / name).read_text()
             for method in ('"thread/start"', '"turn/start"', '"thread/resume"'):
