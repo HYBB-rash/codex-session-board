@@ -2,6 +2,7 @@ import copy
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -181,6 +182,18 @@ class IntegrationPlanTests(unittest.TestCase):
                      "example::project_check::case", "acceptance.test_added.case"}
         self.assertEqual(planner.selected(inventory, "application"),
                          {"lib::application::case", "acceptance.test_added.case"})
+        bindings = json.loads((verify_integration.ROOT / "acceptance/bindings.json").read_text())
+        actual = planner.bound_inventory(bindings, sys.platform)
+        chosen = planner.selected(actual, "application")
+        outcome = {"results": [{"id": name, "status": "pass"} for name in sorted(chosen)],
+                   "inventory": sorted(actual), "selected": sorted(chosen),
+                   "not_run": sorted(actual - chosen), "timings": []}
+        with mock.patch.object(planner, "plan", return_value={"profile": "application"}), \
+                mock.patch.object(verify_integration.rust_adapter, "run", return_value=outcome) as run:
+            report = verify_integration.verify(self.base)
+        self.assertTrue(report["passed"])
+        self.assertTrue(run.call_args.kwargs["include_python"])
+        self.assertTrue(all("::" in prefix for prefix in run.call_args.kwargs["prefixes"]))
         for path in ("scripts/check", "scripts/new-unknown.mjs", "tests/git_hooks.rs",
                      "acceptance/unittest_adapter.py", "examples/dev_fixture_unrelated.rs"):
             with self.subTest(path=path):

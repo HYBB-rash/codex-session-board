@@ -44,8 +44,10 @@ node scripts/check-blocked-optional.mjs /path/outside/source/blocked-optional.js
 验收阶段如何组织及记录留待后续研究；31 条契约及真实环境证据要求继续保留。
 
 集成范围由 `scripts/integration_plan.py` 按固定主线与候选差异保守选择。
-工具、工作流、依赖及未知路径仍执行完整 automated。界面和既有 Rust 业务改动可执行
-明确的业务组，完整测试清单仍必须与绑定一致。独立 `scope=integration` 报告保存
+工具、工作流、依赖及未知路径仍执行完整 automated。界面可执行明确的界面组，
+普通 Rust 业务、新增业务文件及已知原生/打包脚本执行全部业务与 Python 回归，
+排除未受影响的提交工具自测；删除及模式变化保守全量。
+完整测试清单仍必须与绑定一致。独立 `scope=integration` 报告保存
 选中、实际结果及 `not_run`，未执行不算通过，不能替代本节的完整验收报告。
 完整适配器会记录每组耗时；原生和性能组不与其他组争抢资源。
 

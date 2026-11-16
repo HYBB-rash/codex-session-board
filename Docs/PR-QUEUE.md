@@ -20,6 +20,7 @@
 ./scripts/pr-queue requeue --item /tmp/repaired-pr.json --state /tmp/queue-run
 ./scripts/pr-queue status --state /tmp/queue-run
 ./scripts/pr-queue finish --state /tmp/queue-run
+./scripts/pr-queue closeout --state /tmp/queue-run
 ./scripts/pr-queue retry-candidate --state /tmp/queue-run
 ```
 
@@ -33,6 +34,10 @@
 接纳、冻结与 `finish` 属于连续的执行步骤。结果已就绪时立即推进，过程计时保留每步开始、
 结束与等待间隔，不能把协调者未及时推进的时间归为编译或 CI。
 冻结必须紧接已接纳前缀，只提交发布版本字段和精确发布记录；不得夹带新业务代码。
+本机 submit 报告允许先机械组合并启动候选，PR CI 同时运行。
+`finish` 将接受项固定为 PR 门禁输入；候选通过后等待准确头的 PR 工作流及 changes job，
+推进主线前再次检查。变头、失败、缺少工作流或未处置审阅反馈均拒绝。
+中断恢复继续核对同一组 PR 输入，旧记录不能因缺少字段跳过该门禁。
 代码失败回到作者新头、审阅和验证后重新冻结。基础设施失败可以通过既有 GitHub 工具
 重跑原 workflow，再用 `retry-candidate` 核对同一源码、同一 run 的新成功 attempt，
 继续原候选；首次失败保留，不需要空提交或另造版本。
@@ -51,6 +56,7 @@
     "dependencies": [],
     "review": "/absolute/review.json",
     "validation": "/absolute/pr-validation",
+    "author_task_state": "/absolute/private/author-task-state",
     "route": {
       "socket": "/absolute/private-app-server-socket",
       "backend": {"pid": 123, "started": 456},
@@ -68,6 +74,19 @@
 新头须保留原头祖先关系；源码变化后，审阅及验证重新绑定，旧报告不能放行。
 PR 检查通过统一入口执行，检查器在本轮队列中固定。作者工作树和检查器都须保持干净；
 固定后不在检查器工作树追加收尾提交，否则会使本轮证据失效。
+`author_task_state` 明确登记本机作者任务，可省略，但缺失时不能宣称作者监控已收尾。
+同一源码只补交交付证据时，重新核验独立审阅和报告后，队列发布绑定原反馈全文摘要的
+resolved 记录。原始失败保留；修改过的旧评论、新反馈及其他请求修改不因此解除。
+
+## 收尾
+
+主线及不可变包确认后运行 `closeout`。它核对作者任务的仓库、PR、源码、原会话、
+工作树和冻结检查器，复用 `pr-task tick --force --terminal-only` 处理终态，
+由既有 finalizer 归档和移除定时器，不另写归档或删除实现。
+开放或重新打开的 PR 不从这个入口启动修复模型；繁忙、离线和身份不符记录 pending。
+已完成任务再次执行不会重复归档。不清理作者分支、源码、工作树或原始运行记录。
+全部登记项完成退出 0；缺登记或待处理退出 2，重试保留原始收尾起点。
+项目记录随后在已提升的候选树一次提交，并复用 `integrate` 的 context 专用路径同步。
 
 ## 原会话通知
 

@@ -4,13 +4,21 @@
 
 ```bash
 ./scripts/validate --scope pr --base FIXED_MAIN_SHA \
-  --expect-head PR_HEAD_SHA --output /tmp/unique-pr-delivery
+  --stage submit --expect-head PR_HEAD_SHA --output /tmp/unique-pr-delivery
 ```
 
 基线和 PR 头都解析为固定提交。报告保存实际源码、Git tree、实现指纹、平台、
 检查器来源和比较的 merge-base。开始时拒绝脏工作区，结束时再次核对源码与检查器。
 输出必须是源码外的新目录，失败、中断和重试不覆盖旧记录。总预算为 1800 秒。
 PR 工作流明确检出事件中的 PR head，以事件中的 base SHA 比较，不冒称检查了临时合并提交。
+
+作者本机使用 `--stage submit`，`pr-task submit` 自动选择这个阶段。
+保留项目检查、全部目标 Clippy、源码包预检和风险要求的实际包场景；
+Rust 业务先运行库、直接修改的测试目标及界面相关组，Python 仍核对并运行全部回归。
+共享测试支持及 fixture 变化保守运行全部业务组，工具及未知输入仍运行完整组。
+报告明确保存 `stage=submit`，不能用它代替完整 PR CI。
+不传 `--stage` 时默认为 `ci`，GitHub PR 工作流保持这个完整 PR 范围。
+源码变更后重新检查准确新头；不会复用其他提交的成功记录。
 
 ## 自动选择
 
@@ -24,7 +32,8 @@ selected、not_run、逐项状态和分组耗时，缺项、重复、skip、igno
 | 改动 | 追加检查 |
 | --- | --- |
 | 已知界面文件 | 库、状态、存储、插件与界面相关组 |
-| Rust 业务及其测试 | 全部业务组及 Python 回归 |
+| Rust 业务及其测试 | CI 执行全部业务组及 Python 回归；submit 执行受影响目标及全部 Python |
+| 新增普通业务文件、已知原生适配及打包脚本 | 应用回归，排除无关提交工具自测 |
 | 连接层、配置、原生写入、共享启动或 fixture | 实际本机临时包和连接失败场景 |
 | 打包、包启动验证、服务入口或 MCP | 实际本机临时包和启动失败场景 |
 | 检查工具、工作流、依赖或未知路径 | 完整测试组与实际包检查 |
@@ -56,6 +65,9 @@ PR 附上 VALIDATION.json、TESTS.json 及原始日志位置，说明相关检�
 本机检查只证明报告中的平台；Linux PR 工作流不代签 macOS。
 该检查不包含最终多 PR 组合、不可变渠道发布或真实客户端验收，release_ready 保持 false。
 协调者仍对最终组合运行既有双平台门禁、隔离启动与主线提升。
+本机 submit 报告和独立审阅可先启动候选构建，与 PR CI 重叠。
+队列在候选完成后及推进主线前核对当前 PR 头、未处置审阅反馈和准确头的
+`pr-checks.yml` Actions 运行及 `changes` job；缺失、等待、失败和变头均不能推进主线。
 
 合并过程中出现失败，协调者在 PR 保存主线、PR 头、组合来源、复现命令和原始日志，
 并向登记的原会话派单。会话繁忙时等待；连接失败、没有回执或作者表示受阻都不能算修复。

@@ -6,6 +6,7 @@
 
 ```sh
 ./scripts/validate --scope pr --base origin/main --output /tmp/board-pr-review
+./scripts/validate --scope pr --stage submit --base origin/main --output /tmp/board-pr-submit
 ./scripts/validate --scope candidate --output /tmp/board-candidate
 ./scripts/validate --scope preflight --output /tmp/board-source-preflight
 ./scripts/validate --staged --output /tmp/board-staged
@@ -29,6 +30,11 @@ PR 仍使用自己的总预算、进程组退出及场景清理。不能据此�
 3. 完整自动验收，通过独立验收入口核对绑定、测试结果和需求。
 
 主线已有的 `--integration-base <固定基线>` 继续支持：工具重算分级计划，第三步按原规则执行完整或限定范围验证。限定范围报告单独记录未运行测试，完整自动验收和目标环境验收保持待验证；晋升时重算计划并核对实际步骤，不能把限定范围报告当作完整自动验收。
+
+`--stage` 仅用于 PR。`submit` 是作者本机交付范围，默认 `ci` 是 PR CI 范围。
+两者均记录准确来源、完整 inventory、实际 selected 和 not_run，较小报告不能冒充较大计划。
+应用候选包括新增普通业务文件、已知原生适配和打包脚本，执行全部业务及 Python，
+只排除未受影响的 hooks 和项目检查器自测。修改工具依赖或未知输入仍走完整 automated。
 
 preflight 检查便携源码包及指纹，不要求先安装 Rust。staged 只检查索引快照，并分别核对源提交、索引树和快照指纹；未暂存的修复不能使它通过。
 
