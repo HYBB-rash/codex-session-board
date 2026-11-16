@@ -334,3 +334,20 @@ fn native_remote_directory_requires_exactly_one_absolute_safe_path() {
     let project = json!({"paths":["/remote/project & 中文"]});
     assert_eq!(crate::native_new::directory(&project).unwrap(), "/remote/project & 中文");
 }
+
+#[test]
+fn native_navigation_rechecks_removed_hosts_and_encodes_directory_without_extra_parameters() -> Result<()> {
+    let (directory, app, mut registry) = native_app()?;
+    registry["remote-projects"][0]["remotePath"] = json!("/remote/项目 &?#%+");
+    std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&registry)?)?;
+    let result = app.request("/api/new", Some(&native_body()))?;
+    let url = url::Url::parse(result["url"].as_str().unwrap())?;
+    assert_eq!(url.query_pairs().count(), 4);
+    assert_eq!(url.query_pairs().find(|pair| pair.0 == "projectPath").unwrap().1,
+        "/remote/项目 &?#%+");
+    registry["codex-managed-remote-connections"] = json!([]);
+    std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&registry)?)?;
+    assert!(app.request("/api/new", Some(&native_body())).is_err());
+    assert_eq!(std::fs::read_to_string(directory.path().join("opens"))?.lines().count(), 1);
+    Ok(())
+}

@@ -70,8 +70,7 @@ fn schema(name: &str, legacy: bool) -> (Value, Value) {
         "board_open" => (json!({"id":{"type":"string"}}), json!(["id"])),
         "board_connect" => (json!({"hostId":{"type":"string"}}), json!(["hostId"])),
         "board_project_assign" => (
-            json!({"id":{"type":"string"},"projectId":{"type":"string"},
-                "confirmed":{"type":"boolean","const":true}}),
+            json!({"id":{"type":"string"},"projectId":{"type":"string"},"confirmed":{"type":"boolean","const":true}}),
             json!(["id","projectId","confirmed"]),
         ),
         "board_archive" => (

@@ -1217,11 +1217,13 @@ function openProjectAssignment(session) {
   byId("project-assignment").showModal();updateFilterLock();
 }
 byId("assignment-cancel").onclick = () => byId("project-assignment").close();
+byId("project-assignment").addEventListener("cancel",event => {if (saving) event.preventDefault();});
 byId("project-assignment").addEventListener("close",() => {updateFilterLock();load();});
 byId("assignment-form").onsubmit = async event => {
   event.preventDefault();
   if (saving || creating) return;
   const dialog = byId("project-assignment");
+  dialog.setAttribute("closedby","none");
   saving = true;updateFilterLock();
   for (const id of ["assignment-save","assignment-cancel","assignment-project"]) byId(id).disabled = true;
   try {
@@ -1230,6 +1232,7 @@ byId("assignment-form").onsubmit = async event => {
   } catch(error) {byId("assignment-error").textContent = error.message;}
   finally {
     saving = false;
+    dialog.removeAttribute("closedby");
     for (const id of ["assignment-save","assignment-cancel","assignment-project"]) byId(id).disabled = false;
     updateFilterLock();await load();
   }

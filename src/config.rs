@@ -415,6 +415,20 @@ mod tests {
     }
 
     #[test]
+    fn obsolete_native_capability_does_not_require_a_client_patch_or_existing_file() -> Result<()> {
+        let fixture = Fixture::new()?;
+        let path = fixture.0.join("config.json");
+        write_json(&path, &serde_json::json!({
+            "data_dir":"data","native_new_capability":"missing/app.remote-new.json"
+        }), false)?;
+        let config = load(Some(&path))?;
+        assert_eq!(config.data_dir, fixture.0.join("data"));
+        assert!(!serde_json::to_value(config)?.as_object().unwrap()
+            .contains_key("native_new_capability"));
+        Ok(())
+    }
+
+    #[test]
     fn relative_data_uses_config_directory_and_preserves_order_independence() -> Result<()> {
         let fixture = Fixture::new()?;
         let path = fixture.0.join("profile/config.json");

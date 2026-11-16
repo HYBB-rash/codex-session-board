@@ -3,6 +3,7 @@ use crate::rpc::Rpc;
 
 impl App {
     pub(super) fn target_project(&self, identifier: &str) -> Result<Value> {
+        ensure!(!self.config.legacy_mode, "六状态兼容模式不支持远程新建或项目补登记");
         let fields: Vec<String> = serde_json::from_str(
             identifier.strip_prefix("target:").context("目标项目 ID 无效")?)?;
         ensure!(fields.len() == 3 && matches!(fields[1].as_str(), "targetServer" | "targetLegacy")
@@ -12,6 +13,8 @@ impl App {
         ensure!(state.health()["complete"] == true, "项目目录尚未完整读回，请刷新后重试");
         let project = state.snapshot.as_ref().context("目标目录尚未加载")?.projects.iter()
             .find(|project| project["id"] == identifier).context("目标项目已移除，请刷新")?;
+        ensure!(project["hostId"] == fields[0] && project["origin"] == fields[1]
+            && project["nativeId"] == fields[2], "目标目录的项目身份不一致");
         ensure!(project["pendingDeletion"] != true, "项目正在删除，不能新建或补登记");
         crate::native_new::directory(project)?;
         Ok(project.clone())
@@ -54,11 +57,6 @@ impl App {
 fn native_thread(reader: &mut dyn Rpc, identifier: &str, project: &Value) -> Result<Value> {
     let thread = reader.call("thread/read",
         json!({"threadId":identifier,"includeTurns":true}))?["thread"].clone();
-    ensure!(thread["id"] == identifier && thread["cwd"] == crate::native_new::directory(project)?,
-        "会话读回身份或目录不一致");
-    ensure!(thread["source"] == "vscode" && thread["originator"] == "Codex Desktop"
-        && thread["ephemeral"] == false && thread["archived"] != true,
-        "仅支持已发送首条输入的持久原生 Codex 会话");
     ensure!(thread["id"] == identifier && thread["cwd"] == crate::native_new::directory(project)?,
         "会话身份或执行目录与所选项目不一致");
     ensure!(thread["source"] == "vscode" && thread["originator"] == "Codex Desktop"

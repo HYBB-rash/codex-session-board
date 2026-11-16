@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import http from "node:http";
 import { launchBrowser } from "./browser-client.mjs";
-import { until } from "./browser-actions.mjs";
+import { clickNode, until } from "./browser-actions.mjs";
 
 const html = await fs.readFile(new URL("../index.html", import.meta.url), "utf8");
 const project = "target:" + JSON.stringify(["remote:a", "targetServer", "canonical"]);
@@ -23,12 +23,15 @@ const fixture = {
 };
 const writes = [];
 let failAssignment = true, browser, cleanup, cases = 0;
+let releaseAssignment;
+const assignmentReady = new Promise(resolve => { releaseAssignment = resolve; });
 const check = (actual, expected) => { assert.deepEqual(actual, expected); cases++; };
 const server = http.createServer(async (request, response) => {
   let body = "";
   for await (const chunk of request) body += chunk;
   if (request.method === "POST") {
     writes.push({ path: request.url, body: JSON.parse(body) });
+    if (request.url === "/api/project/assign") await assignmentReady;
     if (request.url === "/api/project/assign" && failAssignment)
       return response.writeHead(409, { "Content-Type": "application/json" })
         .end(JSON.stringify({ error: "补登记未确认，请对同一会话重试" }));
@@ -50,12 +53,22 @@ try {
   await wait("!creating");
   check(writes, [{ path: "/api/new", body: { projectId: project } }]);
   check(await evaluate('byId("feedback").textContent.includes("发送第一句话后才会创建会话")'), true);
-  await evaluate('document.querySelector("[data-action=assign-project]").click()');
+  await clickNode(page, "[data-action=assign-project]");
   check(await evaluate('byId("project-assignment").open'), true);
   check(await evaluate('byId("assignment-thread").textContent.includes("actual-uuid")'), true);
   check(await evaluate('Array.from(byId("assignment-project").options).map(option=>option.value)'), [project]);
   check(await evaluate('byId("host-filter").disabled'), true);
   await evaluate('byId("assignment-form").requestSubmit()');
+  await until(() => writes.length === 2, "补登记请求尚未到达");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    for (const type of ["keyDown", "keyUp"])
+      await page.command("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    check(await evaluate('byId("project-assignment").open'), true);
+  }
+  assert.equal(await evaluate('byId("project-assignment").open && saving'), true,
+    JSON.stringify(await evaluate('({open:byId("project-assignment").open,saving,error:byId("assignment-error").textContent})')));
+  cases++;
+  releaseAssignment();
   await wait('!saving && byId("assignment-error").textContent.includes("补登记未确认")');
   check(await evaluate('byId("project-assignment").open'), true);
   check(await evaluate('data.sessions[0].id'), identifier);
@@ -68,6 +81,7 @@ try {
   check(await evaluate('data.sessions.length'), 1);
   check(await evaluate('document.querySelector("[data-action=assign-project]") === null'), true);
 } finally {
+  releaseAssignment();
   if (browser) cleanup = await browser.close();
   await new Promise(resolve => server.close(resolve));
 }
