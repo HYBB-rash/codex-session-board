@@ -1,18 +1,18 @@
 {
   "schema_version": 1,
-  "version": "0.3.98",
+  "version": "0.3.99",
   "target": "aarch64-apple-darwin",
-  "source_commit": "81fa1408dba69d02104e5b33cf4c6d5d62a89786",
+  "source_commit": "a34cb075811a417be63cc69aa3cf8285ef05d763",
   "contract_sha256": "b8ffcf1ded7d8e6bd7607979172843ed069708e62281e54d64445d42ce0c3c3a",
-  "build_sha256": "934cda2a527ff94a45cb9451b330e25649cd94fe59a53a27ee1e4fedf59d4aec",
+  "build_sha256": "8e300ab6842b77c240671972ed12a8bc36496171631bd1453e58c12f9bd72de8",
   "files": {
     ".agents/plugins/marketplace.json": "f4a6622cc875c6e4857666e6e73ad2ab3c4a170323da4131deffa3b5280cb671",
-    ".codex-plugin/plugin.json": "205144fb94fdf6b46543339bee0b35a7f5f7e6d9b2804d157af8dbb3f0cef21d",
+    ".codex-plugin/plugin.json": "bbce9e3403e1f2e08409b49260e6bf68f6509d1c012fab44d5a77cb4abfb2bcf",
     ".mcp.json": "294bd4e6158076bf7831c2a1b98c4b351409904c0ca1be0b55ed8520fa514861",
-    "SOURCE.tar.gz": "81be49b3d0002069c0c929ea6f7d767b28a96edcbf4b0dea1a4477275d835f06",
-    "SOURCE.tar.gz.sha256": "1d63e8caed03c2fd9849b6f1000e6b31deedd6fb1a99dff8f63c5ea05a723b80",
-    "assets/app-bridge-entry.mjs": "8c65a197328c0cb5168627db9181109542cde6ab9de559e537bc75d9678de986",
-    "assets/app-bridge.js": "dc46c161af69efbbcbaf45e4617827bd881ae70f515ebf37336d875cedb32211",
+    "SOURCE.tar.gz": "016064bd364100f158d1494c76fb95bc7a9574a038c5fda11314893859fa43ff",
+    "SOURCE.tar.gz.sha256": "3466a541c9930e24f5fdd06ccb3b2fdefdb83177ae70a337fad5c2e4867c6dbe",
+    "assets/app-bridge-entry.mjs": "144e7c377990e288c27390e11312b05704b4c5ee4b9e49ba6d06c7b51ec93b59",
+    "assets/app-bridge.js": "215a626dbb65f5d457dba72824bc125bb0d6d45304a31f7624e57a7309d3cac9",
     "assets/app-bridge.js.LEGAL.txt": "99845957be48d02957ee10e67e4ec7737d6c750de20016f6f6f6de91871be8da",
     "assets/app-bridge.package-lock.json": "10a2550625ad25083ba5e8927715f7ab5ace9ce7dbd7a92758fb5669b9a51f60",
     "assets/app-bridge.package.json": "0da243198aee26cc01e47edd5753208f778be5fa0dca9442c44bda536c3d66d3",
@@ -21,12 +21,12 @@
     "assets/pwa.js": "f7cea52d3f8a5f73033f2a2eeece37ca1406cf2b5c9c9d0f10667a8a3ec671f7",
     "assets/sw.js": "8dbd5839272fe2f473fbbb27abfcec839c6272fd864cde06440353b720213ac9",
     "assets/third-party-licenses.txt": "b54e0492ec95c9882816f02c96a0ce4875b5e4fb148347fe20aa82aec8ef3df2",
-    "bin/codex-session-board": "86bf9b4cb573c5dff6f0f494b9a3a5c9b486b9e22d138dfa35ed6f3565f6bcec",
+    "bin/codex-session-board": "87a74b6126a16471076236ea1761b282c3613a84945549394ab4572c99f1b057",
     "bin/run-plugin": "a1579d2e06a2e919ad4a5222ab787153f6c8415f181f41bdfe4b8876eac4eafe",
-    "index.html": "5b3ac826d13445fa8504c3d379ecc4ed7715e621cdf7dc07f3a81621a0fd6a66",
+    "index.html": "aa612ad2afce04c5060fbe9c0716073cf1b660297aac4e48f51ce99bb87ad3d7",
     "mcp.json": "a629b93820e492a616c74895ffbbbd179ffca6e7b6e83bde4a6685d30b741be7",
-    "plugin.json": "1cad468e3f3417b30cae8df65164d309fe4dcfd3bbc0fcf3a11f47d76454d0da",
+    "plugin.json": "8a537bc1fbd29d1ab0b86d094d86d69f7388b1d6f46e215f6aa54df0a8f1040c",
     "skills/open-session-board/SKILL.md": "155eacabee4f6f7de180109876f605fada402c1c40ce653af6765795ff7bcce8"
   },
-  "binary_sha256": "86bf9b4cb573c5dff6f0f494b9a3a5c9b486b9e22d138dfa35ed6f3565f6bcec"
+  "binary_sha256": "87a74b6126a16471076236ea1761b282c3613a84945549394ab4572c99f1b057"
 }
