@@ -59,3 +59,50 @@ class IntegrateTests(unittest.TestCase):
             self.assertEqual(saved["last_error"]["type"], "ValueError")
             self.assertEqual(saved["errors"][0], state["errors"][0])
             self.assertEqual(len(saved["errors"]), 2)
+
+    def test_candidate_build_finishes_before_waiting_for_pr_ci_and_checks_reach_promoter(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            state = {"source": {"commit": "candidate"}, "base": "base", "branch": "branch",
+                     "repository": "owner/repo", "started_at": "2026-11-16T00:00:00+00:00",
+                     "pushed_at": "2026-11-16T00:01:00+00:00", "pr_gates": {"items": [7]}}
+            run = {"id": 1, "run_attempt": 1, "status": "completed", "conclusion": "success"}
+            order = []
+            def find(*arguments):
+                order.append("candidate")
+                return run
+            def check(*arguments):
+                order.append("pr")
+                return None if order.count("pr") == 1 else [{"head": "current"}]
+            with patch.object(integrate, "require_checkout"), \
+                    patch.object(integrate, "git", return_value="base refs/heads/main"), \
+                    patch.object(integrate.subprocess, "run"), patch.object(integrate.time, "sleep"), \
+                    patch.object(integrate, "find_run", side_effect=find), \
+                    patch.object(integrate.pr_queue_gates, "verify", side_effect=check), \
+                    patch.object(integrate, "promote") as promote:
+                integrate.continue_candidate(state, directory, 10)
+            self.assertEqual(order, ["candidate", "pr", "pr"])
+            self.assertEqual(promote.call_args.kwargs["pr_gates"], state["pr_gates"])
+            self.assertEqual(state["pr_checks"], [{"head": "current"}])
+
+    def test_resume_adopts_missing_pr_gates_and_rejects_different_frozen_inputs(self):
+        from argparse import Namespace
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            state = {"source": {"commit": "candidate"}, "base": "base", "branch": "branch",
+                     "repository": "owner/repo", "started_at": "2026-11-16T00:00:00+00:00"}
+            incoming = {"items": [{"number": 7, "head": "current"}]}
+            arguments = Namespace(output=directory, resume=True, timeout=10, pr_gates=Path("queue.json"))
+            for previous, blocked in ((None, False), (incoming, False), ({"items": []}, True)):
+                saved = {**state, **({"pr_gates": previous} if previous is not None else {})}
+                integrate.save(directory / "integration.json", saved)
+                with patch.object(integrate.pr_queue_gates, "from_queue", return_value=incoming), \
+                        patch.object(integrate, "continue_candidate", return_value={
+                            **state, "run": 1, "seconds": 1}) as continuation:
+                    if blocked:
+                        with self.assertRaises(ValueError):
+                            integrate.start(arguments)
+                        continuation.assert_not_called()
+                    else:
+                        integrate.start(arguments)
+                        self.assertEqual(continuation.call_args.args[0]["pr_gates"], incoming)

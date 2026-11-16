@@ -363,15 +363,26 @@ class PRQueueTests(unittest.TestCase):
         self.assertEqual(self.git("rev-parse", "HEAD"), self.state["prefix"])
 
     def test_delivery_evidence_can_be_repaired_without_an_empty_commit(self):
+        from scripts import pr_task_github, pr_task_publish
+        identifier = "12345678-1234-1234-1234-123456789abc"
+        body = f"<!-- pr-queue:{identifier} -->\nPR head: `{self.base}`\nMissing evidence"
         item = self.item(1, self.base)
-        item.update(status="needs-fix", feedback={"kind": "delivery", "notification": "acknowledged"})
+        item.update(status="needs-fix", feedback={"kind": "delivery", "notification": "acknowledged",
+                    "id": identifier, "comment": "https://github.com/owner/repo/pull/1#issuecomment-123"})
         self.state["items"] = [item]
         incoming = {"number": 1, "head": self.base, "review": "new-review", "validation": "new-report"}
-        with mock.patch.object(pr_queue, "notify"), mock.patch.object(pr_queue, "verify_entry") as verify:
+        order = []
+        with mock.patch.object(pr_queue, "notify"), mock.patch.object(
+                pr_queue, "verify_entry", side_effect=lambda *arguments: order.append("verify")) as verify, \
+                mock.patch.object(pr_task_github, "api", return_value={"body": body}), \
+                mock.patch.object(pr_task_publish, "comment_once",
+                                  side_effect=lambda *arguments: order.append("resolved")) as resolve:
             pr_queue.requeue(self.state, incoming, self.queue)
         verify.assert_called_once()
         self.assertEqual(item["status"], "submitted")
         self.assertEqual(item["head"], self.base)
+        self.assertEqual(order, ["verify", "resolved"])
+        self.assertIn(hashlib.sha256(body.encode()).hexdigest(), resolve.call_args.args[2])
 
     def test_repair_cannot_narrow_the_fixed_validation_base(self):
         item = self.item(1, self.base)

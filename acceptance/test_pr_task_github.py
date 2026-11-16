@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 import subprocess
 import time
@@ -29,6 +30,18 @@ class PRTaskGithubTests(unittest.TestCase):
         before = found[0]["key"]
         comment["body"] += " updated requirement"
         self.assertNotEqual(forge.feedback(pull(), [], [comment], [], {}, ["owner"])[0]["key"], before)
+
+    def test_revalidated_same_head_feedback_resolves_only_its_exact_original_body(self):
+        identifier = str(uuid.uuid4())
+        comment = {**review(), "body": f"<!-- pr-queue:{identifier} -->\nPR head: `{HEAD}`\nMissing evidence"}
+        digest = hashlib.sha256(comment["body"].encode()).hexdigest()
+        resolution = {**review(2), "body": f"<!-- pr-queue:resolved {identifier} {HEAD} {digest} -->"}
+        self.assertEqual(forge.feedback(pull(), [], [comment, resolution], [], {}, ["owner"]), [])
+        for changed in ({**comment, "body": comment["body"] + " new issue"},
+                        {**comment, "body": comment["body"].replace(identifier, str(uuid.uuid4()))}):
+            self.assertEqual(len(forge.feedback(pull(), [], [changed, resolution], [], {}, ["owner"])), 1)
+        resolution["user"] = {"login": "stranger"}
+        self.assertEqual(len(forge.feedback(pull(), [], [comment, resolution], [], {}, ["owner"])), 1)
 
     def test_old_head_feedback_and_resolved_threads_do_not_wake_author(self):
         comment = {**review(), "body": f"<!-- pr-queue:{uuid.uuid4()} -->\nPR head: `{'c' * 40}`"}

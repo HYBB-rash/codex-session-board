@@ -2097,7 +2097,24 @@
       "acceptance.test_native_new.NativeNewTests.test_candidate_archive_preserves_other_files_and_rejects_unknown_clients",
       "acceptance.test_native_new.NativeNewTests.test_native_draft_routes_and_navigation_never_send_input",
       "acceptance.test_native_target.NativeTargetTests.test_target_navigation_never_changes_operator_project_or_sends_input",
-      "acceptance.test_native_target.NativeTargetTests.test_target_candidate_requires_complete_exact_renderer_profile"
+      "acceptance.test_native_target.NativeTargetTests.test_target_candidate_requires_complete_exact_renderer_profile",
+      "acceptance.test_integrate.IntegrateTests.test_candidate_build_finishes_before_waiting_for_pr_ci_and_checks_reach_promoter",
+      "acceptance.test_integrate.IntegrateTests.test_resume_adopts_missing_pr_gates_and_rejects_different_frozen_inputs",
+      "acceptance.test_pr_delivery.PRPlanTests.test_submit_selects_affected_targets_but_cannot_satisfy_the_ci_plan",
+      "acceptance.test_pr_queue_closeout.PRQueueCloseoutTests.test_cleanup_reuses_task_tick_and_completed_tasks_do_not_run_again",
+      "acceptance.test_pr_queue_closeout.PRQueueCloseoutTests.test_other_task_source_checker_or_route_cannot_be_archived",
+      "acceptance.test_pr_queue_closeout.PRQueueCloseoutTests.test_unregistered_pending_and_retried_cleanup_preserve_delivery_and_start_time",
+      "acceptance.test_pr_queue_gates.PRQueueGateTests.test_already_merged_retry_still_requires_checks_on_the_exact_head",
+      "acceptance.test_pr_queue_gates.PRQueueGateTests.test_gate_manifest_binds_the_real_queue_candidate_and_accepted_sources",
+      "acceptance.test_pr_queue_gates.PRQueueGateTests.test_only_the_current_head_with_successful_checks_and_no_feedback_can_pass",
+      "acceptance.test_pr_queue_gates.PRQueueGateTests.test_pr_changed_before_snapshot_does_not_reuse_old_ci",
+      "acceptance.test_pr_queue_gates.PRQueueGateTests.test_pr_changed_during_workflow_proof_cannot_pass",
+      "acceptance.test_pr_queue_gates.PRQueueGateTests.test_same_named_status_cannot_replace_the_real_pr_workflow",
+      "acceptance.test_pr_queue_gates.PRQueueGateTests.test_workflow_proof_requires_the_exact_pr_head_workflow_and_successful_job",
+      "acceptance.test_pr_task_github.PRTaskGithubTests.test_revalidated_same_head_feedback_resolves_only_its_exact_original_body",
+      "acceptance.test_pr_task_lifecycle.PRTaskLifecycleTests.test_terminal_only_tick_does_not_start_a_repair_for_an_open_pr",
+      "acceptance.test_promotion.PromotionTests.test_context_promotion_requires_exact_exclusive_evidence_and_never_rebuilds_packages",
+      "acceptance.test_promotion.PromotionTests.test_pr_ci_is_checked_again_after_artifacts_and_before_the_main_push"
     ]
   }
 }

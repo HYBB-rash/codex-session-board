@@ -48,6 +48,58 @@ class PromotionTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     promotion.validate_run(run, self.jobs, self.source, "owner/repo")
 
+    def test_pr_ci_is_checked_again_after_artifacts_and_before_the_main_push(self):
+        from scripts import pr_queue_gates
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch.object(promotion, "identity", return_value=self.source), \
+                    patch.object(promotion, "git", return_value=""), \
+                    patch.object(promotion, "github", side_effect=[json.dumps(self.run), json.dumps(self.jobs)]), \
+                    patch.object(promotion, "collect_platform", side_effect=lambda *args: (args[2], {}, {})) as collect, \
+                    patch.object(promotion.subprocess, "run") as run, \
+                    patch.object(pr_queue_gates, "verify", return_value=None), \
+                    patch.object(promotion, "require_remote_target") as remote, \
+                    self.assertRaisesRegex(ValueError, "PR checks are pending"):
+                promotion.promote(self.source["commit"], "base", 1, "owner/repo",
+                                  Path(temporary) / "receipt.json", pr_gates={"items": [7]})
+            self.assertEqual(collect.call_count, 2)
+            remote.assert_not_called()
+            self.assertFalse(any(command.args[0][:2] == ["git", "push"] for command in run.call_args_list))
+
+    def test_context_promotion_requires_exact_exclusive_evidence_and_never_rebuilds_packages(self):
+        from scripts import validate_context
+        required = {"Classify integration", "Validate context records", "Candidate gate"}
+        jobs = {"jobs": [{"name": name, "status": "completed", "conclusion": "success"} for name in required]
+                + [{"name": "Finalize candidate", "status": "completed", "conclusion": "skipped"}]}
+        expected = {"scope": "context", "context_only": True, "base": "base",
+                    "source_commit": self.source["commit"], "reference": "refs/heads/main",
+                    "implementation_unchanged": True}
+        for change in ({}, {"base": "stale"}, {"source_commit": "other"},
+                       {"implementation_unchanged": False}):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary:
+                def github(*arguments):
+                    if arguments[:2] == ("run", "download"):
+                        directory = Path(arguments[arguments.index("--dir") + 1])
+                        (directory / "CONTEXT.json").write_text(json.dumps({**expected, **change}))
+                        return ""
+                    return json.dumps(jobs if "/jobs?" in arguments[1] else self.run)
+                with patch.object(promotion, "identity", return_value=self.source), \
+                        patch.object(promotion, "git", return_value=""), \
+                        patch.object(validate_context, "context_only", return_value=True), \
+                        patch.object(promotion, "github", side_effect=github), \
+                        patch.object(promotion, "require_remote_target", side_effect=["base", self.source["commit"]]), \
+                        patch.object(promotion.subprocess, "run") as run, \
+                        patch.object(promotion, "collect_platform") as collect:
+                    output = Path(temporary) / "receipt.json"
+                    if change:
+                        with self.assertRaises(ValueError):
+                            promotion.promote_context(self.source["commit"], "base", 1, "owner/repo", output)
+                        run.assert_not_called()
+                    else:
+                        promotion.promote_context(self.source["commit"], "base", 1, "owner/repo", output)
+                        self.assertEqual(json.loads(output.read_text())["scope"], "context")
+                        self.assertEqual(run.call_args.args[0][:2], ["git", "push"])
+                    collect.assert_not_called()
+
     def artifact(self, directory):
         report = {
             "automated_passed": True, "build_sha256": self.source["fingerprint"],
