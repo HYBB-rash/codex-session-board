@@ -2126,7 +2126,24 @@
       "acceptance.test_main_release.MainReleaseTests.test_channel_manifest_reads_existing_candidate_branches",
       "acceptance.test_main_release_feedback.MainReleaseFeedbackTests.test_broken_main_blocks_unrelated_merges_until_a_referenced_regression_fix",
       "acceptance.test_main_release_feedback.MainReleaseFeedbackTests.test_failure_reuses_one_incident_and_confirms_source_bound_author_feedback",
-      "acceptance.test_main_release_feedback.MainReleaseFeedbackTests.test_recovery_closes_only_incidents_covered_by_the_published_source"
+      "acceptance.test_main_release_feedback.MainReleaseFeedbackTests.test_recovery_closes_only_incidents_covered_by_the_published_source",
+      "acceptance.test_saved_release.SavedReleaseTests.test_startup_asset_is_uploaded_once_and_canonical_winner_is_read_back",
+      "acceptance.test_saved_release.SavedReleaseTests.test_missing_or_mismatched_startup_evidence_never_publishes",
+      "acceptance.test_delivery.DeliveryTests.test_platform_channel_updates_are_atomic_and_retries_reuse_commits",
+      "acceptance.test_delivery.DeliveryTests.test_second_platform_rejection_cannot_change_either_channel",
+      "acceptance.test_delivery.DeliveryTests.test_bulk_cli_preserves_legacy_single_package_and_requires_both_records",
+      "acceptance.test_checker_cache.CheckerCacheTests.test_cold_build_then_cross_worktree_hit_preserves_the_binary",
+      "acceptance.test_checker_cache.CheckerCacheTests.test_corrupted_binary_or_record_is_rejected",
+      "acceptance.test_checker_cache.CheckerCacheTests.test_different_build_parameters_use_distinct_build_directories",
+      "acceptance.test_checker_cache.CheckerCacheTests.test_input_changes_during_build_cannot_publish_an_entry",
+      "acceptance.test_checker_cache.CheckerCacheTests.test_missing_relative_path_entries_do_not_prevent_worktree_reuse",
+      "acceptance.test_checker_cache.CheckerCacheTests.test_same_identity_concurrent_requests_compile_once",
+      "acceptance.test_checker_cache.CheckerCacheTests.test_sources_lock_flags_configuration_and_compiler_changes_invalidate",
+      "acceptance.test_checker_cache.CheckerCacheTests.test_validation_wrappers_do_not_create_new_cache_identities",
+      "acceptance.test_main_release.MainReleaseTests.test_published_descendant_covers_coalesced_and_older_main_commits",
+      "acceptance.test_main_release.MainReleaseTests.test_missing_immutable_release_or_wrong_tag_cannot_skip_publication",
+      "acceptance.test_main_release.MainReleaseTests.test_changed_implementation_needs_a_fresh_unclaimed_version",
+      "acceptance.test_main_release_feedback.MainReleaseFeedbackTests.test_infrastructure_recovery_does_not_require_an_unrelated_business_regression"
     ]
   }
 }

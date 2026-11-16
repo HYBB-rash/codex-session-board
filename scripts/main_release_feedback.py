@@ -36,7 +36,7 @@ def affected_prs(repository, source, previous):
     return result
 
 
-def failure(repository, source, run, url, exercise=False):
+def failure(repository, source, run, url, exercise=False, phase="unknown"):
     previous = channels(GitHub(repository))
     ensure_label(repository)
     marker = f"<!-- main-release:{'exercise' if exercise else 'failure'} {source} -->"
@@ -45,10 +45,13 @@ def failure(repository, source, run, url, exercise=False):
     matches = [issue for issue in issues if marker in (issue["body"] or "")]
     if len(matches) > 1:
         raise ValueError("Duplicate release incident records need manual reconciliation")
-    body = (f"{marker}\n代码已合并，尚未发布。\nSource: `{source}`\n失败流水线：{url}\n\n"
+    body = (f"{marker}\n代码已合并，尚未发布。\nSource: `{source}`\nFailure-Phase: {phase}\n"
+            f"失败流水线：{url}\n\n"
             "上一可用候选渠道保持原样：\n```json\n" + json.dumps(previous, indent=2) + "\n```\n\n"
-            "请作者提交独立修复 PR，并引用本工单。先保留准确源码上的失败证据；"
-            "若是合并门禁遗漏，必须补进合并前的对应回归，再修复和验证。"
+            "请作者先区分基础设施问题和源码问题，提交独立修复 PR，"
+            "提交消息使用 `Release-Fix: #本工单编号`，不要使用会自动关单的 closing keywords。"
+            "先保留准确源码上的失败证据；若确认为合并门禁遗漏，"
+            "给本工单加 `merge-gate-gap` 标签，并补进合并前的对应回归，再修复和验证。"
             "基础设施故障应记录原因后重试同一不可变候选，不能靠重跑掩盖业务失败。"
             "本工单保持打开，直到后续插件双平台发布成功。")
     issue = matches[0] if matches else forge.api(
@@ -84,10 +87,11 @@ def require_recovery(repository, base):
     regression = any(path.startswith(("tests/", "acceptance/test_", "scripts/check-"))
                      and path != "acceptance/bindings.json" for path in paths)
     for issue in incidents:
-        reference = rf"(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?)\s+(?:{re.escape(repository)})?#{issue['number']}\b"
-        if not regression or not re.search(reference, commits, re.IGNORECASE):
+        reference = rf"Release-Fix:\s+#{issue['number']}\b"
+        gap = any(label["name"] == "merge-gate-gap" for label in issue.get("labels", []))
+        if (gap and not regression) or not re.search(reference, commits, re.IGNORECASE):
             raise ValueError(f"Main has an unresolved release incident #{issue['number']}; "
-                             "merge a source-bound fix with its pre-merge regression first")
+                             "merge a Release-Fix first; confirmed gate gaps also need a regression")
 
 
 def recovered(repository, source, run):

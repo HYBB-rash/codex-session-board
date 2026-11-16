@@ -2,6 +2,8 @@ name: Publish main plugins
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: "*/10 * * * *"
   workflow_dispatch:
     inputs:
       exercise_failure:
@@ -32,6 +34,7 @@ jobs:
       main: ${{ steps.select.outputs.main }}
       version: ${{ steps.select.outputs.version }}
       tag: ${{ steps.select.outputs.tag }}
+      published: ${{ steps.select.outputs.published }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -43,11 +46,12 @@ jobs:
         with:
           python-version: "3.12"
       - id: select
-        run: ./scripts/release main select --github-output "$GITHUB_OUTPUT" --output "$RUNNER_TEMP/source.json"
+        run: ./scripts/release main select ${{ (inputs.exercise_failure || inputs.exercise_hold_seconds != '' && inputs.exercise_hold_seconds != '0') && '--exercise' || '' }} --github-output "$GITHUB_OUTPUT" --output "$RUNNER_TEMP/source.json"
       - run: git checkout --detach "${{ steps.select.outputs.source }}"
       - run: ./scripts/release main verify --output "$RUNNER_TEMP/merge-evidence"
+        if: steps.select.outputs.published != 'true'
       - run: ./scripts/release main record --source "${{ steps.select.outputs.source }}" --state pending
-        if: inputs.exercise_failure != true
+        if: inputs.exercise_failure != true && steps.select.outputs.published != 'true'
       - uses: actions/upload-artifact@v4
         with:
           name: release-source
@@ -57,6 +61,7 @@ jobs:
   package:
     name: Package (${{ matrix.target }})
     needs: source
+    if: needs.source.outputs.published != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -86,6 +91,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
+            ~/.cache/codex-session-board/checker
             target
           key: release-${{ matrix.target }}-1.99.1-${{ hashFiles('Cargo.lock') }}-${{ needs.source.outputs.source }}
           restore-keys: |
@@ -142,6 +148,9 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       SOURCE: ${{ needs.source.outputs.source || github.sha }}
       PUBLISHED: ${{ needs.publish.result }}
+      ALREADY_PUBLISHED: ${{ needs.source.outputs.published }}
+      SOURCE_RESULT: ${{ needs.source.result }}
+      PACKAGE_RESULT: ${{ needs.package.result }}
       EXERCISE_FAILURE: ${{ inputs.exercise_failure || false }}
     steps:
       - uses: actions/checkout@v4
@@ -154,9 +163,13 @@ jobs:
       - run: |
           state=failure
           test "$PUBLISHED" != success || state=success
+          test "$ALREADY_PUBLISHED" != true || state=success
           exercise=()
           test "$EXERCISE_FAILURE" != true || exercise=(--exercise)
-          ./scripts/release main record --source "$SOURCE" --state "$state" "${exercise[@]}" --output "$RUNNER_TEMP/RELEASE.json"
+          phase=publish
+          test "$PACKAGE_RESULT" != failure || phase=package
+          test "$SOURCE_RESULT" != failure || phase=source
+          ./scripts/release main record --source "$SOURCE" --state "$state" --phase "$phase" "${exercise[@]}" --output "$RUNNER_TEMP/RELEASE.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

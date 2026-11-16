@@ -155,6 +155,8 @@ def start(arguments):
         save(path, state)
         raise
     print(json.dumps({"source": result["source"]["commit"], "run": result["run"],
+                      "merge_status": result.get("merge_status"),
+                      "release_status": result.get("release_status"),
                       "seconds": result["seconds"], "receipt": str(path)}))
 
 

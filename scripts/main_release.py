@@ -12,17 +12,28 @@ from scripts.main_release_evidence import implementation, select, verify_merge
 from scripts.promote_candidate import git, github
 from scripts.release_plugin import GitHub
 from scripts.package_plugin import TARGETS
+from scripts.integration_plan import ancestor
 
 
 def dispatch(repository, source):
     result = {"status": "pending", "requested_source": source,
               "requested_at": datetime.now(timezone.utc).isoformat()}
+    for attempt in range(1, 4):
+        try:
+            github("workflow", "run", "plugin-release.yml", "--repo", repository, "--ref", "main", timeout=10)
+            result.update(trigger="workflow_dispatch", attempts=attempt)
+            return result
+        except Exception as error:
+            result.update(dispatch_error=str(error), attempts=attempt)
+    result["retry"] = "./scripts/release main dispatch --repository " + repository
+    result["automatic_retry"] = "plugin-release.yml scheduled reconciliation"
     try:
-        github("workflow", "run", "plugin-release.yml", "--repo", repository, "--ref", "main", timeout=30)
-        result["trigger"] = "workflow_dispatch"
+        from scripts.main_release_feedback import failure
+        result["feedback"] = failure(repository, source, "dispatch",
+                                     f"https://github.com/{repository}/actions/workflows/plugin-release.yml",
+                                     phase="dispatch")
     except Exception as error:
-        result["dispatch_error"] = str(error)
-        result["retry"] = "./scripts/release main dispatch --repository " + repository
+        result["feedback_error"] = str(error)
     return result
 
 
@@ -37,21 +48,41 @@ def channels(forge):
     return result
 
 
+def already_published(repository, selected):
+    forge = GitHub(repository)
+    published = channels(forge)
+    if not all(item and item["source_commit"] == selected["source"]
+               and item["version"] == selected["version"] and item["target"] == target
+               for target, item in published.items()):
+        return False
+    saved = forge.release(selected["tag"])
+    if not saved or saved["draft"] or not saved.get("immutable"):
+        return False
+    commit = forge.api(f"commits/{selected['tag']}")
+    return commit["sha"] == selected["source"]
+
+
 def status(repository, source):
+    git("fetch", "--quiet", "origin", "main")
+    merged = ancestor(source, git("rev-parse", "FETCH_HEAD"))
     forge = GitHub(repository)
     published = channels(forge)
     statuses = forge.api(f"commits/{source}/statuses?per_page=100")
     latest = next((entry for entry in statuses if entry["context"] == "Plugin release"), None)
-    complete = all(record and record["source_commit"] == implementation(source)
-                   for record in published.values())
-    return {"source": source, "merge_status": "merged", "published": published,
-            "release_status": "published" if complete else
-                {"failure": "failed", "pending": "pending"}.get(
-                    latest["state"] if latest else "", "pending"),
+    canonical = implementation(source)
+    origins = {item["source_commit"] for item in published.values() if item}
+    coherent = len(origins) == 1 and all(published.values())
+    covered = coherent and ancestor(canonical, next(iter(origins)))
+    complete = covered and canonical in origins
+    state = ("published" if complete else "covered" if covered else
+             {"success": "published", "failure": "failed", "pending": "pending"}.get(
+                 latest["state"] if latest else "", "pending"))
+    return {"source": source, "merge_status": "merged" if merged else "not_merged", "published": published,
+            "release_status": state, "covered_by": next(iter(origins)) if covered else None,
             "latest_attempt": latest}
 
 
-def record(repository, source, state, run, exercise=False):
+def record(repository, source, state, run, exercise=False, phase="unknown"):
     if state == "success":
         current = channels(GitHub(repository))
         if not all(item and item["source_commit"] == source for item in current.values()):
@@ -60,7 +91,7 @@ def record(repository, source, state, run, exercise=False):
         if state == "failure":
             from scripts.main_release_feedback import failure
             return failure(repository, source, run,
-                           f"https://github.com/{repository}/actions/runs/{run}", exercise=True)
+                           f"https://github.com/{repository}/actions/runs/{run}", exercise=True, phase=phase)
         return {"source": source, "status": state, "exercise": True, "run": run}
     forge = GitHub(repository)
     url = f"https://github.com/{repository}/actions/runs/{run}"
@@ -70,7 +101,7 @@ def record(repository, source, state, run, exercise=False):
               description=descriptions[state], target_url=url)
     if state == "failure":
         from scripts.main_release_feedback import failure
-        return failure(repository, source, run, url)
+        return failure(repository, source, run, url, phase=phase)
     result = {"source": source, "status": state, "run": run}
     if state == "success":
         from scripts.main_release_feedback import recovered
@@ -88,12 +119,14 @@ def main():
     parser.add_argument("--state", choices=("pending", "success", "failure"))
     parser.add_argument("--run", default=os.environ.get("GITHUB_RUN_ID"))
     parser.add_argument("--exercise", action="store_true")
+    parser.add_argument("--phase", default="unknown")
     arguments = parser.parse_args()
     repository = arguments.repository or json.loads(
         github("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"]
     source = arguments.source or git("rev-parse", "HEAD")
     if arguments.action == "select":
         result = select(repository)
+        result["published"] = str(not arguments.exercise and already_published(repository, result)).lower()
     elif arguments.action == "verify":
         if arguments.output is None:
             parser.error("verify needs an external evidence directory")
@@ -105,10 +138,11 @@ def main():
     else:
         if not arguments.state or not arguments.run:
             parser.error("record needs --state and --run")
-        result = record(repository, source, arguments.state, arguments.run, arguments.exercise)
+        result = record(repository, source, arguments.state, arguments.run, arguments.exercise,
+                        arguments.phase)
     if arguments.github_output:
         with arguments.github_output.open("a") as stream:
-            for name in ("main", "source", "version", "tag"):
+            for name in ("main", "source", "version", "tag", "published"):
                 if name in result:
                     stream.write(f"{name}={result[name]}\n")
     if arguments.output and arguments.action != "verify":

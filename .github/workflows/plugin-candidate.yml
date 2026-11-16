@@ -52,6 +52,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
+            ~/.cache/codex-session-board/checker
             target
           key: context-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
           restore-keys: |
@@ -101,6 +102,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
+            ~/.cache/codex-session-board/checker
             target
           key: candidate-${{ matrix.target }}-1.99.1-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
           restore-keys: |

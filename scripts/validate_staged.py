@@ -21,8 +21,7 @@ def identity():
 
 def commands_for():
     return [
-        ["cargo", "run", "--quiet", "--locked", "--offline", "--example", "project_check", "--",
-         "--pre-commit", "--baseline-repository", str(ROOT)],
+        ["bash", "scripts/check", "--pre-commit", "--baseline-repository", str(ROOT)],
         ["cargo", "clippy", "--all-targets", "--locked", "--offline", "--", "-D", "warnings"],
         ["cargo", "test", "--locked", "--offline", "--", "--test-threads=1"],
     ]

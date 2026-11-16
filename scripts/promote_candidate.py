@@ -148,6 +148,8 @@ def promote(candidate, base, run_id, repository, output, reference="refs/heads/m
     if remote == base:
         if reference == "refs/heads/main":
             from scripts.main_release_feedback import require_recovery
+            from scripts.main_release_evidence import require_version
+            require_version(repository, base)
             require_recovery(repository, base)
         lease = [] if reference == "refs/heads/main" else [f"--force-with-lease={reference}:{base}"]
         subprocess.run(["git", "push", *lease, "origin", f"{candidate}:{reference}"],

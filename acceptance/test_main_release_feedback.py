@@ -6,15 +6,22 @@ from scripts import main_release_feedback as feedback
 
 class MainReleaseFeedbackTests(unittest.TestCase):
     def test_broken_main_blocks_unrelated_merges_until_a_referenced_regression_fix(self):
-        incident = {"number": 19, "body": "<!-- main-release:failure " + "a" * 40 + " -->"}
+        incident = {"number": 19, "body": "<!-- main-release:failure " + "a" * 40 + " -->",
+                    "labels": [{"name": "merge-gate-gap"}]}
         with patch.object(feedback.forge, "pages", return_value=[incident]):
             for messages, paths in (("Update UI", "tests/ui_layout.rs"),
-                                    ("Fixes #19", "src/main.rs")):
+                                    ("Release-Fix: #19", "src/main.rs")):
                 with patch.object(feedback, "git", side_effect=[messages, paths]), \
                         self.assertRaisesRegex(ValueError, "unresolved release incident #19"):
                     feedback.require_recovery("owner/repo", "base")
-            with patch.object(feedback, "git", side_effect=["Fixes #19", "acceptance/test_release.py"]):
+            with patch.object(feedback, "git", side_effect=["Release-Fix: #19", "acceptance/test_release.py"]):
                 feedback.require_recovery("owner/repo", "base")
+
+    def test_infrastructure_recovery_does_not_require_an_unrelated_business_regression(self):
+        incident = {"number": 19, "body": "<!-- main-release:failure " + "a" * 40 + " -->", "labels": []}
+        with patch.object(feedback.forge, "pages", return_value=[incident]), \
+                patch.object(feedback, "git", side_effect=["Release-Fix: #19", ".github/workflows/release.yml"]):
+            feedback.require_recovery("owner/repo", "base")
 
     def test_failure_reuses_one_incident_and_confirms_source_bound_author_feedback(self):
         source = "a" * 40

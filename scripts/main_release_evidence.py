@@ -30,15 +30,27 @@ def implementation(main):
 def select(repository):
     if git("status", "--porcelain", "--untracked-files=all"):
         raise ValueError("Release selection requires a clean checkout")
-    subprocess.run(["git", "fetch", "--quiet", "origin", "main"], cwd=ROOT, check=True)
-    main = git("rev-parse", "FETCH_HEAD")
     observed = json.loads(github("api", f"repos/{repository}/git/ref/heads/main"))["object"]["sha"]
+    subprocess.run(["git", "fetch", "--quiet", "origin", "main"], cwd=ROOT, check=True)
+    main = git("rev-parse", f"{observed}^{{commit}}")
     if main != observed:
-        raise ValueError("Main advanced during selection; retry before pinning a release")
+        raise ValueError("Pinned main source is unavailable after fetching")
     source = implementation(main)
     version = tomllib.loads(git("show", f"{source}:Cargo.toml"))["package"]["version"]
     return {"main": main, "source": source, "version": version, "tag": f"v{version}",
             "selected_at": datetime.now(timezone.utc).isoformat()}
+
+
+def require_version(repository, base):
+    from scripts.release_plugin import GitHub
+    previous = tomllib.loads(git("show", f"{base}:Cargo.toml"))["package"]["version"]
+    version = tomllib.loads(git("show", "HEAD:Cargo.toml"))["package"]["version"]
+    if tuple(map(int, version.split("."))) <= tuple(map(int, previous.split("."))):
+        raise ValueError("Freeze a fresh release version before validating a changed implementation")
+    forge = GitHub(repository)
+    if forge.api(f"git/ref/tags/v{version}") is not None:
+        if forge.api(f"commits/v{version}")["sha"] != git("rev-parse", "HEAD"):
+            raise ValueError("This release version already belongs to different immutable source")
 
 
 def merge_run(repository, source):

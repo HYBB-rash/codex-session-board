@@ -27,7 +27,7 @@ class MainReleaseTests(unittest.TestCase):
         with patch.object(evidence, "git", side_effect=["", "older"]), \
                 patch.object(evidence.subprocess, "run"), \
                 patch.object(evidence, "github", return_value=json.dumps({"object": {"sha": "newer"}})), \
-                self.assertRaisesRegex(ValueError, "advanced"):
+                self.assertRaisesRegex(ValueError, "unavailable"):
             evidence.select("owner/repo")
 
     def test_only_regular_context_records_share_the_previous_implementation(self):
@@ -75,11 +75,14 @@ class MainReleaseTests(unittest.TestCase):
 
     def test_dispatch_error_keeps_merge_complete_and_release_pending(self):
         with patch.object(release, "github", side_effect=RuntimeError("transport failed")):
-            result = release.dispatch("owner/repo", "source")
+            with patch("scripts.main_release_feedback.failure", side_effect=RuntimeError("offline")):
+                result = release.dispatch("owner/repo", "source")
         self.assertEqual(result["status"], "pending")
         self.assertEqual(result["requested_source"], "source")
         self.assertIn("transport failed", result["dispatch_error"])
         self.assertIn("release main dispatch", result["retry"])
+        self.assertEqual(result["attempts"], 3)
+        self.assertIn("scheduled", result["automatic_retry"])
 
     def test_channel_status_requires_both_exact_sources_and_preserves_previous_release(self):
         previous = {target: {"source_commit": "previous", "version": "0.3.97"} for target in release.TARGETS}
@@ -87,6 +90,8 @@ class MainReleaseTests(unittest.TestCase):
         forge.api.return_value = [{"context": "Plugin release", "state": "failure"}]
         with patch.object(release, "GitHub", return_value=forge), \
                 patch.object(release, "channels", return_value=previous), \
+                patch.object(release, "git", return_value="main"), \
+                patch.object(release, "ancestor", side_effect=[True, False]), \
                 patch.object(release, "implementation", return_value="current"):
             result = release.status("owner/repo", "current")
         self.assertEqual(result["merge_status"], "merged")
@@ -95,6 +100,48 @@ class MainReleaseTests(unittest.TestCase):
         with patch.object(release, "channels", return_value=previous), \
                 self.assertRaisesRegex(ValueError, "Both delivery channels"):
             release.record("owner/repo", "current", "success", 7)
+
+    def test_published_descendant_covers_coalesced_and_older_main_commits(self):
+        current = {target: {"source_commit": "newer", "version": "0.3.98"} for target in release.TARGETS}
+        forge = Mock()
+        forge.api.return_value = [{"context": "Plugin release", "state": "pending"}]
+        with patch.object(release, "GitHub", return_value=forge), \
+                patch.object(release, "channels", return_value=current), \
+                patch.object(release, "implementation", return_value="older"), \
+                patch.object(release, "git", return_value="main"), \
+                patch.object(release, "ancestor", return_value=True):
+            result = release.status("owner/repo", "older")
+        self.assertEqual(result["release_status"], "covered")
+        self.assertEqual(result["covered_by"], "newer")
+
+    def test_missing_immutable_release_or_wrong_tag_cannot_skip_publication(self):
+        selected = {"source": "source", "version": "0.3.98", "tag": "v0.3.98"}
+        manifests = {target: {"source_commit": "source", "version": "0.3.98", "target": target}
+                     for target in release.TARGETS}
+        forge = Mock()
+        with patch.object(release, "GitHub", return_value=forge), \
+                patch.object(release, "channels", return_value=manifests):
+            for saved in (None, {"draft": True, "immutable": True},
+                          {"draft": False, "immutable": False}):
+                forge.release.return_value = saved
+                self.assertFalse(release.already_published("owner/repo", selected))
+            forge.release.return_value = {"draft": False, "immutable": True}
+            forge.api.return_value = {"sha": "other"}
+            self.assertFalse(release.already_published("owner/repo", selected))
+            forge.api.return_value = {"sha": "source"}
+            self.assertTrue(release.already_published("owner/repo", selected))
+
+    def test_changed_implementation_needs_a_fresh_unclaimed_version(self):
+        with patch.object(evidence, "git", side_effect=['[package]\nversion="0.3.97"'] * 2), \
+                self.assertRaisesRegex(ValueError, "fresh"):
+            evidence.require_version("owner/repo", "base")
+        forge = Mock()
+        forge.api.side_effect = [{}, {"sha": "other"}]
+        with patch("scripts.release_plugin.GitHub", return_value=forge), \
+                patch.object(evidence, "git", side_effect=[
+                    '[package]\nversion="0.3.97"', '[package]\nversion="0.3.98"', "source"]), \
+                self.assertRaisesRegex(ValueError, "different immutable source"):
+            evidence.require_version("owner/repo", "base")
 
     def test_channel_manifest_reads_existing_candidate_branches(self):
         forge = Mock()
