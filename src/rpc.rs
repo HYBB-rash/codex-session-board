@@ -67,6 +67,7 @@ pub enum Role {
     TargetProjectPreparer,
     TitleWriter,
     ArchiveWriter,
+    ProjectWriter,
 }
 
 impl Role {
@@ -82,6 +83,8 @@ impl Role {
                 "initialize" | "thread/list" | "thread/turns/list" | "threadSection/list"
             ),
             Self::DraftReader => matches!(method, "initialize" | "thread/read"),
+            Self::ProjectWriter => matches!(method, "initialize" | "account/read" | "project/read"
+                | "thread/read" | "thread/metadata/update"),
             Self::CalibrationWriter => matches!(method, "initialize" | "thread/start"
                 | "thread/read" | "thread/name/set" | "thread/archive"
                 | "thread/list" | "threadSection/list" | "thread/turns/list"),
@@ -104,6 +107,19 @@ impl Role {
         };
         ensure!(allowed, "此 RPC 连接不允许调用 {method}");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn project_writer_cannot_create_send_rename_or_archive() {
+    for method in ["initialize", "account/read", "project/read", "thread/read",
+        "thread/metadata/update"] {
+        assert!(Role::ProjectWriter.check(method).is_ok());
+    }
+    for method in ["thread/start", "turn/start", "thread/resume", "thread/name/set",
+        "thread/archive", "project/create", "fs/writeFile"] {
+        assert!(Role::ProjectWriter.check(method).is_err());
     }
 }
 
@@ -535,7 +551,7 @@ impl Rpc for DesktopConnection {
         let deadline = self.call_deadline()?;
         if matches!(
             method,
-            "thread/start" | "thread/name/set" | "thread/archive" | "project/import"
+            "thread/start" | "thread/name/set" | "thread/archive" | "project/import" | "thread/metadata/update"
         ) && let Some(binding) = &self.remote_binding
         {
             binding.require_confirmed()?;

@@ -140,6 +140,35 @@ fn cached_writer_rechecks_alias_and_peer_before_any_mutating_rpc() -> Result<()>
 }
 
 #[test]
+fn project_writer_rechecks_alias_and_peer_before_metadata_updates() -> Result<()> {
+    for (key, value) in [
+        ("hostname", json!("other")),
+        ("user", json!("other")),
+        ("port", json!(2222)),
+        ("peer", json!({"uid":502,"home":"/Users/remote","codexHome":"/Users/remote/.codex",
+            "declaredCodexHome":"/Users/remote/.codex"})),
+        ("peer", json!({"uid":501,"home":"/Users/other","codexHome":"/Users/other/.codex",
+            "declaredCodexHome":"/Users/other/.codex"})),
+        ("peer", json!({"uid":501,"home":"/Users/remote","codexHome":"/changed",
+            "declaredCodexHome":"/changed"})),
+    ] {
+        let fixture = Fixture::new()?;
+        let app = fixture.app()?;
+        let mut connection = app.connection(Duration::from_secs(3), Role::ProjectWriter)?;
+        let params = json!({"threadId":"existing-uuid","projectId":"existing-project"});
+        assert_eq!(connection.call("thread/metadata/update", params.clone())?, json!({"ok":true}));
+        let binding = app.config.remote_binding.as_ref().unwrap();
+        let before = std::fs::read(&binding.path)?;
+        fixture.update(key, value)?;
+        assert!(connection.call("thread/metadata/update", params).is_err(), "{key}");
+        assert_eq!(std::fs::read(&binding.path)?, before);
+        assert_eq!(fixture.events().lines()
+            .filter(|event| *event == "thread/metadata/update").count(), 1);
+    }
+    Ok(())
+}
+
+#[test]
 fn clock_and_proxy_share_peer_checks_and_reject_different_clock_authority() -> Result<()> {
     let fixture = Fixture::new()?;
     let app = fixture.app()?;

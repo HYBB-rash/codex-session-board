@@ -49,7 +49,11 @@ fn creation_projects(root: &App, remote: &App) -> Result<Vec<Value>> {
 
 #[test]
 fn native_project_creation_requires_a_live_connected_non_deleting_target() -> Result<()> {
-    let (_directory, root, remote, _thread) = fixture()?;
+    let (directory, mut root, remote, _thread) = fixture()?;
+    root.config.sidebar_state_file = directory.path().join("registry.json");
+    std::fs::write(&root.config.sidebar_state_file, serde_json::to_vec(&json!({
+        "codex-managed-remote-connections":[{"hostId":"remote:a","displayName":"Mac",
+            "alias":"example"}]}))?)?;
     let project = json!({"id":"target:[\"remote:a\",\"targetServer\",\"p\"]",
         "nativeId":"p","hostId":"remote:a","origin":"targetServer","paths":["/target"],
         "canCreate":false,"canMove":false,"canOpenProject":false});
@@ -59,7 +63,9 @@ fn native_project_creation_requires_a_live_connected_non_deleting_target() -> Re
         projects: vec![project],
         active: Vec::new(),
         archived: Vec::new(),
-        coverage: json!({}),
+        coverage: json!({"projects":"complete","ordinaryActive":"complete",
+            "ordinaryArchived":"complete","publishedReferences":"complete",
+            "membership":"complete","legacy":"complete"}),
         issues: Vec::new(),
     });
     assert_eq!(creation_projects(&root, &remote)?[0]["canCreate"], false);

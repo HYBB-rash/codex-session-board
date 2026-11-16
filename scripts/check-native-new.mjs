@@ -1,45 +1,119 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import vm from "node:vm";
+import fs from "node:fs/promises";
+import http from "node:http";
+import { launchBrowser } from "./browser-client.mjs";
+import { clickNode, until } from "./browser-actions.mjs";
 
-const directory = new URL("./native_new/", import.meta.url);
-const load = async name => vm.runInNewContext(
-  `(${await readFile(new URL(name, directory), "utf8")})`,
-);
-const parse = await load("route.js");
-const open = await load("open.js");
-const url = "codex://threads/new-remote?hostId=remote%3Aa&projectId=p%20%26%20%E4%B8%AD";
-const route = JSON.parse(JSON.stringify(parse(new URL(url))));
-assert.deepEqual(route, { kind: "remoteNewThread", hostId: "remote:a", projectId: "p & 中" });
-for (const invalid of [
-  url + "&prompt=send", url + "&hostId=remote:b", url + "#fragment",
-  url.replace("codex:", "https:"), url.replace("remote%3Aa", "local"),
-  url.replace("hostId=remote%3Aa", "hostId="), url.replace("new-remote", "new-remote/extra"),
-]) assert.equal(parse(new URL(invalid)), null);
-const events = [];
-const project = { id: route.projectId, hostId: route.hostId, remotePath: "/remote/project" };
-const dependencies = {
-  route, projectsManager: { getRemoteProjects: () => [project] },
-  selectProject: async selection => events.push(["select", selection]),
-  announce: () => events.push(["announce"]),
-  navigate: selection => events.push(["navigate", selection]),
+const html = await fs.readFile(new URL("../index.html", import.meta.url), "utf8");
+const project = "target:" + JSON.stringify(["remote:a", "targetServer", "canonical"]);
+const identifier = "remote:" + JSON.stringify(["codex", "remote:a", "actual-uuid"]);
+const fixture = {
+  states: { unknown: "待判断", review: "待审阅", to_archive: "待归档" },
+  health: { remoteRegistry: [{ hostId: "remote:a", hostLabel: "Mac", enabled: true }],
+    remoteConnections: [{ hostId: "remote:a", connected: true, catalog: { cached: false } }] },
+  projectCatalog: { loaded: true, items: [
+    { id: project, nativeId: "canonical", hostId: "remote:a", hostLabel: "Mac",
+      origin: "targetServer", remote: true, label: "项目", paths: ["/remote/project"], canCreate: true },
+    { id: "foreign", hostId: "remote:b", hostLabel: "Other", origin: "targetServer",
+      remote: true, label: "别的主机", paths: ["/remote/project"], canCreate: true },
+  ] },
+  sessions: [{ id: identifier, threadId: "actual-uuid", title: "刚创建的会话",
+    remote: true, hostId: "remote:a", hostLabel: "Mac", cwd: "/remote/project",
+    state: "review", note: "", ordinary: true, catalogCurrent: true, presence: "active",
+    archived: false, projectId: null, version: 0, inputVersion: 1 }],
 };
-await open(dependencies);
-assert.deepEqual(JSON.parse(JSON.stringify(events)), [
-  ["select", { type: "remote", projectId: route.projectId }],
-  ["announce"], ["navigate", { type: "remote", projectId: route.projectId }],
-]);
-for (const projects of [
-  [], [project, project], [project, { ...project, hostId: "remote:b" }],
-  [{ ...project, hostId: "remote:b" }],
-  [{ ...project, remotePath: "relative" }],
-]) {
-  events.length = 0;
-  await assert.rejects(open({
-    ...dependencies, projectsManager: { getRemoteProjects: () => projects },
-  }));
-  assert.deepEqual(events, []);
+const writes = [];
+let failAssignment = true, failNavigation = false, browser, cleanup, cases = 0;
+let releaseAssignment;
+const assignmentReady = new Promise(resolve => { releaseAssignment = resolve; });
+let releaseRefresh;
+const refreshReady = new Promise(resolve => { releaseRefresh = resolve; });
+const check = (actual, expected) => { assert.deepEqual(actual, expected); cases++; };
+const server = http.createServer(async (request, response) => {
+  let body = "";
+  for await (const chunk of request) body += chunk;
+  if (request.method === "POST") {
+    writes.push({ path: request.url, body: JSON.parse(body) });
+    if (request.url === "/api/new" && failNavigation)
+      return response.writeHead(200, { "Content-Type": "application/json" })
+        .end(JSON.stringify({ pending: true, error: "输入页尚未确认" }));
+    if (request.url === "/api/project/assign") await assignmentReady;
+    if (request.url === "/api/project/assign" && failAssignment)
+      return response.writeHead(409, { "Content-Type": "application/json" })
+        .end(JSON.stringify({ error: "补登记未确认，请对同一会话重试" }));
+    if (request.url === "/api/project/assign") fixture.sessions[0].projectId = project;
+  }
+  if (request.method === "GET" && request.url === "/api/sessions"
+      && fixture.sessions[0].projectId === project) await refreshReady;
+  response.writeHead(200, { "Content-Type": request.url === "/" ? "text/html; charset=utf-8" : "application/json" });
+  response.end(request.url === "/" ? html : JSON.stringify(request.method === "POST" ? { ok: true } : fixture));
+});
+await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+try {
+  browser = await launchBrowser();
+  const page = await browser.page(`http://127.0.0.1:${server.address().port}/`);
+  const evaluate = expression => page.evaluate(expression);
+  const wait = expression => until(() => evaluate(expression), "页面状态未就绪：" + expression);
+  await wait('typeof data !== "undefined" && data.sessions.length === 1');
+  await evaluate('byId("host-filter").value="host:remote:a";byId("host-filter").dispatchEvent(new Event("change"))');
+  check(await evaluate('canCreateProject(data.projectCatalog.items[0])'), true);
+  await evaluate('createSession(data.projectCatalog.items[0].id)');
+  await wait("!creating");
+  check(writes.length, 1);
+  check(writes[0].path, "/api/new");
+  check(writes[0].body.projectId, project);
+  check(Object.keys(writes[0].body).sort(), ["operationId", "projectId"]);
+  check(/^[0-9a-f-]{36}$/.test(writes[0].body.operationId), true);
+  check(await evaluate('byId("feedback").textContent.includes("发送第一句话后才会创建会话")'), true);
+  await clickNode(page, "[data-action=assign-project]");
+  check(await evaluate('byId("project-assignment").open'), true);
+  check(await evaluate('byId("assignment-thread").textContent.includes("actual-uuid")'), true);
+  check(await evaluate('Array.from(byId("assignment-project").options).map(option=>option.value)'), [project]);
+  check(await evaluate('byId("host-filter").disabled'), true);
+  await evaluate('byId("assignment-form").requestSubmit()');
+  await until(() => writes.length === 2, "补登记请求尚未到达");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    for (const type of ["keyDown", "keyUp"])
+      await page.command("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    check(await evaluate('byId("project-assignment").open'), true);
+  }
+  assert.equal(await evaluate('byId("project-assignment").open && saving'), true,
+    JSON.stringify(await evaluate('({open:byId("project-assignment").open,saving,error:byId("assignment-error").textContent})')));
+  cases++;
+  releaseAssignment();
+  await wait('!saving && byId("assignment-error").textContent.includes("补登记未确认")');
+  check(await evaluate('byId("project-assignment").open'), true);
+  check(await evaluate('data.sessions[0].id'), identifier);
+  failAssignment = false;
+  await evaluate('byId("assignment-form").requestSubmit()');
+  await wait('!saving && !byId("project-assignment").open');
+  check(await evaluate('document.querySelector("[data-action=assign-project]") !== null'), true);
+  releaseRefresh();
+  await wait(`data.sessions[0].projectId === ${JSON.stringify(project)}
+    && document.querySelector("[data-action=assign-project]") === null`);
+  check(writes.filter(write => write.path === "/api/project/assign").map(write => write.body),
+    [{ id: identifier, projectId: project, confirmed: true }, { id: identifier, projectId: project, confirmed: true }]);
+  check(writes.filter(write => write.path === "/api/new").length, 1);
+  check(await evaluate('data.sessions.length'), 1);
+  check(await evaluate('document.querySelector("[data-action=assign-project]") === null'), true);
+  const legacy = "target:" + JSON.stringify(["remote:a", "targetLegacy", "old"]);
+  fixture.projectCatalog.items.push({ ...fixture.projectCatalog.items[0], id: legacy, origin: "targetLegacy" });
+  await evaluate("load()");
+  failNavigation = true;
+  await evaluate(`createSession(${JSON.stringify(legacy)})`);
+  check(await evaluate('byId("draft-recovery").open'), true);
+  const failedNavigation = writes.at(-1);
+  fixture.projectCatalog.items = fixture.projectCatalog.items.filter(project => project.id !== legacy);
+  await evaluate("load()");
+  failNavigation = false;
+  await evaluate('byId("draft-retry").click()');
+  await wait("!creating");
+  check(writes.at(-1), failedNavigation);
+  check(await evaluate('byId("draft-recovery").open'), false);
+} finally {
+  releaseAssignment();
+  releaseRefresh();
+  if (browser) cleanup = await browser.close();
+  await new Promise(resolve => server.close(resolve));
 }
-console.log(JSON.stringify({ passed: true, source: fileURLToPath(directory) }));
-await import("./check-native-target.mjs");
+console.log(JSON.stringify({ passed: true, cases, cleanup }));

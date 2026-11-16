@@ -60,8 +60,10 @@ fn selected_host_refresh_never_connects_other_or_disabled_hosts() -> Result<()> 
 }
 
 #[test]
-fn target_creation_requires_operation_and_v2_capability_before_remote_actions() -> Result<()> {
-    let (_directory, root, _first, _second) = fixture()?;
+fn target_creation_requires_operation_and_registered_host_before_remote_actions() -> Result<()> {
+    let (directory, mut root, _first, _second) = fixture()?;
+    root.config.sidebar_state_file = directory.path().join("registry.json");
+    std::fs::write(&root.config.sidebar_state_file, "{}")?;
     for origin in ["targetServer", "targetLegacy"] {
         let project = format!("target:{}", json!(["remote:a", origin, "native-project"]));
         let error = root
@@ -72,7 +74,7 @@ fn target_creation_requires_operation_and_v2_capability_before_remote_actions() 
             .request("/api/new", Some(&json!({"projectId":project,
                 "operationId":uuid::Uuid::new_v4().to_string()})))
             .unwrap_err();
-        assert!(error.to_string().contains("尚未配置远程原生新建入口"));
+        assert!(error.to_string().contains("主机已移除或未登记"));
     }
     assert!(root.store.pending_drafts()?.is_empty());
     assert!(root.remote_requested.lock().unwrap().is_empty());

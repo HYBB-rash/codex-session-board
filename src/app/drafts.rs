@@ -86,9 +86,6 @@ impl App {
         if !body["requestId"].is_null() {
             ensure!(unique_project_root(&projects,&project),
                 "旧版新建目录对应多个项目，请先在客户端核对归属");
-        } else {
-            ensure!(projects.iter().filter(|current|current["nativeId"]==project["nativeId"]).count()==1,
-                "多个远程项目使用同一原生 ID，请在客户端重新登记后重试");
         }
         validate_remote_project(&project)?;
         ensure!(

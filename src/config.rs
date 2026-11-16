@@ -38,7 +38,6 @@ pub struct Config {
     pub history_per_poll: usize,
     pub host_id: String,
     pub open_command: Vec<String>,
-    pub native_new_capability: Option<PathBuf>,
     pub client_singleton_profile: Option<PathBuf>,
     pub desktop_socket: PathBuf,
     pub runtime_poll_seconds: u64,
@@ -75,7 +74,6 @@ impl Default for Config {
             host_id: "local".into(),
             open_command: default_open_command(),
             client_singleton_profile: None,
-            native_new_capability: None,
             desktop_socket: env::var_os("CODEX_LINUX_APP_SERVER_BRIDGE_SOCKET")
                 .map(PathBuf::from)
                 .unwrap_or_default(),
@@ -275,10 +273,6 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
     config.validate()?;
     let base = config_path.parent().context("配置文件缺少父目录")?;
     config.data_dir = resolve_path(&base.join(&config.data_dir))?;
-    config.native_new_capability = config
-        .native_new_capability
-        .map(|path| resolve_path(&base.join(path)))
-        .transpose()?;
     config.client_singleton_profile = config
         .client_singleton_profile
         .map(|path| resolve_path(&base.join(path)))
@@ -418,6 +412,20 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn obsolete_native_capability_does_not_require_a_client_patch_or_existing_file() -> Result<()> {
+        let fixture = Fixture::new()?;
+        let path = fixture.0.join("config.json");
+        write_json(&path, &serde_json::json!({
+            "data_dir":"data","native_new_capability":"missing/app.remote-new.json"
+        }), false)?;
+        let config = load(Some(&path))?;
+        assert_eq!(config.data_dir, fixture.0.join("data"));
+        assert!(!serde_json::to_value(config)?.as_object().unwrap()
+            .contains_key("native_new_capability"));
+        Ok(())
     }
 
     #[test]

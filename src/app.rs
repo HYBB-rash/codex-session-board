@@ -17,6 +17,7 @@ use std::sync::{
 use std::time::Duration;
 
 mod drafts;
+mod project_assignment;
 mod native;
 mod native_backfill;
 mod native_mapping;
@@ -251,6 +252,7 @@ impl App {
             ("/api/archive", Some(body)) => crate::archive::request(self, body),
             ("/api/new", Some(body)) => self.new_session(body),
             ("/api/new/reset", Some(body)) => self.reset_remote_draft(body),
+            ("/api/project/assign", Some(body)) => self.assign_project(body),
             ("/api/connect", Some(body)) => self.connect_remote(body),
             ("/api/native-calibration/reset", Some(body)) => self.reset_native_calibration(body),
             ("/api/open", Some(body)) => {

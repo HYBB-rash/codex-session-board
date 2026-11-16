@@ -65,7 +65,7 @@ pub(crate) fn read(reader: &mut dyn Rpc, codex_home: &str) -> Result<Input> {
     })
 }
 
-fn account_fingerprint(account: &Value) -> Result<Option<String>> {
+pub(crate) fn account_fingerprint(account: &Value) -> Result<Option<String>> {
     let (Some(user), Some(workspace)) = (
         account["userId"].as_str().filter(|value| !value.is_empty()),
         account["workspaceRouting"]["chatgptAccountId"]

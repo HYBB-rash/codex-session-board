@@ -205,6 +205,16 @@ textarea{resize:vertical;min-height:90px}
     <div class="dialog-actions"><button type="button" id="cancel">取消</button><button type="submit" id="save" class="primary">保存状态</button></div>
   </form>
 </dialog>
+<dialog id="project-assignment" aria-labelledby="assignment-title">
+  <form id="assignment-form">
+    <h2 id="assignment-title">确认新会话的项目归属</h2>
+    <p id="assignment-thread" class="dialog-title"></p>
+    <label for="assignment-project">归入项目</label><select id="assignment-project" required></select>
+    <p class="reason">请核对这是你刚发送第一句话的会话。这里只登记项目，不发送消息；失败后仍处理同一会话。</p>
+    <div id="assignment-error" class="notice" role="alert"></div>
+    <div class="dialog-actions"><button type="button" id="assignment-cancel">取消</button><button type="submit" id="assignment-save" class="primary">确认归入项目</button></div>
+  </form>
+</dialog>
 <dialog id="new-target" aria-labelledby="new-target-title">
   <form id="new-target-form">
     <h2 id="new-target-title">选择新会话的位置</h2>
@@ -439,6 +449,14 @@ function makeCard(session) {
   adjust.setAttribute("aria-label",adjust.title);
   adjust.onclick = () => openEditor(session.id);
   actions.append(adjust);
+  if (session.remote && session.catalogCurrent && session.ordinary && !session.archived
+      && !session.projectId && assignmentProjects(session).length) {
+    const assign = element("button","归入项目","row-action");
+    assign.type = "button";assign.dataset.action = "assign-project";
+    assign.disabled = saving || creating || pending;
+    assign.onclick = () => openProjectAssignment(session);
+    actions.append(assign);
+  }
   if (canArchiveSession(session)) {
     const archive = element("button",session.followUp ? "确认待归档" : "归档","row-action");
     archive.type = "button";
@@ -741,7 +759,7 @@ function canCreateProject(project) {
   return host?.connected === true && host.catalog?.cached === false;
 }
 function filtersLocked() {
-  return Boolean(dragging || saving && !moving || creating || byId("editor").open || byId("new-target").open || byId("draft-recovery").open);
+  return Boolean(dragging || saving && !moving || creating || byId("editor").open || byId("new-target").open || byId("draft-recovery").open || byId("project-assignment").open);
 }
 function updateFilterLock() {
   byId("host-filter").disabled = filtersLocked();
@@ -1140,15 +1158,15 @@ byId("edit-form").onsubmit = async event => {
   }
 };
 byId("cancel").onclick = () => byId("editor").close();
-async function createSession(projectId) {
+async function createSession(projectId, operationId = null) {
   const button = byId("new-session");
   if (creating || dragging || saving || byId("editor").open) return;
   const project = data.projectCatalog.items.find(item => item.id === projectId);
   if (project && !canCreateProject(project)) {announce("当前项目暂不可新建，请核对主机连接和项目状态。",true);return;}
-  const remote = project?.remote || draftRequests.has(projectId);
   const body = projectId === null ? {} : {projectId};
-  const target = ["targetServer","targetLegacy"].includes(project?.origin);
-  if (target) body.operationId = nativeDraftOperation(projectId);
+  const target = projectId?.startsWith("target:") || ["targetServer","targetLegacy"].includes(project?.origin);
+  const remote = target || project?.remote || draftRequests.has(projectId);
+  if (target) body.operationId = operationId || nativeDraftOperation(projectId);
   else if (remote && draftRequests.has(projectId)) body.requestId = draftRequests.get(projectId);
   creating = true;button.disabled = true;++requestSerial;render();
   try {
@@ -1163,7 +1181,7 @@ async function createSession(projectId) {
     }
     if (target) nativeDraftOperation(projectId,true);
     draftRequests.delete(projectId);
-    announce(remote ? "已发送远程项目新建页面打开请求，尚未发送输入。" : "已发送新建会话页面打开请求。");
+    announce(remote ? "已请求打开远程原生输入页。请核对主机和目录，发送第一句话后才会创建会话；回到看板刷新可确认项目归属。" : "已发送新建会话页面打开请求。");
   } catch(error) {
     if (target) {
       recoveringDraft = {projectId,operationId:body.operationId};
@@ -1181,9 +1199,47 @@ function updateNewProjects() {
   byId("new-project").replaceChildren(...options);
   byId("new-project").required = host !== "local";
   byId("new-target-open").disabled = !options.length;
-  byId("new-target-hint").textContent = options.length ? "新会话固定在所选主机，不会发送输入。" :
+  byId("new-target-hint").textContent = options.length ? "打开原生输入页后核对主机和目录。由你发送第一句话，才会创建会话。" :
     "此主机没有支持新建会话的项目。已有项目与会话仍可查看。";
 }
+function assignmentProjects(session) {
+  return data.projectCatalog.items.filter(project => project.origin === "targetServer"
+    && project.hostId === session.hostId && !project.pendingDeletion
+    && project.paths?.length === 1 && project.paths[0] === session.cwd);
+}
+function openProjectAssignment(session) {
+  if (filtersLocked()) return;
+  byId("project-assignment").dataset.id = session.id;
+  byId("assignment-thread").textContent = `${session.title}\n${session.threadId}\n${session.cwd}`;
+  byId("assignment-project").replaceChildren(...assignmentProjects(session)
+    .map(project => new Option(projectLabel(project),project.id)));
+  byId("assignment-error").textContent = "";
+  byId("project-assignment").showModal();updateFilterLock();
+}
+byId("assignment-cancel").onclick = () => byId("project-assignment").close();
+byId("project-assignment").addEventListener("cancel",event => {if (saving) event.preventDefault();});
+document.addEventListener("keydown",event => {
+  if (saving && byId("project-assignment").open && event.key === "Escape") event.preventDefault();
+},true);
+byId("project-assignment").addEventListener("close",() => {updateFilterLock();load();});
+byId("assignment-form").onsubmit = async event => {
+  event.preventDefault();
+  if (saving || creating) return;
+  const dialog = byId("project-assignment");
+  dialog.setAttribute("closedby","none");
+  saving = true;updateFilterLock();
+  for (const id of ["assignment-save","assignment-cancel","assignment-project"]) byId(id).disabled = true;
+  try {
+    await post("/api/project/assign",{id:dialog.dataset.id,projectId:byId("assignment-project").value,confirmed:true});
+    dialog.close();announce("已读回项目归属。可刷新目录查看归类结果。");
+  } catch(error) {byId("assignment-error").textContent = error.message;}
+  finally {
+    saving = false;
+    dialog.removeAttribute("closedby");
+    for (const id of ["assignment-save","assignment-cancel","assignment-project"]) byId(id).disabled = false;
+    updateFilterLock();await load();
+  }
+};
 byId("new-session").onclick = () => {
   if (saving || filtersLocked()) return;
   if (selectedHost.startsWith("host:") && !(data.health.remoteRegistry || []).some(host => "host:" + host.hostId === selectedHost)) {
@@ -1216,7 +1272,7 @@ byId("draft-later").onclick = () => byId("draft-recovery").close();
 byId("draft-recovery").addEventListener("close",() => {updateFilterLock();load();});
 byId("draft-retry").onclick = () => {
   byId("draft-recovery").close();
-  createSession(recoveringDraft.projectId);
+  createSession(recoveringDraft.projectId, recoveringDraft.operationId);
 };
 byId("draft-restart").onclick = async () => {
   if (saving || creating) return;

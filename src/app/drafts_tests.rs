@@ -1,6 +1,5 @@
 use super::*;
 use std::collections::VecDeque;
-use sha2::Digest;
 use std::os::unix::fs::PermissionsExt;
 
 struct Reader {
@@ -231,11 +230,10 @@ fn project_confirmation_handles_implicit_membership_but_rejects_ambiguous_or_for
 fn native_app() -> Result<(tempfile::TempDir, App, Value)> {
     let (directory, mut app) = isolated()?;
     let path = directory.path();
-    std::fs::create_dir(path.join("resources"))?;
-    let archive = path.join("resources/app.asar");
-    std::fs::write(&archive, b"isolated native candidate")?;
     let registry = json!({"remote-projects":[{"id":"project & 中","hostId":"remote:a",
-        "label":"项目","remotePath":"/not-a-local-path"}]});
+        "label":"项目","remotePath":"/not-a-local-path"}],
+        "codex-managed-remote-connections":[{"hostId":"remote:a",
+            "displayName":"Mac","alias":"test-mac"}]});
     app.config.sidebar_state_file = path.join("projects.json");
     std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&registry)?)?;
     let executable = path.join("codex");
@@ -243,13 +241,7 @@ fn native_app() -> Result<(tempfile::TempDir, App, Value)> {
         "#!/bin/sh\nsleep 1.1\nprintf '%s\\n' \"$1\" >> '{}'\n", path.join("opens").display()))?;
     std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))?;
     app.config.open_command = vec![executable.to_string_lossy().into()];
-    app.config.native_new_capability = Some(path.join("capability.json"));
-    let capability = json!({"protocol":"codex-remote-draft-v1","archive":archive,
-        "sha256":format!("{:x}", sha2::Sha256::digest(b"isolated native candidate")),
-        "openCommand":app.config.open_command});
-    std::fs::write(app.config.native_new_capability.as_ref().unwrap(),
-        serde_json::to_vec(&capability)?)?;
-    Ok((directory, app, capability))
+    Ok((directory, app, registry))
 }
 
 fn native_body() -> Value {
@@ -272,14 +264,16 @@ fn native_navigation_receipt(directory: &std::path::Path) -> Result<String> {
 }
 
 #[test]
-fn native_remote_new_only_navigates_and_preserves_the_selected_host_and_project() -> Result<()> {
+fn native_remote_new_only_navigates_to_the_registered_ssh_alias_and_directory() -> Result<()> {
     let (directory, app, _) = native_app()?;
     let response = app.request("/api/new", Some(&native_body()))?;
     assert_eq!(response["native"], true);
     let url = url::Url::parse(response["url"].as_str().unwrap())?;
-    assert_eq!(url.path(), "/new-remote");
+    assert_eq!(url.host_str(), Some("settings"));
+    assert_eq!(url.path(), "/connections/ssh/add");
     assert_eq!(url.query_pairs().collect::<Vec<_>>(),
-        [("hostId".into(),"remote:a".into()),("projectId".into(),"project & 中".into())]);
+        [("name".into(),"test-mac".into()),("projectPath".into(),"/not-a-local-path".into()),
+            ("enabled".into(),"true".into()),("activate".into(),"true".into())]);
     assert!(app.store.pending_drafts()?.is_empty());
     assert!(app.store.sessions()?.is_empty());
     assert!(app.remotes.lock().unwrap().is_empty());
@@ -289,23 +283,20 @@ fn native_remote_new_only_navigates_and_preserves_the_selected_host_and_project(
 }
 
 #[test]
-fn native_remote_new_rejects_missing_or_changed_capabilities_before_navigation() -> Result<()> {
-    let (directory, app, capability) = native_app()?;
-    let path = app.config.native_new_capability.as_ref().unwrap();
-    for (key, value) in [("protocol",json!("unknown")),
-        ("sha256",json!("wrong")),("openCommand",json!(["another-client"]))] {
-        let mut changed = capability.clone();
-        changed[key] = value;
-        std::fs::write(path, serde_json::to_vec(&changed)?)?;
+fn native_remote_new_rejects_missing_ambiguous_or_invalid_aliases_before_navigation() -> Result<()> {
+    let (directory, app, registry) = native_app()?;
+    for alias in [Value::Null, json!(""), json!("-unsafe"), json!("mac\ninjected")] {
+        let mut changed = registry.clone();
+        changed["codex-managed-remote-connections"][0]["alias"] = alias;
+        changed["codex-managed-remote-connections"][0]["hostname"] = json!("valid-hostname");
+        std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&changed)?)?;
         assert!(app.request("/api/new", Some(&native_body())).is_err());
     }
-    let unrelated = directory.path().join("unrelated.asar");
-    std::fs::copy(capability["archive"].as_str().unwrap(), &unrelated)?;
-    let mut changed = capability.clone();
-    changed["archive"] = json!(unrelated);
-    std::fs::write(path, serde_json::to_vec(&changed)?)?;
-    assert!(app.request("/api/new", Some(&native_body())).is_err());
-    std::fs::remove_file(path)?;
+    let mut changed = registry;
+    let mut duplicate = changed["codex-managed-remote-connections"][0].clone();
+    duplicate["hostId"] = json!("remote:b");
+    changed["codex-managed-remote-connections"].as_array_mut().unwrap().push(duplicate);
+    std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&changed)?)?;
     assert!(app.request("/api/new", Some(&native_body())).is_err());
     assert!(!directory.path().join("opens").exists());
     assert!(app.store.pending_drafts()?.is_empty());
@@ -326,10 +317,37 @@ fn native_remote_new_rechecks_project_registration_and_never_replays_old_creatio
     duplicate["hostId"] = json!("remote:b");
     registry["remote-projects"].as_array_mut().unwrap().push(duplicate);
     std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&registry)?)?;
-    assert!(app.request("/api/new", Some(&native_body())).is_err());
+    assert!(app.request("/api/new", Some(&native_body())).is_ok());
     std::fs::write(&app.config.sidebar_state_file, r#"{"remote-projects":[]}"#)?;
     assert!(app.request("/api/new", Some(&native_body())).is_err());
-    assert!(!directory.path().join("opens").exists());
+    assert_eq!(native_navigation_receipt(directory.path())?.lines().count(), 1);
     assert!(app.store.pending_drafts()?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn native_remote_directory_requires_exactly_one_absolute_safe_path() {
+    for paths in [json!([]), json!(["/one","/two"]), json!(["relative"]),
+        json!(["/remote\ninjected"]), json!([null])] {
+        assert!(crate::native_new::directory(&json!({"paths":paths})).is_err());
+    }
+    let project = json!({"paths":["/remote/project & 中文"]});
+    assert_eq!(crate::native_new::directory(&project).unwrap(), "/remote/project & 中文");
+}
+
+#[test]
+fn native_navigation_rechecks_removed_hosts_and_encodes_directory_without_extra_parameters() -> Result<()> {
+    let (directory, app, mut registry) = native_app()?;
+    registry["remote-projects"][0]["remotePath"] = json!("/remote/项目 &?#%+");
+    std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&registry)?)?;
+    let result = app.request("/api/new", Some(&native_body()))?;
+    let url = url::Url::parse(result["url"].as_str().unwrap())?;
+    assert_eq!(url.query_pairs().count(), 4);
+    assert_eq!(url.query_pairs().find(|pair| pair.0 == "projectPath").unwrap().1,
+        "/remote/项目 &?#%+");
+    registry["codex-managed-remote-connections"] = json!([]);
+    std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&registry)?)?;
+    assert!(app.request("/api/new", Some(&native_body())).is_err());
+    assert_eq!(native_navigation_receipt(directory.path())?.lines().count(), 1);
     Ok(())
 }

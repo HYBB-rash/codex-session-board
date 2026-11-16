@@ -36,7 +36,7 @@ impl App {
         health["writeError"] = json!(checked.err().map(|error| error.to_string()));
         health["catalog"] = view.health;
         health["connected"] = json!(writable);
-        append_projects(projects, view.projects, &health, writable, host);
+        projects.extend(view.projects.into_iter().map(|project| self.creation_project(project, &health)));
         sessions.retain(|row| {
             row["hostId"] != *host || !known.contains(row["threadId"].as_str().unwrap_or(""))
         });
@@ -55,15 +55,13 @@ impl App {
         health["hostId"] = json!(host);
         Ok(health)
     }
-}
 
-fn append_projects(projects: &mut Vec<Value>, targets: Vec<Value>, health: &Value,
-    writable: bool, host: &str) {
-    for mut project in targets {
+    fn creation_project(&self, mut project: Value, health: &Value) -> Value {
         project["hostLabel"] = health["hostLabel"].clone();
-        project["canCreate"] = json!(writable && health["catalog"]["cached"] == false
-            && project["pendingDeletion"] != true && host != "local");
-        projects.push(project);
+        project["canCreate"] = json!(health["connected"] == true
+            && health["catalog"]["complete"] == true && project["pendingDeletion"] != true
+            && crate::native_new::remote_url(&self.config, &project).is_ok());
+        project
     }
 }
 
