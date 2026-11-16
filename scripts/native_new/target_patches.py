@@ -38,7 +38,13 @@ def replace(source, anchor, replacement):
 
 
 def patch_sources(sources):
-    selected = FEDORA_SOURCES if any("/486887.e71" in path for path in sources) else SOURCES
+    main_digest = hashlib.sha256(sources.get(MAIN, b"")).hexdigest()
+    if main_digest == "97adba36c0c0e9e145ab364c82eb3433abe3675ab7c6e3ab282035b67a4d60bb":
+        selected = SOURCES
+    elif main_digest == "b6da640567d370d9fcf6105944f453cde03c1492da44ac2d87143edc9009394e":
+        selected = FEDORA_SOURCES
+    else:
+        raise ValueError("Unsupported target draft renderer source identity")
     for path, digest in selected.items():
         if path not in sources or hashlib.sha256(sources[path]).hexdigest() != digest:
             raise ValueError(f"Unsupported target draft renderer: {path}")
