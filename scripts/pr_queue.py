@@ -94,6 +94,10 @@ def verify_entry(state, item):
             or not review.get("reviewer")
             or review["reviewer"] == item["route"]["thread_id"]):
         raise ValueError("Current PR head needs an independent passing review")
+    verify_pr_validation(item, state["checker"])
+
+
+def verify_pr_validation(item, checker):
     directory = Path(item["validation"])
     record = json.loads((directory / "VALIDATION.json").read_text())
     project = Path(record["project"]).resolve(strict=True)
@@ -102,7 +106,7 @@ def verify_entry(state, item):
     if (record.get("scope") != "pr" or record.get("passed") is not True
             or record.get("release_ready") is not False or record.get("acceptance_status") != "not_performed"
             or source["commit"] != item["head"] or record.get("source") != source
-            or record.get("checker") != state["checker"]
+            or record.get("checker") != checker
             or record.get("plan") != strategy
             or git(project, "status", "--porcelain", "--untracked-files=all")):
         raise ValueError("PR evidence must identify the current clean source and queue checker")

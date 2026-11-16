@@ -25,7 +25,8 @@ def response(text):
         raise ForgeError("GitHub did not return a complete HTTP response")
     headers = {key.lower(): value.strip() for line in header.splitlines()[1:]
                for key, colon, value in [line.partition(":")] if colon}
-    return int(header.splitlines()[0].split()[1]), headers, json.loads(body)
+    status = int(header.splitlines()[0].split()[1])
+    return status, headers, {} if status == 204 and not body.strip() else json.loads(body)
 
 
 def api(endpoint, *arguments, deadline=None):
@@ -178,8 +179,10 @@ def snapshot(state):
     conclusions.update({name: entry["state"] for name, entry in latest.items()})
     if any(entry["kind"] == "check" for entry in result["items"]):
         result["ci"] = "failed"
-    elif conclusions and all(conclusions.get(name) == "success" for name in state["checks"]):
-        result["ci"] = "passed" if all(value == "success" for value in conclusions.values()) else "pending"
+    elif (conclusions and all(conclusions.get(name) == "success" for name in state["checks"])
+          and all(entry["status"] == "completed" and entry["conclusion"] == "success" for entry in checks)
+          and all(entry["state"] == "success" for entry in latest.values())):
+        result["ci"] = "passed"
     after = api(pull, deadline=deadline)
     if (after["head"]["sha"], after["base"]["sha"], after["state"], after["merged"]) != (
             result["head"], result["base"], pr["state"], pr["merged"]):
