@@ -7,6 +7,11 @@ import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+if sys.version_info < (3, 11):
+    from scripts.validation_environment import choose_python
+    selected_python = choose_python(Path(__file__).resolve().parents[1], dict(os.environ))["path"]
+    os.execv(selected_python, [selected_python, __file__, *sys.argv[1:]])
+
 from scripts import pr_task_github as forge
 from scripts import pr_task_init as setup
 from scripts import pr_task_lifecycle as lifecycle

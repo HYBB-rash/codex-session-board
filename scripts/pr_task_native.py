@@ -67,6 +67,7 @@ def delivery(state, event):
     save(output, receipt)
     try:
         with transport.connect_endpoint(state["route"]) as rpc:
+            rpc.deadline = time.monotonic() + 90
             if receipt["state"] in {"pending", "waiting_idle", "rejected"}:
                 _, turn, users = latest(rpc, state["route"])
                 owned(state, turn, users)

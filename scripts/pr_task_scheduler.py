@@ -154,14 +154,8 @@ def finalize(state):
         raise ValueError("PR reopened during cleanup; inspection is required")
     if not native.archive(state):
         return
-    remove(state)
+    if state["scheduler"]:
+        remove(state)
     state.update(phase="complete", cleanup_pending=False, completed_at=now())
     persist(state)
     record(state, "completed", outcome=state["outcome"])
-
-
-def reconcile_cleanup(state):
-    if (state["phase"] == "finalizing" and state.get("cleanup_pending")
-            and not finalizer_running(state) and not Path(state["scheduler"]["plist"]).exists()
-            and not present(state)):
-        finalize(state)
