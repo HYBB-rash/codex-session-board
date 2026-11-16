@@ -320,7 +320,7 @@ fn native_remote_new_rechecks_project_registration_and_never_replays_old_creatio
     assert!(app.request("/api/new", Some(&native_body())).is_ok());
     std::fs::write(&app.config.sidebar_state_file, r#"{"remote-projects":[]}"#)?;
     assert!(app.request("/api/new", Some(&native_body())).is_err());
-    assert_eq!(std::fs::read_to_string(directory.path().join("opens"))?.lines().count(), 1);
+    assert_eq!(native_navigation_receipt(directory.path())?.lines().count(), 1);
     assert!(app.store.pending_drafts()?.is_empty());
     Ok(())
 }
@@ -348,6 +348,6 @@ fn native_navigation_rechecks_removed_hosts_and_encodes_directory_without_extra_
     registry["codex-managed-remote-connections"] = json!([]);
     std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&registry)?)?;
     assert!(app.request("/api/new", Some(&native_body())).is_err());
-    assert_eq!(std::fs::read_to_string(directory.path().join("opens"))?.lines().count(), 1);
+    assert_eq!(native_navigation_receipt(directory.path())?.lines().count(), 1);
     Ok(())
 }
