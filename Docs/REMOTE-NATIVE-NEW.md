@@ -38,8 +38,9 @@ v2 包含两条不同的入口，不能交换它们的项目 ID：
 roots 改变或客户端已知的 pending deletion 会拒绝发送，保留草稿并要求明确重开。
 pending deletion 读取原生同步全局状态中该 host 的 canonical ID；目标另一客户端尚未暴露
 给本客户端的暂存删除意图不能靠 project/read 观察。它不是跨客户端原子锁。
-发送前检查与发送之间仍存在并发窗口；首轮接受后读回原 UUID 和 projectId，
-归属丢失时报告这个 UUID，不自动换 ID 重建。
+发送前检查与发送之间仍存在并发窗口。首轮接受后后台可能尚未发布持久化归属，
+因此只对同一 UUID 的空 projectId 做有限读回等待；出现其他项目则立即拒绝，
+等待结束仍为空时报告“尚未确认”和原 UUID，不自动换 ID 重建。
 
 ## 准备客户端候选
 
@@ -92,7 +93,8 @@ python3 -B scripts/native_new/verify_sources.py /path/to/source/app.asar \
 ```
 
 该选项为新进程创建独立 HOME、CODEX_HOME 和工作目录，模型只连接本地 SSE 替身。
-它执行生成候选的 `_D/xz.prepareConversation/prepareStart`，让两个同目录项目分别完成首轮，
+它执行生成候选的 `_D/xz.prepareConversation/prepareStart` 和目标运行时，
+在 turn/start 刚接受时立即调用归属核对，再让两个同目录项目分别完成首轮，
 再核对 thread/read 与 SQLite 的 project_id、cwd，最后清理进程和临时目录。
 通用配置读取由替身提供；本探针验证目标参数和原生落库，不证明登录和 GUI 可用。
 用 Fedora 导出源在 Mac 上执行时，证明的是 Fedora 客户端函数与该 Mac 后台的组合，

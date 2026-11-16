@@ -13,13 +13,13 @@ const { candidate } = JSON.parse(readFileSync(0, "utf8"));
 assert(process.argv[2] && path.isAbsolute(process.argv[2]), "Pass an absolute native backend executable");
 const main = Object.keys(candidate).find(name => name.includes("/early-bootstrap-226-"));
 assert(main, "The generated candidate must contain the native creation module");
-function extract(marker, context) {
-  const start = candidate[main].indexOf(marker);
+function extract(marker, context, source = candidate[main]) {
+  const start = source.indexOf(marker);
   assert(start >= 0, marker);
   let end = start;
-  while ((end = candidate[main].indexOf("}", end + 1)) >= 0) {
+  while ((end = source.indexOf("}", end + 1)) >= 0) {
     let script;
-    try { script = new vm.Script(`(${candidate[main].slice(start, end + 1)})`); } catch { continue; }
+    try { script = new vm.Script(`(${source.slice(start, end + 1)})`); } catch { continue; }
     return script.runInNewContext(context);
   }
   throw Error(`Incomplete native boundary ${marker}`);
@@ -32,6 +32,9 @@ const Creation = extract("class xz{", {
 const normalize = extract("async function _D(", {
   nf: { iw: "cloud" }, SV: { zO: () => null },
 });
+const runtimeSource = Object.values(candidate).find(source => source.includes("function targetDraftRuntime("));
+assert(runtimeSource, "The generated candidate must contain its target runtime");
+const targetRuntimeFactory = extract("function targetDraftRuntime(", { setTimeout }, runtimeSource);
 const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "native-target-start-")));
 const home = path.join(root, "home");
 await mkdir(home);
@@ -67,6 +70,14 @@ const call = (method, params) => new Promise((resolve, reject) => {
   pending.set(id, { resolve, reject, timer });
   backend.stdin.write(JSON.stringify({ id, method, params }) + "\n");
 });
+const runtime = targetRuntimeFactory({
+  createId: () => "client-new-thread:fixture", scopeId: scope => scope.id,
+  existing: () => undefined, readContext: () => ({ accountId: "account", userId: "user" }),
+  request: (scope, hostId, method, params) => {
+    assert.equal(hostId, "remote:isolated");
+    return call(method, params);
+  },
+});
 async function completed(threadId) {
   const deadline = Date.now() + 15000;
   while (!events.some(event => event.method === "turn/completed" && event.params?.threadId === threadId)) {
@@ -75,7 +86,10 @@ async function completed(threadId) {
   }
 }
 async function create(project, cwd) {
-  const target = { hostId: "remote:isolated", projectId: project.id, operationId: randomUUID() };
+  const target = runtime.register({
+    hostId: "remote:isolated", projectId: project.id, operationId: randomUUID(),
+  });
+  await runtime.resolve({}, target);
   const normalized = await normalize({
     getHostId: () => target.hostId, readDefaultPersonality: async () => null,
   }, { readDefaultFeatureOverrides: () => null }, {
@@ -97,8 +111,11 @@ async function create(project, cwd) {
   assert.equal(start.request.projectId, project.id);
   assert.equal(start.request.cwd, cwd);
   const { thread } = await call(start.method, JSON.parse(JSON.stringify(start.request)));
+  runtime.accepted(target, thread.id);
+  await runtime.beforeFirstTurn({}, target);
   await call("turn/start", { threadId: thread.id, cwd,
     input: [{ type: "text", text: "Return the local fixture marker" }] });
+  await runtime.verify({}, target, thread.id);
   await completed(thread.id);
   const current = (await call("thread/read", { threadId: thread.id, includeTurns: false })).thread;
   assert.equal(current.projectId, project.id);
@@ -156,7 +173,7 @@ try {
   assert(results.every(result => rows.some(row => row[0] === result.threadId &&
     row[1] === result.projectId && row[2] === result.cwd)));
   console.log(JSON.stringify({ passed: true, localModelRequests: requests.length,
-    externalModelRequests: 0, sqliteMatches: true, projects: results,
+    externalModelRequests: 0, sqliteMatches: true, acceptedReadbackVerified: true, projects: results,
     candidateModule: createHash("sha256").update(candidate[main]).digest("hex") }));
 } finally {
   for (const waiter of pending.values()) { clearTimeout(waiter.timer); waiter.reject(Error("Fixture closed")); }

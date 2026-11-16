@@ -19,6 +19,7 @@ const projects = new Map(["canonical-a", "canonical-b"].map(id => [
   id, { id, roots: [{ path: "/same" }, { path: "/second" }] },
 ]));
 const threads = new Map();
+const unpublished = new Map();
 const requests = [];
 const account = { accountId: "account", userId: "user" };
 const runtime = factory({
@@ -26,13 +27,19 @@ const runtime = factory({
   scopeId: scope => scope.id,
   existing: () => undefined,
   readContext: () => account,
+  wait: async () => {},
   request: async (scope, hostId, method, params) => {
     requests.push({ hostId, method, params });
     if (method === "project/read") {
       if (!projects.has(params.projectId)) throw Error("Deleted");
       return { project: structuredClone(projects.get(params.projectId)) };
     }
-    return { thread: threads.get(params.threadId) };
+    const thread = threads.get(params.threadId);
+    if ((unpublished.get(params.threadId) ?? 0) > 0) {
+      unpublished.set(params.threadId, unpublished.get(params.threadId) - 1);
+      return { thread: { ...thread, projectId: null } };
+    }
+    return { thread };
   },
 });
 const first = runtime.register(route);
@@ -61,10 +68,22 @@ await assert.rejects(runtime.creationInputs({}, route.hostId, {
 runtime.accepted(first, "thread-a");
 threads.set("thread-a", { id: "thread-a", projectId: first.projectId });
 await runtime.beforeFirstTurn({}, first);
+unpublished.set("thread-a", 2);
 await runtime.verify({}, first, "thread-a");
+assert.equal(unpublished.get("thread-a"), 0);
 await assert.rejects(runtime.resolve({}, first), /already created thread thread-a/);
 threads.get("thread-a").projectId = null;
-await assert.rejects(runtime.verify({}, first, "thread-a"), /thread-a.*lost/);
+const beforeUnconfirmed = requests.length;
+await assert.rejects(runtime.verify({}, first, "thread-a"), /thread-a.*unconfirmed/);
+assert.equal(requests.length - beforeUnconfirmed, 20);
+threads.get("thread-a").projectId = "different-project";
+const beforeMismatch = requests.length;
+await assert.rejects(runtime.verify({}, first, "thread-a"), /thread-a.*different target/);
+assert.equal(requests.length - beforeMismatch, 1);
+threads.get("thread-a").id = "another-thread";
+await assert.rejects(runtime.verify({}, first, "thread-a"), /thread-a.*readback ID changed/);
+await assert.rejects(runtime.verify({}, first, "another-thread"), /bound to thread thread-a/);
+assert.equal(first.conversationId, "thread-a");
 projects.get(second.projectId).roots.reverse();
 await assert.rejects(runtime.resolve({}, second), /roots changed/);
 projects.get(second.projectId).roots.reverse();

@@ -1,4 +1,5 @@
-function targetDraftRuntime({ createId, scopeId, request, existing, readContext }) {
+function targetDraftRuntime({ createId, scopeId, request, existing, readContext,
+  wait = delay => new Promise(resolve => setTimeout(resolve, delay)) }) {
   const operations = new Map();
   const drafts = new Map();
   const required = (value, name) => {
@@ -125,11 +126,25 @@ function targetDraftRuntime({ createId, scopeId, request, existing, readContext 
   };
   const verify = async (scope, descriptor, conversationId) => {
     const target = targetFor(descriptor);
-    const { thread } = await request(scope, target.hostId, "thread/read", {
-      threadId: conversationId, includeTurns: false,
-    });
-    if (thread?.id !== conversationId || thread.projectId !== target.projectId)
-      throw Error(`Created thread ${conversationId} lost its target project; open that thread before retrying`);
+    if (target.conversationId !== conversationId)
+      throw Error(`The target operation is bound to thread ${target.conversationId}`);
+    for (let attempt = 0; attempt < 20; attempt++) {
+      let thread;
+      try {
+        ({ thread } = await request(scope, target.hostId, "thread/read", {
+          threadId: conversationId, includeTurns: false,
+        }));
+      } catch (error) {
+        throw Error(`Cannot confirm created thread ${conversationId}: ${error}`);
+      }
+      if (thread?.id !== conversationId)
+        throw Error(`Cannot confirm created thread ${conversationId}: readback ID changed`);
+      if (thread.projectId === target.projectId) return;
+      if (thread.projectId != null)
+        throw Error(`Created thread ${conversationId} has a different target project; open that thread before retrying`);
+      if (attempt < 19) await wait(100);
+    }
+    throw Error(`Created thread ${conversationId} target project remains unconfirmed; open that thread before retrying`);
   };
   return { register, get, resolve, creationInputs, accepted, beforeFirstTurn, verify };
 }
