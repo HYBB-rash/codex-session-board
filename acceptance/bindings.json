@@ -2158,7 +2158,8 @@
       "acceptance.test_checker_cache.CheckerCacheTests.test_transient_source_change_during_copy_cannot_publish_a_snapshot",
       "acceptance.test_checker_cache.CheckerCacheTests.test_snapshot_changes_during_compilation_cannot_publish_an_entry",
       "acceptance.test_checker_cache.CheckerCacheTests.test_non_object_cache_records_return_a_check_error",
-      "acceptance.test_main_release_feedback.MainReleaseFeedbackTests.test_closed_unacknowledged_incident_still_blocks_and_gate_gap_needs_a_regression"
+      "acceptance.test_main_release_feedback.MainReleaseFeedbackTests.test_closed_unacknowledged_incident_still_blocks_and_gate_gap_needs_a_regression",
+      "acceptance.test_promotion.PromotionTests.test_main_lease_rejects_an_advanced_base_and_never_rewinds_history"
     ]
   }
 }

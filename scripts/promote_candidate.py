@@ -111,6 +111,12 @@ def collect_platform(repository, run, label, source, base, directory, reference=
     return label, record, None
 
 
+def advance(candidate, base, reference):
+    subprocess.run(["git", "merge-base", "--is-ancestor", base, candidate], cwd=ROOT, check=True)
+    subprocess.run(["git", "push", f"--force-with-lease={reference}:{base}",
+                    "origin", f"{candidate}:{reference}"], cwd=ROOT, check=True)
+
+
 def promote(candidate, base, run_id, repository, output, reference="refs/heads/main", *, pr_gates=None):
     output = output.resolve()
     if output.is_relative_to(ROOT) or output.exists():
@@ -151,9 +157,7 @@ def promote(candidate, base, run_id, repository, output, reference="refs/heads/m
             from scripts.main_release_evidence import require_version
             require_version(repository, base)
             require_recovery(repository, base)
-        lease = [] if reference == "refs/heads/main" else [f"--force-with-lease={reference}:{base}"]
-        subprocess.run(["git", "push", *lease, "origin", f"{candidate}:{reference}"],
-                       cwd=ROOT, check=True)
+        advance(candidate, base, reference)
     require_remote_target(reference, (candidate,), git_command=git)
     receipt = {
         "schema_version": 1, "source": source, "base": base, "reference": reference,
@@ -202,7 +206,7 @@ def promote_context(candidate, base, run_id, repository, output):
         raise ValueError("Context evidence differs from the unchanged implementation and exact source")
     remote = require_remote_target("refs/heads/main", (base, candidate), git_command=git)
     if remote == base:
-        subprocess.run(["git", "push", "origin", f"{candidate}:refs/heads/main"], cwd=ROOT, check=True)
+        advance(candidate, base, "refs/heads/main")
     require_remote_target("refs/heads/main", (candidate,), git_command=git)
     receipt = {"schema_version": 1, "scope": "context", "source": source, "base": base,
                "reference": "refs/heads/main", "repository": repository, "run": run_id,

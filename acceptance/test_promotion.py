@@ -1,6 +1,7 @@
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -10,6 +11,38 @@ from scripts import validation_report
 
 
 class PromotionTests(unittest.TestCase):
+    def test_main_lease_rejects_an_advanced_base_and_never_rewinds_history(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source, remote = root / "source", root / "remote.git"
+            subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+            subprocess.run(["git", "init", "-qb", "main", str(source)], check=True)
+            def command(*arguments):
+                return subprocess.check_output(["git", *arguments], cwd=source, text=True,
+                                               stderr=subprocess.STDOUT).strip()
+            for name, value in (("user.name", "Lease fixture"), ("user.email", "fixture@example.invalid"),
+                                ("commit.gpgsign", "false"), ("core.hooksPath", "/dev/null")):
+                command("config", name, value)
+            revisions = []
+            for value in ("base", "intermediate", "candidate"):
+                (source / "README.md").write_text(value)
+                command("add", ".")
+                command("commit", "-qm", value)
+                revisions.append(command("rev-parse", "HEAD"))
+            base, intermediate, candidate = revisions
+            command("remote", "add", "origin", str(remote))
+            command("push", "origin", f"{base}:refs/heads/main")
+            command("push", "origin", f"{intermediate}:refs/heads/main")
+            with patch.object(promotion, "ROOT", source):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    promotion.advance(candidate, base, "refs/heads/main")
+                self.assertTrue(command("ls-remote", "origin", "refs/heads/main").startswith(intermediate))
+                with self.assertRaises(subprocess.CalledProcessError):
+                    promotion.advance(base, intermediate, "refs/heads/main")
+                self.assertTrue(command("ls-remote", "origin", "refs/heads/main").startswith(intermediate))
+                promotion.advance(candidate, intermediate, "refs/heads/main")
+            self.assertTrue(command("ls-remote", "origin", "refs/heads/main").startswith(candidate))
+
     def setUp(self):
         self.source = {"commit": "a" * 40, "tree": "b" * 40, "fingerprint": "c" * 64}
         self.run = {
