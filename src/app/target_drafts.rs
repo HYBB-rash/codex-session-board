@@ -41,7 +41,6 @@ impl App {
         ensure!(!self.config.legacy_mode, "六状态兼容模式不支持目标项目新建");
         let request = TargetRequest::parse(body)?;
         let operation = request.operation;
-        crate::native_new::target_capability(&self.config)?;
         let operation_lock = self.thread_lock(&format!("native-target:{operation}"))?;
         let _guard = operation_lock
             .lock()
@@ -86,8 +85,10 @@ impl App {
 
     fn open_target_draft(&self, request: &TargetRequest<'_>, target: &Value) -> Result<Value> {
         let operation = request.operation;
-        let canonical = target["projectId"].as_str().context("规范项目缺少 ID")?;
-        let url = crate::native_new::target_url(&self.config, &request.host, canonical, operation)?;
+        let paths: Vec<_> = target["roots"].as_array().context("项目缺少目录")?
+            .iter().map(|root| root["path"].clone()).collect();
+        let project = json!({"hostId":request.host,"paths":paths});
+        let url = crate::native_new::remote_url(&self.config, &project)?;
         match open_client_url(url, &self.config) {
             Ok(url) => {
                 self.store.native_draft_opened(operation)?;
