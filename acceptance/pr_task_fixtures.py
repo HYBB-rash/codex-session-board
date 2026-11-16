@@ -14,7 +14,7 @@ BASE = "b" * 40
 def task(test):
     temporary = tempfile.TemporaryDirectory()
     test.addCleanup(temporary.cleanup)
-    directory = Path(temporary.name)
+    directory = Path(temporary.name).resolve()
     state = {
         "schema_version": 1, "id": str(uuid.uuid4()), "directory": str(directory),
         "project": str(directory), "repository": "owner/repo", "branch": "codex/task",

@@ -81,10 +81,10 @@ def rebind(state, socket_path, accept_input=False):
                 native.transport.observe(rpc, route, receipt)
                 if not receipt.get("turn_id"):
                     raise ValueError("Unknown delivery is not proven on the new backend; do not resend")
-            audit = path.with_name(f"{path.stem}-before-rebind-{uuid.uuid4().hex}.json")
-            save(audit, json.loads(path.read_text()))
+            replacement = path.with_name(f"delivery-{event['id']}-{uuid.uuid4().hex}.json")
             receipt["route_sha256"] = digest(route)
-            save(path, receipt)
+            save(replacement, receipt)
+            event["delivery_file"] = replacement.name
             event["delivery"] = receipt
     state.update(route=route, session_anchor=anchor, phase="watching" if state["pr"] else "developing",
                  next_poll_at=0)

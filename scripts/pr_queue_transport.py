@@ -35,11 +35,14 @@ class Rpc:
         self.identifier = 0
 
     def request(self, method, params):
+        deadline = min(time.monotonic() + 30, getattr(self, "deadline", float("inf")))
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"Request budget expired before {method}")
+        self.connection.settimeout(max(0.001, deadline - time.monotonic()))
         self.identifier += 1
         self.connection.send(json.dumps({
             "id": self.identifier, "method": method, "params": params,
         }))
-        deadline = min(time.monotonic() + 30, getattr(self, "deadline", float("inf")))
         while time.monotonic() < deadline:
             self.connection.settimeout(max(0.001, deadline - time.monotonic()))
             reply = json.loads(self.connection.recv())

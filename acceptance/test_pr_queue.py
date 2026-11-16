@@ -181,6 +181,35 @@ class PRQueueTests(unittest.TestCase):
         self.assertNotIn("feedback", item)
         self.assertEqual(verify.call_args.args[1]["review"], "new-review")
 
+    def test_github_feedback_mode_leaves_comment_without_native_dispatch(self):
+        self.state["feedback_mode"] = "github"
+        item = self.item(1, self.base)
+        with mock.patch.object(pr_queue, "comment", return_value="comment-url") as comment, mock.patch.object(
+                pr_queue.subprocess, "run") as transport:
+            pr_queue.reject(self.state, item, self.queue, "conflict", "author fixes it")
+            pr_queue.notify(self.state, item, self.queue)
+        comment.assert_called_once()
+        transport.assert_not_called()
+        self.assertEqual(item["feedback"]["notification"], "github_comment_posted")
+        self.assertNotIn("receipt", item["feedback"])
+
+    def test_github_requeue_needs_fresh_evidence_but_no_native_ack(self):
+        self.state["feedback_mode"] = "github"
+        item = self.item(1, self.base)
+        item.update(status="needs-fix", feedback={"notification": "github_comment_posted"})
+        self.state["items"] = [item]
+        source = self.branch("github-repair", "other.txt", "repair\n")
+        incoming = {"number": 1, "head": source, "review": "new-review", "validation": "new-validation"}
+        with mock.patch.object(pr_queue, "notify"), mock.patch.object(
+                pr_queue, "verify_entry", side_effect=ValueError("stale evidence")):
+            with self.assertRaisesRegex(ValueError, "stale evidence"):
+                pr_queue.requeue(self.state, incoming, self.queue)
+        self.assertEqual(item["status"], "needs-fix")
+        with mock.patch.object(pr_queue, "notify"), mock.patch.object(pr_queue, "verify_entry"):
+            pr_queue.requeue(self.state, incoming, self.queue)
+        self.assertEqual(item["head"], source)
+        self.assertEqual(item["status"], "submitted")
+
     def evidence(self):
         (self.project / "README.md").write_text("updated\n")
         source = self.commit()

@@ -50,7 +50,7 @@ def request_for(state, event):
 
 
 def receipt_path(state, event):
-    return Path(state["directory"]) / f"delivery-{event['id']}.json"
+    return Path(state["directory"]) / event.get("delivery_file", f"delivery-{event['id']}.json")
 
 
 def delivery(state, event):

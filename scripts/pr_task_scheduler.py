@@ -50,7 +50,7 @@ def install(state):
     path = launch_agents / f"{label}.plist"
     definition = {
         "Label": label,
-        "ProgramArguments": [str(Path(sys.executable).resolve()), str(ROOT / "scripts/pr_task.py"),
+        "ProgramArguments": [os.path.abspath(sys.executable), str(ROOT / "scripts/pr_task.py"),
                              "tick", "--state", state["directory"]],
         "WorkingDirectory": str(ROOT), "StartInterval": state["interval"], "RunAtLoad": True,
         "AbandonProcessGroup": True,
@@ -152,6 +152,11 @@ def finalize(state):
         state["phase"] = "needs-human"
         persist(state)
         raise ValueError("PR reopened during cleanup; inspection is required")
+    state["outcome"] = {
+        "result": "merged" if snapshot["state"] == "merged" else "closed_without_merge",
+        "head": snapshot["head"], "merge_commit": snapshot["merge_commit"], "observed_at": now(),
+    }
+    persist(state)
     if not native.archive(state):
         return
     if state["scheduler"]:

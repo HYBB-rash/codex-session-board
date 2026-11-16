@@ -62,6 +62,8 @@ def initialize(manifest, directory):
         raise ValueError("Use a new queue directory outside source and checker")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", state["repository"]):
         raise ValueError("Expected an explicit owner/repository")
+    if state.get("feedback_mode", "native") not in {"native", "github"}:
+        raise ValueError("Feedback mode must be native or github")
     base = git(project, "rev-parse", f"{state['base']}^{{commit}}")
     clean(project, base)
     known = set()
@@ -165,6 +167,11 @@ def notify(state, item, directory):
             feedback["comment"] = comment(state, item, feedback)
         except Exception as error:
             feedback.setdefault("errors", []).append({"at": now(), "comment": str(error)})
+    if state.get("feedback_mode") == "github":
+        feedback["notification"] = "github_comment_posted" if feedback.get("comment") else "pending"
+        save(folder / "feedback.json", feedback)
+        save(directory / "queue.json", state)
+        return
     try:
         request = {"id": feedback["id"], "body": feedback["body"]}
         save(folder / "request.json", request)
@@ -308,7 +315,8 @@ def requeue(state, incoming, directory):
     subprocess.run(["git", "merge-base", "--is-ancestor", item["head"], source],
                    cwd=state["project"], check=True)
     notify(state, item, directory)
-    if item["feedback"].get("notification") != "acknowledged":
+    expected_notification = "github_comment_posted" if state.get("feedback_mode") == "github" else "acknowledged"
+    if item["feedback"].get("notification") != expected_notification:
         raise ValueError("The original author has not acknowledged this repair request")
     replacement = {**item, **{key: incoming[key] for key in ("head", "review", "validation")}}
     replacement["head"] = source
