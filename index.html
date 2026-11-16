@@ -1158,15 +1158,15 @@ byId("edit-form").onsubmit = async event => {
   }
 };
 byId("cancel").onclick = () => byId("editor").close();
-async function createSession(projectId) {
+async function createSession(projectId, operationId = null) {
   const button = byId("new-session");
   if (creating || dragging || saving || byId("editor").open) return;
   const project = data.projectCatalog.items.find(item => item.id === projectId);
   if (project && !canCreateProject(project)) {announce("当前项目暂不可新建，请核对主机连接和项目状态。",true);return;}
-  const remote = project?.remote || draftRequests.has(projectId);
   const body = projectId === null ? {} : {projectId};
-  const target = ["targetServer","targetLegacy"].includes(project?.origin);
-  if (target) body.operationId = nativeDraftOperation(projectId);
+  const target = projectId?.startsWith("target:") || ["targetServer","targetLegacy"].includes(project?.origin);
+  const remote = target || project?.remote || draftRequests.has(projectId);
+  if (target) body.operationId = operationId || nativeDraftOperation(projectId);
   else if (remote && draftRequests.has(projectId)) body.requestId = draftRequests.get(projectId);
   creating = true;button.disabled = true;++requestSerial;render();
   try {
@@ -1272,7 +1272,7 @@ byId("draft-later").onclick = () => byId("draft-recovery").close();
 byId("draft-recovery").addEventListener("close",() => {updateFilterLock();load();});
 byId("draft-retry").onclick = () => {
   byId("draft-recovery").close();
-  createSession(recoveringDraft.projectId);
+  createSession(recoveringDraft.projectId, recoveringDraft.operationId);
 };
 byId("draft-restart").onclick = async () => {
   if (saving || creating) return;

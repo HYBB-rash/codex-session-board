@@ -9,7 +9,8 @@ const project = "target:" + JSON.stringify(["remote:a", "targetServer", "canonic
 const identifier = "remote:" + JSON.stringify(["codex", "remote:a", "actual-uuid"]);
 const fixture = {
   states: { unknown: "待判断", review: "待审阅", to_archive: "待归档" },
-  health: { remoteRegistry: [{ hostId: "remote:a", hostLabel: "Mac", enabled: true }] },
+  health: { remoteRegistry: [{ hostId: "remote:a", hostLabel: "Mac", enabled: true }],
+    remoteConnections: [{ hostId: "remote:a", connected: true, catalog: { cached: false } }] },
   projectCatalog: { loaded: true, items: [
     { id: project, nativeId: "canonical", hostId: "remote:a", hostLabel: "Mac",
       origin: "targetServer", remote: true, label: "项目", paths: ["/remote/project"], canCreate: true },
@@ -22,7 +23,7 @@ const fixture = {
     archived: false, projectId: null, version: 0, inputVersion: 1 }],
 };
 const writes = [];
-let failAssignment = true, browser, cleanup, cases = 0;
+let failAssignment = true, failNavigation = false, browser, cleanup, cases = 0;
 let releaseAssignment;
 const assignmentReady = new Promise(resolve => { releaseAssignment = resolve; });
 let releaseRefresh;
@@ -33,6 +34,9 @@ const server = http.createServer(async (request, response) => {
   for await (const chunk of request) body += chunk;
   if (request.method === "POST") {
     writes.push({ path: request.url, body: JSON.parse(body) });
+    if (request.url === "/api/new" && failNavigation)
+      return response.writeHead(200, { "Content-Type": "application/json" })
+        .end(JSON.stringify({ pending: true, error: "输入页尚未确认" }));
     if (request.url === "/api/project/assign") await assignmentReady;
     if (request.url === "/api/project/assign" && failAssignment)
       return response.writeHead(409, { "Content-Type": "application/json" })
@@ -55,7 +59,11 @@ try {
   check(await evaluate('canCreateProject(data.projectCatalog.items[0])'), true);
   await evaluate('createSession(data.projectCatalog.items[0].id)');
   await wait("!creating");
-  check(writes, [{ path: "/api/new", body: { projectId: project } }]);
+  check(writes.length, 1);
+  check(writes[0].path, "/api/new");
+  check(writes[0].body.projectId, project);
+  check(Object.keys(writes[0].body).sort(), ["operationId", "projectId"]);
+  check(/^[0-9a-f-]{36}$/.test(writes[0].body.operationId), true);
   check(await evaluate('byId("feedback").textContent.includes("发送第一句话后才会创建会话")'), true);
   await clickNode(page, "[data-action=assign-project]");
   check(await evaluate('byId("project-assignment").open'), true);
@@ -88,6 +96,20 @@ try {
   check(writes.filter(write => write.path === "/api/new").length, 1);
   check(await evaluate('data.sessions.length'), 1);
   check(await evaluate('document.querySelector("[data-action=assign-project]") === null'), true);
+  const legacy = "target:" + JSON.stringify(["remote:a", "targetLegacy", "old"]);
+  fixture.projectCatalog.items.push({ ...fixture.projectCatalog.items[0], id: legacy, origin: "targetLegacy" });
+  await evaluate("load()");
+  failNavigation = true;
+  await evaluate(`createSession(${JSON.stringify(legacy)})`);
+  check(await evaluate('byId("draft-recovery").open'), true);
+  const failedNavigation = writes.at(-1);
+  fixture.projectCatalog.items = fixture.projectCatalog.items.filter(project => project.id !== legacy);
+  await evaluate("load()");
+  failNavigation = false;
+  await evaluate('byId("draft-retry").click()');
+  await wait("!creating");
+  check(writes.at(-1), failedNavigation);
+  check(await evaluate('byId("draft-recovery").open'), false);
 } finally {
   releaseAssignment();
   releaseRefresh();

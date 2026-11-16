@@ -14,19 +14,9 @@ struct NativeFixture {
 fn client(config: &mut Config) -> Result<()> {
     let directory = config.data_dir.parent().context("fixture directory")?;
     let executable = directory.join("client");
-    let archive = directory.join("resources/app.asar");
-    std::fs::create_dir_all(archive.parent().context("archive directory")?)?;
-    std::fs::write(&archive, b"isolated candidate")?;
     std::fs::write(&executable, "#!/bin/sh\nexit 0\n")?;
     std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))?;
     config.open_command = vec![executable.to_string_lossy().into_owned()];
-    let capability = directory.join("capability.json");
-    config.native_new_capability = Some(capability.clone());
-    std::fs::write(capability, serde_json::to_vec(&json!({
-        "protocol":"codex-remote-draft-v2","archive":archive,
-        "sha256":format!("{:x}",Sha256::digest(b"isolated candidate")),
-        "openCommand":config.open_command
-    }))?)?;
     Ok(())
 }
 
@@ -80,9 +70,18 @@ fn bind_catalog(remote: &App) -> Result<()> {
     source["hostId"] = json!("remote:test");
     source["accountFingerprint"] = json!(format!("{:x}", Sha256::digest(br#"["user","account"]"#)));
     remote.catalog.lock().unwrap().snapshot = Some(crate::catalog::Snapshot {
-        source, captured_at: now(), projects: Vec::new(), active: Vec::new(),
-        archived: Vec::new(), coverage: json!({}), issues: Vec::new(),
+        source, captured_at: now(),
+        projects: [("targetServer",CANONICAL),("targetLegacy","old")].into_iter()
+            .map(|(origin, identifier)| json!({
+                "id":format!("target:{}",json!(["remote:test",origin,identifier])),
+                "hostId":"remote:test","origin":origin,"nativeId":identifier,"paths":["/project"]
+            })).collect(),
+        active: Vec::new(), archived: Vec::new(),
+        coverage: json!({"projects":"complete","ordinaryActive":"complete",
+            "ordinaryArchived":"complete","publishedReferences":"complete",
+            "membership":"complete","legacy":"complete"}), issues: Vec::new(),
     });
+    remote.catalog.lock().unwrap().live = true;
     Ok(())
 }
 
@@ -96,10 +95,13 @@ fn canonical_target_request_uses_verified_rpc_and_only_opens_native_input() -> R
     assert_eq!(result["target"]["cwd"], "/project");
     let url = url::Url::parse(result["url"].as_str().context("url")?)?;
     let query: HashMap<_,_> = url.query_pairs().into_owned().collect();
-    assert_eq!(query.len(), 3);
-    assert_eq!(query["hostId"], "remote:test");
-    assert_eq!(query["projectId"], CANONICAL);
-    assert_eq!(query["operationId"], operation);
+    assert_eq!(url.host_str(), Some("settings"));
+    assert_eq!(url.path(), "/connections/ssh/add");
+    assert_eq!(query.len(), 4);
+    assert_eq!(query["name"], "example");
+    assert_eq!(query["projectPath"], "/project");
+    assert_eq!(query["enabled"], "true");
+    assert_eq!(query["activate"], "true");
     assert!(fixture.imports().is_empty());
     assert!(!fixture.peer.events().contains("thread/start"));
     assert!(!fixture.peer.events().contains("turn/start"));
@@ -108,8 +110,27 @@ fn canonical_target_request_uses_verified_rpc_and_only_opens_native_input() -> R
 }
 
 #[test]
+fn target_directory_creation_rechecks_live_catalog_and_never_starts_a_thread() -> Result<()> {
+    let fixture = NativeFixture::new()?;
+    let operation = uuid::Uuid::new_v4().to_string();
+    let remote = fixture.root.remote_app("remote:test")?;
+    remote.catalog.lock().unwrap().live = false;
+    assert!(fixture.request("targetServer", &operation).is_err());
+    remote.catalog.lock().unwrap().live = true;
+    fixture.request("targetServer", &operation)?;
+    remote.catalog.lock().unwrap().snapshot.as_mut().unwrap().projects[0]["pendingDeletion"] = json!(true);
+    assert!(fixture.request("targetServer", &operation).is_err());
+    assert!(fixture.imports().is_empty());
+    assert!(!fixture.peer.events().contains("thread/start"));
+    assert!(!fixture.peer.events().contains("turn/start"));
+    Ok(())
+}
+
+#[test]
 fn lost_navigation_retry_reuses_prepared_target_without_reimport_or_thread_start() -> Result<()> {
     let fixture = NativeFixture::new()?;
+    let remote = fixture.root.remote_app("remote:test")?;
+    let canonical = remote.catalog.lock().unwrap().snapshot.as_mut().unwrap().projects.remove(0);
     let executable = &fixture.root.config.open_command[0];
     std::fs::write(executable, "#!/bin/sh\nexit 1\n")?;
     let operation = uuid::Uuid::new_v4().to_string();
@@ -119,6 +140,8 @@ fn lost_navigation_retry_reuses_prepared_target_without_reimport_or_thread_start
     assert_eq!(payload["idempotencyKey"], "old");
     assert!(payload.get("threads").is_none());
     std::fs::write(executable, "#!/bin/sh\nexit 0\n")?;
+    assert_eq!(fixture.request("targetLegacy", &operation)?["ok"], true);
+    remote.catalog.lock().unwrap().snapshot.as_mut().unwrap().projects = vec![canonical];
     let result = fixture.request("targetLegacy", &operation)?;
     assert_eq!(result["ok"], true);
     assert_eq!(result["target"]["projectId"], CANONICAL);

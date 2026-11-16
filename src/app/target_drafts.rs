@@ -21,6 +21,7 @@ impl<'a> TargetRequest<'a> {
             body["hostId"].is_null() || body["hostId"] == host,
             "新建目标主机不一致"
         );
+        ensure!(body["requestId"].is_null(), "目录项目没有旧版新建恢复请求");
         let operation = body["operationId"].as_str().context("缺少新建操作 ID")?;
         ensure!(
             uuid::Uuid::parse_str(operation)?.to_string() == operation,
@@ -46,6 +47,8 @@ impl App {
             .lock()
             .map_err(|_| anyhow::anyhow!("新建操作锁已损坏"))?;
         let record = self.store.native_draft_begin(request.key, operation)?;
+        let selected = self.prepared_project(&request, &record)?;
+        crate::native_new::remote_url(&self.config, &selected)?;
         let remote = self.target_draft_host(&request.host)?;
         let _active = remote.operation()?;
         let mut reader = remote.connection(
@@ -65,8 +68,25 @@ impl App {
             &request,
             remote.config.max_pages,
         )?;
+        ensure!(target["roots"].as_array().is_some_and(|roots| roots.len() == 1)
+            && target["cwd"] == crate::native_new::directory(&selected)?,
+            "项目目录已改变，请刷新后重新选择");
         self.store.native_draft_prepared(operation, &target)?;
         self.open_target_draft(&request, &target)
+    }
+
+    fn prepared_project(&self, request: &TargetRequest<'_>, record: &Value) -> Result<Value> {
+        let canonical = record["target"]["projectId"].as_str()
+            .filter(|_| request.origin == "targetLegacy");
+        if let Some(canonical) = canonical {
+            let key = format!("target:{}", json!([request.host,"targetServer",canonical]));
+            let remote = self.remote_app(&request.host)?;
+            let published = remote.catalog.lock().map_err(|_| anyhow::anyhow!("目录锁已损坏"))?
+                .snapshot.as_ref().is_some_and(|snapshot| snapshot.projects.iter()
+                    .any(|project| project["id"] == key));
+            if published { return self.target_project(&key); }
+        }
+        self.target_project(request.key)
     }
 
     fn target_draft_host(&self, host: &str) -> Result<Arc<App>> {
@@ -85,9 +105,7 @@ impl App {
 
     fn open_target_draft(&self, request: &TargetRequest<'_>, target: &Value) -> Result<Value> {
         let operation = request.operation;
-        let paths: Vec<_> = target["roots"].as_array().context("项目缺少目录")?
-            .iter().map(|root| root["path"].clone()).collect();
-        let project = json!({"hostId":request.host,"paths":paths});
+        let project = json!({"hostId":request.host,"paths":[target["cwd"]]});
         let url = crate::native_new::remote_url(&self.config, &project)?;
         match open_client_url(url, &self.config) {
             Ok(url) => {
