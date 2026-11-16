@@ -47,17 +47,39 @@ fn launch_archive(command: &[String]) -> Result<PathBuf> {
     Ok(parent.join("resources/app.asar"))
 }
 
-pub(crate) fn remote_url(config: &Config, project: &Value) -> Result<String> {
+fn capability(config: &Config, target: bool) -> Result<()> {
     let path = config.native_new_capability.as_ref()
         .context("当前 Codex 客户端尚未配置远程原生新建入口，请更新客户端")?;
     let capability: Capability = serde_json::from_reader(std::fs::File::open(path)?)
         .context("无法核对 Codex 远程原生新建能力")?;
-    ensure!(capability.protocol == "codex-remote-draft-v1"
+    ensure!((capability.protocol == "codex-remote-draft-v2"
+        || (!target && capability.protocol == "codex-remote-draft-v1"))
         && capability.open_command == config.open_command
         && capability.archive.is_absolute()
         && launch_archive(&config.open_command)?.canonicalize()? == capability.archive.canonicalize()?
         && digest(&capability.archive)? == capability.sha256,
         "Codex 原生新建入口与当前客户端不匹配，请重新配置客户端");
+    Ok(())
+}
+
+pub(crate) fn target_url(config: &Config, host: &str, project: &str, operation: &str) -> Result<String> {
+    capability(config, true)?;
+    target_route(host, project, operation)
+}
+
+fn target_route(host: &str, project: &str, operation: &str) -> Result<String> {
+    ensure!(!host.trim().is_empty() && host != "local", "目标新建需要远程主机");
+    for identifier in [project, operation] {
+        ensure!(uuid::Uuid::parse_str(identifier)?.to_string() == identifier, "目标新建 ID 无效");
+    }
+    let mut url = url::Url::parse("codex://threads/new-target")?;
+    url.query_pairs_mut().append_pair("hostId", host).append_pair("projectId", project)
+        .append_pair("operationId", operation);
+    Ok(url.to_string())
+}
+
+pub(crate) fn remote_url(config: &Config, project: &Value) -> Result<String> {
+    capability(config, false)?;
     let host = project["hostId"].as_str().context("远程项目缺少主机")?;
     let identifier = project["nativeId"].as_str().context("远程项目缺少原生 ID")?;
     ensure!(!host.trim().is_empty() && host != "local" && !identifier.trim().is_empty(),
@@ -65,4 +87,23 @@ pub(crate) fn remote_url(config: &Config, project: &Value) -> Result<String> {
     let mut url = url::Url::parse("codex://threads/new-remote")?;
     url.query_pairs_mut().append_pair("hostId", host).append_pair("projectId", identifier);
     Ok(url.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn target_route_contains_only_bound_identifiers() -> Result<()> {
+        let identifier = "01a1d38a-3ab5-7741-a555-3aafd1ecb9a8";
+        let operation = "01a1dfd4-904e-77f1-8052-3e2b388002ec";
+        let url = url::Url::parse(&target_route("remote:ssh", identifier, operation)?)?;
+        assert_eq!(url.path(), "/new-target");
+        assert_eq!(url.query_pairs().collect::<Vec<_>>(), vec![
+            ("hostId".into(), "remote:ssh".into()), ("projectId".into(), identifier.into()),
+            ("operationId".into(), operation.into())]);
+        assert!(target_route("local", identifier, operation).is_err());
+        assert!(target_route("remote:ssh", "/path", operation).is_err());
+        Ok(())
+    }
 }
