@@ -1218,6 +1218,9 @@ function openProjectAssignment(session) {
 }
 byId("assignment-cancel").onclick = () => byId("project-assignment").close();
 byId("project-assignment").addEventListener("cancel",event => {if (saving) event.preventDefault();});
+document.addEventListener("keydown",event => {
+  if (saving && byId("project-assignment").open && event.key === "Escape") event.preventDefault();
+},true);
 byId("project-assignment").addEventListener("close",() => {updateFilterLock();load();});
 byId("assignment-form").onsubmit = async event => {
   event.preventDefault();

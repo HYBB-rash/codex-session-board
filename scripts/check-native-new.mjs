@@ -46,7 +46,7 @@ try {
   const page = await browser.page(`http://127.0.0.1:${server.address().port}/`);
   const evaluate = expression => page.evaluate(expression);
   const wait = expression => until(() => evaluate(expression), "页面状态未就绪：" + expression);
-  await wait('data.sessions.length === 1');
+  await wait('typeof data !== "undefined" && data.sessions.length === 1');
   await evaluate('byId("host-filter").value="host:remote:a";byId("host-filter").dispatchEvent(new Event("change"))');
   check(await evaluate('canCreateProject(data.projectCatalog.items[0])'), true);
   await evaluate('createSession(data.projectCatalog.items[0].id)');

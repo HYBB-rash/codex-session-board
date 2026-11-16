@@ -16,8 +16,9 @@ class NativeNewTests(unittest.TestCase):
         self.assertNotIn("codex://threads/new-remote", source)
 
     def test_native_navigation_and_assignment_do_not_create_or_send_input(self):
-        subprocess.run(["node", "scripts/check-native-new.mjs"], cwd=ROOT,
-                       check=True, capture_output=True, timeout=30)
+        result = subprocess.run(["node", "scripts/check-native-new.mjs"], cwd=ROOT,
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         subprocess.run(["node", "scripts/check-native-new.mjs"], cwd=ROOT, check=True,
                        capture_output=True, timeout=30)
         for name in ("src/native_new.rs", "src/app/project_assignment.rs"):
