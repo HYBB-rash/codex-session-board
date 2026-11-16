@@ -3,6 +3,7 @@ import copy
 import hashlib
 import json
 from pathlib import Path
+import runpy
 import struct
 import subprocess
 import tempfile
@@ -14,9 +15,12 @@ SUPPORTED_SOURCES = {
     "/.vite/build/early-bootstrap-631-9880b56d55f301d1.js":
         "bce29a615bb1ab7019b9db27acdff7018ddaae8a2c7d6ede4b6c983b01f90ebe",
     "/.vite/build/early-bootstrap-226-2f6bd181558008cf.js":
-        "97adba36c0c0e9e145ab364c82eb3433abe3675ab7c6e3ab282035b67a4d60bb",
+        ("97adba36c0c0e9e145ab364c82eb3433abe3675ab7c6e3ab282035b67a4d60bb",
+         "b6da640567d370d9fcf6105944f453cde03c1492da44ac2d87143edc9009394e"),
     "/.vite/build/early-bootstrap-631-c364c4eef36b8fb5.js":
         "3d33823eff6f760caed93a06c7bd580a2ed7631c961bf7f4454622c47205fc2c",
+    "/.vite/build/early-bootstrap-631-0e6c54222e68c8ef.js":
+        "67df539aae3e7e579da590bbefd074c70b537f977559168f273c875b21f13c55",
 }
 BINDINGS = {
     "/.vite/build/early-bootstrap-615-24f1d3fc72897a7a.js": ("eX", "es", True),
@@ -60,32 +64,49 @@ def dispatch(opener, binding):
             '{project,focusComposerNonce:Date.now()})});return}')
 
 
+def target_dispatch(opener):
+    return ('case"targetNewThread":{await(' + opener + ')({route:t,'
+            'navigate:state=>l(e,"/",state)});return}')
+
+
 def patches(tree, raw, base):
     root = Path(__file__).parent
     parser = (root / "route.js").read_text().strip()
     opener = (root / "open.js").read_text().strip()
+    target_opener = (root / "open_target.js").read_text().strip()
     result = {}
+    sources = {}
     for name, entry in files(tree):
+        if "offset" in entry:
+            start = base + int(entry["offset"])
+            sources[name] = raw[start:start + entry["size"]]
         if name not in SUPPORTED_SOURCES or "offset" not in entry:
             continue
-        start = base + int(entry["offset"])
-        data = raw[start:start + entry["size"]]
-        if hashlib.sha256(data).hexdigest() != SUPPORTED_SOURCES[name]:
+        data = sources[name]
+        accepted = SUPPORTED_SOURCES[name]
+        if hashlib.sha256(data).hexdigest() not in (
+            (accepted,) if isinstance(accepted, str) else accepted
+        ):
             raise ValueError(f"Unsupported native client source: {name}")
         source = data.decode()
         if 'case"threads":{let e=L(t);' in source:
             source = replace_once(source, 'case"threads":{let e=L(t);',
-                'case"threads":{let e=L(t);if("new-remote"===e[0])return(' + parser + ')(t);')
+                'case"threads":{let e=L(t);if(["new-remote","new-target"].includes(e[0]))return(' + parser + ')(t);')
             result[name] = source.encode()
         if 'case"newThread":{let s=' in source:
             if name not in BINDINGS:
                 raise ValueError(f"Unsupported native dispatcher: {name}")
-            branch = dispatch(opener, BINDINGS[name])
+            branch = dispatch(opener, BINDINGS[name]) + target_dispatch(target_opener)
             source = replace_once(source, 'case"newThread":{let s=',
                 branch + 'case"newThread":{let s=')
             result[name] = source.encode()
     if len(result) != 2:
         raise ValueError("Unsupported native client: missing remote draft integration points")
+    adapter = runpy.run_path(str(root / "target_patches.py"))
+    if adapter["MAIN"] not in result:
+        raise ValueError("Unsupported target draft client build")
+    result[adapter["MAIN"]] = adapter["normalize"](result[adapter["MAIN"]].decode()).encode()
+    result.update(adapter["patch_sources"](sources))
     for source in result.values():
         with tempfile.NamedTemporaryFile(suffix=".js") as script:
             script.write(source)
@@ -152,7 +173,7 @@ def prepare(source, target, command):
     with target.open("xb") as output:
         output.write(candidate)
     capability = {
-        "protocol": "codex-remote-draft-v1", "archive": str(target.resolve()),
+        "protocol": "codex-remote-draft-v2", "archive": str(target.resolve()),
         "sha256": hashlib.sha256(candidate).hexdigest(), "openCommand": command,
         "sourceSha256": hashlib.sha256(raw).hexdigest(),
         "patchedFiles": sorted(changed),

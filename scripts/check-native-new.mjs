@@ -42,3 +42,4 @@ for (const projects of [
   assert.deepEqual(events, []);
 }
 console.log(JSON.stringify({ passed: true, source: fileURLToPath(directory) }));
+await import("./check-native-target.mjs");

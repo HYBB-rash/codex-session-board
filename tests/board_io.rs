@@ -606,6 +606,7 @@ fn native_resource_and_tools_expose_global_app_only_actions() {
         json!({"type":"string"})
     );
     assert_eq!(create["inputSchema"]["required"], json!([]));
+    assert_eq!(create["inputSchema"]["properties"]["operationId"]["format"], "uuid");
     assert!(!html.contains("<iframe") && !html.contains("https://cdn"));
     assert!(!html.contains("__CSRF_TOKEN__"));
     assert!(!html.contains("manifest.webmanifest"));

@@ -6,6 +6,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,9 +27,11 @@ class ValidationCliTests(unittest.TestCase):
             source.extractall(parent, filter="data")
         root = parent / "codex-session-board"
         commands = [
-            ["init", "--quiet"], ["add", "."],
-            ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
-             "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null",
+            ["init", "--quiet"],
+            ["config", "user.name", "Fixture"],
+            ["config", "user.email", "fixture@example.invalid"],
+            ["add", "."],
+            ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null",
              "commit", "--quiet", "-m", "fixture"],
         ]
         for arguments in commands:
@@ -85,6 +88,11 @@ class ValidationCliTests(unittest.TestCase):
             self.assertEqual(rejected.returncode, 3)
             self.assertIn("摘要不匹配", rejected.stderr)
 
+    @patch.dict(os.environ, {
+        "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "user.useConfigOnly",
+        "GIT_CONFIG_VALUE_0": "true",
+    })
     def test_pr_bootstrap_preserves_foreign_source_and_rejects_wrong_head_once(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = self.committed_source(Path(temporary))
