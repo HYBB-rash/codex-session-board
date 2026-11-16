@@ -244,6 +244,7 @@ let moving = null, moveHideTimer = null;
 const moveDelays = {courier:1500,slow:8000};
 const unconfirmedMoves = new Map();
 const draftRequests = new Map();
+const nativeDraftOperations = new Map();
 const connectingHosts = new Set();
 const byId = id => document.getElementById(id);
 const date = value => value ? new Date(value * 1000).toLocaleString("zh-CN",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "尚未读取";
@@ -734,7 +735,10 @@ function hostCatalog(host = selectedHost) {
   return (data.health.remoteConnections || []).find(item => "host:" + item.hostId === host)?.catalog;
 }
 function canCreateProject(project) {
-  return project && project.canCreate !== false && !["targetServer","targetLegacy"].includes(project.origin);
+  if (!project || project.canCreate === false || project.pendingDeletion === true) return false;
+  if (!["targetServer","targetLegacy"].includes(project.origin)) return true;
+  const host = (data.health.remoteConnections || []).find(host => host.hostId === project.hostId);
+  return host?.connected === true && host.catalog?.cached === false;
 }
 function filtersLocked() {
   return Boolean(dragging || saving && !moving || creating || byId("editor").open || byId("new-target").open || byId("draft-recovery").open);
@@ -1029,6 +1033,20 @@ function noteDraft(id, value) {
     sessionStorage.setItem(key,value);return value;
   } catch {return null;}
 }
+function nativeDraftOperation(projectId, reset = false) {
+  const key = "native-draft-operation:"+projectId;
+  if (reset) {
+    nativeDraftOperations.delete(projectId);
+    try {sessionStorage.removeItem(key);} catch {}
+    return null;
+  }
+  let operation = nativeDraftOperations.get(projectId);
+  try {operation ||= sessionStorage.getItem(key);} catch {}
+  operation ||= crypto.randomUUID();
+  nativeDraftOperations.set(projectId,operation);
+  try {sessionStorage.setItem(key,operation);} catch {}
+  return operation;
+}
 function openEditor(id, state, snapshot) {
   if (saving || creating) return;
   resetMoveFeedback();
@@ -1126,23 +1144,34 @@ async function createSession(projectId) {
   const button = byId("new-session");
   if (creating || dragging || saving || byId("editor").open) return;
   const project = data.projectCatalog.items.find(item => item.id === projectId);
-  if (project && !canCreateProject(project)) {announce("此项目目录仅供查看，暂不支持在这里新建会话。",true);return;}
+  if (project && !canCreateProject(project)) {announce("当前项目暂不可新建，请核对主机连接和项目状态。",true);return;}
   const remote = project?.remote || draftRequests.has(projectId);
   const body = projectId === null ? {} : {projectId};
-  if (remote && draftRequests.has(projectId)) body.requestId = draftRequests.get(projectId);
+  const target = ["targetServer","targetLegacy"].includes(project?.origin);
+  if (target) body.operationId = nativeDraftOperation(projectId);
+  else if (remote && draftRequests.has(projectId)) body.requestId = draftRequests.get(projectId);
   creating = true;button.disabled = true;++requestSerial;render();
   try {
     const result = await post("/api/new",body);
     if (result.pending) {
-      recoveringDraft = {projectId,requestId:result.requestId || body.requestId};
-      draftRequests.set(projectId,recoveringDraft.requestId);
+      recoveringDraft = target ? {projectId,operationId:body.operationId} :
+        {projectId,requestId:result.requestId || body.requestId};
+      if (!target) draftRequests.set(projectId,recoveringDraft.requestId);
       byId("draft-message").textContent = result.error;
       byId("draft-recovery").showModal();
       return;
     }
+    if (target) nativeDraftOperation(projectId,true);
     draftRequests.delete(projectId);
     announce(remote ? "已发送远程项目新建页面打开请求，尚未发送输入。" : "已发送新建会话页面打开请求。");
-  } catch(error) {announce(error.message,true);}
+  } catch(error) {
+    if (target) {
+      recoveringDraft = {projectId,operationId:body.operationId};
+      byId("draft-message").textContent = "新建尚未完成，请核对客户端和目标后重试。"+error.message;
+      byId("draft-recovery").showModal();
+    }
+    announce(error.message,true);
+  }
   finally {creating=false;button.disabled=false;render();await load();}
 }
 function updateNewProjects() {
@@ -1163,7 +1192,7 @@ byId("new-session").onclick = () => {
   if (filterMode === "project" && selectedProject.startsWith("project:")) {
     const project = hostProjects().find(item => "project:" + item.id === selectedProject);
     if (!project) {announce("项目暂不可用，请刷新后重新选择。",true);return;}
-    if (!canCreateProject(project)) {announce("此项目目录仅供查看，暂不支持在这里新建会话。",true);return;}
+    if (!canCreateProject(project)) {announce("当前项目暂不可新建，请核对主机连接和项目状态。",true);return;}
     createSession(project.id);return;
   }
   if (selectedHost === "local") {createSession(null);return;}
@@ -1194,8 +1223,11 @@ byId("draft-restart").onclick = async () => {
   const draft = {...recoveringDraft}, button = byId("draft-restart");
   button.disabled=true;creating=true;++requestSerial;
   try {
-    await post("/api/new/reset",{...draft,confirmed:true});
-    draftRequests.delete(draft.projectId);
+    if (draft.operationId) nativeDraftOperation(draft.projectId,true);
+    else {
+      await post("/api/new/reset",{...draft,confirmed:true});
+      draftRequests.delete(draft.projectId);
+    }
     byId("draft-recovery").close();
     creating=false;
     await createSession(draft.projectId);
