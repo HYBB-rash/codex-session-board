@@ -21,7 +21,7 @@ PATTERNS = (
     ".github/pull_request_template.md", "scripts/pr-queue", "scripts/pr-task",
     "scripts/dev", "scripts/dev_environment/*.py", "scripts/validate", "scripts/promote",
     "scripts/verify-plugin", "scripts/smoke-plugin", "scripts/integrate",
-    "scripts/native_new/*.py", "scripts/native_new/*.js", "scripts/native_new/*.mjs",
+    "scripts/native_new/*.mjs",
     "scripts/verify_context.sh", "context/**/*.md", "context/*.yaml",
     "acceptance/*.py", "acceptance/*.json", "acceptance/*.md",
 )
@@ -45,8 +45,6 @@ def package_contents(root):
         "acceptance/README.md", "assets/app-bridge.js", "context/PROJECT.yaml",
         "context/STATE.yaml", "scripts/verify_context.sh", "scripts/check_context.py",
         "scripts/checker_cache.py", "scripts/checker/Cargo.toml", "scripts/checker/Cargo.lock",
-        "scripts/native_new/prepare.py", "scripts/native_new/prepare_app.py",
-        "scripts/native_new/route.js", "scripts/native_new/open.js",
         "scripts/native_new/verify_originator.mjs",
     )
     if any(name not in contents for name in required):

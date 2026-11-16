@@ -253,7 +253,7 @@ class PackageTests(unittest.TestCase):
                 self.assertIn(script.relative_to(ROOT).as_posix(), files)
             self.assertIn("scripts/rust_adapter.py", files)
             for script in (ROOT / "scripts/native_new").iterdir():
-                if script.suffix in {".py", ".js", ".mjs"}:
+                if script.suffix == ".mjs":
                     self.assertIn(script.relative_to(ROOT).as_posix(), files)
             self.assertIn("Docs/MIGRATION.md", files)
             self.assertNotIn("main.py", files)
