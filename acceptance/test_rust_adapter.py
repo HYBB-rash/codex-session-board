@@ -33,15 +33,19 @@ class RustAdapterTests(unittest.TestCase):
         self.assertEqual([record["status"] for record in records.values()], ["fail", "skip"])
         self.assertEqual(timing["returncode"], 1)
 
-    def test_only_isolated_tools_receive_multiple_threads(self):
+    def test_only_verified_groups_receive_two_threads(self):
         output = self.target("test first ... ok\n")
-        for prefix, threads in (("test::git_hooks", 2), ("example::project_check", 2),
-                                ("test::native_authority", 1)):
+        for prefix, threads in (
+            ("lib::codex_session_board", 2), ("test::native_authority", 2),
+            ("test::git_hooks", 2), ("example::project_check", 2),
+            ("test::performance", 1), ("test::fixture", 1), ("lib::other", 1),
+        ):
             with self.subTest(prefix=prefix), mock.patch.object(
                 rust_adapter, "command", return_value=output
             ) as command:
-                rust_adapter.run_target(prefix, "/binary", {prefix + "::first"})
+                _, timing = rust_adapter.run_target(prefix, "/binary", {prefix + "::first"})
                 self.assertIn(f"--test-threads={threads}", command.call_args.args[0])
+                self.assertEqual(timing["threads"], threads)
 
     def test_selection_does_not_execute_unselected_groups(self):
         names = {"test::first::case": ("test::first", "case"),

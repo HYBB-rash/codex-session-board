@@ -108,7 +108,8 @@ python3 -m venv ~/.local/share/codex-session-board/delivery-venv
 `./scripts/check --prepare-commit` 同步 Cargo 与两个插件清单的版本。
 提交前须审阅并暂存本次代码和四份版本文件，再运行
 `./scripts/check --pre-commit`；源提交使用本机独立 Agent 签名器。
-提交钩子通过 `--test-threads=1` 串行运行完整测试，与完整验收适配器一致。
+11 月 13 日的合并验证使用 `--test-threads=1` 串行运行完整测试。
+当前完整验收适配器的分组线程设置见 `Docs/INTEGRATION.md`。
 用例内部的并发场景保持原样。SQLite writer fixture 的就绪消息单独占一行，
 避免单线程 harness 的无换行前缀破坏握手；子 fixture 显式单线程覆盖该故障模式，
 无需依赖 `RUST_TEST_THREADS=2`。

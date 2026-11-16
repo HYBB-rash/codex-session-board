@@ -62,7 +62,10 @@ def inventory(targets):
 
 def run_target(prefix, executable, expected):
     started = time.monotonic()
-    threads = "2" if prefix in ("test::git_hooks", "example::project_check") else "1"
+    threads = "2" if prefix in (
+        "lib::codex_session_board", "test::native_authority",
+        "test::git_hooks", "example::project_check",
+    ) else "1"
     timeout = 1200 if prefix == "test::git_hooks" else 600
     process = command([str(executable), f"--test-threads={threads}"], timeout=timeout)
     results = {}
