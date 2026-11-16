@@ -1780,6 +1780,12 @@
     ],
     "GATE-001": [
       "acceptance.test_pr_task_cli.PRTaskCLITests.test_real_cli_idle_polling_uses_no_model_and_closes_without_deleting_work",
+      "acceptance.test_pr_task_manual.PRTaskManualTests.test_registration_needs_no_client_and_mode_cannot_change",
+      "acceptance.test_pr_task_manual.PRTaskManualTests.test_refresh_reads_new_feedback_without_writing_task_or_pr",
+      "acceptance.test_pr_task_manual.PRTaskManualTests.test_manual_tasks_reject_automatic_commands_without_pausing",
+      "acceptance.test_pr_task_manual.PRTaskManualTests.test_submit_reuses_publisher_without_installing_scheduler",
+      "acceptance.test_pr_task_manual.PRTaskManualTests.test_ready_requires_final_validated_head_passed_ci_and_no_feedback",
+      "acceptance.test_pr_task_manual.PRTaskManualTests.test_finalize_distinguishes_closed_from_merged_and_keeps_work",
       "acceptance.test_pr_task_cli.PRTaskCLITests.test_real_cli_requires_original_claim_and_publishes_blocked_once",
       "acceptance.test_pr_task_cli.PRTaskCLITests.test_real_cli_lock_and_background_permission_probe_are_idempotent",
       "acceptance.test_pr_task_github.PRTaskGithubTests.test_pending_review_and_inline_comment_are_not_consumed_before_publication",
