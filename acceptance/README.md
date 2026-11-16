@@ -39,7 +39,8 @@ node scripts/check-blocked-optional.mjs /path/outside/source/blocked-optional.js
 
 ## 完整验收的判定
 
-合并阶段以最终组合的选定自动回归通过、主线更新及可运行插件包产出为完成条件，
+合并阶段以最终组合的选定自动回归通过并进入主线为完成条件。
+固定 main 源码的包完整性、隔离启动和渠道更新属于自动发布阶段，
 见 `Docs/INTEGRATION.md`。下面的完整验收属于独立阶段，不阻塞符合条件的合并。
 验收阶段如何组织及记录留待后续研究；31 条契约及真实环境证据要求继续保留。
 

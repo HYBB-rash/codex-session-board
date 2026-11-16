@@ -83,7 +83,7 @@ def plan(root, base, additions=(), stage="ci"):
         risks.add("package")
     strategy = {"base": base, "merge_base": merge_base, "paths": paths,
                 "profile": profile, "risks": sorted(risks),
-                "package_required": "package" in risks}
+                "package_stage": "release"}
     if stage == "submit":
         strategy["stage"] = stage
     return strategy

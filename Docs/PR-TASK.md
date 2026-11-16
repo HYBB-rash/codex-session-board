@@ -1,7 +1,7 @@
 # PR 作者任务 CLI
 
 项目内手动入口是 `.agents/skills/pr-task/SKILL.md`；确定性步骤由 `scripts/pr-task`
-执行。它不替换 `validate`、合并队列、独立审阅或组合产包门禁。
+执行。它不替换 `validate`、合并队列、独立审阅或组合门禁。
 GitHub PR 是反馈来源，合并方打回后继续看下一个，作者的监控自行处理新反馈。
 
 ## 开始任务与提 PR
@@ -69,7 +69,7 @@ Python 使用既有 3.11+ 环境及 `websocket-client`，不自动安装新运�
 未解决的问题用 `--result blocked`，停在 `needs-human`，不会自动反复消耗模型。
 
 队列清单设置 `"feedback_mode": "github"`，即可复用 `pr-queue` 的冲突定位、PR 评论、
-依赖跳过和候选产包，但不再从合并方直接唤起作者或等待聊天 ACK。`requeue` 仍要求
+依赖跳过和组合验证；main 更新后另由自动发布产包，不再从合并方直接唤起作者或等待聊天 ACK。`requeue` 仍要求
 准确源码的新审阅和验证。旧清单默认保留 native 模式，避免改变已运行队列。
 同一 PR 不要同时启用 native 队列派单和作者监控。
 

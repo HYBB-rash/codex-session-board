@@ -34,7 +34,7 @@ class PRPlanTests(unittest.TestCase):
         strategy = self.strategy(["src/rpc/sidebar.rs"])
         self.assertEqual(strategy["profile"], "business")
         self.assertEqual(strategy["risks"], ["connection", "lifecycle", "package"])
-        self.assertTrue(strategy["package_required"])
+        self.assertEqual(strategy["package_stage"], "release")
         self.assertEqual(strategy["base"], "fixed-base")
 
     def test_ui_records_and_unknown_paths_have_explicit_profiles(self):
@@ -45,11 +45,12 @@ class PRPlanTests(unittest.TestCase):
             with self.subTest(paths=paths):
                 strategy = self.strategy(paths)
                 self.assertEqual(strategy["profile"], profile)
-                self.assertEqual(strategy["package_required"], profile == "full")
+                self.assertEqual("package" in strategy["risks"], profile == "full")
+                self.assertEqual(strategy["package_stage"], "release")
 
     def test_explicit_risks_can_only_add_to_automatic_checks(self):
         self.assertIn("package", self.strategy(["index.html"], ["package"])["risks"])
-        self.assertTrue(self.strategy(["index.html"], ["lifecycle"])["package_required"])
+        self.assertIn("package", self.strategy(["index.html"], ["lifecycle"])["risks"])
         with self.assertRaises(ValueError):
             self.strategy(["src/rpc/sidebar.rs"], ["none"])
 
@@ -83,7 +84,7 @@ class PRPlanTests(unittest.TestCase):
         paths = ["scripts/native_new/prepare.py", "scripts/check-native-new.mjs",
                  "src/app/new_module.rs", "acceptance/bindings.json"]
         self.assertEqual(self.strategy(paths)["profile"], "business")
-        self.assertTrue(self.strategy(paths)["package_required"])
+        self.assertIn("package", self.strategy(paths)["risks"])
         for dependency in ("scripts/check", "scripts/validate", "scripts/install-git-hooks",
                            "scripts/version_policy.rs", ".gitignore", "Cargo.lock",
                            ".github/workflows/pr-checks.yml", "scripts/unknown.py",
@@ -150,7 +151,7 @@ class PRDeliveryTests(unittest.TestCase):
         def execute(name, _command, _output, **_options):
             return {"returncode": 1 if name == "related-tests" else 0, "seconds": 0}
 
-        strategy = {"profile": "business", "package_required": True, "risks": ["package"]}
+        strategy = {"profile": "business", "package_stage": "release", "risks": ["package"]}
         with mock.patch.object(pr_delivery, "identity", return_value=SOURCE), \
                 mock.patch.object(pr_delivery, "git", return_value=""), \
                 mock.patch.object(pr_plan, "plan", return_value=strategy), \

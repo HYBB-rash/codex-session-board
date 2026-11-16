@@ -129,7 +129,8 @@ class ValidationCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             record = json.loads(result.stdout)
             self.assertFalse(record["executed"])
-            self.assertTrue(record["plan"]["package_required"])
+            self.assertEqual(record["plan"]["package_stage"], "release")
+            self.assertIn("package", record["plan"]["risks"])
             self.assertFalse(output.exists())
             result = self.invoke("--scope", "pr", "--project", root, "--base", "HEAD",
                                  "--stage", "submit", "--plan", "--output", output)
