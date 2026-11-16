@@ -2090,7 +2090,9 @@
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_install_uses_the_verified_git_snapshot_without_a_second_marketplace_refresh",
       "acceptance.test_update_delivery.UpdateDeliveryTests.test_reload_targets_the_installed_mcp_without_global_skill_discovery",
       "acceptance.test_native_new.NativeNewTests.test_candidate_archive_preserves_other_files_and_rejects_unknown_clients",
-      "acceptance.test_native_new.NativeNewTests.test_native_draft_routes_and_navigation_never_send_input"
+      "acceptance.test_native_new.NativeNewTests.test_native_draft_routes_and_navigation_never_send_input",
+      "acceptance.test_native_target.NativeTargetTests.test_target_navigation_never_changes_operator_project_or_sends_input",
+      "acceptance.test_native_target.NativeTargetTests.test_target_candidate_requires_complete_exact_renderer_profile"
     ]
   }
 }

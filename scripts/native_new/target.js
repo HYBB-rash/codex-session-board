@@ -40,6 +40,7 @@ function targetDraftRuntime({ createId, scopeId, request, existing, readContext 
     return target;
   };
   const context = (scope, target, metadata) => {
+    if (target.invalid) throw Error(target.invalid);
     const current = readContext(scope, target);
     if (current.pendingDeletion) {
       target.invalid = "The target project is pending deletion; open a new target draft";

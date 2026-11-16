@@ -283,6 +283,20 @@ delete pendingDeletions["remote:target:/target-home"];
 overrides.SPnB.chatGptAuthenticatedAccountId$.initial = "changed";
 await assert.rejects(native.resolveNativeTargetDraft(scope(targets[1].clientThreadId), targets[1]),
   /native account changed/);
+overrides.SPnB.chatGptAuthenticatedAccountId$.initial = "account";
+const firstTurnTarget = native.registerNativeTargetDraft({
+  hostId: "remote:target", projectId: "project-a",
+  operationId: "019a1111-2222-4333-8444-999999999999",
+});
+const firstTurnScope = scope(firstTurnTarget.clientThreadId);
+await native.resolveNativeTargetDraft(firstTurnScope, firstTurnTarget);
+native.nativeTargetAccepted(firstTurnTarget, "original-thread");
+overrides.SPnB.chatGptAuthenticatedAccountId$.initial = "changed";
+await assert.rejects(native.nativeTargetBeforeFirstTurn(firstTurnScope, firstTurnTarget),
+  /original-thread.*native account changed/);
+overrides.SPnB.chatGptAuthenticatedAccountId$.initial = "account";
+await assert.rejects(native.nativeTargetBeforeFirstTurn(firstTurnScope, firstTurnTarget),
+  /original-thread.*native account changed/);
 console.log(JSON.stringify({ passed: true,
   realModules: ["V3rO", "HSUP", "aVy5", "e1yv", "QX7Q", "_D", "TSah", "xz.prepareStart"],
   targetSubmitReached: true, targetPrewarmDisabled: true,

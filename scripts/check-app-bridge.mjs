@@ -85,7 +85,10 @@ try {
     "/api/connect": "board_connect", "/api/archive": "board_archive", "/api/column-sort": "board_sort",
   };
   for (const [route, name] of Object.entries(routes)) {
-    const body = { id: "fixture", version: 3, hostId: "host-fixture" };
+    const body = route === "/api/new" ? {
+      projectId: 'target:["remote:fixture","targetServer","canonical"]',
+      operationId: "019a1111-2222-4333-8444-555555555555",
+    } : { id: "fixture", version: 3, hostId: "host-fixture" };
     check(await evaluate(`boardRequest(${JSON.stringify(route)},${JSON.stringify(body)})`), { ok: true, received: body });
     check(await page.evaluate("(({name,arguments:body})=>({name,arguments:body}))(requests.at(-1))"),
       { name, arguments: body });

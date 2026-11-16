@@ -69,6 +69,7 @@ projects.get(second.projectId).roots.reverse();
 await assert.rejects(runtime.resolve({}, second), /roots changed/);
 projects.get(second.projectId).roots.reverse();
 await assert.rejects(runtime.resolve({}, second), /roots changed/);
+await assert.rejects(runtime.beforeFirstTurn({}, second), /roots changed/);
 projects.delete(first.projectId);
 await assert.rejects(runtime.beforeFirstTurn({}, first), /Deleted/);
 const ownerTarget = runtime.register({ ...route,
@@ -82,6 +83,22 @@ account.accountId = "other";
 await assert.rejects(runtime.resolve({}, ownerTarget), /native account changed/);
 account.accountId = "account";
 await assert.rejects(runtime.resolve({}, ownerTarget), /native account changed/);
+const firstTurnTarget = runtime.register({ ...route,
+  operationId: "019a1111-2222-4333-8444-999999999999" });
+await runtime.resolve({}, firstTurnTarget);
+runtime.accepted(firstTurnTarget, "thread-before-first-turn");
+account.accountId = "other";
+await assert.rejects(runtime.beforeFirstTurn({}, firstTurnTarget), /native account changed/);
+account.accountId = "account";
+await assert.rejects(runtime.beforeFirstTurn({}, firstTurnTarget), /native account changed/);
+const rootsTarget = runtime.register({ ...route,
+  operationId: "019a1111-2222-4333-8444-aaaaaaaaaaaa" });
+await runtime.resolve({}, rootsTarget);
+runtime.accepted(rootsTarget, "original-root-thread");
+projects.get(route.projectId).roots.push({ path: "/changed" });
+await assert.rejects(runtime.beforeFirstTurn({}, rootsTarget), /original-root-thread.*changed/);
+projects.get(route.projectId).roots.pop();
+await assert.rejects(runtime.beforeFirstTurn({}, rootsTarget), /original-root-thread.*changed/);
 const pendingTarget = runtime.register({ ...route,
   operationId: "019a1111-2222-4333-8444-888888888888" });
 account.pendingDeletion = true;

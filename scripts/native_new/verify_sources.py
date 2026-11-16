@@ -6,7 +6,7 @@ import subprocess
 from prepare import files, patches, read_archive
 
 
-def verify(source):
+def verify(source, backend=None):
     if source.is_dir():
         sources = {"/" + str(path.relative_to(source)): path.read_bytes()
                    for path in source.rglob("*.js")}
@@ -27,12 +27,19 @@ def verify(source):
     changed = patches(tree, raw, base)
     original = {name: sources[name].decode() for name in changed}
     candidate = {name: data.decode() for name, data in changed.items()}
+    payload = json.dumps({"original": original, "candidate": candidate})
     subprocess.run(["node", str(Path(__file__).parent.parent / "check-native-target-source.mjs")],
-                   input=json.dumps({"original": original, "candidate": candidate}),
+                   input=payload,
                    text=True, check=True, timeout=60)
+    if backend is not None:
+        subprocess.run(["node", str(Path(__file__).parent.parent / "check-native-target-start.mjs"),
+                        str(backend)], input=payload, text=True, check=True, timeout=60)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("source", type=Path)
-    verify(parser.parse_args().source)
+    parser.add_argument("--backend", type=Path,
+                        help="Run isolated native first turns using this absolute executable")
+    arguments = parser.parse_args()
+    verify(arguments.source, arguments.backend)

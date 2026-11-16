@@ -84,6 +84,20 @@ python3 -B scripts/native_new/verify_sources.py /path/to/source/app.asar
 它在内存生成候选，执行真实 `V3rO/HSUP/aVy5/e1yv/QX7Q/_D/TSah/xz.prepareStart`，
 用两个共享 cwd/roots 的项目和未改函数作对照，不创建 archive，不发送真实请求。
 这些函数验证不是 GUI 验收，也不代替后台首轮和数据库读回。
+需要同时验证首轮和落库时，显式指定本机原生后台可执行文件：
+
+```zsh
+python3 -B scripts/native_new/verify_sources.py /path/to/source/app.asar \
+  --backend /absolute/path/to/codex
+```
+
+该选项为新进程创建独立 HOME、CODEX_HOME 和工作目录，模型只连接本地 SSE 替身。
+它执行生成候选的 `_D/xz.prepareConversation/prepareStart`，让两个同目录项目分别完成首轮，
+再核对 thread/read 与 SQLite 的 project_id、cwd，最后清理进程和临时目录。
+通用配置读取由替身提供；本探针验证目标参数和原生落库，不证明登录和 GUI 可用。
+用 Fedora 导出源在 Mac 上执行时，证明的是 Fedora 客户端函数与该 Mac 后台的组合，
+不能据此宣称 Fedora 在线环境验收完成。
+
 实际安装候选后，须在专用窗口核对远程项目和输入框，不覆盖已有草稿。
 首轮实测必须核对同一远程主机、项目、cwd，以及原生 Codex 的来源标识。
 当前客户端默认来源为 Codex Desktop，initialize 的连接名为 codex_desktop。

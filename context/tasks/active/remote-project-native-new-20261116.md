@@ -2,7 +2,7 @@
 
 owner: codex
 execution_mode: coordinated_parallel
-allowed_write_set: src/, scripts/native_new/, scripts/check-native-new.mjs, scripts/check-remote-catalog.mjs, scripts/check-target-drafts.mjs, index.html, acceptance/bindings.json, Docs/REMOTE-NATIVE-NEW.md, 本任务文件
+allowed_write_set: src/, tests/, scripts/native_new/, scripts/check-native-new.mjs, scripts/check-native-target*.mjs, scripts/check-remote-catalog.mjs, scripts/check-app-bridge.mjs, index.html, acceptance/bindings.json, acceptance/test_native_new.py, acceptance/test_native_target.py, Docs/REMOTE-NATIVE-NEW.md, 本任务文件
 base_commit: d7c1717428e0fb56312afa74f82db942d7813d3a
 worktree_path: /Users/hongyong/.codex/worktrees/remote-project-native-new/codex-session-board
 coordinator: codex
@@ -26,3 +26,19 @@ coordinator: codex
 验证包括原生转换、RPC 边界、请求恢复、浏览器交互、当前客户端实际函数、
 隔离真实后台与本地模型替身首轮，以及最终源码 PR 门禁和准确头 CI。
 自动验证不代签日用客户端部署或完整 31 条目标环境验收。
+
+2026-11-16 组合验证记录：
+- 已通过 65 项目录/新建浏览器断言，包括刷新重试、明确重开、HTTP 拒绝、删除和离线。
+- App 入口经已核验的隔离 SSH/RPC fixture 完成规范项目导航与旧项目打开失败重试；
+  同一操作复用 canonical，不重复导入，也不发送 thread/start 或 turn/start。
+- 原生项目准备 16 项回归覆盖完整 metadata、分页期间变化、迁移刚完成、
+  最后 canonical 读回、已删除和 foreign backing；全部目标 RPC 经过 App::connection。
+- 实际 Mac 候选主模块摘要 b5666e2944e61eb1ab14f32efed7c128259a756d5504737809ee66b2b87ab6d1。
+  从生成候选抽取 _D 和 xz.prepareConversation/prepareStart，连接隔离的 0.169.0 后台；
+  两个同目录项目分别完成本地 SSE 模型替身首轮，SQLite 的 project_id/cwd 与请求一致，
+  通用预热不可消费，外部模型请求为零，临时进程和目录已清理。
+- 可重复探针为 scripts/check-native-target-start.mjs，由候选源函数检查器提供输入。
+- 当前 Fedora 导出源候选主模块摘要 aab8c55c69179bec359d23c069e12a62169dc0d2c5b543b87459d294156a0dd8。
+  同样在 Mac 的隔离 0.169.0 后台完成两个项目的首轮和 SQLite 核对；此项不是 Fedora 在线验收。
+- 首轮已经绑定 UUID 后，账户 A→B→A、roots 改变后恢复，仍保持操作失效并拒绝重试发送。
+- 真实日用客户端候选安装、多窗口 GUI、远程在线首轮与完整目标环境验收仍待部署阶段。

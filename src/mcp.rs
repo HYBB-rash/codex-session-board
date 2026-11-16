@@ -75,7 +75,7 @@ fn schema(name: &str, legacy: bool) -> (Value, Value) {
         ),
         "board_new" => (
             json!({"projectId":{"type":"string"},"requestId":{"type":"string"},
-            "hostId":{"type":"string"}}),
+            "hostId":{"type":"string"},"operationId":{"type":"string","format":"uuid"}}),
             json!([]),
         ),
         "board_new_reset" => (
