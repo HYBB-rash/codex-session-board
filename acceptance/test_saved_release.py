@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import package_plugin
+import package_scenarios
 import release_plugin
 import release_scenarios
 import verify_package_startup
@@ -50,6 +51,10 @@ class SavedGitHub:
         self.api_calls.append((method, path))
         if path.startswith("commits/"):
             return {"sha": self.source}
+        if path == "git/ref/heads/main":
+            return {"object": {"sha": self.source}}
+        if path.startswith("compare/"):
+            return {"status": "identical", "merge_base_commit": {"sha": self.source}}
         if path.startswith("git/ref/tags/"):
             return {}
         if path.startswith("releases/tags/"):
@@ -99,6 +104,7 @@ class SavedReleaseTests(unittest.TestCase):
         self.github = SavedGitHub()
         self.tag = "v0.2.93"
         self.target = "x86_64-unknown-linux-gnu"
+        (self.root / "fixture").write_bytes(b"fixture")
 
     def archive(self, target=None, source=None):
         with tempfile.TemporaryDirectory() as temporary:
@@ -155,6 +161,19 @@ class SavedReleaseTests(unittest.TestCase):
             "startup_sha256": hashlib.sha256(startup).hexdigest(),
             "cases": cases, "reports": reports, "wrong_backend_bytes": [0],
         }
+
+    def run_scenarios(self, project, package, fixture, output, connection=False):
+        self.assertTrue(connection)
+        output.mkdir()
+        manifest = package_plugin.verify_package(package)
+        body = self.github.assets[release_plugin.asset_name(manifest["target"])]
+        startup = json.dumps(self.startup(manifest["target"])).encode()
+        record = self.scenarios(manifest, body, startup)
+        reports = record.pop("reports")
+        for name, report in reports.items():
+            (output / f"{name}.json").write_text(json.dumps(report))
+        (output / "SCENARIOS.json").write_text(json.dumps(record))
+        return 0
 
     def save_existing(self, target=None, startup=True, scenarios=True):
         target = target or self.target
@@ -287,12 +306,14 @@ class SavedReleaseTests(unittest.TestCase):
             directory.mkdir()
             with patch.object(release_plugin, "build") as build, \
                     patch.object(release_plugin, "authorize", side_effect=lambda package, *_: package_plugin.verify_package(package)), \
-                    patch.object(verify_package_startup, "verify") as startup:
+                    patch.object(verify_package_startup, "verify") as startup, \
+                    patch.object(package_scenarios, "verify") as scenarios:
                 report, fixture = self.root / f"startup-{attempt}.json", self.root / "fixture"
                 release_plugin.save_platform(self.github, self.tag, self.target, self.github.source, directory,
                                              report, fixture)
                 build.assert_not_called()
                 startup.assert_not_called()
+                scenarios.assert_not_called()
                 self.assertEqual(json.loads(report.read_text()), self.startup())
                 self.assertEqual(package_plugin.verify_package(directory / "package")["source_commit"], self.github.source)
         self.assertEqual(self.github.assets, original)
@@ -313,10 +334,8 @@ class SavedReleaseTests(unittest.TestCase):
     def test_startup_asset_is_uploaded_once_and_canonical_winner_is_read_back(self):
         self.save_existing(startup=False)
         report = self.root / "startup.json"
-        def startup(package, fixture, output):
-            output.write_text(json.dumps(self.startup()))
         with patch.object(release_plugin, "authorize", side_effect=lambda package, *_: package_plugin.verify_package(package)), \
-                patch.object(verify_package_startup, "verify", side_effect=startup) as verify:
+                patch.object(package_scenarios, "verify", side_effect=self.run_scenarios) as verify:
             directory = self.root / "saved"
             directory.mkdir()
             release_plugin.save_platform(self.github, self.tag, self.target, self.github.source,
@@ -324,8 +343,79 @@ class SavedReleaseTests(unittest.TestCase):
             verify.assert_called_once()
         name = release_plugin.startup_name(self.target)
         self.assertEqual(report.read_bytes(), self.github.assets[name])
-        self.assertEqual(self.github.uploaded, [name])
+        self.assertEqual(self.github.uploaded, [name, release_plugin.scenarios_name(self.target)])
         self.assertEqual(json.loads((directory / name).read_text()), self.startup())
+        self.assertTrue(report.with_suffix(".scenarios.json").is_file())
+
+    def test_existing_startup_without_scenarios_runs_all_cases_and_preserves_startup(self):
+        self.save_existing(scenarios=False)
+        name = release_plugin.startup_name(self.target)
+        self.github.assets[name] = json.dumps({**self.startup(), "started_at": "older"}).encode()
+        previous = self.github.assets[name]
+        report = self.root / "recovered/startup.json"
+        directory = self.root / "recovered-saved"
+        directory.mkdir()
+        with patch.object(release_plugin, "authorize", side_effect=lambda package, *_: package_plugin.verify_package(package)), \
+                patch.object(package_scenarios, "verify", side_effect=self.run_scenarios) as verify:
+            release_plugin.save_platform(self.github, self.tag, self.target, self.github.source,
+                                         directory, report, self.root / "fixture")
+            verify.assert_called_once()
+        self.assertEqual(self.github.assets[name], previous)
+        self.assertEqual(report.read_bytes(), previous)
+        self.assertEqual(self.github.uploaded, [release_plugin.scenarios_name(self.target)])
+
+    def test_failed_scenarios_keep_diagnostics_and_never_upload_success_proofs(self):
+        self.save_existing(startup=False)
+        report = self.root / "failed/startup.json"
+        directory = self.root / "failed-saved"
+        directory.mkdir()
+        def failed(*arguments, **options):
+            self.run_scenarios(*arguments, **options)
+            return 1
+        with patch.object(release_plugin, "authorize", side_effect=lambda package, *_: package_plugin.verify_package(package)), \
+                patch.object(package_scenarios, "verify", side_effect=failed):
+            with self.assertRaisesRegex(ValueError, "scenarios failed"):
+                release_plugin.save_platform(self.github, self.tag, self.target, self.github.source,
+                                             directory, report, self.root / "fixture")
+        self.assertFalse(report.exists())
+        self.assertTrue((report.with_suffix(".scenarios") / "SCENARIOS.json").is_file())
+        self.assertEqual(self.github.uploaded, [])
+
+    def test_missing_or_failed_scenarios_never_finalize_a_candidate(self):
+        for target in package_plugin.TARGETS:
+            self.save_existing(target)
+        name = release_plugin.scenarios_name(self.target)
+        original = json.loads(self.github.assets[name])
+        variants = [None, json.dumps({**original, "passed": False}).encode()]
+        for index, variant in enumerate(variants):
+            if variant is None:
+                self.github.assets.pop(name, None)
+            else:
+                self.github.assets[name] = variant
+            directory = self.root / f"missing-scenarios-{index}"
+            directory.mkdir()
+            with patch.object(release_plugin, "source_checkout"), \
+                    patch.object(release_plugin.subprocess, "run") as run:
+                with self.assertRaisesRegex(ValueError, "scenarios"):
+                    release_plugin.publish_saved(self.github, self.tag, self.github.source,
+                                                 "candidate", None, directory)
+                self.assertTrue(all(call.args[0][1] == "-c" for call in run.call_args_list))
+            self.assertEqual(self.github.edits, [])
+        self.github.assets[name] = json.dumps(original).encode()
+        observed = self.github.release
+        directory = self.root / "wrong-scenarios-digest"
+        directory.mkdir()
+        with patch.object(self.github, "release", side_effect=lambda tag: {
+            **observed(tag), "assets": [
+                {**asset, "digest": "sha256:wrong"} if asset["name"] == name else asset
+                for asset in observed(tag)["assets"]
+            ],
+        }), patch.object(release_plugin, "source_checkout"), \
+                patch.object(release_plugin.subprocess, "run"):
+            with self.assertRaisesRegex(ValueError, "evidence asset digest"):
+                release_plugin.publish_saved(self.github, self.tag, self.github.source,
+                                             "candidate", None, directory)
+        self.assertEqual(self.github.edits, [])
 
     def test_missing_or_mismatched_startup_evidence_never_publishes(self):
         for target in package_plugin.TARGETS:
@@ -374,13 +464,50 @@ class SavedReleaseTests(unittest.TestCase):
         self.assertTrue(self.github.draft)
         self.assertEqual(self.github.edits, [])
 
+    def test_cli_incomplete_finalize_fails_and_automatic_candidate_dispatches_main(self):
+        with patch.object(release_plugin, "GitHub", return_value=self.github), \
+                patch.object(release_plugin, "command", side_effect=[self.github.source, ""]), \
+                patch.object(release_plugin, "release_tag", return_value=self.tag), \
+                patch.object(release_plugin, "publish_saved", return_value={"status": "incomplete"}), \
+                patch.object(self.github, "ensure_draft", create=True), \
+                patch.object(sys, "argv", ["release", "candidate", "--finalize", "--repository", "owner/plugin"]), \
+                patch("builtins.print"):
+            self.assertEqual(release_plugin.main(), 1)
+        with patch.object(release_plugin, "GitHub", return_value=self.github), \
+                patch.object(release_plugin, "command", side_effect=[self.github.source, ""]), \
+                patch.object(release_plugin, "release_tag", return_value=self.tag), \
+                patch.object(sys, "argv", ["release", "candidate", "--repository", "owner/plugin"]), \
+                patch("builtins.print"):
+            self.assertEqual(release_plugin.main(), 0)
+        self.assertEqual(self.github.edits, [("workflow", "run", "plugin-release.yml", "--ref", "main")])
+        self.assertEqual(self.github.api_calls, [])
+
+    def test_unmerged_candidate_cannot_freeze_or_publish_channels(self):
+        for target in package_plugin.TARGETS:
+            self.save_existing(target)
+        for comparison in (
+            {"status": "diverged", "merge_base_commit": {"sha": self.github.source}},
+            {"status": "ahead", "merge_base_commit": {"sha": "c" * 40}},
+        ):
+            with patch.object(self.github, "api", side_effect=[
+                {"sha": self.github.source}, {"object": {"sha": "b" * 40}}, comparison,
+            ]), patch.object(release_plugin, "source_checkout") as checkout, \
+                    patch.object(release_plugin.subprocess, "run") as run:
+                with self.assertRaisesRegex(ValueError, "contained in main"):
+                    release_plugin.publish_saved(self.github, self.tag, self.github.source,
+                                                 "candidate", None, self.root)
+                checkout.assert_not_called()
+                run.assert_not_called()
+        self.assertEqual(self.github.edits, [])
+
     def test_actions_token_checks_immutability_before_channel_writes(self):
         for target in package_plugin.TARGETS:
             self.save_existing(target)
+        original_api = self.github.api
         def api(path):
             if path == "immutable-releases":
                 raise RuntimeError("Resource not accessible by integration (HTTP 403)")
-            return {"sha": self.github.source}
+            return original_api(path)
         def checkout(source, destination):
             (destination / "scripts").mkdir(parents=True)
         with patch.object(self.github, "api", side_effect=api), \

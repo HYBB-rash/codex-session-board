@@ -6,7 +6,7 @@ allowed_write_set: scripts/release_plugin.py、scripts/publish_plugin.py、scrip
 base_commit: aa1f5663eb09add4aef2624b070935462d25342b
 worktree_path: /Users/hongyong/.codex/worktrees/merge-release-publish-20261116
 coordinator: /root
-status: active
+status: ready_for_integration
 
 沿用 save_platform 和 publish_saved，启动报告保存为 STARTUP-<target>.json，
 读回核对 GitHub 资产摘要和包身份，候选发布必须具备两平台成功且清理完成的报告。
@@ -44,3 +44,12 @@ packages 为 (package, evidence) 配对。CLI 的 --package 和 --evidence 接�
 六案例证据保存并读回 SCENARIOS-<target>.json，复用 success.json 为启动证据。
 绑定实际包、STARTUP、fixture 和验证器摘要，旧 STARTUP 缺 SCENARIOS 不得命中缓存。
 候选 CLI 未就绪必须非零退出；自动入口改为主线发布，渠道更新前确认 main 包含源码。
+
+补充实现完成：SCENARIOS 含六案例完整报告，绑定实际下载包及 canonical STARTUP 摘要，
+并核对 fixture 二进制、fixture 源码、启动验证器、场景驱动、侧栏探针及 Cargo.lock。
+场景首次执行使用现有 verify(connection=True)，success.json 直接复用，
+旧 STARTUP 缺 SCENARIOS 时补跑且保留旧启动资产。失败 JSON 诊断留在外部报告旁，
+成功完整证据才缓存复用。候选 finalize 两平台缺证、错证及错误资产摘要均拒绝。
+
+定向保存、启动、批量 CLI、stable 外部验收及真实 Git 原子拒绝测试共 32 项通过，
+3.848 秒；这是本地受控行为验证，不代替协调者的真实流水线实测。

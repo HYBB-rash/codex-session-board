@@ -138,6 +138,10 @@ def startup_name(target):
     return f"STARTUP-{target}.json"
 
 
+def scenarios_name(target):
+    return f"SCENARIOS-{target}.json"
+
+
 def validate_startup(report, manifest):
     if (not isinstance(report, dict) or report.get("schema_version") != 1
             or report.get("scope") != "package_startup"
@@ -149,15 +153,33 @@ def validate_startup(report, manifest):
             raise ValueError(f"Saved startup evidence differs from package: {field}")
 
 
-def read_startup(github, tag, manifest, directory):
-    name = startup_name(manifest["target"])
+def read_evidence(github, tag, name, directory):
     asset = next((entry for entry in github.release(tag)["assets"] if entry["name"] == name), None)
     if asset is None:
         return None
     saved = github.download(tag, name, directory)
     if asset.get("digest") != "sha256:" + hashlib.sha256(saved.read_bytes()).hexdigest():
-        raise ValueError("GitHub startup asset digest is missing or differs")
+        raise ValueError("GitHub evidence asset digest is missing or differs")
+    return saved
+
+
+def read_startup(github, tag, manifest, directory):
+    saved = read_evidence(github, tag, startup_name(manifest["target"]), directory)
+    if saved is None:
+        return None
     validate_startup(json.loads(saved.read_text()), manifest)
+    return saved
+
+
+def read_scenarios(github, tag, manifest, directory, startup, fixture=None):
+    saved = read_evidence(github, tag, scenarios_name(manifest["target"]), directory)
+    if saved is None:
+        return None
+    if startup is None:
+        raise ValueError("Saved scenarios require the canonical startup evidence")
+    from release_scenarios import validate
+    validate(json.loads(saved.read_text()), manifest, directory / asset_name(manifest["target"]),
+             startup, ROOT, fixture)
     return saved
 
 
@@ -205,24 +227,46 @@ def save_platform(github, tag, target, source, directory, startup_report=None, f
         raise ValueError("Uploaded platform package could not be read back")
     manifest = authorize(package, "candidate", None)
     if startup_report is not None:
+        startup_report = startup_report.resolve()
+        scenario_report = startup_report.with_suffix(".scenarios.json")
+        if (startup_report.exists() or scenario_report.exists()
+                or startup_report.is_relative_to(ROOT) or startup_report.is_relative_to(package.resolve())):
+            raise ValueError("Startup report must use a new path outside the source and package")
         saved = read_startup(github, tag, manifest, directory)
-        if saved is None:
+        scenarios = read_scenarios(github, tag, manifest, directory, saved, fixture)
+        if saved is None or scenarios is None:
             if not github.release(tag)["draft"]:
-                raise ValueError("Published release is missing startup evidence; use a new version")
-            from verify_package_startup import verify as verify_startup
-            verify_startup(package, fixture, startup_report)
-            validate_startup(json.loads(startup_report.read_text()), manifest)
-            saved = directory / startup_name(target)
-            if saved.resolve() != startup_report.resolve():
-                shutil.copyfile(startup_report, saved)
-            github.upload(tag, saved)
-            saved = read_startup(github, tag, manifest, directory)
+                raise ValueError("Published release is missing startup or scenarios evidence; use a new version")
+            from package_scenarios import verify
+            from release_scenarios import collect
+            scenario_output = directory / "scenarios"
+            diagnostics = startup_report.with_suffix(".scenarios")
+            diagnostics.mkdir(parents=True, exist_ok=False)
+            try:
+                status = verify(ROOT, package, fixture, scenario_output, connection=True)
+            finally:
+                for report in scenario_output.glob("*.json"):
+                    shutil.copyfile(report, diagnostics / report.name)
+            if status != 0:
+                raise ValueError(f"Actual package scenarios failed; evidence: {diagnostics}")
+            success = scenario_output / "success.json"
+            validate_startup(json.loads(success.read_text()), manifest)
             if saved is None:
-                raise ValueError("Uploaded startup evidence could not be read back")
-        else:
-            output = startup_report.resolve()
-            if output.exists() or output.is_relative_to(ROOT) or output.is_relative_to(package.resolve()):
-                raise ValueError("Startup report must use a new path outside the source and package")
+                saved = directory / startup_name(target)
+                shutil.copyfile(success, saved)
+                github.upload(tag, saved)
+                saved = read_startup(github, tag, manifest, directory)
+                if saved is None:
+                    raise ValueError("Uploaded startup evidence could not be read back")
+            record = collect(ROOT, manifest, directory / asset_name(target), fixture, scenario_output, saved)
+            scenarios = directory / scenarios_name(target)
+            scenarios.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n")
+            github.upload(tag, scenarios)
+            scenarios = read_scenarios(github, tag, manifest, directory, saved, fixture)
+            if scenarios is None:
+                raise ValueError("Uploaded scenarios evidence could not be read back")
+        startup_report.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(scenarios, scenario_report)
         if saved.resolve() != startup_report.resolve():
             shutil.copyfile(saved, startup_report)
     archive = directory / asset_name(target)
@@ -239,6 +283,14 @@ def save_platform(github, tag, target, source, directory, startup_report=None, f
 def source_checkout(source, directory):
     command(["git", "clone", "--quiet", "--shared", "--no-checkout", str(ROOT), str(directory)])
     command(["git", "checkout", "--quiet", "--detach", source], directory)
+
+
+def require_main_ancestor(github, source):
+    main = github.api("git/ref/heads/main")["object"]["sha"]
+    comparison = github.api(f"compare/{source}...{main}")
+    if (comparison["status"] not in ("identical", "ahead")
+            or comparison["merge_base_commit"]["sha"] != source):
+        raise ValueError("Candidate publication requires a source contained in main")
 
 
 def publish_saved(github, tag, source, channel, evidence, directory, reference="refs/heads/main"):
@@ -259,6 +311,8 @@ def publish_saved(github, tag, source, channel, evidence, directory, reference="
         if channel == "stable" or not release["draft"]:
             raise ValueError("Release is missing required platform packages or checksums")
         return {"status": "incomplete", "tag": tag, "message": "Draft retained; waiting for both platforms"}
+    if channel == "candidate" and not rehearsal:
+        require_main_ancestor(github, source)
     checkout = directory / "source"
     source_checkout(source, checkout)
     packages = []
@@ -270,6 +324,9 @@ def publish_saved(github, tag, source, channel, evidence, directory, reference="
         startup = read_startup(github, tag, manifest, platform_directory)
         if startup is None and channel == "candidate":
             raise ValueError(f"Release is missing required startup evidence for {target}")
+        scenarios = read_scenarios(github, tag, manifest, platform_directory, startup)
+        if scenarios is None and channel == "candidate":
+            raise ValueError(f"Release is missing required scenarios evidence for {target}")
         checksum = github.download(tag, asset_name(target) + ".sha256", platform_directory)
         archive = platform_directory / asset_name(target)
         expected = f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n"
@@ -352,10 +409,10 @@ def main():
     if arguments.channel == "stable" and evidence is None:
         parser.error("stable requires --evidence")
     if arguments.channel == "candidate" and not arguments.local and not arguments.finalize:
-        github.ensure_draft(tag, source)
-        github.gh("workflow", "run", "plugin-candidate.yml", "--ref", tag)
-        print(json.dumps({"status": "dispatched", "source": source, "tag": tag}))
-        return
+        github.gh("workflow", "run", "plugin-release.yml", "--ref", "main")
+        print(json.dumps({"status": "dispatched", "requested_source": source,
+                          "workflow": "plugin-release.yml", "reference": "main"}))
+        return 0
     with tempfile.TemporaryDirectory() as temporary:
         directory = Path(temporary)
         if arguments.channel == "candidate":
@@ -368,12 +425,13 @@ def main():
                               arguments.startup_report, arguments.fixture)
                 if arguments.save_only:
                     print(json.dumps({"status": "saved", "tag": tag, "target": target}))
-                    return
+                    return 0
         elif github.release(tag) is None:
             raise ValueError("No saved candidate exists for this version")
-        print(json.dumps(publish_saved(github, tag, source, arguments.channel, evidence,
-                                       directory, arguments.reference)))
+        result = publish_saved(github, tag, source, arguments.channel, evidence, directory, arguments.reference)
+        print(json.dumps(result))
+        return 0 if result["status"] == "published" else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
