@@ -25,6 +25,8 @@ const writes = [];
 let failAssignment = true, browser, cleanup, cases = 0;
 let releaseAssignment;
 const assignmentReady = new Promise(resolve => { releaseAssignment = resolve; });
+let releaseRefresh;
+const refreshReady = new Promise(resolve => { releaseRefresh = resolve; });
 const check = (actual, expected) => { assert.deepEqual(actual, expected); cases++; };
 const server = http.createServer(async (request, response) => {
   let body = "";
@@ -37,6 +39,8 @@ const server = http.createServer(async (request, response) => {
         .end(JSON.stringify({ error: "补登记未确认，请对同一会话重试" }));
     if (request.url === "/api/project/assign") fixture.sessions[0].projectId = project;
   }
+  if (request.method === "GET" && request.url === "/api/sessions"
+      && fixture.sessions[0].projectId === project) await refreshReady;
   response.writeHead(200, { "Content-Type": request.url === "/" ? "text/html; charset=utf-8" : "application/json" });
   response.end(request.url === "/" ? html : JSON.stringify(request.method === "POST" ? { ok: true } : fixture));
 });
@@ -75,6 +79,10 @@ try {
   failAssignment = false;
   await evaluate('byId("assignment-form").requestSubmit()');
   await wait('!saving && !byId("project-assignment").open');
+  check(await evaluate('document.querySelector("[data-action=assign-project]") !== null'), true);
+  releaseRefresh();
+  await wait(`data.sessions[0].projectId === ${JSON.stringify(project)}
+    && document.querySelector("[data-action=assign-project]") === null`);
   check(writes.filter(write => write.path === "/api/project/assign").map(write => write.body),
     [{ id: identifier, projectId: project, confirmed: true }, { id: identifier, projectId: project, confirmed: true }]);
   check(writes.filter(write => write.path === "/api/new").length, 1);
@@ -82,6 +90,7 @@ try {
   check(await evaluate('document.querySelector("[data-action=assign-project]") === null'), true);
 } finally {
   releaseAssignment();
+  releaseRefresh();
   if (browser) cleanup = await browser.close();
   await new Promise(resolve => server.close(resolve));
 }
