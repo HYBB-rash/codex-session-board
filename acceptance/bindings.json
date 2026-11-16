@@ -1814,6 +1814,7 @@
       "acceptance.test_pr_task_publish.PRTaskPublishTests.test_failed_validation_cannot_push_or_create_pr",
       "acceptance.test_pr_task_publish.PRTaskPublishTests.test_changed_remote_after_validation_prevents_push",
       "acceptance.test_pr_task_publish.PRTaskPublishTests.test_lost_creation_reply_recovers_terminal_pr_and_schedules_idle_cleanup",
+      "acceptance.test_pr_task_publish.PRTaskPublishTests.test_reused_historical_branch_cannot_finish_or_archive_a_new_task",
       "acceptance.test_pr_queue.PRQueueTests.test_github_feedback_mode_leaves_comment_without_native_dispatch",
       "acceptance.test_pr_queue.PRQueueTests.test_github_requeue_needs_fresh_evidence_but_no_native_ack",
       "acceptance.test_integrate.IntegrateTests.test_run_selection_uses_exact_source_branch_and_latest_attempt",

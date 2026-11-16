@@ -91,6 +91,8 @@ def submit(state, title=None, body=None):
     head = checkout(state, clean=True)
     remote_pr = published_pr(state)
     if remote_pr and remote_pr["state"] != "open":
+        if state["pr"] != remote_pr["number"] and not own_publish_intent(state, remote_pr["head"]["sha"], head):
+            raise ValueError("Historical closed PR does not belong to this task; choose a new branch")
         state.update(pr=remote_pr["number"], phase="finalizing", cleanup_pending=True)
         persist(state)
         return

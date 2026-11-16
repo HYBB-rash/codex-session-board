@@ -9,7 +9,7 @@ from acceptance.pr_task_runtime_fixture import runtime
 from scripts import pr_task as cli
 from scripts import pr_task_init as setup
 from scripts import pr_task_publish as publish
-from scripts.pr_task_state import save
+from scripts.pr_task_state import persist, save
 
 
 class PRTaskPublishTests(unittest.TestCase):
@@ -111,6 +111,7 @@ class PRTaskPublishTests(unittest.TestCase):
         arguments = cli.parser().parse_args(["submit", "--state", state["directory"]])
         with mock.patch.object(publish, "checkout", return_value=HEAD), mock.patch.object(
                 publish, "published_pr", return_value=closed), mock.patch.object(
+                publish, "own_publish_intent", return_value=True), mock.patch.object(
                 cli.lifecycle.forge, "snapshot", return_value=snapshot), mock.patch.object(
                 cli.lifecycle.native, "archive", return_value=False), mock.patch.object(
                 cli.scheduler, "install") as install:
@@ -119,3 +120,20 @@ class PRTaskPublishTests(unittest.TestCase):
         self.assertEqual(state["outcome"]["result"], "merged")
         self.assertIn("finalize", result["recovery"])
         install.assert_called_once_with(state)
+
+    def test_reused_historical_branch_cannot_finish_or_archive_a_new_task(self):
+        state, _ = task(self)
+        state.update(pr=None, phase="developing")
+        persist(state)
+        closed = pull()
+        closed.update(state="closed", merged=True)
+        arguments = cli.parser().parse_args(["submit", "--state", state["directory"]])
+        with mock.patch.object(publish, "checkout", return_value=HEAD), mock.patch.object(
+                publish, "published_pr", return_value=closed), mock.patch.object(
+                cli.lifecycle, "tick") as tick, mock.patch.object(cli.scheduler, "install") as install:
+            with self.assertRaisesRegex(ValueError, "Historical closed PR"):
+                cli.execute(state, arguments)
+        tick.assert_not_called()
+        install.assert_not_called()
+        self.assertIsNone(state["pr"])
+        self.assertEqual(saved(state)["phase"], "developing")
