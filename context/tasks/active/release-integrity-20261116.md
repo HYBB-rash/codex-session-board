@@ -14,7 +14,9 @@ stable 继续通过完整外部验收 authorize。
 
 publish_plugin 保留 publish 单包接口，新增 publish_many(repository, packages, channel)，
 packages 为 (package, evidence) 配对。CLI 的 --package 和 --evidence 接受重复参数；
-单包输出保持兼容，多包统一准备后以一次 git push --atomic 更新渠道。
+发布协调者使用明确的 --packages 批量参数，避免旧 source 内的单包脚本静默忽略前一个包。
+旧 source 不支持批量参数时直接拒绝，保留上一可用渠道。单包输出保持兼容，
+多包统一准备后以一次 git push --atomic 更新渠道。
 失败保留上一可用双平台渠道，不替换不可变包。
 
 只执行定向测试和必要提交检查，不操作日用插件或客户端。

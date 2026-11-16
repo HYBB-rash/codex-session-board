@@ -306,8 +306,8 @@ def publish_saved(github, tag, source, channel, evidence, directory, reference="
                 "tag": tag, "source": source}
     arguments = [sys.executable, str(checkout / "scripts/publish_plugin.py"),
                  "--repository", f"https://github.com/{github.repository}.git", "--channel", channel]
+    arguments.extend(["--packages", *(str(package) for package, _ in packages)])
     for package, platform_evidence in packages:
-        arguments.extend(["--package", str(package)])
         if platform_evidence:
             arguments.extend(["--evidence", str(platform_evidence)])
     subprocess.run(arguments, cwd=checkout, check=True)

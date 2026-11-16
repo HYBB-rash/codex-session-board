@@ -320,7 +320,7 @@ class SavedReleaseTests(unittest.TestCase):
         self.assertFalse(self.github.draft)
         self.assertEqual(run.call_count, 3)
         publication = run.call_args_list[-1].args[0]
-        self.assertEqual(publication.count("--package"), len(package_plugin.TARGETS))
+        self.assertEqual(len(publication[publication.index("--packages") + 1:]), len(package_plugin.TARGETS))
         observed_release = self.github.release
         for draft, immutable in ((False, False), (True, True)):
             with patch.object(self.github, "release", side_effect=lambda tag: {

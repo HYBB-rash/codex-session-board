@@ -106,19 +106,22 @@ def publish(repository, package, channel, evidence=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository", required=True)
-    parser.add_argument("--package", type=Path, required=True, action="append")
+    packages = parser.add_mutually_exclusive_group(required=True)
+    packages.add_argument("--package", type=Path, action="append")
+    packages.add_argument("--packages", type=Path, nargs="+")
     parser.add_argument("--channel", choices=("candidate", "stable"), default="candidate")
     parser.add_argument("--evidence", type=Path, action="append")
     parser.add_argument("--ssh-config", type=Path)
     arguments = parser.parse_args()
     if arguments.ssh_config:
         os.environ["GIT_SSH_COMMAND"] = shlex.join(["ssh", "-F", str(arguments.ssh_config.resolve())])
-    if arguments.evidence and len(arguments.evidence) != len(arguments.package):
+    packages = arguments.packages or arguments.package
+    if arguments.evidence and len(arguments.evidence) != len(packages):
         parser.error("Supply one --evidence per --package")
-    evidence = arguments.evidence or [None] * len(arguments.package)
+    evidence = arguments.evidence or [None] * len(packages)
     results = publish_many(arguments.repository, [
         (package.resolve(), record.resolve() if record else None)
-        for package, record in zip(arguments.package, evidence)
+        for package, record in zip(packages, evidence)
     ], arguments.channel)
     result = results[0] if len(results) == 1 else {"publications": results}
     print(json.dumps(result, indent=2))

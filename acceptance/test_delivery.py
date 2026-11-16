@@ -122,6 +122,25 @@ class DeliveryTests(unittest.TestCase):
                     publish_plugin.publish_many("unused", packages, "candidate")
                 prepare.assert_not_called()
 
+    def test_bulk_cli_preserves_legacy_single_package_and_requires_both_records(self):
+        second = self.platform_package("aarch64-apple-darwin", "0.2.93")
+        for arguments, expected in (
+            (["--package", str(self.package)], [(self.package.resolve(), None)]),
+            (["--packages", str(self.package), str(second)], [(self.package.resolve(), None), (second.resolve(), None)]),
+        ):
+            with patch.object(sys, "argv", ["publish", "--repository", "fixture", *arguments]), \
+                    patch.object(publish_plugin, "publish_many", return_value=[{"published": True}]) as publish, \
+                    patch("builtins.print"):
+                publish_plugin.main()
+                self.assertEqual(publish.call_args.args, ("fixture", expected, "candidate"))
+        with patch.object(sys, "argv", ["publish", "--repository", "fixture", "--packages",
+                                       str(self.package), str(second), "--evidence", "one.json"]), \
+                patch.object(publish_plugin, "publish_many") as publish, \
+                patch.object(sys, "stderr"):
+            with self.assertRaises(SystemExit):
+                publish_plugin.main()
+            publish.assert_not_called()
+
     def test_package_hashes_bind_assets_binary_and_version(self):
         self.assertEqual(package_plugin.verify_package(self.package), self.manifest)
         (self.package / "bin/codex-session-board").write_bytes(b"other executable")
