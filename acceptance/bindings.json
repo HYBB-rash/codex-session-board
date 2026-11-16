@@ -1750,6 +1750,7 @@
       "acceptance.test_package_startup.PackageStartupTests.test_transport_failure_with_successful_exit_cannot_pass",
       "acceptance.test_package_startup.PackageStartupTests.test_mcp_response_stream_keeps_one_total_deadline",
       "acceptance.test_package_startup.PackageStartupTests.test_fixture_channel_preserves_all_mcp_startup_requests_and_runtime_identity",
+      "acceptance.test_package_startup.PackageStartupTests.test_reset_or_broken_pipe_waits_for_exit_and_never_passes_an_incomplete_startup",
       "acceptance.test_package_startup.PackageStartupTests.test_mcp_failure_wrong_backend_or_different_service_cannot_pass",
       "acceptance.test_package_startup.PackageStartupTests.test_missing_replies_errors_wrong_version_resource_or_empty_snapshot_fail",
       "acceptance.test_delivery.DeliveryTests.test_source_preflight_checks_relocated_fingerprint_without_building_a_binary",

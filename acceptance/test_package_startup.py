@@ -59,6 +59,21 @@ class PackageStartupTests(unittest.TestCase):
         self.assertEqual(self.exchange(self.replies()),
                          {"name": "codex-session-board", "version": "1"})
 
+    def test_reset_or_broken_pipe_waits_for_exit_and_never_passes_an_incomplete_startup(self):
+        for stage, failure in (("sendall", BrokenPipeError()), ("recv", ConnectionResetError())):
+            for exit_code in (0, 1):
+                reads = [json.dumps({"pid": 26, "parent": 9, "exit": value})
+                         for value in (None, exit_code)]
+                with self.subTest(stage=stage, exit_code=exit_code), \
+                        patch.object(verify_package_startup.socket, "socket") as factory, \
+                        patch.object(Path, "read_text", side_effect=reads) as receipt:
+                    connection = factory.return_value.__enter__.return_value
+                    getattr(connection, stage).side_effect = failure
+                    expected = ValueError if exit_code else type(failure)
+                    with self.assertRaises(expected):
+                        verify_package_startup.mcp(Path("/unused"), "1", self.runtime)
+                    self.assertEqual(receipt.call_count, 2)
+
     def test_mcp_response_stream_keeps_one_total_deadline(self):
         elapsed = [0]
 
