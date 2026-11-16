@@ -16,6 +16,39 @@ UI_GROUPS = {
 TOOL_GROUPS = {"example::project_check", "test::git_hooks"}
 VERSION_PATHS = {"Cargo.toml", "Cargo.lock", "plugin.json",
                  ".codex-plugin/plugin.json", "project-rules.json"}
+PACKAGE_SCRIPTS = {
+    "scripts/build-plugin", "scripts/run-plugin", "scripts/package_plugin.py",
+    "scripts/package_migration.py", "scripts/release_plugin.py",
+    "scripts/verify_package_startup.py", "scripts/package_scenarios.py",
+}
+CONNECTION_SCRIPTS = {
+    "scripts/shared_desktop.py", "scripts/dev", "scripts/pr_connection_probe.py",
+}
+APPLICATION_SCRIPTS = PACKAGE_SCRIPTS | CONNECTION_SCRIPTS | {
+    "scripts/check-app-bridge.mjs", "scripts/check-native-new.mjs",
+    "scripts/check-native-target-source.mjs", "scripts/check-native-target-start.mjs",
+    "scripts/check-native-target.mjs", "scripts/check-remote-catalog.mjs",
+    "scripts/check-light-ui.mjs", "scripts/check-ui-layout.mjs",
+    "scripts/check-host-filter.mjs", "scripts/check-transfer-feedback.mjs",
+    "scripts/check-blocked-optional.mjs",
+}
+APPLICATION_UI = {
+    "index.html", "assets/board.svg", ".codex-plugin/plugin.json",
+}
+
+
+def application_path(path):
+    if path in {"tests/git_hooks.rs", "acceptance/unittest_adapter.py"}:
+        return False
+    return (
+        path.endswith(".rs") and path.startswith(("src/", "tests/", "examples/dev_fixture/"))
+        or path == "examples/dev_fixture.rs"
+        or path.startswith("acceptance/") and path.endswith(".py")
+        or path == "acceptance/bindings.json"
+        or path.startswith(("scripts/native_new/", "scripts/dev_environment/"))
+        and Path(path).suffix in (".py", ".js", ".mjs")
+        or path in APPLICATION_SCRIPTS | APPLICATION_UI
+    )
 
 
 def git(*arguments):
@@ -67,15 +100,20 @@ def changed(base, head):
     return set(filter(None, output.split("\0")))
 
 
-def modes(reference, paths):
+def modes(reference, paths, root=None):
     records = subprocess.check_output(
-        ["git", "ls-tree", "-rz", reference, "--", *sorted(paths)], cwd=ROOT, text=True)
+        ["git", "ls-tree", "-rz", reference, "--", *sorted(paths)], cwd=root or ROOT, text=True)
     return {entry.split("\t", 1)[1]: entry.split("\t", 1)[0].split()[0]
             for entry in records.split("\0") if entry}
 
 
 def context_path(path):
     return path.startswith("context/") and Path(path).suffix in (".md", ".yaml", ".json")
+
+
+def document_path(path):
+    return (path.startswith("Docs/") and Path(path).suffix in (".md", ".yaml", ".json", ".png", ".svg")
+            or path == "README.md")
 
 
 def plan(base, head="HEAD"):
@@ -102,7 +140,7 @@ def plan(base, head="HEAD"):
         and before.get(path, after.get(path)) == "100644" for path in paths
     )
     if ordinary:
-        relevant = {path for path in paths if not context_path(path)}
+        relevant = {path for path in paths if not context_path(path) and not document_path(path)}
         try:
             relevant = {path for path in relevant
                         if path not in VERSION_PATHS or not version_only(base, head, path)}
@@ -111,11 +149,8 @@ def plan(base, head="HEAD"):
         existing = all(path in before and path in after for path in relevant)
         if relevant and relevant.issubset(UI_PATHS) and existing:
             profile = "ui"
-        elif relevant and existing and all(
-            path.endswith(".rs") and path.startswith(("src/", "tests/"))
-            and path != "tests/git_hooks.rs" for path in relevant
-        ):
-            profile = "business"
+        elif relevant and all(path in after and application_path(path) for path in relevant):
+            profile = "application"
     return {"base": base, "profile": profile, "paths": sorted(paths), "replay": replay}
 
 
@@ -124,10 +159,11 @@ def selected(inventory, profile):
         return set(inventory)
     groups = {"::".join(name.split("::")[:2]) for name in inventory if "::" in name}
     required = UI_GROUPS if profile == "ui" else groups - TOOL_GROUPS
-    if profile not in ("ui", "business") or not required or not required.issubset(groups):
+    if profile not in ("ui", "business", "application") or not required or not required.issubset(groups):
         raise ValueError("Integration test plan has missing groups")
     return {name for name in inventory
-            if any(name.startswith(prefix + "::") for prefix in required)}
+            if profile == "application" and "::" not in name
+            or any(name.startswith(prefix + "::") for prefix in required)}
 
 
 def bound_inventory(bindings, platform):

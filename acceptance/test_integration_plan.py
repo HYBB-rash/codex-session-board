@@ -158,3 +158,51 @@ class IntegrationPlanTests(unittest.TestCase):
             changed["tests"][0]["status"] = status
             with self.subTest(status=status), self.assertRaises(ValueError):
                 planner.validate_report(changed, plan, {}, inventory)
+        inventory.add("acceptance.application.case")
+        plan = {"profile": "application"}
+        chosen = planner.selected(inventory, "application")
+        report.update(plan=plan, inventory=sorted(inventory), selected=sorted(chosen),
+                      not_run=sorted(inventory - chosen),
+                      tests=[{"id": name, "status": "pass"} for name in sorted(chosen)])
+        planner.validate_report(report, plan, {}, inventory)
+        report["tests"] = [test for test in report["tests"] if "::" in test["id"]]
+        with self.assertRaises(ValueError):
+            planner.validate_report(report, plan, {}, inventory)
+
+    def test_new_application_files_keep_python_and_exclude_unrelated_hook_self_tests(self):
+        self.write("src/added.rs", "pub fn added() {}")
+        self.write("scripts/native_new/added.py", "value = 1")
+        self.write("acceptance/test_added.py", "value = 1")
+        self.write("index.html", "mixed application change")
+        self.write("Docs/NEW-FEATURE.md", "new feature")
+        application = self.commit()
+        self.assertEqual(planner.plan(self.base)["profile"], "application")
+        inventory = {"lib::application::case", "test::git_hooks::case",
+                     "example::project_check::case", "acceptance.test_added.case"}
+        self.assertEqual(planner.selected(inventory, "application"),
+                         {"lib::application::case", "acceptance.test_added.case"})
+        for path in ("scripts/check", "scripts/new-unknown.mjs", "tests/git_hooks.rs",
+                     "acceptance/unittest_adapter.py", "examples/dev_fixture_unrelated.rs"):
+            with self.subTest(path=path):
+                self.git("reset", "--hard", application)
+                self.git("clean", "-fd")
+                self.write(path, "changed")
+                self.commit()
+                self.assertEqual(planner.plan(self.base)["profile"], "full")
+
+    def test_application_scope_rejects_deletion_and_mode_changes(self):
+        self.write("src/existing.rs", "pub fn existing() {}")
+        base = self.commit()
+        for change in ("deletion", "symlink", "executable"):
+            with self.subTest(change=change):
+                self.git("reset", "--hard", base)
+                path = self.root / "src/existing.rs"
+                if change == "deletion":
+                    path.unlink()
+                elif change == "symlink":
+                    path.unlink()
+                    path.symlink_to("../Cargo.toml")
+                else:
+                    path.chmod(0o755)
+                self.commit()
+                self.assertEqual(planner.plan(base)["profile"], "full")

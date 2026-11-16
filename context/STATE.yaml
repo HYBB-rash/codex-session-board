@@ -2,12 +2,13 @@
   "schema_version": 1,
   "updated_at": "2026-11-16",
   "current_phase": {
-    "id": "pr13-integration-20261116",
-    "status": "completed",
+    "id": "pr-validation-efficiency-20261116",
+    "status": "active",
     "as_of": "2026-11-16",
-    "summary": "PR13已随0.3.95/3629405合入主线，双平台不可变包隔离启动通过，macOS971/Linux982项全过。作者修复临时Git身份后交付f00282a，PR及候选CI并行，核心50分58秒。作者任务complete、归档confirmed、定时器removed且读回113；空闲会话自动唤醒本轮未实证。未部署日用插件或客户端，收尾记录走专用门禁。"
+    "summary": "优化PR验证和收尾，复用现有工具分离业务与提交工具自测，缩短本机完整验证的串行等待，保留最终头CI、双平台候选与包启动门禁。完成后由用户以全新真实PR测量，不重演旧PR或宣称未测的提速。"
   },
   "active_tasks": [
+    "context/tasks/active/pr-validation-efficiency-20261116.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",

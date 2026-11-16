@@ -25,8 +25,9 @@ def verify(base):
         if digest(ROOT / "acceptance" / path) != lock["files"][path]:
             raise ValueError("The accepted contract baseline changed")
     chosen = integration_plan.selected(set(requested), expected_plan["profile"])
-    groups = sorted({"::".join(name.split("::")[:2]) for name in chosen})
-    outcome = rust_adapter.run({"protocol": 1, "tests": requested}, prefixes=groups)
+    groups = sorted({"::".join(name.split("::")[:2]) for name in chosen if "::" in name})
+    outcome = rust_adapter.run({"protocol": 1, "tests": requested}, prefixes=groups,
+                               include_python=expected_plan["profile"] == "application")
     report = {
         "scope": "integration", "source": source, "plan": expected_plan,
         "passed": all(item["status"] == "pass" for item in outcome["results"]),

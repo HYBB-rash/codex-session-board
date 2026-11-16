@@ -26,7 +26,8 @@ def report(strategy):
 class PRPlanTests(unittest.TestCase):
     def strategy(self, paths, additions=()):
         with mock.patch.object(pr_plan, "git", return_value="fixed-base"), \
-                mock.patch.object(pr_plan, "changed", return_value=("merge-base", paths)):
+                mock.patch.object(pr_plan, "changed", return_value=("merge-base", paths)), \
+                mock.patch.object(pr_plan, "regular_changes", return_value=True):
             return pr_plan.plan(Path("/project"), "moving-reference", additions)
 
     def test_connection_changes_require_package_and_lifecycle_checks(self):
@@ -77,6 +78,18 @@ class PRPlanTests(unittest.TestCase):
     def test_missing_required_ui_group_cannot_silently_reduce_coverage(self):
         with self.assertRaises(ValueError):
             pr_plan.groups(INVENTORY, "ui")
+
+    def test_known_application_scripts_exclude_unrelated_tools_but_unknown_tools_do_not(self):
+        paths = ["scripts/native_new/prepare.py", "scripts/check-native-new.mjs",
+                 "src/app/new_module.rs", "acceptance/bindings.json"]
+        self.assertEqual(self.strategy(paths)["profile"], "business")
+        self.assertTrue(self.strategy(paths)["package_required"])
+        for dependency in ("scripts/check", "scripts/validate", "scripts/install-git-hooks",
+                           "scripts/version_policy.rs", ".gitignore", "Cargo.lock",
+                           ".github/workflows/pr-checks.yml", "scripts/unknown.py",
+                           "tests/git_hooks.rs"):
+            with self.subTest(dependency=dependency):
+                self.assertEqual(self.strategy(paths + [dependency])["profile"], "full")
 
 
 class PRDeliveryTests(unittest.TestCase):

@@ -1,16 +1,11 @@
 import subprocess
 from pathlib import Path
 
+from scripts.integration_plan import (
+    CONNECTION_SCRIPTS, PACKAGE_SCRIPTS, UI_GROUPS, application_path, document_path, modes,
+)
 
 RISKS = ("connection", "package", "lifecycle")
-PACKAGE_SCRIPTS = {
-    "scripts/build-plugin", "scripts/run-plugin", "scripts/package_plugin.py",
-    "scripts/package_migration.py", "scripts/release_plugin.py",
-    "scripts/verify_package_startup.py", "scripts/package_scenarios.py",
-}
-CONNECTION_SCRIPTS = {
-    "scripts/shared_desktop.py", "scripts/dev", "scripts/pr_connection_probe.py",
-}
 TOOLS = {
     "scripts/check", "scripts/validate", "scripts/validate_candidate.py",
     "scripts/pr_plan.py", "scripts/pr_delivery.py", "scripts/verify_pr_tests.py",
@@ -38,7 +33,17 @@ def changed(root, base):
     return merge_base, sorted(paths)
 
 
-def plan(root, base, additions=()):
+def regular_changes(root, base, paths):
+    if not paths:
+        return True
+    before, after = modes(base, paths, root), modes("HEAD", paths, root)
+    return all(after.get(path) == "100644" and before.get(path, "100644") == "100644"
+               for path in paths)
+
+
+def plan(root, base, additions=(), stage="ci"):
+    if stage not in ("ci", "submit"):
+        raise ValueError("Unknown PR validation stage")
     if set(additions) - set(RISKS):
         raise ValueError("Unknown PR risk; automatic checks cannot be removed")
     base = git(root, "rev-parse", f"{base}^{{commit}}")
@@ -49,11 +54,12 @@ def plan(root, base, additions=()):
     for path in paths:
         if path.startswith(("context/", "Docs/")) and Path(path).suffix in (".md", ".yaml", ".json", ".png", ".svg"):
             continue
-        if path == "README.md":
+        if document_path(path):
             continue
         relevant.add(path)
         if path.startswith(("src/rpc/", "src/config/", "src/app/", "src/remote/",
-                            "examples/dev_fixture", "scripts/dev_environment/")) or path in {
+                            "examples/dev_fixture", "scripts/dev_environment/",
+                            "scripts/native_new/")) or path in {
                                 "src/config.rs", "src/app.rs", "src/rpc.rs", *CONNECTION_SCRIPTS}:
             risks.update(("connection", "lifecycle"))
         if path in PACKAGE_SCRIPTS | {"plugin.json", ".codex-plugin/plugin.json", "mcp.json", ".mcp.json"} or path.startswith("src/") and any(
@@ -62,10 +68,10 @@ def plan(root, base, additions=()):
             risks.update(("package", "lifecycle"))
         if (path in TOOLS or path.startswith((".githooks/", ".github/"))
                 or path.endswith(".rs") and path.startswith("scripts/")
-                or not (path.startswith(("src/", "tests/", "examples/", "acceptance/"))
-                        or path in UI | PACKAGE_SCRIPTS | CONNECTION_SCRIPTS
-                        or path.startswith("scripts/dev_environment/"))):
+                or not (application_path(path) or path in UI)):
             profile = "full"
+    if not regular_changes(root, merge_base, relevant):
+        profile = "full"
     if profile != "full":
         if not relevant:
             profile = "records"
@@ -75,19 +81,42 @@ def plan(root, base, additions=()):
         risks.add("package")
     if profile == "full":
         risks.add("package")
-    return {"base": base, "merge_base": merge_base, "paths": paths,
-            "profile": profile, "risks": sorted(risks),
-            "package_required": "package" in risks}
+    strategy = {"base": base, "merge_base": merge_base, "paths": paths,
+                "profile": profile, "risks": sorted(risks),
+                "package_required": "package" in risks}
+    if stage == "submit":
+        strategy["stage"] = stage
+    return strategy
 
 
-def groups(inventory, profile):
+def submit_groups(available, paths):
+    if any(path.startswith(("tests/support/", "examples/dev_fixture")) for path in paths):
+        return available - {"test::git_hooks", "example::project_check"}
+    selected = set()
+    if any(path.startswith("src/") for path in paths):
+        selected.update(group for group in available if group.startswith("lib::"))
+        selected.add("test::board_contract")
+    for path in paths:
+        if path.startswith("tests/") and path.endswith(".rs"):
+            selected.add("test::" + path.split("/")[1].split(".")[0])
+    if any(path == "index.html" or path.endswith(".mjs") for path in paths):
+        selected.update(UI_GROUPS)
+    if not selected <= available:
+        raise ValueError("Required local PR test groups are missing")
+    return selected
+
+
+def groups(inventory, profile, paths=(), stage="ci"):
+    if stage not in ("ci", "submit"):
+        raise ValueError("Unknown PR validation stage")
     available = {"::".join(name.split("::")[:2]) for name in inventory if "::" in name}
     if profile == "full":
         return sorted(available)
     if profile == "records":
         return []
+    if profile == "business" and stage == "submit":
+        return sorted(submit_groups(available, paths))
     if profile == "ui":
-        from scripts.integration_plan import UI_GROUPS
         selected = UI_GROUPS
     elif profile == "business":
         selected = available - {"test::git_hooks", "example::project_check"}
@@ -100,7 +129,8 @@ def groups(inventory, profile):
 
 def validate_report(report, strategy, source, inventory):
     from scripts.verify_acceptance import validate_results
-    prefixes = groups(inventory, strategy["profile"])
+    prefixes = groups(inventory, strategy["profile"], strategy.get("paths", ()),
+                      strategy.get("stage", "ci"))
     chosen = {name for name in inventory if "::" not in name
               or any(name.startswith(prefix + "::") for prefix in prefixes)}
     outcomes = validate_results(report, chosen)
