@@ -21,7 +21,7 @@ def encoded(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
 
-def program(name, environment):
+def program(name, environment, root=None):
     path = shutil.which(name, path=environment.get("PATH"))
     if path is None:
         raise ValueError(f"Missing checker build tool: {name}")
@@ -34,6 +34,10 @@ def program(name, environment):
         if len(arguments) != 2 or arguments[1] != "$@" or not Path(arguments[0]).is_absolute():
             break
         path = Path(arguments[0]).resolve(strict=True)
+    if path.name == "rustup" and Path(name).name in {"cargo", "rustc"}:
+        path = Path(subprocess.check_output(
+            [str(path), "which", Path(name).name], cwd=root, env=environment,
+            text=True, timeout=30).strip()).resolve(strict=True)
     return {"sha256": digest(path)}
 
 
@@ -82,7 +86,7 @@ def describe(root, environment):
     versions = {}
     for name, arguments in (("cargo", ["--version"]), ("rustc", ["-vV"])):
         versions[name] = {
-            **program(name, environment),
+            **program(name, environment, root),
             "version": subprocess.check_output([name, *arguments], cwd=root, env=environment,
                                               text=True, timeout=30).strip(),
         }
@@ -94,13 +98,13 @@ def describe(root, environment):
                 and not name.startswith(("CARGO_PKG_", "CARGO_MANIFEST_", "CARGO_BIN_EXE_", "CARGO_CRATE_"))
                 and (name.startswith(("CARGO_", "RUST", "CC_", "CXX_", "AR_", "PKG_CONFIG"))
                      or name in {"CC", "CXX", "AR", "RANLIB", "CFLAGS", "CXXFLAGS", "CPPFLAGS",
-                                 "LDFLAGS", "SDKROOT", "MACOSX_DEPLOYMENT_TARGET", "LIBRARY_PATH",
+                                 "LDFLAGS", "SDKROOT", "DEVELOPER_DIR", "MACOSX_DEPLOYMENT_TARGET", "LIBRARY_PATH",
                                  "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "CPATH"})}
     commands = {"cc", "clang", "gcc", "ar", "ld"}
     commands.update(value for name, value in selected.items()
                     if name in {"RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "CC", "CXX", "AR"}
                     or name.endswith("_LINKER"))
-    programs = {name: program(name, environment) for name in sorted(commands)
+    programs = {name: program(name, environment, root) for name in sorted(commands)
                 if name and shutil.which(name, path=environment.get("PATH"))}
     inputs = source_inputs(root)
     build = {"schema_version": 1, "tools": versions, "host": host,
