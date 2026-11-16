@@ -5,7 +5,7 @@ import subprocess
 import unittest
 from unittest import mock
 
-from acceptance.pr_task_fixtures import HEAD, feedback, saved, task
+from acceptance.pr_task_fixtures import HEAD, feedback, pull, saved, task
 from acceptance.pr_task_runtime_fixture import command, runtime
 from scripts import pr_task as cli
 from scripts import pr_task_init as setup
@@ -96,7 +96,7 @@ class PRTaskManualTests(unittest.TestCase):
             ready.assert_not_called()
             with mock.patch.object(manual.forge, "snapshot", return_value=snapshot):
                 manual.ready(state)
-            ready.assert_called_once_with(state, snapshot)
+            ready.assert_called_once_with(state, snapshot, refresh=True)
         self.assertEqual(saved(state)["phase"], "awaiting-review")
 
     def test_finalize_distinguishes_closed_from_merged_and_keeps_work(self):
@@ -145,3 +145,29 @@ class PRTaskManualTests(unittest.TestCase):
             self.assertEqual(manual.observe(state)["handoff"]["next_action"], "wait-ci")
             snapshot.update(head="c" * 40, ci="passed")
             self.assertEqual(manual.observe(state)["handoff"]["next_action"], "submit")
+
+    def test_explicit_ready_revalidates_same_head_and_reopens_draft(self):
+        state, snapshot = task(self)
+        state.update(mode="manual", published={"head": HEAD, "validation": state["directory"]}, ready_head=HEAD)
+        snapshot.update(ci="passed", draft=True)
+        current = pull()
+        current["draft"] = True
+        with mock.patch.object(manual.forge, "snapshot", return_value=snapshot), mock.patch.object(
+                manual, "checkout", return_value=HEAD), mock.patch.object(
+                manual.publish, "validation") as validation, mock.patch.object(
+                manual.publish.forge, "api", return_value=current) as api, mock.patch.object(
+                manual.publish, "comment_once") as comment, mock.patch.object(manual.publish, "labels") as labels:
+            self.assertEqual(manual.observe(state)["handoff"]["next_action"], "ready")
+            manual.ready(state)
+            manual.ready(state)
+        self.assertEqual(validation.call_count, 2)
+        self.assertTrue(any(call.args[0] == "graphql" for call in api.call_args_list))
+        self.assertEqual(comment.call_args_list[0], comment.call_args_list[1])
+        self.assertEqual(labels.call_args.args, ("owner/repo", 7, True))
+        with mock.patch.object(manual.forge, "snapshot", return_value=snapshot), mock.patch.object(
+                manual, "checkout", return_value=HEAD), mock.patch.object(
+                manual.publish, "validation", side_effect=ValueError("Report changed")), mock.patch.object(
+                manual.publish.forge, "api") as api:
+            with self.assertRaisesRegex(ValueError, "Report changed"):
+                manual.ready(state)
+        api.assert_not_called()

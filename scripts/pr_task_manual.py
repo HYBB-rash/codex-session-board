@@ -31,7 +31,8 @@ def observe(state):
     elif snapshot["ci"] != "passed":
         next_action = "wait-ci"
     else:
-        next_action = "independent-review" if state.get("ready_head") == snapshot["head"] else "ready"
+        next_action = "independent-review" if (
+            state.get("ready_head") == snapshot["head"] and not snapshot["draft"]) else "ready"
     result["handoff"] = {
         "url": snapshot["url"], "head": snapshot["head"], "base": snapshot["base"],
         "state": snapshot["state"], "ci": snapshot["ci"], "draft": snapshot["draft"],
@@ -49,7 +50,7 @@ def ready(state):
     if (state.get("published", {}).get("head") != snapshot["head"]
             or checkout(state, clean=True) != snapshot["head"]):
         raise ValueError("Submit and validate the current PR head before announcing readiness")
-    publish.ready(state, snapshot)
+    publish.ready(state, snapshot, refresh=True)
     state.update(phase="awaiting-review", last_snapshot=snapshot)
     persist(state)
 

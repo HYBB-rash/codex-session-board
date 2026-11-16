@@ -1788,6 +1788,7 @@
       "acceptance.test_pr_task_manual.PRTaskManualTests.test_finalize_distinguishes_closed_from_merged_and_keeps_work",
       "acceptance.test_pr_task_manual.PRTaskManualTests.test_refresh_terminal_or_failed_request_never_finalizes",
       "acceptance.test_pr_task_manual.PRTaskManualTests.test_attach_and_refresh_do_not_reuse_readiness_for_changed_head_or_ci",
+      "acceptance.test_pr_task_manual.PRTaskManualTests.test_explicit_ready_revalidates_same_head_and_reopens_draft",
       "acceptance.test_pr_queue_closeout.PRQueueCloseoutTests.test_manual_cleanup_uses_explicit_finalize_without_watcher",
       "acceptance.test_pr_task_cli.PRTaskCLITests.test_real_cli_requires_original_claim_and_publishes_blocked_once",
       "acceptance.test_pr_task_cli.PRTaskCLITests.test_real_cli_lock_and_background_permission_probe_are_idempotent",
