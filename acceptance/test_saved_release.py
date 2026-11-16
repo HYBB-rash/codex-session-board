@@ -12,6 +12,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import package_plugin
 import release_plugin
+import release_scenarios
 import verify_package_startup
 
 
@@ -131,14 +132,83 @@ class SavedReleaseTests(unittest.TestCase):
             "checks": verify_package_startup.CHECKS, "cleanup_confirmed": True,
         }
 
-    def save_existing(self, target=None, startup=True):
+    def scenarios(self, manifest, body, startup):
+        reports = {}
+        cases = []
+        for name, expected in release_scenarios.CASES.items():
+            report = {**self.startup(manifest["target"]), "passed": expected is None}
+            if expected:
+                report.update(error=expected, checks=[])
+            if name == "wrong-sidebar":
+                report = {"passed": True, "cleanup_confirmed": True, "status": 403,
+                          "bytes_per_connection": [0], "response": {"error": expected}}
+            reports[name] = report
+            cases.append({"name": name, "passed": True, "cleanup_confirmed": True,
+                          "expected_rejection": expected is not None,
+                          "actual_startup_passed": expected is None})
+        return {
+            "schema_version": 1, "scope": "pr_package_scenarios", "passed": True,
+            "manifest": manifest, "fixture_sha256": hashlib.sha256(b"fixture").hexdigest(),
+            "verifier_sha256": release_scenarios.digest(release_plugin.ROOT / "scripts/verify_package_startup.py"),
+            "source_digests": release_scenarios.source_digests(release_plugin.ROOT),
+            "package_asset_sha256": hashlib.sha256(body).hexdigest(),
+            "startup_sha256": hashlib.sha256(startup).hexdigest(),
+            "cases": cases, "reports": reports, "wrong_backend_bytes": [0],
+        }
+
+    def save_existing(self, target=None, startup=True, scenarios=True):
         target = target or self.target
         name = release_plugin.asset_name(target)
         body = self.archive(target)
         self.github.assets[name] = body
         self.github.assets[name + ".sha256"] = f"{hashlib.sha256(body).hexdigest()}  {name}\n".encode()
         if startup:
-            self.github.assets[release_plugin.startup_name(target)] = json.dumps(self.startup(target)).encode()
+            saved_startup = json.dumps(self.startup(target)).encode()
+            self.github.assets[release_plugin.startup_name(target)] = saved_startup
+            if scenarios:
+                with tarfile.open(fileobj=io.BytesIO(body)) as contents:
+                    manifest = json.load(contents.extractfile("RELEASE.json"))
+                self.github.assets[f"SCENARIOS-{target}.json"] = json.dumps(
+                    self.scenarios(manifest, body, saved_startup)).encode()
+
+    def test_scenarios_bind_all_cases_fixture_verifiers_and_actual_package(self):
+        self.save_existing()
+        archive = self.root / release_plugin.asset_name(self.target)
+        archive.write_bytes(self.github.assets[archive.name])
+        startup = self.root / release_plugin.startup_name(self.target)
+        startup.write_bytes(self.github.assets[startup.name])
+        fixture = self.root / "fixture"
+        fixture.write_bytes(b"fixture")
+        record = json.loads(self.github.assets[f"SCENARIOS-{self.target}.json"])
+        manifest = record["manifest"]
+        release_scenarios.validate(record, manifest, archive, startup, release_plugin.ROOT, fixture)
+        changes = [
+            lambda item: item.update(passed=False),
+            lambda item: item.update(manifest={**manifest, "source_commit": "c" * 40}),
+            lambda item: item.update(fixture_sha256="c" * 64),
+            lambda item: item.update(verifier_sha256="c" * 64),
+            lambda item: item.update(source_digests={}),
+            lambda item: item.update(package_asset_sha256="c" * 64),
+            lambda item: item.update(startup_sha256="c" * 64),
+            lambda item: item["cases"].pop(),
+            lambda item: item["cases"][1].update(name="success"),
+            lambda item: item["cases"][1].update(expected_rejection=False),
+            lambda item: item["cases"][1].update(cleanup_confirmed=False),
+            lambda item: item["cases"][1].update(passed=False),
+            lambda item: item["reports"]["mcp-config-drift"].update(error="another failure"),
+            lambda item: item["reports"]["mcp-config-drift"].update(passed=True),
+            lambda item: item["reports"]["mcp-config-drift"].update(source_commit="c" * 40),
+            lambda item: item["reports"]["wrong-sidebar"].update(bytes_per_connection=[1]),
+            lambda item: item["reports"]["wrong-sidebar"].update(status=200),
+            lambda item: item["reports"]["success"].update(cleanup_confirmed=False),
+            lambda item: item["reports"].pop("success"),
+            lambda item: item.update(wrong_backend_bytes=[1]),
+        ]
+        for index, change in enumerate(changes):
+            mutated = json.loads(json.dumps(record))
+            change(mutated)
+            with self.subTest(index=index), self.assertRaisesRegex(ValueError, "scenario"):
+                release_scenarios.validate(mutated, manifest, archive, startup, release_plugin.ROOT, fixture)
 
     def test_first_release_checks_tag_reference_before_resolving_commit(self):
         github = release_plugin.GitHub("owner/plugin")

@@ -2,11 +2,11 @@
 
 owner: /root/release_pipeline_audit
 execution_mode: isolated_write
-allowed_write_set: scripts/release_plugin.py、scripts/publish_plugin.py、acceptance/test_saved_release.py、acceptance/test_delivery.py、本任务记录
+allowed_write_set: scripts/release_plugin.py、scripts/publish_plugin.py、scripts/release_scenarios.py、acceptance/test_saved_release.py、acceptance/test_delivery.py、本任务记录
 base_commit: aa1f5663eb09add4aef2624b070935462d25342b
 worktree_path: /Users/hongyong/.codex/worktrees/merge-release-publish-20261116
 coordinator: /root
-status: ready_for_integration
+status: active
 
 沿用 save_platform 和 publish_saved，启动报告保存为 STARTUP-<target>.json，
 读回核对 GitHub 资产摘要和包身份，候选发布必须具备两平台成功且清理完成的报告。
@@ -39,3 +39,8 @@ packages 为 (package, evidence) 配对。CLI 的 --package 和 --evidence 接�
 - 这些是本地受控验证，不代表真实 GitHub 发布或流程节省测量。
 
 协调者需统一补 acceptance/bindings.json 新测试绑定，并运行最终组合与真实发布流水线。
+
+后续补充：将既有 package_scenarios.verify(connection=True) 移至首次发布保存，
+六案例证据保存并读回 SCENARIOS-<target>.json，复用 success.json 为启动证据。
+绑定实际包、STARTUP、fixture 和验证器摘要，旧 STARTUP 缺 SCENARIOS 不得命中缓存。
+候选 CLI 未就绪必须非零退出；自动入口改为主线发布，渠道更新前确认 main 包含源码。
