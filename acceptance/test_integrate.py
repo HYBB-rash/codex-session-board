@@ -96,16 +96,21 @@ class IntegrateTests(unittest.TestCase):
             def check(*arguments):
                 order.append("pr")
                 return None if order.count("pr") == 1 else [{"head": "current"}]
+            def promoted(*arguments, **keywords):
+                arguments[4].write_text(json.dumps({"merge_status": "merged",
+                                                   "release_status": "pending"}))
             with patch.object(integrate, "require_checkout"), \
                     patch.object(integrate, "git", return_value="base refs/heads/main"), \
                     patch.object(integrate.subprocess, "run"), patch.object(integrate.time, "sleep"), \
                     patch.object(integrate, "find_run", side_effect=find), \
                     patch.object(integrate.pr_queue_gates, "verify", side_effect=check), \
-                    patch.object(integrate, "promote") as promote:
+                    patch.object(integrate, "promote", side_effect=promoted) as promote:
                 integrate.continue_candidate(state, directory, 10)
             self.assertEqual(order, ["candidate", "pr", "pr"])
             self.assertEqual(promote.call_args.kwargs["pr_gates"], state["pr_gates"])
             self.assertEqual(state["pr_checks"], [{"head": "current"}])
+            self.assertEqual(state["merge_status"], "merged")
+            self.assertEqual(state["release_status"], "pending")
 
     def test_resume_adopts_missing_pr_gates_and_rejects_different_frozen_inputs(self):
         from argparse import Namespace

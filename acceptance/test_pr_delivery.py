@@ -145,17 +145,10 @@ class PRDeliveryTests(unittest.TestCase):
         self.assertEqual(saved["error"]["type"], "FileNotFoundError")
         self.assertIn("missing tool", saved["error"]["detail"])
 
-    def test_actual_package_failure_is_reported_before_starting_long_regressions(self):
+    def test_package_risks_defer_packaging_but_keep_business_test_failure(self):
         source, destination = self.setup_source()
-        fixture = source / "fixture"
-        fixture.write_bytes(b"fixture")
-
-        def execute(name, _command, output, **_options):
-            if name == "build-fixture":
-                (output / "build-fixture.log").write_text(json.dumps({
-                    "target": {"name": "dev_fixture"}, "executable": str(fixture),
-                }) + "\n")
-            return {"returncode": 1 if name == "package-scenarios" else 0, "seconds": 0}
+        def execute(name, _command, _output, **_options):
+            return {"returncode": 1 if name == "related-tests" else 0, "seconds": 0}
 
         strategy = {"profile": "business", "package_required": True, "risks": ["package"]}
         with mock.patch.object(pr_delivery, "identity", return_value=SOURCE), \
@@ -164,11 +157,12 @@ class PRDeliveryTests(unittest.TestCase):
                 mock.patch.object(pr_delivery, "execute", side_effect=execute) as commands:
             self.assertEqual(pr_delivery.validate(source, "base", destination), 1)
         names = [call.args[0] for call in commands.call_args_list]
-        self.assertIn("package-scenarios", names)
-        self.assertNotIn("related-tests", names)
+        self.assertEqual(names, ["project-check", "all-target-clippy", "source-package", "related-tests"])
         saved = json.loads((destination / "VALIDATION.json").read_text())
         self.assertFalse(saved["passed"])
-        self.assertIn("package-scenarios", saved["error"]["detail"])
+        self.assertIn("related-tests", saved["error"]["detail"])
+        self.assertEqual(saved["release_risks"], ["package"])
+        self.assertEqual(saved["release_status"], "not_requested")
 
     def test_evidence_inside_source_and_reused_output_are_rejected(self):
         source, destination = self.setup_source()

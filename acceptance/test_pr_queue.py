@@ -331,7 +331,9 @@ class PRQueueTests(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertEqual(command[-2:], ["--reference", self.state["reference"]])
         self.assertEqual(item["status"], "merged")
-        self.assertTrue(self.state["batch_delivered"])
+        self.assertTrue(self.state["batch_merged"])
+        self.assertFalse(self.state["batch_delivered"])
+        self.assertEqual(self.state["release_status"], "pending")
         self.assertFalse(self.state["all_items_merged"])
         self.assertEqual(self.state["initial_base"], self.base)
 

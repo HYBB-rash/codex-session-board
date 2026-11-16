@@ -58,43 +58,8 @@ def validate(project, base, output, expected=None, additions=(), stage="ci"):
             sys.executable, str(project / "scripts/package_plugin.py"), "--preflight",
             "--output", str(output / "source-package"),
         ])
-        if strategy["package_required"]:
-            step("build-fixture", [
-                "cargo", "build", "--locked", "--offline", "--example", "dev_fixture",
-                "--message-format=json",
-            ])
-            fixtures = []
-            for line in (output / "build-fixture.log").read_text().splitlines():
-                try:
-                    item = json.loads(line)
-                except ValueError:
-                    continue
-                if item.get("target", {}).get("name") == "dev_fixture" and item.get("executable"):
-                    fixtures.append(item["executable"])
-            if len(set(fixtures)) != 1:
-                raise ValueError("Cargo did not identify the actual PR fixture executable")
-            fixture = Path(fixtures[0]).resolve(strict=True)
-            record["fixture_sha256"] = hashlib.sha256(fixture.read_bytes()).hexdigest()
-            step("build-plugin", [
-                sys.executable, str(project / "scripts/package_plugin.py"),
-                "--output", str(output / "built-package"),
-            ])
-            package_command = [
-                sys.executable, str(ROOT / "scripts/package_scenarios.py"),
-                "--project", str(project), "--package", str(output / "built-package"),
-                "--fixture", str(fixture), "--output", str(output / "package-checks"),
-            ]
-            if "connection" in strategy["risks"]:
-                package_command.append("--connection")
-            step("package-scenarios", package_command)
-            scenarios = json.loads((output / "package-checks/SCENARIOS.json").read_text())
-            manifest = scenarios["manifest"]
-            if (scenarios["passed"] is not True or manifest["source_commit"] != source["commit"]
-                    or manifest["build_sha256"] != source["fingerprint"]
-                    or scenarios["fixture_sha256"] != record["fixture_sha256"]):
-                raise ValueError("The actual package or fixture differs from the tested PR")
-            record["package_checks_sha256"] = hashlib.sha256(
-                (output / "package-checks/SCENARIOS.json").read_bytes()).hexdigest()
+        record["release_status"] = "not_requested"
+        record["release_risks"] = strategy["risks"]
         step("related-tests", [
             sys.executable, str(ROOT / "scripts/verify_pr_tests.py"),
             "--plan", str(output / "PLAN.json"), "--report", str(output / "TESTS.json"),

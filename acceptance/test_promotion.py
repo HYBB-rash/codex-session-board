@@ -109,7 +109,7 @@ class PromotionTests(unittest.TestCase):
         (directory / "automated.json").write_text(json.dumps(report))
         (directory / "STARTUP.json").write_text(json.dumps({
             "scope": "package_startup", "passed": True, "cleanup_confirmed": True,
-            "checks": promotion.CHECKS, "source_commit": self.source["commit"],
+            "checks": [], "source_commit": self.source["commit"],
             "build_sha256": self.source["fingerprint"], "binary_sha256": "e" * 64,
             "target": "aarch64-apple-darwin",
         }))
@@ -217,17 +217,8 @@ class PromotionTests(unittest.TestCase):
             promotion.validate_artifact(directory, self.source, "macos-arm64")
             with self.assertRaises(ValueError):
                 promotion.validate_artifact(directory, self.source, "linux-x86_64")
-            startup = directory / "STARTUP.json"
-            original = json.loads(startup.read_text())
-            for field, value in (
-                ("cleanup_confirmed", False), ("passed", False), ("checks", []),
-                ("source_commit", "d" * 40), ("build_sha256", "f" * 64),
-                ("binary_sha256", "wrong"), ("target", "x86_64-unknown-linux-gnu"),
-            ):
-                startup.write_text(json.dumps({**original, field: value}))
-                with self.subTest(field=field), self.assertRaises(ValueError):
-                    promotion.validate_artifact(directory, self.source, "macos-arm64")
-            startup.write_text(json.dumps(original))
+            (directory / "STARTUP.json").unlink()
+            promotion.validate_artifact(directory, self.source, "macos-arm64")
             (directory / "automated.json").write_text("{}")
             with self.assertRaises(ValueError):
                 promotion.validate_artifact(directory, self.source, "macos-arm64")
@@ -241,30 +232,16 @@ class PromotionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 promotion.validate_artifact(directory, self.source, "macos-arm64")
 
-    def test_actual_package_must_be_immutable_and_match_the_started_binary(self):
-        startup = {
-            "source_commit": self.source["commit"], "build_sha256": self.source["fingerprint"],
-            "binary_sha256": "e" * 64, "version": "0.3.80", "target": promotion.TARGETS["macos-arm64"],
-        }
+    def test_collecting_merge_evidence_does_not_read_a_release_or_package(self):
         with tempfile.TemporaryDirectory() as temporary:
-            directory = Path(temporary)
-            service = Mock()
-            with patch("release_plugin.GitHub", return_value=service), \
-                    patch("release_plugin.read_package") as read, \
-                    patch("package_plugin.verify_package", return_value=startup) as verify:
-                for release in (None, {"draft": True, "immutable": True},
-                                {"draft": False, "immutable": False}):
-                    service.release.return_value = release
-                    with self.assertRaises(ValueError):
-                        promotion.verify_saved_package(
-                            "owner/repo", "macos-arm64", self.source, startup, directory / "invalid")
-                read.assert_not_called()
-                service.release.return_value = {"draft": False, "immutable": True}
-                for key in startup:
-                    verify.return_value = {**startup, key: "wrong"}
-                    with self.subTest(key=key), self.assertRaises(ValueError):
-                        promotion.verify_saved_package(
-                            "owner/repo", "macos-arm64", self.source, startup, directory / key)
+            with patch.object(promotion, "github") as github, \
+                    patch.object(promotion, "validate_artifact", return_value={"passed": True}), \
+                    patch("release_plugin.GitHub") as release:
+                label, report, package = promotion.collect_platform(
+                    "owner/repo", 1, "macos-arm64", self.source, "base", Path(temporary))
+                self.assertEqual((label, report, package), ("macos-arm64", {"passed": True}, None))
+                self.assertEqual(github.call_count, 1)
+                release.assert_not_called()
 
     def test_scoped_promotion_recomputes_plan_and_rejects_omitted_or_failed_tests(self):
         from scripts.integration_plan import bound_inventory, selected

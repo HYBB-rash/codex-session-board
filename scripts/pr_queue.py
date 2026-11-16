@@ -83,6 +83,7 @@ def initialize(manifest, directory):
         raise ValueError("Queue needs at least one PR")
     state.update(schema_version=1, project=str(project), base=base, initial_base=base, prefix=base,
                  checker=checker, started_at=now(), events=[],
+                 batch_merged=False, release_status="not_requested",
                  batch_delivered=False, all_items_merged=False)
     directory.mkdir(parents=True)
     save(directory / "queue.json", state)
@@ -113,16 +114,6 @@ def verify_pr_validation(item, checker):
             or git(project, "status", "--porcelain", "--untracked-files=all")):
         raise ValueError("PR evidence must identify the current clean source and queue checker")
     names = ["project-check", "all-target-clippy", "source-package"]
-    if strategy["package_required"]:
-        names += ["build-fixture", "build-plugin", "package-scenarios"]
-        scenarios = directory / "package-checks/SCENARIOS.json"
-        package = json.loads(scenarios.read_text())
-        if (hashlib.sha256(scenarios.read_bytes()).hexdigest() != record["package_checks_sha256"]
-                or package["passed"] is not True
-                or package["manifest"]["source_commit"] != source["commit"]
-                or package["manifest"]["build_sha256"] != source["fingerprint"]
-                or package["fixture_sha256"] != record["fixture_sha256"]):
-            raise ValueError("Actual package evidence differs from the PR source")
     names.append("related-tests")
     if [step["name"] for step in record["steps"]] != names:
         raise ValueError("PR evidence omitted required delivery steps")
@@ -337,7 +328,8 @@ def requeue(state, incoming, directory):
                      "同一源码的独立审阅和交付证据已重新核验，解除该条交付反馈；原始失败评论保留。")
     item.update(replacement, status="submitted")
     item.pop("feedback", None)
-    state.update(batch_delivered=False, all_items_merged=False)
+    state.update(batch_merged=False, release_status="not_requested",
+                 batch_delivered=False, all_items_merged=False)
     save(directory / "queue.json", state)
 
 
@@ -462,8 +454,9 @@ def finish(state, directory):
         if item["status"] == "accepted":
             item["status"] = "merged"
     state.setdefault("initial_base", state["base"])
-    state["frozen_candidate"]["status"] = "delivered"
-    state.update(base=candidate, prefix=candidate, delivered_at=now(), batch_delivered=True,
+    state["frozen_candidate"]["status"] = "merged"
+    state.update(base=candidate, prefix=candidate, merged_at=now(), batch_merged=True,
+                 release_status="pending", batch_delivered=False,
                  all_items_merged=all(item["status"] == "merged" for item in state["items"]))
     save(directory / "queue.json", state)
 

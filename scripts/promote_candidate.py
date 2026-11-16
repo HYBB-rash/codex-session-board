@@ -12,13 +12,12 @@ from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from scripts.validate_candidate import ROOT, acceptance_outcome, commands_for, git, identity
-from scripts.verify_package_startup import CHECKS
 from scripts.validation_report import verify_complete
 from scripts.validate_context import require_remote_target, require_target
 
 JOBS = {
     "Candidate (linux-x86_64)", "Candidate (macos-arm64)",
-    "Finalize candidate", "Candidate gate", "Classify integration",
+    "Candidate gate", "Classify integration",
 }
 PLATFORMS = {"linux-x86_64": ("linux", "x86_64"), "macos-arm64": ("darwin", "arm64")}
 TARGETS = {"linux-x86_64": "x86_64-unknown-linux-gnu", "macos-arm64": "aarch64-apple-darwin"}
@@ -101,37 +100,7 @@ def validate_artifact(directory, source, label, base=None):
         log = directory / f"{step['name']}.log"
         if hashlib.sha256(log.read_bytes()).hexdigest() != step["log_sha256"]:
             raise ValueError("Validation transcript does not match its recorded digest")
-    startup = json.loads((directory / "STARTUP.json").read_text())
-    binary = startup["binary_sha256"]
-    if (startup["scope"] != "package_startup" or startup["passed"] is not True
-            or startup["cleanup_confirmed"] is not True or startup["checks"] != CHECKS
-            or startup["source_commit"] != source["commit"]
-            or startup["build_sha256"] != source["fingerprint"]
-            or startup["target"] != TARGETS[label]
-            or not isinstance(binary, str) or len(binary) != 64
-            or any(character not in "0123456789abcdef" for character in binary)):
-        raise ValueError("Packaged startup does not match the candidate and platform")
-    record["package_startup"] = startup
     return record
-
-
-def verify_saved_package(repository, label, source, startup, directory, reference="refs/heads/main"):
-    from release_plugin import GitHub, asset_name, read_package
-    from package_plugin import verify_package
-    service = GitHub(repository)
-    tag = "v" + startup["version"] if reference == "refs/heads/main" else "rehearsal-" + source["commit"]
-    release = service.release(tag)
-    if not release or release["draft"] or release.get("immutable") is not True:
-        raise ValueError("The actual candidate release must be immutable")
-    directory.mkdir(parents=True)
-    package = read_package(service, tag, TARGETS[label], source["commit"], directory)
-    manifest = verify_package(package)
-    for key in ("source_commit", "build_sha256", "binary_sha256", "version", "target"):
-        if manifest[key] != startup[key]:
-            raise ValueError("Actual package differs from its startup validation: " + key)
-    archive = directory / asset_name(TARGETS[label])
-    return {"manifest": manifest, "archive": str(archive),
-            "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest()}
 
 
 def collect_platform(repository, run, label, source, base, directory, reference="refs/heads/main"):
@@ -139,9 +108,7 @@ def collect_platform(repository, run, label, source, base, directory, reference=
     github("run", "download", str(run), "--repo", repository,
            "--name", f"acceptance-{label}", "--dir", str(validation))
     record = validate_artifact(validation, source, label, base)
-    package = verify_saved_package(
-        repository, label, source, record["package_startup"], directory / "packages" / label, reference)
-    return label, record, package
+    return label, record, None
 
 
 def promote(candidate, base, run_id, repository, output, reference="refs/heads/main", *, pr_gates=None):
@@ -162,13 +129,13 @@ def promote(candidate, base, run_id, repository, output, reference="refs/heads/m
         require_remote_target(reference, (base, candidate), git_command=git)
     output.parent.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix="verified-candidate-", dir=output.parent))
-    validations, packages = {}, {}
+    validations = {}
     with ThreadPoolExecutor(max_workers=2) as workers:
         futures = [workers.submit(collect_platform, repository, run_id, label, source,
                                   base, directory, reference) for label in PLATFORMS]
         for future in futures:
-            label, record, package = future.result()
-            validations[label], packages[label] = record, package
+            label, record, _package = future.result()
+            validations[label] = record
     if identity() != source or git("status", "--porcelain", "--untracked-files=all"):
         raise ValueError("Candidate changed while checking remote validation")
     pr_checks = None
@@ -186,13 +153,18 @@ def promote(candidate, base, run_id, repository, output, reference="refs/heads/m
     receipt = {
         "schema_version": 1, "source": source, "base": base, "reference": reference,
         "repository": repository, "run": run_id,
-        "validated_platforms": validations, "packages": packages,
+        "validated_platforms": validations,
+        "merge_status": "merged", "release_status": "pending",
         "artifacts": str(directory),
         "pr_checks": pr_checks,
         "promoted_at": datetime.now(timezone.utc).isoformat(),
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(receipt, indent=2) + "\n")
+    if reference == "refs/heads/main":
+        from scripts.main_release import dispatch
+        receipt["release"] = dispatch(repository, candidate)
+        output.write_text(json.dumps(receipt, indent=2) + "\n")
     print(json.dumps({"promoted": candidate, "receipt": str(output)}))
     return receipt
 

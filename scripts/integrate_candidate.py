@@ -95,6 +95,10 @@ def continue_candidate(state, directory, timeout):
         else:
             promote(candidate, base, run["id"], state["repository"], receipt, reference)
     state["completed_at"] = now()
+    state["merge_status"] = "merged"
+    promoted = json.loads(receipt.read_text())
+    state["release_status"] = promoted.get("release_status", "unchanged")
+    state["release"] = promoted.get("release")
     state["seconds"] = (datetime.fromisoformat(state["completed_at"])
                         - datetime.fromisoformat(state["started_at"])).total_seconds()
     state.pop("last_error", None)

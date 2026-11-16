@@ -39,8 +39,8 @@ def author(state, item):
 
 
 def closeout(state):
-    if not state.get("batch_delivered"):
-        raise ValueError("Close out only after main promotion and immutable packages are confirmed")
+    if not (state.get("batch_merged") or state.get("batch_delivered")):
+        raise ValueError("Close out only after the validated candidate entered main")
     started = time.monotonic()
     previous = state.get("closeout", {})
     record = {"started_at": previous.get("started_at", now()), "authors": []}

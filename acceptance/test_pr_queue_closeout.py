@@ -14,7 +14,7 @@ class PRQueueCloseoutTests(unittest.TestCase):
         item = {"number": state["pr"], "head": HEAD, "status": "merged", "route": state["route"],
                 "author_task_state": state["directory"]}
         queue = {"repository": state["repository"], "checker": state["checker"],
-                 "batch_delivered": True, "items": [item]}
+                 "batch_merged": True, "items": [item]}
         return state, item, queue
 
     def test_cleanup_reuses_task_tick_and_completed_tasks_do_not_run_again(self):
@@ -59,7 +59,7 @@ class PRQueueCloseoutTests(unittest.TestCase):
         self.assertTrue(result["complete"])
         self.assertEqual(len(result["authors"]), 1)
         self.assertEqual(result["started_at"], started)
-        self.assertTrue(queue["batch_delivered"])
-        queue["batch_delivered"] = False
+        self.assertTrue(queue["batch_merged"])
+        queue["batch_merged"] = False
         with self.assertRaises(ValueError):
             closeout.closeout(queue)
