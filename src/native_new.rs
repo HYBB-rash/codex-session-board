@@ -63,8 +63,12 @@ fn capability(config: &Config, target: bool) -> Result<()> {
 }
 
 pub(crate) fn target_url(config: &Config, host: &str, project: &str, operation: &str) -> Result<String> {
-    capability(config, true)?;
+    target_capability(config)?;
     target_route(host, project, operation)
+}
+
+pub(crate) fn target_capability(config: &Config) -> Result<()> {
+    capability(config, true)
 }
 
 fn target_route(host: &str, project: &str, operation: &str) -> Result<String> {
@@ -92,6 +96,7 @@ pub(crate) fn remote_url(config: &Config, project: &Value) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn target_route_contains_only_bound_identifiers() -> Result<()> {
@@ -104,6 +109,30 @@ mod tests {
             ("operationId".into(), operation.into())]);
         assert!(target_route("local", identifier, operation).is_err());
         assert!(target_route("remote:ssh", "/path", operation).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn only_v2_capability_can_open_target_projects() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let resources = directory.path().join("resources");
+        std::fs::create_dir(&resources)?;
+        let archive = resources.join("app.asar");
+        std::fs::write(&archive, b"fixture archive")?;
+        let capability = directory.path().join("capability.json");
+        let config = Config {
+            open_command: vec![directory.path().join("codex").to_string_lossy().into_owned()],
+            native_new_capability: Some(capability.clone()), ..Config::default()
+        };
+        let project = json!({"hostId":"remote:target","nativeId":"client-remote-project"});
+        for protocol in ["codex-remote-draft-v1","codex-remote-draft-v2"] {
+            std::fs::write(&capability, serde_json::to_vec(&json!({"protocol":protocol,
+                "archive":archive,"sha256":digest(&archive)?,"openCommand":config.open_command}))?)?;
+            assert!(remote_url(&config,&project).is_ok());
+            assert_eq!(target_capability(&config).is_ok(),protocol == "codex-remote-draft-v2");
+        }
+        std::fs::write(&archive,b"updated archive")?;
+        assert!(target_capability(&config).is_err());
         Ok(())
     }
 }

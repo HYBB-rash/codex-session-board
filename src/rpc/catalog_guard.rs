@@ -52,6 +52,7 @@ impl CatalogGuard {
         self.source()?;
         ensure!(params.is_object(), "目录 RPC 参数必须是对象");
         match method {
+            "project/import" => import_params(params)?,
             "thread/list" => ensure!(params["useStateDbOnly"] == Value::Bool(true),
                 "目录读取必须使用 useStateDbOnly=true"),
             "thread/read" => ensure!(params["includeTurns"] == Value::Bool(false),
@@ -67,6 +68,23 @@ impl CatalogGuard {
         }
         Ok(())
     }
+}
+
+fn import_params(params: &Value) -> Result<()> {
+    let object = params.as_object().context("导入参数不是对象")?;
+    ensure!(object.len() == 4 && ["idempotencyKey","name","roots","metadata"].iter()
+        .all(|key| object.contains_key(*key)), "项目准备只允许精确旧项目导入，禁止会话迁移");
+    let key = params["idempotencyKey"].as_str().context("导入缺少旧项目 ID")?;
+    ensure!(!key.is_empty() && key.len() <= 4096 && !key.starts_with("g-p-")
+        && !key.chars().any(char::is_control), "导入旧项目 ID 无效");
+    ensure!(params["name"].as_str().is_some_and(|name| !name.trim().is_empty()), "导入名称无效");
+    ensure!(params["roots"].as_array().is_some_and(|roots| !roots.is_empty() && roots.iter().all(|root|
+        root.as_object().is_some_and(|fields| fields.len() == 1)
+        && root["path"].as_str().is_some_and(|path| path.starts_with('/') && !path.chars().any(char::is_control)))),
+        "导入根目录无效");
+    ensure!(params["metadata"].as_object().is_some_and(|metadata| metadata.values().all(Value::is_string)),
+        "导入 metadata 无效");
+    Ok(())
 }
 
 fn local_home(home: &Path, override_home: Option<&Path>) -> Result<PathBuf> {

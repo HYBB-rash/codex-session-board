@@ -66,6 +66,46 @@ fn catalog_role_denies_all_execution_writes_history_and_watches() -> Result<()> 
 }
 
 #[test]
+fn preparation_role_permits_only_target_import_without_threads() -> Result<()> {
+    for method in ["initialize","project/list","project/read","project/import","account/read",
+        "fs/getMetadata","fs/readFile"] {
+        Role::TargetProjectPreparer.check(method)?;
+    }
+    for method in ["project/update","project/create","project/delete","thread/start",
+        "thread/metadata/update","turn/start","fs/writeFile","command/exec","thread/read"] {
+        assert!(Role::TargetProjectPreparer.check(method).is_err());
+    }
+    let payload = json!({"idempotencyKey":"legacy","name":"Project","roots":[{"path":"/remote"}],
+        "metadata":{"codex.localProjectId":"legacy"}});
+    guard()?.check("project/import", &payload)?;
+    for (field,value) in [("threads",json!([])),("projectId",json!("canonical")),
+        ("roots",json!([])),("metadata",json!({"key":false})),("idempotencyKey",json!(""))] {
+        let mut invalid = payload.clone();
+        invalid[field] = value;
+        assert!(guard()?.check("project/import",&invalid).is_err());
+    }
+    Ok(())
+}
+
+#[test]
+fn preparation_connection_binds_source_and_denies_raw_thread_creation_before_transport() -> Result<()> {
+    let fixture = Fixture::new()?;
+    let app = fixture.app()?;
+    let mut connection = app.connection(std::time::Duration::from_secs(3), Role::TargetProjectPreparer)?;
+    assert_eq!(connection.catalog_source()?["codexHome"], fixture.peer()?.codex_home);
+    connection.call("account/read", json!({"refreshToken":false}))?;
+    let before = fixture.events();
+    for (method,params) in [("thread/start",json!({})),("project/delete",json!({"projectId":"id"})),
+        ("project/import",json!({"idempotencyKey":"old","threads":[]})),
+        ("fs/readFile",json!({"path":"/remote/auth.json"})),
+        ("account/read",json!({"refreshToken":true}))] {
+        assert!(connection.call(method,params).is_err());
+    }
+    assert_eq!(fixture.events(), before);
+    Ok(())
+}
+
+#[test]
 fn verified_remote_catalog_rejects_unsafe_requests_before_transport() -> Result<()> {
     let fixture = Fixture::new()?;
     let app = fixture.app()?;

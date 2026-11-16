@@ -4,6 +4,8 @@ use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 
 mod metadata;
+#[cfg(test)]
+mod tests;
 
 pub(crate) struct Fresh {
     account: Value,
@@ -21,6 +23,9 @@ impl Fresh {
         let home = source["codexHome"].as_str().context("目标缺少 Codex Home")?;
         let (bytes, _) = input::state_file(reader, &format!("{home}/.codex-global-state.json"))?;
         let state: Value = serde_json::from_slice(&bytes)?;
+        for field in ["local-projects","project-appearances","app-server-project-id-by-legacy-project-id-by-host"] {
+            ensure!(state[field].is_null() || state[field].is_object(), "目标项目原始字段格式无效：{field}");
+        }
         let projection = Projection::parse(&state, home, &account)?;
         ensure!(projection.account_status == "verified" && projection.issues.is_empty(),
             "目标项目来源、账户或迁移状态不完整，请刷新后重试");
@@ -64,14 +69,15 @@ impl Fresh {
             if scan.complete { break; }
         }
         ensure!(scan.complete, "目标项目目录尚未读完，不能导入旧项目");
-        let mapped = self.projection.mappings.get(identifier);
+        let mappings = self.mappings();
+        let mapped = mappings.get(identifier);
         let candidates: Vec<_> = scan.items.iter().filter(|project|
             mapped == project.get("id") || project["metadata"]["codex.localProjectId"] == identifier).collect();
         ensure!(candidates.len() <= 1, "旧项目对应多个规范项目");
         let expected = mapped.or_else(|| candidates.first().and_then(|project| project.get("id")));
         if let Some(expected) = expected {
             let canonical = expected.as_str().context("旧项目映射无效")?;
-            ensure!(!self.projection.mappings.iter().any(|(key,value)|
+            ensure!(!self.mappings().iter().any(|(key,value)|
                 key != identifier && value == expected), "多个旧项目映射到同一规范项目");
             let project = self.server(reader, canonical)?;
             self.validate_legacy_result(identifier, &payload, &project)?;
@@ -86,6 +92,12 @@ impl Fresh {
         let project = self.server(reader, canonical)?;
         self.validate_legacy_result(identifier, &payload, &project)?;
         Ok(project)
+    }
+
+    fn mappings(&self) -> serde_json::Map<String, Value> {
+        let identity = format!("local:{}", self.source["codexHome"].as_str().unwrap_or(""));
+        self.state["app-server-project-id-by-legacy-project-id-by-host"][identity]
+            .as_object().cloned().unwrap_or_default()
     }
 
     fn validate_legacy_result(&self, identifier: &str, payload: &Value, project: &Value) -> Result<()> {
@@ -113,9 +125,9 @@ impl Fresh {
         if let Some(legacy) = legacy {
             let payload = current.legacy(legacy)?;
             ensure!(self.legacy(legacy)? == payload, "准备期间旧项目内容发生变化");
-            ensure!(current.projection.mappings.get(legacy).is_none_or(|mapped| mapped == canonical),
+            ensure!(current.mappings().get(legacy).is_none_or(|mapped| mapped == canonical),
                 "准备期间旧项目映射发生冲突");
-            ensure!(!current.projection.mappings.iter().any(|(key,value)| key != legacy && value == canonical),
+            ensure!(!current.mappings().iter().any(|(key,value)| key != legacy && value == canonical),
                 "规范项目已关联其他旧项目");
             current.validate_legacy_result(legacy, &payload, project)?;
         }
