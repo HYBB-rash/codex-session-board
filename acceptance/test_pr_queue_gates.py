@@ -93,6 +93,12 @@ class PRQueueGateTests(unittest.TestCase):
         job = {"name": "changes", "head_sha": HEAD, "status": "completed", "conclusion": "success"}
         with mock.patch.object(gates.forge, "pages", side_effect=[[run], [job]]):
             self.assertEqual(gates.workflow("owner/repo", 7, HEAD)["attempt"], 2)
+        unlinked = {**run, "pull_requests": [], "head_branch": "codex/task"}
+        with mock.patch.object(gates.forge, "pages", side_effect=[[unlinked], [job]]):
+            self.assertEqual(gates.workflow("owner/repo", 7, HEAD, merged_branch="codex/task")["run"], 1)
+        with mock.patch.object(gates.forge, "pages", return_value=[unlinked]):
+            self.assertIsNone(gates.workflow("owner/repo", 7, HEAD))
+            self.assertIsNone(gates.workflow("owner/repo", 7, HEAD, merged_branch="other"))
         for change in ({"head_sha": BASE}, {"event": "push"}, {"pull_requests": []},
                        {"path": ".github/workflows/other.yml"}, {"status": "in_progress"}):
             with self.subTest(change=change), \

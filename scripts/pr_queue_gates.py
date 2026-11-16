@@ -31,7 +31,7 @@ def from_queue(path, project, repository, candidate):
     return {"repository": repository, "items": items}
 
 
-def workflow(repository, number, head):
+def workflow(repository, number, head, *, merged_branch=None):
     deadline = time.monotonic() + 90
     runs = forge.pages(
         f"repos/{repository}/actions/workflows/pr-checks.yml/runs?event=pull_request&head_sha={head}",
@@ -39,7 +39,9 @@ def workflow(repository, number, head):
     matches = [run for run in runs if run["head_sha"] == head and run["event"] == "pull_request"
                and run["path"] == ".github/workflows/pr-checks.yml"
                and run["repository"]["full_name"] == repository
-               and any(pr["number"] == number and pr["head"]["sha"] == head for pr in run["pull_requests"])]
+               and (any(pr["number"] == number and pr["head"]["sha"] == head for pr in run["pull_requests"])
+                    or not run["pull_requests"] and merged_branch is not None
+                    and run["head_branch"] == merged_branch)]
     if not matches:
         return None
     run = max(matches, key=lambda item: item["id"])
@@ -73,7 +75,10 @@ def verify(gates):
                                              time.monotonic() + 90))
         if snapshot["ci"] == "failed" or snapshot["items"]:
             raise ValueError(f"PR #{number} has failed checks or unresolved review feedback")
-        proof = workflow(repository, number, item["head"]) if snapshot["ci"] == "passed" else None
+        merged_branch = pr["head"]["ref"] if snapshot["state"] == "merged" else None
+        proof = None
+        if snapshot["ci"] == "passed":
+            proof = workflow(repository, number, item["head"], merged_branch=merged_branch)
         after = forge.api(f"repos/{repository}/pulls/{number}")
         if (after["head"]["sha"] != item["head"] or after["base"]["ref"] != "main"
                 or after["head"]["ref"] != pr["head"]["ref"]
