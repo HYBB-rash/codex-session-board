@@ -2,12 +2,13 @@
   "schema_version": 1,
   "updated_at": "2026-11-16",
   "current_phase": {
-    "id": "test-parallelism-main-20261116",
-    "status": "completed",
+    "id": "merge-release-split-20261116",
+    "status": "active",
     "as_of": "2026-11-16",
-    "summary": "库与native_authority两线程改动已随0.3.97/b0847c5合入远端main；CI43861045024首轮macOS971/Linux982项及双平台不可变包隔离启动通过。integrate入口至推广26分03秒，不含准备和收尾；其他组设置和全部阈值保留。未带入未通过的0.3.96验证工具候选，原草稿保留；未安装或重载日用插件。本地主main的独有提交未改，收尾记录走专用门禁。"
+    "summary": "拆分PR合并和main自动发布，复用现有validate/integrate/release及Cargo缓存。0.3.97两线程已保留；固定checker预编译复用，业务候选仍独立构建。实测合并、发布、缓存及失败/连续更新，目标客户端独立。"
   },
   "active_tasks": [
+    "context/tasks/active/merge-release-split-20261116.md",
     "context/tasks/active/pr-validation-efficiency-20261116.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
