@@ -1,4 +1,5 @@
 import json
+import hashlib
 from pathlib import Path
 import subprocess
 import time
@@ -27,12 +28,17 @@ def comment_once(repository, number, marker, body):
     return observed["html_url"]
 
 
-def labels(repository, number, ready):
+def ensure_labels(repository):
     endpoint = f"repos/{repository}"
     available = {item["name"] for item in forge.pages(f"{endpoint}/labels", time.monotonic() + 60)}
     for name, color in (("ready-for-review", "0e8a16"), ("needs-fix", "d73a4a")):
         if name not in available:
             forge.api(f"{endpoint}/labels", "--method", "POST", "-f", f"name={name}", "-f", f"color={color}")
+
+
+def labels(repository, number, ready):
+    ensure_labels(repository)
+    endpoint = f"repos/{repository}"
     issue = forge.api(f"{endpoint}/issues/{number}")
     assigned = {item["name"] for item in issue["labels"]}
     wanted, unwanted = ("ready-for-review", "needs-fix") if ready else ("needs-fix", "ready-for-review")
@@ -64,6 +70,21 @@ def validation(state, report_path, head):
     return report
 
 
+def own_publish_intent(state, remote_head, head):
+    intent = state.get("publish_intent", {})
+    if remote_head != intent.get("head"):
+        return False
+    path = Path(intent["validation"]) / "VALIDATION.json"
+    if hashlib.sha256(path.read_bytes()).hexdigest() != intent.get("validation_sha256"):
+        raise ValueError("Uncertain publication report changed")
+    report = json.loads(path.read_text())
+    if report["source"]["commit"] != remote_head or report["project"] != state["project"] or not report["passed"]:
+        raise ValueError("Uncertain publication report does not identify this task")
+    subprocess.run(["git", "merge-base", "--is-ancestor", remote_head, head],
+                   cwd=state["project"], check=True, timeout=30)
+    return True
+
+
 def submit(state, title=None, body=None):
     if state["phase"] in {"complete", "finalizing", "paused", "needs-human"}:
         raise ValueError("Task is not accepting publication")
@@ -77,7 +98,7 @@ def submit(state, title=None, body=None):
         raise ValueError("Task is already bound to a different PR")
     if remote_pr and remote_pr["head"]["sha"] not in {
             head, state.get("published", {}).get("head"),
-            state.get("last_snapshot", {}).get("head")}:
+            state.get("last_snapshot", {}).get("head")} and not own_publish_intent(state, remote_pr["head"]["sha"], head):
         raise ValueError("Another writer changed the PR; inspect before publishing")
     if not remote_pr and (not title or not body):
         raise ValueError("The first publication needs --title and --body-file")
@@ -97,7 +118,10 @@ def submit(state, title=None, body=None):
     if before_push and (before_push["state"] != "open" or remote_pr is None
                         or before_push["head"]["sha"] != remote_pr["head"]["sha"]):
         raise ValueError("PR changed during validation; nothing pushed")
-    state["publish_intent"] = {"head": head, "validation": str(output), "at": now()}
+    state["publish_intent"] = {
+        "head": head, "validation": str(output), "at": now(),
+        "validation_sha256": hashlib.sha256((output / "VALIDATION.json").read_bytes()).hexdigest(),
+    }
     persist(state)
     subprocess.run(["git", "push", state["remote"], f"HEAD:refs/heads/{state['branch']}"],
                    cwd=state["project"], check=True, timeout=120)

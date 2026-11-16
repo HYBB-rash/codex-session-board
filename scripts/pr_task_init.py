@@ -1,4 +1,4 @@
-import os
+import json
 from pathlib import Path
 import re
 import time
@@ -68,13 +68,24 @@ def initialize(arguments):
 def rebind(state, socket_path, accept_input=False):
     if state["phase"] == "complete":
         raise ValueError("Completed tasks require a new registration")
-    if state["active_event"]:
-        event = next(entry for entry in state["events"] if entry["id"] == state["active_event"])
-        if event.get("delivery", {}).get("state") in {"delivery_unknown", "sent", "acknowledged"}:
-            raise ValueError("Reconcile the outstanding delivery on its original backend before rebinding")
+    event = next((entry for entry in state["events"] if entry["id"] == state["active_event"]), None)
     route, anchor = native.register(socket_path, state["route"]["thread_id"], Path(state["project"]))
-    if anchor != state["session_anchor"] and not accept_input:
-        raise ValueError("Session inputs changed; explicitly accept the new task input")
+    with native.transport.connect_endpoint(route) as rpc:
+        _, turn, users = native.latest(rpc, route)
+        if not accept_input:
+            native.owned(state, turn, users)
+        if event and native.receipt_path(state, event).exists():
+            path = native.receipt_path(state, event)
+            receipt = json.loads(path.read_text())
+            if receipt["state"] not in {"pending", "waiting_idle", "rejected"}:
+                native.transport.observe(rpc, route, receipt)
+                if not receipt.get("turn_id"):
+                    raise ValueError("Unknown delivery is not proven on the new backend; do not resend")
+            audit = path.with_name(f"{path.stem}-before-rebind-{uuid.uuid4().hex}.json")
+            save(audit, json.loads(path.read_text()))
+            receipt["route_sha256"] = digest(route)
+            save(path, receipt)
+            event["delivery"] = receipt
     state.update(route=route, session_anchor=anchor, phase="watching" if state["pr"] else "developing",
                  next_poll_at=0)
     persist(state)

@@ -23,6 +23,8 @@ def create_event(state, snapshot, items):
     submit = shlex.join([str(ROOT / "scripts/pr-task"), "submit", "--state", state["directory"]])
     event = {"id": identifier, "head": snapshot["head"], "items": items, "status": "pending",
              "created_at": now()}
+    if state.get("retry_from"):
+        event["resume_from"] = state.pop("retry_from")
     event["prompt"] = (
         f"继续已明确授权的本项目 PR 作者任务 {state['repository']}#{state['pr']}。\n"
         f"首先执行 `{command}`；只有返回 claimed 才能修改代码。领取失败则停止并报告。\n"
@@ -36,6 +38,7 @@ def create_event(state, snapshot, items):
         "不要仅在聊天中宣称完成，不得在尚未领取时发送修复或覆盖他人提交。"
     )
     state["events"].append(event)
+    state.pop("ready_head", None)
     state.update(active_event=identifier, phase="repairing")
     persist(state)
     record(state, "feedback_discovered", event=identifier, head=event["head"],
@@ -118,7 +121,7 @@ def tick(state, force=False):
             record(state, "repair_budget_exhausted")
             persist(state)
             return
-        checkout(state, clean=True)
+        checkout(state, clean=not state.get("retry_from"))
         if checkout(state) != snapshot["head"]:
             raise ValueError("Local author branch differs from the PR; inspect before repair")
         event = create_event(state, snapshot, items)
@@ -141,7 +144,7 @@ def claim(state, identifier):
     snapshot = forge.snapshot(state)
     if snapshot["state"] != "open" or snapshot["head"] != event["head"]:
         raise ValueError("PR closed or changed before claim; do not modify it")
-    if checkout(state, clean=event["status"] != "claimed") != event["head"]:
+    if checkout(state, clean=event["status"] != "claimed" and not event.get("resume_from")) != event["head"]:
         raise ValueError("Author worktree does not match the claimed PR head")
     event.update(status="claimed", claimed_at=event.get("claimed_at", now()))
     state["phase"] = "repairing"
@@ -164,6 +167,9 @@ def complete(state, identifier, result, message):
         persist(state)
         return
     if result == "fixed":
+        failed = {item["key"] for item in snapshot["items"] if item["kind"] == "check"}
+        if failed & {item["key"] for item in event["items"]}:
+            raise ValueError("The same CI failure is still present; do not acknowledge it as fixed")
         publication = state.get("published", {})
         if publication.get("head") != snapshot["head"] or checkout(state, clean=True) != snapshot["head"]:
             raise ValueError("Publish and validate the final PR head before completing feedback")

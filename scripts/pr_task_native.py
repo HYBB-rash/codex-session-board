@@ -86,7 +86,8 @@ def is_archived(rpc, route):
         page = rpc.request("thread/list", {
             "archived": True, "useStateDbOnly": True, "limit": 100, "cursor": cursor,
             "sortKey": "updated_at", "sortDirection": "desc", "modelProviders": [],
-            "sourceKinds": ["cli", "vscode", "appServer"],
+            "sourceKinds": ["cli", "vscode", "appServer", "exec", "subAgent", "subAgentReview",
+                            "subAgentCompact", "subAgentThreadSpawn", "subAgentOther", "unknown"],
         })
         if not isinstance(page["data"], list):
             raise ValueError("Native archive listing is incomplete")

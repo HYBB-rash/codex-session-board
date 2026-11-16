@@ -55,13 +55,16 @@ def install(state):
         "WorkingDirectory": str(ROOT), "StartInterval": state["interval"], "RunAtLoad": True,
         "AbandonProcessGroup": True,
         "EnvironmentVariables": {
-            key: value for key in ("HOME", "PATH", "CODEX_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME")
+            key: value for key in ("HOME", "PATH", "CODEX_HOME", "GH_CONFIG_DIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME")
             if (value := os.environ.get(key)) is not None
         },
         "StandardOutPath": str(Path(state["directory"]) / "scheduler.log"),
         "StandardErrorPath": str(Path(state["directory"]) / "scheduler-error.log"),
     }
-    executable = shutil.which("gh")
+    configured = json.loads(os.environ.get("CODEX_GITHUB_COMMAND", '["gh"]'))
+    if not isinstance(configured, list) or len(configured) != 1 or not isinstance(configured[0], str):
+        raise ValueError("Background credentials need a single executable adapter, without inline secrets")
+    executable = shutil.which(configured[0])
     if not executable:
         raise ValueError("GitHub CLI is missing from the background environment")
     definition["EnvironmentVariables"]["CODEX_GITHUB_COMMAND"] = json.dumps([executable])
@@ -71,6 +74,8 @@ def install(state):
                               env=environment, check=True, capture_output=True, text=True, timeout=30)
     if observed.stdout.strip() != state["repository"]:
         raise ValueError("Background GitHub authentication resolved a different repository")
+    subprocess.run([sys.executable, str(ROOT / "scripts/pr_task.py"), "probe", "--state", state["directory"]],
+                   env=environment, check=True, capture_output=True, timeout=120)
     encoded = plistlib.dumps(definition)
     if path.exists() and path.read_bytes() != encoded:
         raise ValueError("An existing LaunchAgent differs; do not overwrite it")

@@ -32,7 +32,7 @@ def parser():
     initial.add_argument("--max-rounds", type=int, default=3)
     initial.add_argument("--max-hours", type=int, default=72)
     initial.add_argument("--archive", action="store_true")
-    for name in ("status", "tick", "schedule", "finalize", "pause", "resume", "attach", "submit",
+    for name in ("status", "tick", "schedule", "finalize", "probe", "pause", "resume", "attach", "submit",
                  "claim", "complete", "rebind"):
         command = commands.add_parser(name)
         command.add_argument("--state", required=True, type=Path)
@@ -53,6 +53,7 @@ def parser():
         if name == "resume":
             command.add_argument("--additional-rounds", type=int, default=0)
             command.add_argument("--extend-hours", type=int, default=0)
+            command.add_argument("--retry-failed", action="store_true")
         if name == "rebind":
             command.add_argument("--socket", required=True, type=Path)
             command.add_argument("--accept-input", action="store_true")
@@ -68,7 +69,10 @@ def parser():
 def execute(state, arguments):
     action = arguments.command
     if action == "status":
-        return summary(state)
+        result = summary(state)
+        if state.get("cleanup_pending"):
+            result["recovery"] = "Run pr-task finalize --state with this task directory to reconcile cleanup"
+        return result
     if action == "tick":
         lifecycle.tick(state, arguments.force)
     elif action == "claim":
@@ -80,12 +84,16 @@ def execute(state, arguments):
         if not arguments.no_schedule and state["phase"] != "finalizing":
             scheduler.install(state)
     elif action == "attach":
+        if state["phase"] in {"complete", "finalizing"}:
+            raise ValueError("Ended task records cannot attach a PR again")
         if state["pr"] not in (None, arguments.pr) or arguments.pr <= 0:
             raise ValueError("This task cannot switch to another PR")
         previous = state["pr"]
         state["pr"] = arguments.pr
         try:
             snapshot = forge.snapshot(state)
+            if snapshot["state"] != "open":
+                raise ValueError("Attach only an open PR")
             if checkout(state, clean=True) != snapshot["head"]:
                 raise ValueError("Author worktree must match the attached PR")
         except Exception:
@@ -112,6 +120,15 @@ def execute(state, arguments):
             raise ValueError("Ended tasks cannot resume repair; use finalize for pending cleanup")
         if not 0 <= arguments.additional_rounds <= 20 or not 0 <= arguments.extend_hours <= 720:
             raise ValueError("Explicit budget extensions exceed the supported bounds")
+        if arguments.retry_failed:
+            event = lifecycle.active(state)
+            if not event:
+                raise ValueError("No interrupted author event is available")
+            receipt = lifecycle.native.delivery(state, event)
+            if receipt.get("turn_status") not in {"completed", "failed", "interrupted"}:
+                raise ValueError("Retry only a confirmed terminal author turn")
+            event["status"] = "superseded"
+            state.update(active_event=None, retry_from=event["id"])
         state["max_rounds"] += arguments.additional_rounds
         state["deadline"] += arguments.extend_hours * 3600
         state.update(phase="watching" if state["pr"] else "developing", next_poll_at=0)
@@ -130,6 +147,15 @@ def main():
             raise ValueError("Provide the original author UUID using --thread or CODEX_THREAD_ID")
         return summary(setup.initialize(arguments))
     directory = arguments.state.resolve()
+    if arguments.command == "probe":
+        state = load(directory)
+        snapshot = forge.snapshot(state)
+        if snapshot["state"] != "open":
+            raise ValueError("Cannot enable monitoring for an ended PR")
+        publish.ensure_labels(state["repository"])
+        return {"comment": publish.comment_once(
+            state["repository"], state["pr"], f"<!-- pr-task:watcher {state['id']} -->",
+            "本 PR 已登记项目内作者巡检。只在新反馈时启动修复；合并或关闭后收尾。")}
     with locked(directory, wait=arguments.command == "finalize"):
         state = load(directory)
         try:
