@@ -1,10 +1,13 @@
 from concurrent.futures import ThreadPoolExecutor
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
 import tempfile
 import textwrap
 import unittest
+from unittest import mock
 
 from scripts import checker_cache
 
@@ -20,7 +23,10 @@ else:
     arguments = sys.argv
     target = pathlib.Path(arguments[arguments.index("--target-dir")+1])
     manifest = pathlib.Path(arguments[arguments.index("--manifest-path")+1])
-    code = (manifest.parent.parent/"project_check.rs").read_bytes()
+    source = manifest.parent.parent/"project_check.rs"
+    if os.environ.get("CSB_FAKE_MUTATE_SNAPSHOT"):
+        source.write_text("changed snapshot during build")
+    code = source.read_bytes()
     binary = target/"project-check"
     binary.parent.mkdir(parents=True,exist_ok=True)
     binary.write_text("#!/usr/bin/env python3\\nprint("+repr(hashlib.sha256(code).hexdigest())+")\\n")
@@ -141,3 +147,85 @@ class CheckerCacheTests(unittest.TestCase):
         second, report = self.resolve(self.fixture("other-root"), PATH=environment)
         self.assertEqual(first, second)
         self.assertTrue(report["cache_hit"])
+
+    def test_configured_compiler_wrappers_and_linkers_content_changes_invalidate(self):
+        configuration = self.source / ".cargo/config.toml"
+        configuration.parent.mkdir()
+        tool = self.root / "bin/config-tool"
+        tool.write_text('#!/usr/bin/env bash\nexec "/bin/sh" "$@"\n')
+        tool.chmod(0o755)
+        for section, name in (
+            ("build", "rustc"), ("build", "rustc-wrapper"),
+            ("build", "rustc-workspace-wrapper"),
+            ("target.x86_64-unknown-linux-gnu", "linker"),
+            ("target.'cfg(unix)'", "linker"),
+        ):
+            with self.subTest(section=section, name=name):
+                configuration.write_text(f"[{section}]\n{name}='../bin/config-tool'\n")
+                contents = configuration.read_bytes()
+                _, previous = self.resolve()
+                tool.write_text(tool.read_text() + "\n")
+                _, updated = self.resolve()
+                self.assertFalse(updated["cache_hit"])
+                self.assertNotEqual(previous["key"], updated["key"])
+                self.assertEqual(configuration.read_bytes(), contents)
+
+    def test_unsupported_config_tool_references_are_rejected(self):
+        configuration = self.source / ".cargo/config.toml"
+        configuration.parent.mkdir()
+        for contents in (
+            "include=['other.toml']\n",
+            "[build]\nrustc-wrapper=['sh','wrapper']\n",
+            "[build]\nrustflags=['-Clinker=unknown']\n",
+            "[env]\nRUSTC_WRAPPER='unknown'\n",
+        ):
+            with self.subTest(configuration=contents):
+                configuration.write_text(contents)
+                with self.assertRaises(ValueError):
+                    self.resolve()
+        self.assertFalse(self.log.exists())
+
+    def test_transient_source_change_during_copy_cannot_publish_a_snapshot(self):
+        source = self.source / "scripts/project_check.rs"
+        original = source.read_bytes()
+        copyfile = checker_cache.shutil.copyfile
+
+        def transient_copy(path, destination, *arguments, **keywords):
+            if Path(path) != source:
+                return copyfile(path, destination, *arguments, **keywords)
+            source.write_text("transient wrong source")
+            try:
+                return copyfile(path, destination, *arguments, **keywords)
+            finally:
+                source.write_bytes(original)
+
+        with mock.patch.object(checker_cache.shutil, "copyfile", side_effect=transient_copy):
+            with self.assertRaisesRegex(ValueError, "snapshot"):
+                self.resolve()
+        self.assertEqual(source.read_bytes(), original)
+        self.assertFalse(self.log.exists())
+        self.assertEqual(list((self.root / "cache/entries").iterdir()), [])
+
+    def test_snapshot_changes_during_compilation_cannot_publish_an_entry(self):
+        source = self.source / "scripts/project_check.rs"
+        original = source.read_bytes()
+        with self.assertRaisesRegex(ValueError, "snapshot changed during compilation"):
+            self.resolve(CSB_FAKE_MUTATE_SNAPSHOT="1")
+        self.assertEqual(source.read_bytes(), original)
+        self.assertEqual(list((self.root / "cache/entries").iterdir()), [])
+
+    def test_non_object_cache_records_return_a_check_error(self):
+        binary, _ = self.resolve()
+        record = binary.parent / "CHECKER.json"
+        for value in ([], None, 42, True, "record"):
+            with self.subTest(record=value):
+                record.write_text(json.dumps(value))
+                with self.assertRaisesRegex(ValueError, "record must be an object"):
+                    self.resolve()
+                with mock.patch.dict(os.environ, self.environment, clear=True):
+                    with mock.patch.object(checker_cache.sys, "argv", [
+                        "checker_cache.py", "--project", str(self.source), "--", "--help",
+                    ]):
+                        with contextlib.redirect_stderr(io.StringIO()) as error:
+                            self.assertEqual(checker_cache.main(), 2)
+                self.assertIn("record must be an object", error.getvalue())

@@ -21,12 +21,12 @@ def encoded(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
 
-def program(name, environment, root=None):
+def program(name, environment, root=None, unwrap=True):
     path = shutil.which(name, path=environment.get("PATH"))
     if path is None:
         raise ValueError(f"Missing checker build tool: {name}")
     path = Path(path).resolve()
-    for _ in range(4):
+    for _ in range(4 if unwrap else 0):
         prefix = path.read_bytes()[:8192]
         if not prefix.startswith(b"#!/usr/bin/env bash\nexec "):
             break
@@ -74,12 +74,62 @@ def source_inputs(root):
 
 
 def configuration(root, environment):
-    cargo_home = Path(environment.get("CARGO_HOME", str(Path.home() / ".cargo"))).resolve()
+    cargo_home = Path(environment.get("CARGO_HOME", str(Path.home() / ".cargo")))
+    cargo_home = (root / cargo_home).resolve()
     paths = {cargo_home / name for name in ("config", "config.toml")}
     for directory in (root, *root.parents):
         paths.update(directory / ".cargo" / name for name in ("config", "config.toml"))
         paths.update(directory / name for name in ("rust-toolchain", "rust-toolchain.toml"))
     return {str(path): digest(path) for path in sorted(paths) if path.is_file()}
+
+
+def configured_programs(paths, root, environment):
+    programs = {}
+    for filename in paths:
+        path = Path(filename)
+        if path.name not in {"config", "config.toml"}:
+            continue
+        try:
+            import tomllib
+        except ImportError as error:
+            raise ValueError("Cargo config fingerprinting requires Python 3.11 or newer") from error
+        configuration = tomllib.loads(path.read_text())
+        if "include" in configuration:
+            raise ValueError("Cannot fingerprint Cargo config include references")
+        build = configuration.get("build", {})
+        targets = configuration.get("target", {})
+        if not isinstance(build, dict) or not isinstance(targets, dict):
+            raise ValueError("Cargo build and target config must be tables")
+        references = {f"build.{name}": value for name, value in build.items()
+                      if name in {"rustc", "rustc-wrapper", "rustc-workspace-wrapper"}}
+        for target, settings in targets.items():
+            if not isinstance(settings, dict):
+                raise ValueError("Cargo target config must be a table")
+            if "linker" in settings:
+                references[f"target.{target}.linker"] = settings["linker"]
+        for section, settings in [("build", build), *targets.items()]:
+            flags = settings.get("rustflags", [])
+            if not isinstance(flags, (str, list)):
+                raise ValueError("Cannot fingerprint Cargo rustflags representation")
+            words = shlex.split(flags) if isinstance(flags, str) else flags
+            if any(not isinstance(word, str) for word in words):
+                raise ValueError("Cannot fingerprint Cargo rustflags representation")
+            if any("linker=" in word or "fuse-ld=" in word for word in words):
+                raise ValueError(f"Use target linker config instead of tool references in {section}.rustflags")
+        injected = configuration.get("env", {})
+        if not isinstance(injected, dict):
+            raise ValueError("Cargo env config must be a table")
+        for name in injected:
+            if name == "PATH" or name.startswith(("RUST", "CARGO_", "CC", "CXX", "AR")):
+                raise ValueError(f"Cannot fingerprint Cargo env tool references: {name}")
+        for name, value in references.items():
+            if not isinstance(value, str) or not value and not name.endswith("wrapper"):
+                raise ValueError(f"Cannot fingerprint Cargo tool reference: {name}")
+            if not value:
+                continue
+            command = str(path.parent.parent / value) if "/" in value else value
+            programs[f"{filename}:{name}"] = program(command, environment, root, unwrap=False)
+    return programs
 
 
 def describe(root, environment):
@@ -101,15 +151,21 @@ def describe(root, environment):
                                  "LDFLAGS", "SDKROOT", "DEVELOPER_DIR", "MACOSX_DEPLOYMENT_TARGET", "LIBRARY_PATH",
                                  "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "CPATH"})}
     commands = {"cc", "clang", "gcc", "ar", "ld"}
-    commands.update(value for name, value in selected.items()
-                    if name in {"RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "CC", "CXX", "AR"}
-                    or name.endswith("_LINKER"))
     programs = {name: program(name, environment, root) for name in sorted(commands)
                 if name and shutil.which(name, path=environment.get("PATH"))}
+    for name, value in selected.items():
+        if value and (name in {"RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER",
+                              "CARGO_BUILD_RUSTC", "CARGO_BUILD_RUSTC_WRAPPER",
+                              "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER", "CC", "CXX", "AR"}
+                      or name.endswith("_LINKER")):
+            command = str(root / value) if "/" in value else value
+            programs[f"env:{name}"] = program(command, environment, root, unwrap=False)
+    configs = configuration(root, environment)
+    programs.update(configured_programs(configs, root, environment))
     inputs = source_inputs(root)
     build = {"schema_version": 1, "tools": versions, "host": host,
              "platform": sys.platform, "machine": platform.machine(), "programs": programs,
-             "configuration": configuration(root, environment),
+             "configuration": configs,
              "environment_sha256": hashlib.sha256(encoded(selected)).hexdigest(),
              "path": path_identity(environment), "profile": "dev", "features": [],
              "manifest_sha256": inputs["scripts/checker/Cargo.toml"],
@@ -123,6 +179,8 @@ def existing(directory, identity):
     if directory.is_symlink():
         raise ValueError("Checker cache entry cannot be a symlink")
     manifest = json.loads((directory / "CHECKER.json").read_text())
+    if not isinstance(manifest, dict):
+        raise ValueError("Checker cache record must be an object")
     binary = directory / "project-check"
     if (manifest.get("identity") != identity or binary.is_symlink()
             or not binary.is_file() or not os.access(binary, os.X_OK)
@@ -142,6 +200,8 @@ def build(root, environment, identity, cache, destination):
             path = source / name
             path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(root / name, path)
+        if source_inputs(source) != identity["inputs"]:
+            raise ValueError("Checker build snapshot differs from its source identity")
         command = ["cargo", "build", "--locked", "--offline", "--manifest-path",
                    str(source / "scripts/checker/Cargo.toml"), "--bin", "project-check",
                    "--target", identity["build"]["host"], "--target-dir", str(target),
@@ -158,6 +218,8 @@ def build(root, environment, identity, cache, destination):
         binary = binaries.pop()
         if not binary.is_relative_to(target.resolve()):
             raise ValueError("Cargo checker executable belongs to a different build directory")
+        if source_inputs(source) != identity["inputs"]:
+            raise ValueError("Checker build snapshot changed during compilation")
         if describe(root, environment) != identity:
             raise ValueError("Checker source or build conditions changed during compilation")
         entry = staging / "entry"
@@ -223,4 +285,9 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.version_info < (3, 11):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from scripts.validation_environment import choose_python
+        python = choose_python(Path.cwd(), os.environ)["path"]
+        os.execve(python, [python, *sys.argv], os.environ)
     sys.exit(main())
