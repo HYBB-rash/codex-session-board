@@ -44,6 +44,7 @@ def package_contents(root):
         "acceptance/bindings.json", "acceptance/contract.lock.json",
         "acceptance/README.md", "assets/app-bridge.js", "context/PROJECT.yaml",
         "context/STATE.yaml", "scripts/verify_context.sh", "scripts/check_context.py",
+        "scripts/checker_cache.py", "scripts/checker/Cargo.toml", "scripts/checker/Cargo.lock",
         "scripts/native_new/prepare.py", "scripts/native_new/prepare_app.py",
         "scripts/native_new/route.js", "scripts/native_new/open.js",
         "scripts/native_new/verify_originator.mjs",
