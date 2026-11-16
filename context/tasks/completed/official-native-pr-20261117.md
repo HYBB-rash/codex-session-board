@@ -6,7 +6,7 @@ allowed_write_set: 本任务记录、原生入口范围内的审阅修复、源�
 base_commit: 9e2f64e4010787338a6a61851a3a4a07bf6dafc4
 worktree_path: /home/herman/.codex/worktrees/official-native-entry-pr/notion-program
 coordinator: 01a1e3f0-8b42-7b72-b57d-62b1049160e5
-status: in_progress
+status: completed
 
 用户显式调用 pr-task，授权验证、推送、草稿 PR、后台巡检及范围内有限修复。
 从 f5b3ff5 的完成实现创建作者分支 codex/official-native-entry-20261117，
@@ -27,3 +27,15 @@ status: in_progress
 已中断该头的 submit 验证，不发布旧头。补入与其他远程变更相同的来源复核，
 使用确实允许写入的 ProjectWriter 做正向对照，再分别改变 alias 解析、UID、
 HOME 和 CODEX_HOME，验证后续更新被拒绝且没有新增写入事件。
+
+## 合并协调者收尾
+
+PR19最终作者头62d54db894590b743832b2055cf9857159baa75b经原两个独立审阅者复核，
+原冻结检查器的submit报告和准确头PR CI43912935654均通过。
+最终组合a34cb075811a417be63cc69aa3cf8285ef05d763/0.3.99经
+CI43916778874 attempt3双平台1046/1057项通过，于2026-11-16T18:04:42Z确认进入main。
+两次macOS容量排队失败没有改变源码，Linux成功任务复用，原失败保留。
+作者任务于18:05:37Z读回complete、result=merged、rounds=0、last_error=null；
+现有外部watch.py完成本任务systemd timer/service文件删除及停用读回，
+external-monitor.status=removed。未请求原生归档，不归档原会话。
+自动发布独立，未安装或重载日用插件，真实客户端验收仍待单独执行。
