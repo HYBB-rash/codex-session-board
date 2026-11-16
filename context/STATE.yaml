@@ -2,12 +2,13 @@
   "schema_version": 1,
   "updated_at": "2026-11-16",
   "current_phase": {
-    "id": "pr-task-20261116",
-    "status": "completed",
+    "id": "pr-task-main-20261116",
+    "status": "active",
     "as_of": "2026-11-16",
-    "summary": "项目内PR作者CLI和手动skill已完成并本地提交。a90083b的942项自动回归、产包及隔离启动通过；真实临时定时器2.139秒完成零模型巡检和自身清理。未推送主线，真实PR与原会话端到端试用尚未执行。"
+    "summary": "用户授权将项目内PR作者CLI和手动skill合入远端主线。固定基线83c507a和本地来源cca7b32，准备冻结发布候选并运行双平台门禁、不可变产包和主线快进；不安装或重载日用插件。"
   },
   "active_tasks": [
+    "context/tasks/active/pr-task-main-20261116.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",
