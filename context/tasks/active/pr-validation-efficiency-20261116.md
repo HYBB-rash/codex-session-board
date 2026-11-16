@@ -31,3 +31,6 @@ PR关联。新增边界回归通过，真实只读证明返回原run43829946296/
 手工直接运行Python全量308项首轮在系统默认临时目录清理.git时报目录非空，
 残留info/refs和objects/info/packs，尚无后台写入者归因，不声称根因已修复。
 失败保留于源码外python-tests.log；同用例在项目规定/private/tmp环境通过，完整标准环境复验待执行。
+标准环境完整Python308项全部通过，用时76.59秒，原始失败保留，不以复验冒称后台写入者根因已修复。
+实际调用integrate --help发现旧入口选择系统Python3.10，复用pr-task已有delivery-venv优先级修正，
+补真实shell入口与错误默认Python隔离回归；后续新PR计时仍待用户发起。

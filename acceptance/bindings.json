@@ -2109,6 +2109,7 @@
       "acceptance.test_pr_queue_gates.PRQueueGateTests.test_only_the_current_head_with_successful_checks_and_no_feedback_can_pass",
       "acceptance.test_pr_queue_gates.PRQueueGateTests.test_pr_changed_before_snapshot_does_not_reuse_old_ci",
       "acceptance.test_pr_queue_gates.PRQueueGateTests.test_pr_changed_during_workflow_proof_cannot_pass",
+      "acceptance.test_integrate.IntegrateTests.test_launcher_uses_the_existing_delivery_environment_before_default_python",
       "acceptance.test_pr_queue_gates.PRQueueGateTests.test_same_named_status_cannot_replace_the_real_pr_workflow",
       "acceptance.test_pr_queue_gates.PRQueueGateTests.test_workflow_proof_requires_the_exact_pr_head_workflow_and_successful_job",
       "acceptance.test_pr_task_github.PRTaskGithubTests.test_revalidated_same_head_feedback_resolves_only_its_exact_original_body",

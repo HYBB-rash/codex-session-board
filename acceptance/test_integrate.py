@@ -1,6 +1,10 @@
 import json
+import os
 from pathlib import Path
 import tempfile
+import shlex
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -8,6 +12,24 @@ from scripts import integrate_candidate as integrate
 
 
 class IntegrateTests(unittest.TestCase):
+    def test_launcher_uses_the_existing_delivery_environment_before_default_python(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            delivery = directory / "codex-session-board/delivery-venv/bin/python"
+            delivery.parent.mkdir(parents=True)
+            delivery.write_text("#!/bin/sh\nexec " + shlex.quote(sys.executable) + ' "$@"\n')
+            delivery.chmod(0o700)
+            fallback = directory / "bin/python3"
+            fallback.parent.mkdir()
+            fallback.write_text("#!/bin/sh\nexit 97\n")
+            fallback.chmod(0o700)
+            environment = dict(os.environ, XDG_DATA_HOME=temporary,
+                               PATH=str(fallback.parent) + os.pathsep + os.environ["PATH"])
+            result = subprocess.run([str(integrate.ROOT / "scripts/integrate"), "--help"],
+                                    env=environment, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("--pr-gates", result.stdout)
+
     def test_run_selection_uses_exact_source_branch_and_latest_attempt(self):
         runs = [
             {"id": 1, "head_sha": "candidate", "head_branch": "branch", "event": "push"},
