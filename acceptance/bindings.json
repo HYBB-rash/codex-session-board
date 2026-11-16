@@ -1794,6 +1794,8 @@
       "acceptance.test_pr_task_github.PRTaskGithubTests.test_nonzero_github_command_retains_http_failure_classification",
       "acceptance.test_pr_task_github.PRTaskGithubTests.test_zero_missing_or_pending_checks_cannot_announce_readiness",
       "acceptance.test_pr_task_github.PRTaskGithubTests.test_duplicate_check_names_cannot_hide_pending_checks",
+      "acceptance.test_pr_task_github.PRTaskGithubTests.test_unrequired_conditional_skips_do_not_block_successful_required_checks",
+      "acceptance.test_pr_task_github.PRTaskGithubTests.test_optional_checks_still_block_while_running_failed_or_unknown",
       "acceptance.test_pr_task_github.PRTaskGithubTests.test_new_check_execution_on_same_head_has_new_action_identity",
       "acceptance.test_pr_task_github.PRTaskGithubTests.test_pr_change_during_snapshot_discards_result",
       "acceptance.test_pr_task_lifecycle.PRTaskLifecycleTests.test_idle_snapshot_never_invokes_native_delivery_or_model",

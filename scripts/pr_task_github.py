@@ -177,7 +177,10 @@ def check_state(repository, head, required, deadline):
     if any(entry["kind"] == "check" for entry in result["items"]):
         result["ci"] = "failed"
     elif (conclusions and all(conclusions.get(name) == "success" for name in required)
-          and all(entry["status"] == "completed" and entry["conclusion"] == "success" for entry in checks)
+          and all(entry["status"] == "completed"
+                  and entry["conclusion"] in (
+                      {"success"} if entry["name"] in required else {"success", "neutral", "skipped"})
+                  for entry in checks)
           and all(entry["state"] == "success" for entry in latest.values())):
         result["ci"] = "passed"
     return result

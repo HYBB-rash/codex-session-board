@@ -124,6 +124,34 @@ class PRTaskGithubTests(unittest.TestCase):
         passing = {**check, "id": 2, "status": "completed", "conclusion": "success"}
         self.assertEqual(self.snapshot_with([check, passing])["ci"], "pending")
 
+    def test_unrequired_conditional_skips_do_not_block_successful_required_checks(self):
+        required = {"id": 1, "name": "changes", "head_sha": HEAD, "status": "completed",
+                    "conclusion": "success", "html_url": "https://github.com/check"}
+        for conclusion in ("skipped", "neutral"):
+            with self.subTest(conclusion=conclusion):
+                optional = {**required, "id": 2, "name": "Validate context records",
+                            "conclusion": conclusion}
+                self.assertEqual(self.snapshot_with([required, optional])["ci"], "passed")
+                self.assertEqual(self.snapshot_with(
+                    [{**required, "conclusion": conclusion}, optional])["ci"], "pending")
+                self.assertEqual(self.snapshot_with([
+                    required, {**required, "id": 3, "conclusion": conclusion},
+                ])["ci"], "pending")
+
+    def test_optional_checks_still_block_while_running_failed_or_unknown(self):
+        required = {"id": 1, "name": "changes", "head_sha": HEAD, "status": "completed",
+                    "conclusion": "success", "completed_at": "one",
+                    "html_url": "https://github.com/check"}
+        optional = {**required, "id": 2, "name": "optional"}
+        for status, conclusion, expected in (
+            ("in_progress", None, "pending"), ("completed", "failure", "failed"),
+            ("completed", "cancelled", "failed"), ("completed", "unknown", "pending"),
+        ):
+            with self.subTest(status=status, conclusion=conclusion):
+                self.assertEqual(self.snapshot_with([
+                    required, {**optional, "status": status, "conclusion": conclusion},
+                ])["ci"], expected)
+
     def test_new_check_execution_on_same_head_has_new_action_identity(self):
         check = {"id": 1, "name": "changes", "head_sha": HEAD, "status": "completed",
                  "conclusion": "failure", "completed_at": "one", "html_url": "https://github.com/check"}
