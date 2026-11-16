@@ -80,6 +80,41 @@ fn target_creation_requires_operation_and_v2_capability_before_remote_actions() 
 }
 
 #[test]
+fn target_directory_creation_rechecks_live_catalog_and_never_starts_a_thread() -> Result<()> {
+    let (directory, mut root, first, _) = fixture()?;
+    root.config.sidebar_state_file = directory.path().join("registry.json");
+    std::fs::write(&root.config.sidebar_state_file, serde_json::to_vec(&json!({
+        "codex-managed-remote-connections":[{"hostId":"remote:a","displayName":"Mac",
+            "alias":"fixture-mac"}]}))?)?;
+    root.config.open_command = vec!["true".into()];
+    let project = format!("target:{}", json!(["remote:a","targetServer","canonical"]));
+    {
+        let mut state = first.catalog.lock().unwrap();
+        state.live = true;
+        state.snapshot = Some(crate::catalog::Snapshot {
+            source: json!({"hostId":"remote:a"}), captured_at: now(),
+            projects: vec![json!({"id":project,"nativeId":"canonical","hostId":"remote:a",
+                "origin":"targetServer","paths":["/remote/project & 中文?#%+"]})],
+            active: vec![], archived: vec![], issues: vec![],
+            coverage: json!({"projects":"complete","ordinaryActive":"complete",
+                "ordinaryArchived":"complete","publishedReferences":"complete",
+                "membership":"complete","legacy":"complete"}),
+        });
+    }
+    let body = json!({"projectId":project,"hostId":"remote:a"});
+    let result = root.request("/api/new", Some(&body))?;
+    let url = url::Url::parse(result["url"].as_str().unwrap())?;
+    assert_eq!(url.query_pairs().count(), 4);
+    assert_eq!(url.query_pairs().find(|pair| pair.0 == "projectPath").unwrap().1,
+        "/remote/project & 中文?#%+");
+    first.catalog.lock().unwrap().live = false;
+    assert!(root.request("/api/new", Some(&body)).is_err());
+    assert!(root.store.pending_drafts()?.is_empty());
+    assert!(root.store.sessions()?.is_empty());
+    Ok(())
+}
+
+#[test]
 fn draft_receipts_are_scoped_to_their_remote_host_and_survive_completion() -> Result<()> {
     let (_directory, root, _first, _second) = fixture()?;
     let thread = uuid::Uuid::new_v4().to_string();

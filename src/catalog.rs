@@ -5,6 +5,7 @@ use serde_json::Value;
 mod capture;
 mod continuity;
 mod input;
+pub(crate) use input::account_fingerprint;
 mod legacy;
 mod membership;
 pub mod paging;

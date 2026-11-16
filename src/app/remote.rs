@@ -182,7 +182,7 @@ impl App {
     }
 }
 
-fn remote_identity(identifier: &str) -> Result<(String, String)> {
+pub(super) fn remote_identity(identifier: &str) -> Result<(String, String)> {
     let fields: Vec<String> =
         serde_json::from_str(identifier.strip_prefix("remote:").context("无效远程 ID")?)?;
     ensure!(fields.len() == 3 && fields[0] == "codex", "无效远程来源");
