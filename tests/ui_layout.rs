@@ -13,7 +13,7 @@ fn host_catalog_filters_preserve_cached_rows_and_isolated_native_drafts() {
         String::from_utf8_lossy(&result.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(report["cases"], 62);
+    assert_eq!(report["cases"], 65);
     assert_eq!(report["cleanup"]["groupEmpty"], true);
     assert_eq!(report["cleanup"]["profileRemoved"], true);
 }

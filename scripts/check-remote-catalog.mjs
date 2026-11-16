@@ -32,10 +32,16 @@ const fixture = {
 };
 const writes = [];
 let nativePending = false;
+let nativeError = false;
 const server = http.createServer(async (request,response) => {
   let body = "";
   for await (const chunk of request) body += chunk;
   if (request.method === "POST") writes.push({path:request.url,body:JSON.parse(body)});
+  if (request.url === "/api/new" && JSON.parse(body).operationId && nativeError) {
+    response.writeHead(400,{"Content-Type":"application/json"});
+    response.end(JSON.stringify({error:"目标来源已改变，请重新核对"}));
+    return;
+  }
   if (request.url === "/api/new" && JSON.parse(body).operationId && nativePending) {
     response.writeHead(200,{"Content-Type":"application/json"});
     response.end(JSON.stringify({ok:false,pending:true,error:"隔离输入页尚未确认"}));
@@ -184,6 +190,17 @@ try {
   await evaluate("load()");
   await evaluate('createSession("server")');
   check(targetWrites().length,beforeDeletion);
+  fixture.health.remoteConnections[0].connected=true;
+  await evaluate("load()");
+  nativeError = true;
+  await evaluate('createSession("server")');
+  const failedOperation = targetWrites().at(-1).body.operationId;
+  check(await evaluate('byId("draft-recovery").open'),true);
+  check(await evaluate('sessionStorage.getItem("native-draft-operation:server")'),failedOperation);
+  nativeError = false;
+  await evaluate('byId("draft-retry").click()');
+  await wait("!creating");
+  check(targetWrites().at(-1).body.operationId,failedOperation);
   await evaluate('data.health.remoteConnections[0].connected=false;data.health.remoteConnections[0].runtimeVerified=false;render()');
   const beforeOffline = writes.length;
   await select("host-filter","host:a");

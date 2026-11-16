@@ -260,7 +260,7 @@ async function request(path, body) {
   const options = body === undefined ? {} : {method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(body)};
   const response = await fetch(path,options);
   const result = await response.json();
-  if (!response.ok) throw Object.assign(new Error(result.error || "操作失败"),{status:response.status});
+  if (!response.ok) throw new Error(result.error || "操作失败");
   return result;
 }
 const post = (path,body) => request(path,body);
@@ -1165,9 +1165,9 @@ async function createSession(projectId) {
     draftRequests.delete(projectId);
     announce(remote ? "已发送远程项目新建页面打开请求，尚未发送输入。" : "已发送新建会话页面打开请求。");
   } catch(error) {
-    if (target && !error.status) {
+    if (target) {
       recoveringDraft = {projectId,operationId:body.operationId};
-      byId("draft-message").textContent = "尚未确认输入页是否打开。"+error.message;
+      byId("draft-message").textContent = "新建尚未完成，请核对客户端和目标后重试。"+error.message;
       byId("draft-recovery").showModal();
     }
     announce(error.message,true);
