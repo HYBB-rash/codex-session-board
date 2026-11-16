@@ -55,6 +55,7 @@ def parser():
             command.add_argument("--body-file", type=Path)
         if name == "tick":
             command.add_argument("--force", action="store_true")
+            command.add_argument("--terminal-only", action="store_true")
         if name == "resume":
             command.add_argument("--additional-rounds", type=int, default=0)
             command.add_argument("--extend-hours", type=int, default=0)
@@ -76,7 +77,7 @@ def execute(state, arguments):
     if action == "status":
         return summary(state)
     if action == "tick":
-        lifecycle.tick(state, arguments.force)
+        lifecycle.tick(state, arguments.force, arguments.terminal_only)
     elif action == "claim":
         return lifecycle.claim(state, arguments.event)
     elif action == "complete":

@@ -152,11 +152,13 @@ def main():
         if arguments.plan:
             from scripts.pr_plan import plan
             print(json.dumps({"scope": "pr", "executed": False,
-                              "plan": plan(project, arguments.base, arguments.risk)},
+                              "plan": plan(project, arguments.base, arguments.risk,
+                                           arguments.stage or "ci")},
                              ensure_ascii=False, indent=2))
             return 0
         from scripts.pr_delivery import validate
-        return validate(project, arguments.base, output, arguments.expect_head, arguments.risk)
+        return validate(project, arguments.base, output, arguments.expect_head, arguments.risk,
+                        arguments.stage or "ci")
     if arguments.plan:
         strategy = integration_strategy(arguments)
         print(json.dumps({"scope": arguments.scope, "executed": False,

@@ -28,6 +28,17 @@ class PRTaskLifecycleTests(unittest.TestCase):
         self.assertEqual(saved(state)["phase"], "waiting-ci")
         self.assertEqual(state["events"], [])
 
+    def test_terminal_only_tick_does_not_start_a_repair_for_an_open_pr(self):
+        state, snapshot = task(self)
+        snapshot["items"] = [feedback()]
+        with mock.patch.object(lifecycle.forge, "snapshot", return_value=snapshot), \
+                mock.patch.object(lifecycle.native, "delivery") as delivery, \
+                mock.patch.object(lifecycle, "create_event") as create:
+            lifecycle.tick(state, force=True, terminal_only=True)
+        delivery.assert_not_called()
+        create.assert_not_called()
+        self.assertEqual(state["events"], [])
+
     def test_read_failure_keeps_feedback_and_does_not_archive(self):
         state, _ = task(self)
         previous = copy.deepcopy(state)

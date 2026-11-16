@@ -91,6 +91,25 @@ class PRPlanTests(unittest.TestCase):
             with self.subTest(dependency=dependency):
                 self.assertEqual(self.strategy(paths + [dependency])["profile"], "full")
 
+    def test_submit_selects_affected_targets_but_cannot_satisfy_the_ci_plan(self):
+        inventory = INVENTORY | {"test::board_contract::case", "test::native_authority::case"}
+        paths = ["src/store.rs"]
+        ci = {"profile": "business", "paths": paths}
+        submit = {**ci, "stage": "submit"}
+        chosen = {"lib::application::case", "test::board_contract::case", "acceptance.case"}
+        local = {**report(submit), "inventory": sorted(inventory), "selected": sorted(chosen),
+                 "not_run": sorted(inventory - chosen),
+                 "results": [{"id": name, "status": "pass"} for name in sorted(chosen)]}
+        pr_plan.validate_report(local, submit, SOURCE, inventory)
+        with self.assertRaises(ValueError):
+            pr_plan.validate_report(local, ci, SOURCE, inventory)
+        with self.assertRaises(ValueError):
+            pr_plan.groups(inventory, "business", ["tests/missing.rs"], "submit")
+        self.assertEqual(pr_plan.groups(inventory, "full", paths, "submit"),
+                         pr_plan.groups(inventory, "full"))
+        self.assertEqual(pr_plan.groups(inventory, "business", ["tests/support/shared.rs"], "submit"),
+                         pr_plan.groups(inventory, "business"))
+
 
 class PRDeliveryTests(unittest.TestCase):
     def setup_source(self):

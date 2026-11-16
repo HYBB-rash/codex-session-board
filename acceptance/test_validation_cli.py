@@ -131,11 +131,17 @@ class ValidationCliTests(unittest.TestCase):
             self.assertFalse(record["executed"])
             self.assertTrue(record["plan"]["package_required"])
             self.assertFalse(output.exists())
+            result = self.invoke("--scope", "pr", "--project", root, "--base", "HEAD",
+                                 "--stage", "submit", "--plan", "--output", output)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(json.loads(result.stdout)["plan"]["stage"], "submit")
+            self.assertFalse(output.exists())
 
     def test_pr_only_options_and_unsupported_modes_are_rejected_before_initialization(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "unused"
             for options in (("--scope", "candidate", "--project", ROOT),
+                            ("--scope", "candidate", "--stage", "submit"),
                             ("--staged", "--expect-head", "HEAD"),
                             ("--scope", "pr", "--timeout", "5"),
                             ("--scope", "pr", "--integration-base", "HEAD"),

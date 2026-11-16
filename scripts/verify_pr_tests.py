@@ -26,7 +26,8 @@ def verify(strategy, destination):
                 raise ValueError("The accepted contract baseline changed")
         outcome = rust_adapter.run(
             {"protocol": 1, "tests": requested},
-            prefixes=pr_plan.groups(requested, strategy["profile"]), include_python=True,
+            prefixes=pr_plan.groups(requested, strategy["profile"], strategy.get("paths", ()),
+                                   strategy.get("stage", "ci")), include_python=True,
         )
         record.update(outcome)
         names = [item["id"] for item in outcome["results"]]

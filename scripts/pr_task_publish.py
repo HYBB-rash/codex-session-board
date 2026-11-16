@@ -110,7 +110,8 @@ def submit(state, title=None, body=None):
     else:
         output = Path(state["directory"]) / f"validation-{head[:12]}-{uuid.uuid4().hex[:8]}"
         record(state, "validation_started", head=head, output=str(output))
-        subprocess.run([str(ROOT / "scripts/validate"), "--scope", "pr", "--project", state["project"],
+        subprocess.run([str(ROOT / "scripts/validate"), "--scope", "pr", "--stage", "submit",
+                        "--project", state["project"],
                         "--base", state["base_commit"], "--expect-head", head, "--output", str(output)],
                        cwd=ROOT, check=True, timeout=1900)
         validation(state, output, head)
@@ -156,7 +157,7 @@ def ready(state, snapshot):
                   "-f", f"id={current['node_id']}")
     marker = f"<!-- pr-task:ready {state['id']} {snapshot['head']} -->"
     comment_once(state["repository"], state["pr"], marker,
-                 f"作者交付检查及 GitHub CI 已通过。\nPR head: `{snapshot['head']}`\n"
+                 f"作者本机交付检查及准确头 GitHub CI 已通过。\nPR head: `{snapshot['head']}`\n"
                  "请独立审阅后纳入组合候选；此记录不表示已经合并、部署或完成目标环境验收。")
     labels(state["repository"], state["pr"], True)
     state["ready_head"] = snapshot["head"]

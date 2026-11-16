@@ -15,6 +15,7 @@ from scripts import validation_environment, validation_report as report
 def parse():
     parser = argparse.ArgumentParser()
     parser.add_argument("--scope", choices=("pr", "candidate", "preflight"), default="candidate")
+    parser.add_argument("--stage", choices=("ci", "submit"))
     parser.add_argument("--base", default="origin/main")
     parser.add_argument("--integration-base")
     parser.add_argument("--project", type=Path)
@@ -31,7 +32,7 @@ def parse():
         parser.error("--timeout 必须大于 0")
     if not (arguments.output or arguments.staged or arguments.plan or arguments.report):
         parser.error("运行验证需要 --output，或使用 --plan / --report")
-    if (arguments.project or arguments.expect_head or arguments.risk) and (
+    if (arguments.project or arguments.expect_head or arguments.risk or arguments.stage) and (
             arguments.scope != "pr" or arguments.staged):
         parser.error("PR source and risk options are only valid for --scope pr")
     if arguments.scope == "pr" and (

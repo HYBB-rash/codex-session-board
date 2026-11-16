@@ -70,6 +70,7 @@ class PRTaskPublishTests(unittest.TestCase):
                 publish.forge, "api", return_value=observed) as api:
             publish.submit(state, "Title", "Body")
         self.assertIn("--expect-head", calls[0])
+        self.assertEqual(calls[0][calls[0].index("--stage") + 1], "submit")
         self.assertEqual(calls[1][:2], ["git", "push"])
         self.assertNotIn("--force", calls[1])
         self.assertIn("draft=true", api.call_args_list[0].args)

@@ -67,7 +67,7 @@ def poll_event(state, event, snapshot):
     persist(state)
 
 
-def tick(state, force=False):
+def tick(state, force=False, terminal_only=False):
     if state["phase"] in {"complete", "paused", "developing"}:
         return
     if not force and time.time() < state.get("next_poll_at", 0):
@@ -95,6 +95,8 @@ def tick(state, force=False):
         state["phase"] = "needs-human"
         record(state, "reopened_during_cleanup")
         persist(state)
+        return
+    if terminal_only:
         return
     if state["phase"] == "needs-human":
         return

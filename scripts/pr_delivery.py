@@ -14,13 +14,13 @@ def save(path, record):
     path.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n")
 
 
-def validate(project, base, output, expected=None, additions=()):
+def validate(project, base, output, expected=None, additions=(), stage="ci"):
     project, output = Path(project).resolve(strict=True), Path(output).resolve()
     if output.is_relative_to(project) or output.is_relative_to(ROOT):
         raise ValueError("PR delivery records must remain outside the source and checker")
     output.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
-    record = {"schema_version": 1, "scope": "pr", "passed": False, "release_ready": False,
+    record = {"schema_version": 1, "scope": "pr", "stage": stage, "passed": False, "release_ready": False,
               "acceptance_status": "not_performed", "project": str(project), "steps": [],
               "started_at": datetime.now(timezone.utc).isoformat()}
     report_path = output / "VALIDATION.json"
@@ -46,7 +46,7 @@ def validate(project, base, output, expected=None, additions=()):
         record.update(source=source, checker=identity())
         if expected and source["commit"] != git("rev-parse", f"{expected}^{{commit}}", root=project):
             raise ValueError("The requested PR head is not checked out")
-        strategy = pr_plan.plan(project, base, additions)
+        strategy = pr_plan.plan(project, base, additions, stage)
         record["plan"] = strategy
         save(output / "PLAN.json", strategy)
         save(report_path, record)
