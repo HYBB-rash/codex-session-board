@@ -57,6 +57,10 @@ def record(repository, source, state, run, exercise=False):
         if not all(item and item["source_commit"] == source for item in current.values()):
             raise ValueError("Both delivery channels must confirm the exact published source")
     if exercise:
+        if state == "failure":
+            from scripts.main_release_feedback import failure
+            return failure(repository, source, run,
+                           f"https://github.com/{repository}/actions/runs/{run}", exercise=True)
         return {"source": source, "status": state, "exercise": True, "run": run}
     forge = GitHub(repository)
     url = f"https://github.com/{repository}/actions/runs/{run}"
@@ -67,7 +71,11 @@ def record(repository, source, state, run, exercise=False):
     if state == "failure":
         from scripts.main_release_feedback import failure
         return failure(repository, source, run, url)
-    return {"source": source, "status": state, "run": run}
+    result = {"source": source, "status": state, "run": run}
+    if state == "success":
+        from scripts.main_release_feedback import recovered
+        result["resolved_incidents"] = recovered(repository, source, run)
+    return result
 
 
 def main():

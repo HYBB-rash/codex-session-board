@@ -2123,7 +2123,10 @@
       "acceptance.test_main_release.MainReleaseTests.test_release_reuses_both_merge_reports_without_rebuilding_or_running_tests",
       "acceptance.test_main_release.MainReleaseTests.test_dispatch_error_keeps_merge_complete_and_release_pending",
       "acceptance.test_main_release.MainReleaseTests.test_channel_status_requires_both_exact_sources_and_preserves_previous_release",
-      "acceptance.test_main_release.MainReleaseTests.test_channel_manifest_reads_existing_candidate_branches"
+      "acceptance.test_main_release.MainReleaseTests.test_channel_manifest_reads_existing_candidate_branches",
+      "acceptance.test_main_release_feedback.MainReleaseFeedbackTests.test_broken_main_blocks_unrelated_merges_until_a_referenced_regression_fix",
+      "acceptance.test_main_release_feedback.MainReleaseFeedbackTests.test_failure_reuses_one_incident_and_confirms_source_bound_author_feedback",
+      "acceptance.test_main_release_feedback.MainReleaseFeedbackTests.test_recovery_closes_only_incidents_covered_by_the_published_source"
     ]
   }
 }

@@ -146,6 +146,9 @@ def promote(candidate, base, run_id, repository, output, reference="refs/heads/m
             raise ValueError("Final PR checks are pending; refusing main promotion")
     remote = require_remote_target(reference, (base, candidate), git_command=git)
     if remote == base:
+        if reference == "refs/heads/main":
+            from scripts.main_release_feedback import require_recovery
+            require_recovery(repository, base)
         lease = [] if reference == "refs/heads/main" else [f"--force-with-lease={reference}:{base}"]
         subprocess.run(["git", "push", *lease, "origin", f"{candidate}:{reference}"],
                        cwd=ROOT, check=True)
