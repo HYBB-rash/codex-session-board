@@ -97,6 +97,7 @@ def summary(state):
         "scheduler", "updated_at",
         "checker", "checker_project",
     )}
+    result["mode"] = state.get("mode", "automatic")
     if result["last_snapshot"]:
         snapshot = result["last_snapshot"]
         result["last_snapshot"] = {key: snapshot[key] for key in ("head", "state", "ci", "url")}

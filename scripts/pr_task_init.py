@@ -11,6 +11,11 @@ from scripts.pr_task_state import ROOT, digest, git, load, locked, now, persist,
 
 
 def initialize(arguments):
+    manual = arguments.mode == "manual"
+    if manual and (arguments.socket or arguments.archive):
+        raise ValueError("Manual tasks do not bind sockets or archive sessions")
+    if not manual and (not arguments.socket or not arguments.thread):
+        raise ValueError("Automatic tasks require --socket and the original --thread or CODEX_THREAD_ID")
     directory = Path(arguments.state).resolve()
     project = Path(arguments.project).resolve(strict=True)
     if project == ROOT.resolve():
@@ -25,6 +30,7 @@ def initialize(arguments):
     if not 1 <= arguments.max_hours <= 720:
         raise ValueError("Task lifetime must be 1..720 hours")
     branch = git(project, "branch", "--show-current")
+    author = arguments.thread or f"manual:{branch}"
     if not branch.startswith("codex/") or branch == arguments.base:
         raise ValueError("Register an isolated codex/ development branch")
     remote_url = git(project, "remote", "get-url", arguments.remote)
@@ -46,15 +52,18 @@ def initialize(arguments):
             if (directory / "task.json").exists():
                 state = load(directory)
                 if (state["repository"], state["project"], state["route"]["thread_id"]) != (
-                        repository, str(project), arguments.thread):
+                        repository, str(project), author):
                     raise ValueError("Existing task belongs to a different repository, worktree or session")
+                if state.get("mode", "automatic") != arguments.mode:
+                    raise ValueError("Existing task mode cannot change")
                 if (state["checker"], state["branch"], state["base"], state["remote"]) != (
                         checker, branch, arguments.base, arguments.remote):
                     raise ValueError("Existing task checker, branch or base changed")
                 return state
-            route, anchor = native.register(arguments.socket, arguments.thread, project)
+            route, anchor = ({"thread_id": author, "repair_cwd": str(project)}, None) if manual else (
+                native.register(arguments.socket, arguments.thread, project))
             state = {
-                "schema_version": 1, "id": str(uuid.uuid4()), "directory": str(directory),
+                "schema_version": 1, "mode": arguments.mode, "id": str(uuid.uuid4()), "directory": str(directory),
                 "project": str(project), "repository": repository, "branch": branch,
                 "checker": checker, "checker_project": str(ROOT),
                 "base": arguments.base, "base_commit": git(project, "rev-parse", f"{arguments.remote}/{arguments.base}"),
@@ -68,7 +77,7 @@ def initialize(arguments):
                 "next_poll_at": 0, "scheduler": None,
             }
             persist(state)
-            save(owner_path, {"directory": str(directory), "thread": arguments.thread})
+            save(owner_path, {"directory": str(directory), "thread": author})
             record(state, "registered", branch=branch)
             return state
 

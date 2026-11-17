@@ -143,10 +143,11 @@ def submit(state, title=None, body=None):
     record(state, "published", pr=state["pr"], head=head, draft=observed["draft"])
 
 
-def ready(state, snapshot):
+def ready(state, snapshot, refresh=False):
     publication = state.get("published")
     if (not publication or publication["head"] != snapshot["head"]
-            or snapshot["ci"] != "passed" or state.get("ready_head") == snapshot["head"]):
+            or snapshot["ci"] != "passed"
+            or not refresh and state.get("ready_head") == snapshot["head"]):
         return
     validation(state, Path(publication["validation"]), snapshot["head"])
     current = forge.api(f"repos/{state['repository']}/pulls/{state['pr']}")

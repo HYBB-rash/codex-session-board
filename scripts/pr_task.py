@@ -15,6 +15,7 @@ if sys.version_info < (3, 11):
 from scripts import pr_task_github as forge
 from scripts import pr_task_init as setup
 from scripts import pr_task_lifecycle as lifecycle
+from scripts import pr_task_manual as manual
 from scripts import pr_task_publish as publish
 from scripts import pr_task_scheduler as scheduler
 from scripts.pr_task_state import checkout, defer, load, locked, persist, record, summary
@@ -28,7 +29,8 @@ def parser():
     initial.add_argument("--project", type=Path, default=Path.cwd())
     initial.add_argument("--repository", required=True)
     initial.add_argument("--thread", default=os.environ.get("CODEX_THREAD_ID"))
-    initial.add_argument("--socket", required=True, type=Path)
+    initial.add_argument("--socket", type=Path)
+    initial.add_argument("--mode", choices=("manual", "automatic"), default="automatic")
     initial.add_argument("--base", default="main")
     initial.add_argument("--remote", default="origin")
     initial.add_argument("--reviewer", action="append", default=[])
@@ -38,9 +40,11 @@ def parser():
     initial.add_argument("--max-hours", type=int, default=72)
     initial.add_argument("--archive", action="store_true")
     for name in ("status", "tick", "schedule", "finalize", "probe", "pause", "resume", "attach", "submit",
-                 "claim", "complete", "rebind"):
+                 "claim", "complete", "rebind", "ready"):
         command = commands.add_parser(name)
         command.add_argument("--state", required=True, type=Path)
+        if name == "status":
+            command.add_argument("--refresh", action="store_true")
         if name in ("claim", "complete"):
             command.add_argument("--event", required=True)
         if name == "complete":
@@ -74,8 +78,9 @@ def parser():
 
 def execute(state, arguments):
     action = arguments.command
+    manual.require_action(state, action)
     if action == "status":
-        return summary(state)
+        return manual.observe(state) if arguments.refresh else summary(state)
     if action == "tick":
         lifecycle.tick(state, arguments.force, arguments.terminal_only)
     elif action == "claim":
@@ -85,8 +90,11 @@ def execute(state, arguments):
     elif action == "submit":
         publish.submit(state, arguments.title, arguments.body_file.read_text() if arguments.body_file else None)
         if state["phase"] == "finalizing":
-            lifecycle.tick(state, force=True)
-        if not arguments.no_schedule and state["phase"] != "complete":
+            if manual.enabled(state):
+                manual.finalize(state)
+            else:
+                lifecycle.tick(state, force=True)
+        if not manual.enabled(state) and not arguments.no_schedule and state["phase"] != "complete":
             scheduler.install(state)
     elif action == "attach":
         if state["phase"] in {"complete", "finalizing"}:
@@ -106,12 +114,17 @@ def execute(state, arguments):
             raise
         state.update(phase="watching", last_snapshot=snapshot, next_poll_at=0)
         persist(state)
-        if not arguments.no_schedule:
+        if not manual.enabled(state) and not arguments.no_schedule:
             scheduler.install(state)
     elif action == "schedule":
         scheduler.install(state)
     elif action == "finalize":
-        scheduler.finalize(state)
+        if manual.enabled(state):
+            manual.finalize(state)
+        else:
+            scheduler.finalize(state)
+    elif action == "ready":
+        manual.ready(state)
     elif action == "rebind":
         setup.rebind(state, arguments.socket, arguments.accept_input)
     elif action == "pause":
@@ -148,12 +161,13 @@ def main():
         return publish.feedback(arguments.repository, arguments.pr, arguments.head,
                                 arguments.request_id, arguments.body_file.read_text())
     if arguments.command == "init":
-        if not arguments.thread:
-            raise ValueError("Provide the original author UUID using --thread or CODEX_THREAD_ID")
         return summary(setup.initialize(arguments))
     directory = arguments.state.resolve()
+    if arguments.command == "status":
+        return execute(load(directory), arguments)
     if arguments.command == "probe":
         state = load(directory)
+        manual.require_action(state, arguments.command)
         setup.verify_checker(state)
         snapshot = forge.snapshot(state)
         if snapshot["state"] != "open":
@@ -166,12 +180,13 @@ def main():
             "本 PR 已登记项目内作者巡检。只在新反馈时启动修复；合并或关闭后收尾。")}
     with locked(directory, wait=arguments.command == "finalize"):
         state = load(directory)
+        manual.require_action(state, arguments.command)
         try:
             if arguments.command not in {"status", "pause"}:
                 setup.verify_checker(state)
             return execute(state, arguments)
         except Exception as error:
-            if arguments.command not in {"status", "claim"}:
+            if not manual.enabled(state) and arguments.command not in {"status", "claim"}:
                 delay = error.retry_after if isinstance(error, forge.ForgeError) else 60
                 previous = state.get("error_backoff", 30)
                 state["error_backoff"] = min(max(delay, previous * 2), 3600)

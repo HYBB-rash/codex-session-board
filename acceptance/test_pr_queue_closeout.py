@@ -47,6 +47,18 @@ class PRQueueCloseoutTests(unittest.TestCase):
                 self.assertEqual(result["authors"][0]["status"], "pending")
             run.assert_not_called()
 
+    def test_manual_cleanup_uses_explicit_finalize_without_watcher(self):
+        state, _, queue = self.fixture()
+        state["mode"] = "manual"
+        complete = {**state, "phase": "complete", "outcome": {"result": "merged"}}
+        with mock.patch.object(closeout, "load", side_effect=[state, complete]), \
+                mock.patch.object(closeout.subprocess, "run",
+                                  return_value=subprocess.CompletedProcess([], 0)) as run:
+            result = closeout.closeout(queue)
+        self.assertTrue(result["complete"])
+        self.assertIn("finalize", run.call_args.args[0])
+        self.assertNotIn("tick", run.call_args.args[0])
+
     def test_unregistered_pending_and_retried_cleanup_preserve_delivery_and_start_time(self):
         state, item, queue = self.fixture()
         item.pop("author_task_state")
