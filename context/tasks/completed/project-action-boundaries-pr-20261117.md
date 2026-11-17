@@ -6,7 +6,7 @@ allowed_write_set: 本任务记录、项目操作准入修复涉及的源码、�
 base_commit: c397839004bb69e60ab6cd334fa2616faf5ef2a5
 worktree_path: /home/herman/.codex/worktrees/project-boundaries-author/notion-program
 coordinator: 当前 PR 作者会话
-status: repairing
+status: completed
 
 用户显式调用项目 pr-task 技能，授权本任务验证、推送、创建 PR、巡检及有限回修。
 范围沿用项目操作准入修复，不包含合并、部署或真实客户端业务验收。
@@ -90,3 +90,14 @@ runtimeVerified=true，与真实后台清除无效运行证据竞争。
 本机 ui_layout 整组六项通过，包含原失败入口和请求、响应双阶段等待回归；
 独立只读审阅未发现问题。最终准确头审阅、submit 报告和回执存于私有任务目录，
 准确头 PR CI 与最终双平台组合验证仍由原流程继续。
+
+## 协调者合并收尾
+
+准确作者头0182407已由原队列机械合入，最终冻结bb06b57/0.4.3。
+CI44064889855的Mac1060、Linux1071项及准确头PR CI均通过，
+2026-11-17T10:38:21.035647Z确认远端main；首次就绪至合并1小时18分12.036秒。
+原CLI closeout已确认任务complete、merged、last_error=null，两轮修复回执保留。
+既有外部watch.py已移除本任务timer/service并读回，不请求原生会话归档。
+作者分支、源码工作树、冻结检查器、原会话和全部原始失败证据继续保留。
+发布由main自动流水线继续，客户端安装、重载与完整验收独立。
+详细协调结果见context/results/pr21-integration-20261117.md。
