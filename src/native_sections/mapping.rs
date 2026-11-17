@@ -26,16 +26,11 @@ pub(crate) struct Record {
 }
 
 pub(crate) fn usable(
-    config: &Config,
     sections: &HashMap<String, Value>,
     logical: HashMap<String, String>,
 ) -> HashMap<String, String> {
-    let mut usable: HashMap<_, _> = logical.into_iter().filter(|(backend, logical)| {
-        sections.get(backend).is_some_and(|section| {
-            config.section_bindings().find(|(_, _, target)| *target == logical)
-                .is_none_or(|(_, label, _)| section["name"] == label)
-        })
-    }).collect();
+    let mut usable: HashMap<_, _> = logical.into_iter()
+        .filter(|(backend, _)| sections.contains_key(backend)).collect();
     let mut counts = HashMap::new();
     for logical in usable.values() {
         *counts.entry(logical.clone()).or_insert(0) += 1;

@@ -56,17 +56,14 @@ impl App {
         let seed = self.mapping_seed()?;
         let mut record = self.mapping_record(&seed)?;
         let mut sections = crate::native_sections::direct::sections(reader, &self.config)?;
-        record.logical = mapping::usable(&self.config, &sections, record.logical);
+        record.logical = mapping::merge_saved(mapping::usable(&sections, record.logical),
+            mapping::usable(&sections, seed.logical));
         if checked.as_ref() == Some(&record.scope) && record.probe.is_none()
             && mapping::complete(&self.config, &record) {
             return Catalog::mapped(sections, record.logical, &self.config);
         }
         let mut sidebar = CalibrationSidebar(self);
         mapping::live_catalog(&mut sidebar, &self.config)?;
-        if checked.as_ref() != Some(&record.scope) {
-            record.logical = mapping::merge_saved(record.logical,
-                mapping::usable(&self.config, &sections, seed.logical));
-        }
         if !mapping::complete(&self.config, &record) || record.probe.is_some() {
             let mut backend = CalibrationBackend {app:self,connection:None};
             sections = Calibration {config:&self.config,store:&self.mapping_store,
@@ -167,3 +164,7 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "native_mapping_tests.rs"]
+mod tests;

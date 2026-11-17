@@ -182,12 +182,17 @@ fn broken_catalog(config: &config::Config, target: usize, fault: &str) -> Result
     }
     std::fs::write(&config.sidebar_state_file, registry.to_string())?;
     let world = Arc::new(Mutex::new(fixture::World { sections, current: 0, writes: vec![] }));
-    ensure!(direct::Catalog::load(&mut fixture::Reader(Arc::clone(&world)), config).is_err(),
-        "目录故障未被目录验证拒绝");
+    let loaded = direct::Catalog::load(&mut fixture::Reader(Arc::clone(&world)), config);
+    ensure!(loaded.is_ok() == (fault == "renamed"), "目录变更与分区身份验证不符");
     let rejected = direct::move_checked(
         &mut fixture::Reader(Arc::clone(&world)), &mut fixture::Writer(Arc::clone(&world)),
         config, fixture::THREAD, &fixture::identifier(0), Some("review")
     );
-    ensure!(rejected.is_err() && world.lock().unwrap().writes.is_empty(), "目录故障仍发送移动");
+    if fault == "renamed" {
+        rejected?;
+        ensure!(world.lock().unwrap().writes.len() == 1, "分区改名影响正确 ID 的移动");
+    } else {
+        ensure!(rejected.is_err() && world.lock().unwrap().writes.is_empty(), "目录故障仍发送移动");
+    }
     Ok(())
 }

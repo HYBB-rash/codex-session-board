@@ -55,7 +55,7 @@ impl Fixture {
         let mut record = self.store.native_mapping(&self.config.host_id)?
             .unwrap_or(mapping::Record {scope:seed.scope,logical:seed.logical,probe:None});
         let sections = self.surface.lock().unwrap().sections.clone();
-        record.logical = mapping::usable(&self.config,&sections,record.logical);
+        record.logical = mapping::usable(&sections,record.logical);
         let mut backend = Mock(Arc::clone(&self.surface),false);
         let mut sidebar = Mock(Arc::clone(&self.surface),true);
         Calibration {config:&self.config,store:&self.store,record:&mut record,

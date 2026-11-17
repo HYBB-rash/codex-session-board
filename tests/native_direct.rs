@@ -144,6 +144,10 @@ fn direct_read_rejects_ambiguous_missing_renamed_and_wrong_host_mappings() -> Re
     let mut source = reader(section());
     source.replies[0]["data"][0]["name"] = json!("renamed");
     assert!(direct::read(&mut source, &config, THREAD).is_err());
+    let mut source = reader(section());
+    source.replies[0]["data"][0]["name"] = json!("renamed");
+    source.replies[1]["thread"]["section"]["name"] = json!("renamed");
+    assert_eq!(direct::read(&mut source, &config, THREAD)?.state, "review");
     let mut remote_config = config;
     remote_config.host_id = "mac".into();
     assert!(direct::read(&mut reader(section()), &remote_config, THREAD).is_err());
