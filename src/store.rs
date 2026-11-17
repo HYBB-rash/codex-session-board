@@ -190,6 +190,14 @@ fn queue_title(
 }
 
 impl Store {
+    pub(crate) fn open_configured(config: &crate::config::Config) -> Result<Self> {
+        let mut store = Self::open(&config.data_dir, config.sync_titles)?;
+        store.native_sections = config.native_sections;
+        store.legacy_mode = config.legacy_mode;
+        store.four_columns = config.four_columns;
+        Ok(store)
+    }
+
     fn queue_title(&self, database: &Transaction<'_>, identifier: &str) -> Result<()> {
         let enabled = self.sync_titles && (!self.four_columns
             || effective(&get_row(database, identifier)?, self.native_sections) != "unknown");

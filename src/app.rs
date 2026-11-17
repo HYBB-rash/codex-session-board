@@ -62,11 +62,7 @@ impl App {
             !config.sync_sections,
             "sync_sections 已停用，请配置 native_sections"
         );
-        let mut store = Store::open(&config.data_dir, config.sync_titles)?;
-        store.native_sections = config.native_sections;
-        store.legacy_mode = config.legacy_mode;
-        store.four_columns = config.four_columns;
-        let store = Arc::new(store);
+        let store = Arc::new(Store::open_configured(&config)?);
         let native_sections = config.native_sections;
         let catalog = crate::catalog::State::load(&store, &config.host_id);
         Ok(Self {
