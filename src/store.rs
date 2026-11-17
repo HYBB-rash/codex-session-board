@@ -22,6 +22,7 @@ pub struct Store {
     pub title_epoch: Option<f64>,
     pub native_sections: bool,
     pub legacy_mode: bool,
+    pub four_columns: bool,
 }
 
 const SCHEMA: &str = "
@@ -190,7 +191,9 @@ fn queue_title(
 
 impl Store {
     fn queue_title(&self, database: &Transaction<'_>, identifier: &str) -> Result<()> {
-        queue_title(database, identifier, self.sync_titles, self.native_sections)
+        let enabled = self.sync_titles && (!self.four_columns
+            || effective(&get_row(database, identifier)?, self.native_sections) != "unknown");
+        queue_title(database, identifier, enabled, self.native_sections)
     }
 
     pub fn open(directory: &Path, sync_titles: bool) -> Result<Self> {
@@ -223,6 +226,7 @@ impl Store {
             title_epoch,
             native_sections: false,
             legacy_mode: false,
+            four_columns: false,
         })
     }
 
@@ -238,6 +242,7 @@ impl Store {
             title_epoch: None,
             native_sections: false,
             legacy_mode: false,
+            four_columns: false,
         })
     }
 
@@ -610,11 +615,12 @@ impl Store {
         let mut statement = database.prepare(
             "SELECT * FROM title_updates WHERE (? IS NULL OR thread_id=?)
              AND (?=0 OR EXISTS(SELECT 1 FROM sessions WHERE id=thread_id AND native_section IS NOT NULL))
+             AND (?=0 OR state!='unknown')
              ORDER BY attempted_at IS NOT NULL,attempted_at,requested_at",
         )?;
         Ok(statement
             .query_map(
-                params![identifier, identifier, self.native_sections],
+                params![identifier, identifier, self.native_sections, self.four_columns],
                 row_value,
             )?
             .collect::<rusqlite::Result<Vec<_>>>()?)
@@ -720,6 +726,8 @@ fn session_value(row: &Value, job: Option<&Value>, native: bool) -> Value {
         "source":if native {"codex"}else if selected {"manual"} else if row["automatic_state"].is_string() {"runtime"} else {"history"},
         "note":row["note"], "followUp":row["needs_review"]==1, "observationError":row["observation_error"],
         "titleSyncPending":job.is_some(), "titleSyncError":job.map(|job| &job["error"]),
+        "confirmedEmpty":turn["confirmedEmpty"] == true && row["observed_revision"] == row["updated_at"]
+            && !selected && row["automatic_state"].is_null() && row["runtime_key"].is_null(),
         "turnStatus":turn["status"], "version":row["version"], "inputVersion":row["input_revision"]
     })
 }

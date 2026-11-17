@@ -38,6 +38,10 @@ impl RuntimeHandle {
         self.settings.legacy_mode
     }
 
+    pub(crate) fn four_columns(&self) -> bool {
+        self.settings.four_columns
+    }
+
     fn acquire(&mut self) -> Result<()> {
         if matches!(self.board, Some(Board::Owned(_))) {
             return Ok(());

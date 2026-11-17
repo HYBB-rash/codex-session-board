@@ -26,6 +26,7 @@ mod remote;
 mod remote_snapshot;
 mod target_drafts;
 mod connection;
+mod four_columns;
 pub use connection::preflight;
 pub(crate) use connection::ConnectionRequest;
 
@@ -64,6 +65,7 @@ impl App {
         let mut store = Store::open(&config.data_dir, config.sync_titles)?;
         store.native_sections = config.native_sections;
         store.legacy_mode = config.legacy_mode;
+        store.four_columns = config.four_columns;
         let store = Arc::new(store);
         let native_sections = config.native_sections;
         let catalog = crate::catalog::State::load(&store, &config.host_id);
@@ -227,6 +229,9 @@ impl App {
         self.append_remote(&mut sessions, &mut catalog)?;
         self.retain_business_rows(&mut sessions)?;
         self.annotate_connections(&mut sessions);
+        if self.config.four_columns {
+            four_columns::project(&mut sessions);
+        }
         Ok(
             json!({"states":states,"sessions":sessions,"projectCatalog":catalog,"columnSorts":self.store.column_sorts()?,
             "legacyMode":self.config.legacy_mode,"runtime":crate::service::info(&self.config)?,
@@ -236,6 +241,12 @@ impl App {
     }
 
     pub fn request(&self, path: &str, body: Option<&Value>) -> Result<Value> {
+        if self.config.four_columns && matches!(path, "/api/state" | "/api/column-sort")
+            && let Some(state) = body.and_then(|body| body["state"].as_str())
+        {
+            ensure!(self.config.board_states().any(|item| item.0 == state),
+                "该状态已停止使用，请刷新看板并重新选择");
+        }
         if !self.config.legacy_mode
             && matches!(path, "/api/state" | "/api/archive")
             && let Some(body) = body

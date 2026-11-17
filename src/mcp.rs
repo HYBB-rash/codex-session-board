@@ -13,6 +13,10 @@ pub fn tools() -> Value {
 }
 
 pub fn tools_for(legacy: bool) -> Value {
+    tools_for_mode(legacy, false)
+}
+
+fn tools_for_mode(legacy: bool, four_columns: bool) -> Value {
     let mut tools = Vec::new();
     let icon =
         base64::engine::general_purpose::STANDARD.encode(include_bytes!("../assets/board.svg"));
@@ -32,7 +36,7 @@ pub fn tools_for(legacy: bool) -> Value {
         if legacy && matches!(name, "board_archive" | "board_new_reset" | "board_connect" | "board_project_assign") {
             continue;
         }
-        let (properties, required) = schema(name, legacy);
+        let (properties, required) = schema(name, legacy, four_columns);
         let meta = if name == "board_view" {
             json!({"ui":{"resourceUri":RESOURCE,"visibility":["app","model"]},
                 "openai/ui":{"entrypoints":[{"type":"global"}]}})
@@ -48,10 +52,10 @@ pub fn tools_for(legacy: bool) -> Value {
     json!({"tools":tools})
 }
 
-fn schema(name: &str, legacy: bool) -> (Value, Value) {
+fn schema(name: &str, legacy: bool, four_columns: bool) -> (Value, Value) {
     match name {
         "board_sort" => (
-            json!({"state":{"type":"string","enum":crate::model::states_for(legacy).map(|item| item.0).collect::<Vec<_>>()},
+            json!({"state":{"type":"string","enum":crate::model::visible_states(legacy, four_columns).map(|item| item.0).collect::<Vec<_>>()},
                 "field":{"type":"string","enum":["updated_at"]},
                 "direction":{"type":"string","enum":["asc","desc"]},
                 "version":{"type":"integer","minimum":0}}),
@@ -60,7 +64,7 @@ fn schema(name: &str, legacy: bool) -> (Value, Value) {
         "board_update" => (
             json!({
                 "id":{"type":"string"}, "state":{"type":["string","null"],
-                    "enum":crate::model::states_for(legacy).map(|item| json!(item.0)).chain([Value::Null]).collect::<Vec<_>>()},
+                    "enum":crate::model::visible_states(legacy, four_columns).map(|item| json!(item.0)).chain([Value::Null]).collect::<Vec<_>>()},
                 "note":{"type":"string","maxLength":2000},
                 "sectionVersion":{"type":["string","null"]},
                 "version":{"type":"integer","minimum":0},"inputVersion":{"type":"integer","minimum":0}
@@ -136,7 +140,7 @@ fn dispatch(method: &str, params: &Value, runtime: &mut RuntimeHandle) -> Result
         ),
         "ping" => Ok(json!({})),
         "tools/list" => {
-            Ok(tools_for(runtime.legacy()))
+            Ok(tools_for_mode(runtime.legacy(), runtime.four_columns()))
         }
         "resources/list" => {
             Ok(json!({"resources":[{"uri":RESOURCE,"name":"会话看板","mimeType":MIME}]}))

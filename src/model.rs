@@ -27,6 +27,13 @@ pub fn states_for(legacy: bool) -> impl Iterator<Item = (&'static str, &'static 
         .filter(move |(state, _)| legacy || *state != "completed")
 }
 
+pub fn visible_states(
+    legacy: bool,
+    four_columns: bool,
+) -> impl Iterator<Item = (&'static str, &'static str)> {
+    states_for(legacy).filter(move |(state, _)| !four_columns || *state != "unknown")
+}
+
 pub fn runtime_state(status: &Value, turn: &Value) -> Option<(&'static str, &'static str)> {
     match status["type"].as_str() {
         Some("active") if turn["status"] == "inProgress" => {

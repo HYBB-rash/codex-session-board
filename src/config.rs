@@ -47,6 +47,8 @@ pub struct Config {
     pub sync_sections: bool,
     pub native_sections: bool,
     pub legacy_mode: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub four_columns: bool,
     pub sidebar_socket: PathBuf,
     pub sidebar_caller: String,
     pub sidebar_state_file: PathBuf,
@@ -84,6 +86,7 @@ impl Default for Config {
             sync_sections: false,
             native_sections: false,
             legacy_mode: false,
+            four_columns: false,
             sidebar_socket: PathBuf::new(),
             sidebar_caller: String::new(),
             sidebar_state_file: PathBuf::new(),
@@ -109,7 +112,8 @@ impl Config {
     pub fn validate_modes(&self) -> Result<()> {
         ensure!(
             !self.legacy_mode
-                || !self.native_sections
+                || !self.four_columns
+                    && !self.native_sections
                     && self.auto_archive_seconds.is_none()
                     && self.remote_auto_archive_seconds.is_none()
                     && self.proxy_command.is_empty()
@@ -123,7 +127,7 @@ impl Config {
     }
 
     pub fn board_states(&self) -> impl Iterator<Item = (&'static str, &'static str)> {
-        crate::model::states_for(self.legacy_mode)
+        crate::model::visible_states(self.legacy_mode, self.four_columns)
     }
 
     pub fn validate(&self) -> Result<()> {

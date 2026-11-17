@@ -165,6 +165,22 @@ impl App {
 
     pub(crate) fn open_remote(&self, identifier: &str) -> Result<Value> {
         let (host, thread) = remote_identity(identifier)?;
+        if self.config.four_columns {
+            let remote = self.remote_app(&host)?;
+            let _operation = remote.operation()?;
+            let rows = crate::catalog::view::read(&remote, &self.store.catalog_drafts(&host)?)?.rows;
+            ensure!(rows.iter().any(|row| row["id"] == thread && super::four_columns::can_open(row)),
+                "远程会话当前不可用，连接并刷新后重试");
+            let mut reader = remote.connection(
+                std::time::Duration::from_secs(self.config.rpc_timeout_seconds),
+                crate::rpc::Role::DraftReader,
+            )?;
+            let response = crate::rpc::Rpc::call(&mut reader, "thread/read",
+                json!({"threadId":thread,"includeTurns":false}))?;
+            ensure!(response["thread"]["id"] == thread, "远程会话读回身份不匹配");
+            let url = open_client_url(conversation_url(&thread, &host)?, &self.config)?;
+            return Ok(json!({"ok":true,"url":url}));
+        }
         let remote = if !self.config.legacy_mode {
             self.remote_entry(&host)?.1
         } else {

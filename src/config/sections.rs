@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 impl Config {
     pub fn section_bindings(&self) -> impl Iterator<Item = (&'static str, &'static str, &str)> {
-        model::board_states().filter_map(|(state, label)| {
+        self.board_states().filter_map(|(state, label)| {
             self.status_sections
                 .get(state)
                 .map(|identifier| (state, label, identifier.as_str()))
@@ -28,11 +28,11 @@ impl Config {
             "原生配置含已退役的已完成分区，请先迁移配置并移除该映射"
         );
         ensure!(
-            self.status_sections.keys().all(|state| model::board_states().any(|item| item.0 == state)),
+            self.status_sections.keys().all(|state| self.board_states().any(|item| item.0 == state)),
             "包含未知状态分区"
         );
         let mut identifiers = HashSet::new();
-        for (state, label) in model::board_states() {
+        for (state, label) in self.board_states() {
             let identifier = self.status_sections.get(state)
                 .with_context(|| format!("缺少状态分区：{label}"))?;
             ensure!(uuid::Uuid::parse_str(identifier).is_ok(), "状态分区 ID 无效：{label}");

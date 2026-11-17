@@ -58,7 +58,7 @@ fn read(database: &Connection, state: &str) -> Result<ColumnSort> {
 impl Store {
     pub fn column_sorts(&self) -> Result<Value> {
         let database = self.connection()?;
-        let preferences: BTreeMap<_, _> = crate::model::states_for(self.legacy_mode)
+        let preferences: BTreeMap<_, _> = crate::model::visible_states(self.legacy_mode, self.four_columns)
             .map(|(state, _)| Ok((state, read(&database, state)?)))
             .collect::<Result<_>>()?;
         Ok(serde_json::to_value(preferences)?)
@@ -68,7 +68,8 @@ impl Store {
         let update: SortUpdate =
             serde_json::from_value(body.clone()).context("栏目排序请求格式无效")?;
         ensure!(
-            crate::model::states_for(self.legacy_mode).any(|(state, _)| state == update.state),
+            crate::model::visible_states(self.legacy_mode, self.four_columns)
+                .any(|(state, _)| state == update.state),
             "未知状态栏目"
         );
         let mut database = self.connection()?;
