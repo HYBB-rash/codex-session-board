@@ -359,6 +359,26 @@ class PRQueueTests(unittest.TestCase):
         self.assertEqual(self.state["frozen_candidate"]["status"], "infrastructure-blocked")
         self.assertTrue(Path(self.state["frozen_candidate"]["failed_run"]["report"]).exists())
 
+    def test_child_initialization_error_is_retained_even_without_a_report(self):
+        item = self.item(1, self.base)
+        item["status"] = "accepted"
+        self.state["items"] = [item]
+        self.state["reference"] = "refs/heads/codex/rehearsal-main-test"
+        def fail(arguments, **options):
+            options["stdout"].write("fixture: failed before writing integration.json\n")
+            raise subprocess.CalledProcessError(2, arguments)
+        with mock.patch.object(pr_queue, "clean"), \
+                mock.patch.object(pr_queue, "git", return_value=self.base), \
+                mock.patch.object(pr_queue, "validate_freeze", return_value="0.3.91"), \
+                mock.patch.object(pr_queue.subprocess, "run", side_effect=fail), \
+                self.assertRaises(subprocess.CalledProcessError):
+            pr_queue.finish(self.state, self.queue)
+        transcript = Path(self.state["integration"]["log"]).read_text()
+        self.assertIn("failed before writing integration.json", transcript)
+        self.assertIn("failed before writing integration.json", self.state["integration"]["error"])
+        self.assertEqual(self.state["merge_status"], "infrastructure-blocked")
+        self.assertNotIn("candidate_failed", self.state["events"][-1])
+
     def test_rehearsal_only_passes_the_restricted_reference_to_integrate(self):
         item = self.item(1, self.base)
         item["status"] = "accepted"

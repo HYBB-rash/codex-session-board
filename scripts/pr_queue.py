@@ -232,7 +232,7 @@ def reject(state, item, directory, kind, detail, files=()):
 
 def commit(project, message):
     command = [shutil.which("agent-git") or "git", "commit", "-m", message]
-    subprocess.run(command, cwd=project, check=True)
+    subprocess.run(command, cwd=project, check=True, stdout=sys.stderr)
 
 
 def attempt(state, directory):
@@ -429,13 +429,19 @@ def finish(state, directory):
     if not state.get("rehearsal"):
         command += ["--pr-gates", str(directory / "queue.json")]
     report = output / "integration.json"
+    log = directory / f"candidate-{candidate}.log"
+    state["integration"] = {"report": str(report), "log": str(log)}
     try:
-        subprocess.run(command, cwd=project, check=True)
+        with log.open("a") as transcript:
+            transcript.write(json.dumps({"started_at": now(), "command": command}) + "\n")
+            transcript.flush()
+            subprocess.run(command, cwd=project, check=True, stdout=transcript, stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError:
         details = json.loads(report.read_text()) if report.exists() else {}
-        state["integration"] = {"report": str(report), **{key: details.get(key) for key in
-                                                        ("run", "run_attempt", "workflow", "waiting_on")}}
-        error = details.get("last_error", {}).get("detail", "集成命令未完成")
+        state["integration"].update({key: details.get(key) for key in
+                                     ("run", "run_attempt", "workflow", "waiting_on")})
+        error = details.get("last_error", {}).get("detail") or log.read_text()[-4000:]
+        state["integration"]["error"] = error
         pending = error in {
             "Candidate is still pending; resume this same output directory",
             "Final PR checks are still pending; resume this same integration",
@@ -468,10 +474,8 @@ def finish(state, directory):
             return
         raise
     details = json.loads(report.read_text())
-    state["integration"] = {
-        "report": str(report), **{key: details.get(key) for key in
-                                 ("run", "run_attempt", "workflow", "waiting_on", "merge_status")},
-    }
+    state["integration"].update({key: details.get(key) for key in
+                                 ("run", "run_attempt", "workflow", "waiting_on", "merge_status")})
     state["merge_status"] = details.get("merge_status")
     if state["merge_status"] == "waiting-ci":
         save(directory / "queue.json", state)

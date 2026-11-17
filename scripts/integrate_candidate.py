@@ -58,6 +58,7 @@ def waiting(state, path, kind):
 
 def failed_run(state, run):
     state["merge_status"] = "infrastructure-blocked"
+    state.pop("failed_jobs", None)
     if run["conclusion"] == "failure":
         pages = json.loads(github("api", "--paginate", "--slurp",
                                  f"repos/{state['repository']}/actions/runs/{run['id']}"
@@ -204,11 +205,16 @@ def start(arguments):
         raise
     finally:
         invocation.update(finished_at=now(), status=state["merge_status"])
+        invocation["workflow"] = state.get("workflow")
         invocation["seconds"] = (datetime.fromisoformat(invocation["finished_at"])
                                  - datetime.fromisoformat(invocation["started_at"])).total_seconds()
         state["seconds"] = (datetime.fromisoformat(state.get("completed_at") or now())
                             - datetime.fromisoformat(state["started_at"])).total_seconds()
         save(path, state)
+        if state.get("workflow", {}).get("conclusion") not in (None, "success"):
+            failure = directory / f"failed-run-{state['run']}-{state['run_attempt']}.json"
+            if not failure.exists():
+                save(failure, state)
     print(json.dumps({"source": result["source"]["commit"], "run": result.get("run"),
                       "merge_status": result.get("merge_status"),
                       "release_status": result.get("release_status"),

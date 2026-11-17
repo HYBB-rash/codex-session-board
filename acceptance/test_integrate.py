@@ -252,6 +252,8 @@ class IntegrateTests(unittest.TestCase):
             self.assertEqual(saved["errors"][0], state["errors"][0])
             self.assertEqual(len(saved["errors"]), 2)
             self.assertEqual(saved["merge_status"], "needs-author")
+            self.assertEqual(json.loads((directory / "failed-run-1-1.json").read_text())["run"], 1)
+            self.assertEqual(saved["invocations"][-1]["workflow"]["run_attempt"], 1)
 
     def test_runner_failure_is_not_sent_to_author_and_workflow_identity_is_pinned(self):
         state = {"repository": "owner/repo"}

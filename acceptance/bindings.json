@@ -1893,6 +1893,7 @@
       "acceptance.test_pr_queue.PRQueueTests.test_runner_failure_retains_candidate_without_author_feedback",
       "acceptance.test_integrate.IntegrateTests.test_separate_cli_processes_return_and_resume_without_a_foreground_monitor",
       "acceptance.test_integrate.IntegrateTests.test_overlapping_cli_invocation_returns_busy_without_any_merge",
+      "acceptance.test_pr_queue.PRQueueTests.test_child_initialization_error_is_retained_even_without_a_report",
       "acceptance.test_promotion.PromotionTests.test_collecting_merge_evidence_does_not_read_a_release_or_package",
       "acceptance.test_promotion.PromotionTests.test_scoped_promotion_recomputes_plan_and_rejects_omitted_or_failed_tests",
       "acceptance.test_integration_plan.IntegrationPlanTests.test_special_unknown_paths_never_become_ui_paths",
