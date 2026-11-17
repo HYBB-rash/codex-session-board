@@ -227,6 +227,38 @@ class PRQueueTests(unittest.TestCase):
         self.assertEqual(item["head"], source)
         self.assertEqual(item["status"], "submitted")
 
+    def test_unrejected_new_head_requires_fresh_evidence_without_invented_feedback(self):
+        self.state["feedback_mode"] = "github"
+        source = self.branch("new-revision", "revision.txt", "updated\n")
+        incoming = {"number": 1, "head": source, "review": "new-review", "validation": "new-validation"}
+        for status in ("submitted", "accepted", "blocked-dependency"):
+            with self.subTest(status=status):
+                item = self.item(1, self.base)
+                item["status"] = status
+                self.state["items"] = [item]
+                with mock.patch.object(pr_queue, "notify") as notify, mock.patch.object(
+                        pr_queue, "verify_entry", side_effect=ValueError("stale evidence")):
+                    with self.assertRaisesRegex(ValueError, "stale evidence"):
+                        pr_queue.requeue(self.state, incoming, self.queue)
+                self.assertEqual(item["head"], self.base)
+                self.assertEqual(item["status"], status)
+                notify.assert_not_called()
+                with mock.patch.object(pr_queue, "notify") as notify, \
+                        mock.patch.object(pr_queue, "verify_entry") as verify:
+                    pr_queue.requeue(self.state, incoming, self.queue)
+                self.assertEqual(verify.call_args.args[1]["head"], source)
+                self.assertEqual(verify.call_args.args[1]["review"], "new-review")
+                self.assertEqual(item["status"], "submitted")
+                self.assertNotIn("feedback", item)
+                notify.assert_not_called()
+        for status in ("merged", "closed", "accepted"):
+            item = self.item(1, source if status == "accepted" else self.base)
+            item["status"] = status
+            self.state["items"] = [item]
+            with self.subTest(terminal_or_unchanged=status), self.assertRaisesRegex(
+                    ValueError, "changed source"):
+                pr_queue.requeue(self.state, incoming, self.queue)
+
     def evidence(self):
         (self.project / "README.md").write_text("updated\n")
         source = self.commit()

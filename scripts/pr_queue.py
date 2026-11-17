@@ -298,15 +298,18 @@ def requeue(state, incoming, directory):
     source = git(state["project"], "rev-parse", f"{incoming['head']}^{{commit}}")
     candidate_failure = item.get("feedback", {}).get("kind") == "candidate"
     evidence_only = item.get("feedback", {}).get("kind") == "delivery"
-    if ((item["status"] != "needs-fix" and not candidate_failure)
+    revision = (state.get("feedback_mode") == "github" and not item.get("feedback")
+                and item["status"] in {"submitted", "accepted", "blocked-dependency"})
+    if ((item["status"] != "needs-fix" and not candidate_failure and not revision)
             or (source == item["head"] and not evidence_only)):
         raise ValueError("Requeue requires a changed source for a rejected PR")
     subprocess.run(["git", "merge-base", "--is-ancestor", item["head"], source],
                    cwd=state["project"], check=True)
-    notify(state, item, directory)
-    expected_notification = "github_comment_posted" if state.get("feedback_mode") == "github" else "acknowledged"
-    if item["feedback"].get("notification") != expected_notification:
-        raise ValueError("The original author has not acknowledged this repair request")
+    if not revision:
+        notify(state, item, directory)
+        expected_notification = "github_comment_posted" if state.get("feedback_mode") == "github" else "acknowledged"
+        if item["feedback"].get("notification") != expected_notification:
+            raise ValueError("The original author has not acknowledged this repair request")
     replacement = {**item, **{key: incoming[key] for key in ("head", "review", "validation")}}
     replacement["head"] = source
     replacement["base"] = item["base"]

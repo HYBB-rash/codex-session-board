@@ -123,6 +123,22 @@ class PRQueueHandoffTests(unittest.TestCase):
         self.assertEqual(result["frozen_candidate"]["candidate"], CANDIDATE)
         review.assert_not_called()
         finish.assert_not_called()
+        incoming = self.directory / "new-item.json"
+        queue.save(incoming, {"number": 7, "head": self.pr["head"]["sha"],
+                              "review": "new-review.json", "validation": "new-validation"})
+        self.arguments.item = incoming
+        self.snapshot["head"] = self.pr["head"]["sha"]
+        with mock.patch.object(queue, "git", return_value=self.pr["head"]["sha"]), \
+                mock.patch.object(queue.subprocess, "run"), mock.patch.object(queue, "notify") as notify, \
+                mock.patch.object(queue, "finish") as finish:
+            resumed = self.run_round()
+        self.assertEqual(resumed["handoff"]["result"], "ready")
+        self.assertEqual(resumed["items"][0]["head"], self.pr["head"]["sha"])
+        self.assertEqual(resumed["items"][0]["status"], "submitted")
+        self.assertEqual(resumed["items"][0]["review"], "new-review.json")
+        self.assertEqual(resumed["frozen_candidate"]["candidate"], CANDIDATE)
+        notify.assert_not_called()
+        finish.assert_not_called()
 
     def test_main_drift_preserves_old_candidate_and_requires_recombination(self):
         self.main = "e" * 40
