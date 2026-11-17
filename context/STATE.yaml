@@ -3,12 +3,11 @@
   "updated_at": "2026-11-17",
   "current_phase": {
     "id": "merge-manual-rounds-20261117",
-    "status": "active",
+    "status": "completed",
     "as_of": "2026-11-17",
-    "summary": "实施PR合并手动交接与恢复，复用队列及integrate；先做隔离验证，真实GitHub对象待用户指定。"
+    "summary": "手动合并交接及恢复已在独立分支实现，28c31f0的macOS1079项通过，396.049秒；CLI已验证返回后恢复和幂等。未推送或合入main，真实GitHub演练待用户指定。"
   },
   "active_tasks": [
-    "context/tasks/active/merge-manual-rounds-20261117.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",
@@ -23,6 +22,7 @@
     "context/tasks/active/state-incident-20261112.md"
   ],
   "known_open_issues": [
+    "手动合并交接及恢复本地实现完成，最终源码28c31f0，macOS1079项通过，396.049秒；真实GitHub对象待用户指定，未推送或合入main。首次未改动Rust插件退出超时原证据保留，后续通过不代表根因修复。源码及证据在独立merge-manual-rounds-20261117工作树，详见context/results/merge-manual-rounds-20261117.md。",
     "PR21已合入bb06b57/0.4.3，首次ready到main1小时18分12.036秒，Mac1060/Linux1071项通过。两轮原会话实际唤起并领取，修复缓存夹具及UI刷新时序，原失败均保留；首轮warm_guard性能失败后续通过不代表根因已修复。失败候选多次冻结使范围保守回退full，额外93项工具自测实测两组最长Mac51.139秒，未改分类。作者任务complete、监控removed，原会话未归档；发布独立，未操作日用插件。详见context/results/pr21-integration-20261117.md。",
     "手动交接工具已合入main，status --refresh只读，ready/finalize显式执行，queue closeout复用手动收尾；实际业务PR协作仍待用户试用。本机Developer主工作树main保留未推送c8a2f8a，不重置历史；试用可从integration-pr-task-manual-20261117工作树进入。详见context/tasks/completed/pr-task-manual-integration-20261117.md。",
     "真实PR19已用原队列完成，CI43916778874第三attempt双平台1046/1057项通过；就绪至main57分51.596秒包含两次macOS runner容量故障空排队30分03秒。成功Linux任务、作者报告与原独立审阅复用，原始失败保留；基础设施仍需协调者归因并解除通用作者反馈，作者rounds=0。发布18:06:41Z仍pending，由自动流水线继续；未安装或重载日用插件。无同源码旧流程对照，无故障普通PR稳定基线仍待实测。详见context/results/pr19-integration-20261117.md。",
@@ -59,7 +59,7 @@
     "PWA安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。",
     "本机和M1专用会话真实归档已通过。正式进程已是 v0.2.63，原生侧栏取消归档后，下一次本机位置读回会恢复本地已确认卡片并保留备注。这次启动还没有完成一次本机位置读回。0.3.38 已实现 SQLite 兼容锁下私有副本热日志恢复，原库与日志不变；两项子进程回归通过，候选交付证据单独保留。"
   ],
-  "last_completed_task": "context/tasks/completed/pr21-integration-20261117.md",
+  "last_completed_task": "context/tasks/completed/merge-manual-rounds-20261117.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
