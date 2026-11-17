@@ -1162,7 +1162,7 @@ async function createSession(projectId, operationId = null) {
   const button = byId("new-session");
   if (creating || dragging || saving || byId("editor").open) return;
   const project = data.projectCatalog.items.find(item => item.id === projectId);
-  if (project && !canCreateProject(project)) {announce("当前项目暂不可新建，请核对主机连接和项目状态。",true);return;}
+  if (project && !canCreateProject(project)) {announce(project.createError || "当前项目暂不可新建，请刷新并核对目标主机。",true);return;}
   const body = projectId === null ? {} : {projectId};
   const target = projectId?.startsWith("target:") || ["targetServer","targetLegacy"].includes(project?.origin);
   const remote = target || project?.remote || draftRequests.has(projectId);
@@ -1248,7 +1248,7 @@ byId("new-session").onclick = () => {
   if (filterMode === "project" && selectedProject.startsWith("project:")) {
     const project = hostProjects().find(item => "project:" + item.id === selectedProject);
     if (!project) {announce("项目暂不可用，请刷新后重新选择。",true);return;}
-    if (!canCreateProject(project)) {announce("当前项目暂不可新建，请核对主机连接和项目状态。",true);return;}
+    if (!canCreateProject(project)) {announce(project.createError || "当前项目暂不可新建，请刷新并核对目标主机。",true);return;}
     createSession(project.id);return;
   }
   if (selectedHost === "local") {createSession(null);return;}
