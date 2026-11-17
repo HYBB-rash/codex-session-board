@@ -62,7 +62,7 @@ pub(crate) fn cycle(app: &App) -> Result<()> {
     let Some(check) = refresh::Check::due(app, requested)? else {
         return Ok(());
     };
-    let mut reader = app.connection(Duration::from_secs(20), Role::CatalogReader)?;
+    let mut reader = app.connection(Duration::from_secs(app.config.rpc_timeout_seconds), Role::CatalogReader)?;
     let mut source = reader.catalog_source()?;
     source["hostId"] = json!(app.config.host_id);
     let Some(mut capture) = check.prepare(app, &mut reader, source, requested)? else {

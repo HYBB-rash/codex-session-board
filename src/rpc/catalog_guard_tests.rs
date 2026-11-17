@@ -23,6 +23,20 @@ fn catalog_requires_bound_initialization_and_reports_verified_source() -> Result
     assert_eq!(source["version"], "0.169.0");
     assert_eq!(source["peerFingerprint"].as_str().unwrap().len(), 64);
     assert_eq!(source, guard()?.source()?);
+    for (agent, version) in [
+        (json!("Codex Desktop/0.169.0 (Mac OS 27.2.1; arm64) unknown (runtime; 0.4.0)"), json!("0.169.0")),
+        (json!("Codex Desktop/0.170.0-alpha.1"), json!("0.170.0-alpha.1")),
+        (json!("session_board_runtime/0.169.0 (Linux)"), json!("0.169.0")),
+        (json!("Codex Desktop"), Value::Null),
+        (json!("Codex Desktop/"), Value::Null),
+        (Value::Null, Value::Null),
+    ] {
+        let mut guard = CatalogGuard::initialized(&json!({
+            "codexHome":"/remote/.codex","userAgent":agent}))?;
+        guard.bind(Path::new("/remote/.codex"), json!({"peer":"verified"}))?;
+        assert_eq!(guard.source()?["version"], version);
+        assert_eq!(guard.source()?["userAgent"], agent);
+    }
     Ok(())
 }
 

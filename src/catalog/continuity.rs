@@ -47,7 +47,6 @@ fn same_source(snapshot: &Snapshot, previous: &Snapshot) -> bool {
             "hostId",
             "codexHome",
             "peerFingerprint",
-            "version",
             "accountFingerprint",
         ]
         .iter()

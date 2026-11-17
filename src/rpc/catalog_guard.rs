@@ -43,7 +43,8 @@ impl CatalogGuard {
     pub(super) fn source(&self) -> Result<Value> {
         let fingerprint = self.peer_fingerprint.as_ref().context("目录来源尚未核验")?;
         let version = self.user_agent.as_deref().and_then(|agent|
-            agent.split_whitespace().next()?.split_once('/').map(|(_, version)| version));
+            agent.split('(').next()?.trim().rsplit_once('/').map(|(_, version)| version.trim())
+                .filter(|version| !version.is_empty() && !version.chars().any(char::is_whitespace)));
         Ok(json!({"codexHome":self.codex_home, "userAgent":self.user_agent,
             "version":version, "peerFingerprint":fingerprint}))
     }
