@@ -17,6 +17,8 @@ from urllib.parse import urlsplit
 from scripts.dev_environment import configuration as config
 from scripts.dev_environment.processes import Child, reap
 
+FIXTURE_SOCKETS = ("desktop/rpc.sock", "sidebar/rpc.sock", "mcp.sock")
+
 
 def public(record):
     return {key: value for key, value in record.items() if key != "_token"}
@@ -70,6 +72,11 @@ def clear_socket(path):
     raise ValueError(f"已有监听者，拒绝接管：{path}")
 
 
+def clear_fixture_sockets(root):
+    for relative in FIXTURE_SOCKETS:
+        clear_socket(root / relative)
+
+
 def probe(record):
     address = urlsplit(record["url"])
     with closing(HTTPConnection(address.hostname, address.port, timeout=0.8)) as connection:
@@ -100,6 +107,12 @@ def probe(record):
     verified = all(health.get(key) is True for key in ("scanComplete", "runtimeVerified", "nativeVerified"))
     if not verified or any(errors) or not snapshot["projectCatalog"]["loaded"]:
         raise RuntimeError(f"本任务原生依赖尚未就绪：{[error for error in errors if error]}")
+    if not any(
+        session.get("remote") is not True and session.get("readOnly") is not True
+        and isinstance(session.get("sectionVersion"), str) and session["sectionVersion"]
+        for session in snapshot["sessions"]
+    ):
+        raise RuntimeError("本任务尚无已读回原生位置的可写会话")
 
 
 def ready(children, record, cancelled):
@@ -127,8 +140,8 @@ def serve(source, root):
 def supervise(source, root):
     manifest = config.load(source, root)
     settings = config.configuration(source, root, manifest)
-    for path in (root / "supervisor.sock", root / "desktop/rpc.sock", root / "sidebar/rpc.sock"):
-        clear_socket(path)
+    clear_socket(root / "supervisor.sock")
+    clear_fixture_sockets(root)
     cancelled = threading.Event()
     for number in (signal.SIGINT, signal.SIGTERM):
         signal.signal(number, lambda *_: cancelled.set())
@@ -189,8 +202,9 @@ def supervise(source, root):
     finally:
         try:
             reap(children)
+            clear_fixture_sockets(root)
             record["cleanup_confirmed"] = True
-        except RuntimeError as error:
+        except (OSError, ValueError, RuntimeError) as error:
             failure = f"{failure or ''}；清理未完成：{error}"
         if server:
             server.close()

@@ -318,27 +318,28 @@ impl App {
         let input = body["inputVersion"]
             .as_i64()
             .context("缺少输入版本，请刷新并核对后重试")?;
-        if self.config.native_sections {
+        let section_version = if self.config.native_sections {
             let expected = body["sectionVersion"]
                 .as_str()
                 .context("缺少原生位置，请刷新后重试")?;
-            self.save_native(
+            Some(self.save_native(
                 identifier,
                 state.as_str(),
                 &note,
                 (version, input),
                 expected,
-            )?;
+            )?)
         } else {
             self.store
                 .set_state(identifier, state.as_str(), &note, version, Some(input))?;
-        }
+            None
+        };
         self.sync_title(identifier)?;
         let pending = self.store.pending_titles(Some(identifier))?;
         Ok(
             json!({"ok":true,"titleEnabled":self.store.sync_titles,"titlePending":!pending.is_empty(),
             "titleError":pending.first().map(|job| &job["error"]),
-            "sectionsEnabled":false,"sectionsPending":0,"sectionsError":null}),
+            "sectionsEnabled":false,"sectionsPending":0,"sectionsError":null,"sectionVersion":section_version}),
         )
     }
 

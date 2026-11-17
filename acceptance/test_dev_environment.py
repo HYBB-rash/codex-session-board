@@ -23,7 +23,7 @@ def endpoint(payload, code=200, headers=None):
 
         def do_GET(self):
             requests.append(self.path)
-            body = json.dumps(payload).encode()
+            body = json.dumps(payload(self.path) if callable(payload) else payload).encode()
             self.send_response(code)
             self.send_header("Content-Length", str(len(body)))
             for name, value in (headers or {}).items():
@@ -45,6 +45,77 @@ def endpoint(payload, code=200, headers=None):
 
 
 class DevEnvironmentTests(unittest.TestCase):
+    def test_native_health_cannot_publish_readonly_cards_as_ready(self):
+        from scripts.dev_environment.runtime import probe
+        identity = {"pid": os.getpid(), "build": "expected", "dataDir": "/task/data"}
+        row = {"id": "fixture", "readOnly": True, "sectionVersion": None}
+        snapshot = {
+            "health": {"scanComplete": True, "runtimeVerified": True, "nativeVerified": True},
+            "projectCatalog": {"loaded": True}, "sessions": [row],
+        }
+        with endpoint(lambda path: identity if path == "/api/info" else snapshot) as (url, _):
+            record = {"url": url, "service_pid": os.getpid(), "program_sha256": "expected", "root": "/task"}
+            with self.assertRaisesRegex(RuntimeError, "可写会话"):
+                probe(record)
+            row.update(sectionVersion="native:fixture")
+            with self.assertRaisesRegex(RuntimeError, "可写会话"):
+                probe(record)
+            row.update(readOnly=False, sectionVersion=None)
+            with self.assertRaisesRegex(RuntimeError, "可写会话"):
+                probe(record)
+            row.update(sectionVersion="native:fixture")
+            probe(record)
+            row.update(remote=True)
+            with self.assertRaisesRegex(RuntimeError, "可写会话"):
+                probe(record)
+            snapshot["sessions"] = []
+            with self.assertRaisesRegex(RuntimeError, "可写会话"):
+                probe(record)
+
+    def test_fixture_cleanup_includes_stale_mcp_socket(self):
+        from scripts.dev_environment.runtime import clear_fixture_sockets
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for relative in ("desktop/rpc.sock", "sidebar/rpc.sock", "mcp.sock"):
+                path = root / relative
+                path.parent.mkdir(exist_ok=True)
+                with socket.socket(socket.AF_UNIX) as server:
+                    server.bind(str(path))
+                self.assertTrue(path.exists())
+            clear_fixture_sockets(root)
+            self.assertFalse(any(root.rglob("*.sock")))
+
+    def test_fixture_cleanup_rejects_active_mcp_listener(self):
+        from scripts.dev_environment.runtime import clear_fixture_sockets
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "mcp.sock"
+            with socket.socket(socket.AF_UNIX) as server:
+                server.bind(str(path))
+                server.listen(1)
+                with self.assertRaisesRegex(ValueError, "已有监听者"):
+                    clear_fixture_sockets(root)
+                self.assertTrue(path.exists())
+
+    def test_fixture_cleanup_preserves_non_socket_and_symlink(self):
+        from scripts.dev_environment.runtime import clear_fixture_sockets
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path, target = root / "mcp.sock", root / "target"
+            target.write_text("unchanged")
+            path.write_text("not a socket")
+            with self.assertRaisesRegex(ValueError, "未知文件"):
+                clear_fixture_sockets(root)
+            self.assertEqual(path.read_text(), "not a socket")
+            path.unlink()
+            path.symlink_to(target)
+            with self.assertRaisesRegex(ValueError, "未知文件"):
+                clear_fixture_sockets(root)
+            with self.assertRaisesRegex(ValueError, "越界"):
+                configuration.boundary(root)
+            self.assertTrue(path.is_symlink())
+            self.assertEqual(target.read_text(), "unchanged")
+
     def test_boundary_accepts_a_system_parent_directory_alias(self):
         with tempfile.TemporaryDirectory() as temporary:
             parent = Path(temporary)

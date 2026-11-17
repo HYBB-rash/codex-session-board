@@ -520,7 +520,7 @@ fn native_save_writes_remote_before_committing_notes_and_confirmation() -> Resul
     let server = Server::new(directory.path())?;
     let app = server.app()?;
     let request = body(&app, "to_archive", "新备注")?;
-    app.request("/api/state", Some(&request))?;
+    let response = app.request("/api/state", Some(&request))?;
     let surface = server.surface.lock().unwrap();
     assert_eq!(surface.slots[FIRST], "to_archive");
     assert_eq!(surface.notes_during_move, [""]);
@@ -529,6 +529,15 @@ fn native_save_writes_remote_before_committing_notes_and_confirmation() -> Resul
         app.snapshot()?["sessions"][0]["sectionVersion"],
         section_id("to_archive")
     );
+    assert_eq!(response["sectionVersion"], section_id("to_archive"));
+    drop(surface);
+    let mut next = request;
+    next["state"] = json!("review");
+    next["version"] = json!(next["version"].as_i64().unwrap() + 1);
+    next["sectionVersion"] = response["sectionVersion"].clone();
+    let response = app.request("/api/state", Some(&next))?;
+    assert_eq!(response["sectionVersion"], section_id("review"));
+    assert_eq!(server.surface.lock().unwrap().slots[FIRST], "review");
     Ok(())
 }
 

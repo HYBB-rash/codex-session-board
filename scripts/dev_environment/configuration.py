@@ -55,7 +55,7 @@ def child_environment(root):
 def boundary(root):
     names = ("prepared.json", "runtime.json", "action.lock", "owner.lock", "config.json",
              "projects.json", "fixture.json", "navigation.jsonl", "fixture.log",
-             "service.log", "supervisor.log", "data", "desktop", "sidebar")
+             "service.log", "supervisor.log", "data", "desktop", "sidebar", "mcp.sock")
     for name in names:
         path = root / name
         if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()):
