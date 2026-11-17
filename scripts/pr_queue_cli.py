@@ -10,6 +10,8 @@ from scripts import pr_queue_registry as registry
 def execute(queue, state, directory, arguments):
     action = arguments.command
     if action == "resume":
+        if arguments.item:
+            queue.requeue(state, json.loads(arguments.item.read_text()), directory)
         return handoff.resume(state, directory, queue)
     queue.verify_checker(state)
     if action == "notify":
@@ -36,6 +38,7 @@ def execute(queue, state, directory, arguments):
 
 def run(queue, state, directory, arguments):
     registry.register(directory, state)
+    state.setdefault("checker_project", str(queue.ROOT))
     record = handoff.begin(state, directory, arguments.command)
     state["merge_status"] = "checking"
     try:
@@ -85,6 +88,10 @@ def main(queue):
             with (directory / "queue.lock").open("a") as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 state = json.loads((directory / "queue.json").read_text())
+                if arguments.repository and state["repository"].lower() != arguments.repository.lower():
+                    raise ValueError("Selected queue belongs to another repository")
+                if arguments.pr and not any(item["number"] == arguments.pr for item in state["items"]):
+                    raise ValueError("Selected queue does not contain the requested PR")
                 run(queue, state, directory, arguments)
         print(json.dumps(state, ensure_ascii=False, indent=2))
         result = state.get("handoff", {}).get("result")

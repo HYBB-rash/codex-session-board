@@ -90,24 +90,39 @@ def resume(state, directory, queue):
             item = next(item for item in state["items"] if item["number"] == observed["number"])
             item["status"] = "merged" if observed["result"] == "merged" else "closed"
         return describe(state, directory, result)
-    if result != "ready":
+    if state["observation"]["main"] != state["base"]:
         return describe(state, directory, result, state["observation"]["detail"])
+    accepted = {item["number"] for item in state["items"] if item["status"] == "accepted"}
+    relevant = [item for item in state["observation"]["items"] if not accepted or item["number"] in accepted]
+    blocker = next((item for item in relevant if item["result"] != "ready"), None)
+    if blocker:
+        return describe(state, directory, blocker["result"], blocker.get("detail", ""))
     queue.verify_checker(state)
     for item in state["items"]:
-        if item["status"] in {"merged", "closed"}:
+        if accepted and item["number"] not in accepted or item["status"] in {"merged", "closed"}:
             continue
         try:
             queue.verify_entry(state, item)
         except Exception as error:
             return describe(state, directory, "needs-evidence", str(error))
-    frozen = state.get("frozen_candidate")
-    if frozen:
-        queue.clean(Path(state["project"]), frozen["candidate"])
-        if frozen["status"] == "failed":
-            return describe(state, directory, "needs-author", "Repair or explicitly retry the recorded failed run")
-        queue.finish(state, directory)
-        return describe(state, directory, state.get("merge_status", "merged"))
-    return describe(state, directory, "ready", "Continue mechanical attempt and release freeze using existing commands")
+    if not accepted:
+        return describe(state, directory, "ready", "Continue mechanical attempt using the existing command")
+    project = Path(state["project"])
+    candidate = queue.git(project, "rev-parse", "HEAD")
+    queue.clean(project, candidate)
+    frozen = state.get("frozen_candidate", {})
+    if frozen.get("status") == "failed" and candidate == frozen["candidate"]:
+        return describe(state, directory, "needs-author", "Repair or explicitly retry the recorded failed run")
+    if candidate == state["prefix"] and candidate != frozen.get("candidate"):
+        return describe(state, directory, "ready", "Freeze the accepted prefix using the existing release command")
+    state["resume_reused"] = ["independent-review", "submit-validation", "accepted-prefix"]
+    if frozen.get("candidate") == candidate:
+        state["resume_reused"] += ["frozen-candidate", "existing-workflow"]
+    queue.finish(state, directory)
+    result = state["merge_status"]
+    if result == "merged" and not state["all_items_merged"]:
+        result = "needs-author"
+    return describe(state, directory, result)
 
 
 def begin(state, directory, command):
@@ -115,6 +130,13 @@ def begin(state, directory, command):
         if previous["result"] == "running":
             previous.update(result="interrupted", interruption_observed_at=now())
     record = {"command": command, "started_at": now(), "result": "running"}
+    previous = state.get("rounds", [])[-1] if state.get("rounds") else {}
+    if previous.get("finished_at"):
+        record["between_calls"] = {
+            "from": previous["finished_at"], "to": record["started_at"], "reason": previous["result"],
+            "seconds": (datetime.fromisoformat(record["started_at"])
+                        - datetime.fromisoformat(previous["finished_at"])).total_seconds(),
+        }
     state.setdefault("rounds", []).append(record)
     save(directory / "queue.json", state)
     return record
@@ -125,4 +147,5 @@ def end(state, directory, record, handoff):
     record["seconds"] = (datetime.fromisoformat(record["finished_at"])
                          - datetime.fromisoformat(record["started_at"])).total_seconds()
     state["handoff"] = handoff
+    record["reused"] = state.pop("resume_reused", [])
     save(directory / "queue.json", state)

@@ -433,6 +433,8 @@ def finish(state, directory):
         subprocess.run(command, cwd=project, check=True)
     except subprocess.CalledProcessError:
         details = json.loads(report.read_text()) if report.exists() else {}
+        state["integration"] = {"report": str(report), **{key: details.get(key) for key in
+                                                        ("run", "run_attempt", "workflow", "waiting_on")}}
         error = details.get("last_error", {}).get("detail", "集成命令未完成")
         pending = error in {
             "Candidate is still pending; resume this same output directory",

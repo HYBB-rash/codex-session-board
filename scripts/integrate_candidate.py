@@ -30,7 +30,15 @@ def require_checkout(state):
         raise ValueError("Continue only in the exact clean candidate checkout and branch")
 
 
-def find_run(repository, branch, candidate):
+def find_run(repository, branch, candidate, pinned=None):
+    if pinned is not None:
+        run = json.loads(github("api", f"repos/{repository}/actions/runs/{pinned}"))
+        if (run["id"] != pinned or run["head_sha"] != candidate or run["head_branch"] != branch
+                or run["repository"]["full_name"] != repository
+                or run["path"] != ".github/workflows/plugin-candidate.yml"
+                or run["event"] not in ("push", "workflow_dispatch")):
+            raise ValueError("Recorded workflow no longer identifies this exact candidate")
+        return run
     runs = json.loads(github("api", f"repos/{repository}/actions/workflows/"
                             f"plugin-candidate.yml/runs?branch={quote(branch, safe='')}&per_page=100"))
     matches = [run for run in runs["workflow_runs"]
@@ -63,7 +71,7 @@ def continue_candidate(state, directory, timeout):
         save(state_path, state)
     deadline = time.monotonic() + timeout
     while True:
-        run = find_run(state["repository"], state["branch"], candidate)
+        run = find_run(state["repository"], state["branch"], candidate, state.get("run"))
         if run:
             state["run"] = run["id"]
             state["run_attempt"] = run["run_attempt"]
@@ -178,7 +186,7 @@ def start(arguments):
         invocation.update(finished_at=now(), status=state["merge_status"])
         invocation["seconds"] = (datetime.fromisoformat(invocation["finished_at"])
                                  - datetime.fromisoformat(invocation["started_at"])).total_seconds()
-        state["seconds"] = (datetime.now(timezone.utc)
+        state["seconds"] = (datetime.fromisoformat(state.get("completed_at") or now())
                             - datetime.fromisoformat(state["started_at"])).total_seconds()
         save(path, state)
     print(json.dumps({"source": result["source"]["commit"], "run": result.get("run"),
