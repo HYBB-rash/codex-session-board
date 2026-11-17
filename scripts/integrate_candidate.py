@@ -39,15 +39,22 @@ def find_run(repository, branch, candidate):
     return max(matches, key=lambda run: run["id"]) if matches else None
 
 
+def waiting(state, path, kind):
+    state.update(merge_status="waiting-ci", waiting_on=kind, observed_at=now())
+    state.pop("last_error", None)
+    save(path, state)
+    return state
+
+
 def continue_candidate(state, directory, timeout):
     state_path = directory / "integration.json"
     require_checkout(state)
-    if state.get("completed_at"):
-        return state
     candidate, base = state["source"]["commit"], state["base"]
     reference = state.get("reference", "refs/heads/main")
     require_target(reference, base, state["branch"], candidate, git_command=git)
     require_remote_target(reference, (base, candidate), git_command=git)
+    if state.get("completed_at"):
+        return state
     subprocess.run(["git", "merge-base", "--is-ancestor", base, candidate], cwd=ROOT, check=True)
     if not state.get("pushed_at"):
         subprocess.run(["git", "push", "origin", f"{candidate}:refs/heads/{state['branch']}"],
@@ -60,14 +67,18 @@ def continue_candidate(state, directory, timeout):
         if run:
             state["run"] = run["id"]
             state["run_attempt"] = run["run_attempt"]
+            state["workflow"] = {key: run.get(key) for key in
+                                 ("id", "run_attempt", "status", "conclusion", "html_url")}
             save(state_path, state)
             if run["status"] == "completed":
                 if run["conclusion"] != "success":
+                    state["merge_status"] = (
+                        "needs-author" if run["conclusion"] == "failure" else "infrastructure-blocked")
                     raise ValueError(f"Candidate run {run['id']} finished: {run['conclusion']}")
                 break
         if time.monotonic() >= deadline:
-            raise TimeoutError("Candidate is still pending; resume this same output directory")
-        time.sleep(10)
+            return waiting(state, state_path, "candidate")
+        time.sleep(min(10, max(0, deadline - time.monotonic())))
     require_checkout(state)
     if state.get("pr_gates"):
         while True:
@@ -76,8 +87,8 @@ def continue_candidate(state, directory, timeout):
             if state["pr_checks"] is not None:
                 break
             if time.monotonic() >= deadline:
-                raise TimeoutError("Final PR checks are still pending; resume this same integration")
-            time.sleep(10)
+                return waiting(state, state_path, "pr")
+            time.sleep(min(10, max(0, deadline - time.monotonic())))
     receipt = directory / "promotion.json"
     if receipt.exists():
         saved = json.loads(receipt.read_text())
@@ -96,6 +107,7 @@ def continue_candidate(state, directory, timeout):
             promote(candidate, base, run["id"], state["repository"], receipt, reference)
     state["completed_at"] = now()
     state["merge_status"] = "merged"
+    state.pop("waiting_on", None)
     promoted = json.loads(receipt.read_text())
     state["release_status"] = promoted.get("release_status", "unchanged")
     state["release"] = promoted.get("release")
@@ -150,17 +162,29 @@ def start(arguments):
                 arguments.pr_gates, ROOT, arguments.repository, state["source"]["commit"])
         directory.mkdir(parents=True)
         save(path, state)
+    invocation = {"started_at": now(), "status": "running"}
+    state.setdefault("invocations", []).append(invocation)
+    state["merge_status"] = "checking" if not state.get("completed_at") else "merged"
+    save(path, state)
     try:
         result = continue_candidate(state, directory, arguments.timeout)
     except Exception as error:
+        if state["merge_status"] == "checking":
+            state["merge_status"] = "needs-user" if isinstance(error, ValueError) else "infrastructure-blocked"
         state["last_error"] = {"at": now(), "type": type(error).__name__, "detail": str(error)}
         state.setdefault("errors", []).append(state["last_error"])
-        save(path, state)
         raise
-    print(json.dumps({"source": result["source"]["commit"], "run": result["run"],
+    finally:
+        invocation.update(finished_at=now(), status=state["merge_status"])
+        invocation["seconds"] = (datetime.fromisoformat(invocation["finished_at"])
+                                 - datetime.fromisoformat(invocation["started_at"])).total_seconds()
+        state["seconds"] = (datetime.now(timezone.utc)
+                            - datetime.fromisoformat(state["started_at"])).total_seconds()
+        save(path, state)
+    print(json.dumps({"source": result["source"]["commit"], "run": result.get("run"),
                       "merge_status": result.get("merge_status"),
                       "release_status": result.get("release_status"),
-                      "seconds": result["seconds"], "receipt": str(path)}))
+                      "seconds": result["seconds"], "invocation": invocation, "receipt": str(path)}))
 
 
 def main():
@@ -172,9 +196,17 @@ def main():
     parser.add_argument("--pr-gates", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--timeout", type=int, default=3600)
-    start(parser.parse_args())
+    parser.add_argument("--timeout", type=int, default=0)
+    arguments = parser.parse_args()
+    if arguments.timeout < 0:
+        parser.error("--timeout must be nonnegative")
+    try:
+        start(arguments)
+    except Exception as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

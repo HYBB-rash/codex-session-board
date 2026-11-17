@@ -2,12 +2,13 @@
   "schema_version": 1,
   "updated_at": "2026-11-17",
   "current_phase": {
-    "id": "pr21-integration-20261117",
-    "status": "completed",
+    "id": "merge-manual-rounds-20261117",
+    "status": "active",
     "as_of": "2026-11-17",
-    "summary": "真实PR21已随bb06b57/0.4.3进入远端main，Mac1060/Linux1071项通过；首次就绪至main1小时18分12.036秒，包含两轮原作者自动回修。作者监控与本任务候选已清理，源码和原会话保留；发布独立，不操作日用插件。"
+    "summary": "实施PR合并手动交接与恢复，复用队列及integrate；先做隔离验证，真实GitHub对象待用户指定。"
   },
   "active_tasks": [
+    "context/tasks/active/merge-manual-rounds-20261117.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",

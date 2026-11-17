@@ -12,6 +12,87 @@ from scripts import integrate_candidate as integrate
 
 
 class IntegrateTests(unittest.TestCase):
+    def test_pending_invocation_returns_then_resume_reuses_candidate_and_workflow(self):
+        from argparse import Namespace
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            state = {"source": {"commit": "candidate"}, "base": "base", "branch": "branch",
+                     "repository": "owner/repo", "started_at": integrate.now()}
+            integrate.save(directory / "integration.json", state)
+            run = {"id": 42, "run_attempt": 1, "status": "in_progress", "conclusion": None}
+            arguments = Namespace(output=directory, resume=True, timeout=0)
+            def promoted(*values):
+                values[4].write_text(json.dumps({"release_status": "pending"}))
+            with patch.object(integrate, "require_checkout"), \
+                    patch.object(integrate, "git", return_value="base refs/heads/main"), \
+                    patch.object(integrate.subprocess, "run") as execute, \
+                    patch.object(integrate, "find_run", return_value=run), \
+                    patch.object(integrate.time, "sleep") as sleep, \
+                    patch.object(integrate, "promote", side_effect=promoted) as promote:
+                integrate.start(arguments)
+                pending = json.loads((directory / "integration.json").read_text())
+                self.assertEqual(pending["merge_status"], "waiting-ci")
+                self.assertEqual(pending["run"], 42)
+                self.assertNotIn("last_error", pending)
+                self.assertNotIn("errors", pending)
+                self.assertEqual(pending["invocations"][0]["status"], "waiting-ci")
+                promote.assert_not_called()
+                sleep.assert_not_called()
+                run.update(status="completed", conclusion="success")
+                integrate.start(arguments)
+                complete = json.loads((directory / "integration.json").read_text())
+                self.assertEqual(complete["merge_status"], "merged")
+                self.assertEqual(complete["release_status"], "pending")
+                self.assertEqual(complete["started_at"], state["started_at"])
+                self.assertEqual([entry["status"] for entry in complete["invocations"]],
+                                 ["waiting-ci", "merged"])
+                pushes = [call for call in execute.call_args_list if call.args[0][1] == "push"]
+                self.assertEqual(len(pushes), 1)
+                promote.assert_called_once()
+                integrate.start(arguments)
+                promote.assert_called_once()
+                self.assertEqual(len([call for call in execute.call_args_list
+                                      if call.args[0][1] == "push"]), 1)
+
+    def test_pending_final_pr_checks_return_without_promoting_or_sleeping(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = {"source": {"commit": "candidate"}, "base": "base", "branch": "branch",
+                     "repository": "owner/repo", "pushed_at": integrate.now(), "pr_gates": {}}
+            state["pr_gates"] = {"items": [7]}
+            with patch.object(integrate, "require_checkout"), \
+                    patch.object(integrate, "git", return_value="base refs/heads/main"), \
+                    patch.object(integrate.subprocess, "run"), \
+                    patch.object(integrate, "find_run", return_value={
+                        "id": 42, "run_attempt": 1, "status": "completed", "conclusion": "success"}), \
+                    patch.object(integrate.pr_queue_gates, "verify", return_value=None), \
+                    patch.object(integrate.time, "sleep") as sleep, \
+                    patch.object(integrate, "promote") as promote:
+                result = integrate.continue_candidate(state, Path(temporary), 0)
+            self.assertEqual(result["waiting_on"], "pr")
+            self.assertEqual(result["merge_status"], "waiting-ci")
+            promote.assert_not_called()
+            sleep.assert_not_called()
+
+    def test_failed_query_keeps_workflow_identity_and_can_be_resumed(self):
+        from argparse import Namespace
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            state = {"source": {"commit": "candidate"}, "base": "base", "branch": "branch",
+                     "repository": "owner/repo", "started_at": integrate.now(),
+                     "pushed_at": integrate.now(), "run": 42, "run_attempt": 1}
+            integrate.save(directory / "integration.json", state)
+            with patch.object(integrate, "require_checkout"), \
+                    patch.object(integrate, "git", return_value="base refs/heads/main"), \
+                    patch.object(integrate.subprocess, "run"), \
+                    patch.object(integrate, "find_run", side_effect=RuntimeError("query unavailable")), \
+                    self.assertRaisesRegex(RuntimeError, "query unavailable"):
+                integrate.start(Namespace(output=directory, resume=True, timeout=0))
+            observed = json.loads((directory / "integration.json").read_text())
+            self.assertEqual(observed["merge_status"], "infrastructure-blocked")
+            self.assertEqual(observed["run"], 42)
+            self.assertEqual(observed["started_at"], state["started_at"])
+            self.assertEqual(observed["invocations"][0]["status"], "infrastructure-blocked")
+
     def test_unfrozen_version_fails_before_pushing_or_starting_ci(self):
         from argparse import Namespace
         from scripts import main_release_evidence
