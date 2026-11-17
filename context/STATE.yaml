@@ -3,12 +3,11 @@
   "updated_at": "2026-11-17",
   "current_phase": {
     "id": "pr-task-manual-integration-20261117",
-    "status": "in_progress",
+    "status": "completed",
     "as_of": "2026-11-17",
-    "summary": "手动PR交接工具已与PR19之后的固定主线机械合并，无冲突；冻结0.4.0并准备双平台候选门禁。未更新远端main，真实业务任务和客户端验收另行安排。"
+    "summary": "手动PR交接工具已随1a3d75e/0.4.0进入远端main，Mac1056/Linux1067项一次通过；集成准备至main21分28.603秒。项目skill默认手动交接，旧自动任务保留。发布独立，真实业务PR由用户随后安排。"
   },
   "active_tasks": [
-    "context/tasks/active/pr-task-manual-integration-20261117.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",
@@ -23,6 +22,7 @@
     "context/tasks/active/state-incident-20261112.md"
   ],
   "known_open_issues": [
+    "手动交接工具已合入main，status --refresh只读，ready/finalize显式执行，queue closeout复用手动收尾；实际业务PR协作仍待用户试用。本机Developer主工作树main保留未推送c8a2f8a，不重置历史；试用可从integration-pr-task-manual-20261117工作树进入。详见context/tasks/completed/pr-task-manual-integration-20261117.md。",
     "真实PR19已用原队列完成，CI43916778874第三attempt双平台1046/1057项通过；就绪至main57分51.596秒包含两次macOS runner容量故障空排队30分03秒。成功Linux任务、作者报告与原独立审阅复用，原始失败保留；基础设施仍需协调者归因并解除通用作者反馈，作者rounds=0。发布18:06:41Z仍pending，由自动流水线继续；未安装或重载日用插件。无同源码旧流程对照，无故障普通PR稳定基线仍待实测。详见context/results/pr19-integration-20261117.md。",
     "验证效率与合并发布分离工具已随PR17/81fa140/0.3.98进入远端main，最终Mac1038/Linux1049项及双平台发布通过；两线程保留。首次PR ready到main85分55.571秒含回修重跑，最终冻结入口到main26分29.629秒含macOS排队10分02秒，main到发布11分47.776秒。工具冷启动9.274秒、复用0.305秒、变更重建2.331秒；连续main更新与演练失败保留渠道、正常恢复自动关单已验证。旧工单14/15及Draft PR16仍保留，不以本轮通过冒称历史偶发故障根因修复。全新普通业务PR提速样本未测；见context/results/merge-release-split-20261116.md。",
     "PR13已随0.3.95/3629405合入主线，macOS971/Linux982项及双平台包启动通过；核心50分58秒。目标项目新建依赖匹配的codex-remote-draft-v2客户端候选，未安装或重载日用客户端；多窗口、Fedora在线首轮及完整目标验收仍独立。Linux临时Git fixture身份失败由原作者修复，原失败保留；见context/tasks/completed/pr13-integration-20261116.md。",
@@ -57,7 +57,7 @@
     "PWA安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。",
     "本机和M1专用会话真实归档已通过。正式进程已是 v0.2.63，原生侧栏取消归档后，下一次本机位置读回会恢复本地已确认卡片并保留备注。这次启动还没有完成一次本机位置读回。0.3.38 已实现 SQLite 兼容锁下私有副本热日志恢复，原库与日志不变；两项子进程回归通过，候选交付证据单独保留。"
   ],
-  "last_completed_task": "context/tasks/completed/pr19-integration-20261117.md",
+  "last_completed_task": "context/tasks/completed/pr-task-manual-integration-20261117.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",

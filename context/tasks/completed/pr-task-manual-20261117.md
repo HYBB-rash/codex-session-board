@@ -33,3 +33,7 @@ status: completed
 改动仅在独立本地分支 codex/pr-task-manual-20261117，未推送、未合入 main。
 主线入口仍是原版本。后续先安排工具改动集成，再由用户选真实业务任务，
 手动转发作者交付、独立审阅和修复反馈，观察交接是否顺畅。
+
+后续更新：用户已授权集成，工具于 2026-11-17 随 1a3d75e / 0.4.0 进入远端 main。
+双平台组合结果和本地未推送记录的保留边界见
+context/tasks/completed/pr-task-manual-integration-20261117.md。
