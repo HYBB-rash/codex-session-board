@@ -92,6 +92,13 @@ class PRQueueHandoffTests(unittest.TestCase):
             self.assertEqual(advance.call_count, 2)
             publish.assert_not_called()
             cleanup.assert_not_called()
+            self.arguments.command = "closeout"
+            with mock.patch("scripts.pr_queue_closeout.closeout", side_effect=lambda state:
+                            state.update(closeout={"complete": False})):
+                pending_cleanup = self.run_round()
+            self.assertEqual(pending_cleanup["handoff"]["result"], "merged")
+            self.assertTrue(pending_cleanup["batch_merged"])
+            self.assertFalse(pending_cleanup["closeout"]["complete"])
 
     def test_feedback_handoff_does_not_wait_notify_again_or_launch_author(self):
         self.snapshot["items"] = [{"kind": "feedback", "url": "https://example.invalid/feedback"}]

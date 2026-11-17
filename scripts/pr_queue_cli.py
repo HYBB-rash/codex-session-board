@@ -31,7 +31,7 @@ def execute(queue, state, directory, arguments):
         getattr(queue, action.replace("-", "_"))(state, directory)
     result = state.get("merge_status") or "ready"
     if result == "checking":
-        result = "ready"
+        result = "merged" if state.get("batch_merged") else "ready"
     for item in state["items"]:
         if item.get("feedback") and not item["feedback"].get("comment"):
             return handoff.describe(state, directory, "infrastructure-blocked", "Feedback has not been delivered")
