@@ -59,6 +59,7 @@ mod tests {
         ])?;
         app.store.set_state("manual", Some("unknown"), "旧备注", 0, Some(0))?;
         app.store.observe("empty", &json!({"confirmedEmpty":true}), None)?;
+        app.store.observe("unread", &json!({"status":"completed","hasFinal":true}), None)?;
         let report = app.snapshot()?;
         assert_eq!(report["fourColumns"], true);
         assert_eq!(report["states"], json!({
@@ -70,7 +71,8 @@ mod tests {
         let row = rows.iter().find(|row| row["id"] == "manual").unwrap();
         assert_eq!(row["state"], Value::Null);
         assert_eq!(row["note"], "旧备注");
-        assert!(rows.iter().any(|row| row["id"] == "unread" && row["state"].is_null()));
+        assert!(rows.iter().any(|row| row["id"] == "unread" && row["state"].is_null()
+            && row["suggestion"].is_null()));
         assert!(app.request("/api/state", Some(&json!({
             "id":"manual","state":"unknown","version":1,"inputVersion":0
         }))).is_err());

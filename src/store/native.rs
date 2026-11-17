@@ -327,7 +327,7 @@ impl Store {
         )?;
         record_observation(&transaction, identifier, &row, native)?;
         if row["native_section"].is_string() || pending {
-            queue_title(&transaction, identifier, self.sync_titles, true)?;
+            queue_title(&transaction, identifier, self.sync_titles, true, self.four_columns)?;
         }
         transaction.commit()?;
         Ok(())

@@ -101,7 +101,7 @@ impl Store {
                         row_value,
                     )
                     .optional()?;
-                let mut value = session_value(&row, job.as_ref(), self.native_sections);
+                let mut value = self.session_value(&row, job.as_ref());
                 value["archived"] = json!(row["archived"] == 1);
                 Ok(value)
             })

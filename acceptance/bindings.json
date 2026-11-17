@@ -38,6 +38,8 @@
   ],
   "requirements": {
     "STATE-001": [
+      "lib::codex_session_board::app::four_columns::tests::four_column_snapshot_preserves_legacy_cards_and_rejects_retired_writes",
+      "lib::codex_session_board::app::four_columns::tests::four_column_remote_keeps_default_placement_without_replaying_old_backfill",
       "lib::codex_session_board::formal::tests::section_configuration_and_native_resolution_conform_to_the_independent_model",
       "test::native_direct::retired_mapping_never_changes_the_effective_native_dependencies",
       "lib::codex_session_board::formal::tests::native_session_control_matches_the_store_on_every_reachable_edge",
@@ -1799,6 +1801,11 @@
       "acceptance.test_delivery.DeliveryTests.test_channel_versions_are_monotonic_and_bind_immutable_payloads"
     ],
     "GATE-001": [
+      "acceptance.test_four_column_migration.FourColumnMigrationTest.test_lost_move_receipt_and_native_default",
+      "acceptance.test_four_column_migration.FourColumnMigrationTest.test_unplanned_move_and_new_input_require_reconciliation",
+      "acceptance.test_four_column_migration.FourColumnMigrationTest.test_delete_requires_candidate_and_all_host_readbacks",
+      "acceptance.test_four_column_migration.FourColumnMigrationTest.test_rollback_restores_order_and_preserves_later_edits",
+      "acceptance.test_four_column_migration.FourColumnMigrationTest.test_account_membership_and_freshness_are_required",
       "acceptance.test_pr_task_cli.PRTaskCLITests.test_real_cli_idle_polling_uses_no_model_and_closes_without_deleting_work",
       "acceptance.test_pr_task_manual.PRTaskManualTests.test_registration_needs_no_client_and_mode_cannot_change",
       "acceptance.test_pr_task_manual.PRTaskManualTests.test_refresh_reads_new_feedback_without_writing_task_or_pr",

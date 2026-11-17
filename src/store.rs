@@ -84,14 +84,15 @@ fn suggestion(row: &Value) -> (&'static str, &'static str) {
     recommend(&turn_of(row))
 }
 
-fn effective(row: &Value, native: bool) -> String {
+fn effective(row: &Value, native: bool, history_suggestions: bool) -> String {
     if native {
         return row["native_state"].as_str().unwrap_or("unknown").into();
     }
     row["selected_state"]
         .as_str()
         .or_else(|| row["automatic_state"].as_str())
-        .unwrap_or_else(|| suggestion(row).0)
+        .or_else(|| history_suggestions.then(|| suggestion(row).0))
+        .unwrap_or("unknown")
         .to_string()
 }
 
@@ -139,7 +140,7 @@ fn archive_expected(row: &Value, revision: (i64, i64), native: bool) -> Result<V
         "会话有新输入，请核对后点击卡片上的“确认待归档”"
     );
     ensure!(
-        crate::model::board_state(&effective(row, native)) == "to_archive",
+        crate::model::board_state(&effective(row, native, false)) == "to_archive",
         "只能归档待归档会话"
     );
     Ok(if native {
@@ -169,12 +170,14 @@ fn queue_title(
     identifier: &str,
     enabled: bool,
     native: bool,
+    four_columns: bool,
 ) -> Result<()> {
-    if !enabled {
+    let row = get_row(database, identifier)?;
+    let state = effective(&row, native, !four_columns);
+    if !enabled || four_columns && state == "unknown" {
         database.execute("DELETE FROM title_updates WHERE thread_id=?", [identifier])?;
         return Ok(());
     }
-    let row = get_row(database, identifier)?;
     database.execute(
         "INSERT INTO title_updates(thread_id,version,state,requested_at) VALUES (?,?,?,?)
          ON CONFLICT(thread_id) DO UPDATE SET version=excluded.version,state=excluded.state,
@@ -182,7 +185,7 @@ fn queue_title(
         params![
             identifier,
             row["version"].as_i64(),
-            effective(&row, native),
+            state,
             now()
         ],
     )?;
@@ -199,9 +202,7 @@ impl Store {
     }
 
     fn queue_title(&self, database: &Transaction<'_>, identifier: &str) -> Result<()> {
-        let enabled = self.sync_titles && (!self.four_columns
-            || effective(&get_row(database, identifier)?, self.native_sections) != "unknown");
-        queue_title(database, identifier, enabled, self.native_sections)
+        queue_title(database, identifier, self.sync_titles, self.native_sections, self.four_columns)
     }
 
     pub fn open(directory: &Path, sync_titles: bool) -> Result<Self> {
@@ -638,7 +639,7 @@ impl Store {
         let database = self.connection()?;
         let row = get_row(&database, identifier)?;
         Ok((
-            effective(&row, self.native_sections),
+            effective(&row, self.native_sections, !self.four_columns),
             row["version"].as_i64().context("状态版本无效")?,
         ))
     }
@@ -715,29 +716,39 @@ impl Store {
                     row_value,
                 )
                 .optional()?;
-            result.push(session_value(&row, job.as_ref(), self.native_sections));
+            result.push(self.session_value(&row, job.as_ref()));
         }
         Ok(result)
     }
-}
-
-fn session_value(row: &Value, job: Option<&Value>, native: bool) -> Value {
-    let turn = turn_of(row);
-    let (suggestion, reason) = suggestion(row);
-    let selected = row["selected_state"].is_string();
-    json!({
-        "id":row["id"], "title":row["title"], "cwd":row["cwd"], "updatedAt":row["updated_at"],
-        "seenAt":row["seen_at"], "observedAt":row["observed_at"], "state":effective(row,native), "manual":selected,
-        "sectionVersion":if native {row["native_section"].clone()} else {Value::Null},
-        "suggestion":row["automatic_state"].as_str().unwrap_or(suggestion),
-        "reason":if native {"状态来自 Codex 原生分区。"}else{row["automatic_reason"].as_str().unwrap_or(reason)},
-        "source":if native {"codex"}else if selected {"manual"} else if row["automatic_state"].is_string() {"runtime"} else {"history"},
-        "note":row["note"], "followUp":row["needs_review"]==1, "observationError":row["observation_error"],
-        "titleSyncPending":job.is_some(), "titleSyncError":job.map(|job| &job["error"]),
-        "confirmedEmpty":turn["confirmedEmpty"] == true && row["observed_revision"] == row["updated_at"]
-            && !selected && row["automatic_state"].is_null() && row["runtime_key"].is_null(),
-        "turnStatus":turn["status"], "version":row["version"], "inputVersion":row["input_revision"]
-    })
+    fn session_value(&self, row: &Value, job: Option<&Value>) -> Value {
+        let native = self.native_sections;
+        let job = job.filter(|job| !self.four_columns || job["state"] != "unknown");
+        let turn = turn_of(row);
+        let (suggestion, reason) = if self.four_columns {
+            ("unknown", "尚无可确认的工作状态。")
+        } else {
+            suggestion(row)
+        };
+        let selected = row["selected_state"].is_string();
+        let mut value = json!({
+            "id":row["id"], "title":row["title"], "cwd":row["cwd"], "updatedAt":row["updated_at"],
+            "seenAt":row["seen_at"], "observedAt":row["observed_at"], "state":effective(row,native,!self.four_columns), "manual":selected,
+            "sectionVersion":if native {row["native_section"].clone()} else {Value::Null},
+            "suggestion":row["automatic_state"].as_str().unwrap_or(suggestion),
+            "reason":if native {"状态来自 Codex 原生分区。"}else{row["automatic_reason"].as_str().unwrap_or(reason)},
+            "source":if native {"codex"}else if selected {"manual"} else if row["automatic_state"].is_string() {"runtime"} else {"history"},
+            "note":row["note"], "followUp":row["needs_review"]==1, "observationError":row["observation_error"],
+            "titleSyncPending":job.is_some(), "titleSyncError":job.map(|job| &job["error"]),
+            "turnStatus":turn["status"], "version":row["version"], "inputVersion":row["input_revision"]
+        });
+        if self.four_columns && turn["confirmedEmpty"] == true
+            && row["observed_revision"] == row["updated_at"] && !selected
+            && row["automatic_state"].is_null() && row["runtime_key"].is_null()
+        {
+            value["confirmedEmpty"] = json!(true);
+        }
+        value
+    }
 }
 
 fn has_follow_up(row: &Value, turn: &Value, native: bool) -> bool {
