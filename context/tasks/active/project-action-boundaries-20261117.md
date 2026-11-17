@@ -2,7 +2,7 @@
 
 owner: codex
 execution_mode: serial_write
-allowed_write_set: src/, index.html, scripts/check-native-target*.mjs, scripts/check-remote-catalog.mjs, acceptance/bindings.json, Docs/REMOTE-NATIVE-NEW.md, 本任务记录、对应完成记录与日志
+allowed_write_set: src/, tests/ui_layout.rs, index.html, scripts/check-native-target*.mjs, scripts/check-remote-catalog.mjs, acceptance/bindings.json, Docs/REMOTE-NATIVE-NEW.md, 本任务记录、对应完成记录与日志
 base_commit: f5b3ff5abf126003ba29c055443ee7852f93bc54
 worktree_path: /home/herman/文档/notion-program
 coordinator: 当前会话

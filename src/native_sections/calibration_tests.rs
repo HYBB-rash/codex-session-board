@@ -128,6 +128,9 @@ fn empty_probe_learns_every_remote_mapping_without_disk_flush_and_reuses_after_r
     fixture.surface.lock().unwrap().lose_move = true;
     fixture.surface.lock().unwrap().unmaterialized = true;
     fixture.surface.lock().unwrap().changing_read_times = true;
+    for (_, name) in &mut fixture.surface.lock().unwrap().logical {
+        *name = format!("已改名 {name}");
+    }
     let first = fixture.run()?;
     assert_eq!(first.logical.len(),5);
     assert!(first.probe.is_none());
@@ -142,6 +145,8 @@ fn empty_probe_learns_every_remote_mapping_without_disk_flush_and_reuses_after_r
     assert_eq!(fixture.calls("move_thread_to_sidebar_section"),5);
     assert_eq!(std::fs::read(&fixture.config.sidebar_state_file)?,before);
     let surface = fixture.surface.lock().unwrap();
+    assert!(surface.sections.values().all(|section|
+        section["name"].as_str().unwrap().starts_with("已改名 ")));
     assert!(surface.threads.values().all(|thread|
         thread["archived"] == true && thread["turns"] == json!([])));
     assert!(!surface.calls.iter().any(|call| call.starts_with("turn/")));
