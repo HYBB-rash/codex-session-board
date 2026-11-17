@@ -145,10 +145,32 @@ fn registry(fixture: &Fixture) -> Result<Config> {
     Ok(config)
 }
 
+fn wait_runtime(remote: &App, expected_error: Option<&str>) -> Result<()> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let health = remote.health.lock().unwrap().clone();
+        let ready = match expected_error {
+            Some(error) => health["runtimeVerified"] == false && health["runtimeError"] == error,
+            None => health["runtimeVerified"] == true && health["scanComplete"] == true
+                && remote.is_active(THREAD)?,
+        };
+        if ready {
+            return Ok(());
+        }
+        ensure!(std::time::Instant::now() < deadline,
+            "运行扫描未达到预期状态：{health}");
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
 #[test]
 fn explicit_connection_overrides_startup_preference_without_changing_desktop_configuration()
 -> Result<()> {
     let fixture = Fixture::new()?;
+    fixture.update("results", json!({
+        "thread/list":{"data":[{"id":THREAD,"name":"test","status":{"type":"idle"}}]},
+        "thread/turns/list":{"data":[]}
+    }))?;
     let config = registry(&fixture)?;
     let before = std::fs::read(&config.sidebar_state_file)?;
     let root = App::new(config)?;
@@ -168,8 +190,7 @@ fn explicit_connection_overrides_startup_preference_without_changing_desktop_con
     );
     let remote = root.remote_app(&fixture.host.host_id)?;
     assert!(remote.enabled.load(Ordering::SeqCst));
-    remote.discover(&[json!({"id":THREAD,"name":"test"})], true)?;
-    remote.update_health(json!({"runtimeVerified":true}))?;
+    wait_runtime(&remote, None)?;
     root.request(
         "/api/state",
         Some(&json!({
@@ -179,7 +200,31 @@ fn explicit_connection_overrides_startup_preference_without_changing_desktop_con
     )?;
     assert_eq!(remote.store.note(THREAD)?, "显式连接后保存");
     assert_eq!(std::fs::read(&root.config.sidebar_state_file)?, before);
-    remote.deactivate()?;
+    root.shutdown()?;
+    Ok(())
+}
+
+#[test]
+fn malformed_runtime_after_explicit_connection_keeps_cached_rows_read_only() -> Result<()> {
+    let fixture = Fixture::new()?;
+    let config = registry(&fixture)?;
+    let before = std::fs::read(&config.sidebar_state_file)?;
+    let root = App::new(config)?;
+    assert_eq!(root.request("/api/connect",
+        Some(&json!({"hostId":fixture.host.host_id})))?["ok"], true);
+    let remote = root.remote_app(&fixture.host.host_id)?;
+    remote.store.discover(&[json!({"id":THREAD,"name":"cached"})])?;
+    wait_runtime(&remote, Some("远程会话列表格式无效"))?;
+    assert!(remote.enabled.load(Ordering::SeqCst));
+    let saved = remote.store.sessions()?;
+    let error = root.request("/api/state", Some(&json!({
+        "id":identity(&fixture.host.host_id, THREAD),"state":"review",
+        "note":"不得保存","version":0,"inputVersion":0
+    }))).unwrap_err();
+    assert!(error.to_string().contains("当前不可修改"), "{error:#}");
+    assert_eq!(remote.store.sessions()?, saved);
+    assert_eq!(std::fs::read(&root.config.sidebar_state_file)?, before);
+    root.shutdown()?;
     Ok(())
 }
 

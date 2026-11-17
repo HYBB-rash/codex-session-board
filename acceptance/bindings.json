@@ -1066,6 +1066,7 @@
       "lib::codex_session_board::rpc::framing::tests::project_writer_rechecks_alias_and_peer_before_metadata_updates"
     ],
     "DISCOVERY-002": [
+      "lib::codex_session_board::remote::cache::tests::malformed_runtime_after_explicit_connection_keeps_cached_rows_read_only",
       "test::native_authority::native_archive_list_absence_keeps_position_without_an_unread_error",
       "lib::codex_session_board::app::remote_snapshot::tests::unpublished_empty_chat_survives_complete_scan_and_restart_as_read_only",
       "lib::codex_session_board::app::remote_snapshot::tests::published_chat_uses_confirmed_position_and_existing_missing_record_filter",

@@ -6,7 +6,7 @@ allowed_write_set: 本任务记录、项目操作准入修复涉及的源码、�
 base_commit: c397839004bb69e60ab6cd334fa2616faf5ef2a5
 worktree_path: /home/herman/.codex/worktrees/project-boundaries-author/notion-program
 coordinator: 当前 PR 作者会话
-status: submitting
+status: repairing
 
 用户显式调用项目 pr-task 技能，授权本任务验证、推送、创建 PR、巡检及有限回修。
 范围沿用项目操作准入修复，不包含合并、部署或真实客户端业务验收。
@@ -38,3 +38,27 @@ status: submitting
 交付由冻结检查器的 pr-task submit 执行当前头 submit 门禁并推送草稿 PR。
 完整 PR CI、独立审阅、组合门禁、发布和目标环境验收分别判定。
 PR 链接、准确头、验证报告、巡检与回修状态以私有 task.json 和 GitHub 为准。
+
+## 反馈回修 623747e1
+
+本事件已由冻结 CLI 返回 claimed，原头为 681f68c189bbb0d77458253d0b0a537acee859a3。
+受信 HYBB-rash 在 PR21 的反馈评论 6944099160 对应最终候选
+43f3ae6d6eaa05bf790314e9c2707c138f1cfa65、CI 44054543905 attempt 1。
+下载并核对 acceptance-linux-x86_64 artifact 14316141060 的来源与失败报告。
+该候选相对原头只改了五份版本及冻结规则清单，业务源码与失败用例相同。
+
+原失败和复现保存在私有状态目录的 `repair-623747e1` 下：
+原头单例首次通过，随后仅给同一测试增加等待后台无效回包的诊断同步，
+确定性得到“远程会话列表格式无效”和原 CI 的“当前不可修改”失败。
+`diagnostic-ordering.patch` 与日志保留该调度改变，不把它冒充原树原样失败。
+没有将该问题归为 runner 故障，也没有反复重跑获取通过。
+
+根因是连接测试夹具默认对 thread/list 回答通用 ok，测试却手动注入发现和
+runtimeVerified=true，与真实后台清除无效运行证据竞争。
+修复只调整测试：正例提供合法会话及轮次列表，等待真实扫描完成、会话活动及
+运行核验成功后再验证可保存；新增坏回包反例，等待真实失败后断言缓存只读、
+数据库与桌面配置均不变。两例都关闭自己创建的运行实例并等待后台线程退出。
+独立复审指出负例不能把初始“尚未连接”错误当作目标扫描失败，
+等待条件已收紧到该次无效列表错误，避免产生另一个调度竞争。
+生产只读及身份保护、库与 native_authority 两线程、断言强度和版本保持不变。
+返回头仍由固定检查器 submit 验证推送，并由独立只读审阅者复核。
