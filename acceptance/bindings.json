@@ -40,6 +40,7 @@
     "STATE-001": [
       "lib::codex_session_board::app::four_columns::tests::four_column_snapshot_preserves_legacy_cards_and_rejects_retired_writes",
       "lib::codex_session_board::app::four_columns::tests::four_column_remote_keeps_default_placement_without_replaying_old_backfill",
+      "lib::codex_session_board::app::four_columns::tests::only_current_remote_rows_offer_navigation",
       "lib::codex_session_board::formal::tests::section_configuration_and_native_resolution_conform_to_the_independent_model",
       "test::native_direct::retired_mapping_never_changes_the_effective_native_dependencies",
       "lib::codex_session_board::formal::tests::native_session_control_matches_the_store_on_every_reachable_edge",
