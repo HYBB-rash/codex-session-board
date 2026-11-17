@@ -1,4 +1,5 @@
 import copy
+from contextlib import nullcontext
 import hashlib
 import json
 from pathlib import Path
@@ -317,10 +318,12 @@ class PRQueueTests(unittest.TestCase):
                     mock.patch.object(pr_queue, "notify") as notify, \
                     mock.patch.object(pr_queue.subprocess, "run",
                                       side_effect=subprocess.CalledProcessError(1, "integrate")), \
-                    self.assertRaises(subprocess.CalledProcessError):
+                    (self.assertRaises(subprocess.CalledProcessError) if should_notify else nullcontext()):
                 pr_queue.finish(self.state, self.queue)
             self.assertEqual(item["status"], "accepted")
             self.assertEqual(notify.call_count, int(should_notify))
+            self.assertIn("candidate_failed" if should_notify else "candidate_pending",
+                          self.state["events"][-1])
         self.assertEqual(len(self.state["events"]), 2)
 
     def test_requeue_cannot_alias_the_old_head_as_a_new_revision(self):
@@ -339,10 +342,16 @@ class PRQueueTests(unittest.TestCase):
         blocked["status"] = "needs-fix"
         self.state["items"] = [item, blocked]
         self.state["reference"] = "refs/heads/codex/rehearsal-main-test"
+        def integrate(arguments, **options):
+            output = self.queue / f"candidate-{self.base}"
+            output.mkdir()
+            self.write_json(output / "integration.json", {
+                "merge_status": "merged", "source": {"commit": self.base},
+            })
         with mock.patch.object(pr_queue, "clean"), \
                 mock.patch.object(pr_queue, "git", return_value=self.base), \
                 mock.patch.object(pr_queue, "validate_freeze", return_value="0.3.91"), \
-                mock.patch.object(pr_queue.subprocess, "run") as run:
+                mock.patch.object(pr_queue.subprocess, "run", side_effect=integrate) as run:
             pr_queue.finish(self.state, self.queue)
         command = run.call_args.args[0]
         self.assertEqual(command[-2:], ["--reference", self.state["reference"]])
@@ -507,6 +516,9 @@ class PRQueueTests(unittest.TestCase):
                     "last_error": {"detail": "Candidate run 42 finished: failure"},
                 })
                 raise subprocess.CalledProcessError(1, arguments)
+            self.write_json(output / "integration.json", {
+                "merge_status": "merged", "source": {"commit": self.git("rev-parse", "HEAD")},
+            })
             return subprocess.CompletedProcess(arguments, 0)
 
         def acknowledge(state, source, directory):

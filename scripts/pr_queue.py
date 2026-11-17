@@ -1,6 +1,4 @@
-import argparse
 from datetime import datetime, timezone
-import fcntl
 import hashlib
 import json
 from pathlib import Path
@@ -396,6 +394,9 @@ def validate_freeze(project, prefix, candidate, target=None):
 
 def finish(state, directory):
     verify_checker(state)
+    if state.get("batch_merged"):
+        state["merge_status"] = "merged"
+        return
     reference = state.get("reference", "refs/heads/main")
     if ((state.get("rehearsal") and not re.fullmatch(
             r"refs/heads/codex/rehearsal-main-[A-Za-z0-9._-]+", reference))
@@ -418,7 +419,8 @@ def finish(state, directory):
     state["prefix"] = candidate
     save(directory / "queue.json", state)
     output = directory / f"candidate-{candidate}"
-    command = [sys.executable, str(project / "scripts/integrate_candidate.py"), "--output", str(output)]
+    command = [sys.executable, str(project / "scripts/integrate_candidate.py"),
+               "--output", str(output), "--timeout", "0"]
     command += ["--resume"] if output.exists() else [
         "--base", state["base"], "--repository", state["repository"], "--started-at", state["started_at"],
     ]
@@ -426,14 +428,23 @@ def finish(state, directory):
         command += ["--reference", reference]
     if not state.get("rehearsal"):
         command += ["--pr-gates", str(directory / "queue.json")]
+    report = output / "integration.json"
     try:
         subprocess.run(command, cwd=project, check=True)
     except subprocess.CalledProcessError:
-        report = output / "integration.json"
         details = json.loads(report.read_text()) if report.exists() else {}
-        state["events"].append({"at": now(), "candidate_failed": candidate, "report": str(report)})
         error = details.get("last_error", {}).get("detail", "集成命令未完成")
+        pending = error in {
+            "Candidate is still pending; resume this same output directory",
+            "Final PR checks are still pending; resume this same integration",
+        }
+        state["merge_status"] = "waiting-ci" if pending else details.get(
+            "merge_status", "infrastructure-blocked")
+        event = "candidate_pending" if pending else "candidate_blocked"
+        state["events"].append({"at": now(), event: candidate, "report": str(report)})
         if re.fullmatch(r"Candidate run \d+ finished: failure", error):
+            state["merge_status"] = "needs-author"
+            state["events"][-1] = {"at": now(), "candidate_failed": candidate, "report": str(report)}
             snapshot = output / f"failed-run-{details.get('run')}-{details.get('run_attempt')}.json"
             if not snapshot.exists():
                 save(snapshot, details)
@@ -449,7 +460,20 @@ def finish(state, directory):
                            f"共同复现材料 {report}；{error}")
                     item["status"] = "accepted"
         save(directory / "queue.json", state)
+        if pending:
+            return
         raise
+    details = json.loads(report.read_text())
+    state["integration"] = {
+        "report": str(report), **{key: details.get(key) for key in
+                                 ("run", "run_attempt", "workflow", "waiting_on", "merge_status")},
+    }
+    state["merge_status"] = details.get("merge_status")
+    if state["merge_status"] == "waiting-ci":
+        save(directory / "queue.json", state)
+        return
+    if state["merge_status"] != "merged" or details.get("source", {}).get("commit") != candidate:
+        raise ValueError("Integration did not confirm this exact candidate entered main")
     for item in state["items"]:
         if item["status"] == "accepted":
             item["status"] = "merged"
@@ -492,42 +516,8 @@ def retry_candidate(state, directory):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("init", "attempt", "notify", "requeue", "finish",
-                                          "retry-candidate", "closeout", "status"))
-    parser.add_argument("--state", required=True, type=Path)
-    parser.add_argument("--manifest", type=Path)
-    parser.add_argument("--item", type=Path)
-    arguments = parser.parse_args()
-    directory = arguments.state.resolve()
-    if arguments.command == "init":
-        state = initialize(arguments.manifest, directory)
-    else:
-        with (directory / "queue.lock").open("a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            state = json.loads((directory / "queue.json").read_text())
-            verify_checker(state)
-            if arguments.command == "attempt":
-                attempt(state, directory)
-            elif arguments.command == "notify":
-                for item in state["items"]:
-                    if item.get("feedback"):
-                        notify(state, item, directory)
-            elif arguments.command == "requeue":
-                requeue(state, json.loads(arguments.item.read_text()), directory)
-            elif arguments.command == "finish":
-                finish(state, directory)
-            elif arguments.command == "closeout":
-                from scripts.pr_queue_closeout import closeout
-                closeout(state)
-                save(directory / "queue.json", state)
-            elif arguments.command == "retry-candidate":
-                retry_candidate(state, directory)
-            elif arguments.command == "status":
-                refresh_release(state)
-                save(directory / "queue.json", state)
-    print(json.dumps(state, ensure_ascii=False, indent=2))
-    return 2 if arguments.command == "closeout" and not state["closeout"]["complete"] else 0
+    from scripts.pr_queue_cli import main as cli
+    return cli(sys.modules[__name__])
 
 
 if __name__ == "__main__":
