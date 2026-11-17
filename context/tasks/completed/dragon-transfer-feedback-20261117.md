@@ -58,6 +58,31 @@ scripts/check-transfer-feedback.mjs 已提供可控时钟及浏览器交互验�
 保存锁即时释放、手动收起、失败、320/736/1680px、减少动态效果、
 后台完成与暂停续时、慢解码。三项定向 Rust 包装、HTTP/MCP 资源检查通过。
 两名只读审阅者分别检查计时逻辑和素材/CSS 接入，没有阻断发现。
-后续运行统一门禁、真实 Rust 开发 fixture 并记录清理。
 证据根目录：
 /home/herman/.codex/visualizations/2026/11/17/01a1e91e-eee2-76a0-87b1-81287595ff28
+
+## 交付与验证结论
+
+实现提交：82bb49ac5a4a1df9a58dceea35eb4a8c8df7c384，保持 v0.3.97。
+统一入口 ./scripts/validate --scope pr --base 1d9c0aa --expect-head 82bb49a
+通过，349.47 秒。项目规则、全目标 Clippy、便携源码包及 899 项选定测试均通过；
+93 项未选定测试不计为通过，release_ready=false，不宣称完整验收。
+报告：上述证据根目录 pr-validation/VALIDATION.json 和 TESTS.json。
+两态实际页面切帧录制为 dragon-feedback-preview.gif，循环 4.45 秒，
+420×170 像素。图集原始 PNG、压缩 WebP 和浏览器逐帧截图保留在源码外。
+浏览器场景、Rust 包装、HTTP/MCP 资源检查及源码包验证均使用本次新实现。
+
+额外尝试了本任务的真实 Rust dev fixture。服务、依赖与数据目录身份匹配，
+但页面三张卡片全部显示只读，未找到可写卡片，拖动演练未进行，不能计为通过。
+失败截图、报告和日志保留在 fixture-first-failure/。
+随后启动诊断又遇到该 fixture 遗留 socket 拒绝启动，原失败日志保留；
+没有修改正式连接、关闭只读保护、改 fixture 源码或改变测试通过条件。
+这项额外演练的失败不替代或覆盖已经通过的隔离浏览器与 PR 证据。
+开发进程停止确认 cleanup_confirmed=true，浏览器进程组与 profile 均已清理。
+仅在确认本任务进程已退出、socket 由本用户持有且连接被拒绝后，
+删除本任务留下的三个失效 socket，见 fixture-cleanup.json。
+
+本任务的角色接入、计时和隔离浏览器回归完成。
+真实 Rust dev fixture 拖动演练及目标 Codex 客户端验收没有签收。
+未修改共享 STATE、需求、模型、验收锁、版本、正式配置或客户端；
+未安装、重载、推送或部署。造型和素材制作说明见 Docs/DRAGON-FEEDBACK.md。
