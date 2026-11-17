@@ -24,11 +24,11 @@ impl Calibration<'_> {
             .config
             .section_bindings()
             .filter(|(_, _, target)| !self.record.logical.values().any(|value| value == target))
-            .map(|(_, label, target)| (label.to_owned(), target.to_owned()))
+            .map(|(_, _, target)| target.to_owned())
             .collect();
         if !missing.is_empty() {
             self.prepare()?;
-            for (label, target) in missing {
+            for target in missing {
                 self.ensure_scope()?;
                 let identifier = self.identifier()?.to_owned();
                 self.empty()?;
@@ -36,7 +36,7 @@ impl Calibration<'_> {
                     "threadId":identifier,"sectionId":target,"source":"codex","hostId":self.config.host_id
                 }));
                 let (backend, updated) = self
-                    .confirm(&identifier, &target, &label)
+                    .confirm(&identifier, &target)
                     .with_context(|| format!("校准位置未确认；移动回执：{receipt:?}"))?;
                 ensure!(
                     self.record
@@ -229,11 +229,10 @@ impl Calibration<'_> {
         &mut self,
         identifier: &str,
         target: &str,
-        label: &str,
     ) -> Result<(String, HashMap<String, Value>)> {
         let deadline = Instant::now() + Duration::from_secs(self.config.rpc_timeout_seconds.min(4));
         loop {
-            let result = self.confirm_once(identifier, target, label);
+            let result = self.confirm_once(identifier, target);
             if result.is_ok() || self.record.probe.is_none() || Instant::now() >= deadline {
                 return result;
             }
@@ -245,7 +244,6 @@ impl Calibration<'_> {
         &mut self,
         identifier: &str,
         target: &str,
-        label: &str,
     ) -> Result<(String, HashMap<String, Value>)> {
         let thread = self.empty()?;
         ensure!(thread["id"] == identifier, "校准读回的会话 ID 不匹配");
@@ -256,7 +254,7 @@ impl Calibration<'_> {
         ensure!(
             sections
                 .get(backend)
-                .is_some_and(|section| section == &thread["section"] && section["name"] == label),
+                .is_some_and(|section| section == &thread["section"]),
             "后台分区身份尚未确认"
         );
         let live = mapping::live_catalog(self.sidebar, self.config)?;

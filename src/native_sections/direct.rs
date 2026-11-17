@@ -103,8 +103,7 @@ impl Catalog {
                 continue;
             }
             let backend = backend.with_context(|| format!("状态分区缺少主机映射：{label}"))?;
-            let section = self.sections.get(backend).with_context(|| format!("原生分区已移除：{label}"))?;
-            ensure!(section["name"] == label, "原生分区名称不匹配：{label}");
+            ensure!(self.sections.contains_key(backend), "原生分区已移除：{label}");
         }
         Ok(())
     }

@@ -25,6 +25,7 @@ fn uncertain_references_never_become_active_and_remain_visible_as_unresolved() -
     let identifier = uuid::Uuid::new_v4().to_string();
     let thread = json!({"id":identifier,"ephemeral":false,"attachedToThreadId":null,"source":"cli"});
     let mut unknown = capture("0.170.0");
+    unknown.jobs[4].complete = false;
     unknown.accept_reference(&identifier, &thread)?;
     let snapshot = unknown.snapshot("local")?;
     assert!(snapshot.active.is_empty());
@@ -43,15 +44,49 @@ fn uncertain_references_never_become_active_and_remain_visible_as_unresolved() -
 fn archive_checks_classify_references_without_publishing_the_check_inventory() -> Result<()> {
     let identifier = uuid::Uuid::new_v4().to_string();
     let unrelated = uuid::Uuid::new_v4().to_string();
-    let mut capture = capture("0.169.0");
-    capture.jobs[4].items = vec![json!({"id":identifier}), json!({"id":unrelated})];
-    capture.accept_reference(&identifier, &json!({"id":identifier,"ephemeral":false,
-        "attachedToThreadId":null,"source":{"subAgent":{"other":"never cache"}}}))?;
-    let snapshot = capture.snapshot("local")?;
-    assert!(snapshot.active.is_empty());
-    assert_eq!(snapshot.archived.len(), 1);
-    assert_eq!(snapshot.archived[0]["id"], identifier);
-    assert!(!serde_json::to_string(&snapshot)?.contains("never cache"));
+    for version in ["0.169.0", "0.170.0", "1.0.0", ""] {
+        let mut capture = capture(version);
+        capture.jobs[4].items = vec![json!({"id":identifier}), json!({"id":unrelated})];
+        capture.accept_reference(&identifier, &json!({"id":identifier,"ephemeral":false,
+            "attachedToThreadId":null,"source":{"subAgent":{"other":"never cache"}}}))?;
+        let snapshot = capture.snapshot("local")?;
+        assert!(snapshot.active.is_empty());
+        assert_eq!(snapshot.archived.len(), 1);
+        assert_eq!(snapshot.archived[0]["id"], identifier);
+        assert!(!serde_json::to_string(&snapshot)?.contains("never cache"));
+    }
+    Ok(())
+}
+
+struct RejectedSource(Option<i64>);
+
+impl Rpc for RejectedSource {
+    fn call(&mut self, method: &str, _params: Value) -> Result<Value> {
+        let Some(code) = self.0 else { anyhow::bail!("connection lost"); };
+        Err(RequestError { method:method.into(), details:json!({
+            "code":code,"message":"source query rejected"}) }.into())
+    }
+}
+
+#[test]
+fn source_query_rejections_never_invent_archive_evidence_or_hide_transport_errors() -> Result<()> {
+    for code in [Some(-32601), Some(-32602), Some(-32603), None] {
+        let mut capture = capture("0.170.0");
+        capture.jobs[4].complete = false;
+        capture.jobs[4].params["sourceKinds"] = json!(ALL_SOURCES);
+        let result = capture.step_page(&mut RejectedSource(code), "local", 4);
+        if matches!(code, Some(-32601 | -32602)) {
+            result?;
+            assert!(capture.archive_check.is_none());
+            assert!(capture.jobs[4].items.is_empty());
+            assert_eq!(capture.snapshot("local")?.coverage["publishedReferences"], "partial");
+        } else {
+            assert!(result.is_err());
+            assert_eq!(capture.archive_check, Some(4));
+            assert!(!capture.jobs[4].complete);
+        }
+        assert!(capture.jobs[1].complete && capture.jobs[2].complete);
+    }
     Ok(())
 }
 

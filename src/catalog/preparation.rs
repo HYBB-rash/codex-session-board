@@ -41,6 +41,7 @@ impl Fresh {
     }
 
     fn legacy(&self, identifier: &str) -> Result<Value> {
+        validate_legacy_projection(&self.projection)?;
         ensure!(!identifier.starts_with("g-p-"), "需要可用的原生本地项目");
         ensure!(!self.projection.pending_deletions.contains_key(identifier), "旧项目正在删除");
         for field in ["local-projects", "project-appearances"] {
@@ -143,8 +144,6 @@ fn project_state(state: &Value, home: &str, account: &Value) -> Result<Projectio
     ensure!(owner == input::digest(&serde_json::to_vec(&identity)?), "目标项目与账户所有者不一致");
     let host = format!("local:{home}");
     let mappings = host_entries(&state["app-server-project-id-by-legacy-project-id-by-host"], &host)?;
-    ensure!(mappings.iter().all(|(legacy, canonical)| !legacy.is_empty()
-        && canonical.as_str().is_some_and(|identifier| !identifier.is_empty())), "项目映射格式无效");
     let pending = host_entries(&state[format!(
         "electron-owner-value:app-server-pending-project-deletions-by-host:{owner}")], &host)?;
     ensure!(pending.iter().all(|(legacy, deletion)| !legacy.is_empty() && deletion.is_object()
@@ -152,13 +151,19 @@ fn project_state(state: &Value, home: &str, account: &Value) -> Result<Projectio
         "待删除项目格式无效");
     let checkpoints = host_entries(&state[format!(
         "electron-owner-value:app-server-projects-migration-by-host:{owner}")], &host)?;
-    for (field, valid) in [("version", Value::is_u64 as fn(&Value) -> bool),
-        ("projectsMigrated", Value::is_boolean)] {
-        ensure!(checkpoints.get(field).is_none_or(valid), "项目迁移字段格式无效：{field}");
-    }
     Ok(Projection { owner: Some(owner.into()), account_status: "verified".into(),
         mappings, pending_deletions: pending, checkpoint: Value::Object(checkpoints),
         ..Projection::default() })
+}
+
+fn validate_legacy_projection(projection: &Projection) -> Result<()> {
+    ensure!(projection.mappings.iter().all(|(legacy, canonical)| !legacy.is_empty()
+        && canonical.as_str().is_some_and(|identifier| !identifier.is_empty())), "项目映射格式无效");
+    for (field, valid) in [("version", Value::is_u64 as fn(&Value) -> bool),
+        ("projectsMigrated", Value::is_boolean)] {
+        ensure!(projection.checkpoint.get(field).is_none_or(valid), "项目迁移字段格式无效：{field}");
+    }
+    Ok(())
 }
 
 fn host_entries(value: &Value, host: &str) -> Result<serde_json::Map<String, Value>> {

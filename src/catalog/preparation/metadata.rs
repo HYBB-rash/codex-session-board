@@ -34,15 +34,15 @@ fn appearance(value: &Value, metadata: &mut Map<String, Value>) -> Result<()> {
     if value.is_null() {
         return Ok(());
     }
-    let color = value["color"].as_str().context("项目外观缺少颜色")?;
-    ensure!(["black","blue","green","orange","pink","purple","red","yellow"].contains(&color),
-        "项目颜色无效");
+    let color = value["color"].as_str().filter(|color| !color.trim().is_empty())
+        .context("项目外观缺少颜色")?;
     let marker = &value["marker"];
     let normalized = match marker["kind"].as_str() {
         Some("emoji") => json!({"kind":"emoji","emoji":marker["emoji"].as_str()
             .filter(|text| !text.is_empty()).context("项目表情无效")?}),
         Some("icon") => {
-            let icon = marker["icon"].as_str().context("项目图标无效")?;
+            let icon = marker["icon"].as_str().filter(|icon| !icon.trim().is_empty())
+                .context("项目图标无效")?;
             let icon = match icon {
                 "balancing-scale"=>"scale", "cat"=>"paw", "code"|"code-brackets"=>"function",
                 "globe-spin"=>"desk-globe", "graduation"=>"graduation-cap",
@@ -52,10 +52,6 @@ fn appearance(value: &Value, metadata: &mut Map<String, Value>) -> Result<()> {
                 "building"|"bug"|"cube"|"gift"|"lightning"|"openai"|"pointer"|"star"|"target"=>"folder",
                 canonical=>canonical,
             };
-            ensure!(["folder","currency-dollar","book","graduation-cap","edit","writing","function",
-                "terminal","music","popcorn","customize","palette","stethoscope","health","lotus",
-                "suitcase","bar-chart","kettlebell","dumbbell","logs","scale","desk-globe","plane",
-                "globe","wrench","paw","flask","brain","heart","plant"].contains(&icon), "项目图标无效");
             json!({"kind":"icon","icon":icon})
         }
         _ => anyhow::bail!("项目标记无效"),
@@ -139,6 +135,11 @@ mod tests {
             &Value::Null,&account())?;
         assert_eq!(retired.as_object().context("metadata")?.len(), 1);
         validate_canonical(&retired, &account(), Some("legacy"))?;
+        let style = json!({"color":"cyan","marker":{"kind":"icon","icon":"future-icon"}});
+        let metadata = convert("legacy", &json!({}), &style, &account())?;
+        assert_eq!(metadata["appearance.color"], "cyan");
+        assert_eq!(serde_json::from_str::<Value>(metadata["appearance.marker"].as_str().context("marker")?)?,
+            style["marker"]);
         Ok(())
     }
 
@@ -151,7 +152,9 @@ mod tests {
             {"userId":"other","accountId":"account","state":"requested"}}),&Value::Null,&account()).is_err());
         assert!(convert("legacy",&json!({"retiredChatGptBacking":backing(),"chatGptBacking":wrong}),
             &Value::Null,&account()).is_err());
-        assert!(convert("legacy",&json!({}),&json!({"color":"blue","marker":{"kind":"icon","icon":"bad"}}),
-            &account()).is_err());
+        for icon in [json!(false), json!(""), json!(" ")] {
+            assert!(convert("legacy",&json!({}),
+                &json!({"color":"blue","marker":{"kind":"icon","icon":icon}}),&account()).is_err());
+        }
     }
 }

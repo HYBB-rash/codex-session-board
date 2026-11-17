@@ -39,8 +39,10 @@ fn missing_membership_preserves_confirmed_project_instead_of_new_cwd_guess() -> 
     let expected = original.active[0]["catalogProjectId"].clone();
     let at = original.captured_at;
     publish(&app, original.clone())?;
-    for _ in 0..2 {
-        publish(&app, missing(original.clone()))?;
+    for version in [json!("0.169.0"), json!("0.170.0"), serde_json::Value::Null] {
+        let mut next = missing(original.clone());
+        next.source["version"] = version;
+        publish(&app, next)?;
         let state = app.catalog.lock().unwrap();
         let snapshot = state.snapshot.as_ref().unwrap();
         let row = &snapshot.active[0];

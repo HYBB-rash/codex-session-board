@@ -81,8 +81,8 @@ fn validate_catalog(config: &Config, catalog: &[Value]) -> Result<()> {
             .filter(|section| section["sectionId"] == *identifier)
             .collect();
         ensure!(
-            matches.len() == 1 && matches[0]["name"] == label,
-            "原生分区 ID 或名称不匹配：{label}"
+            matches.len() == 1,
+            "原生分区 ID 缺失或重复：{label}"
         );
     }
     Ok(())
@@ -313,7 +313,7 @@ mod tests {
         let mut renamed = response("review-id");
         renamed["sections"][0]["name"] = json!("其他名称");
         desktop.replies = [renamed].into();
-        assert!(snapshot(&mut desktop, &config()).is_err());
+        assert_eq!(snapshot(&mut desktop, &config()).unwrap()["thread"].state, "review");
     }
 
     fn aliased(section: &str) -> Value {

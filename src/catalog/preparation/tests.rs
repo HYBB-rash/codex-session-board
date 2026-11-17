@@ -88,6 +88,14 @@ fn action_import_uses_exact_key_complete_metadata_without_thread_migration() -> 
     assert_eq!(payload["roots"], json!([{"path":"/old"},{"path":"/second"}]));
     assert_eq!(payload["metadata"]["appearance.color"], "green");
     fresh.verify_after(&mut backend, &Backend::source(), Some("old"), &project)?;
+    let mut backend = Backend::new();
+    backend.state["project-appearances"]["old"] =
+        json!({"color":"cyan","marker":{"kind":"icon","icon":"future-icon"}});
+    let fresh = backend.read()?;
+    let project = fresh.prepare_legacy(&mut backend, "old", 1)?;
+    assert_eq!(project["metadata"]["appearance.color"], "cyan");
+    assert_eq!(project["metadata"]["appearance.marker"], r#"{"kind":"icon","icon":"future-icon"}"#);
+    assert_eq!(backend.imports.len(), 1);
     Ok(())
 }
 
@@ -306,8 +314,15 @@ fn malformed_project_identity_deletion_and_checkpoint_fields_remain_rejected() -
             json!({"local:/target/codex":{"version":1,"projectsMigrated":"false"}})),
     ] {
         let mut backend = Backend::new();
-        backend.state[field] = value;
-        assert!(backend.read().is_err());
+        backend.state[&field] = value;
+        backend.projects.push(json!({"id":CANONICAL,"roots":[{"path":"/target"}],"metadata":{}}));
+        if field.contains("pending-project-deletions") {
+            assert!(backend.read().is_err());
+        } else {
+            let fresh = backend.read()?;
+            fresh.server(&mut backend, CANONICAL)?;
+            assert!(fresh.prepare_legacy(&mut backend, "old", 1).is_err());
+        }
         assert!(backend.imports.is_empty());
     }
     Ok(())
