@@ -10,7 +10,7 @@ impl App {
             && identifier == format!("target:{}", json!(fields)), "目标项目 ID 无效");
         let remote = self.remote_app(&fields[0])?;
         let state = remote.catalog.lock().map_err(|_| anyhow::anyhow!("目录锁已损坏"))?;
-        ensure!(state.health()["complete"] == true, "项目目录尚未完整读回，请刷新后重试");
+        ensure!(state.projects_ready(), "项目目录尚未实时读回，请刷新后重试");
         let project = state.snapshot.as_ref().context("目标目录尚未加载")?.projects.iter()
             .find(|project| project["id"] == identifier).context("目标项目已移除，请刷新")?;
         ensure!(project["hostId"] == fields[0] && project["origin"] == fields[1]

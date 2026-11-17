@@ -58,9 +58,17 @@ impl App {
 
     fn creation_project(&self, mut project: Value, health: &Value) -> Value {
         project["hostLabel"] = health["hostLabel"].clone();
-        project["canCreate"] = json!(health["connected"] == true
-            && health["catalog"]["complete"] == true && project["pendingDeletion"] != true
-            && crate::native_new::remote_url(&self.config, &project).is_ok());
+        let error = if health["connected"] != true {
+            Some("主机未连接或来源身份尚未确认，请先连接主机。".to_owned())
+        } else if health["catalog"]["projectsReady"] != true {
+            Some("项目目录尚未实时读回，请刷新后重试。".to_owned())
+        } else if project["pendingDeletion"] == true {
+            Some("项目正在删除，不能新建会话。".to_owned())
+        } else {
+            crate::native_new::remote_url(&self.config, &project).err().map(|error| error.to_string())
+        };
+        project["canCreate"] = json!(error.is_none());
+        project["createError"] = json!(error);
         project
     }
 }

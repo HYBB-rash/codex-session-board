@@ -1023,6 +1023,7 @@
       "lib::codex_session_board::catalog::capture::tests::archive_checks_classify_references_without_publishing_the_check_inventory",
       "lib::codex_session_board::catalog::capture::tests::membership_conflicts_require_targeted_metadata_before_claiming_completeness",
       "lib::codex_session_board::catalog::capture::tests::references_outside_known_source_scope_keep_archive_status_unresolved",
+      "lib::codex_session_board::catalog::capture::tests::source_query_rejections_never_invent_archive_evidence_or_hide_transport_errors",
       "lib::codex_session_board::catalog::capture::tests::uncertain_references_never_become_active_and_remain_visible_as_unresolved",
       "lib::codex_session_board::catalog::input::tests::incomplete_or_empty_account_identity_has_no_fingerprint",
       "lib::codex_session_board::catalog::input::tests::invalid_json_and_base64_are_partial_legacy_evidence",

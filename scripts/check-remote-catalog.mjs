@@ -148,8 +148,15 @@ try {
   check(await evaluate("[selectedHistory,byId('history-filter').disabled]"),["active",true]);
   check(await ids(),["local"]);
   check(writes.some(row=>row.path === "/api/connect"),false);
+  fixture.projectCatalog.items.find(project=>project.id==="server").createError="项目正在删除，不能新建会话。";
+  await evaluate('load()');
+  await evaluate('createSession("server")');
+  check(await evaluate('byId("feedback").textContent'),"项目正在删除，不能新建会话。");
+  check(writes.some(row=>row.path === "/api/new" && row.body.projectId === "server"),false);
   fixture.projectCatalog.items.find(project=>project.id==="server").canCreate=true;
   fixture.projectCatalog.items.find(project=>project.id==="empty").canCreate=true;
+  fixture.health.remoteConnections[0].catalog.complete=false;
+  fixture.health.remoteConnections[0].catalog.issues=["membership:unrelated:foreignMembership"];
   await evaluate("load()");
   nativePending = true;
   await evaluate('createSession("server")');

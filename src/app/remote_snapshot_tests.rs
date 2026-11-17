@@ -71,18 +71,20 @@ fn native_project_creation_requires_a_live_connected_non_deleting_target() -> Re
     assert_eq!(creation_projects(&root, &remote)?[0]["canCreate"], false);
     remote.catalog.lock().unwrap().live = true;
     assert_eq!(creation_projects(&root, &remote)?[0]["canCreate"], true);
+    for scope in ["membership", "publishedReferences", "ordinaryArchived", "legacy"] {
+        remote.catalog.lock().unwrap().snapshot.as_mut().unwrap().coverage[scope] = json!("partial");
+        assert_eq!(creation_projects(&root, &remote)?[0]["canCreate"], true);
+        assert_eq!(remote.catalog.lock().unwrap().health()["complete"], false);
+    }
+    remote.catalog.lock().unwrap().progress = Some(json!({"refreshing":true}));
+    assert_eq!(creation_projects(&root, &remote)?[0]["canCreate"], true);
     {
         let mut catalog = remote.catalog.lock().unwrap();
         catalog.snapshot.as_mut().unwrap().projects[0]["pendingDeletion"] = json!(true);
     }
     assert_eq!(creation_projects(&root, &remote)?[0]["canCreate"], false);
-    remote
-        .catalog
-        .lock()
-        .unwrap()
-        .snapshot
-        .as_mut()
-        .unwrap()
+    assert!(creation_projects(&root, &remote)?[0]["createError"].as_str().unwrap().contains("删除"));
+    remote.catalog.lock().unwrap().snapshot.as_mut().unwrap()
         .projects[0]["pendingDeletion"] = json!(false);
     remote.deactivate()?;
     assert_eq!(creation_projects(&root, &remote)?[0]["canCreate"], false);

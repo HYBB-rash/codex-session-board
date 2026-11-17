@@ -117,7 +117,20 @@ fn target_directory_creation_rechecks_live_catalog_and_never_starts_a_thread() -
     remote.catalog.lock().unwrap().live = false;
     assert!(fixture.request("targetServer", &operation).is_err());
     remote.catalog.lock().unwrap().live = true;
+    {
+        let mut catalog = remote.catalog.lock().unwrap();
+        let snapshot = catalog.snapshot.as_mut().unwrap();
+        for scope in ["membership", "publishedReferences", "ordinaryArchived", "legacy"] {
+            snapshot.coverage[scope] = json!("partial");
+        }
+        snapshot.issues.push("membership:unrelated:foreignMembership".into());
+        catalog.progress = Some(json!({"refreshing":true}));
+        assert_eq!(catalog.health()["complete"], false);
+    }
     fixture.request("targetServer", &operation)?;
+    remote.catalog.lock().unwrap().snapshot.as_mut().unwrap().coverage["projects"] = json!("partial");
+    assert!(fixture.request("targetServer", &operation).is_err());
+    remote.catalog.lock().unwrap().snapshot.as_mut().unwrap().coverage["projects"] = json!("complete");
     remote.catalog.lock().unwrap().snapshot.as_mut().unwrap().projects[0]["pendingDeletion"] = json!(true);
     assert!(fixture.request("targetServer", &operation).is_err());
     assert!(fixture.imports().is_empty());

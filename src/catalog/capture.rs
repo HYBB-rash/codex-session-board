@@ -75,10 +75,9 @@ impl Capture {
             self.expand()?;
         }
         if let Some(index) = self.jobs.iter().position(|job| !job.complete) {
-            let job = &mut self.jobs[index];
-            job.step(reader, host)?;
+            self.step_page(reader, host, index)?;
             if self.archive_check == Some(index) {
-                for row in &mut job.items {
+                for row in &mut self.jobs[index].items {
                     *row = json!({"id":row["id"]});
                 }
             }
@@ -117,8 +116,23 @@ impl Capture {
         Ok(false)
     }
 
-    fn supported_sources(&self) -> bool {
-        self.source["version"].as_str().is_some_and(|version| version.starts_with("0.169."))
+    fn step_page(&mut self, reader: &mut dyn Rpc, host: &str, index: usize) -> Result<()> {
+        let job = &mut self.jobs[index];
+        match job.step(reader, host) {
+            Err(error) if job.params["sourceKinds"] == json!(ALL_SOURCES)
+                && error.downcast_ref::<RequestError>().is_some_and(|error|
+                    matches!(error.details["code"].as_i64(), Some(-32601 | -32602))) =>
+            {
+                job.items.clear();
+                job.complete = true;
+                if self.archive_check == Some(index) {
+                    self.archive_check = None;
+                }
+                self.issues.push(format!("sourceKindsUnsupported:{error}"));
+                Ok(())
+            }
+            result => result,
+        }
     }
 
     fn unresolved_reference(&mut self, identifier: &str, reason: &str) {
@@ -139,9 +153,7 @@ impl Capture {
     }
 
     fn reference_issue(&self, thread: &Value) -> Option<&'static str> {
-        if !self.supported_sources() {
-            Some("unsupportedArchiveScope")
-        } else if !thread.get("attachedToThreadId").is_some_and(|value| value.is_null() || value.is_string())
+        if !thread.get("attachedToThreadId").is_some_and(|value| value.is_null() || value.is_string())
             || !thread["ephemeral"].is_boolean()
         {
             Some("missingVisibilityEvidence")
@@ -227,27 +239,23 @@ impl Capture {
     }
 
     fn expand(&mut self) -> Result<()> {
-        let supported = self.supported_sources();
         let limit = self.jobs[1].params["limit"].clone();
-        self.expand_sections(supported, &limit)?;
+        self.expand_sections(&limit)?;
         let unresolved = self.initial.projection.references.iter().any(|row| {
             row["id"].as_str().is_some_and(|identifier| !self.listed(identifier))
         });
-        if unresolved && supported {
+        if unresolved {
             let mut params = ordinary_params(100, true);
             params["limit"] = limit;
             params["sourceKinds"] = json!(ALL_SOURCES);
             self.archive_check = Some(self.jobs.len());
             self.jobs.push(PageScan::new("thread/list", params));
         }
-        if !supported {
-            self.issues.push("sourceKindsUnsupportedVersion".into());
-        }
         self.expanded = true;
         Ok(())
     }
 
-    fn expand_sections(&mut self, supported: bool, limit: &Value) -> Result<()> {
+    fn expand_sections(&mut self, limit: &Value) -> Result<()> {
         let sections = self.jobs[3].items.clone();
         for section in sections {
             let identifier = section["id"].as_str().context("分区缺少身份")?;
@@ -261,9 +269,6 @@ impl Capture {
             }
             for archived in [false, true] {
                 for sources in [json!([]), json!(ALL_SOURCES)] {
-                    if !supported && sources != json!([]) {
-                        continue;
-                    }
                     let mut params = ordinary_params(100, archived);
                     params["limit"] = limit.clone();
                     params["sectionId"] = json!(identifier);

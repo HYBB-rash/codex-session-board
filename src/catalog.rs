@@ -72,6 +72,12 @@ pub struct State {
 }
 
 impl State {
+    pub(crate) fn projects_ready(&self) -> bool {
+        self.live && self.error.is_none()
+            && self.snapshot.as_ref().is_some_and(|snapshot|
+                snapshot.coverage["projects"] == "complete")
+    }
+
     pub(crate) fn load(store: &crate::store::Store, host: &str) -> Self {
         let result = (|| -> Result<Self> {
             let snapshot = store
@@ -99,7 +105,7 @@ impl State {
             && self.live
             && self.error.is_none()
             && self.progress.is_none();
-        serde_json::json!({"complete":complete,"cached":!self.live,
+        serde_json::json!({"complete":complete,"projectsReady":self.projects_ready(),"cached":!self.live,
             "capturedAt":snapshot.map(|snapshot| snapshot.captured_at),
             "coverage":snapshot.map(|snapshot| &snapshot.coverage),
             "issues":snapshot.map(|snapshot| &snapshot.issues),
