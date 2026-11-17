@@ -57,6 +57,21 @@ pub fn runtime_state(status: &Value, turn: &Value) -> Option<(&'static str, &'st
     }
 }
 
+pub(crate) fn verified_runtime_state(
+    status: &Value,
+    turn: &Value,
+) -> Option<(&'static str, &'static str)> {
+    turn["id"].as_str().filter(|identifier| !identifier.is_empty())?;
+    if matches!(status["type"].as_str(), Some("idle" | "notLoaded"))
+        && !turn["completedAt"]
+            .as_f64()
+            .is_some_and(|time| time.is_finite() && time > 0.0)
+    {
+        return None;
+    }
+    runtime_state(status, turn)
+}
+
 fn terminal_state(turn: &Value) -> Option<(&'static str, &'static str)> {
     match turn["status"].as_str() {
         Some("failed") => Some(("blocked", "本轮请求失败，需要处理后重试。")),

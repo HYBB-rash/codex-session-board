@@ -776,6 +776,14 @@ fn append_threads(
 }
 
 pub fn latest_turn(reader: &mut dyn Rpc, id: &str) -> Result<Value> {
+    read_latest_turn(reader, id, false)
+}
+
+pub(crate) fn latest_verified_turn(reader: &mut dyn Rpc, id: &str) -> Result<Value> {
+    read_latest_turn(reader, id, true)
+}
+
+fn read_latest_turn(reader: &mut dyn Rpc, id: &str, confirm_empty: bool) -> Result<Value> {
     let result = reader.call(
         "thread/turns/list",
         json!({
@@ -784,6 +792,11 @@ pub fn latest_turn(reader: &mut dyn Rpc, id: &str) -> Result<Value> {
     )?;
     match result.get("data") {
         None | Some(Value::Null) => Ok(json!({})),
+        Some(Value::Array(turns))
+            if confirm_empty && turns.is_empty() && result["nextCursor"].is_null() =>
+        {
+            Ok(json!({"confirmedEmpty":true}))
+        }
         Some(Value::Array(turns)) => Ok(turns.first().map(summarize_turn).unwrap_or(json!({}))),
         _ => bail!("轮次列表的 data 必须是数组"),
     }

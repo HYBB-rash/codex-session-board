@@ -24,7 +24,23 @@ fn history_pass(app: &App, reader: &mut dyn Rpc) -> Result<()> {
     let (mut threads, complete) =
         rpc::list_threads(reader, app.config.page_size, app.config.max_pages)?;
     app.retain_business_threads(&mut threads)?;
-    app.store.discover(&threads)?;
+    if app.config.four_columns {
+        let _operation = app.operation()?;
+        let mut undiscovered = Vec::new();
+        for thread in &threads {
+            if !app.store.has_session(thread["id"].as_str().context("会话缺少 ID")?)? {
+                undiscovered.push(thread.clone());
+            }
+        }
+        app.store.discover(&undiscovered)?;
+    } else {
+        app.store.discover(&threads)?;
+        observe_history_turns(app, reader, &threads)?;
+    }
+    app.update_health(json!({"lastSuccessAt":now(),"error":null,"scanComplete":complete,"discovered":threads.len()}))
+}
+
+fn observe_history_turns(app: &App, reader: &mut dyn Rpc, threads: &[Value]) -> Result<()> {
     let ids: HashSet<_> = threads
         .iter()
         .filter_map(|thread| thread["id"].as_str())
@@ -48,7 +64,7 @@ fn history_pass(app: &App, reader: &mut dyn Rpc) -> Result<()> {
             }
         }
     }
-    app.update_health(json!({"lastSuccessAt":now(),"error":null,"scanComplete":complete,"discovered":threads.len()}))
+    Ok(())
 }
 
 pub fn history_candidates(rows: &[Value], quota: usize) -> Vec<Value> {
@@ -179,7 +195,19 @@ fn observe_one(
         && !app.needs_native_backfill(identifier)? {
         return Ok(Seen::Same);
     }
-    match rpc::latest_turn(reader, identifier) {
+    let turn = if app.config.four_columns {
+        rpc::latest_verified_turn(reader, identifier).map(|turn| {
+            if turn["confirmedEmpty"] == true
+                && !matches!(status["type"].as_str(), Some("idle" | "notLoaded"))
+            {
+                return json!({});
+            }
+            turn
+        })
+    } else {
+        rpc::latest_turn(reader, identifier)
+    };
+    match turn {
         Ok(turn) => apply_observed_turn(app, identifier, status, &turn, since, revision),
         Err(error) if error.downcast_ref::<RequestError>().is_some() => Ok(Seen::Unread),
         Err(error) if frame_too_large(&error) => {
@@ -204,6 +232,13 @@ fn apply_observed_turn(
     app.store.observe(identifier, turn, None)?;
     if let Err(error) = app.backfill_native(identifier, status) {
         return Ok(Seen::Phase(error.to_string()));
+    }
+    if app.config.four_columns && crate::model::verified_runtime_state(status, turn).is_none() {
+        return Ok(if turn["confirmedEmpty"] == true {
+            Seen::Saved(identifier.to_owned(), revision)
+        } else {
+            Seen::Same
+        });
     }
     let since = app.native_runtime_since(identifier,since)?;
     if app.baseline_native_backfill(identifier,status,turn,since)? {
@@ -414,6 +449,10 @@ pub(crate) fn start_host(app: &Arc<App>) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "observer/four_column_tests.rs"]
+mod four_column_tests;
 
 #[cfg(test)]
 mod tests {
