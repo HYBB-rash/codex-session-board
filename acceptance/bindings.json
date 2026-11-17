@@ -1602,6 +1602,7 @@
       "lib::codex_session_board::config::tests::obsolete_native_capability_does_not_require_a_client_patch_or_existing_file",
       "lib::codex_session_board::rpc::project_writer_cannot_create_send_rename_or_archive",
       "lib::codex_session_board::app::project_assignment::tests::assignment_reads_writes_and_confirms_only_the_selected_uuid",
+      "lib::codex_session_board::app::project_assignment::tests::assignment_accepts_selected_persistent_sources_without_rewriting_provenance",
       "lib::codex_session_board::app::project_assignment::tests::assignment_retry_is_idempotent_and_never_recreates",
       "lib::codex_session_board::app::project_assignment::tests::assignment_rejects_changed_identity_directory_membership_source_and_missing_input",
       "lib::codex_session_board::app::project_assignment::tests::assignment_preserves_uuid_when_api_is_unsupported_or_readback_is_uncertain",

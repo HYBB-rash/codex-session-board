@@ -54,14 +54,14 @@ impl App {
     }
 }
 
-fn native_thread(reader: &mut dyn Rpc, identifier: &str, project: &Value) -> Result<Value> {
+fn selected_thread(reader: &mut dyn Rpc, identifier: &str, project: &Value) -> Result<Value> {
     let thread = reader.call("thread/read",
         json!({"threadId":identifier,"includeTurns":true}))?["thread"].clone();
     ensure!(thread["id"] == identifier && thread["cwd"] == crate::native_new::directory(project)?,
         "会话身份或执行目录与所选项目不一致");
-    ensure!(thread["source"] == "vscode" && thread["originator"] == "Codex Desktop"
-        && thread["ephemeral"] == false && thread["archived"] != true,
-        "仅支持持久原生桌面会话，请先在 Codex 中核对");
+    ensure!(thread["ephemeral"] == false && thread["archived"] != true
+        && thread.get("attachedToThreadId").is_some_and(Value::is_null),
+        "仅支持未归档的独立持久会话，请先在 Codex 中核对");
     ensure!(thread.get("projectId").is_some() && (thread["projectId"].is_null()
         || thread["projectId"] == project["nativeId"]), "会话已归属其他项目或后台未提供归属字段");
     ensure!(thread["turns"].as_array().is_some_and(|turns| turns.iter().any(|turn|
@@ -78,13 +78,13 @@ fn assign(reader: &mut dyn Rpc, identifier: &str, project: &Value) -> Result<()>
         .collect::<Vec<_>>());
     ensure!(current["project"]["id"] == project["nativeId"]
         && actual["paths"] == project["paths"], "项目目录已改变，请刷新后重新选择");
-    let before = native_thread(reader, identifier, project)?;
+    let before = selected_thread(reader, identifier, project)?;
     if before["projectId"] != project["nativeId"] {
         reader.call("thread/metadata/update",
             json!({"threadId":identifier,"projectId":project["nativeId"]}))
             .context("项目补登记未确认；保留同一会话，可刷新后重试。后台需支持 thread/metadata/update")?;
     }
-    let after = native_thread(reader, identifier, project)?;
+    let after = selected_thread(reader, identifier, project)?;
     ensure!(after["projectId"] == project["nativeId"],
         "项目补登记尚未读回；请对同一会话重试，不要重新新建");
     Ok(())

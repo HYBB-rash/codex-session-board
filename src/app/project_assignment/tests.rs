@@ -23,7 +23,7 @@ fn project() -> Value {
 
 fn thread() -> Value {
     json!({"id":"actual-uuid","cwd":"/remote/project","source":"vscode",
-        "originator":"Codex Desktop","ephemeral":false,"projectId":null,
+        "originator":"Codex Desktop","ephemeral":false,"attachedToThreadId":null,"projectId":null,
         "turns":[{"items":[{"type":"userMessage"}]}]})
 }
 
@@ -65,14 +65,35 @@ fn assignment_retry_is_idempotent_and_never_recreates() -> Result<()> {
 fn assignment_rejects_changed_identity_directory_membership_source_and_missing_input() {
     for (key, value) in [("id", json!("other-uuid")), ("cwd", json!("/other")),
         ("projectId", json!("other-project")), ("projectId", json!(0)),
-        ("source", json!("cli")), ("originator", json!("plugin")),
-        ("ephemeral", json!(true)), ("archived", json!(true)), ("turns", json!([]))] {
+        ("attachedToThreadId", json!("parent-uuid")), ("attachedToThreadId", json!(false)),
+        ("ephemeral", json!(true)), ("ephemeral", json!(null)),
+        ("archived", json!(true)), ("turns", json!([]))] {
         let mut before = thread();
         before[key] = value;
         let mut reader = reader(before, thread());
         assert!(assign(&mut reader, "actual-uuid", &project()).is_err(), "{key}");
         assert_eq!(reader.calls.len(), 2);
     }
+}
+
+#[test]
+fn assignment_accepts_selected_persistent_sources_without_rewriting_provenance() -> Result<()> {
+    for source in ["cli", "appServer", "vscode"] {
+        let mut before = thread();
+        before["source"] = json!(source);
+        before["originator"] = json!("Codex Desktop Nightly");
+        let mut after = before.clone();
+        after["projectId"] = json!("canonical");
+        let mut reader = reader(before, after);
+        assign(&mut reader, "actual-uuid", &project())?;
+        assert_eq!(reader.calls[2].1, json!({"threadId":"actual-uuid","projectId":"canonical"}));
+        assert!(reader.calls.iter().all(|(_, params)|
+            params.get("source").is_none() && params.get("originator").is_none()));
+    }
+    let mut before = thread();
+    before.as_object_mut().unwrap().remove("attachedToThreadId");
+    assert!(assign(&mut reader(before, thread()), "actual-uuid", &project()).is_err());
+    Ok(())
 }
 
 #[test]

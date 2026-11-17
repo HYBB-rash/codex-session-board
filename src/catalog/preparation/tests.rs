@@ -306,8 +306,15 @@ fn malformed_project_identity_deletion_and_checkpoint_fields_remain_rejected() -
             json!({"local:/target/codex":{"version":1,"projectsMigrated":"false"}})),
     ] {
         let mut backend = Backend::new();
-        backend.state[field] = value;
-        assert!(backend.read().is_err());
+        backend.state[&field] = value;
+        backend.projects.push(json!({"id":CANONICAL,"roots":[{"path":"/target"}],"metadata":{}}));
+        if field.contains("pending-project-deletions") {
+            assert!(backend.read().is_err());
+        } else {
+            let fresh = backend.read()?;
+            fresh.server(&mut backend, CANONICAL)?;
+            assert!(fresh.prepare_legacy(&mut backend, "old", 1).is_err());
+        }
         assert!(backend.imports.is_empty());
     }
     Ok(())
