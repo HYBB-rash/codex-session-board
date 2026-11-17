@@ -1,7 +1,9 @@
 import json
+import fcntl
 import os
 from pathlib import Path
 import tempfile
+import time
 import shlex
 import subprocess
 import sys
@@ -12,6 +14,71 @@ from scripts import integrate_candidate as integrate
 
 
 class IntegrateTests(unittest.TestCase):
+    def test_overlapping_cli_invocation_returns_busy_without_any_merge(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / "candidate"
+            with directory.with_name(".candidate.lock").open("a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                with patch("sys.argv", ["integrate", "--resume", "--output", str(directory)]), \
+                        patch.object(integrate, "start") as start:
+                    self.assertEqual(integrate.main(), 75)
+                start.assert_not_called()
+
+    def test_separate_cli_processes_return_and_resume_without_a_foreground_monitor(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            state = {"source": {"commit": "candidate"}, "base": "base", "branch": "branch",
+                     "repository": "owner/repo", "started_at": integrate.now()}
+            integrate.save(directory / "integration.json", state)
+            driver = directory / "invoke.py"
+            driver.write_text(
+                "import json,sys\nfrom pathlib import Path\nfrom unittest.mock import patch\n"
+                "from scripts import integrate_candidate as flow\n"
+                "folder=Path(sys.argv[1]); phase=sys.argv[2]\n"
+                "def effect(kind):\n"
+                "    with (folder/'effects.jsonl').open('a') as stream:\n"
+                "        stream.write(json.dumps({'kind':kind})+'\\n')\n"
+                "def execute(arguments, **options):\n"
+                "    if arguments[1]=='push': effect('push')\n"
+                "def promote(*arguments):\n"
+                "    effect('promote')\n"
+                "    arguments[4].write_text(json.dumps({'release_status':'pending'}))\n"
+                "run={'id':42,'run_attempt':1,'status':phase,"
+                "'conclusion':'success' if phase=='completed' else None}\n"
+                "sys.argv=['integrate','--resume','--output',str(folder)]\n"
+                "with patch.object(flow,'require_checkout'), "
+                "patch.object(flow,'git',return_value='base refs/heads/main'), "
+                "patch.object(flow.subprocess,'run',side_effect=execute), "
+                "patch.object(flow,'find_run',return_value=run), "
+                "patch.object(flow,'promote',side_effect=promote):\n"
+                "    sys.exit(flow.main())\n")
+            environment = dict(os.environ, PYTHONPATH=str(integrate.ROOT))
+            invocations = []
+            for phase in ("in_progress", "completed", "completed"):
+                started = time.monotonic()
+                process = subprocess.run([sys.executable, str(driver), str(directory), phase],
+                                         cwd=directory, env=environment, capture_output=True,
+                                         text=True, timeout=30)
+                self.assertEqual(process.returncode, 0, process.stderr)
+                invocations.append({"process_returned": True, "returncode": process.returncode,
+                                    "seconds": time.monotonic() - started,
+                                    "output": json.loads(process.stdout)})
+            self.assertEqual([entry["output"]["merge_status"] for entry in invocations],
+                             ["waiting-ci", "merged", "merged"])
+            effects = [json.loads(line) for line in (directory / "effects.jsonl").read_text().splitlines()]
+            self.assertEqual(effects, [{"kind": "push"}, {"kind": "promote"}])
+            self.assertEqual(invocations[1]["output"]["seconds"], invocations[2]["output"]["seconds"])
+            evidence = os.environ.get("CSB_MERGE_TEST_EVIDENCE")
+            if evidence:
+                destination = Path(evidence).resolve()
+                self.assertFalse(destination.is_relative_to(integrate.ROOT))
+                destination.mkdir(parents=True, exist_ok=False)
+                integrate.save(destination / "invocations.json", {
+                    "scope": "isolated-state-machine", "external_operations": "mocked",
+                    "invocations": invocations, "effects": effects,
+                })
+                (destination / "integration.json").write_bytes((directory / "integration.json").read_bytes())
+
     def test_pending_invocation_returns_then_resume_reuses_candidate_and_workflow(self):
         from argparse import Namespace
         with tempfile.TemporaryDirectory() as temporary:
@@ -171,6 +238,10 @@ class IntegrateTests(unittest.TestCase):
                     patch.object(integrate, "git", return_value="base refs/heads/main"), \
                     patch.object(integrate.subprocess, "run"), \
                     patch.object(integrate, "find_run", return_value=run), \
+                    patch.object(integrate, "github", return_value=json.dumps([{"jobs": [{
+                        "name": "Candidate (linux-x86_64)", "conclusion": "failure",
+                        "steps": [{"name": "TMPDIR=/tmp ./scripts/validate", "conclusion": "failure"}],
+                    }]}])), \
                     patch.object(integrate, "promote") as promote, self.assertRaises(ValueError):
                 integrate.start(Namespace(output=directory, resume=True, timeout=10))
             promote.assert_not_called()
@@ -180,6 +251,23 @@ class IntegrateTests(unittest.TestCase):
             self.assertEqual(saved["last_error"]["type"], "ValueError")
             self.assertEqual(saved["errors"][0], state["errors"][0])
             self.assertEqual(len(saved["errors"]), 2)
+            self.assertEqual(saved["merge_status"], "needs-author")
+
+    def test_runner_failure_is_not_sent_to_author_and_workflow_identity_is_pinned(self):
+        state = {"repository": "owner/repo"}
+        run = {"id": 42, "run_attempt": 1, "conclusion": "failure"}
+        with patch.object(integrate, "github", return_value=json.dumps([{"jobs": [{
+                "name": "Candidate (macos-arm64)", "conclusion": "failure", "steps": [],
+        }]}])), self.assertRaises(ValueError):
+            integrate.failed_run(state, run)
+        self.assertEqual(state["merge_status"], "infrastructure-blocked")
+        pinned = {**run, "head_sha": "candidate", "head_branch": "branch", "event": "push",
+                  "repository": {"full_name": "owner/repo"}, "path": ".github/workflows/plugin-candidate.yml"}
+        with patch.object(integrate, "github", return_value=json.dumps(pinned)) as query:
+            self.assertEqual(integrate.find_run("owner/repo", "branch", "candidate", 42)["id"], 42)
+            self.assertIn("actions/runs/42", query.call_args.args[1])
+            with self.assertRaises(ValueError):
+                integrate.find_run("owner/repo", "branch", "changed", 42)
 
     def test_candidate_build_finishes_before_waiting_for_pr_ci_and_checks_reach_promoter(self):
         with tempfile.TemporaryDirectory() as temporary:

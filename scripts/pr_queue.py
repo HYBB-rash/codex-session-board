@@ -80,7 +80,7 @@ def initialize(manifest, directory):
     if not known:
         raise ValueError("Queue needs at least one PR")
     state.update(schema_version=1, project=str(project), base=base, initial_base=base, prefix=base,
-                 checker=checker, started_at=now(), events=[],
+                 checker=checker, checker_project=str(ROOT), started_at=now(), events=[],
                  batch_merged=False, release_status="not_requested",
                  batch_delivered=False, all_items_merged=False)
     directory.mkdir(parents=True)
@@ -445,17 +445,19 @@ def finish(state, directory):
         event = "candidate_pending" if pending else "candidate_blocked"
         state["events"].append({"at": now(), event: candidate, "report": str(report)})
         if re.fullmatch(r"Candidate run \d+ finished: failure", error):
-            state["merge_status"] = "needs-author"
-            state["events"][-1] = {"at": now(), "candidate_failed": candidate, "report": str(report)}
+            author = details.get("merge_status", "needs-author") == "needs-author"
+            state["merge_status"] = "needs-author" if author else "infrastructure-blocked"
+            if author:
+                state["events"][-1] = {"at": now(), "candidate_failed": candidate, "report": str(report)}
             snapshot = output / f"failed-run-{details.get('run')}-{details.get('run_attempt')}.json"
             if not snapshot.exists():
                 save(snapshot, details)
-            state["frozen_candidate"]["status"] = "failed"
+            state["frozen_candidate"]["status"] = "failed" if author else "infrastructure-blocked"
             state["frozen_candidate"]["failed_run"] = {
                 "id": details.get("run"), "attempt": details.get("run_attempt"), "report": str(snapshot),
             }
             state["events"][-1]["failure_report"] = str(snapshot)
-            for item in state["items"]:
+            for item in state["items"] if author else []:
                 if item["status"] == "accepted":
                     reject(state, item, directory, "candidate",
                            f"组合候选 {candidate} 未通过，不能据此归责单一PR。"
@@ -479,6 +481,7 @@ def finish(state, directory):
     for item in state["items"]:
         if item["status"] == "accepted":
             item["status"] = "merged"
+            item["merged_at"] = details.get("completed_at") or now()
     state.setdefault("initial_base", state["base"])
     state["frozen_candidate"]["status"] = "merged"
     state.update(base=candidate, prefix=candidate, merged_at=now(), batch_merged=True,
@@ -502,7 +505,7 @@ def retry_candidate(state, directory):
     frozen = state["frozen_candidate"]
     clean(Path(state["project"]), frozen["candidate"])
     previous = frozen.get("failed_run", {})
-    if (frozen["status"] != "failed" or state["prefix"] != frozen["candidate"]
+    if (frozen["status"] not in {"failed", "infrastructure-blocked"} or state["prefix"] != frozen["candidate"]
             or type(previous.get("id")) is not int or type(previous.get("attempt")) is not int):
         raise ValueError("Retry needs the exact unchanged failed candidate and its recorded workflow attempt")
     run = json.loads(github("api", f"repos/{state['repository']}/actions/runs/{previous['id']}"))

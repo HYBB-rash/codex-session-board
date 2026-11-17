@@ -335,6 +335,30 @@ class PRQueueTests(unittest.TestCase):
             pr_queue.requeue(self.state, {"number": 1, "head": "HEAD"}, self.queue)
         notify.assert_not_called()
 
+    def test_runner_failure_retains_candidate_without_author_feedback(self):
+        self.state["rehearsal"] = False
+        item = self.item(1, self.base)
+        item["status"] = "accepted"
+        self.state["items"] = [item]
+        output = self.queue / f"candidate-{self.base}"
+        output.mkdir()
+        self.write_json(output / "integration.json", {
+            "run": 42, "run_attempt": 1, "merge_status": "infrastructure-blocked",
+            "last_error": {"detail": "Candidate run 42 finished: failure"},
+        })
+        with mock.patch.object(pr_queue, "clean"), \
+                mock.patch.object(pr_queue, "git", return_value=self.base), \
+                mock.patch.object(pr_queue, "validate_freeze", return_value="0.3.91"), \
+                mock.patch.object(pr_queue, "notify") as notify, \
+                mock.patch.object(pr_queue.subprocess, "run",
+                                  side_effect=subprocess.CalledProcessError(2, "integrate")), \
+                self.assertRaises(subprocess.CalledProcessError):
+            pr_queue.finish(self.state, self.queue)
+        notify.assert_not_called()
+        self.assertEqual(self.state["merge_status"], "infrastructure-blocked")
+        self.assertEqual(self.state["frozen_candidate"]["status"], "infrastructure-blocked")
+        self.assertTrue(Path(self.state["frozen_candidate"]["failed_run"]["report"]).exists())
+
     def test_rehearsal_only_passes_the_restricted_reference_to_integrate(self):
         item = self.item(1, self.base)
         item["status"] = "accepted"

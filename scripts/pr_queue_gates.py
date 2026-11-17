@@ -6,6 +6,12 @@ import time
 from scripts import pr_task_github as forge
 
 
+class GateBlocked(ValueError):
+    def __init__(self, result, detail):
+        super().__init__(detail)
+        self.result = result
+
+
 def from_queue(path, project, repository, candidate):
     state = json.loads(Path(path).read_text())
     if (state.get("rehearsal") or state["repository"] != repository
@@ -48,12 +54,13 @@ def workflow(repository, number, head, *, merged_branch=None):
     if run["status"] != "completed":
         return None
     if run["conclusion"] != "success":
-        raise ValueError(f"PR #{number} workflow did not pass")
+        raise GateBlocked("needs-author" if run["conclusion"] == "failure" else "infrastructure-blocked",
+                          f"PR #{number} workflow did not pass")
     jobs = forge.pages(f"repos/{repository}/actions/runs/{run['id']}/jobs?filter=latest", deadline, "jobs")
     if (not any(job["name"] == "changes" for job in jobs)
             or any(job["head_sha"] != head or job["status"] != "completed"
                    or job["conclusion"] != "success" for job in jobs)):
-        raise ValueError(f"PR #{number} requires its actual successful changes job")
+        raise GateBlocked("needs-evidence", f"PR #{number} requires its actual successful changes job")
     return {"run": run["id"], "attempt": run["run_attempt"], "head": head}
 
 
@@ -63,18 +70,18 @@ def verify(gates):
         repository, number = gates["repository"], item["number"]
         pr = forge.api(f"repos/{repository}/pulls/{number}")
         if pr["head"]["sha"] != item["head"] or pr["base"]["ref"] != "main":
-            raise ValueError(f"PR #{number} changed source or target; requeue its new head")
+            raise GateBlocked("needs-evidence", f"PR #{number} changed source or target; requeue its new head")
         snapshot = forge.snapshot({
             "repository": repository, "pr": number, "branch": pr["head"]["ref"],
             "base": "main", "checks": item["checks"], "reviewers": item["reviewers"],
         })
         if snapshot["head"] != item["head"] or snapshot["state"] not in {"open", "merged"}:
-            raise ValueError(f"PR #{number} changed or closed without merging")
+            raise GateBlocked("needs-user", f"PR #{number} changed or closed without merging")
         if snapshot["state"] == "merged":
             snapshot.update(forge.check_state(repository, item["head"], item["checks"],
                                              time.monotonic() + 90))
         if snapshot["ci"] == "failed" or snapshot["items"]:
-            raise ValueError(f"PR #{number} has failed checks or unresolved review feedback")
+            raise GateBlocked("needs-author", f"PR #{number} has failed checks or unresolved review feedback")
         merged_branch = pr["head"]["ref"] if snapshot["state"] == "merged" else None
         proof = None
         if snapshot["ci"] == "passed":
@@ -84,6 +91,6 @@ def verify(gates):
                 or after["head"]["ref"] != pr["head"]["ref"]
                 or after["base"]["sha"] != snapshot.get("base", after["base"]["sha"])
                 or ("merged" if after["merged"] else after["state"]) != snapshot["state"]):
-            raise ValueError(f"PR #{number} changed while proving its workflow; requeue")
+            raise GateBlocked("needs-evidence", f"PR #{number} changed while proving its workflow; requeue")
         results.append({"number": number, **snapshot, "workflow": proof})
     return results if all(result["ci"] == "passed" and result["workflow"] for result in results) else None

@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+import time
 
 from scripts import pr_task_github as forge
 from scripts.pr_task_state import now, save
@@ -10,6 +11,22 @@ ACTORS = {
     "needs-author": "author", "needs-evidence": "author-or-reviewer",
     "infrastructure-blocked": "user", "needs-user": "user", "ready": "coordinator",
 }
+NEXT = {
+    "merged": "report-main-and-release-status", "closed-without-merge": "report-terminal-state",
+    "waiting-ci": "return-and-resume-on-user-request", "needs-author": "hand-feedback-to-author",
+    "needs-evidence": "register-current-head-review-and-validation",
+    "infrastructure-blocked": "resolve-infrastructure-and-resume", "needs-user": "inspect-recorded-blocker",
+    "ready": "continue-existing-queue-commands",
+}
+
+
+def first_ready(repository, number, pr):
+    events = forge.pages(f"repos/{repository}/issues/{number}/timeline", time.monotonic() + 90)
+    changes = sorted((entry for entry in events if entry["event"] in
+                      {"ready_for_review", "convert_to_draft"}), key=lambda entry: entry["created_at"])
+    if changes and changes[0]["event"] == "ready_for_review":
+        return changes[0]["created_at"]
+    return pr["created_at"] if changes or not pr["draft"] else None
 
 
 def contained(repository, source, main):
@@ -26,11 +43,18 @@ def observe(state):
     results = []
     for item in state["items"]:
         pr = forge.api(f"repos/{repository}/pulls/{item['number']}")
-        result = {"number": item["number"], "head": pr["head"]["sha"], "url": pr["html_url"]}
+        ready = item.get("first_ready_at")
+        if not ready and pr.get("created_at"):
+            ready = first_ready(repository, item["number"], pr)
+        result = {"number": item["number"], "head": pr["head"]["sha"], "url": pr["html_url"],
+                  "checks_url": pr["html_url"] + "/checks", "first_ready_at": ready,
+                  "merged_at": pr.get("merged_at")}
         if pr["merged"]:
             result["result"] = "merged" if contained(repository, pr["merge_commit_sha"], main) else "needs-user"
         elif pr["state"] == "closed":
             result["result"] = "closed-without-merge"
+        elif item["status"] in {"closed", "merged"}:
+            result.update(result="needs-user", detail="PR reopened after terminal handoff; inspect before registering again")
         elif pr["base"]["ref"] != reference.removeprefix("refs/heads/"):
             result.update(result="needs-user", detail="PR target changed")
         elif pr["head"]["sha"] != item["head"]:
@@ -50,6 +74,8 @@ def observe(state):
                 result["result"] = "needs-evidence"
             elif item["status"] == "blocked-dependency":
                 result["result"] = "needs-author"
+            elif snapshot["ci"] != "passed":
+                result["result"] = "waiting-ci"
         results.append(result)
     terminal = all(item["result"] in {"merged", "closed-without-merge"} for item in results)
     result = "merged" if all(item["result"] == "merged" for item in results) else (
@@ -68,22 +94,39 @@ def describe(state, directory, result, detail=""):
         "number": item["number"], "head": item["head"], "base": item["base"],
         "review": item["review"], "validation": item["validation"], "status": item["status"],
         "feedback": item.get("feedback"), "author_task_state": item.get("author_task_state"),
+        "first_ready_at": item.get("first_ready_at"), "merged_at": item.get("merged_at"),
+        "ready_to_main_seconds": (
+            datetime.fromisoformat(item["merged_at"].replace("Z", "+00:00"))
+            - datetime.fromisoformat(item["first_ready_at"].replace("Z", "+00:00"))).total_seconds()
+        if item.get("merged_at") and item.get("first_ready_at") else None,
     } for item in state["items"]]
     return {
-        "result": result, "detail": detail, "next_actor": ACTORS[result],
+        "result": result, "detail": detail, "next_actor": ACTORS[result], "next_action": NEXT[result],
         "repository": state["repository"], "reference": state.get("reference", "refs/heads/main"),
         "base": state["base"], "candidate": state.get("frozen_candidate"),
         "integration": integration, "items": items, "observation": state.get("observation"),
-        "retain": {"queue": str(directory), "project": state["project"], "checker": state["checker"]},
+        "retain": {"queue": str(directory), "project": state["project"], "checker": state["checker"],
+                   "checker_project": state.get("checker_project")},
         "continue": "继续合并 " + "、".join(f"PR #{item['number']}" for item in items),
         "release_status": state.get("release_status", "not_requested"),
     }
 
 
+def refresh(state):
+    state["observation"] = observe(state)
+    for observed in state["observation"]["items"]:
+        item = next(item for item in state["items"] if item["number"] == observed["number"])
+        for field in ("first_ready_at", "merged_at"):
+            if observed.get(field):
+                item[field] = observed[field]
+    state["resume_rechecked"] = ["GitHub PR/head/CI/feedback", "main"]
+    return state["observation"]
+
+
 def resume(state, directory, queue):
     if state.get("feedback_mode") != "github":
         raise ValueError("Manual merge handoff requires github feedback; existing native queues remain unchanged")
-    state["observation"] = observe(state)
+    refresh(state)
     result = state["observation"]["result"]
     if result in {"merged", "closed-without-merge"}:
         for observed in state["observation"]["items"]:
@@ -91,13 +134,18 @@ def resume(state, directory, queue):
             item["status"] = "merged" if observed["result"] == "merged" else "closed"
         return describe(state, directory, result)
     if state["observation"]["main"] != state["base"]:
-        return describe(state, directory, result, state["observation"]["detail"])
+        report = describe(state, directory, result, state["observation"]["detail"])
+        report.update(next_actor="coordinator", next_action="recombine-and-validate")
+        return report
     accepted = {item["number"] for item in state["items"] if item["status"] == "accepted"}
     relevant = [item for item in state["observation"]["items"] if not accepted or item["number"] in accepted]
-    blocker = next((item for item in relevant if item["result"] != "ready"), None)
+    blocker = next((item for item in relevant if item["result"] not in {"ready", "waiting-ci"}), None)
     if blocker:
+        if blocker["result"] in {"merged", "closed-without-merge"}:
+            return describe(state, directory, "needs-user", "Part of the candidate became terminal; recombine")
         return describe(state, directory, blocker["result"], blocker.get("detail", ""))
     queue.verify_checker(state)
+    state["resume_rechecked"] += ["frozen-checker", "source-bound-review-and-validation"]
     for item in state["items"]:
         if accepted and item["number"] not in accepted or item["status"] in {"merged", "closed"}:
             continue
@@ -106,7 +154,8 @@ def resume(state, directory, queue):
         except Exception as error:
             return describe(state, directory, "needs-evidence", str(error))
     if not accepted:
-        return describe(state, directory, "ready", "Continue mechanical attempt using the existing command")
+        return describe(state, directory, "ready",
+                        "Continue mechanical attempt; PR CI can run alongside candidate validation")
     project = Path(state["project"])
     candidate = queue.git(project, "rev-parse", "HEAD")
     queue.clean(project, candidate)
@@ -148,4 +197,8 @@ def end(state, directory, record, handoff):
                          - datetime.fromisoformat(record["started_at"])).total_seconds()
     state["handoff"] = handoff
     record["reused"] = state.pop("resume_reused", [])
+    record["rechecked"] = state.pop("resume_rechecked", [])
+    if record.get("request_started_at"):
+        record["request_seconds"] = (datetime.fromisoformat(record["finished_at"])
+                                     - datetime.fromisoformat(record["request_started_at"])).total_seconds()
     save(directory / "queue.json", state)

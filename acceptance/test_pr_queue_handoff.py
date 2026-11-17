@@ -60,6 +60,7 @@ class PRQueueHandoffTests(unittest.TestCase):
         return json.loads((self.directory / "queue.json").read_text())
 
     def test_return_then_resume_reuses_candidate_and_duplicate_terminal_call_does_nothing(self):
+        self.arguments.started_at = queue.now()
         def finish(state, directory):
             state["merge_status"] = "waiting-ci"
             state["integration"] = {"run": 42, "run_attempt": 1, "report": "integration.json"}
@@ -69,6 +70,8 @@ class PRQueueHandoffTests(unittest.TestCase):
             self.assertEqual(first["rounds"][0]["result"], "waiting-ci")
             self.assertEqual(registry.locate("owner/repo", 7), self.directory)
             self.assertEqual(first["integration"]["run"], 42)
+            self.assertEqual(first["rounds"][0]["request_started_at"], self.arguments.started_at)
+            self.assertGreaterEqual(first["rounds"][0]["request_seconds"], first["rounds"][0]["seconds"])
             def complete(state, directory):
                 state.update(merge_status="merged", batch_merged=True, all_items_merged=True,
                              base=CANDIDATE, release_status="pending")
@@ -119,6 +122,7 @@ class PRQueueHandoffTests(unittest.TestCase):
         self.assertEqual(result["handoff"]["result"], "needs-user")
         self.assertIn("recombine", result["handoff"]["detail"])
         self.assertEqual(result["base"], BASE)
+        self.assertEqual(result["handoff"]["next_actor"], "coordinator")
         finish.assert_not_called()
 
     def test_missing_evidence_and_query_failure_cannot_become_a_pass(self):
@@ -142,6 +146,11 @@ class PRQueueHandoffTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["status"], "closed")
         finish.assert_not_called()
         notify.assert_not_called()
+        self.pr["state"] = "open"
+        with mock.patch.object(queue, "finish") as finish:
+            reopened = self.run_round()
+        self.assertEqual(reopened["handoff"]["result"], "needs-user")
+        finish.assert_not_called()
 
     def test_readonly_refresh_finds_registered_pr_and_never_changes_records(self):
         registry.register(self.directory, self.state)
@@ -153,6 +162,11 @@ class PRQueueHandoffTests(unittest.TestCase):
         self.assertEqual(json.loads(output.getvalue())["observation"]["main"], BASE)
         self.assertEqual((self.directory / "queue.json").read_bytes(), before)
         release.assert_not_called()
+        self.snapshot["ci"] = "pending"
+        with mock.patch("sys.argv", arguments), redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(cli.main(queue), 0)
+        self.assertEqual(json.loads(output.getvalue())["handoff"]["result"], "waiting-ci")
+        self.assertEqual((self.directory / "queue.json").read_bytes(), before)
 
     def test_ambiguous_or_missing_queue_records_are_not_silently_replaced(self):
         registry.register(self.directory, self.state)
@@ -174,6 +188,26 @@ class PRQueueHandoffTests(unittest.TestCase):
         self.assertEqual(result["rounds"][0]["result"], "interrupted")
         self.assertNotIn("finished_at", result["rounds"][0])
         self.assertEqual(result["rounds"][1]["result"], "infrastructure-blocked")
+
+    def test_first_ready_time_survives_repairs_and_includes_between_call_wait(self):
+        self.pr.update(created_at="2026-11-17T00:00:00Z")
+        events = [
+            {"event": "ready_for_review", "created_at": "2026-11-17T01:00:00Z"},
+            {"event": "convert_to_draft", "created_at": "2026-11-17T02:00:00Z"},
+            {"event": "ready_for_review", "created_at": "2026-11-17T03:00:00Z"},
+        ]
+        with mock.patch.object(handoff.forge, "pages", return_value=events), \
+                mock.patch.object(queue, "finish", side_effect=lambda state, directory:
+                                  state.update(merge_status="waiting-ci")):
+            first = self.run_round()
+        self.assertEqual(first["items"][0]["first_ready_at"], "2026-11-17T01:00:00Z")
+        self.pr.update(merged=True, state="closed", merge_commit_sha=CANDIDATE,
+                       merged_at="2026-11-17T04:00:00Z")
+        self.main = CANDIDATE
+        with mock.patch.object(handoff.forge, "pages") as timeline:
+            final = self.run_round()
+        self.assertEqual(final["handoff"]["items"][0]["ready_to_main_seconds"], 10800)
+        timeline.assert_not_called()
 
     def test_batch_can_finish_accepted_items_without_waiting_for_rejected_item(self):
         rejected = {**self.state["items"][0], "number": 8, "status": "needs-fix",

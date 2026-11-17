@@ -1,5 +1,6 @@
 import argparse
 from datetime import datetime, timezone
+import fcntl
 import json
 from pathlib import Path
 import subprocess
@@ -32,7 +33,7 @@ def require_checkout(state):
 
 def find_run(repository, branch, candidate, pinned=None):
     if pinned is not None:
-        run = json.loads(github("api", f"repos/{repository}/actions/runs/{pinned}"))
+        run = json.loads(github("api", f"repos/{repository}/actions/runs/{pinned}", timeout=60))
         if (run["id"] != pinned or run["head_sha"] != candidate or run["head_branch"] != branch
                 or run["repository"]["full_name"] != repository
                 or run["path"] != ".github/workflows/plugin-candidate.yml"
@@ -40,7 +41,8 @@ def find_run(repository, branch, candidate, pinned=None):
             raise ValueError("Recorded workflow no longer identifies this exact candidate")
         return run
     runs = json.loads(github("api", f"repos/{repository}/actions/workflows/"
-                            f"plugin-candidate.yml/runs?branch={quote(branch, safe='')}&per_page=100"))
+                            f"plugin-candidate.yml/runs?branch={quote(branch, safe='')}&per_page=100",
+                            timeout=60))
     matches = [run for run in runs["workflow_runs"]
                if run["head_sha"] == candidate and run["head_branch"] == branch
                and run["event"] in ("push", "workflow_dispatch")]
@@ -54,6 +56,21 @@ def waiting(state, path, kind):
     return state
 
 
+def failed_run(state, run):
+    state["merge_status"] = "infrastructure-blocked"
+    if run["conclusion"] == "failure":
+        pages = json.loads(github("api", "--paginate", "--slurp",
+                                 f"repos/{state['repository']}/actions/runs/{run['id']}"
+                                 f"/attempts/{run['run_attempt']}/jobs?per_page=100", timeout=60))
+        state["failed_jobs"] = [job for page in pages for job in page["jobs"]
+                                if job["conclusion"] != "success"]
+        if any(step.get("conclusion") == "failure" and "scripts/validate" in step["name"]
+               for job in state["failed_jobs"] if job["name"].startswith("Candidate (")
+               for step in job.get("steps", [])):
+            state["merge_status"] = "needs-author"
+    raise ValueError(f"Candidate run {run['id']} finished: {run['conclusion']}")
+
+
 def continue_candidate(state, directory, timeout):
     state_path = directory / "integration.json"
     require_checkout(state)
@@ -62,11 +79,12 @@ def continue_candidate(state, directory, timeout):
     require_target(reference, base, state["branch"], candidate, git_command=git)
     require_remote_target(reference, (base, candidate), git_command=git)
     if state.get("completed_at"):
+        state["merge_status"] = "merged"
         return state
     subprocess.run(["git", "merge-base", "--is-ancestor", base, candidate], cwd=ROOT, check=True)
     if not state.get("pushed_at"):
         subprocess.run(["git", "push", "origin", f"{candidate}:refs/heads/{state['branch']}"],
-                       cwd=ROOT, check=True)
+                       cwd=ROOT, check=True, timeout=120)
         state["pushed_at"] = now()
         save(state_path, state)
     deadline = time.monotonic() + timeout
@@ -80,9 +98,7 @@ def continue_candidate(state, directory, timeout):
             save(state_path, state)
             if run["status"] == "completed":
                 if run["conclusion"] != "success":
-                    state["merge_status"] = (
-                        "needs-author" if run["conclusion"] == "failure" else "infrastructure-blocked")
-                    raise ValueError(f"Candidate run {run['id']} finished: {run['conclusion']}")
+                    failed_run(state, run)
                 break
         if time.monotonic() >= deadline:
             return waiting(state, state_path, "candidate")
@@ -117,6 +133,7 @@ def continue_candidate(state, directory, timeout):
     state["merge_status"] = "merged"
     state.pop("waiting_on", None)
     promoted = json.loads(receipt.read_text())
+    state["completed_at"] = promoted.get("promoted_at", state["completed_at"])
     state["release_status"] = promoted.get("release_status", "unchanged")
     state["release"] = promoted.get("release")
     state["seconds"] = (datetime.fromisoformat(state["completed_at"])
@@ -136,15 +153,6 @@ def start(arguments):
         state = json.loads(path.read_text())
         if state.get("reference", "refs/heads/main") != reference:
             raise ValueError("Resume must explicitly select the recorded integration target")
-        if getattr(arguments, "pr_gates", None):
-            gates = pr_queue_gates.from_queue(
-                arguments.pr_gates, ROOT, state["repository"], state["source"]["commit"])
-            if state.get("pr_gates", gates) != gates:
-                raise ValueError("Resumed PR gates differ from the frozen source heads")
-            if state.get("completed_at") and not state.get("pr_gates"):
-                raise ValueError("An old completed integration cannot acquire PR gates retroactively")
-            state["pr_gates"] = gates
-            save(path, state)
     else:
         if not arguments.base or not arguments.repository or directory.exists():
             raise ValueError("A new integration needs fixed base, repository and a new output directory")
@@ -171,14 +179,26 @@ def start(arguments):
         directory.mkdir(parents=True)
         save(path, state)
     invocation = {"started_at": now(), "status": "running"}
+    for previous in state.get("invocations", []):
+        if previous["status"] == "running":
+            previous.update(status="interrupted", interruption_observed_at=now())
     state.setdefault("invocations", []).append(invocation)
-    state["merge_status"] = "checking" if not state.get("completed_at") else "merged"
+    state["merge_status"] = "checking"
     save(path, state)
     try:
+        if arguments.resume and getattr(arguments, "pr_gates", None):
+            gates = pr_queue_gates.from_queue(
+                arguments.pr_gates, ROOT, state["repository"], state["source"]["commit"])
+            if state.get("pr_gates", gates) != gates:
+                raise ValueError("Resumed PR gates differ from the frozen source heads")
+            if state.get("completed_at") and not state.get("pr_gates"):
+                raise ValueError("An old completed integration cannot acquire PR gates retroactively")
+            state["pr_gates"] = gates
         result = continue_candidate(state, directory, arguments.timeout)
     except Exception as error:
         if state["merge_status"] == "checking":
-            state["merge_status"] = "needs-user" if isinstance(error, ValueError) else "infrastructure-blocked"
+            state["merge_status"] = getattr(error, "result", (
+                "needs-user" if isinstance(error, ValueError) else "infrastructure-blocked"))
         state["last_error"] = {"at": now(), "type": type(error).__name__, "detail": str(error)}
         state.setdefault("errors", []).append(state["last_error"])
         raise
@@ -209,7 +229,16 @@ def main():
     if arguments.timeout < 0:
         parser.error("--timeout must be nonnegative")
     try:
-        start(arguments)
+        output = arguments.output.resolve()
+        if output.is_relative_to(ROOT):
+            raise ValueError("Integration records must remain outside the source")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with output.with_name(f".{output.name}.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            start(arguments)
+    except BlockingIOError:
+        print("Integration is busy; resume this same output directory", file=sys.stderr)
+        return 75
     except Exception as error:
         print(str(error), file=sys.stderr)
         return 2

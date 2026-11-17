@@ -1,4 +1,5 @@
 import argparse
+from datetime import datetime, timezone
 import fcntl
 import json
 from pathlib import Path
@@ -14,6 +15,9 @@ def execute(queue, state, directory, arguments):
             queue.requeue(state, json.loads(arguments.item.read_text()), directory)
         return handoff.resume(state, directory, queue)
     queue.verify_checker(state)
+    if (action in {"attempt", "finish", "requeue"} and state.get("feedback_mode") == "github"
+            and not state.get("rehearsal")):
+        handoff.refresh(state)
     if action == "notify":
         for item in state["items"]:
             if item.get("feedback"):
@@ -38,11 +42,13 @@ def execute(queue, state, directory, arguments):
 
 def run(queue, state, directory, arguments):
     registry.register(directory, state)
-    state.setdefault("checker_project", str(queue.ROOT))
     record = handoff.begin(state, directory, arguments.command)
+    if getattr(arguments, "started_at", None):
+        record["request_started_at"] = arguments.started_at
     state["merge_status"] = "checking"
     try:
         result = execute(queue, state, directory, arguments)
+        state.pop("last_error", None)
     except (Exception, KeyboardInterrupt) as error:
         code = state.get("merge_status", "checking")
         if code == "checking":
@@ -65,7 +71,12 @@ def main(queue):
     parser.add_argument("--item", type=Path)
     parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--release", action="store_true")
+    parser.add_argument("--started-at")
     arguments = parser.parse_args()
+    if arguments.started_at:
+        started = datetime.fromisoformat(arguments.started_at)
+        if started.tzinfo is None or started > datetime.now(timezone.utc):
+            parser.error("--started-at requires a timezone-aware past instant")
     if not arguments.state and (not arguments.repository or not arguments.pr or arguments.pr < 1):
         parser.error("Use --state or --repository OWNER/REPO --pr NUMBER")
     if arguments.command == "init" and (not arguments.state or not arguments.manifest):
@@ -82,6 +93,9 @@ def main(queue):
             state = json.loads((directory / "queue.json").read_text())
             if arguments.refresh:
                 state["observation"] = handoff.observe(state)
+                state["handoff"] = handoff.describe(state, directory, state["observation"]["result"],
+                                                    state["observation"]["detail"])
+                state["handoff"].update(read_only=True, observed_at=state["observation"]["observed_at"])
             if arguments.release:
                 queue.refresh_release(state)
         else:
