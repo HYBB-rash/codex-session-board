@@ -41,6 +41,11 @@ try {
     }
     assert.fail("界面状态未就绪："+expression);
   };
+  const refresh = async () => {
+    const expected = JSON.stringify(fixture);
+    await evaluate("load()");
+    await wait(`snapshotError === null && JSON.stringify(data) === ${JSON.stringify(expected)}`);
+  };
   await wait('typeof data !== "undefined" && data.sessions.length === 4');
   await evaluate('window.scrollbarStyle=document.createElement("style");document.head.append(scrollbarStyle)');
   for (const scrollbarSize of [0,16,32]) {
@@ -75,7 +80,8 @@ try {
   check(await evaluate('document.activeElement.dataset.action'),"adjust");
   check(await evaluate('originalJump===byId("jump").children[2]'),true);
   check(await evaluate(`${card("long")}.querySelector(".note-details").open`),true);
-  await evaluate('data.sessions.find(row=>row.id==="long").title="更新后的会话";render()');
+  fixture.sessions.find(row=>row.id === "long").title = "更新后的会话";
+  await refresh();
   check(await evaluate(`originalCard===${card("long")}`),false);
   check(await evaluate('document.activeElement.dataset.action'),"adjust");
   check(await evaluate('document.activeElement.closest(".card").dataset.id'),"long");
@@ -94,30 +100,37 @@ try {
   await evaluate(`${card("long")}.querySelector('[data-action="open"]').click()`);
   await wait('!opening');
   check(writes.map(write=>[write.path,write.body.id]),[["/api/open","long"]]);
-  await evaluate(`${card("long")}.querySelector('[data-action="adjust"]').focus();
-    data.sessions=data.sessions.filter(row=>row.id!=="long");render()`);
+  await evaluate(`${card("long")}.querySelector('[data-action="adjust"]').focus()`);
+  fixture.sessions = fixture.sessions.filter(row=>row.id !== "long");
+  await refresh();
   check(await evaluate('document.activeElement.classList.contains("column-sort")'),true);
   check(await evaluate('document.activeElement.closest(".column").dataset.state'),"review");
-  await evaluate('data.sessions.find(row=>row.id==="short").readOnly=true;render()');
+  fixture.sessions.find(row=>row.id === "short").readOnly = true;
+  await refresh();
   check(await evaluate(`${card("short")}.querySelector('[data-action="adjust"]').disabled`),true);
   for (const theme of ["dark","light"]) {
     await page.command("Emulation.setEmulatedMedia",{features:[{name:"prefers-color-scheme",value:theme}]});
     check(await evaluate('getComputedStyle(document.body).backgroundColor'),theme === "dark" ? "rgb(28, 29, 32)" : "rgb(255, 255, 255)");
   }
-  await evaluate('data.sessions.forEach(row=>row.readOnly=false);render();window.projectBaseline=structuredClone(data.projectCatalog);window.healthBaseline=structuredClone(data.health)');
+  fixture.sessions.forEach(row=>{row.readOnly=false;});
+  await refresh();
+  const projectBaseline = structuredClone(fixture.projectCatalog), healthBaseline = structuredClone(fixture.health);
   check(await evaluate('hostHealth({value:"local",hostLabel:"本机"}).ready'),true);
   for (const patch of [{loaded:false},{pending:true},{cached:true},{incomplete:true},{error:"项目读取失败"}]) {
-    await evaluate(`data.projectCatalog={...projectBaseline,...${JSON.stringify(patch)}};render()`);
+    fixture.projectCatalog = {...projectBaseline,...patch};
+    await refresh();
     check(await evaluate('Boolean(hostHealth({value:"local",hostLabel:"本机"}).ready)'),false);
     check(await evaluate('byId("health-summary").textContent.includes("连接正常")'),false);
   }
   for (const patch of [{runtimeVerified:false},{nativeVerified:false},{scanComplete:false},{lastSuccessAt:null}]) {
-    await evaluate(`data.projectCatalog=structuredClone(projectBaseline);data.health={...healthBaseline,...${JSON.stringify(patch)}};render()`);
+    fixture.projectCatalog = structuredClone(projectBaseline);fixture.health = {...healthBaseline,...patch};
+    await refresh();
     check(await evaluate('Boolean(hostHealth({value:"local",hostLabel:"本机"}).ready)'),false);
     check(await evaluate('byId("health-summary").textContent.includes("连接正常")'),false);
   }
+  fixture.health = structuredClone(healthBaseline);
+  await refresh();
   refreshPerformance = await evaluate(`(() => {
-    data.health=structuredClone(healthBaseline);
     data.sessions=Array.from({length:1500},(_,index)=>({...data.sessions[0],id:"performance-"+index,note:"",state:"review"}));
     const initial=performance.now();render();const fullRenderMs=performance.now()-initial;
     const original=[...document.querySelectorAll(".card")],unchangedRenderMs=[];
