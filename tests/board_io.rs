@@ -590,6 +590,7 @@ fn native_resource_and_tools_expose_global_app_only_actions() {
     let resource = mcp::resource();
     let html = resource["text"].as_str().unwrap();
     assert_eq!(resource["mimeType"], mcp::MIME);
+    assert!(html.contains("id=\"move-dragon\" src=\"data:image/webp;base64,"));
     assert!(html.contains("window.boardRequest"));
     assert!(html.contains("\"/api/new\":\"board_new\""));
     assert!(html.contains("id=\"new-session\""));
@@ -819,6 +820,7 @@ fn real_http_pwa_manifest_and_assets_are_local_and_uncached() {
     let origin = running["url"].as_str().unwrap();
     let client = client();
     let html = client.get(origin).send().unwrap().text().unwrap();
+    assert!(html.contains("id=\"move-dragon\" src=\"data:image/webp;base64,"));
     assert!(html.contains("<link rel=\"manifest\" href=\"/manifest.webmanifest\">"));
     assert!(html.contains("<script src=\"/assets/pwa.js\" defer></script>"));
     assert!(!html.contains("__CSRF_TOKEN__"));
