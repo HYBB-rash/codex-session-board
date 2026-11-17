@@ -112,8 +112,23 @@ pub fn scan_runtime(
 enum Seen {
     Same,
     Unread,
+    Unconfirmed(String),
     Phase(String),
     Saved(String, String),
+}
+
+#[derive(Default)]
+pub(crate) struct EvidenceGaps(HashMap<String, (std::time::Instant, usize)>);
+
+impl EvidenceGaps {
+    fn record(&mut self, unconfirmed: HashSet<String>, observed_at: std::time::Instant) -> usize {
+        self.0.retain(|identifier, _| unconfirmed.contains(identifier));
+        unconfirmed.into_iter().filter(|identifier| {
+            let (started, count) = self.0.entry(identifier.clone()).or_insert((observed_at, 0));
+            *count = count.saturating_add(1);
+            *count >= 2 && observed_at.duration_since(*started) >= Duration::from_secs(30)
+        }).count()
+    }
 }
 
 pub(crate) fn frame_too_large(error: &anyhow::Error) -> bool {
@@ -131,6 +146,7 @@ fn frame_blocked(note: Option<&str>, updated_at: i64) -> bool {
 }
 
 fn runtime_pause(app: &App, error: &anyhow::Error) -> Result<bool> {
+    app.evidence_gaps.lock().map_err(|_| anyhow::anyhow!("执行信号锁已损坏"))?.0.clear();
     if frame_too_large(error) {
         return Ok(false);
     }
@@ -150,9 +166,11 @@ pub(crate) fn observe_runtime_threads(
 ) -> Result<()> {
     let mut unreadable = 0;
     let mut native_errors = Vec::new();
+    let mut unconfirmed = HashSet::new();
     for thread in threads {
         match observe_one(app, reader, revisions, since, thread)? {
             Seen::Unread => unreadable += 1,
+            Seen::Unconfirmed(identifier) => { unconfirmed.insert(identifier); }
             Seen::Phase(error) => {
                 if !native_errors.contains(&error) {
                     native_errors.push(error);
@@ -164,9 +182,15 @@ pub(crate) fn observe_runtime_threads(
             Seen::Same => {}
         }
     }
+    let delayed = app.evidence_gaps.lock().map_err(|_| anyhow::anyhow!("执行信号锁已损坏"))?
+        .record(unconfirmed, std::time::Instant::now());
+    let warnings = [
+        (unreadable > 0).then(|| format!("{unreadable} 个会话的执行状态暂不可读")),
+        (delayed > 0).then(|| format!("{delayed} 个会话持续无法确认执行状态，已保留原位置")),
+    ].into_iter().flatten().collect::<Vec<_>>();
     app.update_health(json!({"runtimeVerified":true,"runtimeLastAt":now(),
         "nativeStageError":if native_errors.is_empty() {Value::Null}else{json!(native_errors.join("; "))},
-        "runtimeError":if unreadable > 0 { json!(format!("{unreadable} 个会话的执行状态暂不可读")) } else {Value::Null}}))
+        "runtimeError":if warnings.is_empty() {Value::Null} else {json!(warnings.join("。"))}}))
 }
 
 fn observe_one(
@@ -195,20 +219,19 @@ fn observe_one(
         && !app.needs_native_backfill(identifier)? {
         return Ok(Seen::Same);
     }
-    let turn = if app.config.four_columns {
-        rpc::latest_verified_turn(reader, identifier).map(|turn| {
-            if turn["confirmedEmpty"] == true
-                && !matches!(status["type"].as_str(), Some("idle" | "notLoaded"))
-            {
-                return json!({});
-            }
-            turn
-        })
-    } else {
-        rpc::latest_turn(reader, identifier)
-    };
-    match turn {
-        Ok(turn) => apply_observed_turn(app, identifier, status, &turn, since, revision),
+    match read_runtime_turn(reader, identifier, status, app.config.four_columns) {
+        Ok(turn) => {
+            let unresolved = app.config.four_columns
+                && crate::model::verified_runtime_state(status, &turn).is_none()
+                && (status["type"] == "active" || thread["updatedAt"].as_f64().is_some_and(|time| time >= since)
+                    && turn["userItems"].as_array().is_some_and(|items| !items.is_empty()));
+            let seen = apply_observed_turn(app, identifier, status, &turn, since, revision)?;
+            Ok(if unresolved && matches!(seen, Seen::Same) {
+                Seen::Unconfirmed(identifier.to_owned())
+            } else {
+                seen
+            })
+        }
         Err(error) if error.downcast_ref::<RequestError>().is_some() => Ok(Seen::Unread),
         Err(error) if frame_too_large(&error) => {
             app.store
@@ -217,6 +240,20 @@ fn observe_one(
         }
         Err(error) => Err(error),
     }
+}
+
+fn read_runtime_turn(reader: &mut dyn Rpc, identifier: &str, status: &Value,
+    four_columns: bool) -> Result<Value> {
+    if !four_columns {
+        return rpc::latest_turn(reader, identifier);
+    }
+    let turn = rpc::latest_verified_turn(reader, identifier)?;
+    if turn["confirmedEmpty"] == true
+        && !matches!(status["type"].as_str(), Some("idle" | "notLoaded"))
+    {
+        return Ok(json!({}));
+    }
+    Ok(turn)
 }
 
 fn apply_observed_turn(

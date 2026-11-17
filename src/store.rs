@@ -741,11 +741,10 @@ impl Store {
             "titleSyncPending":job.is_some(), "titleSyncError":job.map(|job| &job["error"]),
             "turnStatus":turn["status"], "version":row["version"], "inputVersion":row["input_revision"]
         });
-        if self.four_columns && turn["confirmedEmpty"] == true
-            && row["observed_revision"] == row["updated_at"] && !selected
-            && row["automatic_state"].is_null() && row["runtime_key"].is_null()
-        {
-            value["confirmedEmpty"] = json!(true);
+        if self.four_columns {
+            value["confirmedEmpty"] = json!(turn["confirmedEmpty"] == true
+                && row["observed_revision"] == row["updated_at"] && !selected
+                && row["automatic_state"].is_null() && row["runtime_key"].is_null());
         }
         value
     }

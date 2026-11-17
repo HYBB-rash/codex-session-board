@@ -95,7 +95,7 @@ fn empty_requires_complete_response_and_an_inactive_verified_backend() -> Result
     let legacy_directory = tempfile::tempdir()?;
     let legacy = self::app(&legacy_directory, false)?;
     observe(&legacy, 1, "idle", json!({"data":[],"nextCursor":null}))?;
-    assert_eq!(legacy.store.sessions()?[0]["confirmedEmpty"], false);
+    assert!(legacy.store.sessions()?[0].get("confirmedEmpty").is_none());
     Ok(())
 }
 
@@ -124,4 +124,15 @@ fn standalone_history_discovery_does_not_replace_verified_turns_in_four_column_m
     let discovered = sessions.iter().find(|row| row["id"] == "session-newly-discovered").unwrap();
     assert_eq!(discovered["confirmedEmpty"], false);
     Ok(())
+}
+#[test]
+fn warnings_require_two_complete_observations_and_thirty_seconds() {
+    let start = std::time::Instant::now();
+    let mut gaps = super::EvidenceGaps::default();
+    let unresolved = || std::collections::HashSet::from(["session".to_owned()]);
+    assert_eq!(gaps.record(unresolved(), start), 0);
+    assert_eq!(gaps.record(unresolved(), start + std::time::Duration::from_secs(29)), 0);
+    assert_eq!(gaps.record(unresolved(), start + std::time::Duration::from_secs(30)), 1);
+    assert_eq!(gaps.record(Default::default(), start + std::time::Duration::from_secs(31)), 0);
+    assert_eq!(gaps.record(unresolved(), start + std::time::Duration::from_secs(60)), 0);
 }
