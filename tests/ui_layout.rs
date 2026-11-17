@@ -80,6 +80,7 @@ fn light_ui_refresh_health_and_catalog_preserve_interaction() {
     );
     let report: serde_json::Value = serde_json::from_slice(&interaction.stdout).unwrap();
     assert_eq!(report["cases"], 80);
+    assert_eq!(report["fourColumnCases"], 20);
     assert_eq!(report["cleanup"]["groupEmpty"], true);
     assert_eq!(report["cleanup"]["profileRemoved"], true);
 }

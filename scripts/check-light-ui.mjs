@@ -16,19 +16,30 @@ const fixture = {
   })),
 };
 const writes = [], requests = [];
+let failedPlacement = false;
 const server = http.createServer(async (request,response) => {
   requests.push({method:request.method,path:request.url});
   let body = "";
   for await (const chunk of request) body += chunk;
   if (request.method === "POST") {
-    writes.push({path:request.url,body:JSON.parse(body)});
+    const input = JSON.parse(body);
+    writes.push({path:request.url,body:input});
+    if (request.url === "/api/state" && input.id === "unplaced") {
+      if (failedPlacement) return response.writeHead(409,{"Content-Type":"application/json"})
+        .end('{"error":"原生分区写入未确认"}');
+      Object.assign(fixture.sessions.find(row => row.id === input.id),{
+        state:input.state,note:input.note,version:input.version+1,sectionVersion:"verified-review",placementReason:null
+      });
+      return response.writeHead(200,{"Content-Type":"application/json"})
+        .end('{"ok":true,"sectionVersion":"verified-review"}');
+    }
     return response.writeHead(200,{"Content-Type":"application/json"}).end('{"ok":true}');
   }
   response.writeHead(200,{"Content-Type":request.url === "/" ? "text/html; charset=utf-8" : "application/json"});
   response.end(request.url === "/" ? html : JSON.stringify(fixture));
 });
 await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
-let browser, cases = 0, cleanup, refreshPerformance;
+let browser, cases = 0, baselineCases, cleanup, refreshPerformance;
 const check = (actual,expected,message) => {assert.deepEqual(actual,expected,message);cases++;};
 try {
   browser = await launchBrowser();
@@ -141,8 +152,58 @@ try {
   })()`);
   check(refreshPerformance.retained,1500);
   check(requests.filter(request=>request.method === "POST").length,1);
+  baselineCases = cases;
+  fixture.fourColumns = true;
+  delete fixture.states.unknown;
+  fixture.sessions.push({
+    ...fixture.sessions[0],id:"unplaced",title:"未归列示例",state:null,note:"保留备注",
+    placementReason:"Codex 原生位置为默认区",sectionVersion:"unsectioned",version:7,inputVersion:9,
+    readOnly:false
+  },{
+    ...fixture.sessions[0],id:"offline",title:"离线示例",remote:true,hostId:"remote-air",
+    hostLabel:"离线主机",state:null,placementReason:"上次确认位于自定义分区",
+    canOpen:false,presence:"cachedUnknown",catalogCurrent:true
+  });
+  await refresh();
+  check(await evaluate('[...byId("board").children].map(column=>column.dataset.state)'),
+    ["in_progress","review","blocked","to_archive"]);
+  check(await evaluate('byId("jump").children.length'),4);
+  check(await evaluate('byId("unplaced").open'),false);
+  check(await evaluate('byId("unplaced-summary").textContent'),"未归列会话 1");
+  await evaluate(`byId("unplaced-summary").click();byId("filter-toggle").click();
+    byId("search").value="未归列示例";byId("search").dispatchEvent(new Event("input"));`);
+  check(await evaluate('byId("unplaced-cards").children.length'),1);
+  check(await evaluate(`${card("unplaced")}.querySelector(".placement-reason").textContent`),"Codex 原生位置为默认区");
+  await evaluate(`${card("unplaced")}.querySelector('[data-action="adjust"]').click()`);
+  check(await evaluate('byId("editor").open'),true);
+  check(await evaluate('[...byId("state").options].filter(option=>!option.disabled).map(option=>option.value)'),
+    ["in_progress","review","blocked","to_archive"]);
+  check(await evaluate('byId("state").value'),"");
+  await evaluate('byId("edit-form").requestSubmit()');
+  check(writes.length,1);
+  failedPlacement = true;
+  await evaluate('byId("state").value="review";byId("edit-form").requestSubmit()');
+  await wait('!saving && byId("notice").textContent.includes("原生分区写入未确认")');
+  check(await evaluate('byId("editor").open'),true);
+  check(await evaluate('byId("note").value'),"保留备注");
+  failedPlacement = false;
+  await evaluate('byId("edit-form").requestSubmit()');
+  await wait('!saving && !byId("editor").open && byId("unplaced").hidden');
+  check(await evaluate(`${card("unplaced")}.closest(".column").dataset.state`),"review");
+  check(writes.slice(1),Array.from({length:2},()=>({
+    path:"/api/state",body:{id:"unplaced",state:"review",note:"保留备注",version:7,inputVersion:9,sectionVersion:"unsectioned"}
+  })));
+  await evaluate(`byId("search").value="离线示例";byId("host-filter").value="all";
+    byId("host-filter").dispatchEvent(new Event("change"));`);
+  check(await evaluate('byId("unplaced-summary").textContent'),"未归列会话 1");
+  check(await evaluate(`${card("offline")}.classList.contains("offline")`),true);
+  check(await evaluate(`${card("offline")}.draggable`),false);
+  check(await evaluate(`${card("offline")}.querySelector('[data-action="adjust"]').disabled`),true);
+  check(await evaluate(`${card("offline")}.querySelector('[data-action="open"]').disabled`),true);
+  await evaluate(`${card("offline")}.click();openSession("offline")`);
+  check(writes.length,3);
 } finally {
   if (browser) cleanup = await browser.close();
   await new Promise(resolve => server.close(resolve));
 }
-console.log(JSON.stringify({cases,writes,refreshPerformance,cleanup}));
+console.log(JSON.stringify({cases:baselineCases,fourColumnCases:cases-baselineCases,writes,refreshPerformance,cleanup}));
