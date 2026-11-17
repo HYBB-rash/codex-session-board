@@ -74,7 +74,7 @@ input[type=search]{width:180px}
 .card.move-pending::after{content:"";position:absolute;inset:-1px;padding:2px;border-radius:inherit;pointer-events:none;background:conic-gradient(from var(--move-angle),transparent 65%,#e4c890,#bd8955,transparent);mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;opacity:0;animation:move-glow 2.4s linear .18s infinite}
 .move-label,.move-origin{margin-top:8px;font-size:12px;color:var(--move-ink);overflow-wrap:anywhere}
 .move-origin{margin:0;padding:12px;border:1px dashed var(--move-line);border-radius:10px;color:var(--muted)}
-.move-feedback{position:fixed;right:12px;bottom:12px;z-index:10;display:flex;align-items:center;gap:12px;width:min(420px,calc(100vw - 24px));padding:12px;border:1px solid light-dark(#d9c9e5,#726080);border-radius:12px;background:light-dark(#fdfaff,#2c2534);box-shadow:var(--shadow)}
+.move-feedback{position:fixed;right:12px;bottom:12px;z-index:10;display:flex;align-items:center;gap:12px;width:min(420px,calc(100% - 24px));padding:12px;border:1px solid light-dark(#d9c9e5,#726080);border-radius:12px;background:light-dark(#fdfaff,#2c2534);box-shadow:var(--shadow)}
 .move-copy{flex:1;min-width:0}.move-copy strong{font-size:14px;font-weight:650}.move-copy p{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;margin:6px 0 0;color:var(--muted);font-size:12px;white-space:pre-line;overflow-wrap:anywhere}
 .move-feedback .quiet{align-self:flex-start;padding:2px 5px;font-size:11px}
 #edit-form .move-feedback{position:static;width:100%;margin-top:14px;box-shadow:none}
@@ -1129,7 +1129,8 @@ async function persist(session, state, note) {
   const result = await post("/api/state",{id:session.id,state,note,version:session.version,inputVersion:session.inputVersion,sectionVersion:session.sectionVersion});
   data.sessions = data.sessions.map(row => row.id === session.id ? {
     ...row,state:state || row.suggestion,note,manual:state !== null,
-    version:session.version+1,followUp:false,titleSyncPending:result.titlePending,titleSyncError:result.titleError
+    version:session.version+1,sectionVersion:Object.hasOwn(result,"sectionVersion") ? result.sectionVersion : row.sectionVersion,
+    followUp:false,titleSyncPending:result.titlePending,titleSyncError:result.titleError
   } : row);
   return result;
 }

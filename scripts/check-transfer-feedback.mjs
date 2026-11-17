@@ -58,7 +58,7 @@ const complete = async (status = 200, apply = status === 200, titlePending = fal
   if (apply) Object.assign(snapshot.sessions.find(row => row.id === body.id),
     { state: body.state, note: body.note, version: body.version + 1, sectionVersion: "native:" + body.state, titleSyncPending: titlePending });
   response.writeHead(status, { "Content-Type": "application/json" });
-  response.end(JSON.stringify(status === 200 ? { ok: true, titleEnabled: true, titlePending } : { error: "版本冲突或连接未确认" }));
+  response.end(JSON.stringify(status === 200 ? { ok: true, titleEnabled: true, titlePending, sectionVersion: "native:" + body.state } : { error: "版本冲突或连接未确认" }));
 };
 const server = http.createServer(async (request, response) => {
   if (request.url === "/") { response.setHeader("Content-Type", "text/html; charset=utf-8");response.end(html);return; }
@@ -223,10 +223,11 @@ try {
   await check("等待态播放眨眼摆尾帧", 'getComputedStyle(byId("move-dragon")).animationName === "dragon-wait" && getComputedStyle(byId("move-dragon")).top === "0px"');
   await screenshot("long-wait");
   await animationFrames("waiting-animation", [0, 1560, 1800, 2040, 2280, 2399]);
-  for (const width of [320, 736, 1680]) {
-    await page.command("Emulation.setDeviceMetricsOverride", { width, height: 1000, deviceScaleFactor: 1, mobile: false });
-    await check(`等待提示在${width}像素内`, 'document.documentElement.scrollWidth <= innerWidth && byId("move-feedback").getBoundingClientRect().left >= 0 && byId("move-feedback").getBoundingClientRect().right <= innerWidth');
-    if (width === 320) await screenshot("narrow-wait");
+  for (const [width, height] of [[320, 568], [320, 1000], [736, 1000], [1680, 1000]]) {
+    await page.command("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
+    await evaluate(`document.body.style.minHeight=${JSON.stringify(height === 568 ? "calc(100vh + 32px)" : "")}`);
+    await check(`等待提示在${width}乘${height}像素内`, 'document.documentElement.scrollWidth <= innerWidth && byId("move-feedback").getBoundingClientRect().left >= 0 && byId("move-feedback").getBoundingClientRect().right <= innerWidth && byId("move-feedback").getBoundingClientRect().top >= 0 && byId("move-feedback").getBoundingClientRect().bottom <= innerHeight');
+    if (width === 320) await screenshot(height === 568 ? "narrow-portrait-wait" : "narrow-wait");
   }
   await page.command("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
   await check("减少动画保留静态龙娘和说明", 'getComputedStyle(byId("move-dragon")).animationName === "none" && !byId("move-dragon").hidden && getComputedStyle(document.querySelector(".move-pending"),"::after").animationName === "none" && document.querySelector(".move-label").textContent.includes("等待")');
@@ -239,11 +240,16 @@ try {
   await until('moving?.slow === true');
   await check("慢响应不假装完成", 'performance.now() - moving.started === 8000 && saving && byId("move-heading").textContent.includes("还在等确认") && !byId("feedback").textContent.includes("已保存")');
   await check("超过可见两秒仍未确认时继续展示", 'performance.now() - moving.shownAt === 6500 && !byId("move-feedback").hidden && byId("move-feedback").classList.contains("waiting")');
+  const staleSnapshot = heldSnapshot;
+  heldSnapshot = undefined;holdSnapshot = true;
   await complete(200, true, true);
   await settled();
-  await check("回执才触发完成且标题待同步独立", 'data.sessions[0].state === "review" && !document.querySelector(".move-pending") && byId("move-feedback").classList.contains("saved") && document.querySelector(".follow").textContent.includes("标题") && byId("feedback").textContent.includes("标题同步待重试")');
-  heldSnapshot.response.setHeader("Content-Type", "application/json");heldSnapshot.response.end(heldSnapshot.text);
+  staleSnapshot.response.setHeader("Content-Type", "application/json");staleSnapshot.response.end(staleSnapshot.text);
   await evaluate('window.staleRead');
+  for (let attempt = 0; attempt < 100 && !heldSnapshot; attempt++) await delay(20);
+  assert(heldSnapshot);
+  await check("刷新尚未返回也立即使用回执的原生位置", 'data.sessions[0].sectionVersion === "native:review" && !saving');
+  await check("回执才触发完成且标题待同步独立", 'data.sessions[0].state === "review" && !document.querySelector(".move-pending") && byId("move-feedback").classList.contains("saved") && document.querySelector(".follow").textContent.includes("标题") && byId("feedback").textContent.includes("标题同步待重试")');
   await check("晚到的旧快照不能回滚成功结果", 'selectedHost === "all" && data.sessions[0].state === "review" && !saving && !moving && !document.querySelector(".move-origin")');
   await screenshot("saved");
   await check("成功态切到庆祝帧", 'getComputedStyle(byId("move-dragon")).animationName === "dragon-success" && getComputedStyle(byId("move-dragon")).top === "-144px"');
@@ -253,6 +259,9 @@ try {
   await page.command("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
   await evaluate('for(let index=0;index<20;index++)data.sessions.push({...data.sessions[1],id:"scroll-"+index});render();byId("column-unknown").querySelector(".cards").scrollTop=180;window.previousScroll=byId("column-unknown").querySelector(".cards").scrollTop');
   await move("to_archive");
+  for (let attempt = 0; attempt < 100 && writes.length < 2; attempt++) await delay(20);
+  assert.equal(writes[1].sectionVersion, "native:review");
+  heldSnapshot.response.setHeader("Content-Type", "application/json");heldSnapshot.response.end(heldSnapshot.text);
   await check("临时落位保留其他列的滚动", 'window.previousScroll > 0 && byId("column-unknown").querySelector(".cards").scrollTop === window.previousScroll');
   await advance(1050);
   await check("上一轮收尾不会打断新等待", 'saving && byId("move-feedback").hidden && moving.state === "to_archive"');

@@ -185,7 +185,7 @@ impl App {
         note: &str,
         revision: (i64, i64),
         expected: &str,
-    ) -> Result<()> {
+    ) -> Result<String> {
         let operation = self.thread_lock(identifier)?;
         let _guard = operation
             .lock()
@@ -199,7 +199,8 @@ impl App {
         let confirmed = self.move_native(identifier, expected, state)?;
         self.store
             .set_native_state(identifier, state, note, revision, &confirmed)
-            .context("原生操作后本地确认未完成，请刷新核对")
+            .context("原生操作后本地确认未完成，请刷新核对")?;
+        Ok(confirmed.version)
     }
 
     pub(crate) fn observe_native_runtime(

@@ -2,7 +2,7 @@
 
 owner: codex
 execution_mode: isolated_write
-allowed_write_set: scripts/dev_environment/runtime.py, scripts/dev_environment/configuration.py, acceptance/test_dev_environment.py, acceptance/bindings.json, scripts/check-transfer-feedback.mjs, scripts/check-dragon-fixture.mjs, scripts/check-dev-isolation.mjs, scripts/check-blocked-optional.mjs, tests/ui_layout.rs, Docs/MAC-DEVELOPMENT.md, Docs/DRAGON-FEEDBACK.md, context/tasks/active/dragon-fixture-pr-20261117.md, context/handoffs/dragon-fixture-pr-20261117.md, context/results/dragon-fixture-pr-20261117.md
+allowed_write_set: index.html, src/app.rs, src/app/native.rs, scripts/dev_environment/runtime.py, scripts/dev_environment/configuration.py, acceptance/test_dev_environment.py, acceptance/bindings.json, scripts/check-transfer-feedback.mjs, scripts/check-dragon-fixture.mjs, scripts/check-dev-isolation.mjs, scripts/check-blocked-optional.mjs, tests/ui_layout.rs, tests/native_authority/transport.rs, Docs/MAC-DEVELOPMENT.md, Docs/DRAGON-FEEDBACK.md, context/tasks/active/dragon-fixture-pr-20261117.md, context/handoffs/dragon-fixture-pr-20261117.md, context/results/dragon-fixture-pr-20261117.md
 base_commit: b66656a
 worktree_path: /home/herman/.codex/worktrees/dragon-fixture-author/notion-program
 coordinator: 当前会话
@@ -45,6 +45,27 @@ readOnly=true，nativeVerified=true；588.38ms 后三张卡片均有字符串位
 14 项 DevEnvironmentTests 定向回归及上下文校验通过。
 原生健康、只有位置、只有可写标记、远端记录和空列表均不能冒充本机可操作就绪；
 MCP 失效路径能清理，活监听者、非 socket 和符号链接保持受保护。
+
+首次真实演练的阻塞操作 10 项通过，龙娘等待态及超过两秒继续等待也通过。
+320×568 实际页面因纵向滚动条出现，固定面板的 100vw 宽度令左边界越出 3px，
+该次失败保留在 fixture-repair/actual-first，未计为通过。
+修正面板宽度为固定包含块的可用百分比，补充带纵向滚动条的竖屏回归。
+浏览器场景增加带滚动条竖屏和回执位置版本检查，同步 Rust 包装器准确数量。
+
+连续真实拖动又复现保存回执竞态，失败保留在 fixture-repair/actual-trace。
+第二次保存 HTTP 200 后，第三次拖动带着旧 sectionVersion 发出，
+真实后端拒绝为 HTTP 400「原生分区已更新」。没有用测试等待绕过失败。
+保存回执现返回锁内已确认的原生 sectionVersion，前端在恢复操作前应用它，
+不等列表刷新或动画结束，不推导分区 ID，不放松过期版本保护。
+原生保存回归直接沿用回执继续保存；浏览器挂起后续快照检查下一次请求位置。
+实际 fixture 的 8 项拖动验证和 1 项停止重启持久性检查已通过：
+出现延迟 1500.10ms，成功可见 2000.20ms，独立浏览器及进程组均已清理。
+证据在 fixture-repair/actual-receipt；最终提交后再补精确源码身份演练。
+64 项受控浏览器检查、39 项 native_authority 回归均通过。
+只读子代理复核确认本次保存事务恰好增加一个状态版本且不改变输入版本，
+回执增加确认位置已足以修复本次竞态；真实外部变更仍由原有版本保护拒绝。
+MCP 清理与就绪条件也经另一个只读子代理静态复核，无阻断意见。
+这些定向复核不代替 PR 最终头的独立业务审阅。
 
 ## 验证计划
 

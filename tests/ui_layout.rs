@@ -119,5 +119,5 @@ fn transfer_feedback_waits_for_receipts_and_preserves_interaction() {
         diagnosis
     );
     let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(report["cases"], 62);
+    assert_eq!(report["cases"], 64);
 }

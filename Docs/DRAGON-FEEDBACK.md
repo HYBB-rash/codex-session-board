@@ -48,3 +48,25 @@ Bottom row: four frames of SUCCESS celebration animation, same girl smiling, eye
 HTTP 与 MCP 测试检查实际产出的页面包含内嵌素材。
 
 隔离证据不代替目标 Codex 原生容器验收，不表示已安装、重载或部署。
+
+真实 Rust fixture 演练使用 `scripts/check-dragon-fixture.mjs`，先启动本工作树的
+`scripts/dev`，再传入新的源码外报告目录。它核对服务身份和具体可写卡片，
+通过真实指针拖动、请求放行与服务端读回验证保存，用真实时钟测量成功态，
+输出窄屏、动画帧和清理证据。停止后重新启动同一 fixture，再传入同一目录和
+`--verify-only`，核对保存状态与备注仍然存在。示例：
+
+```sh
+./scripts/dev setup
+./scripts/dev start
+node scripts/check-dragon-fixture.mjs /absolute/new-fixture-report
+./scripts/dev stop
+./scripts/dev start
+node scripts/check-dragon-fixture.mjs /absolute/new-fixture-report --verify-only
+./scripts/dev stop
+```
+
+320×568 竖屏回归包含纵向滚动条，提示面板按固定包含块的可用宽度收缩，
+避免 `100vw` 包含滚动条宽度时越过左边界。
+
+保存成功回执直接携带已确认的 `sectionVersion`。前端在恢复拖动前应用它，
+因此连续拖动不依赖后续列表刷新，也不会用上一位置向原生服务再次写入。
