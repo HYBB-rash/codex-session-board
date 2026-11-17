@@ -196,6 +196,7 @@ def end(state, directory, record, handoff):
     record["seconds"] = (datetime.fromisoformat(record["finished_at"])
                          - datetime.fromisoformat(record["started_at"])).total_seconds()
     state["handoff"] = handoff
+    state["merge_status"] = handoff["result"]
     record["reused"] = state.pop("resume_reused", [])
     record["rechecked"] = state.pop("resume_rechecked", [])
     if record.get("request_started_at"):

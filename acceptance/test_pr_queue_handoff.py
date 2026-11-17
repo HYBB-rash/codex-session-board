@@ -89,6 +89,7 @@ class PRQueueHandoffTests(unittest.TestCase):
                     mock.patch.object(queue, "closeout", create=True) as cleanup:
                 third = self.run_round()
             self.assertEqual(third["handoff"]["result"], "merged")
+            self.assertEqual(third["merge_status"], "merged")
             self.assertEqual(advance.call_count, 2)
             publish.assert_not_called()
             cleanup.assert_not_called()
@@ -107,6 +108,7 @@ class PRQueueHandoffTests(unittest.TestCase):
             second = self.run_round()
         self.assertEqual(first["handoff"]["result"], "needs-author")
         self.assertEqual(second["handoff"]["next_actor"], "author")
+        self.assertEqual(second["merge_status"], "needs-author")
         self.assertEqual(len(second["rounds"]), 2)
         self.assertIn("feedback", second["handoff"]["observation"]["items"][0]["snapshot"]["items"][0]["url"])
         notify.assert_not_called()
