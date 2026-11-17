@@ -3,20 +3,23 @@ use crate::native_sections::Observation;
 
 impl App {
     pub(crate) fn native_runtime_since(&self, identifier: &str, since: f64) -> Result<f64> {
-        if self.config.native_sections && self.config.host_id != "local" {
+        if self.imports_native_placement() {
             self.store.native_backfill_since(identifier,since)
         } else { Ok(since) }
     }
 
     pub(crate) fn baseline_native_backfill(&self, identifier: &str, status: &Value,
         turn: &Value, since: f64) -> Result<bool> {
-        Ok(self.config.native_sections && self.config.host_id != "local"
+        Ok(self.imports_native_placement()
             && self.store.baseline_native_backfill(identifier,status,turn,since)?)
     }
 
     pub(crate) fn needs_native_backfill(&self, identifier: &str) -> Result<bool> {
-        Ok(self.config.native_sections && self.config.host_id != "local"
-            && self.store.native_backfill_pending(identifier)?)
+        Ok(self.imports_native_placement() && self.store.native_backfill_pending(identifier)?)
+    }
+
+    fn imports_native_placement(&self) -> bool {
+        !self.config.four_columns && self.config.native_sections && self.config.host_id != "local"
     }
 
     pub(super) fn native_backfill_scope(&self) -> Result<Value> {

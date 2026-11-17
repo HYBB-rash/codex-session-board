@@ -24,6 +24,7 @@ pub(super) fn project(sessions: &mut Vec<Value>) {
         row["state"] = Value::Null;
         row["placementReason"] = json!(match row["sectionVersion"].as_str() {
             Some("unsectioned" | "chats" | "threads") => "原生侧栏默认区",
+            Some("pinned") => "原生侧栏置顶",
             Some(_) => "原生侧栏分区未映射",
             None => "尚未确认原生位置或工作状态",
         });
@@ -59,6 +60,7 @@ mod tests {
         app.store.set_state("manual", Some("unknown"), "旧备注", 0, Some(0))?;
         app.store.observe("empty", &json!({"confirmedEmpty":true}), None)?;
         let report = app.snapshot()?;
+        assert_eq!(report["fourColumns"], true);
         assert_eq!(report["states"], json!({
             "in_progress":"进行中","review":"待审阅","blocked":"已阻塞","to_archive":"待归档"
         }));
@@ -76,6 +78,24 @@ mod tests {
             "id":"manual","state":"review","version":1,"inputVersion":0
         })))?;
         assert_eq!(app.store.note("manual")?, "旧备注");
+        Ok(())
+    }
+
+    #[test]
+    fn four_column_remote_keeps_default_placement_without_replaying_old_backfill() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let app = App::new(Config {
+            data_dir: directory.path().into(),
+            four_columns: true,
+            native_sections: true,
+            host_id: "remote:fixture".into(),
+            ..Config::default()
+        })?;
+        app.store.discover(&[json!({"id":"old","updatedAt":1})])?;
+        app.store.observe("old", &json!({"status":"completed","hasFinal":true}), None)?;
+        assert!(!app.needs_native_backfill("old")?);
+        assert_eq!(app.native_runtime_since("old", 42.0)?, 42.0);
+        assert_eq!(app.store.sessions()?[0]["state"], "unknown");
         Ok(())
     }
 

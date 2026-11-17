@@ -23,6 +23,8 @@ CHECKS = [
     "mcp_resource", "mcp_snapshot", "cleanup",
 ]
 IDENTITY_FIELDS = ("app", "version", "build", "dataDir", "configId", "pid", "authority")
+WORK_STATES = {"in_progress", "review", "blocked", "to_archive"}
+UNPLACED_THREAD = "11111111-1111-4111-8111-000000000001"
 
 
 def remaining_time(deadline):
@@ -47,7 +49,17 @@ def confirm_mcp_exit(root, runtime, deadline):
         raise ValueError("Packaged MCP exited unsuccessfully or belongs to another backend")
 
 
-def mcp(root, version, runtime):
+def four_column_snapshot(snapshot):
+    if snapshot.get("fourColumns") is not True or set(snapshot["states"]) != WORK_STATES:
+        raise ValueError("Packaged board did not publish exactly four work columns")
+    if set(snapshot["columnSorts"]) != WORK_STATES:
+        raise ValueError("Packaged board exposed a retired sorting destination")
+    row = next((row for row in snapshot["sessions"] if row["id"] == UNPLACED_THREAD), None)
+    if row is None or row["state"] is not None or not row["sectionVersion"]:
+        raise ValueError("Packaged board lost the old section's unplaced session")
+
+
+def mcp(root, version, runtime, four_columns=False):
     deadline = time.monotonic() + 30
     requests = [
         {"id": 1, "method": "initialize", "params": {
@@ -90,11 +102,22 @@ def mcp(root, version, runtime):
         raise ValueError("Packaged MCP cannot read the isolated fixture")
     if {field: snapshot["structuredContent"]["runtime"][field] for field in IDENTITY_FIELDS} != runtime:
         raise ValueError("Packaged MCP did not reuse the verified HTTP service and configuration")
+    if four_columns:
+        four_column_snapshot(snapshot["structuredContent"])
     remaining_time(deadline)
     return initialized["serverInfo"]
 
 
-def verify(package, fixture, output):
+def read_http(port, path):
+    with closing(HTTPConnection("127.0.0.1", port, timeout=3)) as connection:
+        connection.request("GET", path)
+        with connection.getresponse() as response:
+            if response.status != 200:
+                raise ValueError(f"Packaged HTTP endpoint unavailable: {path}")
+            return json.load(response)
+
+
+def verify(package, fixture, output, four_columns=False):
     package, fixture, output = package.resolve(), fixture.resolve(strict=True), output.resolve()
     if output.exists() or output.is_relative_to(ROOT) or output.is_relative_to(package):
         raise ValueError("Startup report must use a new path outside the source and package")
@@ -117,6 +140,12 @@ def verify(package, fixture, output):
                 port = lease.getsockname()[1]
             subprocess.run([str(fixture), "prepare", str(root), str(port)], cwd=ROOT,
                            env=environment, check=True, timeout=10, capture_output=True)
+            if four_columns:
+                config_path = root / "config.json"
+                config = json.loads(config_path.read_text())
+                config["four_columns"] = True
+                del config["status_sections"]["unknown"]
+                config_path.write_text(json.dumps(config))
             children = []
             try:
                 children.append(Child(root, "fixture", [
@@ -126,13 +155,11 @@ def verify(package, fixture, output):
                     "program_sha256": manifest["binary_sha256"],
                 }
                 ready(children, record, threading.Event())
-                with closing(HTTPConnection("127.0.0.1", port, timeout=3)) as connection:
-                    connection.request("GET", "/api/info")
-                    with connection.getresponse() as response:
-                        if response.status != 200:
-                            raise ValueError("Packaged HTTP identity is unavailable")
-                        runtime = {field: value for field, value in json.load(response).items()
-                                   if field in IDENTITY_FIELDS}
+                runtime = {field: value for field, value in read_http(port, "/api/info").items()
+                           if field in IDENTITY_FIELDS}
+                if four_columns:
+                    four_column_snapshot(read_http(port, "/api/sessions"))
+                    report["four_columns"] = {"http": True}
                 authority = json.loads((root / "fixture-authority.json").read_text())
                 service = json.loads((root / "service-child.json").read_text())
                 if (runtime["authority"] != authority or authority["pid"] != children[0].pid
@@ -144,7 +171,9 @@ def verify(package, fixture, output):
                 config_sha = digest(root / "config.json")
                 report["runtime"] = runtime
                 report["config_sha256"] = config_sha
-                report["mcp"] = mcp(root, manifest["version"], runtime)
+                report["mcp"] = mcp(root, manifest["version"], runtime, four_columns)
+                if four_columns:
+                    report["four_columns"]["mcp"] = True
                 report["mcp_child"] = json.loads((root / "mcp-child.json").read_text())
                 if digest(root / "config.json") != config_sha:
                     raise ValueError("Isolated configuration changed during startup")
@@ -176,8 +205,11 @@ def main():
     parser.add_argument("--package", required=True, type=Path)
     parser.add_argument("--fixture", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--four-columns", action="store_true")
     arguments = parser.parse_args()
-    print(json.dumps(verify(arguments.package, arguments.fixture, arguments.output)))
+    print(json.dumps(verify(
+        arguments.package, arguments.fixture, arguments.output, arguments.four_columns
+    )))
 
 
 if __name__ == "__main__":

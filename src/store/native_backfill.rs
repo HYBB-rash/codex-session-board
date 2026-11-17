@@ -116,13 +116,6 @@ impl Store {
         ensure!(row["archived"] == 0
             && ["unsectioned","chats","threads"].contains(&section), "远程原生位置已改变");
         let state = candidate(&row, status);
-        if config.four_columns && state == "unknown" {
-            record.pending = None;
-            record.done = true;
-            save(&transaction, identifier, &record)?;
-            transaction.commit()?;
-            return Ok(None);
-        }
         let change = BackfillChange {
             target:config.section_target(&state)?.into(),state,
             version:row["version"].as_i64().context("状态版本无效")?,

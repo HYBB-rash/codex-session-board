@@ -230,7 +230,8 @@ impl App {
         }
         Ok(
             json!({"states":states,"sessions":sessions,"projectCatalog":catalog,"columnSorts":self.store.column_sorts()?,
-            "legacyMode":self.config.legacy_mode,"runtime":crate::service::info(&self.config)?,
+            "legacyMode":self.config.legacy_mode,"fourColumns":self.config.four_columns,
+            "runtime":crate::service::info(&self.config)?,
             "pendingDrafts":self.store.pending_drafts()?,
             "health":self.health.lock().map_err(|_| anyhow::anyhow!("健康状态锁已损坏"))?.clone()}),
         )
