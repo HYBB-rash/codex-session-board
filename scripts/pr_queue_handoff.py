@@ -138,7 +138,9 @@ def resume(state, directory, queue):
         report.update(next_actor="coordinator", next_action="recombine-and-validate")
         return report
     accepted = {item["number"] for item in state["items"] if item["status"] == "accepted"}
-    relevant = [item for item in state["observation"]["items"] if not accepted or item["number"] in accepted]
+    recombining = {item["number"] for item in state["items"] if item.get("recombine_required")}
+    relevant = [item for item in state["observation"]["items"]
+                if not accepted or item["number"] in accepted | recombining]
     blocker = next((item for item in relevant if item["result"] not in {"ready", "waiting-ci"}), None)
     if blocker:
         if blocker["result"] in {"merged", "closed-without-merge"}:
@@ -147,12 +149,14 @@ def resume(state, directory, queue):
     queue.verify_checker(state)
     state["resume_rechecked"] += ["frozen-checker", "source-bound-review-and-validation"]
     for item in state["items"]:
-        if accepted and item["number"] not in accepted or item["status"] in {"merged", "closed"}:
+        if accepted and item["number"] not in accepted | recombining or item["status"] in {"merged", "closed"}:
             continue
         try:
             queue.verify_entry(state, item)
         except Exception as error:
             return describe(state, directory, "needs-evidence", str(error))
+    if recombining:
+        return describe(state, directory, "ready", "Use the existing mechanical attempt to recombine changed PR heads")
     if not accepted:
         return describe(state, directory, "ready",
                         "Continue mechanical attempt; PR CI can run alongside candidate validation")

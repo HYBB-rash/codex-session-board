@@ -1882,6 +1882,7 @@
       "acceptance.test_pr_queue_handoff.PRQueueHandoffTests.test_feedback_handoff_does_not_wait_notify_again_or_launch_author",
       "acceptance.test_pr_queue_handoff.PRQueueHandoffTests.test_new_head_never_uses_old_review_or_candidate",
       "acceptance.test_pr_queue.PRQueueTests.test_unrejected_new_head_requires_fresh_evidence_without_invented_feedback",
+      "acceptance.test_pr_queue_handoff.PRQueueHandoffTests.test_changed_batch_head_requires_recombination_before_any_finish",
       "acceptance.test_pr_queue_handoff.PRQueueHandoffTests.test_main_drift_preserves_old_candidate_and_requires_recombination",
       "acceptance.test_pr_queue_handoff.PRQueueHandoffTests.test_missing_evidence_and_query_failure_cannot_become_a_pass",
       "acceptance.test_pr_queue_handoff.PRQueueHandoffTests.test_closed_pr_is_terminal_without_merge_or_cleanup",

@@ -284,6 +284,7 @@ def attempt(state, directory):
             raise
         state["prefix"] = git(project, "rev-parse", "HEAD")
         item.update(status="accepted", ingress=state["prefix"])
+        item.pop("recombine_required", None)
         state["events"].append({"at": now(), "number": item["number"], "head": item["head"],
                                 "prefix": prefix, "ingress": state["prefix"]})
         save(directory / "queue.json", state)
@@ -327,6 +328,8 @@ def requeue(state, incoming, directory):
         marker = f"<!-- pr-queue:resolved {feedback['id']} {source} {body_sha256} -->"
         comment_once(state["repository"], item["number"], marker,
                      "同一源码的独立审阅和交付证据已重新核验，解除该条交付反馈；原始失败评论保留。")
+    if source != item["head"] and (item["status"] == "accepted" or item.get("ingress")):
+        replacement["recombine_required"] = True
     item.update(replacement, status="submitted")
     item.pop("feedback", None)
     state.update(batch_merged=False, release_status="not_requested",
@@ -397,6 +400,8 @@ def validate_freeze(project, prefix, candidate, target=None):
 
 def finish(state, directory):
     verify_checker(state)
+    if any(item.get("recombine_required") for item in state["items"]):
+        raise ValueError("Changed PR source requires mechanical recombine before freezing or promotion")
     if state.get("batch_merged"):
         state["merge_status"] = "merged"
         return

@@ -250,7 +250,19 @@ class PRQueueTests(unittest.TestCase):
                 self.assertEqual(verify.call_args.args[1]["review"], "new-review")
                 self.assertEqual(item["status"], "submitted")
                 self.assertNotIn("feedback", item)
+                self.assertEqual(item.get("recombine_required", False), status == "accepted")
                 notify.assert_not_called()
+        item = self.item(1, self.base)
+        item["status"] = "accepted"
+        self.state["items"] = [item]
+        with mock.patch.object(pr_queue, "verify_entry"), mock.patch.object(
+                pr_queue, "commit", side_effect=lambda project, message: self.commit()):
+            pr_queue.requeue(self.state, incoming, self.queue)
+            self.assertTrue(item["recombine_required"])
+            pr_queue.attempt(self.state, self.queue)
+        self.assertEqual(item["status"], "accepted")
+        self.assertNotIn("recombine_required", item)
+        self.assertEqual(self.git("show", f"{self.state['prefix']}:revision.txt"), "updated")
         for status in ("merged", "closed", "accepted"):
             item = self.item(1, source if status == "accepted" else self.base)
             item["status"] = status

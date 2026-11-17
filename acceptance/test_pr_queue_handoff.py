@@ -114,6 +114,37 @@ class PRQueueHandoffTests(unittest.TestCase):
         notify.assert_not_called()
         finish.assert_not_called()
 
+    def test_changed_batch_head_requires_recombination_before_any_finish(self):
+        incoming = self.directory / "new-item.json"
+        source = "d" * 40
+        queue.save(incoming, {"number": 7, "head": source,
+                              "review": "new-review.json", "validation": "new-validation"})
+        self.arguments.item = incoming
+        observation = {"main": BASE, "result": "ready", "detail": "", "items": [
+            {"number": 7, "result": "ready"}, {"number": 8, "result": "ready"}]}
+        for recorded_run in (False, True):
+            with self.subTest(recorded_run=recorded_run):
+                state = copy.deepcopy(self.state)
+                state["items"].append({**state["items"][0], "number": 8})
+                if recorded_run:
+                    report = self.directory / "integration.json"
+                    queue.save(report, {"run": 42, "source": {"commit": CANDIDATE}})
+                    state["integration"] = {"report": str(report), "run": 42}
+                queue.save(self.directory / "queue.json", state)
+                with mock.patch.object(queue, "git", return_value=source), \
+                        mock.patch.object(queue.subprocess, "run"), \
+                        mock.patch.object(handoff, "observe", return_value=observation), \
+                        mock.patch.object(queue, "finish") as finish:
+                    resumed = self.run_round()
+                self.assertEqual(resumed["handoff"]["result"], "ready")
+                self.assertIn("recombine", resumed["handoff"]["detail"])
+                self.assertTrue(resumed["items"][0]["recombine_required"])
+                self.assertEqual(resumed["items"][1]["status"], "accepted")
+                self.assertEqual(resumed["frozen_candidate"]["candidate"], CANDIDATE)
+                finish.assert_not_called()
+                with self.assertRaisesRegex(ValueError, "recombine"):
+                    queue.finish(resumed, self.directory)
+
     def test_new_head_never_uses_old_review_or_candidate(self):
         self.pr["head"]["sha"] = "d" * 40
         with mock.patch.object(queue, "verify_entry") as review, mock.patch.object(queue, "finish") as finish:
