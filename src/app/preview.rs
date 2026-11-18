@@ -29,6 +29,8 @@ impl PreviewTurns {
             && let Some(turn_id) = turn["id"].as_str().filter(|id| valid_turn_id(id))
         {
             self.lock()?.insert(identifier.to_owned(), turn_id.to_owned());
+        } else {
+            self.remove(identifier)?;
         }
         Ok(())
     }

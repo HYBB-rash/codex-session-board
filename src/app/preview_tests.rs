@@ -151,3 +151,37 @@ fn snapshot_tracks_observed_turns_across_same_second_transitions() -> Result<()>
     }
     Ok(())
 }
+
+#[test]
+fn snapshot_rechecks_idle_turns_when_the_list_revision_is_unchanged() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let app = App::new(crate::config::Config {
+        data_dir: directory.path().into(),
+        ..crate::config::Config::default()
+    })?;
+    let mut revisions = HashMap::new();
+    let row = json!({"id":"thread","name":"测试会话","updatedAt":100,"status":{"type":"idle"}});
+    app.store.discover(std::slice::from_ref(&row))?;
+    let start = std::time::Instant::now();
+    let interval = Duration::from_secs(app.config.runtime_poll_seconds);
+    for (index, (turn, status, phase, expected)) in [
+        ("first", "completed", "final_answer", Some("first")),
+        ("second", "completed", "final_answer", Some("second")),
+        ("third", "completed", "commentary", None),
+        ("fourth", "interrupted", "final_answer", None),
+    ].into_iter().enumerate() {
+        let mut replies = VecDeque::new();
+        if index > 0 {
+            replies.push_back(("thread/turns/list", json!({"data":[{"id":turn,"status":status}]})));
+        }
+        replies.push_back(("thread/turns/list", page(turn, status, phase)));
+        let mut reader = Fixture(replies);
+        crate::observer::observe_runtime_threads_at(
+            &app, &mut reader, &mut revisions, 0.0, std::slice::from_ref(&row),
+            start + interval * (index as u32),
+        )?;
+        assert_eq!(app.snapshot()?["sessions"][0]["previewTurnId"].as_str(), expected);
+        assert!(reader.0.is_empty());
+    }
+    Ok(())
+}

@@ -204,7 +204,7 @@ fn verify_failed_stage_after_external_choice(
     app: &App,
     server: &Server,
     since: f64,
-    revisions: &mut std::collections::HashMap<String, String>,
+    revisions: &mut codex_session_board::observer::RuntimeRevisions,
 ) -> Result<()> {
     let moves = native_move_count(server);
     server
