@@ -47,9 +47,12 @@ impl App {
             .lock()
             .map_err(|_| anyhow::anyhow!("新建操作锁已损坏"))?;
         crate::native_new::registered_alias(&self.config, &request.host)?;
+        let existing = self.store.native_draft(operation)?.unwrap_or(Value::Null);
+        let selected = self.prepared_project(&request, &existing)?;
+        if let Some(preview) = crate::native_new::consent(&self.config, &selected, &body["consent"])? {
+            return Ok(preview);
+        }
         let record = self.store.native_draft_begin(request.key, operation)?;
-        let selected = self.prepared_project(&request, &record)?;
-        crate::native_new::remote_url(&self.config, &selected)?;
         let remote = self.target_draft_host(&request.host)?;
         let _active = remote.operation()?;
         let mut reader = remote.connection(

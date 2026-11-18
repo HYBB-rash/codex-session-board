@@ -232,6 +232,7 @@ fn native_app() -> Result<(tempfile::TempDir, App, Value)> {
     let path = directory.path();
     let registry = json!({"remote-projects":[{"id":"project & 中","hostId":"remote:a",
         "label":"项目","remotePath":"/not-a-local-path"}],
+        "remote-connection-auto-connect-by-host-id":{"remote:a":true},
         "codex-managed-remote-connections":[{"hostId":"remote:a",
             "displayName":"Mac","alias":"test-mac"}]});
     app.config.sidebar_state_file = path.join("projects.json");
@@ -281,6 +282,28 @@ fn native_remote_new_only_navigates_to_the_registered_ssh_alias_and_directory() 
     assert_eq!(native_navigation_receipt(directory.path())?.lines().collect::<Vec<_>>(),
         [response["url"].as_str().unwrap()]);
     assert_eq!(std::fs::read(&app.config.sidebar_state_file)?, registration);
+    Ok(())
+}
+
+#[test]
+fn native_remote_new_previews_persistent_changes_and_rejects_stale_consent() -> Result<()> {
+    let (directory, app, mut registry) = native_app()?;
+    let auto = &mut registry["remote-connection-auto-connect-by-host-id"]["remote:a"];
+    *auto = json!(false);
+    std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&registry)?)?;
+    let mut request = native_body();
+    let preview = app.request("/api/new", Some(&request))?;
+    assert_eq!(preview["consent"]["changes"], json!(["开启 test-mac 的自动连接"]));
+    assert!(!directory.path().join("opens").exists());
+    request["consent"] = preview["consent"]["token"].clone();
+    registry["remote-connection-auto-connect-by-host-id"]["remote:a"] = Value::Null;
+    std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&registry)?)?;
+    let fresh = app.request("/api/new", Some(&request))?;
+    assert_ne!(fresh["consent"]["token"], request["consent"]);
+    assert!(!directory.path().join("opens").exists());
+    request["consent"] = fresh["consent"]["token"].clone();
+    assert_eq!(app.request("/api/new", Some(&request))?["native"], true);
+    assert_eq!(native_navigation_receipt(directory.path())?.lines().count(), 1);
     Ok(())
 }
 

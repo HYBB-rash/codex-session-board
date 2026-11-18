@@ -122,30 +122,46 @@ impl Probe {
         let mut reader = temporary_app.connection(timeout, Role::SetupReader)?;
         let source = reader.catalog_source()?;
         let account = reader.call("account/read", json!({"refreshToken":false}))?;
-        let account = crate::catalog::account_fingerprint(&account)?.context("无法确认远端 Codex 账号")?;
-        verify_directory(&mut reader, target)?;
+        let account = setup_account(&account)?;
+        let project = verify_directory(&mut reader, target)?;
         let identity = binding.mapping_identity()?;
         ensure!(identity["ssh"] == serde_json::to_value(target.endpoint()?)?,
             "SSH 生效主机、用户或端口与输入不同");
-        Ok(json!({"source":source["peerFingerprint"],"peer":identity["peer"],"account":account}))
+        Ok(json!({"source":source["peerFingerprint"],"peer":identity["peer"],"account":account,"project":project}))
     }
 }
 
-fn verify_directory(reader: &mut impl Rpc, target: &Target) -> Result<()> {
+fn setup_account(response: &Value) -> Result<Value> {
+    if let Some(fingerprint) = crate::catalog::account_fingerprint(response)? {
+        return Ok(json!({"fingerprint":fingerprint}));
+    }
+    ensure!(response["requiresOpenaiAuth"] == false && response["account"].is_null()
+        && response["userId"].is_null() && response["workspaceRouting"].is_null(),
+        "无法确认远端 Codex 账号");
+    Ok(json!({"provider":"no-openai-auth"}))
+}
+
+fn verify_directory(reader: &mut impl Rpc, target: &Target) -> Result<String> {
     let mut cursor = Value::Null;
     let mut visited = BTreeSet::new();
+    let mut matched = None;
     loop {
         let result = reader.call("project/list", json!({"limit":100,"cursor":cursor}))?;
         let projects = result["data"].as_array().context("无法确认远端项目目录")?;
-        if projects.iter().any(|project| {
+        for project in projects.iter().filter(|project| {
             project["roots"].as_array().is_some_and(|roots| roots.len() == 1
                 && roots[0]["path"] == target.directory)
         }) {
-            return Ok(());
+            ensure!(matched.is_none(), "远端目录对应多个项目，请在 Codex 核对项目归属");
+            matched = Some(project["id"].as_str().filter(|id| !id.is_empty())
+                .context("远端项目缺少身份")?.to_owned());
         }
         cursor = result["nextCursor"].clone();
+        if cursor.is_null() {
+            return matched.context("远端项目列表未找到该单目录项目");
+        }
         ensure!(cursor.as_str().is_some_and(|value| visited.len() < 100 && visited.insert(value.to_owned())),
-            "远端项目列表未找到该单目录项目");
+            "远端项目列表未能验证完整");
     }
 }
 

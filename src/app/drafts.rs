@@ -32,6 +32,9 @@ impl App {
         let timeout = Duration::from_secs(caller.rpc_timeout_seconds);
         let project = self.remote_draft_project(body, &caller, timeout)?;
         if body["requestId"].is_null() {
+            if let Some(preview) = crate::native_new::consent(&self.config, &project, &body["consent"])? {
+                return Ok(preview);
+            }
             let url = crate::native_new::remote_url(&self.config, &project)?;
             let url = open_client_url(url, &self.config)?;
             return Ok(json!({"ok":true,"url":url,"native":true}));

@@ -41,7 +41,9 @@ impl NativeFixture {
         config.sidebar_state_file = config.data_dir.with_extension("registry.json");
         std::fs::write(&config.sidebar_state_file, serde_json::to_vec(&json!({
             "codex-managed-remote-connections":[{
-                "hostId":"remote:test","displayName":"test","alias":"example"}]}))?)?;
+                "hostId":"remote:test","displayName":"test","alias":"example"}],
+            "remote-connection-auto-connect-by-host-id":{"remote:test":true},
+            "remote-projects":[{"id":"client-project","hostId":"remote:test","remotePath":"/project"}]}))?)?;
         client(&mut config)?;
         peer.update("results", responses(&peer.peer()?.codex_home)?)?;
         peer.update("rpcEvents", json!(true))?;
@@ -55,7 +57,13 @@ impl NativeFixture {
     fn request(&self, origin: &str, operation: &str) -> Result<Value> {
         let identifier = if origin == "targetLegacy" { "old" } else { CANONICAL };
         let key = format!("target:{}", json!(["remote:test",origin,identifier]));
-        self.root.request("/api/new", Some(&json!({"projectId":key,"operationId":operation})))
+        let mut request = json!({"projectId":key,"operationId":operation});
+        let result = self.root.request("/api/new", Some(&request))?;
+        if result["consent"].is_object() {
+            request["consent"] = result["consent"]["token"].clone();
+            return self.root.request("/api/new", Some(&request));
+        }
+        Ok(result)
     }
 
     fn imports(&self) -> Vec<Value> {
