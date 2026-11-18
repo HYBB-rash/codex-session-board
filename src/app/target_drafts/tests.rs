@@ -113,6 +113,7 @@ fn canonical_target_request_uses_verified_rpc_and_only_opens_native_input() -> R
 fn target_directory_creation_rechecks_live_catalog_and_never_starts_a_thread() -> Result<()> {
     let fixture = NativeFixture::new()?;
     let operation = uuid::Uuid::new_v4().to_string();
+    missing_alias_leaves_no_operation_record(&fixture, &operation)?;
     let remote = fixture.root.remote_app("remote:test")?;
     remote.catalog.lock().unwrap().live = false;
     assert!(fixture.request("targetServer", &operation).is_err());
@@ -136,6 +137,31 @@ fn target_directory_creation_rechecks_live_catalog_and_never_starts_a_thread() -
     assert!(fixture.imports().is_empty());
     assert!(!fixture.peer.events().contains("thread/start"));
     assert!(!fixture.peer.events().contains("turn/start"));
+    Ok(())
+}
+
+fn missing_alias_leaves_no_operation_record(fixture: &NativeFixture, operation: &str) -> Result<()> {
+    let config = &fixture.root.config;
+    let original = std::fs::read(&config.sidebar_state_file)?;
+    let mut registry: Value = serde_json::from_slice(&original)?;
+    let connection = &mut registry["codex-managed-remote-connections"][0];
+    connection["alias"] = Value::Null;
+    connection["hostname"] = json!("builder@studio.example.test");
+    let registration = serde_json::to_vec(&registry)?;
+    std::fs::write(&config.sidebar_state_file, &registration)?;
+    let events = fixture.peer.events();
+    let error = fixture.request("targetServer", operation).unwrap_err();
+    assert!(error.to_string().contains("选择原主机和项目"));
+    assert_eq!(fixture.peer.events(), events);
+    assert_eq!(std::fs::read(&config.sidebar_state_file)?, registration);
+    let database = rusqlite::Connection::open(config.data_dir.join("status.sqlite3"))?;
+    let records: i64 = database.query_row(
+        "SELECT count(*) FROM settings WHERE key = ?",
+        [format!("native_draft_v1:{operation}")],
+        |row| row.get(0),
+    )?;
+    assert_eq!(records, 0);
+    std::fs::write(&config.sidebar_state_file, original)?;
     Ok(())
 }
 

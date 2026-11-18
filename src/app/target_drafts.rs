@@ -46,6 +46,7 @@ impl App {
         let _guard = operation_lock
             .lock()
             .map_err(|_| anyhow::anyhow!("新建操作锁已损坏"))?;
+        crate::native_new::registered_alias(&self.config, &request.host)?;
         let record = self.store.native_draft_begin(request.key, operation)?;
         let selected = self.prepared_project(&request, &record)?;
         crate::native_new::remote_url(&self.config, &selected)?;

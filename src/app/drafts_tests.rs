@@ -266,6 +266,7 @@ fn native_navigation_receipt(directory: &std::path::Path) -> Result<String> {
 #[test]
 fn native_remote_new_only_navigates_to_the_registered_ssh_alias_and_directory() -> Result<()> {
     let (directory, app, _) = native_app()?;
+    let registration = std::fs::read(&app.config.sidebar_state_file)?;
     let response = app.request("/api/new", Some(&native_body()))?;
     assert_eq!(response["native"], true);
     let url = url::Url::parse(response["url"].as_str().unwrap())?;
@@ -279,6 +280,7 @@ fn native_remote_new_only_navigates_to_the_registered_ssh_alias_and_directory() 
     assert!(app.remotes.lock().unwrap().is_empty());
     assert_eq!(native_navigation_receipt(directory.path())?.lines().collect::<Vec<_>>(),
         [response["url"].as_str().unwrap()]);
+    assert_eq!(std::fs::read(&app.config.sidebar_state_file)?, registration);
     Ok(())
 }
 
@@ -289,8 +291,13 @@ fn native_remote_new_rejects_missing_ambiguous_or_invalid_aliases_before_navigat
         let mut changed = registry.clone();
         changed["codex-managed-remote-connections"][0]["alias"] = alias;
         changed["codex-managed-remote-connections"][0]["hostname"] = json!("valid-hostname");
-        std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&changed)?)?;
-        assert!(app.request("/api/new", Some(&native_body())).is_err());
+        let registration = serde_json::to_vec(&changed)?;
+        std::fs::write(&app.config.sidebar_state_file, &registration)?;
+        let error = app.request("/api/new", Some(&native_body())).unwrap_err();
+        if changed["codex-managed-remote-connections"][0]["alias"].is_null() {
+            assert!(error.to_string().contains("选择原主机和项目"));
+        }
+        assert_eq!(std::fs::read(&app.config.sidebar_state_file)?, registration);
     }
     let mut changed = registry;
     let mut duplicate = changed["codex-managed-remote-connections"][0].clone();
