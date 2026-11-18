@@ -41,7 +41,9 @@ impl NativeFixture {
         config.sidebar_state_file = config.data_dir.with_extension("registry.json");
         std::fs::write(&config.sidebar_state_file, serde_json::to_vec(&json!({
             "codex-managed-remote-connections":[{
-                "hostId":"remote:test","displayName":"test","alias":"example"}]}))?)?;
+                "hostId":"remote:test","displayName":"test","alias":"example"}],
+            "remote-connection-auto-connect-by-host-id":{"remote:test":true},
+            "remote-projects":[{"id":"client-project","hostId":"remote:test","remotePath":"/project"}]}))?)?;
         client(&mut config)?;
         peer.update("results", responses(&peer.peer()?.codex_home)?)?;
         peer.update("rpcEvents", json!(true))?;
@@ -55,7 +57,13 @@ impl NativeFixture {
     fn request(&self, origin: &str, operation: &str) -> Result<Value> {
         let identifier = if origin == "targetLegacy" { "old" } else { CANONICAL };
         let key = format!("target:{}", json!(["remote:test",origin,identifier]));
-        self.root.request("/api/new", Some(&json!({"projectId":key,"operationId":operation})))
+        let mut request = json!({"projectId":key,"operationId":operation});
+        let result = self.root.request("/api/new", Some(&request))?;
+        if result["consent"].is_object() {
+            request["consent"] = result["consent"]["token"].clone();
+            return self.root.request("/api/new", Some(&request));
+        }
+        Ok(result)
     }
 
     fn imports(&self) -> Vec<Value> {
@@ -110,9 +118,26 @@ fn canonical_target_request_uses_verified_rpc_and_only_opens_native_input() -> R
 }
 
 #[test]
+fn legacy_target_rejects_a_moved_directory_before_import() -> Result<()> {
+    let fixture = NativeFixture::new()?;
+    let mut changed = responses(&fixture.peer.peer()?.codex_home)?;
+    let encoded = changed["fs/readFile"]["dataBase64"].as_str().context("fixture state")?;
+    let mut state: Value = serde_json::from_slice(&STANDARD.decode(encoded)?)?;
+    state["local-projects"]["old"]["rootPaths"] = json!(["/different"]);
+    changed["fs/readFile"]["dataBase64"] = json!(STANDARD.encode(serde_json::to_vec(&state)?));
+    fixture.peer.update("results", changed)?;
+    let operation = uuid::Uuid::new_v4().to_string();
+    let error = fixture.request("targetLegacy", &operation).unwrap_err();
+    assert!(error.to_string().contains("项目目录已改变"));
+    assert!(fixture.imports().is_empty());
+    Ok(())
+}
+
+#[test]
 fn target_directory_creation_rechecks_live_catalog_and_never_starts_a_thread() -> Result<()> {
     let fixture = NativeFixture::new()?;
     let operation = uuid::Uuid::new_v4().to_string();
+    missing_alias_leaves_no_operation_record(&fixture, &operation)?;
     let remote = fixture.root.remote_app("remote:test")?;
     remote.catalog.lock().unwrap().live = false;
     assert!(fixture.request("targetServer", &operation).is_err());
@@ -136,6 +161,31 @@ fn target_directory_creation_rechecks_live_catalog_and_never_starts_a_thread() -
     assert!(fixture.imports().is_empty());
     assert!(!fixture.peer.events().contains("thread/start"));
     assert!(!fixture.peer.events().contains("turn/start"));
+    Ok(())
+}
+
+fn missing_alias_leaves_no_operation_record(fixture: &NativeFixture, operation: &str) -> Result<()> {
+    let config = &fixture.root.config;
+    let original = std::fs::read(&config.sidebar_state_file)?;
+    let mut registry: Value = serde_json::from_slice(&original)?;
+    let connection = &mut registry["codex-managed-remote-connections"][0];
+    connection["alias"] = Value::Null;
+    connection["hostname"] = json!("builder@studio.example.test");
+    let registration = serde_json::to_vec(&registry)?;
+    std::fs::write(&config.sidebar_state_file, &registration)?;
+    let events = fixture.peer.events();
+    let error = fixture.request("targetServer", operation).unwrap_err();
+    assert!(error.to_string().contains("选择原主机和项目"));
+    assert_eq!(fixture.peer.events(), events);
+    assert_eq!(std::fs::read(&config.sidebar_state_file)?, registration);
+    let database = rusqlite::Connection::open(config.data_dir.join("status.sqlite3"))?;
+    let records: i64 = database.query_row(
+        "SELECT count(*) FROM settings WHERE key = ?",
+        [format!("native_draft_v1:{operation}")],
+        |row| row.get(0),
+    )?;
+    assert_eq!(records, 0);
+    std::fs::write(&config.sidebar_state_file, original)?;
     Ok(())
 }
 

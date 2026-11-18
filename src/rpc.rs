@@ -66,6 +66,7 @@ pub enum Role {
     CalibrationWriter,
     CatalogReader,
     TargetProjectPreparer,
+    SetupReader,
     TitleWriter,
     ArchiveWriter,
     ProjectWriter,
@@ -97,6 +98,7 @@ impl Role {
             Self::TargetProjectPreparer => matches!(method,
                 "initialize" | "project/list" | "project/read" | "project/import"
                     | "account/read" | "fs/getMetadata" | "fs/readFile"),
+            Self::SetupReader => matches!(method, "initialize" | "project/list" | "account/read"),
             Self::TitleWriter => matches!(method, "initialize" | "thread/read" | "thread/name/set"),
             Self::ArchiveWriter => matches!(
                 method,
@@ -477,10 +479,11 @@ impl DesktopConnection {
     }
 
     fn initialize(&mut self, source: Option<(&Binding, &Peer)>) -> Result<()> {
+        let name = if self.role == Role::SetupReader { "codex-backend" } else { "session_board_runtime" };
         let response = self.call(
             "initialize",
             json!({
-                "clientInfo": {"name": "session_board_runtime", "version": env!("CARGO_PKG_VERSION")},
+                "clientInfo": {"name": name, "version": env!("CARGO_PKG_VERSION")},
                 "capabilities": {"experimentalApi": true}
             }),
         )?;
@@ -488,7 +491,7 @@ impl DesktopConnection {
             peer.initialize(&response)?;
             binding.confirm(peer, self.call_deadline()?)?;
         }
-        if matches!(self.role, Role::CatalogReader | Role::TargetProjectPreparer) {
+        if matches!(self.role, Role::CatalogReader | Role::TargetProjectPreparer | Role::SetupReader) {
             let mut guard = catalog_guard::CatalogGuard::initialized(&response)?;
             if let Some((binding, peer)) = source {
                 guard.bind(Path::new(&peer.codex_home), json!({"ssh":binding.endpoint, "peer":peer}))?;
@@ -500,7 +503,7 @@ impl DesktopConnection {
     }
 
     pub(crate) fn catalog_source(&self) -> Result<Value> {
-        ensure!(matches!(self.role, Role::CatalogReader | Role::TargetProjectPreparer),
+        ensure!(matches!(self.role, Role::CatalogReader | Role::TargetProjectPreparer | Role::SetupReader),
             "此连接不是项目目录连接");
         if let Some(authority) = &self.local_authority {
             authority.confirm()?;
@@ -543,7 +546,9 @@ impl DesktopConnection {
 impl Rpc for DesktopConnection {
     fn call(&mut self, method: &str, params: Value) -> Result<Value> {
         self.role.check(method)?;
-        if matches!(self.role, Role::CatalogReader | Role::TargetProjectPreparer) && method != "initialize" {
+        if matches!(self.role, Role::CatalogReader | Role::TargetProjectPreparer | Role::SetupReader)
+            && method != "initialize"
+        {
             self.catalog_source()?;
             self.catalog_guard.as_ref().context("目录连接尚未初始化")?.check(method, &params)?;
         }

@@ -27,6 +27,7 @@ const routes = {
   "/api/new/reset": "board_new_reset",
   "/api/project/assign": "board_project_assign",
   "/api/connect": "board_connect",
+  "/api/ssh-setup": "board_ssh_setup",
   "/api/archive": "board_archive",
   "/api/column-sort": "board_sort",
 };

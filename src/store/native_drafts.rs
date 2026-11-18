@@ -1,6 +1,14 @@
 use super::*;
 
 impl Store {
+    pub(crate) fn native_draft(&self, operation: &str) -> Result<Option<Value>> {
+        let value: Option<String> = self.connection()?.query_row(
+            "SELECT value FROM settings WHERE key=?", [format!("native_draft_v1:{operation}")],
+            |row| row.get(0),
+        ).optional()?;
+        value.map(|value| serde_json::from_str(&value)).transpose().map_err(Into::into)
+    }
+
     pub(crate) fn native_draft_begin(&self, project: &str, operation: &str) -> Result<Value> {
         ensure!(
             uuid::Uuid::parse_str(operation)?.to_string() == operation,

@@ -232,6 +232,7 @@ fn native_app() -> Result<(tempfile::TempDir, App, Value)> {
     let path = directory.path();
     let registry = json!({"remote-projects":[{"id":"project & 中","hostId":"remote:a",
         "label":"项目","remotePath":"/not-a-local-path"}],
+        "remote-connection-auto-connect-by-host-id":{"remote:a":true},
         "codex-managed-remote-connections":[{"hostId":"remote:a",
             "displayName":"Mac","alias":"test-mac"}]});
     app.config.sidebar_state_file = path.join("projects.json");
@@ -266,6 +267,7 @@ fn native_navigation_receipt(directory: &std::path::Path) -> Result<String> {
 #[test]
 fn native_remote_new_only_navigates_to_the_registered_ssh_alias_and_directory() -> Result<()> {
     let (directory, app, _) = native_app()?;
+    let registration = std::fs::read(&app.config.sidebar_state_file)?;
     let response = app.request("/api/new", Some(&native_body()))?;
     assert_eq!(response["native"], true);
     let url = url::Url::parse(response["url"].as_str().unwrap())?;
@@ -279,6 +281,55 @@ fn native_remote_new_only_navigates_to_the_registered_ssh_alias_and_directory() 
     assert!(app.remotes.lock().unwrap().is_empty());
     assert_eq!(native_navigation_receipt(directory.path())?.lines().collect::<Vec<_>>(),
         [response["url"].as_str().unwrap()]);
+    assert_eq!(std::fs::read(&app.config.sidebar_state_file)?, registration);
+    Ok(())
+}
+
+#[test]
+fn native_remote_new_previews_persistent_changes_and_rejects_stale_consent() -> Result<()> {
+    let (directory, app, mut registry) = native_app()?;
+    let auto = &mut registry["remote-connection-auto-connect-by-host-id"]["remote:a"];
+    *auto = json!(false);
+    std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&registry)?)?;
+    let mut request = native_body();
+    let preview = app.request("/api/new", Some(&request))?;
+    assert_eq!(preview["consent"]["changes"], json!(["开启 test-mac 的自动连接"]));
+    assert!(!directory.path().join("opens").exists());
+    request["consent"] = preview["consent"]["token"].clone();
+    registry["remote-connection-auto-connect-by-host-id"]["remote:a"] = Value::Null;
+    std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&registry)?)?;
+    let fresh = app.request("/api/new", Some(&request))?;
+    assert_ne!(fresh["consent"]["token"], request["consent"]);
+    assert!(!directory.path().join("opens").exists());
+    request["consent"] = fresh["consent"]["token"].clone();
+    assert_eq!(app.request("/api/new", Some(&request))?["native"], true);
+    assert_eq!(native_navigation_receipt(directory.path())?.lines().count(), 1);
+    Ok(())
+}
+
+#[test]
+fn approved_native_navigation_rechecks_alias_and_account_before_handoff() -> Result<()> {
+    use crate::native_new::{Navigation, navigation};
+
+    let (_directory, app, original) = native_app()?;
+    let project = json!({"hostId":"remote:a","paths":["/not-a-local-path"]});
+    let Navigation::Ready(approved) = navigation(&app.config, &project, &Value::Null)? else {
+        bail!("fixture already has a registered directory and auto-connect");
+    };
+    for (key, value) in [
+        ("account", json!("other-account")),
+        ("alias", json!("other-mac")),
+    ] {
+        let mut changed = original.clone();
+        if key == "account" {
+            changed["electron-renderer-content-owner"] = value;
+        } else {
+            changed["codex-managed-remote-connections"][0]["alias"] = value;
+        }
+        std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&changed)?)?;
+        assert!(approved.verify(&app.config, &project).is_err());
+    }
+    assert!(approved.url().contains("name=test-mac&"));
     Ok(())
 }
 
@@ -289,8 +340,13 @@ fn native_remote_new_rejects_missing_ambiguous_or_invalid_aliases_before_navigat
         let mut changed = registry.clone();
         changed["codex-managed-remote-connections"][0]["alias"] = alias;
         changed["codex-managed-remote-connections"][0]["hostname"] = json!("valid-hostname");
-        std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&changed)?)?;
-        assert!(app.request("/api/new", Some(&native_body())).is_err());
+        let registration = serde_json::to_vec(&changed)?;
+        std::fs::write(&app.config.sidebar_state_file, &registration)?;
+        let error = app.request("/api/new", Some(&native_body())).unwrap_err();
+        if changed["codex-managed-remote-connections"][0]["alias"].is_null() {
+            assert!(error.to_string().contains("选择原主机和项目"));
+        }
+        assert_eq!(std::fs::read(&app.config.sidebar_state_file)?, registration);
     }
     let mut changed = registry;
     let mut duplicate = changed["codex-managed-remote-connections"][0].clone();
