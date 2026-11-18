@@ -111,9 +111,19 @@ input[type=search]{width:180px}
 .follow{margin-top:6px;color:var(--warning);font-size:12px}
 .card-footer{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin-top:12px}
 .card-footer time{color:var(--muted);font-size:11px;white-space:nowrap}
-.card-actions{display:flex;gap:2px;margin-left:auto}
+.card-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:2px;margin-left:auto}
 .row-action{min-height:28px;padding:0 7px;border-color:transparent;background:transparent;color:var(--muted);font-size:12px;white-space:nowrap}
 .row-action:hover{border-color:transparent;background:var(--subtle);color:var(--ink)}
+.reply-trigger{color:light-dark(#264c7a,#a9c9f5)}
+#reply-reader{position:fixed;inset:calc(12px + var(--host-inset-top,0px)) calc(12px + var(--host-inset-right,0px)) auto auto;margin:0;padding:0;width:min(540px,calc(100% - 24px - var(--host-inset-left,0px) - var(--host-inset-right,0px)));height:calc(100dvh - 24px - var(--host-inset-top,0px) - var(--host-inset-bottom,0px));max-width:none;max-height:none;overflow:hidden}
+#reply-reader[open]{display:grid;grid-template-rows:auto minmax(0,1fr) auto}
+.reply-heading,.reply-actions{padding:12px 16px}
+.reply-heading{border-bottom:1px solid var(--line)}
+.reply-label{display:flex;align-items:center;justify-content:space-between;color:var(--muted)}
+.reply-heading h2{margin:4px 0;overflow-wrap:anywhere}
+#reply-meta{margin:0;color:var(--muted)}
+#reply-body{margin:0;padding:16px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.7}
+.reply-actions{display:flex;justify-content:flex-end;border-top:1px solid var(--line)}
 .empty-column{display:grid;place-items:center;min-height:74px;margin:0;padding:16px 12px;border:1px dashed transparent;border-radius:10px;color:var(--muted);font-size:12px;text-align:center}
 .drag-active .empty-column{border-color:var(--hover)}
 .board-help{margin-top:8px;color:var(--muted);font-size:12px}
@@ -190,6 +200,17 @@ textarea{resize:vertical;min-height:90px}
     <button id="connection-help" class="quiet" type="button">连接帮助</button>
   </details>
 </main>
+<dialog id="reply-reader" aria-labelledby="reply-title">
+  <header class="reply-heading">
+    <div class="reply-label"><span>最终答复</span><button id="reply-close" class="quiet" type="button" autofocus>关闭</button></div>
+    <h2 id="reply-title"></h2>
+    <p id="reply-meta"></p>
+  </header>
+  <article id="reply-body" tabindex="0" aria-label="最终答复正文" aria-busy="false">
+    <p id="reply-status" role="status"></p><div id="reply-text"></div>
+  </article>
+  <footer class="reply-actions"><button id="reply-open" class="quiet" type="button">打开会话 ↗</button></footer>
+</dialog>
 <dialog id="health-details" aria-labelledby="health-details-title">
   <h2 id="health-details-title">连接与会话读取</h2>
   <p class="reason">先查看受影响的功能，再选择处理办法。选择主机只改变显示范围。后台定时归档仍按原配置运行。</p>
@@ -259,6 +280,7 @@ const unconfirmedMoves = new Map();
 const draftRequests = new Map();
 const nativeDraftOperations = new Map();
 const connectingHosts = new Set();
+let replyPreview = null;
 const byId = id => document.getElementById(id);
 const date = value => value ? new Date(value * 1000).toLocaleString("zh-CN",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "尚未读取";
 function element(tag, text, className) {
@@ -439,6 +461,18 @@ byId("unplaced").addEventListener("toggle",updateNotePreviews);
 function sessionReadOnly(session) {
   return session.readOnly || session.remote && (session.canOpen === false || session.archived || session.presence === "cachedUnknown");
 }
+function replyTurn(session) {
+  return snapshotError || session.canOpen === false ? null : session.previewTurnId;
+}
+function makeReplyButton(session) {
+  const button = element("button","预览答复","row-action reply-trigger");
+  button.type = "button";
+  button.dataset.action = "preview";
+  button.setAttribute("aria-haspopup","dialog");
+  button.setAttribute("aria-label","预览答复：" + session.title);
+  button.onclick = () => openReply(session,button);
+  return button;
+}
 function makeCard(session) {
   const card = element("article",undefined,"card");
   card.dataset.id = session.id;
@@ -473,6 +507,7 @@ function makeCard(session) {
   const footer = element("div",undefined,"card-footer");
   const updated = element("time",date(session.updatedAt));
   const actions = element("div",undefined,"card-actions");
+  if (!pending && replyTurn(session)) actions.append(makeReplyButton(session));
   const adjust = element("button",session.state === null ? "归列" : "调整","row-action");
   adjust.type = "button";adjust.dataset.action = "adjust";
   adjust.disabled = saving || creating || pending || sessionReadOnly(session);
@@ -503,7 +538,8 @@ function makeCard(session) {
     if (session.canOpen !== false && !event.target.closest("button,a,input,select,textarea,details")) openSession(session.id);
   };
   card.ondragstart = event => {
-    if (saving || creating || sessionReadOnly(session) || byId("editor").open) {event.preventDefault();return;}
+    if (saving || creating || sessionReadOnly(session) || byId("editor").open ||
+        event.target.closest('[data-action="preview"]')) {event.preventDefault();return;}
     dragging = {...session};
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain",session.id);
@@ -519,6 +555,54 @@ function makeCard(session) {
   };
   return card;
 }
+async function openReply(session, button) {
+  if (dragging || saving || creating || replyPreview || performance.now() < suppressOpenUntil) return;
+  const current = data.sessions.find(row => row.id === session.id);
+  const turnId = current && replyTurn(current);
+  if (!turnId || turnId !== session.previewTurnId) return;
+  const dialog = byId("reply-reader");
+  const preview = {id:session.id,turnId,button};
+  replyPreview = preview;
+  byId("reply-title").textContent = session.title;
+  byId("reply-meta").textContent = `${session.hostLabel || "本机"} · ${date(session.updatedAt)}`;
+  byId("reply-status").textContent = "正在读取最终答复…";
+  byId("reply-body").setAttribute("aria-busy","true");
+  dialog.showModal();
+  byId("reply-body").scrollTop = 0;
+  try {
+    const result = await post("/api/preview-reply",{id:preview.id,turnId});
+    if (replyPreview !== preview || !dialog.open) return;
+    if (result.turnId !== turnId || typeof result.text !== "string" || !result.text.trim()) {
+      throw new Error("无法核对答复所属轮次");
+    }
+    byId("reply-status").textContent = "";
+    byId("reply-text").textContent = result.text;
+    byId("reply-body").setAttribute("aria-busy","false");
+  } catch (error) {
+    if (replyPreview === preview && dialog.open) {
+      if (replyTurn(current) === turnId) delete current.previewTurnId;
+      closeReply("本轮答复暂不可预览，可以打开会话核对。");
+    }
+  }
+}
+function closeReply(message = "") {
+  const preview = replyPreview;
+  replyPreview = null;
+  byId("reply-reader").close();
+  byId("reply-text").textContent = "";
+  byId("reply-status").textContent = "";
+  byId("reply-body").setAttribute("aria-busy","false");
+  preview?.button.focus({preventScroll:true});
+  render();
+  if (message) announce(message);
+}
+byId("reply-close").onclick = () => closeReply();
+byId("reply-reader").addEventListener("cancel",event => {event.preventDefault();closeReply();});
+byId("reply-open").onclick = () => {
+  const id = replyPreview?.id;
+  closeReply();
+  if (id) openSession(id);
+};
 async function openSession(id) {
   if (dragging || saving && !moving || moving?.id === id || opening || performance.now() < suppressOpenUntil) return;
   if (data.sessions.find(session => session.id === id)?.canOpen === false) {
@@ -687,7 +771,7 @@ function updateUnplaced(filtered) {
   const origin = data.fourColumns && moving?.from === null && filtered.some(session => session.id === moving.id);
   section.hidden = !sessions.length && !origin;
   byId("unplaced-summary").textContent = `未归列会话 ${sessions.length + Number(Boolean(origin))}`;
-  const signature = JSON.stringify([sessions,data.projectCatalog,data.states,moving,[...unconfirmedMoves],saving,creating,origin]);
+  const signature = JSON.stringify([sessions,data.projectCatalog,data.states,moving,[...unconfirmedMoves],saving,creating,origin,Boolean(snapshotError)]);
   if (columnContent.get(section) === signature) return false;
   columnContent.set(section,signature);
   const position = captureScroll(cards);
@@ -723,7 +807,7 @@ function updateColumn(column, state, sessions) {
   const unread = !hostSessions().length && healthReports().some(host => (selectedHost === "all" || host.key === selectedHost) && !host.lastRead);
   const origin = moving?.from === state && visibleSessions().some(session => session.id === moving.id);
   const signature = JSON.stringify([sessions,data.projectCatalog,data.states,selectedHost,data.legacyMode,
-    moving,[...unconfirmedMoves],saving,creating,unread,origin]);
+    moving,[...unconfirmedMoves],saving,creating,unread,origin,Boolean(snapshotError)]);
   if (columnContent.get(column) === signature) return false;
   columnContent.set(column,signature);
   cards.replaceChildren(...sessions.map(makeCard));
@@ -884,7 +968,7 @@ function toggleFilter() {
   byId(filterMode === "project" ? "project-filter" : "search").focus();
 }
 function render(resetState = null) {
-  if (dragging || saving && !moving || byId("editor").open) return;
+  if (dragging || saving && !moving || byId("editor").open || replyPreview) return;
   updateProjectOptions();
   updateFilterLock();
   const host = byId("host-filter").selectedOptions[0]?.textContent || selectedHost;
@@ -1154,6 +1238,10 @@ async function load() {
     if (serial !== requestSerial || saving || filtersLocked()) return;
     data = result;
     snapshotError = null;
+    if (replyPreview && !data.sessions.some(session =>
+      session.id === replyPreview.id && replyTurn(session) === replyPreview.turnId)) {
+      closeReply("会话状态已变化，已关闭答复预览。");
+    }
     for (const [id,operation] of unconfirmedMoves) {
       const row = data.sessions.find(session => session.id === id);
       if (row && !row.readOnly && (row.version > operation.version || row.inputVersion > operation.inputVersion ||
@@ -1163,7 +1251,9 @@ async function load() {
     render();
   } catch (error) {
     if (serial !== requestSerial) return;
-    snapshotError = error.message;renderHealth();
+    snapshotError = error.message;
+    if (replyPreview) closeReply("暂时无法确认会话状态，已关闭答复预览。");
+    else render();
   }
 }
 async function persist(session, state, note) {
