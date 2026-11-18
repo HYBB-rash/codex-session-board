@@ -77,7 +77,19 @@ bin/codex-session-board stop
 
 ## 更新与回退
 
-安装更新工具依赖：
+已安装的看板可点击页头「更新」。它读取 GitHub 上本机平台的 `candidate/<Rust target>`，
+校验并安装该频道发布的包。运行中的构建和已安装包都匹配时，直接显示「已是最新版」。
+按钮需要本机有 `python3`、`git` 和配置中的 `codex` 命令。Python 的重载依赖已随包提供。
+
+若显示「已安装，待重载」，完全退出并重新启动 Codex，再打开看板。也可点击「更新」
+重试重载。看板成功读回新版和会话列表后才显示「已生效」。下载或校验失败可在网络恢复
+后重试。安装中断时，先点击「更新」重试，仍无法恢复时可按下文固定旧版本。
+最近一次按钮任务的进度、结果和日志保存在 XDG 数据目录的
+`codex-session-board/installation/board-update.json` 与 `board-update.log`。
+重新打开看板即可读回结果。
+
+首次安装、以及从没有「更新」按钮的版本升级，仍使用命令行入口。构建插件和直接运行
+源码目录中的更新工具时，先安装打包及重载依赖：
 
 ```bash
 python3 -m venv ~/.local/share/codex-session-board/delivery-venv

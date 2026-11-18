@@ -1937,7 +1937,7 @@ function showPluginUpdate(result) {
   const running = ` 当前运行版本 ${result.runningVersion}。`;
   const messages = {
     up_to_date:`已是最新版${version}。`,
-    active:`新版${version}已生效，看板已恢复。`,
+    active:`新版${version} 已生效，看板已恢复。`,
     awaiting_desktop_reload:`${version.trim()} 已安装，待重载。请完全退出并重新启动 Codex，再打开看板。也可点击「更新」重试重载。${running}${detail}`,
     reopen_board:`${version.trim()} 已安装，已请求重载。请关闭并重新打开看板确认新版。如果仍是旧版，请重启 Codex。${running}`,
     failed:result.failedStage === "installing"

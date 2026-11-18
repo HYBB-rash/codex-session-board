@@ -19,11 +19,13 @@ COMMAND_TIMEOUT = 120
 
 
 def command(arguments, root=None):
-    return subprocess.check_output(arguments, cwd=root, text=True, timeout=COMMAND_TIMEOUT).strip()
+    return subprocess.check_output(
+        arguments, cwd=root, text=True, stderr=subprocess.PIPE, timeout=COMMAND_TIMEOUT).strip()
 
 
 def run(arguments, **kwargs):
-    return subprocess.run(arguments, check=True, timeout=COMMAND_TIMEOUT, **kwargs)
+    return subprocess.run(arguments, check=True, text=True, stderr=subprocess.PIPE,
+                          timeout=COMMAND_TIMEOUT, **kwargs)
 
 
 def target():

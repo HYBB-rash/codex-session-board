@@ -1368,6 +1368,8 @@
       "acceptance.test_plugin_update.PluginUpdateTests.test_package_update_records_install_without_starting_a_runtime_or_daemon",
       "acceptance.test_plugin_update.PluginUpdateTests.test_repeated_upgrades_preserve_original_receipt_with_atomic_current_writes",
       "acceptance.test_plugin_update.PluginUpdateTests.test_defer_reload_preserves_installed_but_unloaded_result",
+      "acceptance.test_plugin_update.PluginUpdateTests.test_verified_running_candidate_does_not_reinstall",
+      "acceptance.test_plugin_update.PluginUpdateTests.test_installed_candidate_with_old_runtime_retries_only_reload",
       "acceptance.test_plugin_update.PluginUpdateTests.test_full_update_installs_marketplace_file_on_desktop_before_reload",
       "acceptance.test_plugin_update.PluginUpdateTests.test_old_desktop_inventory_keeps_the_successful_install_record",
       "acceptance.test_plugin_update.PluginUpdateTests.test_hash_mismatch_rejects_before_install",

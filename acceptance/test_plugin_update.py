@@ -141,6 +141,27 @@ class PluginUpdateTests(unittest.TestCase):
         self.assertTrue(result["installed"])
         self.assertFalse(result["desktop_loaded"])
 
+    def test_verified_running_candidate_does_not_reinstall(self):
+        with self.isolated():
+            self.update()
+            self.commands.clear()
+            result = self.update(running_build=self.manifest["binary_sha256"])
+        self.assertEqual(result["phase"], "up_to_date")
+        self.assertFalse(any(args[:3] == ["codex", "plugin", "add"] for args in self.commands))
+        self.assertFalse((self.state / "pending.json").exists())
+
+    def test_installed_candidate_with_old_runtime_retries_only_reload(self):
+        with self.isolated():
+            self.update()
+            self.commands.clear()
+            with patch.object(update_plugin, "reload_plugins", return_value={
+                    "phase": "awaiting_board_readback", "desktop_loaded": False}) as reload:
+                result = self.update(running_build="old-build")
+        reload.assert_called_once()
+        self.assertEqual(result["phase"], "awaiting_board_readback")
+        self.assertTrue(result["installed"])
+        self.assertFalse(any(args[:3] == ["codex", "plugin", "add"] for args in self.commands))
+
     def desktop_connection(self, version=None):
         connection = MagicMock()
         connection.recv.side_effect = [json.dumps(item) for item in [

@@ -13,6 +13,13 @@ REPOSITORY = "https://github.com/HYBB-rash/codex-session-board.git"
 STATUS = "board-update.json"
 
 
+def failure_detail(error):
+    stderr = getattr(error, "stderr", None)
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode(errors="replace")
+    return stderr.strip()[:1000] if stderr and stderr.strip() else str(error)
+
+
 def start(state, codex, running_build):
     try:
         with update_lock(state) as lock:
@@ -58,7 +65,8 @@ def work(state, codex, running_build, descriptor):
                  build=result["release"]["binary_sha256"], installed=True,
                  error=result.get("reload_error"))
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
-        progress("failed", failedStage=stage["phase"], version=stage.get("version"), error=str(error))
+        progress("failed", failedStage=stage["phase"], version=stage.get("version"),
+                 error=failure_detail(error))
         raise
     finally:
         shutil.rmtree(snapshot)
