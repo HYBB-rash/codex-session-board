@@ -15,6 +15,9 @@ impl Rpc for Fixture {
             assert_eq!(params["limit"], 1);
             assert_eq!(params["sortDirection"], "desc");
         }
+        if let Some(error) = response.get("error") {
+            return Err(crate::rpc::RequestError { method: method.into(), details: error.clone() }.into());
+        }
         Ok(response)
     }
 }
@@ -68,6 +71,7 @@ fn reply_reader_only_returns_the_expected_completed_turn() -> Result<()> {
 fn reply_reader_distinguishes_empty_from_unknown_and_rechecks_changed_turns() -> Result<()> {
     for response in [
         json!({"data":[]}),
+        json!({"error":{"code":-32600,"message":"thread thread is not materialized yet; thread/turns/list is unavailable before first user message"}}),
         page("first", "interrupted", "final_answer"),
         page("first", "failed", "final_answer"),
         page("first", "completed", "commentary"),

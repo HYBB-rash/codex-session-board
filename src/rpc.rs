@@ -805,6 +805,12 @@ pub(crate) fn latest_turn_page(reader: &mut dyn Rpc, id: &str, view: &str) -> Re
     }))
 }
 
+pub(crate) fn paginated_unmaterialized(error: &anyhow::Error, identifier: &str) -> bool {
+    error.downcast_ref::<RequestError>().is_some_and(|error|
+        error.method == "thread/turns/list" && error.details["code"] == -32600
+            && error.details["message"] == format!("thread {identifier} is not materialized yet; thread/turns/list is unavailable before first user message"))
+}
+
 pub fn summarize_turn(turn: &Value) -> Value {
     let items = turn["items"].as_array().map(Vec::as_slice).unwrap_or(&[]);
     let mut users: Vec<_> = items

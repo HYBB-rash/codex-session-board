@@ -23,6 +23,10 @@ const server = http.createServer(async (request,response) => {
   for await (const chunk of request) body += chunk;
   if (request.method === "POST") {
     const input = JSON.parse(body);
+    if (request.url === "/api/preview-reply") {
+      return response.writeHead(200,{"Content-Type":"application/json"})
+        .end(JSON.stringify({turnId:null,html:null,inProgress:false}));
+    }
     writes.push({path:request.url,body:input});
     if (request.url === "/api/state" && input.id === "unplaced") {
       if (failedPlacement) return response.writeHead(409,{"Content-Type":"application/json"})
@@ -108,7 +112,9 @@ try {
   await evaluate('byId("editor").close();editing=null;render()');
   check(await evaluate(`${card("readonly")}.querySelector('[data-action="adjust"]').disabled`),true);
   check(await evaluate(`${card("readonly")}.draggable`),false);
-  await evaluate(`${card("long")}.querySelector('[data-action="open"]').click()`);
+  await evaluate(`${card("long")}.querySelector('[data-action="preview"]').click()`);
+  check(writes,[]);
+  await evaluate('byId("reply-open").click()');
   await wait('!opening');
   check(writes.map(write=>[write.path,write.body.id]),[["/api/open","long"]]);
   await evaluate(`${card("long")}.querySelector('[data-action="adjust"]').focus()`);
@@ -151,7 +157,7 @@ try {
     return {rows:original.length,retained:original.filter(card=>card.isConnected).length,fullRenderMs,unchangedRenderMs};
   })()`);
   check(refreshPerformance.retained,1500);
-  check(requests.filter(request=>request.method === "POST").length,1);
+  check(requests.filter(request=>request.method === "POST").map(request=>request.path),["/api/preview-reply","/api/open"]);
   baselineCases = cases;
   fixture.fourColumns = true;
   delete fixture.states.unknown;
@@ -199,8 +205,10 @@ try {
   check(await evaluate(`${card("offline")}.classList.contains("offline")`),true);
   check(await evaluate(`${card("offline")}.draggable`),false);
   check(await evaluate(`${card("offline")}.querySelector('[data-action="adjust"]').disabled`),true);
-  check(await evaluate(`${card("offline")}.querySelector('[data-action="open"]').disabled`),true);
-  await evaluate(`${card("offline")}.click();openSession("offline")`);
+  check(await evaluate(`${card("offline")}.querySelector('[data-action="preview"]').disabled`),false);
+  await evaluate(`${card("offline")}.click()`);
+  check(await evaluate('byId("reply-open").disabled'),true);
+  await evaluate('byId("reply-close").click();openSession("offline")');
   check(writes.length,3);
 } finally {
   if (browser) cleanup = await browser.close();

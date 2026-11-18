@@ -1,5 +1,5 @@
 use super::{App, remote::remote_identity};
-use crate::rpc::{Role, Rpc, latest_turn_page};
+use crate::rpc::{Role, Rpc, latest_turn_page, paginated_unmaterialized};
 use anyhow::{Context, Result, ensure};
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd, html};
 use serde_json::{Value, json};
@@ -142,10 +142,10 @@ fn latest_reply(reader: &mut dyn Rpc, thread: &str, initial: &Value) -> Result<O
 fn read_reply(reader: &mut dyn Rpc, thread: &str) -> Result<Value> {
     for _ in 0..2 {
         let running = thread_running(reader, thread)?;
-        let first = latest_turn_page(reader, thread, "summary")?;
+        let first = preview_head(reader, thread, "summary")?;
         let revision = single_turn(&first)?.map(|(_, id, status)| (id, status));
         let answer = latest_reply(reader, thread, &first)?;
-        let confirmation = latest_turn_page(reader, thread, "notLoaded")?;
+        let confirmation = preview_head(reader, thread, "notLoaded")?;
         let verified = single_turn(&confirmation)?.map(|(_, id, status)| (id, status));
         if running == thread_running(reader, thread)? && revision == verified {
             let in_progress = running || revision.is_some_and(|(_, status)| status == "inProgress");
@@ -154,6 +154,13 @@ fn read_reply(reader: &mut dyn Rpc, thread: &str) -> Result<Value> {
         }
     }
     anyhow::bail!("读取期间轮次发生变化，请重试")
+}
+
+fn preview_head(reader: &mut dyn Rpc, thread: &str, view: &str) -> Result<Value> {
+    match latest_turn_page(reader, thread, view) {
+        Err(error) if paginated_unmaterialized(&error, thread) => Ok(json!({"data":[]})),
+        result => result,
+    }
 }
 
 fn render_markdown(markdown: &str) -> String {
