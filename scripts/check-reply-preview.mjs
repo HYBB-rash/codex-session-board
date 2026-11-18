@@ -7,12 +7,13 @@ import { launchBrowser } from "./browser-client.mjs";
 const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const bridge = await readFile(new URL("../assets/app-bridge.js", import.meta.url), "utf8");
 const states = {in_progress:"进行中",review:"待审阅",blocked:"已阻塞",to_archive:"待归档"};
-const session = (id, state, title = "核对发布", extra = {}) => ({
+const sharedTitle = "核对发布及隔离启动历史记录".repeat(6);
+const session = (id, state, title = sharedTitle, extra = {}) => ({
   id,state,title,version:0,inputVersion:0,sectionVersion:"fixture",updatedAt:1760000000,...extra,
 });
 const fixture = () => ({
   states,health:{},fourColumns:true,projectCatalog:{loaded:true,items:[]},
-  sessions:[session("local","review"),session("remote:mac:session","in_progress","核对发布",{remote:true,hostId:"mac",hostLabel:"MacBook"}),
+  sessions:[session("local","review"),session("remote:mac:session","in_progress",sharedTitle,{remote:true,hostId:"mac",hostLabel:"MacBook"}),
     session("empty","blocked","尚无回复"),session("offline","to_archive","读取失败",{canOpen:false}),
     ...Array.from({length:20},(_,index)=>session(`review-${index}`,"review",`核对记录 ${index}`))],
 });
@@ -86,6 +87,20 @@ const until = async (predicate, message) => {
 };
 const card = id => `.card[data-id="${id}"] .card-title`;
 const remote = "remote:mac:session";
+const overlayClosed = 'byId("reply-reader").hidden && byId("reply-scrim").hidden';
+const geometry = `(() => {
+  const bounds = node => node.getBoundingClientRect().toJSON();
+  return {
+    columns:[...document.querySelectorAll(".column")].map(bounds),
+    titles:[...document.querySelectorAll(".card-title")].map(bounds),
+    lists:[...document.querySelectorAll(".column .cards")].map(list=>list.scrollTop),
+    horizontal:byId("board-viewport").scrollLeft, filter:byId("host-filter").value,
+  };
+})()`;
+const center = selector => `(() => {
+  const bounds = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+  return {x:bounds.left+bounds.width/2,y:bounds.top+bounds.height/2};
+})()`;
 const release = () => {
   pending.end(JSON.stringify({turnId:"local",html:"<p>本机迟到内容</p>",inProgress:false}));
   pending = null;
@@ -105,14 +120,43 @@ async function exercise(surface) {
   const page = await browser.page(address+(surface==="mcp" ? "/host" : "/"));
   const evaluate = surface==="mcp" ? await iframeEvaluator() : page.evaluate;
   const wait = expression => until(()=>evaluate(expression),expression);
+  const resize = async (width,height) => {
+    await page.command("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:1,mobile:false});
+    await wait(`innerWidth === ${width} && innerHeight === ${height}`);
+  };
   const press = selector => evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
+  const mouse = (type, point, buttons) => page.command("Input.dispatchMouseEvent",{
+    type,...point,button:"left",buttons,clickCount:1,
+  });
+  const click = async point => {
+    await mouse("mousePressed",point,1);
+    await mouse("mouseReleased",point,0);
+  };
+  const gutter = () => evaluate(`(() => {
+    const {right,top,height}=byId("reply-reader").getBoundingClientRect();
+    return {x:Math.floor(right)+4,y:Math.floor(top+height/2)};
+  })()`);
   await wait(`Boolean(document.querySelector(${JSON.stringify(card("local"))}))`);
+  await evaluate(`(() => {
+    const readReply = openReply;
+    window.settledLocalReads = 0;
+    openReply = async (session, focus) => {
+      await readReply(session, focus);
+      if (session.id === "local") window.settledLocalReads++;
+    };
+  })()`);
   await evaluate('byId("host-filter").value="all";byId("host-filter").dispatchEvent(new Event("change"))');
-  await press(card("local"));
+  await evaluate(`document.querySelector(${JSON.stringify(card("local"))}).scrollIntoView({block:"nearest"})`);
+  const baseline = await evaluate(geometry);
+  await click(await evaluate(center(card("local"))));
   await until(()=>pending,"本机请求未被延迟");
-  await press(card(remote));
+  assert.equal(await evaluate('byId("reply-scrim").hidden'),false);
+  assert.deepEqual(await evaluate(geometry),baseline);
+  await click(await evaluate(center(card(remote))));
   await wait('byId("reply-status").textContent === "上一条完整回复 · 当前轮次进行中"');
+  assert.deepEqual(await evaluate(geometry),baseline);
   release();
+  await wait("window.settledLocalReads === 1");
   await wait('byId("reply-text").innerHTML.includes("隔离启动")');
   const elements = '["h1","li","blockquote","pre code","table","a[href]"]';
   assert(await evaluate(`${elements}.every(tag=>byId("reply-text").querySelector(tag)) &&
@@ -121,21 +165,40 @@ async function exercise(surface) {
     await press("#reply-text a");
     await until(()=>page.evaluate('window.lastLink === "https://example.com/report"'),"插件未通过宿主打开链接");
   }
+  const start = await evaluate(center("#reply-text h1"));
+  const outside = await evaluate(`({x:byId("reply-reader").getBoundingClientRect().left-7,
+    y:byId("reply-text").querySelector("h1").getBoundingClientRect().bottom+8})`);
+  await mouse("mousePressed",start,1);
+  await mouse("mouseMoved",outside,1);
+  await mouse("mouseReleased",outside,0);
+  assert(await evaluate('!byId("reply-reader").hidden && getSelection().toString().trim().length > 0'));
+  await evaluate("getSelection().removeAllRanges()");
   if (process.argv[2]) {
     const capture = await page.command("Page.captureScreenshot",{format:"png"});
     await writeFile(`${process.argv[2]}/${surface}.png`,Buffer.from(capture.data,"base64"));
   }
-  for (const [width,height] of [[390,600],[390,320],[320,256]]) {
-    await page.command("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:1,mobile:false});
-    assert(await evaluate(`(() => {
+  for (const [width,height] of [[768,431],[768,430],[390,600],[390,320],[320,361],[320,256]]) {
+    await resize(width,height);
+    const layout = await evaluate(`(() => {
       const reader=byId("reply-reader"), body=byId("reply-body"), open=byId("reply-open");
       open.focus({preventScroll:true});
-      return body.clientHeight >= 96 && body.scrollHeight > body.clientHeight &&
-        open.getBoundingClientRect().bottom <= reader.getBoundingClientRect().bottom &&
-        document.activeElement === open;
-    })()`),`阅读栏在 ${width}×${height} 中裁切正文或原会话入口`);
+      return {bodyHeight:body.clientHeight, bodyScrollHeight:body.scrollHeight, openBottom:open.getBoundingClientRect().bottom,
+        readerBottom:reader.getBoundingClientRect().bottom, focused:document.activeElement === open,
+        fullTitle:byId("reply-title").title};
+    })()`);
+    assert(layout.bodyHeight >= 96 && layout.bodyScrollHeight > layout.bodyHeight &&
+      layout.openBottom <= Math.min(height,layout.readerBottom) && layout.focused && layout.fullTitle === sharedTitle,
+    `阅读栏在 ${width}×${height} 中裁切正文或原会话入口 ${JSON.stringify(layout)}`);
   }
-  await page.command("Emulation.setDeviceMetricsOverride",{width:1680,height:1000,deviceScaleFactor:1,mobile:false});
+  await resize(768,431);
+  const overlayBounds = `["reply-reader","reply-scrim"].map(id=>byId(id).getBoundingClientRect().toJSON())`;
+  const beforeWheel = await evaluate(overlayBounds);
+  await page.command("Input.dispatchMouseEvent",{type:"mouseWheel",x:8,y:250,deltaX:0,deltaY:480});
+  await wait("window.scrollY > 0");
+  assert.deepEqual(await evaluate(overlayBounds),beforeWheel);
+  assert.equal(beforeWheel[1].bottom,431);
+  await evaluate("window.scrollTo(0,0)");
+  await resize(1680,1000);
   const scroll = await evaluate('byId("reply-body").scrollTop=140;byId("reply-body").scrollTop');
   assert(scroll>0);
   snapshot.sessions[1].previewTurnId = "new";
@@ -145,13 +208,16 @@ async function exercise(surface) {
   assert.equal(await evaluate('byId("reply-body").scrollTop'),scroll);
   await press("#reply-refresh");
   await wait('byId("reply-text").textContent === "本轮已完成"');
+  await evaluate('byId("host-filter").focus({preventScroll:true})');
   await page.command("Input.dispatchKeyEvent",{type:"keyDown",key:"Escape",code:"Escape",windowsVirtualKeyCode:27});
-  await wait(`byId("reply-reader").hidden && document.activeElement.matches(${JSON.stringify(card(remote))})`);
+  await wait(`${overlayClosed} && document.activeElement.matches(${JSON.stringify(card(remote))})`);
   await press(card("local"));
   await until(()=>pending,"预览请求未被延迟");
-  await press("#board");
+  await click(await gutter());
+  await wait(overlayClosed);
   release();
-  assert(await evaluate('byId("reply-reader").hidden && !byId("reply-text").textContent'));
+  await wait("window.settledLocalReads === 2");
+  assert(await evaluate(`${overlayClosed} && !byId("reply-text").textContent`),"迟到正文改变了收起状态");
   await press(card("empty"));
   await wait('byId("reply-status").textContent === "还没有完整回复" && !byId("reply-open").disabled');
   await press(card("offline"));
@@ -168,30 +234,39 @@ async function exercise(surface) {
   assert.deepEqual(requests.filter(([path])=>path!=="/api/preview-reply"),[["/api/open",remote],["/api/open",remote]]);
   const position = await evaluate('const list=byId("column-review").querySelector(".cards");list.scrollTop=90;list.scrollTop');
   assert(position>0);
-  await press(card(remote));
-  await press("#board");
-  assert.equal(await evaluate('byId("column-review").querySelector(".cards").scrollTop'),position);
-  assert.equal(await evaluate('byId("host-filter").value'),"all");
-  await page.command("Emulation.setDeviceMetricsOverride",{width:768,height:900,deviceScaleFactor:1,mobile:false});
-  await press(card(remote));
+  const scrolled = await evaluate(geometry);
+  for (const blank of ["#column-review .column-heading h2","#column-in_progress .cards"]) {
+    await click(await evaluate(center(card(remote))));
+    await wait('!byId("reply-scrim").hidden');
+    await click(await evaluate(center(blank)));
+    await wait(overlayClosed);
+    assert.deepEqual(await evaluate(geometry),scrolled);
+  }
+  await click(await evaluate(center(card(remote))));
+  await wait('byId("reply-text").textContent === "本轮已完成"');
+  const beforeAdjust = requests.length;
+  await click(await evaluate(center(`.card[data-id="${remote}"] [data-action="adjust"]`)));
+  await wait('byId("editor").open && !byId("reply-scrim").hidden');
+  assert.equal(requests.length,beforeAdjust);
+  await evaluate('byId("editor").close()');
+  await click(await gutter());
+  await wait(overlayClosed);
+  await resize(768,900);
   const horizontal = await evaluate('byId("board-viewport").scrollLeft=10000;byId("board-viewport").scrollLeft');
-  await press("#board");
-  const collapsed = await evaluate('byId("board-viewport").scrollLeft');
-  assert(horizontal>collapsed && collapsed>0);
+  assert(horizontal>0);
+  const narrow = await evaluate(geometry);
   await press(card(remote));
-  assert.equal(await evaluate('byId("board-viewport").scrollLeft'),horizontal);
-  await press("#reply-close");
+  assert.deepEqual(await evaluate(geometry),narrow);
+  await click(await gutter());
+  await wait(overlayClosed);
+  assert.deepEqual(await evaluate(geometry),narrow);
   if (surface==="http") await checkTitleDrag(page, evaluate);
   checks.push(surface);
 }
 async function checkTitleDrag(page, evaluate) {
   await page.command("Emulation.setDeviceMetricsOverride",{width:1680,height:1000,deviceScaleFactor:1,mobile:false});
   await evaluate(`document.querySelector(${JSON.stringify(card("local"))}).scrollIntoView({block:"center"})`);
-  const center = selector=>evaluate(`(() => {
-    const bounds = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
-    return {x:bounds.left+bounds.width/2,y:bounds.top+bounds.height/2};
-  })()`);
-  const source = await center(card("local")), target = await center("#column-blocked .cards");
+  const source = await evaluate(center(card("local"))), target = await evaluate(center("#column-blocked .cards"));
   const before = requests.length;
   await page.command("Input.setInterceptDrags",{enabled:true});
   const drag = page.event("Input.dragIntercepted");
