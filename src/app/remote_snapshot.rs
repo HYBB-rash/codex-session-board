@@ -18,7 +18,7 @@ impl App {
     ) -> Result<Value> {
         let host = &remote.config.host_id;
         let view = crate::catalog::view::read(remote, &self.store.catalog_drafts(host)?)?;
-        let rows = view.rows;
+        let mut rows = view.rows;
         let known = remote.store.saved_session_ids()?;
         let mut health = remote
             .health
@@ -32,6 +32,9 @@ impl App {
             .map(|binding| binding.require_confirmed())
             .transpose();
         let writable = remote.enabled.load(Ordering::SeqCst) && checked.is_ok();
+        if writable {
+            remote.annotate_previews(&mut rows)?;
+        }
         health["nativeCalibration"] = self.calibration_health(host)?;
         health["writeError"] = json!(checked.err().map(|error| error.to_string()));
         health["catalog"] = view.health;

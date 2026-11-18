@@ -8,7 +8,7 @@ use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, atomic::Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub fn scan_history(app: &App, reader: &mut dyn Rpc) -> Result<()> {
     app.update_health(json!({"refreshing":true,"lastScanAt":now()}))?;
@@ -99,7 +99,7 @@ pub fn history_candidates(rows: &[Value], quota: usize) -> Vec<Value> {
 pub fn scan_runtime(
     app: &App,
     reader: &mut dyn Rpc,
-    revisions: &mut HashMap<String, String>,
+    revisions: &mut RuntimeRevisions,
     since: f64,
 ) -> Result<()> {
     let (threads, complete) =
@@ -114,7 +114,38 @@ enum Seen {
     Unread,
     Unconfirmed(String),
     Phase(String),
-    Saved(String, String),
+    Saved(String, RuntimeRevision),
+}
+
+pub type RuntimeRevisions = HashMap<String, RuntimeRevision>;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RuntimeRevision {
+    metadata: String,
+    turn_id: Value,
+    turn_status: Value,
+    checked_at: Instant,
+}
+
+impl RuntimeRevision {
+    fn new(metadata: String, turn: &Value, checked_at: Instant) -> Self {
+        Self {
+            metadata,
+            turn_id: turn["id"].clone(),
+            turn_status: turn["status"].clone(),
+            checked_at,
+        }
+    }
+
+    fn unchanged_turn(&self, page: &Value) -> bool {
+        let Some(turns) = page["data"].as_array() else { return false };
+        match turns.as_slice() {
+            [] => self.turn_id.is_null() && page["nextCursor"].is_null(),
+            [turn] => turn["id"].is_string() && turn["id"] == self.turn_id
+                && turn["status"] == self.turn_status,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -146,6 +177,7 @@ fn frame_blocked(note: Option<&str>, updated_at: i64) -> bool {
 }
 
 fn runtime_pause(app: &App, error: &anyhow::Error) -> Result<bool> {
+    app.preview_turns.clear()?;
     app.evidence_gaps.lock().map_err(|_| anyhow::anyhow!("执行信号锁已损坏"))?.0.clear();
     if frame_too_large(error) {
         return Ok(false);
@@ -160,16 +192,34 @@ fn runtime_pause(app: &App, error: &anyhow::Error) -> Result<bool> {
 pub(crate) fn observe_runtime_threads(
     app: &App,
     reader: &mut dyn Rpc,
-    revisions: &mut HashMap<String, String>,
+    revisions: &mut RuntimeRevisions,
     since: f64,
     threads: &[Value],
 ) -> Result<()> {
+    observe_runtime_threads_at(app, reader, revisions, since, threads, Instant::now())
+}
+
+pub(crate) fn observe_runtime_threads_at(
+    app: &App,
+    reader: &mut dyn Rpc,
+    revisions: &mut RuntimeRevisions,
+    since: f64,
+    threads: &[Value],
+    observed_at: Instant,
+) -> Result<()> {
+    invalidate_changed_previews(app, revisions, threads)?;
+    let rechecks = idle_rechecks(app, revisions, threads, observed_at);
     let mut unreadable = 0;
     let mut native_errors = Vec::new();
     let mut unconfirmed = HashSet::new();
     for thread in threads {
-        match observe_one(app, reader, revisions, since, thread)? {
-            Seen::Unread => unreadable += 1,
+        let identifier = thread["id"].as_str().context("会话缺少 ID")?;
+        match observe_one(app, reader, revisions, since, thread, observed_at, rechecks.contains(identifier))? {
+            Seen::Unread => {
+                app.preview_turns.remove(identifier)?;
+                revisions.remove(identifier);
+                unreadable += 1;
+            }
             Seen::Unconfirmed(identifier) => { unconfirmed.insert(identifier); }
             Seen::Phase(error) => {
                 if !native_errors.contains(&error) {
@@ -193,12 +243,59 @@ pub(crate) fn observe_runtime_threads(
         "runtimeError":if warnings.is_empty() {Value::Null} else {json!(warnings.join("。"))}}))
 }
 
+fn invalidate_changed_previews(app: &App, revisions: &mut RuntimeRevisions, threads: &[Value]) -> Result<()> {
+    for thread in threads {
+        let identifier = thread["id"].as_str().context("会话缺少 ID")?;
+        if !matches!(thread["status"]["type"].as_str(), Some("idle" | "notLoaded")) {
+            revisions.remove(identifier);
+            app.preview_turns.remove(identifier)?;
+        } else if cached_revision(revisions, identifier, &thread_revision(thread)).is_none() {
+            app.preview_turns.remove(identifier)?;
+        }
+    }
+    Ok(())
+}
+
+fn idle_rechecks<'a>(
+    app: &App,
+    revisions: &RuntimeRevisions,
+    threads: &'a [Value],
+    observed_at: Instant,
+) -> HashSet<&'a str> {
+    let interval = Duration::from_secs(app.config.runtime_poll_seconds);
+    let recently_updated_after = now() - interval.as_secs_f64();
+    let mut due: Vec<_> = threads.iter().filter_map(|thread| {
+        let identifier = thread["id"].as_str()?;
+        let cached = cached_revision(revisions, identifier, &thread_revision(thread))?;
+        let recent = thread["updatedAt"].as_f64().is_some_and(|time| time >= recently_updated_after);
+        (observed_at.saturating_duration_since(cached.checked_at) >= interval)
+            .then_some((cached.checked_at, identifier, recent))
+    }).collect();
+    due.sort_unstable();
+    let mut due = due.into_iter();
+    let oldest = due.next();
+    let next = due.min_by_key(|(checked_at, identifier, recent)| (!recent, *checked_at, *identifier));
+    oldest.into_iter().chain(next).map(|(_, identifier, _)| identifier).collect()
+}
+
+fn cached_revision<'a>(
+    revisions: &'a RuntimeRevisions, identifier: &str, metadata: &str,
+) -> Option<&'a RuntimeRevision> {
+    revisions.get(identifier).filter(|cached| cached.metadata == metadata)
+}
+
+fn thread_revision(thread: &Value) -> String {
+    json!([thread["updatedAt"], thread["status"]]).to_string()
+}
+
 fn observe_one(
     app: &App,
     reader: &mut dyn Rpc,
-    revisions: &HashMap<String, String>,
+    revisions: &mut RuntimeRevisions,
     since: f64,
     thread: &Value,
+    observed_at: Instant,
+    recheck: bool,
 ) -> Result<Seen> {
     ensure!(app.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
     let identifier = thread["id"].as_str().context("会话缺少 ID")?;
@@ -214,19 +311,19 @@ fn observe_one(
         return Ok(Seen::Same);
     }
     let status = &thread["status"];
-    let revision = json!([thread["updatedAt"], status]).to_string();
-    if status["type"] != "active" && revisions.get(identifier) == Some(&revision)
-        && !app.needs_native_backfill(identifier)? {
-        return Ok(Seen::Same);
+    let metadata = thread_revision(thread);
+    let recheck_at = recheck.then_some(observed_at);
+    match needs_turn_read(app, reader, revisions, identifier, &metadata, recheck_at) {
+        Ok(false) => return Ok(Seen::Same),
+        Err(error) if error.downcast_ref::<RequestError>().is_some() => return Ok(Seen::Unread),
+        result => { result?; }
     }
     match read_runtime_turn(reader, identifier, status, app.config.four_columns) {
         Ok(turn) => {
-            let unresolved = app.config.four_columns
-                && crate::model::verified_runtime_state(status, &turn).is_none()
-                && (status["type"] == "active" || thread["updatedAt"].as_f64().is_some_and(|time| time >= since)
-                    && turn["userItems"].as_array().is_some_and(|items| !items.is_empty()));
+            app.preview_turns.observe(identifier, status, &turn)?;
+            let revision = RuntimeRevision::new(metadata, &turn, observed_at);
             let seen = apply_observed_turn(app, identifier, status, &turn, since, revision)?;
-            Ok(if unresolved && matches!(seen, Seen::Same) {
+            Ok(if matches!(seen, Seen::Same) && unresolved_runtime(app, thread, &turn, since) {
                 Seen::Unconfirmed(identifier.to_owned())
             } else {
                 seen
@@ -240,6 +337,35 @@ fn observe_one(
         }
         Err(error) => Err(error),
     }
+}
+
+fn unresolved_runtime(app: &App, thread: &Value, turn: &Value, since: f64) -> bool {
+    let status = &thread["status"];
+    app.config.four_columns && crate::model::verified_runtime_state(status, turn).is_none()
+        && (status["type"] == "active" || thread["updatedAt"].as_f64().is_some_and(|time| time >= since)
+            && turn["userItems"].as_array().is_some_and(|items| !items.is_empty()))
+}
+
+fn needs_turn_read(
+    app: &App,
+    reader: &mut dyn Rpc,
+    revisions: &mut RuntimeRevisions,
+    identifier: &str,
+    metadata: &str,
+    recheck: Option<Instant>,
+) -> Result<bool> {
+    let Some(cached) = revisions.get_mut(identifier).filter(|cached| cached.metadata == metadata)
+        else { return Ok(true) };
+    if app.needs_native_backfill(identifier)? { return Ok(true); }
+    let Some(observed_at) = recheck else { return Ok(false) };
+    let page = rpc::latest_turn_page(reader, identifier, "notLoaded")?;
+    if cached.unchanged_turn(&page) {
+        cached.checked_at = observed_at;
+        return Ok(false);
+    }
+    app.preview_turns.remove(identifier)?;
+    revisions.remove(identifier);
+    Ok(true)
 }
 
 fn read_runtime_turn(reader: &mut dyn Rpc, identifier: &str, status: &Value,
@@ -262,7 +388,7 @@ fn apply_observed_turn(
     status: &Value,
     turn: &Value,
     since: f64,
-    revision: String,
+    revision: RuntimeRevision,
 ) -> Result<Seen> {
     let _operation = app.operation()?;
     ensure!(app.enabled.load(Ordering::SeqCst), "主机连接登记已失效");
@@ -364,7 +490,7 @@ fn runtime_worker(app: Arc<App>) -> Result<()> {
 fn runtime_step(
     app: &App,
     reader: &mut Option<RuntimeConnection>,
-    revisions: &mut HashMap<String, String>,
+    revisions: &mut RuntimeRevisions,
     since: f64,
 ) -> Result<()> {
     if reader.is_none() {
@@ -513,6 +639,27 @@ mod tests {
 
     fn thread(identifier: &str, updated_at: i64) -> Value {
         json!({"id":identifier,"updatedAt":updated_at,"status":{"type":"idle"},"name":identifier})
+    }
+
+    #[test]
+    fn idle_rechecks_limit_extra_reads_and_rotate_across_stable_rows() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let app = App::new(Config {data_dir: directory.path().into(), ..Config::default()})?;
+        let rows = [thread("first", 100), thread("second", 100), thread("third", 100)];
+        app.store.discover(&rows)?;
+        let mut revisions = RuntimeRevisions::new();
+        let mut reader = Script {calls: Vec::new()};
+        let started = Instant::now();
+        let interval = Duration::from_secs(app.config.runtime_poll_seconds);
+        observe_runtime_threads_at(&app, &mut reader, &mut revisions, 0.0, &rows, started)?;
+        assert_eq!(reader.calls, ["first", "second", "third"]);
+        reader.calls.clear();
+        observe_runtime_threads_at(&app, &mut reader, &mut revisions, 0.0, &rows, started + interval)?;
+        assert_eq!(reader.calls, ["first", "second"]);
+        reader.calls.clear();
+        observe_runtime_threads_at(&app, &mut reader, &mut revisions, 0.0, &rows, started + interval * 2)?;
+        assert_eq!(reader.calls, ["first", "third"]);
+        Ok(())
     }
 
     #[test]
