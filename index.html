@@ -121,19 +121,29 @@ input[type=search]{width:180px}
 .card-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:2px;margin-left:auto}
 .row-action{min-height:28px;padding:0 7px;border-color:transparent;background:transparent;color:var(--muted);font-size:12px;white-space:nowrap}
 .row-action:hover{border-color:transparent;background:var(--subtle);color:var(--ink)}
-#board-workspace{flex:1 0 auto;min-height:0;display:grid;grid-template: minmax(0,1fr) / minmax(0,1fr)}
-#board-workspace.reading{flex:1 1 0;min-height:340px;grid-template-columns:minmax(0,1fr) clamp(300px,41%,540px);gap:12px}
-#board-workspace.reading .board{min-height:0}
-@media(max-width:670px){
-  #board-workspace.reading{min-height:440px;grid-template:minmax(88px,1fr) minmax(340px,2fr) / minmax(0,1fr)}
-}
+#board-workspace{flex:1 0 auto;min-height:0;display:grid;grid-template:minmax(0,1fr) / minmax(0,1fr)}
+#reply-scrim{position:fixed;inset:0;z-index:3;pointer-events:none;background:light-dark(#262d431b,#0b0c1070)}
 .card:has(.card-title[aria-expanded=true]){border-color:var(--blue)}
-#reply-reader{min-height:0;min-width:0;display:grid;grid-template-rows:auto auto minmax(96px,1fr) auto;overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+#reply-reader{
+  --reply-top:calc(8px + var(--host-inset-top,0px));
+  --reply-bottom:calc(12px + var(--host-inset-bottom,0px));
+  --reply-right:calc(24px + var(--host-inset-right,0px));
+  position:fixed;z-index:4;
+  top:clamp(var(--reply-top),var(--reply-board-top,var(--reply-top)),calc(100dvh - var(--reply-bottom) - 340px));
+  bottom:var(--reply-bottom);right:var(--reply-right);
+  width:clamp(285px,43%,540px);
+  max-width:calc(100% - var(--reply-right) - 56px - var(--host-inset-left,0px));
+  display:grid;grid-template-rows:auto auto minmax(96px,1fr) auto;overflow:auto;
+  border:1px solid var(--line);border-radius:10px;background:var(--bg);box-shadow:0 8px 30px light-dark(#252b3a29,#0007);
+}
+@media(max-width:800px){
+  #reply-reader{--reply-right:calc(16px + var(--host-inset-right,0px))}
+}
 .reply-heading,.reply-actions{padding:12px 16px}
 .reply-heading{border-bottom:1px solid var(--line)}
 .reply-label{display:flex;align-items:center;justify-content:space-between;color:var(--muted)}
-.reply-heading h2{margin:4px 0;overflow-wrap:anywhere}
-#reply-meta{margin:0;color:var(--muted)}
+.reply-heading h2{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;margin:4px 0;overflow-wrap:anywhere}
+#reply-meta{margin:0;color:var(--muted);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 #reply-state{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:8px 16px;color:var(--muted);border-bottom:1px solid var(--line)}
 #reply-status{margin:0}
 #reply-status.error{color:var(--danger)}
@@ -145,6 +155,17 @@ input[type=search]{width:180px}
 #reply-text :is(th,td){padding:4px 8px;border:1px solid var(--line)}
 #reply-text a[href]{color:var(--blue)}
 .reply-actions{display:flex;justify-content:flex-end;border-top:1px solid var(--line)}
+@media(max-height:430px){
+  .reply-heading,.reply-actions,#reply-state{padding:4px 10px}
+  .reply-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:8px}
+  .reply-label{display:contents}
+  .reply-label span{display:none}
+  #reply-close{grid-column:2;grid-row:1 / span 2}
+  .reply-label button,.reply-actions button,#reply-refresh{padding:3px 7px}
+  .reply-heading h2,#reply-meta{grid-column:1}
+  .reply-heading h2{-webkit-line-clamp:1;margin:0;font-size:15px}
+  #reply-body{padding:8px 10px}
+}
 .empty-column{display:grid;place-items:center;min-height:74px;margin:0;padding:16px 12px;border:1px dashed transparent;border-radius:10px;color:var(--muted);font-size:12px;text-align:center}
 .drag-active .empty-column{border-color:var(--hover)}
 .board-help{margin-top:8px;color:var(--muted);font-size:12px}
@@ -220,6 +241,7 @@ textarea{resize:vertical;min-height:90px}
     <summary id="unplaced-summary">未归列会话</summary>
     <div id="unplaced-cards" class="cards"></div>
   </details>
+  <div id="reply-scrim" aria-hidden="true" hidden></div>
   <div id="board-workspace">
     <div class="board-viewport" id="board-viewport" tabindex="0" aria-label="横向滚动查看全部状态列">
     <div class="board" id="board" aria-label="会话状态看板"></div>
@@ -357,7 +379,6 @@ const draftRequests = new Map();
 const nativeDraftOperations = new Map();
 const connectingHosts = new Set();
 let replyPreview = null;
-let collapsedReplyScroll = null;
 const byId = id => document.getElementById(id);
 const date = value => value ? new Date(value * 1000).toLocaleString("zh-CN",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "尚未读取";
 function element(tag, text, className) {
@@ -644,6 +665,13 @@ function updateReplyAvailability() {
     replyStatus(replyPreview.turnId ? "新答复已完成 · 当前仍在阅读上一条" : "新答复已完成","查看新答复");
   }
 }
+function alignReplyToBoard() {
+  const boardTop = byId("board-workspace").getBoundingClientRect().top;
+  byId("reply-reader").style.setProperty("--reply-board-top",`${boardTop + 4}px`);
+}
+window.addEventListener("resize",() => {
+  if (replyPreview) alignReplyToBoard();
+});
 async function openReply(session, focus = false) {
   if (dragging || saving && !moving || creating || moving?.id === session.id || performance.now() < suppressOpenUntil) return;
   const current = data.sessions.find(row => row.id === session.id) || session;
@@ -651,17 +679,16 @@ async function openReply(session, focus = false) {
   replyPreview = preview;
   syncReplySelection();
   byId("reply-title").textContent = session.title;
-  byId("reply-meta").textContent = `${session.hostLabel || "本机"} · ${date(session.updatedAt)}`;
+  byId("reply-title").title = session.title;
+  const metadata = byId("reply-meta");
+  metadata.textContent = `${session.hostLabel || "本机"} · ${date(session.updatedAt)}`;
+  metadata.title = metadata.textContent;
   replyStatus("正在读取回复…");
   byId("reply-text").replaceChildren();
   byId("reply-body").setAttribute("aria-busy","true");
-  const viewport = byId("board-viewport");
-  const resumeScroll = collapsedReplyScroll?.closed === viewport.scrollLeft &&
-    collapsedReplyScroll?.width === viewport.clientWidth ? collapsedReplyScroll.reading : viewport.scrollLeft;
-  collapsedReplyScroll = null;
+  if (byId("reply-reader").hidden) alignReplyToBoard();
+  byId("reply-scrim").hidden = false;
   byId("reply-reader").hidden = false;
-  byId("board-workspace").classList.add("reading");
-  viewport.scrollLeft = resumeScroll;
   byId("reply-body").scrollTop = 0;
   updateReplyAvailability();
   if (focus) byId("reply-close").focus({preventScroll:true});
@@ -683,20 +710,14 @@ async function openReply(session, focus = false) {
     if (replyPreview === preview) byId("reply-body").setAttribute("aria-busy","false");
   }
 }
-function closeReply() {
+function closeReply(restoreFocus = false) {
   if (!replyPreview) return;
   const id = replyPreview.id;
   const reader = byId("reply-reader");
-  const restore = reader.contains(document.activeElement) || document.activeElement === document.body;
-  const viewport = byId("board-viewport");
-  const reading = viewport.scrollLeft;
+  const restore = restoreFocus || reader.contains(document.activeElement) || document.activeElement === document.body;
   replyPreview = null;
   reader.hidden = true;
-  byId("board-workspace").classList.remove("reading");
-  viewport.scrollLeft = reading;
-  if (viewport.scrollLeft !== reading) {
-    collapsedReplyScroll = {reading,closed:viewport.scrollLeft,width:viewport.clientWidth};
-  }
+  byId("reply-scrim").hidden = true;
   byId("reply-text").replaceChildren();
   byId("reply-body").setAttribute("aria-busy","false");
   syncReplySelection();
@@ -711,18 +732,19 @@ byId("reply-open").onclick = async () => {
   const preview = replyPreview;
   if (preview && await openSession(preview.id) && replyPreview === preview) closeReply();
 };
-let replyPointerOrigin = false;
+let replyPointerStartedInside = false;
 document.addEventListener("pointerdown",event => {
-  replyPointerOrigin = byId("reply-reader").contains(event.target);
+  replyPointerStartedInside = byId("reply-reader").contains(event.target);
 },true);
 document.addEventListener("click",event => {
-  if (!replyPreview || replyPointerOrigin || dragging || performance.now() < suppressOpenUntil) return;
-  if (!event.target.closest("#reply-reader,.card,button,a,input,select,textarea,label,details,dialog,nav")) closeReply();
+  if (!replyPreview || dragging || performance.now() < suppressOpenUntil) return;
+  if (event.detail > 0 && replyPointerStartedInside) return;
+  if (!event.target.closest("#reply-reader,.card,button,a,input,select,textarea,label,summary,dialog,[popover]")) closeReply();
 });
 document.addEventListener("keydown",event => {
   if (event.key === "Escape" && replyPreview && !document.querySelector("dialog[open],.sort-menu:popover-open")) {
     event.preventDefault();
-    closeReply();
+    closeReply(true);
   }
 });
 byId("reply-text").addEventListener("click",event => {
@@ -1286,7 +1308,6 @@ function visibleSessions() {
   return sessions.filter(session => "project:" + session.projectId === selectedProject);
 }
 function resetFilterScroll() {
-  collapsedReplyScroll = null;
   for (const cards of document.querySelectorAll(".cards")) cards.scrollTop = 0;
 }
 function toggleFilter() {
