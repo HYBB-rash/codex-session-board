@@ -143,6 +143,28 @@ fn ssh_preview_rejects_old_connection_and_dynamic_config_without_writing() -> Re
 }
 
 #[test]
+fn ssh_preview_rejects_an_existing_connection_with_a_stale_endpoint_binding() -> Result<()> {
+    let temporary = tempfile::tempdir()?;
+    let (peer, config) = fixture(temporary.path())?;
+    let app = App::new(config)?;
+    let identity = json!({"hostId":peer.host.host_id,"displayName":"existing","alias":"example"});
+    let state = json!({"codex-managed-remote-connections":[identity]});
+    fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&state)?)?;
+    let saved = peer.host.directory(&app.config).join("source.json");
+    let record = json!({"schemaVersion":2,"hostId":peer.host.host_id,
+        "ssh":{"hostname":"previous.example","user":"remote","port":22},
+        "peer":{"uid":502,"home":"/other","codexHome":"/other/.codex","declaredCodexHome":"/other/.codex"}});
+    crate::config::write_json(&saved, &record, false)?;
+    peer.update("targets", json!({"example":{"hostname":"another-address.example","user":"remote","port":22}}))?;
+    let directory = temporary.path().join(".ssh");
+    let error = preview(&app, &directory).unwrap_err();
+    assert!(error.to_string().contains("无法排除既有 Codex 连接"));
+    assert!(!directory.exists());
+    assert!(app.store.ssh_setup_records()?.is_empty());
+    Ok(())
+}
+
+#[test]
 fn ssh_preview_reuses_a_user_selected_existing_alias_without_file_changes() -> Result<()> {
     let temporary = tempfile::tempdir()?;
     let (_peer, mut config) = fixture(temporary.path())?;

@@ -326,7 +326,9 @@ fn reject_existing(app: &App, probe: &Probe, target: &Target, proof: &Value, res
         let identity = binding.and_then(|binding| binding.mapping_identity());
         ensure!(!same_target && !identity.as_ref().is_ok_and(|record| record["peer"] == proof["peer"]),
             "Codex 已登记同一连接，请使用原连接和项目");
-        ensure!(identity.is_ok(),
+        let current = json!({"hostname":settings["hostname"][0],"user":settings["user"][0],
+            "port":settings["port"][0].as_str().and_then(|port| port.parse::<u16>().ok())});
+        ensure!(identity.is_ok_and(|record| record["ssh"] == current),
             "无法排除既有 Codex 连接指向同一环境，请先核对现有连接");
     }
     Ok(())

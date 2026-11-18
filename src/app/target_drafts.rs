@@ -49,9 +49,22 @@ impl App {
         crate::native_new::registered_alias(&self.config, &request.host)?;
         let existing = self.store.native_draft(operation)?.unwrap_or(Value::Null);
         let selected = self.prepared_project(&request, &existing)?;
-        if let Some(preview) = crate::native_new::consent(&self.config, &selected, &body["consent"])? {
-            return Ok(preview);
-        }
+        let navigation = match crate::native_new::navigation(&self.config, &selected, &body["consent"])? {
+            crate::native_new::Navigation::Preview(preview) => return Ok(preview),
+            crate::native_new::Navigation::Ready(navigation) => navigation,
+        };
+        let target = self.prepare_confirmed_target(&request, &selected, &navigation)?;
+        navigation.verify(&self.config, &selected)?;
+        self.open_target_draft(&request, &target, navigation.url())
+    }
+
+    fn prepare_confirmed_target(
+        &self,
+        request: &TargetRequest<'_>,
+        selected: &Value,
+        navigation: &crate::native_new::ApprovedNavigation,
+    ) -> Result<Value> {
+        let operation = request.operation;
         let record = self.store.native_draft_begin(request.key, operation)?;
         let remote = self.target_draft_host(&request.host)?;
         let _active = remote.operation()?;
@@ -69,14 +82,19 @@ impl App {
             &fresh,
             &source,
             &record,
-            &request,
+            request,
             remote.config.max_pages,
+            |payload| {
+                ensure!(payload["roots"] == json!([{"path":crate::native_new::directory(selected)?}]),
+                    "项目目录已改变，请刷新后重新选择");
+                navigation.verify(&self.config, selected)
+            },
         )?;
         ensure!(target["roots"].as_array().is_some_and(|roots| roots.len() == 1)
-            && target["cwd"] == crate::native_new::directory(&selected)?,
+            && target["cwd"] == crate::native_new::directory(selected)?,
             "项目目录已改变，请刷新后重新选择");
         self.store.native_draft_prepared(operation, &target)?;
-        self.open_target_draft(&request, &target)
+        Ok(target)
     }
 
     fn prepared_project(&self, request: &TargetRequest<'_>, record: &Value) -> Result<Value> {
@@ -107,10 +125,8 @@ impl App {
         self.remote_app(host)
     }
 
-    fn open_target_draft(&self, request: &TargetRequest<'_>, target: &Value) -> Result<Value> {
+    fn open_target_draft(&self, request: &TargetRequest<'_>, target: &Value, url: String) -> Result<Value> {
         let operation = request.operation;
-        let project = json!({"hostId":request.host,"paths":[target["cwd"]]});
-        let url = crate::native_new::remote_url(&self.config, &project)?;
         match open_client_url(url, &self.config) {
             Ok(url) => {
                 self.store.native_draft_opened(operation)?;
@@ -154,12 +170,13 @@ fn prepare_target(
     record: &Value,
     request: &TargetRequest<'_>,
     pages: usize,
+    authorize_import: impl FnOnce(&Value) -> Result<()>,
 ) -> Result<Value> {
     let legacy = (request.origin == "targetLegacy").then_some(request.identifier.as_str());
     let project = if let Some(canonical) = record["target"]["projectId"].as_str() {
         fresh.server(reader, canonical)?
     } else if legacy.is_some() {
-        fresh.prepare_legacy(reader, &request.identifier, pages)?
+        fresh.prepare_legacy(reader, &request.identifier, pages, authorize_import)?
     } else {
         fresh.server(reader, &request.identifier)?
     };

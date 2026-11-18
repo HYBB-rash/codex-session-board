@@ -1151,10 +1151,13 @@
       "common": [
         "lib::codex_session_board::app::drafts::tests::project_confirmation_handles_implicit_membership_but_rejects_ambiguous_or_foreign_hosts",
         "lib::codex_session_board::app::drafts::tests::native_remote_new_previews_persistent_changes_and_rejects_stale_consent",
+        "lib::codex_session_board::app::drafts::tests::approved_native_navigation_rechecks_alias_and_account_before_handoff",
+        "lib::codex_session_board::app::target_drafts::tests::legacy_target_rejects_a_moved_directory_before_import",
         "lib::codex_session_board::app::ssh_setup::tests::ssh_apply_checks_drift_writes_real_files_and_recovers_the_same_alias",
         "lib::codex_session_board::app::ssh_setup::tests::ssh_apply_resumes_partial_registration_but_preserves_user_changes",
         "lib::codex_session_board::app::ssh_setup::tests::ssh_decline_survives_app_restart_and_a_dismissed_restore_preview",
         "lib::codex_session_board::app::ssh_setup::tests::ssh_preview_rejects_old_connection_and_dynamic_config_without_writing",
+        "lib::codex_session_board::app::ssh_setup::tests::ssh_preview_rejects_an_existing_connection_with_a_stale_endpoint_binding",
         "lib::codex_session_board::app::ssh_setup::tests::ssh_preview_reuses_a_user_selected_existing_alias_without_file_changes",
         "lib::codex_session_board::remote::hosts::tests::auto_connect_reads_only_the_current_codex_account_preferences",
         "lib::codex_session_board::app::remote::tests::opening_a_known_offline_chat_does_not_require_connecting_or_enable_writes",

@@ -13,7 +13,12 @@ pub(crate) fn directory(project: &Value) -> Result<&str> {
 }
 
 pub(crate) fn registered_alias(config: &Config, identifier: &str) -> Result<String> {
-    let hosts = hosts::registered(config)?;
+    let state = read_registry(config)?;
+    registered_alias_in(&state, identifier)
+}
+
+fn registered_alias_in(state: &Value, identifier: &str) -> Result<String> {
+    let hosts = hosts::registered_in(state)?;
     let host = hosts.iter().find(|host| host.host_id == identifier)
         .context("远程主机已移除或未登记，请刷新")?;
     let alias = host.alias.as_deref().filter(|alias| !alias.trim().is_empty())
@@ -31,36 +36,73 @@ pub(crate) fn remote_url(config: &Config, project: &Value) -> Result<String> {
     alias_url(&alias, directory(project)?)
 }
 
-pub(crate) fn consent(config: &Config, project: &Value, acknowledged: &Value) -> Result<Option<Value>> {
-    let identifier = project["hostId"].as_str().context("远程项目缺少主机")?;
-    let alias = registered_alias(config, identifier)?;
-    let path = directory(project)?;
-    let state: Value = serde_json::from_slice(&std::fs::read(&config.sidebar_state_file)?)?;
-    let (owner, auto_connect) = hosts::auto_connect_settings(&state)?;
-    let auto = &auto_connect[identifier];
-    let projects = state["remote-projects"].as_array().into_iter().flatten()
-        .filter(|row| row["hostId"] == identifier).collect::<Vec<_>>();
-    let has_project = projects.iter().any(|row| row["remotePath"] == path);
-    let import = project["origin"] == "targetLegacy";
-    let mut changes = Vec::new();
-    if import {
-        changes.push("将远端旧项目登记到远端项目目录".to_owned());
+pub(crate) enum Navigation {
+    Preview(Value),
+    Ready(ApprovedNavigation),
+}
+
+pub(crate) struct ApprovedNavigation {
+    token: String,
+    url: String,
+}
+
+impl ApprovedNavigation {
+    pub(crate) fn verify(&self, config: &Config, project: &Value) -> Result<()> {
+        let current = NavigationChanges::read(config, project)?;
+        ensure!(current.token == self.token, "Codex 连接或账号已改变，请重新核对新建授权");
+        Ok(())
     }
-    if !has_project {
-        changes.push(format!("在 Codex 中为 {alias} 登记目录 {path}"));
+
+    pub(crate) fn url(self) -> String {
+        self.url
     }
-    if *auto != true {
-        changes.push(format!("开启 {alias} 的自动连接"));
+}
+
+struct NavigationChanges {
+    alias: String,
+    path: String,
+    token: String,
+    changes: Vec<String>,
+}
+
+impl NavigationChanges {
+    fn read(config: &Config, project: &Value) -> Result<Self> {
+        let identifier = project["hostId"].as_str().context("远程项目缺少主机")?;
+        let path = directory(project)?;
+        let state = read_registry(config)?;
+        let alias = registered_alias_in(&state, identifier)?;
+        let (owner, auto_connect) = hosts::auto_connect_settings(&state)?;
+        let auto = &auto_connect[identifier];
+        let projects: Vec<_> = state["remote-projects"].as_array().into_iter().flatten()
+            .filter(|row| row["hostId"] == identifier).collect();
+        let mut changes = Vec::new();
+        if project["origin"] == "targetLegacy" {
+            changes.push("将远端旧项目登记到远端项目目录".to_owned());
+        }
+        if !projects.iter().any(|row| row["remotePath"] == path) {
+            changes.push(format!("在 Codex 中为 {alias} 登记目录 {path}"));
+        }
+        if *auto != true {
+            changes.push(format!("开启 {alias} 的自动连接"));
+        }
+        let token = format!("{:x}", Sha256::digest(serde_json::to_vec(
+            &json!([owner,identifier,alias,path,auto,projects,project["id"]]))?));
+        Ok(Self { alias, path: path.to_owned(), token, changes })
     }
-    if changes.is_empty() {
-        return Ok(None);
+}
+
+pub(crate) fn navigation(config: &Config, project: &Value, acknowledged: &Value) -> Result<Navigation> {
+    let plan = NavigationChanges::read(config, project)?;
+    if plan.changes.is_empty() || *acknowledged == plan.token {
+        let url = alias_url(&plan.alias, &plan.path)?;
+        return Ok(Navigation::Ready(ApprovedNavigation { token: plan.token, url }));
     }
-    let token = format!("{:x}", Sha256::digest(serde_json::to_vec(
-        &json!([owner,identifier,alias,path,auto,projects,project["id"]]))?));
-    if *acknowledged == token {
-        return Ok(None);
-    }
-    Ok(Some(json!({"consent":{"token":token,"summary":format!("{alias} · {path}"),"changes":changes}})))
+    Ok(Navigation::Preview(json!({"consent":{"token":plan.token,
+        "summary":format!("{} · {}",plan.alias,plan.path),"changes":plan.changes}})))
+}
+
+fn read_registry(config: &Config) -> Result<Value> {
+    Ok(serde_json::from_slice(&std::fs::read(&config.sidebar_state_file)?)?)
 }
 
 pub(crate) fn alias_url(alias: &str, path: &str) -> Result<String> {

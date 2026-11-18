@@ -118,6 +118,22 @@ fn canonical_target_request_uses_verified_rpc_and_only_opens_native_input() -> R
 }
 
 #[test]
+fn legacy_target_rejects_a_moved_directory_before_import() -> Result<()> {
+    let fixture = NativeFixture::new()?;
+    let mut changed = responses(&fixture.peer.peer()?.codex_home)?;
+    let encoded = changed["fs/readFile"]["dataBase64"].as_str().context("fixture state")?;
+    let mut state: Value = serde_json::from_slice(&STANDARD.decode(encoded)?)?;
+    state["local-projects"]["old"]["rootPaths"] = json!(["/different"]);
+    changed["fs/readFile"]["dataBase64"] = json!(STANDARD.encode(serde_json::to_vec(&state)?));
+    fixture.peer.update("results", changed)?;
+    let operation = uuid::Uuid::new_v4().to_string();
+    let error = fixture.request("targetLegacy", &operation).unwrap_err();
+    assert!(error.to_string().contains("项目目录已改变"));
+    assert!(fixture.imports().is_empty());
+    Ok(())
+}
+
+#[test]
 fn target_directory_creation_rechecks_live_catalog_and_never_starts_a_thread() -> Result<()> {
     let fixture = NativeFixture::new()?;
     let operation = uuid::Uuid::new_v4().to_string();

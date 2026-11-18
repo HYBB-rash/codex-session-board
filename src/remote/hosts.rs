@@ -33,7 +33,11 @@ pub fn registered(config: &Config) -> Result<Vec<Host>> {
 
 pub(crate) fn registered_at(path: &std::path::Path) -> Result<Vec<Host>> {
     let state: Value = serde_json::from_slice(&std::fs::read(path)?)?;
-    let (_, auto_connect) = auto_connect_settings(&state)?;
+    registered_in(&state)
+}
+
+pub(crate) fn registered_in(state: &Value) -> Result<Vec<Host>> {
+    let (_, auto_connect) = auto_connect_settings(state)?;
     let mut hosts: Vec<Host> = serde_json::from_value(
         state["codex-managed-remote-connections"]
             .as_array()

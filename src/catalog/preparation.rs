@@ -61,7 +61,8 @@ impl Fresh {
             "idempotencyKey":identifier}))
     }
 
-    pub(crate) fn prepare_legacy(&self, reader: &mut dyn Rpc, identifier: &str, pages: usize) -> Result<Value> {
+    pub(crate) fn prepare_legacy(&self, reader: &mut dyn Rpc, identifier: &str, pages: usize,
+        authorize_import: impl FnOnce(&Value) -> Result<()>) -> Result<Value> {
         let payload = self.legacy(identifier)?;
         let mut scan = PageScan::new("project/list", json!({"limit":100}));
         for _ in 0..pages.max(1) {
@@ -89,6 +90,7 @@ impl Fresh {
         ensure!(current.projection.checkpoint["version"] == 1
             && current.projection.checkpoint["projectsMigrated"] == false,
             "旧项目迁移状态已改变，请刷新");
+        authorize_import(&payload)?;
         let project = reader.call("project/import", payload.clone())?["project"].clone();
         current.validate_legacy_result(identifier, &payload, &project)?;
         let canonical = project["id"].as_str().context("导入回执缺少项目 ID")?;

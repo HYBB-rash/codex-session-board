@@ -32,11 +32,11 @@ impl App {
         let timeout = Duration::from_secs(caller.rpc_timeout_seconds);
         let project = self.remote_draft_project(body, &caller, timeout)?;
         if body["requestId"].is_null() {
-            if let Some(preview) = crate::native_new::consent(&self.config, &project, &body["consent"])? {
-                return Ok(preview);
-            }
-            let url = crate::native_new::remote_url(&self.config, &project)?;
-            let url = open_client_url(url, &self.config)?;
+            let navigation = match crate::native_new::navigation(&self.config, &project, &body["consent"])? {
+                crate::native_new::Navigation::Preview(preview) => return Ok(preview),
+                crate::native_new::Navigation::Ready(navigation) => navigation,
+            };
+            let url = open_client_url(navigation.url(), &self.config)?;
             return Ok(json!({"ok":true,"url":url,"native":true}));
         }
         self.recover_remote_draft(body, &caller, project)

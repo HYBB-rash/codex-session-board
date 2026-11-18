@@ -308,6 +308,32 @@ fn native_remote_new_previews_persistent_changes_and_rejects_stale_consent() -> 
 }
 
 #[test]
+fn approved_native_navigation_rechecks_alias_and_account_before_handoff() -> Result<()> {
+    use crate::native_new::{Navigation, navigation};
+
+    let (_directory, app, original) = native_app()?;
+    let project = json!({"hostId":"remote:a","paths":["/not-a-local-path"]});
+    let Navigation::Ready(approved) = navigation(&app.config, &project, &Value::Null)? else {
+        bail!("fixture already has a registered directory and auto-connect");
+    };
+    for (key, value) in [
+        ("account", json!("other-account")),
+        ("alias", json!("other-mac")),
+    ] {
+        let mut changed = original.clone();
+        if key == "account" {
+            changed["electron-renderer-content-owner"] = value;
+        } else {
+            changed["codex-managed-remote-connections"][0]["alias"] = value;
+        }
+        std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&changed)?)?;
+        assert!(approved.verify(&app.config, &project).is_err());
+    }
+    assert!(approved.url().contains("name=test-mac&"));
+    Ok(())
+}
+
+#[test]
 fn native_remote_new_rejects_missing_ambiguous_or_invalid_aliases_before_navigation() -> Result<()> {
     let (directory, app, registry) = native_app()?;
     for alias in [Value::Null, json!(""), json!("-unsafe"), json!("mac\ninjected")] {

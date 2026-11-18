@@ -78,7 +78,7 @@ fn action_import_uses_exact_key_complete_metadata_without_thread_migration() -> 
     let mut backend = Backend::new();
     let fresh = backend.read()?;
     assert!(backend.imports.is_empty());
-    let project = fresh.prepare_legacy(&mut backend, "old", 1)?;
+    let project = fresh.prepare_legacy(&mut backend, "old", 1, |_| Ok(()))?;
     assert_eq!(project["id"], CANONICAL);
     assert_eq!(backend.imports.len(), 1);
     let payload = &backend.imports[0];
@@ -92,7 +92,7 @@ fn action_import_uses_exact_key_complete_metadata_without_thread_migration() -> 
     backend.state["project-appearances"]["old"] =
         json!({"color":"cyan","marker":{"kind":"icon","icon":"future-icon"}});
     let fresh = backend.read()?;
-    let project = fresh.prepare_legacy(&mut backend, "old", 1)?;
+    let project = fresh.prepare_legacy(&mut backend, "old", 1, |_| Ok(()))?;
     assert_eq!(project["metadata"]["appearance.color"], "cyan");
     assert_eq!(project["metadata"]["appearance.marker"], r#"{"kind":"icon","icon":"future-icon"}"#);
     assert_eq!(backend.imports.len(), 1);
@@ -103,11 +103,11 @@ fn action_import_uses_exact_key_complete_metadata_without_thread_migration() -> 
 fn same_key_retry_preserves_canonical_metadata_and_uses_fresh_roots() -> Result<()> {
     let mut backend = Backend::new();
     let fresh = backend.read()?;
-    let mut project = fresh.prepare_legacy(&mut backend, "old", 1)?;
+    let mut project = fresh.prepare_legacy(&mut backend, "old", 1, |_| Ok(()))?;
     project["roots"] = json!([{"path":"/changed"},{"path":"/other"}]);
     project["metadata"]["unrelated"] = json!("preserve");
     backend.projects[0] = project.clone();
-    let retry = backend.read()?.prepare_legacy(&mut backend, "old", 1)?;
+    let retry = backend.read()?.prepare_legacy(&mut backend, "old", 1, |_| Ok(()))?;
     assert_eq!(retry, project);
     assert_eq!(backend.imports.len(), 2);
     Ok(())
@@ -131,7 +131,7 @@ fn existing_mapping_uses_current_backend_roots_without_overwrite() -> Result<()>
         json!({"local:/target/codex":{"old":CANONICAL}});
     backend.projects.push(json!({"id":CANONICAL,"name":"Renamed","roots":[{"path":"/fresh"}],
         "metadata":{"custom":"untouched"}}));
-    let project = backend.read()?.prepare_legacy(&mut backend, "old", 1)?;
+    let project = backend.read()?.prepare_legacy(&mut backend, "old", 1, |_| Ok(()))?;
     assert_eq!(project, backend.projects[0]);
     assert!(backend.imports.is_empty());
     Ok(())
@@ -147,7 +147,7 @@ fn missing_legacy_and_foreign_owner_reject_before_import() -> Result<()> {
         } else {
             backend.state["local-projects"] = json!({});
         }
-        assert!(backend.read()?.prepare_legacy(&mut backend, "old", 1).is_err());
+        assert!(backend.read()?.prepare_legacy(&mut backend, "old", 1, |_| Ok(())).is_err());
         assert!(backend.imports.is_empty());
     }
     Ok(())
@@ -163,7 +163,7 @@ fn missing_canonical_mapping_and_pending_deletion_never_import() -> Result<()> {
             backend.state["app-server-project-id-by-legacy-project-id-by-host"] =
                 json!({"local:/target/codex":{"old":CANONICAL}});
         }
-        assert!(backend.read()?.prepare_legacy(&mut backend, "old", 1).is_err());
+        assert!(backend.read()?.prepare_legacy(&mut backend, "old", 1, |_| Ok(())).is_err());
         assert!(backend.imports.is_empty());
     }
     Ok(())
@@ -177,12 +177,12 @@ fn conflicting_mapping_and_alias_never_import() -> Result<()> {
     backend.state["app-server-project-id-by-legacy-project-id-by-host"] =
         json!({"local:/target/codex":{"old":CANONICAL,"other":CANONICAL}});
     backend.projects.push(json!({"id":CANONICAL,"roots":[{"path":"/old"}],"metadata":{}}));
-    assert!(backend.read()?.prepare_legacy(&mut backend, "old", 1).is_err());
+    assert!(backend.read()?.prepare_legacy(&mut backend, "old", 1, |_| Ok(())).is_err());
     assert!(backend.imports.is_empty());
     backend.state["app-server-project-id-by-legacy-project-id-by-host"]
         ["local:/target/codex"] = json!({"old":CANONICAL});
     backend.projects[0]["metadata"]["codex.localProjectId"] = json!("other");
-    assert!(backend.read()?.prepare_legacy(&mut backend, "old", 1).is_err());
+    assert!(backend.read()?.prepare_legacy(&mut backend, "old", 1, |_| Ok(())).is_err());
     assert!(backend.imports.is_empty());
     Ok(())
 }
@@ -192,7 +192,7 @@ fn owner_account_source_and_deletion_changes_fail_before_opening() -> Result<()>
     for change in ["owner","account","source","pending","roots"] {
         let mut backend = Backend::new();
         let fresh = backend.read()?;
-        let project = fresh.prepare_legacy(&mut backend, "old", 1)?;
+        let project = fresh.prepare_legacy(&mut backend, "old", 1, |_| Ok(()))?;
         let mut source = Backend::source();
         match change {
             "owner" => backend.state["electron-renderer-content-owner"] = json!("other"),
@@ -228,7 +228,7 @@ fn changes_during_project_scan_reject_before_import() -> Result<()> {
         let mut backend = Backend::new();
         let fresh = backend.read()?;
         backend.on_list = Some(change);
-        assert!(fresh.prepare_legacy(&mut backend, "old", 1).is_err());
+        assert!(fresh.prepare_legacy(&mut backend, "old", 1, |_| Ok(())).is_err());
         assert!(backend.imports.is_empty());
     }
     Ok(())
@@ -243,7 +243,7 @@ fn mapping_completed_during_scan_reuses_new_canonical_without_import() -> Result
             json!({"local:/target/codex":{"old":CANONICAL}});
         backend.projects.push(json!({"id":CANONICAL,"roots":[{"path":"/native"}],"metadata":{}}));
     });
-    let project = fresh.prepare_legacy(&mut backend, "old", 1)?;
+    let project = fresh.prepare_legacy(&mut backend, "old", 1, |_| Ok(()))?;
     assert_eq!(roots(&project)?, vec![json!({"path":"/native"})]);
     assert!(backend.imports.is_empty());
     Ok(())
@@ -254,7 +254,7 @@ fn final_read_returns_current_roots_after_state_revalidation() -> Result<()> {
     for legacy in [None,Some("old")] {
         let mut backend = Backend::new();
         let fresh = backend.read()?;
-        let project = fresh.prepare_legacy(&mut backend, "old", 1)?;
+        let project = fresh.prepare_legacy(&mut backend, "old", 1, |_| Ok(()))?;
         backend.on_state = Some(|backend| {
             backend.projects[0]["roots"] = json!([{"path":"/latest"},{"path":"/latest-second"}]);
         });
@@ -273,7 +273,7 @@ fn final_read_rejects_deleted_canonical_and_foreign_backing() -> Result<()> {
         }] {
         let mut backend = Backend::new();
         let fresh = backend.read()?;
-        let project = fresh.prepare_legacy(&mut backend, "old", 1)?;
+        let project = fresh.prepare_legacy(&mut backend, "old", 1, |_| Ok(()))?;
         backend.on_state = Some(change);
         assert!(fresh.verify_after(&mut backend, &Backend::source(), Some("old"), &project).is_err());
     }
@@ -321,7 +321,7 @@ fn malformed_project_identity_deletion_and_checkpoint_fields_remain_rejected() -
         } else {
             let fresh = backend.read()?;
             fresh.server(&mut backend, CANONICAL)?;
-            assert!(fresh.prepare_legacy(&mut backend, "old", 1).is_err());
+            assert!(fresh.prepare_legacy(&mut backend, "old", 1, |_| Ok(())).is_err());
         }
         assert!(backend.imports.is_empty());
     }
