@@ -109,11 +109,12 @@ fn isolated_archive_batch(home: &std::path::Path, test: &str) -> Result<bool> {
     if std::env::var_os("CSB_ARCHIVE_BATCH_FIXTURE").is_some() {
         return Ok(false);
     }
-    let status = std::process::Command::new(std::env::current_exe()?)
+    let result = std::process::Command::new(std::env::current_exe()?)
         .args(["--exact", &format!("archive::{test}"), "--nocapture"])
         .env("CSB_ARCHIVE_BATCH_FIXTURE", "1")
-        .env("CODEX_HOME", home).status()?;
-    anyhow::ensure!(status.success(), "隔离归档批次测试失败: {test}");
+        .env("CODEX_HOME", home).output()?;
+    anyhow::ensure!(result.status.success(), "隔离归档批次测试失败: {test}\n{}\n{}",
+        String::from_utf8_lossy(&result.stdout), String::from_utf8_lossy(&result.stderr));
     Ok(true)
 }
 
