@@ -161,6 +161,7 @@ impl App {
         let files = Files::read(directory)?;
         if decision.state.may_be_registered() && decision.plan.applied(self, directory)? {
             decision.plan.verify_target(self, &files)?;
+            decision.plan.verify_installed(self)?;
             return Ok(json!({"state":"registered","summary":decision.summary(),
                 "message":"已核对 SSH 目标并读回 Codex 连接和目录项目。"}));
         }
@@ -178,6 +179,7 @@ impl App {
         decision.state = State::FilesWritten;
         self.save_ssh_decision(decision)?;
         decision.plan.verify_target(self, &Files::read(directory)?)?;
+        decision.plan.verify_installed(self)?;
         if registry::ready(self, &decision.plan, true)? {
             return self.ssh_decision_status(decision, directory);
         }
@@ -212,6 +214,21 @@ impl State {
 }
 
 impl Plan {
+    fn verify_installed(&self, app: &App) -> Result<()> {
+        if app.config.ssh_command != ["ssh"] {
+            return Ok(());
+        }
+        let probe = Probe::installed(&app.config)?;
+        let alias = host(&self.target, Some(&self.alias))?;
+        let direct = host(&self.target, None)?;
+        let settings = probe.settings(&alias)?;
+        ensure!(settings == probe.settings(&direct)? && settings["proxycommand"].is_null()
+            && settings["proxyjump"].is_null(), "OpenSSH 载入的别名与直连目标不同");
+        ensure!(probe.proof(&alias, &self.target)? == self.proof,
+            "OpenSSH 实际加载的别名指向不同的远端");
+        Ok(())
+    }
+
     fn applied(&self, app: &App, directory: &Path) -> Result<bool> {
         Ok(registry::ready(app, self, true)? && Files::read(directory)?.hashes() == self.after)
     }

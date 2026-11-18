@@ -29,6 +29,9 @@ const setupRequests = [];
 const setupTarget = { hostname: "studio.example.test", user: "builder", port: "22", directory: "/srv/project" };
 const setupSummary = "builder@studio.example.test:22 · /srv/project · csb-studio";
 let setupDeclined = false, previewCount = 0;
+let requireConsent = false;
+const declinedResult = () => ({ state: "declined", targetId: "isolated-target", summary: setupSummary,
+  message: "该连接的一键远程新建已关闭。已有会话操作仍可使用。" });
 let releaseAssignment;
 const assignmentReady = new Promise(resolve => { releaseAssignment = resolve; });
 let releaseRefresh;
@@ -36,20 +39,18 @@ const refreshReady = new Promise(resolve => { releaseRefresh = resolve; });
 const check = (actual, expected) => { assert.deepEqual(actual, expected); cases++; };
 function sshSetupResponse(body) {
   setupRequests.push(body);
-  if (body.action === "status") return setupDeclined ? {
-    state: "declined", targetId: "isolated-target", summary: setupSummary,
-    message: "该连接的一键远程新建已关闭。已有会话操作仍可使用。",
-  } : { state: "form" };
+  if (body.action === "status") return { state: "form", saved: setupDeclined ? [declinedResult()] : [] };
   if (body.action === "decline" && body.previewId === `preview-${previewCount}`) {
     setupDeclined = true;
-    return { state: "declined", targetId: "isolated-target", summary: setupSummary,
-      message: "该连接的一键远程新建已关闭。已有会话操作仍可使用。" };
+    return declinedResult();
+  }
+  if (body.action === "apply" && body.previewId === `preview-${previewCount}`) {
+    setupDeclined = false;
+    return { state: "applied", message: "已交付 Codex 打开请求。请核对主机和目录，再发送第一句话。" };
   }
   if ((body.action === "preview" && !setupDeclined) ||
       (body.action === "restore" && setupDeclined && body.targetId === "isolated-target")) {
-    setupDeclined = false;
-    return { state: "preview", previewId: `preview-${++previewCount}`, summary: setupSummary, canApply: false,
-      message: "隔离预览。实际写入功能尚未接入。",
+    return { state: "preview", previewId: `preview-${++previewCount}`, summary: setupSummary, canApply: true,
       changes: [
         { label: "新增 ~/.ssh/codex-session-board.conf",
           detail: "+ Host csb-studio\n+     HostName studio.example.test\n+     User builder\n+     Port 22" },
@@ -68,7 +69,12 @@ const server = http.createServer(async (request, response) => {
       .end(JSON.stringify(result));
   }
   if (request.method === "POST") {
-    writes.push({ path: request.url, body: JSON.parse(body) });
+    const payload = JSON.parse(body);
+    if (request.url === "/api/new" && requireConsent && !payload.consent)
+      return response.writeHead(200, { "Content-Type": "application/json" })
+        .end(JSON.stringify({ consent: { token: "approved-connection", summary: "Mac · /remote/project",
+          changes: ["开启该连接的自动连接"] } }));
+    writes.push({ path: request.url, body: payload });
     if (request.url === "/api/new" && failNavigation)
       return response.writeHead(200, { "Content-Type": "application/json" })
         .end(JSON.stringify({ pending: true, error: "输入页尚未确认" }));
@@ -156,6 +162,18 @@ try {
   check(writes.at(-1), failedNavigation);
   check(await evaluate('byId("draft-recovery").open'), false);
 
+  requireConsent = true;
+  await evaluate(`createSession(${JSON.stringify(project)})`);
+  check(await evaluate('byId("native-consent-changes").textContent'), "开启该连接的自动连接");
+  const beforeCancel = writes.length;
+  await clickNode(page, "#native-consent-cancel");
+  check(writes.length, beforeCancel);
+  await evaluate(`createSession(${JSON.stringify(project)})`);
+  await evaluate('byId("native-consent-form").requestSubmit()');
+  await wait('!creating && !byId("native-consent").open');
+  check(writes.at(-1).body.consent, "approved-connection");
+  requireConsent = false;
+
   const registration = JSON.stringify(fixture.health.remoteRegistry);
   const checkpoints = writes.length;
   const oldConnectionReason = "这条 Codex 连接未绑定 SSH 别名。请在 Codex 侧栏选择原主机和项目，再新建会话。通过别名添加可能产生第二条连接。";
@@ -178,7 +196,7 @@ try {
   await clickNode(page, "#ssh-setup-next");
   await wait('sshSetup?.state==="preview" && !sshSetupBusy');
   check(setupRequests.at(-1), { action: "preview", target: setupTarget });
-  check(await evaluate('byId("ssh-setup-next").disabled'), true);
+  check(await evaluate('byId("ssh-setup-next").disabled'), false);
   check(await evaluate('byId("ssh-setup-changes").children.length'), 3);
   await capture("02-authorization-preview");
   await clickNode(page, "#ssh-setup-decline");
@@ -187,16 +205,19 @@ try {
   const reopened = await browser.page(address);
   await until(() => reopened.evaluate('document.getElementById("ssh-settings")?.hidden === false'), "连接设置按钮未就绪");
   await clickNode(reopened, "#ssh-settings");
-  await until(() => reopened.evaluate('sshSetup?.state==="declined" && !sshSetupBusy'), "拒绝状态未读回");
-  check(await reopened.evaluate('byId("ssh-setup-restore").hidden'), false);
+  await until(() => reopened.evaluate('sshSetup?.saved?.[0]?.state==="declined" && !sshSetupBusy'), "拒绝状态未读回");
+  check(await reopened.evaluate('byId("ssh-setup-saved").hidden'), false);
   if (evidence) {
     const image = await reopened.command("Page.captureScreenshot", { format: "png" });
     await fs.writeFile(`${evidence}/02-declined.png`, Buffer.from(image.data, "base64"));
   }
-  await clickNode(reopened, "#ssh-setup-restore");
+  await clickNode(reopened, "#ssh-setup-saved button");
   await until(() => reopened.evaluate('sshSetup?.state==="preview" && !sshSetupBusy'), "重新启用预览未读回");
   check(setupRequests.at(-1), { action: "restore", targetId: "isolated-target" });
   check(await reopened.evaluate('sshSetup.previewId'), "preview-2");
+  await clickNode(reopened, "#ssh-setup-next");
+  await until(() => reopened.evaluate('sshSetup?.state==="applied" && !sshSetupBusy'), "配置回执未读回");
+  check(setupRequests.at(-1), { action: "apply", previewId: "preview-2" });
   check(writes.length, checkpoints);
   check(JSON.stringify(fixture.health.remoteRegistry), registration);
 } finally {

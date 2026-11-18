@@ -231,6 +231,17 @@ textarea{resize:vertical;min-height:90px}
     <div class="dialog-actions"><button type="button" id="new-target-cancel">取消</button><button id="new-target-open" type="submit" class="primary">打开新会话</button></div>
   </form>
 </dialog>
+<dialog id="native-consent" aria-labelledby="native-consent-title">
+  <form id="native-consent-form">
+    <h2 id="native-consent-title">确认连接和项目改动</h2>
+    <p id="native-consent-target"></p>
+    <ul id="native-consent-changes"></ul>
+    <div class="dialog-actions">
+      <button id="native-consent-cancel" type="button">取消</button>
+      <button class="primary" type="submit">同意并打开</button>
+    </div>
+  </form>
+</dialog>
 <dialog id="ssh-setup" aria-labelledby="ssh-setup-title">
   <form id="ssh-setup-form">
     <h2 id="ssh-setup-title">远程新建连接设置</h2>
@@ -244,11 +255,16 @@ textarea{resize:vertical;min-height:90px}
       <p id="ssh-setup-target"></p>
       <ul id="ssh-setup-changes"></ul>
     </section>
+    <label id="ssh-setup-alias-choice" hidden>请选择要复用的 SSH 别名
+      <select id="ssh-setup-alias"></select>
+    </label>
+    <div id="ssh-setup-saved" hidden></div>
     <p id="ssh-setup-notice" class="reason" role="status"></p>
     <div class="dialog-actions">
       <button id="ssh-setup-close" type="button">关闭</button>
       <button id="ssh-setup-decline" type="button" hidden>拒绝</button>
       <button id="ssh-setup-restore" type="button" hidden>重新启用</button>
+      <button id="ssh-setup-recheck" type="button" hidden>重新检查</button>
       <button id="ssh-setup-next" class="primary" type="submit">检查并预览</button>
     </div>
   </form>
@@ -836,7 +852,7 @@ function canCreateProject(project) {
   return host?.connected === true && host.catalog?.cached === false;
 }
 function filtersLocked() {
-  return Boolean(dragging || saving && !moving || creating || byId("editor").open || byId("new-target").open || byId("draft-recovery").open || byId("project-assignment").open || byId("ssh-setup").open);
+  return Boolean(dragging || saving && !moving || creating || byId("editor").open || byId("new-target").open || byId("draft-recovery").open || byId("project-assignment").open || byId("ssh-setup").open || byId("native-consent").open);
 }
 function updateFilterLock() {
   byId("host-filter").disabled = filtersLocked();
@@ -1246,7 +1262,8 @@ byId("edit-form").onsubmit = async event => {
   }
 };
 byId("cancel").onclick = () => byId("editor").close();
-async function createSession(projectId, operationId = null) {
+let nativeConsent = null;
+async function createSession(projectId, operationId = null, consent = null) {
   const button = byId("new-session");
   if (creating || dragging || saving || byId("editor").open) return;
   const project = data.projectCatalog.items.find(item => item.id === projectId);
@@ -1256,9 +1273,17 @@ async function createSession(projectId, operationId = null) {
   const remote = target || project?.remote || draftRequests.has(projectId);
   if (target) body.operationId = operationId || nativeDraftOperation(projectId);
   else if (remote && draftRequests.has(projectId)) body.requestId = draftRequests.get(projectId);
+  if (consent) body.consent = consent;
   creating = true;button.disabled = true;++requestSerial;render();
   try {
     const result = await post("/api/new",body);
+    if (result.consent) {
+      nativeConsent = {projectId,operationId:body.operationId,token:result.consent.token};
+      byId("native-consent-target").textContent = result.consent.summary;
+      byId("native-consent-changes").replaceChildren(...result.consent.changes.map(change => element("li", change)));
+      byId("native-consent").showModal();
+      return;
+    }
     if (result.pending) {
       recoveringDraft = target ? {projectId,operationId:body.operationId} :
         {projectId,requestId:result.requestId || body.requestId};
@@ -1280,6 +1305,14 @@ async function createSession(projectId, operationId = null) {
   }
   finally {creating=false;button.disabled=false;render();await load();}
 }
+byId("native-consent-form").onsubmit = event => {
+  event.preventDefault();
+  const consent = nativeConsent;
+  byId("native-consent").close();
+  if (consent) createSession(consent.projectId, consent.operationId, consent.token);
+};
+byId("native-consent-cancel").onclick = () => byId("native-consent").close();
+byId("native-consent").addEventListener("close", () => {nativeConsent=null;updateFilterLock();load();});
 function updateNewProjects() {
   const host = byId("new-host").value;
   const projects = hostProjects(host);
@@ -1293,13 +1326,19 @@ function updateNewProjects() {
   byId("new-target-hint").textContent = options.length ? "打开原生输入页后核对主机和目录。由你发送第一句话，才会创建会话。" :
     reason || "此主机没有支持新建会话的项目。已有项目与会话仍可查看。";
 }
-let sshSetup = null, sshSetupBusy = false;
+let sshSetup = null, sshSetupBusy = false, sshSetupRequest = null;
 function renderSshSetup() {
   const preview = sshSetup?.state === "preview";
   const declined = sshSetup?.state === "declined";
-  byId("ssh-setup-fields").disabled = sshSetupBusy || preview || declined;
-  byId("ssh-setup-fields").hidden = preview || declined;
-  byId("ssh-setup-preview").hidden = !preview && !declined;
+  const form = !sshSetup?.state || sshSetup.state === "form";
+  const choosing = sshSetup?.state === "selectAlias";
+  byId("ssh-setup-alias-choice").hidden = !choosing;
+  const alias = byId("ssh-setup-alias");
+  if (choosing && !sshSetupBusy) alias.replaceChildren(...sshSetup.aliases.map(name => new Option(name,name)));
+  alias.disabled = sshSetupBusy;
+  byId("ssh-setup-fields").disabled = sshSetupBusy || !form;
+  byId("ssh-setup-fields").hidden = !form;
+  byId("ssh-setup-preview").hidden = form || choosing;
   byId("ssh-setup-target").textContent = sshSetup?.summary || "";
   byId("ssh-setup-changes").replaceChildren(...(preview ? sshSetup.changes : []).map(change => {
     const item = element("li", change.label);
@@ -1309,19 +1348,42 @@ function renderSshSetup() {
   byId("ssh-setup-notice").textContent = sshSetup?.message || "";
   byId("ssh-setup-decline").hidden = !preview;
   byId("ssh-setup-restore").hidden = !declined;
+  const saved = byId("ssh-setup-saved");
+  saved.hidden = !sshSetup?.saved?.length;
+  saved.replaceChildren(...(sshSetup?.saved || []).map(record => {
+    const item = element("p", record.summary);
+    item.append(" ", element("span", record.message));
+    if (record.state !== "registered") {
+      const button = element("button", record.state === "declined" ? "重新启用" : "核对配置进度");
+      button.type = "button";
+      button.disabled = sshSetupBusy;
+      button.onclick = () => {
+        sshSetup = record;
+        if (record.state === "declined") requestSshSetup("restore");
+        else renderSshSetup();
+      };
+      item.append(" ", button);
+    }
+    return item;
+  }));
+  const resumable = ["approved","filesWritten","linkDelivered"].includes(sshSetup?.state);
+  byId("ssh-setup-recheck").hidden = !resumable;
   const next = byId("ssh-setup-next");
-  next.hidden = declined;
-  next.textContent = preview ? "同意并配置" : "检查并预览";
+  next.hidden = !form && !preview && !resumable && !choosing;
+  next.textContent = preview ? "同意并配置" : resumable ? "继续配置" : "检查并预览";
   next.disabled = sshSetupBusy || preview && sshSetup.canApply !== true;
-  for (const id of ["ssh-setup-close","ssh-setup-decline","ssh-setup-restore"])
+  for (const id of ["ssh-setup-close","ssh-setup-decline","ssh-setup-restore","ssh-setup-recheck"])
     byId(id).disabled = sshSetupBusy;
 }
-async function requestSshSetup(action) {
+async function requestSshSetup(action, selection = null) {
   if (sshSetupBusy || data.health.sshAliasSetup !== true) return;
-  const body = {action};
-  if (action === "preview") body.target = Object.fromEntries(new FormData(byId("ssh-setup-form")));
-  if (action === "decline" || action === "apply") body.previewId = sshSetup.previewId;
-  if (action === "restore") body.targetId = sshSetup.targetId;
+  const body = selection ? {...sshSetupRequest,alias:selection} : {action};
+  if (!selection) {
+    if (action === "preview") body.target = Object.fromEntries(new FormData(byId("ssh-setup-form")));
+    if (action === "decline" || action === "apply") body.previewId = sshSetup.previewId;
+    if (action === "restore" || action === "recheck") body.targetId = sshSetup.targetId;
+  }
+  sshSetupRequest = body;
   sshSetupBusy = true;
   renderSshSetup();
   try {
@@ -1349,12 +1411,17 @@ byId("ssh-setup-form").onsubmit = event => {
   event.preventDefault();
   if (sshSetup?.state === "preview") {
     if (sshSetup.canApply === true) requestSshSetup("apply");
-  } else if (sshSetup?.state !== "declined") {
+  } else if (["approved","filesWritten","linkDelivered"].includes(sshSetup?.state)) {
+    requestSshSetup("apply");
+  } else if (sshSetup?.state === "selectAlias") {
+    requestSshSetup(sshSetupRequest.action, byId("ssh-setup-alias").value);
+  } else if (!sshSetup?.state || sshSetup.state === "form") {
     requestSshSetup("preview");
   }
 };
 byId("ssh-setup-decline").onclick = () => requestSshSetup("decline");
 byId("ssh-setup-restore").onclick = () => requestSshSetup("restore");
+byId("ssh-setup-recheck").onclick = () => requestSshSetup("recheck");
 byId("ssh-setup-close").onclick = () => byId("ssh-setup").close();
 byId("ssh-setup").addEventListener("cancel", event => { if (sshSetupBusy) event.preventDefault(); });
 byId("ssh-setup").addEventListener("close", () => { updateFilterLock(); load(); });

@@ -75,13 +75,24 @@ pub(super) struct Probe {
 
 impl Probe {
     pub(super) fn new(config: &Config, contents: &str) -> Result<Self> {
+        Self::configured(config, Some(contents))
+    }
+
+    pub(super) fn installed(config: &Config) -> Result<Self> {
+        Self::configured(config, None)
+    }
+
+    fn configured(config: &Config, contents: Option<&str>) -> Result<Self> {
         let temporary = tempfile::tempdir()?;
-        let mut file = tempfile::NamedTempFile::new_in(temporary.path())?;
-        file.write_all(contents.as_bytes())?;
-        let saved = temporary.path().join("config");
-        file.persist(&saved)?;
         let mut command = config.ssh_command.clone();
-        command.extend(["-F".into(), saved.to_string_lossy().into_owned(),
+        if let Some(contents) = contents {
+            let saved = temporary.path().join("config");
+            let mut file = tempfile::NamedTempFile::new_in(temporary.path())?;
+            file.write_all(contents.as_bytes())?;
+            file.persist(&saved)?;
+            command.extend(["-F".into(), saved.to_string_lossy().into_owned()]);
+        }
+        command.extend([
             "-o".into(), "StrictHostKeyChecking=yes".into(), "-o".into(), "UpdateHostKeys=no".into(),
             "-o".into(), "ControlMaster=no".into(), "-o".into(), "ControlPath=none".into()]);
         let config = Config {
