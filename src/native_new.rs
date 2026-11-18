@@ -36,7 +36,8 @@ pub(crate) fn consent(config: &Config, project: &Value, acknowledged: &Value) ->
     let alias = registered_alias(config, identifier)?;
     let path = directory(project)?;
     let state: Value = serde_json::from_slice(&std::fs::read(&config.sidebar_state_file)?)?;
-    let auto = &state["remote-connection-auto-connect-by-host-id"][identifier];
+    let (owner, auto_connect) = hosts::auto_connect_settings(&state)?;
+    let auto = &auto_connect[identifier];
     let projects = state["remote-projects"].as_array().into_iter().flatten()
         .filter(|row| row["hostId"] == identifier).collect::<Vec<_>>();
     let has_project = projects.iter().any(|row| row["remotePath"] == path);
@@ -55,7 +56,7 @@ pub(crate) fn consent(config: &Config, project: &Value, acknowledged: &Value) ->
         return Ok(None);
     }
     let token = format!("{:x}", Sha256::digest(serde_json::to_vec(
-        &json!([identifier,alias,path,auto,projects,project["id"]]))?));
+        &json!([owner,identifier,alias,path,auto,projects,project["id"]]))?));
     if *acknowledged == token {
         return Ok(None);
     }

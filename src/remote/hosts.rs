@@ -33,6 +33,7 @@ pub fn registered(config: &Config) -> Result<Vec<Host>> {
 
 pub(crate) fn registered_at(path: &std::path::Path) -> Result<Vec<Host>> {
     let state: Value = serde_json::from_slice(&std::fs::read(path)?)?;
+    let (_, auto_connect) = auto_connect_settings(&state)?;
     let mut hosts: Vec<Host> = serde_json::from_value(
         state["codex-managed-remote-connections"]
             .as_array()
@@ -47,11 +48,27 @@ pub(crate) fn registered_at(path: &std::path::Path) -> Result<Vec<Host>> {
             "远程主机 ID 无效"
         );
         ensure!(identifiers.insert(&host.host_id), "远程主机 ID 重复");
-        host.auto_connect =
-            state["remote-connection-auto-connect-by-host-id"][&host.host_id] != false;
+        host.auto_connect = auto_connect[&host.host_id] != false;
         host.enabled = host.auto_connect;
     }
     Ok(hosts)
+}
+
+pub(crate) fn auto_connect_settings(state: &Value) -> Result<(Option<&str>, &Value)> {
+    const LEGACY: &str = "remote-connection-auto-connect-by-host-id";
+    const PREFIX: &str = "electron-account-remote-preference:remote-connection-auto-connect-by-host-id:";
+    let owner = match state.get("electron-renderer-content-owner") {
+        None | Some(Value::Null) => state.get(format!("{PREFIX}signed-out")).map(|_| "signed-out"),
+        Some(Value::String(owner)) if !owner.is_empty() => Some(owner.as_str()),
+        _ => anyhow::bail!("Codex 当前账号登记无效"),
+    };
+    let settings = if let Some(owner) = owner {
+        &state[format!("{PREFIX}{owner}")]
+    } else {
+        &state[LEGACY]
+    };
+    ensure!(settings.is_null() || settings.is_object(), "Codex 自动连接登记格式无效");
+    Ok((owner, settings))
 }
 
 impl Host {
@@ -127,6 +144,23 @@ impl Host {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn auto_connect_reads_only_the_current_codex_account_preferences() -> Result<()> {
+        let mut state = json!({
+            "remote-connection-auto-connect-by-host-id":{"remote:a":true},
+            "electron-account-remote-preference:remote-connection-auto-connect-by-host-id:signed-out":{
+                "remote:a":false},
+            "electron-account-remote-preference:remote-connection-auto-connect-by-host-id:owner":{
+                "remote:a":true}
+        });
+        assert_eq!(auto_connect_settings(&state)?.1["remote:a"], false);
+        state["electron-renderer-content-owner"] = json!("owner");
+        assert_eq!(auto_connect_settings(&state)?.1["remote:a"], true);
+        state["electron-renderer-content-owner"] = json!("different-owner");
+        assert_eq!(*auto_connect_settings(&state)?.1, Value::Null);
+        Ok(())
+    }
 
     #[test]
     fn registered_hosts_do_not_depend_on_projects_and_respect_disabled_connections() -> Result<()> {

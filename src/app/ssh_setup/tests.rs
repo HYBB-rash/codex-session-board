@@ -78,7 +78,7 @@ fn confirm_registry_replay(app: App, config: Config, directory: &Path, apply: &V
     let host = "remote-ssh-discovered:csb-mac";
     let registration = json!({
         "codex-managed-remote-connections":[{"hostId":host,"displayName":"csb-mac","alias":"csb-mac"}],
-        "remote-connection-auto-connect-by-host-id":{(host):true},
+        "electron-account-remote-preference:remote-connection-auto-connect-by-host-id:signed-out":{(host):true},
         "remote-projects":[{"id":"project","hostId":host,"remotePath":"/project"}]
     });
     fs::write(&config.sidebar_state_file, serde_json::to_vec(&registration)?)?;

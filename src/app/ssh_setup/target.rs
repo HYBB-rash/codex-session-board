@@ -130,7 +130,8 @@ impl Probe {
         let binding = config.remote_binding.clone().context("缺少 SSH 来源绑定")?;
         let temporary_app = crate::app::App::new(config)?;
         let timeout = Duration::from_secs(self.config.rpc_timeout_seconds);
-        let mut reader = temporary_app.connection(timeout, Role::SetupReader)?;
+        let mut reader = temporary_app.connection(timeout, Role::SetupReader)
+            .context("未能连接远端 Codex 后台。请核对目标用户的 Codex 后台服务")?;
         let source = reader.catalog_source()?;
         let account = reader.call("account/read", json!({"refreshToken":false}))?;
         let account = setup_account(&account)?;
