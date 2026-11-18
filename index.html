@@ -24,6 +24,13 @@ h1{font-size:20px;font-weight:600;margin:0}
 .header-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;min-width:0}
 #new-session{white-space:nowrap}
 .health{margin:0 0 8px;padding:0;background:transparent;border:0;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.archive-results{margin:0 0 8px;font-size:12px;overflow-wrap:anywhere}
+.archive-summary{margin:0;padding:8px 10px;background:var(--subtle);border-radius:8px}
+.archive-results p{margin:4px 0}
+.archive-batch{padding:6px 10px;border-bottom:1px solid var(--line)}
+.archive-items{list-style:none;padding:0;margin:4px 0 0}
+.archive-items li{display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-top:1px solid var(--line)}
+.archive-item-status{color:var(--muted);flex-shrink:0}
 .health.error{background:transparent;border:0;color:var(--danger)}
 .health.ready #health-summary::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:light-dark(#53745c,#a3c6aa);margin-right:6px}
 .health-host{margin:12px 0;padding:10px;border:1px solid var(--line);border-radius:8px;overflow-wrap:anywhere}
@@ -167,12 +174,20 @@ textarea{resize:vertical;min-height:90px}
     <div id="health" class="health"><span id="health-summary" role="status">正在读取会话…</span> <button id="health-more" type="button" class="row-action" aria-label="查看连接详情">详情</button></div>
     <div class="header-actions">
       <button id="refresh" class="quiet" type="button">刷新</button>
+      <button id="archive-results-toggle" class="quiet" type="button" aria-controls="archive-result-list" aria-expanded="false">归档结果</button>
       <button id="ssh-settings" class="quiet" type="button" hidden>连接设置</button>
       <button id="install-app" class="quiet" type="button" hidden>安装应用</button>
       <button id="new-session" class="primary" type="button">＋ 新建会话</button>
     </div>
   </header>
   <div id="archive-status" class="health" role="status" hidden></div>
+  <section class="archive-results" aria-label="手动归档结果">
+    <div id="archive-summary" class="archive-summary" hidden>
+      <div id="archive-summary-text" role="status"></div>
+      <div id="archive-summary-actions"></div>
+    </div>
+    <div id="archive-result-list" hidden></div>
+  </section>
   <div class="toolbar">
     <div class="filters">
       <label class="filter-field">主机<select id="host-filter" aria-label="选择主机"><option value="local">本机</option><option value="all">全部主机</option></select></label>
@@ -313,6 +328,10 @@ const csrf = "__CSRF_TOKEN__";
 let data = {states:{},sessions:[],health:{},projectCatalog:{loaded:false,items:[]}}, editing = null, dragging = null;
 let saving = false, requestSerial = 0, dragPoint = null, scrollFrame = null;
 let opening = false, suppressOpenUntil = 0;
+let archiveBatches = [], archivePending = new Set(), archiveReadError = false, archiveRead = 0;
+let archiveRun = null, archiveChecking = false, archiveNotice = "";
+const archiveStatuses = {awaiting:"尚无提交记录",pending:"待核对",archived:"已归档",
+  verified:"核实时已归档",newInput:"未归档 · 有新输入",rejected:"未归档"};
 let filterMode = "project", selectedHost = "local", selectedProject = "all", selectedHistory = "active", projectOptionsKey = "";
 let creating = false, recoveringDraft = null;
 let snapshotError = null;
@@ -340,7 +359,7 @@ async function request(path, body) {
   if (!response.ok) throw new Error(result.error || "操作失败");
   return result;
 }
-const post = (path,body) => request(path,body);
+const post = (path,body,timeout) => timeout === undefined ? request(path,body) : archiveRequest(path,body,timeout);
 function announce(message, error = false) {
   byId("feedback").textContent = message;
   byId("feedback").className = "feedback" + (error ? " error" : "");
@@ -541,6 +560,7 @@ function makeCard(session) {
   if (session.note) card.append(makeNote(session.note));
   if (!session.manual && session.state === "blocked") card.append(element("div",session.reason,"card-note"));
   if (session.followUp) card.append(element("div","有新输入，待复核","follow"));
+  if (archivePending.has(session.id)) card.append(element("div","归档结果待核对","follow"));
   if (sessionReadOnly(session)) card.append(element("div","当前仅供查看","follow"));
   if (session.observationError) card.append(element("div","历史读取失败，保留原状态","follow"));
   if (session.observationWarning) card.append(element("div",session.observationWarning,"follow"));
@@ -565,7 +585,7 @@ function makeCard(session) {
     assign.onclick = () => openProjectAssignment(session);
     actions.append(assign);
   }
-  if (canArchiveSession(session)) {
+  if (archiveEligible(session) && !archivePending.has(session.id)) {
     const archive = element("button",session.followUp ? "确认待归档" : "归档","row-action");
     archive.type = "button";
     archive.dataset.action = "archive";
@@ -659,11 +679,22 @@ async function openSession(id) {
   } catch (error) {announce(error.message,true);}
   finally {opening = false;}
 }
-async function archiveSession(session, button) {
-  return archiveSessions([session],button);
+function archiveEligible(session) {
+  return session.state === "to_archive" && !sessionReadOnly(session) && session.canArchive !== false;
 }
 function canArchiveSession(session) {
-  return session.state === "to_archive" && !sessionReadOnly(session) && session.canArchive !== false;
+  return archiveEligible(session) && !session.followUp && !archivePending.has(session.id);
+}
+function archiveSession(session, button) {
+  return archiveSessions([session],button);
+}
+function archiveBatchId() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 15) | 64;
+  bytes[8] = (bytes[8] & 63) | 128;
+  const hex = Array.from(bytes,byte => byte.toString(16).padStart(2,"0")).join("");
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
 }
 async function confirmArchiveInputs(session, button) {
   if (saving || creating || dragging || byId("editor").open) return;
@@ -675,24 +706,213 @@ async function confirmArchiveInputs(session, button) {
   finally {saving = false;button.disabled = false;render();await load();}
 }
 async function archiveSessions(sessions, button) {
-  if (saving || creating || dragging || byId("editor").open) return;
+  if (saving || creating || dragging || archiveChecking || byId("editor").open) return;
   const targets = sessions.filter(canArchiveSession);
   if (!targets.length) {announce("当前列没有可归档的会话。");return;}
+  const id = archiveBatchId();
+  const items = targets.map(({id,title,version,inputVersion,sectionVersion}) =>
+    ({id,title,version,inputVersion,sectionVersion:sectionVersion ?? null}));
   saving = true; button.disabled = true; ++requestSerial;
-  let archived = 0;
-  const failures = [];
+  ++archiveRead;
+  archiveRun = {id,index:0,total:items.length,submitted:new Set(),sending:true};
+  archiveNotice = "";
+  renderArchiveResults();
   try {
-    for (const [index,session] of targets.entries()) {
-      announce(`正在归档 ${index + 1} / ${targets.length}：${session.title}`);
-      try {
-        await post("/api/archive",{id:session.id,version:session.version,inputVersion:session.inputVersion,sectionVersion:session.sectionVersion});
-        data.sessions = data.sessions.filter(row => row.id !== session.id);
-        archived++;
-      } catch (error) {failures.push(`${session.title}：${error.message}`);}
+    let batch;
+    try {
+      ({batch} = await archiveRequest("/api/archive-batches",{id,items}));
+    } catch {
+      await readArchiveResults();
+      batch = archiveBatches.find(entry => entry.id === id);
+      if (!batch) throw new Error("缺少归档批次记录");
     }
-    announce(`已归档 ${archived} 条会话。` + (failures.length ? `${failures.length} 条未完成，已保留卡片。${failures.join("；")}` : ""),failures.length > 0);
+    updateArchiveBatch(batch);
+    for (const {title,...revision} of items) {
+      archiveRun.index++;
+      archiveRun.submitted.add(revision.id);
+      renderArchiveResults();
+      try {
+        const {item} = await post("/api/archive",{...revision,batchId:id},30000);
+        updateArchiveBatch({...batch,items:batch.items.map(row => row.id === item.id ? item : row)});
+        if (item.status === "pending") scheduleArchiveCheck(id);
+      } catch {
+        await readArchiveResults();
+        scheduleArchiveCheck(id);
+      }
+      batch = archiveBatches.find(entry => entry.id === id) || batch;
+    }
+    archiveRun.sending = false;
+    renderArchiveResults();
+    const finished = await archiveRequest("/api/archive-batches/finish",{id});
+    updateArchiveBatch(finished.batch);
+    if (finished.batch.items.some(item => item.status === "pending")) {
+      await checkArchiveResults([finished.batch],false);
+    }
+  } catch {
+    archiveNotice = "未收到本批操作的确认。请从「归档结果」核对记录。";
+    await readArchiveResults();
+  } finally {
+    archiveRun = null;
+    saving = false;
+    button.disabled = false;
+    updateArchivePending();
+    await load();
   }
-  finally {saving = false;button.disabled = false;render();await load();}
+}
+function archiveStatus(item,batch) {
+  if (item.status !== "awaiting" || archiveRun?.id !== batch.id) return item.status;
+  return archiveRun.submitted.has(item.id) ? "pending" : "queued";
+}
+function updateArchivePending() {
+  archivePending = new Set(archiveBatches.flatMap(batch =>
+    batch.items.filter(item => archiveStatus(item,batch) === "pending").map(item => item.id)));
+  renderArchiveResults();
+  render();
+}
+function updateArchiveBatch(batch) {
+  const previous = archiveBatches.find(entry => entry.id === batch.id);
+  if (previous) {
+    const known = new Map(previous.items.map(item => [item.id,item]));
+    batch = {...batch,finishedAt:batch.finishedAt ?? previous.finishedAt,items:batch.items.map(item => {
+      const earlier = known.get(item.id);
+      const stale = item.status === "awaiting" ||
+        (item.status === "pending" && earlier && !["awaiting","pending"].includes(earlier.status));
+      return earlier && stale ? earlier : item;
+    })};
+  }
+  if (archiveRun?.id === batch.id) {
+    const confirmed = new Set(batch.items.filter(item => ["archived","verified"].includes(item.status)).map(item => item.id));
+    data.sessions = data.sessions.filter(session => !confirmed.has(session.id));
+  }
+  archiveBatches = [batch,...archiveBatches.filter(previous => previous.id !== batch.id)]
+    .sort((first,second) => second.createdAt - first.createdAt);
+  updateArchivePending();
+}
+function scheduleArchiveCheck(id) {
+  if (archiveRun.automaticCheck) return;
+  archiveRun.automaticCheck = true;
+  setTimeout(() => {
+    const batch = archiveBatches.find(entry => entry.id === id);
+    if (archiveRun?.id === id && batch?.items.some(item => item.status === "pending")) {
+      void checkArchiveResults([batch],false);
+    }
+  },1200);
+}
+async function archiveRequest(path,body,timeout = 30000) {
+  let timer;
+  try {
+    return await Promise.race([
+      request(path,body),new Promise((resolve,reject) => {
+        timer = setTimeout(() => reject(new Error("归档请求超时")),timeout);
+      })
+    ]);
+  } finally {clearTimeout(timer);}
+}
+async function readArchiveResults() {
+  const read = ++archiveRead;
+  try {
+    const {batches} = await archiveRequest("/api/archive-batches",undefined,8000);
+    if (read !== archiveRead) return;
+    if (!Array.isArray(batches)) throw new Error("归档记录格式不正确");
+    archiveBatches = batches;
+    archiveReadError = false;
+  } catch {
+    if (read !== archiveRead) return;
+    archiveReadError = true;
+  }
+  updateArchivePending();
+}
+async function checkArchiveResults(batches,manual) {
+  if (archiveChecking) return;
+  ++archiveRead;
+  archiveChecking = true;
+  archiveNotice = "";
+  renderArchiveResults();
+  try {
+    for (const {id} of batches) {
+      const {batch} = await archiveRequest("/api/archive-batches/check",{id},8000);
+      updateArchiveBatch(batch);
+    }
+    if (manual && archivePending.size) archiveNotice = "刚刚核对，仍有结果待确认。";
+  } catch {archiveNotice = "暂时无法核对结果，请稍后再试。";}
+  finally {archiveChecking = false;renderArchiveResults();}
+}
+function archiveResultButton(label, action) {
+  const button = element("button",label,"row-action");
+  button.type = "button";
+  button.onclick = action;
+  return button;
+}
+function renderArchiveResults() {
+  const panel = byId("archive-summary"), toggle = byId("archive-results-toggle");
+  toggle.hidden = data.legacyMode === true;
+  if (data.legacyMode === true) {panel.hidden = true;return;}
+  const list = byId("archive-result-list");
+  const current = archiveBatches.find(batch => batch.id === archiveRun?.id) || archiveBatches[0];
+  const statuses = current?.items.map(item => archiveStatus(item,current)) || [];
+  const counts = values => statuses.filter(status => values.includes(status)).length;
+  const pendingBatches = archiveBatches.filter(batch => batch.items.some(item => item.status === "pending"));
+  const readingError = archiveReadError ? "暂时无法读取归档记录。" : "";
+  const active = archiveRun?.sending;
+  let heading = active ? (archiveRun.index ?
+    `正在提交第 ${archiveRun.index} / ${archiveRun.total} 条` : "正在记录本次归档") : "";
+  const lines = [];
+  if (current) {
+    const count = `已确认归档 ${counts(["archived","verified"])} / ${statuses.length} 条`;
+    const outstanding = [["pending","条待核对"],["queued","条等候提交"],["awaiting","条尚无提交记录"],
+      ["newInput","条有新输入"],["rejected","条未归档"]]
+      .map(([status,label]) => counts([status]) ? ` · ${counts([status])} ${label}` : "").join("");
+    if (heading) lines.push(count + outstanding);
+    else heading = count + outstanding;
+  }
+  if (active) lines.push("请保持看板打开，直到本批提交结束。");
+  else if (current?.finishedAt) lines.push("本批提交已结束。可以关闭看板，之后从「归档结果」查看。");
+  else if (pendingBatches.length) lines.push("下次打开看板时会再尝试核对。结果仍可在「归档结果」查看。");
+  if (!active && counts(["awaiting"])) lines.push("尚无提交记录的会话仍可从待归档卡片另行提交。");
+  if (archiveNotice) lines.push(archiveNotice);
+  if (readingError) lines.push(readingError);
+  const newInputItems = current?.items.filter(item => item.status === "newInput") || [];
+  const toOpen = newInputItems.filter(item => data.sessions.find(session => session.id === item.id)?.canOpen !== false);
+  if (newInputItems.length) lines.push("核对新输入后，回到卡片点「确认待归档」。确认后需另行发起归档。");
+  const content = byId("archive-summary-text");
+  const signature = JSON.stringify([heading,lines,archiveBatches,archiveChecking,archiveRun?.index,list.hidden,toOpen]);
+  if (panel.dataset.rendered === signature) return;
+  panel.dataset.rendered = signature;
+  panel.hidden = !heading && !lines.length;
+  content.replaceChildren(element("strong",heading),...lines.map(line => element("p",line)));
+  const actions = byId("archive-summary-actions");
+  const checkFocused = actions.contains(document.activeElement);
+  actions.replaceChildren();
+  if (pendingBatches.length && !active) {
+    const check = archiveResultButton(archiveChecking ? "正在核对…" : "核对结果",
+      () => checkArchiveResults(pendingBatches,true));
+    check.disabled = archiveChecking || Boolean(archiveRun);
+    actions.append(check," 仅查询归档状态");
+    if (checkFocused) (check.disabled ? toggle : check).focus({preventScroll:true});
+  }
+  if (toOpen.length === 1) actions.append(archiveResultButton("打开会话",() => openSession(toOpen[0].id)));
+  toggle.setAttribute("aria-expanded",String(!list.hidden));
+  if (list.hidden) return;
+  list.replaceChildren(...archiveBatches.map(batch => {
+    const detail = element("div",undefined,"archive-batch");
+    detail.append(element("strong",`${date(batch.createdAt)} 提交 · ${batch.items.length} 条`));
+    const rows = element("ul",undefined,"archive-items");
+    for (const item of batch.items) {
+      const status = archiveStatus(item,batch);
+      const row = element("li");
+      const itemInfo = element("div",item.title);
+      const session = data.sessions.find(session => session.id === item.id);
+      if (status === "newInput") {
+        if (session?.canOpen !== false) itemInfo.append(archiveResultButton("打开会话",() => openSession(item.id)));
+      }
+      if (item.message) itemInfo.append(element("p",item.message));
+      row.append(itemInfo,element("span",status === "queued" ? "等候提交" : archiveStatuses[status],"archive-item-status"));
+      rows.append(row);
+    }
+    detail.append(rows);
+    return detail;
+  }));
+  if (!archiveBatches.length) list.append(element("p",readingError || "暂无归档记录。"));
 }
 function columnSort(state) {
   return data.columnSorts?.[state] || {field:"updated_at",direction:state === "to_archive" ? "asc" : "desc",version:0};
@@ -849,13 +1069,15 @@ function updateColumn(column, state, sessions) {
   const unread = !hostSessions().length && healthReports().some(host => (selectedHost === "all" || host.key === selectedHost) && !host.lastRead);
   const origin = moving?.from === state && visibleSessions().some(session => session.id === moving.id);
   const signature = JSON.stringify([sessions,data.projectCatalog,data.states,selectedHost,data.legacyMode,
-    moving,[...unconfirmedMoves],saving,creating,unread,origin,Boolean(snapshotError)]);
+    moving,[...unconfirmedMoves],[...archivePending],saving,creating,unread,origin,Boolean(snapshotError)]);
   if (columnContent.get(column) === signature) return false;
   columnContent.set(column,signature);
   cards.replaceChildren(...sessions.map(makeCard));
   if (origin) cards.append(element("div",`移往${data.states[moving.state]} · 等待确认`,"move-origin"));
   if (!sessions.length && !origin) {
-    cards.append(element("div",unread ? "尚未读取会话，可查看连接详情" : "暂无匹配的会话","empty-column"));
+    const message = unread ? "尚未读取会话，可查看连接详情" : state === "to_archive" && archivePending.size ?
+      "暂无匹配的会话。归档结果待核对，见「归档结果」。" : "暂无匹配的会话";
+    cards.append(element("div",message,"empty-column"));
   }
   return true;
 }
@@ -1279,6 +1501,7 @@ async function load() {
     const result = await request("/api/sessions");
     if (serial !== requestSerial || saving || filtersLocked()) return;
     data = result;
+    renderArchiveResults();
     byId("ssh-settings").hidden = data.health.sshAliasSetup !== true;
     snapshotError = null;
     if (replyPreview && !data.sessions.some(session =>
@@ -1664,6 +1887,18 @@ byId("host-filter").onchange = () => {
 document.addEventListener("dragover",event => {
   if (dragging) dragPoint = {x:event.clientX,y:event.clientY};
 });
-load(); setInterval(load,4000);
+byId("archive-results-toggle").onclick = async () => {
+  const list = byId("archive-result-list");
+  list.hidden = !list.hidden;
+  renderArchiveResults();
+  if (!list.hidden && !archiveRun && !archiveChecking) await readArchiveResults();
+};
+load().then(async () => {
+  if (data.legacyMode === true) return;
+  await readArchiveResults();
+  const batches = archiveBatches.filter(batch => batch.items.some(item => item.status === "pending"));
+  if (batches.length && !archiveRun) return checkArchiveResults(batches,false);
+});
+setInterval(load,4000);
 </script>
 </html>

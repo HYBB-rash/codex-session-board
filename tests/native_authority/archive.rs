@@ -16,6 +16,108 @@ use std::time::Duration;
 
 const SECOND: &str = "22222222-2222-4222-8222-222222222222";
 
+#[test]
+fn archive_batch_recovers_lost_receipt_after_reopen_without_replay() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    if isolated_archive_batch(directory.path(), "archive_batch_recovers_lost_receipt_after_reopen_without_replay")? {
+        return Ok(());
+    }
+    let server = Server::new(directory.path())?;
+    let app = server.app()?;
+    app.request("/api/state", Some(&body(&app, "to_archive", "保留备注")?))?;
+    {
+        let mut native = server.surface.lock().unwrap();
+        native.archive_account = Some("original".into());
+        native.lose_archive_receipt = true;
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    let mut first = body(&app, "to_archive", "")?;
+    first["title"] = json!("丢失回执");
+    let second = json!({"id":SECOND,"title":"尚未提交","version":0,"inputVersion":0});
+    let manifest = json!({"id":id,"items":[first,second]});
+    let target = json!({"id":FIRST, "batchId":id});
+    app.request("/api/archive-batches", Some(&manifest))?;
+    assert!(app.request("/api/archive-batches", Some(&json!({"id":id,"items":[manifest["items"][0]]}))).is_err());
+    assert_eq!(app.request("/api/archive", Some(&target))?["item"]["status"], "pending");
+    assert_eq!(app.request("/api/archive", Some(&target))?["item"]["status"], "pending");
+    assert!(app.store.contains(FIRST)?);
+    drop(app);
+    assert_batch_recovery(&server, &id)
+}
+
+fn assert_batch_recovery(server: &Server, id: &str) -> Result<()> {
+    let reopened = App::new(server.config.clone())?;
+    reopened.refresh_native()?;
+    reopened.discover(&[], true)?;
+    assert!(!reopened.snapshot()?["sessions"].as_array().unwrap().iter().any(|row| row["id"] == FIRST));
+    let check = |path: &str| reopened.request(path, Some(&json!({"id":id})));
+    let items = |value: &Value, identifier: &str| value["batch"]["items"].as_array().unwrap()
+        .iter().find(|item| item["id"] == identifier).unwrap()["status"].clone();
+    let history = reopened.request("/api/archive-batches", None)?;
+    assert_eq!(history["batches"][0]["id"], id);
+    assert_eq!(items(&json!({"batch":history["batches"][0]}), SECOND), "awaiting");
+    assert_eq!(items(&check("/api/archive-batches/finish")?, FIRST), "pending");
+    assert_eq!(reopened.request("/api/archive", Some(&json!({"id":SECOND,"batchId":id})))?["item"]["status"], "awaiting");
+
+    server.surface.lock().unwrap().archive_account = Some("different".into());
+    assert_eq!(items(&check("/api/archive-batches/check")?, FIRST), "pending");
+    server.surface.lock().unwrap().archive_account = Some("original".into());
+    assert_eq!(items(&check("/api/archive-batches/check")?, FIRST), "verified");
+    assert_eq!(items(&check("/api/archive-batches/check")?, SECOND), "awaiting");
+    assert!(!reopened.store.contains(FIRST)?);
+    assert_eq!(reopened.store.note(FIRST)?, "保留备注");
+    assert_eq!(server.surface.lock().unwrap().calls.iter().filter(|method| *method == "thread/archive").count(), 1);
+    Ok(())
+}
+
+#[test]
+fn archive_batch_persists_new_input_refusal_without_native_write() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    if isolated_archive_batch(directory.path(), "archive_batch_persists_new_input_refusal_without_native_write")? {
+        return Ok(());
+    }
+    let server = Server::new(directory.path())?;
+    let app = server.app()?;
+    app.request("/api/state", Some(&body(&app, "to_archive", "")?))?;
+    let id = uuid::Uuid::new_v4().to_string();
+    let mut target = body(&app, "to_archive", "")?;
+    target["title"] = json!("有新输入");
+    let unknown = uuid::Uuid::new_v4().to_string();
+    let register = |batch: &str| app.request("/api/archive-batches",
+        Some(&json!({"id":batch,"items":[target]})));
+    register(&unknown)?;
+    let unverified = app.request("/api/archive", Some(&json!({"batchId":unknown,"id":FIRST})))?;
+    assert_eq!(unverified["item"]["status"], "rejected");
+    register(&id)?;
+    {
+        let mut native = server.surface.lock().unwrap();
+        native.archive_account = Some("original".into());
+        native.latest_turn = Some(json!({
+            "id":"new","status":"completed","items":[{"id":"input","type":"userMessage"}],
+        }));
+    }
+    let submitted = app.request("/api/archive", Some(&json!({"batchId": id,"id":FIRST})))?;
+    assert_eq!(submitted["item"]["status"], "newInput");
+    assert!(app.store.contains(FIRST)?);
+    let checked = app.request("/api/archive-batches/check", Some(&json!({"id":id})))?;
+    assert_eq!(checked["batch"]["items"][0]["status"], "newInput");
+    assert!(!server.surface.lock().unwrap().calls.iter().any(|method| method == "thread/archive"));
+    Ok(())
+}
+
+fn isolated_archive_batch(home: &std::path::Path, test: &str) -> Result<bool> {
+    if std::env::var_os("CSB_ARCHIVE_BATCH_FIXTURE").is_some() {
+        return Ok(false);
+    }
+    let result = std::process::Command::new(std::env::current_exe()?)
+        .args(["--exact", &format!("archive::{test}"), "--nocapture"])
+        .env("CSB_ARCHIVE_BATCH_FIXTURE", "1")
+        .env("CODEX_HOME", home).output()?;
+    anyhow::ensure!(result.status.success(), "隔离归档批次测试失败: {test}\n{}\n{}",
+        String::from_utf8_lossy(&result.stdout), String::from_utf8_lossy(&result.stderr));
+    Ok(true)
+}
+
 pub(super) struct Engine {
     pub archived: Arc<Mutex<HashSet<String>>>,
     stop: Arc<AtomicBool>,
@@ -150,7 +252,6 @@ fn engine_reply(
     let method = request["method"].as_str().unwrap_or("");
     surface.calls.push(method.into());
     Ok(match method {
-        "initialize" => json!({}),
         "thread/list" => {
             let desired = request["params"]["archived"] == true;
             let values: Vec<_> = surface
@@ -185,8 +286,20 @@ fn engine_reply(
             archived.lock().unwrap().insert(identifier.into());
             json!({})
         }
-        method => anyhow::bail!("unexpected engine method {method}"),
+        _ => return archive_identity_reply(method, surface),
     })
+}
+
+fn archive_identity_reply(method: &str, surface: &Surface) -> Result<Value> {
+    match method {
+        "initialize" => {
+            let home = std::env::var_os("CODEX_HOME").map(std::path::PathBuf::from);
+            Ok(json!({"codexHome":home.and_then(|home| home.canonicalize().ok())}))
+        }
+        "account/read" if surface.archive_account.is_some() =>
+            Ok(json!({"userId":surface.archive_account,"workspaceRouting":{"chatgptAccountId":"fixture"}})),
+        _ => anyhow::bail!("unexpected engine method {method}"),
+    }
 }
 
 fn probe_reply(request: &Value, surface: &mut Surface) -> Result<Value> {

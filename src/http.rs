@@ -51,15 +51,15 @@ fn json_response(request: Request, status: u16, body: Value) {
     );
 }
 
-fn body(request: &mut Request) -> Result<Value> {
+fn body(request: &mut Request, maximum: usize) -> Result<Value> {
     let length = request.body_length().context("请求大小无效")?;
-    anyhow::ensure!(length > 0 && length <= 12000, "请求大小无效");
+    anyhow::ensure!(length > 0 && length <= maximum, "请求大小无效");
     let mut buffer = String::new();
     request
         .as_reader()
-        .take(12001)
+        .take((maximum + 1) as u64)
         .read_to_string(&mut buffer)?;
-    anyhow::ensure!(buffer.len() <= 12000, "请求大小无效");
+    anyhow::ensure!(buffer.len() <= maximum, "请求大小无效");
     let body: Value = serde_json::from_str(&buffer)?;
     anyhow::ensure!(body.is_object(), "请求格式无效");
     Ok(body)
@@ -129,7 +129,8 @@ pub fn handle(mut request: Request, app: &App, token: &str, port: u16) {
             identity
         })
     } else if request.method() == &Method::Post {
-        body(&mut request).and_then(|body| app.request(&path, Some(&body)))
+        let maximum = if path == "/api/archive-batches" { 1024 * 1024 } else { 12000 };
+        body(&mut request, maximum).and_then(|body| app.request(&path, Some(&body)))
     } else if !writing {
         app.request(&path, None)
     } else {

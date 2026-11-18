@@ -9,6 +9,13 @@ mod catalog_tests;
 impl App {
     pub(crate) fn route_remote(&self, path: &str, body: &Value) -> Result<Value> {
         let identifier = body["id"].as_str().context("缺少会话 ID")?;
+        let (remote, thread) = self.remote_write_target(identifier)?;
+        let mut request = body.clone();
+        request["id"] = json!(thread);
+        remote.request(path, Some(&request))
+    }
+
+    pub(super) fn remote_write_target(&self, identifier: &str) -> Result<(Arc<App>, String)> {
         let (host, thread) = remote_identity(identifier)?;
         let remote = self.remote_app(&host)?;
         let drafts = self.store.catalog_drafts(&host)?;
@@ -19,9 +26,7 @@ impl App {
             "会话只有目录或历史缓存记录，当前不可修改"
         );
         remote.store.note(&thread)?;
-        let mut request = body.clone();
-        request["id"] = json!(thread);
-        remote.request(path, Some(&request))
+        Ok((remote, thread))
     }
 
     pub(super) fn refresh_hosts(&self, body: &Value) -> Result<Value> {

@@ -31,7 +31,7 @@ fn mcp_bridge_preserves_routes_results_and_host_theme() {
         String::from_utf8_lossy(&result.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(report["cases"], 37);
+    assert_eq!(report["cases"], 45);
     assert_eq!(report["cleanup"]["groupEmpty"], true);
     assert_eq!(report["cleanup"]["profileRemoved"], true);
 }
@@ -73,7 +73,7 @@ fn long_content_and_project_filters_preserve_browser_column_geometry() {
         String::from_utf8_lossy(&filters.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&filters.stdout).unwrap();
-    assert_eq!(report["cases"], 54);
+    assert_eq!(report["cases"], 60);
 }
 
 #[test]
