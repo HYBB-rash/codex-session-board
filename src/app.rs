@@ -25,6 +25,7 @@ mod native_probes;
 mod remote;
 mod remote_snapshot;
 mod target_drafts;
+mod ssh_setup;
 mod connection;
 mod four_columns;
 pub use connection::preflight;
@@ -45,6 +46,7 @@ pub struct App {
     pub(crate) active_sessions: Mutex<Option<HashSet<String>>>,
     pub(crate) evidence_gaps: Mutex<crate::observer::EvidenceGaps>,
     thread_operations: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    ssh_previews: Mutex<HashMap<String, ssh_setup::Decision>>,
     native_generation: AtomicUsize,
     pub(crate) enabled: AtomicBool,
     pub(crate) workers: WorkerGroup,
@@ -80,6 +82,7 @@ impl App {
             active_sessions: Mutex::new(None),
             evidence_gaps: Mutex::default(),
             thread_operations: Mutex::new(HashMap::new()),
+            ssh_previews: Mutex::new(HashMap::new()),
             native_generation: AtomicUsize::new(0),
             enabled: AtomicBool::new(true),
             workers: WorkerGroup::default(),
@@ -235,8 +238,14 @@ impl App {
             "legacyMode":self.config.legacy_mode,"fourColumns":self.config.four_columns,
             "runtime":crate::service::info(&self.config)?,
             "pendingDrafts":self.store.pending_drafts()?,
-            "health":self.health.lock().map_err(|_| anyhow::anyhow!("健康状态锁已损坏"))?.clone()}),
+            "health":self.snapshot_health()?}),
         )
+    }
+
+    fn snapshot_health(&self) -> Result<Value> {
+        let mut health = self.health.lock().map_err(|_| anyhow::anyhow!("健康状态锁已损坏"))?.clone();
+        health["sshAliasSetup"] = json!(self.ssh_setup_enabled());
+        Ok(health)
     }
 
     pub fn request(&self, path: &str, body: Option<&Value>) -> Result<Value> {
@@ -264,6 +273,7 @@ impl App {
             ("/api/new/reset", Some(body)) => self.reset_remote_draft(body),
             ("/api/project/assign", Some(body)) => self.assign_project(body),
             ("/api/connect", Some(body)) => self.connect_remote(body),
+            ("/api/ssh-setup", Some(body)) => self.ssh_setup(body),
             ("/api/native-calibration/reset", Some(body)) => self.reset_native_calibration(body),
             ("/api/open", Some(body)) => {
                 let identifier = body["id"].as_str().context("缺少会话 ID")?;
