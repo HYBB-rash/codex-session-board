@@ -22,7 +22,7 @@
     "context/tasks/active/state-incident-20261112.md"
   ],
   "known_open_issues": [
-    "归档状态与反馈调研完成。推荐可找回的归档结果，回执不明先只读核对，结果入口独立于卡片。六条批次样稿覆盖两秒后确认、隔日待核对和新输入拒绝；独立研究者走查已反馈，实际产品用户与面板关闭生命周期待验证。见archive-feedback-design-20261118完成卡。",
+    "归档反馈首版按用户确认的等待前提，采用页面逐条提交与持久归档结果。提交结束可离开，未知项重开只读核对。样稿复验两秒后确认、隔日待核对、提前关闭与新输入拒绝；实施范围由负责人决定。见archive-feedback-wait-20261118完成卡。",
     "0.4.7于2026-11-18 19:05一键归档六条，原生均已归档。第4条在MCP环回HTTP报错前已开始归档，约两秒后落库，独留看板归档标志为0；活动快照已隐藏卡片。底层HTTP异常链未留存。建议修归档结果核对与反馈，见archive-transport-incident-20261118完成卡。",
     "原生目标在官方桌面26.1111.71025的已加载空闲原会话自动跨轮已实测。notLoaded仅保存，显式加载后才观察到原UUID新轮。预测在同后台返回-32601，本次桌面未显示预测。看板现有RPC角色不开放这些方法，隔离探针验证目标set/get可走App::connection。是否开发目标状态入口待决定，见goal-continuation-research-20261118完成卡。",
     "手动合并交接及恢复本地实现完成，最终源码28c31f0，macOS1079项通过，396.049秒；真实GitHub对象待用户指定，未推送或合入main。首次未改动Rust插件退出超时原证据保留，后续通过不代表根因修复。源码及证据在独立merge-manual-rounds-20261117工作树，详见context/results/merge-manual-rounds-20261117.md。",
@@ -62,7 +62,7 @@
     "PWA安装入口已部署并通过真实浏览器验证，系统安装及独立窗口启动等待用户体验。",
     "本机和M1专用会话真实归档已通过。正式进程已是 v0.2.63，原生侧栏取消归档后，下一次本机位置读回会恢复本地已确认卡片并保留备注。这次启动还没有完成一次本机位置读回。0.3.38 已实现 SQLite 兼容锁下私有副本热日志恢复，原库与日志不变；两项子进程回归通过，候选交付证据单独保留。"
   ],
-  "last_completed_task": "context/tasks/completed/archive-feedback-design-20261118.md",
+  "last_completed_task": "context/tasks/completed/archive-feedback-wait-20261118.md",
   "disclosure": {
     "startup": [
       "AGENTS.md",
