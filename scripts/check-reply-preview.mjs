@@ -7,12 +7,13 @@ import { launchBrowser } from "./browser-client.mjs";
 const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const bridge = await readFile(new URL("../assets/app-bridge.js", import.meta.url), "utf8");
 const states = {in_progress:"进行中",review:"待审阅",blocked:"已阻塞",to_archive:"待归档"};
-const session = (id, state, title = "核对发布", extra = {}) => ({
+const sharedTitle = "核对发布及隔离启动历史记录".repeat(6);
+const session = (id, state, title = sharedTitle, extra = {}) => ({
   id,state,title,version:0,inputVersion:0,sectionVersion:"fixture",updatedAt:1760000000,...extra,
 });
 const fixture = () => ({
   states,health:{},fourColumns:true,projectCatalog:{loaded:true,items:[]},
-  sessions:[session("local","review"),session("remote:mac:session","in_progress","核对发布",{remote:true,hostId:"mac",hostLabel:"MacBook"}),
+  sessions:[session("local","review"),session("remote:mac:session","in_progress",sharedTitle,{remote:true,hostId:"mac",hostLabel:"MacBook"}),
     session("empty","blocked","尚无回复"),session("offline","to_archive","读取失败",{canOpen:false}),
     ...Array.from({length:20},(_,index)=>session(`review-${index}`,"review",`核对记录 ${index}`))],
 });
@@ -170,18 +171,27 @@ async function exercise(surface) {
     const capture = await page.command("Page.captureScreenshot",{format:"png"});
     await writeFile(`${process.argv[2]}/${surface}.png`,Buffer.from(capture.data,"base64"));
   }
-  for (const [width,height] of [[768,431],[768,430],[390,600],[390,320],[320,256]]) {
+  for (const [width,height] of [[768,431],[768,430],[390,600],[390,320],[320,361],[320,256]]) {
     await resize(width,height);
     const layout = await evaluate(`(() => {
       const reader=byId("reply-reader"), body=byId("reply-body"), open=byId("reply-open");
       open.focus({preventScroll:true});
       return {bodyHeight:body.clientHeight, bodyScrollHeight:body.scrollHeight, openBottom:open.getBoundingClientRect().bottom,
-        readerBottom:reader.getBoundingClientRect().bottom, focused:document.activeElement === open};
+        readerBottom:reader.getBoundingClientRect().bottom, focused:document.activeElement === open,
+        fullTitle:byId("reply-title").title};
     })()`);
     assert(layout.bodyHeight >= 96 && layout.bodyScrollHeight > layout.bodyHeight &&
-      layout.openBottom <= Math.min(height,layout.readerBottom) && layout.focused,
+      layout.openBottom <= Math.min(height,layout.readerBottom) && layout.focused && layout.fullTitle === sharedTitle,
     `阅读栏在 ${width}×${height} 中裁切正文或原会话入口 ${JSON.stringify(layout)}`);
   }
+  await resize(768,431);
+  const overlayBounds = `["reply-reader","reply-scrim"].map(id=>byId(id).getBoundingClientRect().toJSON())`;
+  const beforeWheel = await evaluate(overlayBounds);
+  await page.command("Input.dispatchMouseEvent",{type:"mouseWheel",x:8,y:250,deltaX:0,deltaY:480});
+  await wait("window.scrollY > 0");
+  assert.deepEqual(await evaluate(overlayBounds),beforeWheel);
+  assert.equal(beforeWheel[1].bottom,431);
+  await evaluate("window.scrollTo(0,0)");
   await resize(1680,1000);
   const scroll = await evaluate('byId("reply-body").scrollTop=140;byId("reply-body").scrollTop');
   assert(scroll>0);
