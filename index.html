@@ -119,6 +119,12 @@ input[type=search]{width:180px}
 .board-help{margin-top:8px;color:var(--muted);font-size:12px}
 .board-help>summary{width:fit-content;cursor:pointer}
 .board-help[open]{max-height:25dvh;overflow:auto}
+.unplaced{flex:none;margin:6px 0;color:var(--muted)}
+.unplaced>summary{width:fit-content;cursor:pointer}
+.unplaced .cards{max-height:min(32dvh,320px);margin-top:4px}
+.placement-reason{margin-top:8px;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.card.offline{background:var(--subtle);color:var(--muted)}
+.card.offline .card-title{color:var(--muted)}
 .foot{margin:8px 0 0;color:var(--muted);font-size:11px}
 dialog{width:min(520px,calc(100vw - 32px));max-height:80dvh;overflow:auto;padding:20px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);box-shadow:var(--shadow)}
 dialog::backdrop{background:#2020204d}dialog h2{margin:0 0 8px;font-size:15px;font-weight:600}
@@ -167,6 +173,10 @@ textarea{resize:vertical;min-height:90px}
   </div>
   <div class="scope-row"><nav class="jump" id="jump" aria-label="跳转到状态列"></nav><div id="filter-scope"></div></div>
   <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
+  <details class="unplaced" id="unplaced" hidden>
+    <summary id="unplaced-summary">未归列会话</summary>
+    <div id="unplaced-cards" class="cards"></div>
+  </details>
   <div class="board-viewport" id="board-viewport" tabindex="0" aria-label="横向滚动查看全部状态列">
     <div class="board" id="board" aria-label="会话状态看板"></div>
   </div>
@@ -190,7 +200,7 @@ textarea{resize:vertical;min-height:90px}
   <form id="edit-form">
     <h2>调整工作状态</h2>
     <div id="dialog-title" class="dialog-title"></div>
-    <label for="state">状态</label><select id="state"></select>
+    <label for="state">状态</label><select id="state" required></select>
     <label for="note">备注 / 阻塞原因（可选）</label><textarea id="note" maxlength="2000" aria-describedby="note-help" placeholder="记录下一步，或说明卡在哪里"></textarea>
     <p id="note-help" class="reason"></p>
     <div id="reason" class="reason"></div>
@@ -425,8 +435,9 @@ function updateNotePreviews() {
   }
 }
 new ResizeObserver(updateNotePreviews).observe(byId("board-viewport"));
+byId("unplaced").addEventListener("toggle",updateNotePreviews);
 function sessionReadOnly(session) {
-  return session.readOnly || session.remote && (session.archived || session.presence === "cachedUnknown");
+  return session.readOnly || session.remote && (session.canOpen === false || session.archived || session.presence === "cachedUnknown");
 }
 function makeCard(session) {
   const card = element("article",undefined,"card");
@@ -434,14 +445,18 @@ function makeCard(session) {
   const pending = moving?.id === session.id;
   card.draggable = !saving && !creating && !sessionReadOnly(session);
   if (pending) {card.classList.add("move-pending");card.setAttribute("aria-busy","true");}
+  if (session.canOpen === false) card.classList.add("offline");
   card.setAttribute("aria-label",session.title);
   const title = element("button",session.title,"title card-title");
   title.type = "button";
   title.dataset.action = "open";
-  title.disabled = pending;
-  title.title = "打开会话：" + session.title;
+  title.disabled = pending || session.canOpen === false;
+  title.title = session.canOpen === false ? "主机暂不可用，无法打开会话" : "打开会话：" + session.title;
   title.onclick = () => openSession(session.id);
   card.append(title,makeProjectTag(session));
+  if (session.state === null && session.placementReason) {
+    card.append(element("div",session.placementReason,"placement-reason"));
+  }
   if (session.remote && session.archived) card.append(element("div","已归档","meta"));
   if (session.remote && session.presence === "cachedUnknown") card.append(element("div",
     session.catalogCurrent ? "上次目录快照，当前状态待确认" : "历史缓存，当前目录未确认此会话","follow"));
@@ -452,20 +467,21 @@ function makeCard(session) {
   if (session.followUp) card.append(element("div","有新输入，待复核","follow"));
   if (sessionReadOnly(session)) card.append(element("div","当前仅供查看","follow"));
   if (session.observationError) card.append(element("div","历史读取失败，保留原状态","follow"));
+  if (session.observationWarning) card.append(element("div",session.observationWarning,"follow"));
   if (session.projectIssue) card.append(element("div","项目归属待确认","follow"));
   if (session.titleSyncPending) card.append(element("div",session.titleSyncError ? "状态已保存，标题同步待重试：" + session.titleSyncError : "状态已保存，标题正在同步","follow"));
   const footer = element("div",undefined,"card-footer");
   const updated = element("time",date(session.updatedAt));
   const actions = element("div",undefined,"card-actions");
-  const adjust = element("button","调整","row-action");
+  const adjust = element("button",session.state === null ? "归列" : "调整","row-action");
   adjust.type = "button";adjust.dataset.action = "adjust";
   adjust.disabled = saving || creating || pending || sessionReadOnly(session);
-  adjust.title = "调整状态或备注：" + session.title;
+  adjust.title = (session.state === null ? "归列：" : "调整状态或备注：") + session.title;
   adjust.setAttribute("aria-label",adjust.title);
   adjust.onclick = () => openEditor(session.id);
   actions.append(adjust);
   if (session.remote && session.catalogCurrent && session.ordinary && !session.archived
-      && !session.projectId && assignmentProjects(session).length) {
+      && session.canOpen !== false && !session.projectId && assignmentProjects(session).length) {
     const assign = element("button","归入项目","row-action");
     assign.type = "button";assign.dataset.action = "assign-project";
     assign.disabled = saving || creating || pending;
@@ -484,7 +500,7 @@ function makeCard(session) {
   footer.append(updated,actions);
   card.append(footer);
   card.onclick = event => {
-    if (!event.target.closest("button,a,input,select,textarea,details")) openSession(session.id);
+    if (session.canOpen !== false && !event.target.closest("button,a,input,select,textarea,details")) openSession(session.id);
   };
   card.ondragstart = event => {
     if (saving || creating || sessionReadOnly(session) || byId("editor").open) {event.preventDefault();return;}
@@ -505,6 +521,10 @@ function makeCard(session) {
 }
 async function openSession(id) {
   if (dragging || saving && !moving || moving?.id === id || opening || performance.now() < suppressOpenUntil) return;
+  if (data.sessions.find(session => session.id === id)?.canOpen === false) {
+    announce("主机暂不可用，无法打开会话。",true);
+    return;
+  }
   opening = true;
   announce("正在打开 Codex 会话…");
   try {
@@ -661,6 +681,22 @@ function restoreScroll(cards, position) {
   if (anchor) cards.scrollTop += anchor.getBoundingClientRect().top - cards.getBoundingClientRect().top - position.offset;
 }
 const columnContent = new WeakMap();
+function updateUnplaced(filtered) {
+  const section = byId("unplaced"), cards = byId("unplaced-cards");
+  const sessions = data.fourColumns ? filtered.filter(session => session.state === null) : [];
+  const origin = data.fourColumns && moving?.from === null && filtered.some(session => session.id === moving.id);
+  section.hidden = !sessions.length && !origin;
+  byId("unplaced-summary").textContent = `未归列会话 ${sessions.length + Number(Boolean(origin))}`;
+  const signature = JSON.stringify([sessions,data.projectCatalog,data.states,moving,[...unconfirmedMoves],saving,creating,origin]);
+  if (columnContent.get(section) === signature) return false;
+  columnContent.set(section,signature);
+  const position = captureScroll(cards);
+  sessions.sort((first,second) => compareSessions(first,second,{direction:"desc"}));
+  cards.replaceChildren(...sessions.map(makeCard));
+  if (origin) cards.append(element("div",`移往${data.states[moving.state]} · 等待确认`,"move-origin"));
+  restoreScroll(cards,position);
+  return true;
+}
 function updateColumn(column, state, sessions) {
   const pending = sessions.some(session => session.id === moving?.id);
   column.querySelector(".column-count").textContent = pending ? `${sessions.length - 1} + 1` : String(sessions.length);
@@ -864,7 +900,7 @@ function render(resetState = null) {
       [column.dataset.state,column.dataset.state === resetState ? null : captureScroll(column.querySelector(".cards"))]));
   const active = document.activeElement;
   const focusedCard = active?.closest(".card");
-  const focus = focusedCard && {id:focusedCard.dataset.id,state:focusedCard.closest(".column").dataset.state,
+  const focus = focusedCard && {id:focusedCard.dataset.id,state:focusedCard.closest(".column")?.dataset.state,
     action:active.dataset.action || (active.closest(".project-tag") ? "project" : "open")};
   const expanded = new Map([...document.querySelectorAll(".card")].map(card => [card.dataset.id,
     {project:card.querySelector(".project-tag").open,note:Boolean(card.querySelector(".note-details[open]"))}]));
@@ -873,7 +909,7 @@ function render(resetState = null) {
   const mode = data.legacyMode ? "legacy" : "native";
   byId("board").style.setProperty("--columns",Object.keys(data.states).length);
   const jumps = [];
-  let changed = false;
+  let changed = updateUnplaced(filtered);
   for (const [state,label] of Object.entries(data.states)) {
     const sessions = filtered.filter(session => session.state === state);
     sessions.sort((first,second) => compareSessions(first,second,columnSort(state)));
@@ -897,7 +933,7 @@ function render(resetState = null) {
       columns.some((column,index) => byId("board").children[index] !== column)) {
     byId("board").replaceChildren(...columns);
   }
-  for (const card of byId("board").querySelectorAll(".card")) {
+  for (const card of document.querySelectorAll(".card")) {
     const previous = expanded.get(card.dataset.id);
     if (previous) {
       card.querySelector(".project-tag").open = previous.project;
@@ -906,9 +942,10 @@ function render(resetState = null) {
     }
   }
   if (focus && !active.isConnected) {
-    const card = [...byId("board").querySelectorAll(".card")].find(card => card.dataset.id === focus.id);
+    const card = [...document.querySelectorAll(".card")].find(card => card.dataset.id === focus.id);
     const target = card?.querySelector(focus.action === "project" ? ".project-tag summary" : `[data-action="${focus.action}"]`);
-    const fallback = byId("column-" + focus.state)?.querySelector(".column-sort") || byId("host-filter");
+    const fallback = byId("column-" + focus.state)?.querySelector(".column-sort") ||
+      (!byId("unplaced").hidden && byId("unplaced-summary")) || byId("host-filter");
     (target && !target.disabled ? target : fallback).focus({preventScroll:true});
   }
   for (const column of columns) restoreScroll(column.querySelector(".cards"),scrollPositions.get(column.dataset.state));
@@ -1088,11 +1125,16 @@ function openEditor(id, state, snapshot) {
   if (sessionReadOnly(editing)) {editing=null;announce("当前会话仅供查看，不能修改状态或备注。",true);return;}
   byId("dialog-title").textContent = editing.title + (editing.remote ? " · " + editing.hostLabel : "");
   byId("state").replaceChildren();
+  if (editing.state === null) {
+    const placeholder = new Option("选择状态","");
+    placeholder.disabled = true;
+    byId("state").append(placeholder);
+  }
   for (const [value,label] of Object.entries(data.states)) byId("state").append(new Option(label,value));
-  byId("state").value = state || editing.state;
+  byId("state").value = state || editing.state || "";
   const draft = noteDraft(id);
   byId("note").value = draft === null ? editing.note : draft;
-  byId("reason").textContent = editing.reason;
+  byId("reason").textContent = editing.placementReason || editing.reason;
   byId("notice").textContent = draft === null ? "" : "已恢复上次未保存的备注，请核对当前状态后保存。";
   byId("editor").showModal();
   updateNoteHelp();
@@ -1130,7 +1172,8 @@ async function persist(session, state, note) {
   data.sessions = data.sessions.map(row => row.id === session.id ? {
     ...row,state:state || row.suggestion,note,manual:state !== null,
     version:session.version+1,sectionVersion:Object.hasOwn(result,"sectionVersion") ? result.sectionVersion : row.sectionVersion,
-    followUp:false,titleSyncPending:result.titlePending,titleSyncError:result.titleError
+    placementReason:state === null ? row.placementReason : null,followUp:false,
+    titleSyncPending:result.titlePending,titleSyncError:result.titleError
   } : row);
   return result;
 }
@@ -1152,12 +1195,14 @@ async function moveCard(session, state) {
 byId("edit-form").onsubmit = async event => {
   event.preventDefault();
   if (saving || creating) return;
+  const state = byId("state").value;
+  if (!Object.hasOwn(data.states,state) && state !== "auto") return;
   saving = true; byId("save").disabled = true; byId("cancel").disabled = true;
   byId("state").disabled = true;byId("note").readOnly = true;byId("notice").textContent = "";
-  const operation = startMove(editing,byId("state").value);
+  const operation = startMove(editing,state);
   let saved = false;
   try {
-    const result = await persist(editing,byId("state").value === "auto" ? null : byId("state").value,byId("note").value);
+    const result = await persist(editing,state === "auto" ? null : state,byId("note").value);
     noteDraft(editing.id,null);
     saved = true;
     byId("editor").close(); announce("状态已保存。" + syncNotice(result));
