@@ -123,3 +123,31 @@ fn serve_preview(listener: UnixListener, thread: &str) -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn snapshot_tracks_observed_turns_across_same_second_transitions() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let app = App::new(crate::config::Config {
+        data_dir: directory.path().into(),
+        ..crate::config::Config::default()
+    })?;
+    let mut revisions = HashMap::new();
+    let mut row = json!({"id":"thread","name":"测试会话","updatedAt":1,"status":{"type":"idle"}});
+    app.store.discover(std::slice::from_ref(&row))?;
+    for (thread_status, turn, turn_status, phase, expected) in [
+        ("idle", "first", "completed", "final_answer", Some("first")),
+        ("active", "first", "completed", "final_answer", None),
+        ("active", "second", "inProgress", "commentary", None),
+        ("idle", "second", "completed", "final_answer", Some("second")),
+        ("active", "third", "inProgress", "final_answer", None),
+        ("idle", "third", "interrupted", "final_answer", None),
+    ] {
+        row["status"]["type"] = json!(thread_status);
+        let mut reader = Fixture(VecDeque::from([("thread/turns/list", page(turn, turn_status, phase))]));
+        crate::observer::observe_runtime_threads(&app, &mut reader, &mut revisions, 0.0, std::slice::from_ref(&row))?;
+        let snapshot = app.snapshot()?;
+        assert_eq!(snapshot["sessions"][0]["previewTurnId"].as_str(), expected);
+        assert!(!snapshot.to_string().contains("first final"));
+    }
+    Ok(())
+}
