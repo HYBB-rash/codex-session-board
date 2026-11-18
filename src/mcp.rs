@@ -31,7 +31,7 @@ fn tools_for_mode(legacy: bool, four_columns: bool) -> Value {
         ("board_archive_batch_finish", "结束本批归档提交", false),
         ("board_archive_batch_check", "核对原生归档结果", true),
         ("board_open", "打开已有会话", true),
-        ("board_preview_reply", "预览本轮最终答复", true),
+        ("board_preview_reply", "预览最近一条完整回复", true),
         ("board_new", "打开新建会话页", false),
         ("board_new_reset", "确认已核对新建结果", false),
         ("board_project_assign", "确认新会话项目归属", false),
@@ -109,11 +109,7 @@ fn basic_schema(name: &str) -> (Value, Value) {
         ),
         "board_archive_batch_finish" | "board_archive_batch_check" =>
             (json!({"id":{"type":"string","format":"uuid"}}), json!(["id"])),
-        "board_open" => (json!({"id":{"type":"string"}}), json!(["id"])),
-        "board_preview_reply" => (
-            json!({"id":{"type":"string"},"turnId":{"type":"string","maxLength":128}}),
-            json!(["id", "turnId"]),
-        ),
+        "board_open" | "board_preview_reply" => (json!({"id":{"type":"string"}}), json!(["id"])),
         "board_connect" => (json!({"hostId":{"type":"string"}}), json!(["hostId"])),
         _ => setup_schema(name),
     }

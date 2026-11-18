@@ -126,7 +126,7 @@ async function runRegression() {
     assert.equal(events.some(event => event.event === "wait-observed" &&
       ["request-blocked", "response-blocked"].includes(event.phase) && event.value !== false), false);
     const browserReport = JSON.parse(stdout);
-    assert.equal(browserReport.cases, 80);
+    assert.equal(browserReport.cases, 81);
     assert.equal(browserReport.cleanup.groupEmpty, true);
     assert.equal(browserReport.cleanup.profileRemoved, true);
     report.passed = true;

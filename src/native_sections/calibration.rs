@@ -2,7 +2,7 @@ use super::{
     mapping::{self, Probe, Record},
     *,
 };
-use crate::store::Store;
+use crate::{rpc::paginated_unmaterialized, store::Store};
 use std::time::{Duration, Instant};
 
 #[cfg(test)]
@@ -350,12 +350,6 @@ fn missing(error: &anyhow::Error, identifier: &str) -> bool {
     error.downcast_ref::<crate::rpc::RequestError>().is_some_and(|error|
         error.method == "thread/read" && error.details["code"] == -32600
             && error.details["message"] == format!("thread not loaded: {identifier}"))
-}
-
-fn paginated_unmaterialized(error: &anyhow::Error, identifier: &str) -> bool {
-    error.downcast_ref::<crate::rpc::RequestError>().is_some_and(|error|
-        error.method == "thread/turns/list" && error.details["code"] == -32600
-            && error.details["message"] == format!("thread {identifier} is not materialized yet; thread/turns/list is unavailable before first user message"))
 }
 
 fn same_probe_metadata(left: &Value, right: &Value) -> bool {
