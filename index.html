@@ -114,21 +114,24 @@ input[type=search]{width:180px}
 .card-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:2px;margin-left:auto}
 .row-action{min-height:28px;padding:0 7px;border-color:transparent;background:transparent;color:var(--muted);font-size:12px;white-space:nowrap}
 .row-action:hover{border-color:transparent;background:var(--subtle);color:var(--ink)}
-#board-workspace{position:relative;flex:1 0 auto;min-height:0;display:grid;grid-template:minmax(0,1fr) / minmax(0,1fr)}
+#board-workspace{anchor-name:--board-workspace;flex:1 0 auto;min-height:0;display:grid;grid-template:minmax(0,1fr) / minmax(0,1fr)}
 #reply-scrim{position:absolute;inset:0;z-index:3;pointer-events:none;background:light-dark(#262d431b,#0b0c1070)}
 .card:has(.card-title[aria-expanded=true]){border-color:var(--blue)}
 #reply-reader{
-  position:absolute;inset:4px 4px 10px auto;z-index:4;width:min(calc(100% - 76px),clamp(285px,43%,540px));
+  --reply-top:calc(8px + var(--host-inset-top,0px));
+  --reply-bottom:calc(12px + var(--host-inset-bottom,0px));
+  --reply-right:calc(24px + var(--host-inset-right,0px));
+  position:fixed;position-anchor:--board-workspace;z-index:4;
+  top:var(--reply-top);
+  top:clamp(var(--reply-top),calc(anchor(top,0px) + 4px),calc(100dvh - var(--reply-bottom) - 340px));
+  bottom:var(--reply-bottom);right:var(--reply-right);
+  width:clamp(285px,43%,540px);
+  max-width:calc(100% - var(--reply-right) - 56px - var(--host-inset-left,0px));
   display:grid;grid-template-rows:auto auto minmax(96px,1fr) auto;overflow:auto;
   border:1px solid var(--line);border-radius:10px;background:var(--bg);box-shadow:0 8px 30px light-dark(#252b3a29,#0007);
 }
-@media(max-width:670px),(max-height:430px){
-  #reply-reader{
-    position:fixed;
-    top:calc(8px + var(--host-inset-top,0px));right:calc(12px + var(--host-inset-right,0px));
-    bottom:calc(8px + var(--host-inset-bottom,0px));
-    max-width:calc(100% - 64px - var(--host-inset-left,0px) - var(--host-inset-right,0px));
-  }
+@media(max-width:800px){
+  #reply-reader{--reply-right:calc(16px + var(--host-inset-right,0px))}
 }
 .reply-heading,.reply-actions{padding:12px 16px}
 .reply-heading{border-bottom:1px solid var(--line)}

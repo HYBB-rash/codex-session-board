@@ -170,7 +170,7 @@ async function exercise(surface) {
     const capture = await page.command("Page.captureScreenshot",{format:"png"});
     await writeFile(`${process.argv[2]}/${surface}.png`,Buffer.from(capture.data,"base64"));
   }
-  for (const [width,height] of [[390,600],[390,320],[320,256]]) {
+  for (const [width,height] of [[768,431],[768,430],[390,600],[390,320],[320,256]]) {
     await resize(width,height);
     const layout = await evaluate(`(() => {
       const reader=byId("reply-reader"), body=byId("reply-body"), open=byId("reply-open");
