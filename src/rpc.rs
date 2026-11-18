@@ -477,10 +477,11 @@ impl DesktopConnection {
     }
 
     fn initialize(&mut self, source: Option<(&Binding, &Peer)>) -> Result<()> {
+        let name = if self.role == Role::SetupReader { "codex-backend" } else { "session_board_runtime" };
         let response = self.call(
             "initialize",
             json!({
-                "clientInfo": {"name": "session_board_runtime", "version": env!("CARGO_PKG_VERSION")},
+                "clientInfo": {"name": name, "version": env!("CARGO_PKG_VERSION")},
                 "capabilities": {"experimentalApi": true}
             }),
         )?;
@@ -543,7 +544,9 @@ impl DesktopConnection {
 impl Rpc for DesktopConnection {
     fn call(&mut self, method: &str, params: Value) -> Result<Value> {
         self.role.check(method)?;
-        if matches!(self.role, Role::CatalogReader | Role::TargetProjectPreparer) && method != "initialize" {
+        if matches!(self.role, Role::CatalogReader | Role::TargetProjectPreparer | Role::SetupReader)
+            && method != "initialize"
+        {
             self.catalog_source()?;
             self.catalog_guard.as_ref().context("目录连接尚未初始化")?.check(method, &params)?;
         }
