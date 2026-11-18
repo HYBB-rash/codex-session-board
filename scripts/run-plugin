@@ -1,11 +1,14 @@
 #!/bin/sh
 set -eu
 plugin_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)"
-if [ -f "$plugin_root/RELEASE.json" ] && [ -f "$plugin_root/updater/board_update_job.py" ]; then
-  export CODEX_SESSION_BOARD_UPDATER="$plugin_root/updater/board_update_job.py"
-else
-  unset CODEX_SESSION_BOARD_UPDATER
-fi
+unset CODEX_SESSION_BOARD_UPDATER_HOME
+case "${plugin_root%/*}" in
+  */plugins/cache/session-board-rust/codex-session-board)
+    if [ -f "$plugin_root/RELEASE.json" ] && [ -f "$plugin_root/updater/board_update_job.py" ]; then
+      export CODEX_SESSION_BOARD_UPDATER_HOME="$plugin_root"
+    fi
+    ;;
+esac
 umask 077
 runtime_root="${XDG_DATA_HOME:-$HOME/.local/share}/codex-session-board"
 mkdir -p "$runtime_root"

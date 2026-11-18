@@ -4,6 +4,7 @@
       "type": "stdio",
       "command": "./bin/run-plugin",
       "args": ["mcp"],
+      "env_vars": ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR", "CODEX_APP_SERVER_WS_URL", "CODEX_LINUX_APP_SERVER_BRIDGE_SOCKET"],
       "cwd": "."
     }
   }

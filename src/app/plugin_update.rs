@@ -13,7 +13,7 @@ const RUNNING: &[&str] = &["fetching", "verifying", "installing", "reloading"];
 
 impl App {
     pub(super) fn plugin_update(&self, body: Option<&Value>) -> Result<Value> {
-        let Some(updater) = std::env::var_os("CODEX_SESSION_BOARD_UPDATER") else {
+        let Some(package) = std::env::var_os("CODEX_SESSION_BOARD_UPDATER_HOME") else {
             ensure!(body.is_none(), "更新只在已安装的插件中可用");
             return Ok(json!({"available":false}));
         };
@@ -22,7 +22,7 @@ impl App {
         let build = config::build_id()?;
         if let Some(body) = body {
             ensure!(body.as_object().is_some_and(|fields| fields.is_empty()), "更新不接受参数");
-            self.start_plugin_update(Path::new(&updater), &state, &build)?;
+            self.start_plugin_update(Path::new(&package), &state, &build)?;
         }
         let mut status = status(&state, &build)?;
         if status["phase"] == "active" || status["phase"] == "up_to_date" {
@@ -33,10 +33,12 @@ impl App {
         Ok(status)
     }
 
-    fn start_plugin_update(&self, updater: &Path, state: &Path, build: &str) -> Result<()> {
+    fn start_plugin_update(&self, package: &Path, state: &Path, build: &str) -> Result<()> {
+        let home = package.ancestors().nth(5).context("无法确定当前插件所属的 Codex 目录")?;
         let mut command = Command::new("python3");
-        command.args(["-EBS"]).arg(updater).arg(state)
-            .arg(&self.config.codex_command[0]).arg(build).stdin(Stdio::null());
+        command.args(["-EBS"]).arg(package.join("updater/board_update_job.py")).arg(state)
+            .arg(&self.config.codex_command[0]).arg(build).stdin(Stdio::null())
+            .env("CODEX_HOME", home);
         command.env_remove("CODEX_SESSION_BOARD_UPDATE_AUTHORITY");
         if let Some(authority) = &self.config.local_authority {
             command.env("CODEX_SESSION_BOARD_UPDATE_AUTHORITY", serde_json::to_string(authority)?);

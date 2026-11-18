@@ -9,7 +9,10 @@ import sys
 import tempfile
 import time
 
-from desktop_identity import process_identity, socket_peer_pid
+if __package__:
+    from .desktop_identity import process_identity, socket_peer_pid
+else:
+    from desktop_identity import process_identity, socket_peer_pid
 
 
 def publish_authority(root, backend, desktop):

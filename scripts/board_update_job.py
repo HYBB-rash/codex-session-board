@@ -77,6 +77,10 @@ def main():
     else:
         os.umask(0o077)
         os.environ["GIT_TERMINAL_PROMPT"] = "0"
+        config_home = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+        gitconfig = config_home / "codex-session-board/gitconfig"
+        if gitconfig.is_file():
+            os.environ["GIT_CONFIG_GLOBAL"] = str(gitconfig)
         start(arguments.state, arguments.codex, arguments.running_build)
 
 
