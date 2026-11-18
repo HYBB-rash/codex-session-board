@@ -34,6 +34,7 @@ pub(super) struct Surface {
     pub notes_during_move: Vec<String>,
     pub lose_receipt: bool,
     pub lose_archive_receipt: bool,
+    pub archive_account: Option<String>,
     pub reject_move: Option<String>,
     pub blocked: Option<BlockingMove>,
     pub read_blocked: Option<BlockingMove>,

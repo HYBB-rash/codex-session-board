@@ -84,6 +84,9 @@ try {
     "/api/sessions": "board_snapshot", "/api/state": "board_update", "/api/open": "board_open",
     "/api/refresh": "board_refresh", "/api/new": "board_new", "/api/new/reset": "board_new_reset",
     "/api/connect": "board_connect", "/api/archive": "board_archive", "/api/column-sort": "board_sort",
+    "/api/archive-batches": "board_archive_batch_start",
+    "/api/archive-batches/finish": "board_archive_batch_finish",
+    "/api/archive-batches/check": "board_archive_batch_check",
     "/api/ssh-setup": "board_ssh_setup",
     "/api/project/assign": "board_project_assign",
   };
@@ -96,6 +99,8 @@ try {
     check(await page.evaluate("(({name,arguments:body})=>({name,arguments:body}))(requests.at(-1))"),
       { name, arguments: body });
   }
+  check(await evaluate('boardRequest("/api/archive-batches")'), {ok:true,received:{}});
+  check(await page.evaluate("requests.at(-1).name"), "board_archive_batches");
   const previous = await page.evaluate("requests.length");
   check(await evaluate('boardRequest("toString").then(()=>false, error=>error.message)'), "未知看板操作");
   check(await page.evaluate("requests.length"), previous);

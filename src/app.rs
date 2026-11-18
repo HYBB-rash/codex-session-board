@@ -16,6 +16,7 @@ use std::sync::{
 };
 use std::time::Duration;
 
+mod archive_batches;
 mod drafts;
 mod project_assignment;
 mod native;
@@ -262,6 +263,7 @@ impl App {
         if !self.config.legacy_mode
             && matches!(path, "/api/state" | "/api/archive")
             && let Some(body) = body
+            && (path != "/api/archive" || body.get("batchId").is_none())
             && body["id"]
                 .as_str()
                 .is_some_and(|id| id.starts_with("remote:"))
@@ -273,7 +275,8 @@ impl App {
             ("/api/preview-reply", Some(body)) => self.preview_reply(body),
             ("/api/state", Some(body)) => self.save(body),
             ("/api/column-sort", Some(body)) => self.store.save_column_sort(body),
-            ("/api/archive", Some(body)) => crate::archive::request(self, body),
+            ("/api/archive" | "/api/archive-batches" | "/api/archive-batches/finish" | "/api/archive-batches/check", body) =>
+                self.archive_route(path, body),
             ("/api/new", Some(body)) => self.new_session(body),
             ("/api/new/reset", Some(body)) => self.reset_remote_draft(body),
             ("/api/project/assign", Some(body)) => self.assign_project(body),
