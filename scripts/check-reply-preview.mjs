@@ -26,7 +26,8 @@ let snapshot = fixture(), pending, current, held, openFails;
 const host = `<!doctype html><meta charset="utf-8">
 <style>body{margin:0}iframe{display:block;border:0;width:100vw;height:100vh}</style>
 <script>
-const readRoutes={board_snapshot:"/api/sessions",board_archive_batches:"/api/archive-batches"};
+const readRoutes={board_snapshot:"/api/sessions",board_archive_batches:"/api/archive-batches",
+  board_plugin_update_status:"/api/plugin-update"};
 const postRoutes={board_preview_reply:"/api/preview-reply",board_open:"/api/open"};
 addEventListener("message",async event=>{
   if(event.source!==document.querySelector("iframe").contentWindow)return;
@@ -54,6 +55,9 @@ const server = http.createServer(async (request,response) => {
   }
   response.setHeader("Content-Type","application/json");
   if (request.url === "/api/sessions") return response.end(JSON.stringify(snapshot));
+  if (request.url === "/api/plugin-update" && request.method === "GET") {
+    return response.end(JSON.stringify({available:false}));
+  }
   if (request.url === "/api/archive-batches" && request.method === "GET") {
     return response.end(JSON.stringify({batches:[]}));
   }
