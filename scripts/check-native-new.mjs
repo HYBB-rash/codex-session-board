@@ -60,6 +60,14 @@ function sshSetupResponse(body) {
   }
   return { error: "此操作不可用" };
 }
+async function openSshSettings(page) {
+  await until(
+    () => page.evaluate('document.getElementById("ssh-settings")?.hidden === false && !filtersLocked()'),
+    "连接设置按钮未就绪"
+  );
+  await clickNode(page, "#ssh-settings");
+}
+
 const server = http.createServer(async (request, response) => {
   let body = "";
   for await (const chunk of request) body += chunk;
@@ -188,8 +196,8 @@ try {
   await capture("03-original-connection");
 
   fixture.health.sshAliasSetup = true;
-  await evaluate("load()");
-  await clickNode(page, "#ssh-settings");
+  await evaluate("void load()");
+  await openSshSettings(page);
   await wait('sshSetup?.state==="form" && !sshSetupBusy');
   await evaluate(`for (const [name,value] of Object.entries(${JSON.stringify(setupTarget)}))
     byId("ssh-setup-form").elements.namedItem(name).value=value`);
@@ -203,8 +211,7 @@ try {
   await wait('sshSetup?.state==="declined" && !sshSetupBusy');
   check(setupRequests.at(-1), { action: "decline", previewId: "preview-1" });
   const reopened = await browser.page(address);
-  await until(() => reopened.evaluate('document.getElementById("ssh-settings")?.hidden === false'), "连接设置按钮未就绪");
-  await clickNode(reopened, "#ssh-settings");
+  await openSshSettings(reopened);
   await until(() => reopened.evaluate('sshSetup?.saved?.[0]?.state==="declined" && !sshSetupBusy'), "拒绝状态未读回");
   check(await reopened.evaluate('byId("ssh-setup-saved").hidden'), false);
   if (evidence) {
