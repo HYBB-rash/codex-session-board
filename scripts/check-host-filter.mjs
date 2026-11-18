@@ -116,7 +116,7 @@ try {
   await evaluate('void byId("archive-results-toggle").onclick()');
   await wait('byId("archive-result-list").textContent.includes("待核对")');
   const reopened = await browser.page(`http://127.0.0.1:${server.address().port}/`);
-  const readReopened = () => reopened.evaluate('byId("archive-summary-text").textContent.includes("1 条待核对") && !archiveChecking');
+  const readReopened = () => reopened.evaluate('typeof byId === "function" && byId("archive-summary-text").textContent.includes("1 条待核对") && !archiveChecking');
   for (let attempt = 0; attempt < 100 && !await readReopened(); attempt++)
     await new Promise(resolve => setTimeout(resolve,25));
   check(await readReopened(),true);
