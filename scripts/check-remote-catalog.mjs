@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import http from "node:http";
 import { launchBrowser } from "./browser-client.mjs";
+import { archiveFixture } from "./archive-browser-fixture.mjs";
 
 const html = await fs.readFile(new URL("../index.html",import.meta.url),"utf8");
 const project = (id,hostId,origin) => ({id,hostId,origin,remote:true,hostLabel:hostId,
@@ -31,12 +32,15 @@ const fixture = {
     note:"",version:1,inputVersion:1,canArchive:true,...row})),
 };
 const writes = [];
+const archive = archiveFixture();
 let nativePending = false;
 let nativeError = false;
 const server = http.createServer(async (request,response) => {
   let body = "";
   for await (const chunk of request) body += chunk;
-  if (request.method === "POST") writes.push({path:request.url,body:JSON.parse(body)});
+  const input = body ? JSON.parse(body) : null;
+  if (request.method === "POST") writes.push({path:request.url,body:input});
+  if (archive.handle(request.url,request.method,input,response)) return;
   if (request.url === "/api/new" && JSON.parse(body).operationId && nativeError) {
     response.writeHead(400,{"Content-Type":"application/json"});
     response.end(JSON.stringify({error:"目标来源已改变，请重新核对"}));
