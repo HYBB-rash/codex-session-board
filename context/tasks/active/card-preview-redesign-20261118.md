@@ -13,5 +13,5 @@ coordinator: agent
 用户定稿后验证官方客户端的渲染能力和历史读回，再实现并更新 NAV-001。
 终点为 PR 合并及经验证的同源 Linux/macOS 不可变候选包发布。
 
-当前等待用户试用并确认 UI。测试路径和下一步见
-`context/handoffs/card-preview-redesign-20261118.md`。
+用户已批准右侧阅读栏。历史读回、Markdown 渲染和两条浏览器入口的验证记录见
+`context/handoffs/card-preview-redesign-20261118.md`。提交候选的验证和发布回执继续记录在本任务下。

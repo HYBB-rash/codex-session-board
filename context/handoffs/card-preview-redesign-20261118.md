@@ -16,5 +16,23 @@
 点击「模拟本轮完成」可观察通知是否打断阅读。进入原会话会显示模拟目标 ID。
 
 隔离 Chrome 已验证两版的迟到响应、收起不重开、阅读中完成、滚动、同名 ID、空与失败分离、
-筛选、调整、Esc 焦点、格式样例和 320px 布局。原型是排版样例，渲染与读回实验待用户定稿后执行。
-真实客户端、产品源码、NAV-001 和发布渠道在本阶段保持原状态。
+筛选、调整、Esc 焦点、格式样例和 320px 布局。用户随后定稿右侧阅读栏。
+
+## 技术验证
+
+- [Apps SDK](https://developers.openai.com/apps-sdk/reference) 通过 iframe 加载插件 HTML。
+  原版桌面包 `26.1111.71025` 的 MCP Apps bridge 提供工具调用、主题同步及 `ui/open-link`。
+  原生对话的 Markdown 组件位于桌面内部资源中，插件接口没有暴露这个组件。
+  因此由 Rust 的 `pulldown-cmark` 生成 HTML，两个入口接收同一格式。原始 HTML 显示为文字，
+  图片显示替代文字，只有无凭据的 HTTP(S) 链接可以点击。代码块使用等宽文字。
+- 原版桌面随包 App Server `0.169.0-alpha.11.1` 在离线、无认证环境读取本任务历史副本，
+  同时带上对应状态行和历史投影行。`thread/read` 报告 `notLoaded`。
+  `thread/turns/list` 按时间倒序取四页，最新为 `interrupted`，第二页为 `completed`，
+  有 `agentMessage` 和 `final_answer`。仅复制 rollout 的首次实验读到空页。
+- 既有原版桌面事件记录显示同一会话先完成一轮，再出现 `active` 和 `inProgress`，
+  随最终消息和轮次完成回到 `idle`。读回用当前后台的状态和轮次双重确认，
+  并逐页找最近一个已完成轮次中的最终答复。读期间发生变化时重新查询一次。
+- `node scripts/check-reply-preview.mjs OUTPUT` 用同一正文核对网页与沙箱 MCP 桥接。
+  标题、列表、引用、代码块、表格和链接均呈现。用例还覆盖切卡、迟到、空白收起、
+  筛选、滚动、调整、Esc 焦点、标题拖动和同名 ID。截图为 `http.png` 和 `mcp.png`。
+  官方桌面中的实际插件验收另行安排。
