@@ -299,6 +299,27 @@ impl Store {
         Ok(())
     }
 
+    pub(crate) fn ssh_setup_record(&self, key: &str) -> Result<Option<Value>> {
+        self.connection()?.query_row(
+            "SELECT value FROM settings WHERE key = ?", [format!("ssh_setup_v1:{key}")],
+            |row| row.get::<_, String>(0),
+        ).optional()?.map(|value| serde_json::from_str(&value)).transpose().map_err(Into::into)
+    }
+
+    pub(crate) fn ssh_setup_records(&self) -> Result<Vec<Value>> {
+        let database = self.connection()?;
+        let mut query = database.prepare("SELECT value FROM settings WHERE key GLOB 'ssh_setup_v1:*' ORDER BY key")?;
+        let rows = query.query_map([], |row| row.get::<_, String>(0))?;
+        rows.map(|row| Ok(serde_json::from_str(&row?)?)).collect()
+    }
+
+    pub(crate) fn save_ssh_setup(&self, key: &str, value: &Value) -> Result<()> {
+        self.connection()?.execute("INSERT INTO settings(key,value) VALUES (?,?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            rusqlite::params![format!("ssh_setup_v1:{key}"), value.to_string()])?;
+        Ok(())
+    }
+
     pub fn connection(&self) -> Result<MutexGuard<'_, Connection>> {
         self.database
             .lock()

@@ -109,7 +109,7 @@ fn compatibility_tools_and_direct_routes_keep_archive_and_remote_creation_disabl
     let tools = codex_session_board::mcp::tools_for(true);
     let entries = tools["tools"].as_array().context("缺少工具清单")?;
     assert!(!entries.iter().any(|tool| matches!(tool["name"].as_str(),
-        Some("board_archive" | "board_new_reset" | "board_connect"))));
+        Some("board_archive" | "board_new_reset" | "board_connect" | "board_ssh_setup"))));
     let sort = entries.iter().find(|tool| tool["name"] == "board_sort").context("缺少排序")?;
     assert!(sort["inputSchema"]["properties"]["state"]["enum"]
         .as_array().context("缺少状态枚举")?.contains(&json!("completed")));

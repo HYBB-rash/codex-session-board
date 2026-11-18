@@ -32,9 +32,10 @@ fn tools_for_mode(legacy: bool, four_columns: bool) -> Value {
         ("board_new_reset", "确认已核对新建结果", false),
         ("board_project_assign", "确认新会话项目归属", false),
         ("board_connect", "连接已登记的远程主机", false),
+        ("board_ssh_setup", "设置远程新建连接", false),
         ("board_refresh", "重新发现", false),
     ] {
-        if legacy && matches!(name, "board_archive" | "board_new_reset" | "board_connect" | "board_project_assign") {
+        if legacy && matches!(name, "board_archive" | "board_new_reset" | "board_connect" | "board_project_assign" | "board_ssh_setup") {
             continue;
         }
         let (properties, required) = schema(name, legacy, four_columns);
@@ -81,11 +82,6 @@ fn schema(name: &str, legacy: bool, four_columns: bool) -> (Value, Value) {
                 "inputVersion":{"type":"integer","minimum":0},"sectionVersion":{"type":["string","null"]}}),
             json!(["id", "version", "inputVersion"]),
         ),
-        "board_new" => (
-            json!({"projectId":{"type":"string"},"requestId":{"type":"string"},
-            "hostId":{"type":"string"},"operationId":{"type":"string","format":"uuid"}}),
-            json!([]),
-        ),
         "board_new_reset" => (
             json!({"projectId":{"type":"string"},
             "requestId":{"type":"string"},"confirmed":{"type":"boolean","const":true}}),
@@ -99,8 +95,26 @@ fn basic_schema(name: &str) -> (Value, Value) {
     match name {
         "board_open" | "board_preview_reply" => (json!({"id":{"type":"string"}}), json!(["id"])),
         "board_connect" => (json!({"hostId":{"type":"string"}}), json!(["hostId"])),
-        _ => (json!({}), json!([])),
+        _ => setup_schema(name),
     }
+}
+
+fn setup_schema(name: &str) -> (Value, Value) {
+    if name == "board_new" {
+        return (json!({"projectId":{"type":"string"},"requestId":{"type":"string"},
+            "hostId":{"type":"string"},"operationId":{"type":"string","format":"uuid"},
+            "consent":{"type":"string"}}), json!([]));
+    }
+    if name != "board_ssh_setup" {
+        return (json!({}), json!([]));
+    }
+    (json!({
+        "action":{"type":"string","enum":["status","preview","apply","decline","restore","recheck"]},
+        "target":{"type":"object","properties":{"hostname":{"type":"string"},"user":{"type":"string"},
+            "port":{"type":"string"},"directory":{"type":"string"}},
+            "required":["hostname","user","port","directory"],"additionalProperties":false},
+        "previewId":{"type":"string","format":"uuid"},"targetId":{"type":"string"},"alias":{"type":"string"}
+    }), json!(["action"]))
 }
 
 pub fn resource() -> Value {
@@ -132,6 +146,7 @@ fn backend(runtime: &mut RuntimeHandle, name: &str, arguments: &Value) -> Result
         "board_new_reset" => "/api/new/reset",
         "board_project_assign" => "/api/project/assign",
         "board_connect" => "/api/connect",
+        "board_ssh_setup" => "/api/ssh-setup",
         "board_refresh" => "/api/refresh",
         _ => bail!("未知看板工具"),
     };
