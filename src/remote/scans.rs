@@ -216,7 +216,7 @@ fn prepare_catalog(app: &App, reader: &mut dyn Rpc)
 pub(crate) fn scan_runtime_page(
     app: &App,
     reader: &mut dyn Rpc,
-    revisions: &mut HashMap<String, String>,
+    revisions: &mut observer::RuntimeRevisions,
     since: f64,
 ) -> Result<()> {
     let mut progress = Progress::load(app)?;

@@ -5,7 +5,7 @@ use anyhow::Result;
 use codex_session_board::{
     app::App,
     config::Config,
-    observer::{scan_history, scan_runtime},
+    observer::{RuntimeRevisions, scan_history, scan_runtime},
     rpc::{RequestError, Rpc},
 };
 use serde_json::{Value, json};
@@ -239,7 +239,7 @@ fn edit_body(row: &Value, state: &str) -> Value {
     })
 }
 
-fn runtime_manual_fixture() -> (Fixture, HashMap<String, String>, Value) {
+fn runtime_manual_fixture() -> (Fixture, RuntimeRevisions, Value) {
     let fixture = Fixture::new(2, 2);
     let mut reader = FakeRpc::new(&[thread("owner", 1, "active")]);
     reader.set_turn("owner", raw_turn("owner", "inProgress"));
@@ -253,7 +253,7 @@ fn runtime_manual_fixture() -> (Fixture, HashMap<String, String>, Value) {
     (fixture, revisions, saved)
 }
 
-fn runtime_extra_input(app: &App, revisions: &mut HashMap<String, String>) {
+fn runtime_extra_input(app: &App, revisions: &mut RuntimeRevisions) {
     let mut reader = FakeRpc::new(&[thread("owner", 1, "active")]);
     let mut latest = raw_turn("owner", "inProgress");
     latest["items"].as_array_mut().unwrap().push(json!({
@@ -683,8 +683,11 @@ fn runtime_transport_failure_propagates_without_reclassifying_manual_state() {
 fn runtime_list_connection_failure_leaves_saved_sessions_and_revision_cache_untouched() {
     let fixture = Fixture::new(2, 2);
     manual(&fixture.app, "saved");
+    let mut revisions = RuntimeRevisions::new();
+    let mut initial = FakeRpc::new(&[thread("saved", 1, "idle")]);
+    scan_runtime(&fixture.app, &mut initial, &mut revisions, 1000.0).unwrap();
+    assert!(revisions.contains_key("saved"));
     let before = decision(&fixture.app, "saved");
-    let mut revisions = HashMap::from([("saved".to_string(), "existing-revision".to_string())]);
     let before_revisions = revisions.clone();
     let mut reader = FakeRpc::new(&[]);
     reader.pages[0] = Reply::Timeout("owner connection lost");

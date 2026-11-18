@@ -21,6 +21,7 @@ const routes = {
   "/api/sessions": "board_snapshot",
   "/api/state": "board_update",
   "/api/open": "board_open",
+  "/api/preview-reply": "board_preview_reply",
   "/api/refresh": "board_refresh",
   "/api/new": "board_new",
   "/api/new/reset": "board_new_reset",
@@ -37,6 +38,8 @@ window.boardRequest = async (route, body) => {
   const result = await app.callServerTool({ name, arguments: body || {} });
   if (result.isError)
     throw new Error(result.content?.find(item => item.type === "text")?.text || "操作失败");
+  if (name === "board_preview_reply" && result._meta?.previewReply)
+    return result._meta.previewReply;
   if (result.structuredContent) return result.structuredContent;
   const content = result.content?.find(item => item.type === "text");
   if (!content) throw new Error("看板返回了空结果");

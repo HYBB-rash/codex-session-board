@@ -19,7 +19,8 @@ addEventListener("message",event=>{
     hostContext:{theme:"dark",safeAreaInsets:{top:12,right:4,bottom:6,left:8}}};
   if(message.method==="tools/call"){
     requests.push(message.params);
-    result=mode==="structured"?{content:[],structuredContent:{ok:true,received:message.params.arguments}}:
+    result=message.params.name==="board_preview_reply"?{content:[],_meta:{previewReply:{turnId:"two",text:"本轮答复"}}}:
+      mode==="structured"?{content:[],structuredContent:{ok:true,received:message.params.arguments}}:
       mode==="text"?{content:[{type:"text",text:'{"ok":true}'}]}:
       mode==="error"?{isError:true,content:[{type:"text",text:"fixture-denied"}]}:
       mode==="malformed"?{content:[{type:"text",text:"invalid-json"}]}:{content:[]};
@@ -98,6 +99,9 @@ try {
   const previous = await page.evaluate("requests.length");
   check(await evaluate('boardRequest("toString").then(()=>false, error=>error.message)'), "未知看板操作");
   check(await page.evaluate("requests.length"), previous);
+  check(await evaluate('boardRequest("/api/preview-reply",{id:"fixture",turnId:"two"})'), {turnId:"two",text:"本轮答复"});
+  check(await page.evaluate("(({name,arguments:body})=>({name,arguments:body}))(requests.at(-1))"),
+    {name:"board_preview_reply",arguments:{id:"fixture",turnId:"two"}});
   for (const [mode, expected] of [["text", { ok: true }], ["error", "fixture-denied"], ["empty", "看板返回了空结果"]]) {
     await page.evaluate(`mode=${JSON.stringify(mode)}`);
     check(await evaluate('boardRequest("/api/sessions").catch(error=>error.message)'), expected);

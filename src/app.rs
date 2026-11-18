@@ -22,6 +22,7 @@ mod native;
 mod native_backfill;
 mod native_mapping;
 mod native_probes;
+mod preview;
 mod remote;
 mod remote_snapshot;
 mod target_drafts;
@@ -45,6 +46,7 @@ pub struct App {
     pub(crate) title_lock: Mutex<()>,
     pub(crate) active_sessions: Mutex<Option<HashSet<String>>>,
     pub(crate) evidence_gaps: Mutex<crate::observer::EvidenceGaps>,
+    pub(crate) preview_turns: preview::PreviewTurns,
     thread_operations: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     ssh_previews: Mutex<HashMap<String, ssh_setup::Decision>>,
     native_generation: AtomicUsize,
@@ -81,6 +83,7 @@ impl App {
             title_lock: Mutex::new(()),
             active_sessions: Mutex::new(None),
             evidence_gaps: Mutex::default(),
+            preview_turns: preview::PreviewTurns::default(),
             thread_operations: Mutex::new(HashMap::new()),
             ssh_previews: Mutex::new(HashMap::new()),
             native_generation: AtomicUsize::new(0),
@@ -227,6 +230,7 @@ impl App {
         projects.annotate(&mut sessions);
         let mut catalog = serde_json::to_value(&*projects)?;
         drop(projects);
+        self.annotate_previews(&mut sessions)?;
         self.append_remote(&mut sessions, &mut catalog)?;
         self.retain_business_rows(&mut sessions)?;
         self.annotate_connections(&mut sessions);
@@ -266,6 +270,7 @@ impl App {
         }
         match (path, body) {
             ("/api/sessions", None) => self.snapshot(),
+            ("/api/preview-reply", Some(body)) => self.preview_reply(body),
             ("/api/state", Some(body)) => self.save(body),
             ("/api/column-sort", Some(body)) => self.store.save_column_sort(body),
             ("/api/archive", Some(body)) => crate::archive::request(self, body),

@@ -31,8 +31,18 @@ fn mcp_bridge_preserves_routes_results_and_host_theme() {
         String::from_utf8_lossy(&result.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(report["cases"], 35);
+    assert_eq!(report["cases"], 37);
     assert_eq!(report["cleanup"]["groupEmpty"], true);
+    assert_eq!(report["cleanup"]["profileRemoved"], true);
+}
+
+#[test]
+fn reply_preview_preserves_scroll_focus_and_rejects_late_bodies() {
+    let result = Command::new("node").arg("scripts/check-reply-preview.mjs").output().unwrap();
+    assert!(result.status.success(), "答复预览失败：\n{}\n{}",
+        String::from_utf8_lossy(&result.stdout),String::from_utf8_lossy(&result.stderr));
+    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(report["passed"], true);
     assert_eq!(report["cleanup"]["profileRemoved"], true);
 }
 

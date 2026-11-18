@@ -27,6 +27,7 @@ fn tools_for_mode(legacy: bool, four_columns: bool) -> Value {
         ("board_sort", "设置栏目排序", false),
         ("board_archive", "归档待归档会话", false),
         ("board_open", "打开已有会话", true),
+        ("board_preview_reply", "预览本轮最终答复", true),
         ("board_new", "打开新建会话页", false),
         ("board_new_reset", "确认已核对新建结果", false),
         ("board_project_assign", "确认新会话项目归属", false),
@@ -72,8 +73,6 @@ fn schema(name: &str, legacy: bool, four_columns: bool) -> (Value, Value) {
             }),
             json!(["id", "state", "version", "inputVersion"]),
         ),
-        "board_open" => (json!({"id":{"type":"string"}}), json!(["id"])),
-        "board_connect" => (json!({"hostId":{"type":"string"}}), json!(["hostId"])),
         "board_project_assign" => (
             json!({"id":{"type":"string"},"projectId":{"type":"string"},"confirmed":{"type":"boolean","const":true}}),
             json!(["id","projectId","confirmed"]),
@@ -88,6 +87,18 @@ fn schema(name: &str, legacy: bool, four_columns: bool) -> (Value, Value) {
             "requestId":{"type":"string"},"confirmed":{"type":"boolean","const":true}}),
             json!(["projectId", "requestId", "confirmed"]),
         ),
+        _ => basic_schema(name),
+    }
+}
+
+fn basic_schema(name: &str) -> (Value, Value) {
+    match name {
+        "board_open" => (json!({"id":{"type":"string"}}), json!(["id"])),
+        "board_preview_reply" => (
+            json!({"id":{"type":"string"},"turnId":{"type":"string","maxLength":128}}),
+            json!(["id", "turnId"]),
+        ),
+        "board_connect" => (json!({"hostId":{"type":"string"}}), json!(["hostId"])),
         _ => setup_schema(name),
     }
 }
@@ -134,6 +145,7 @@ fn backend(runtime: &mut RuntimeHandle, name: &str, arguments: &Value) -> Result
         "board_sort" => "/api/column-sort",
         "board_archive" => "/api/archive",
         "board_open" => "/api/open",
+        "board_preview_reply" => "/api/preview-reply",
         "board_new" => "/api/new",
         "board_new_reset" => "/api/new/reset",
         "board_project_assign" => "/api/project/assign",
@@ -171,6 +183,9 @@ fn dispatch(method: &str, params: &Value, runtime: &mut RuntimeHandle) -> Result
                 params["name"].as_str().context("缺少工具名称")?,
                 params.get("arguments").unwrap_or(&json!({})),
             ) {
+                Ok(value) if params["name"] == "board_preview_reply" => {
+                    json!({"content":[],"_meta":{"previewReply":value}})
+                }
                 Ok(value) => {
                     json!({"content":[{"type":"text","text":value.to_string()}],"structuredContent":value})
                 }
