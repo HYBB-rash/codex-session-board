@@ -1,5 +1,6 @@
 import argparse
 import hashlib
+from importlib.metadata import distribution
 import json
 import os
 import shutil
@@ -12,10 +13,10 @@ from pathlib import Path
 
 from verify_acceptance import fingerprint
 from package_migration import build_package
+from plugin_package import TARGETS, hashes, verify_package
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TARGETS = {"x86_64-unknown-linux-gnu", "aarch64-apple-darwin"}
 
 
 def command(arguments, root=ROOT):
@@ -33,36 +34,21 @@ def versions(root):
     return cargo
 
 
-def hashes(directory):
-    files = {}
-    for path in sorted(directory.rglob("*")):
-        if path.relative_to(directory).parts[0] == ".git":
-            continue
-        if path.is_symlink():
-            raise ValueError("Plugin packages cannot contain symlinks")
-        if path.is_file() and path.relative_to(directory).as_posix() != "RELEASE.json":
-            files[path.relative_to(directory).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
-    return files
-
-
-def verify_package(directory, installed=False):
-    manifest = json.loads((directory / "RELEASE.json").read_text())
-    if manifest["schema_version"] != 1 or manifest["target"] not in TARGETS:
-        raise ValueError("Unsupported plugin release")
-    actual = hashes(directory)
-    if installed:
-        actual.pop(".codex-marketplace-install.json", None)
-    if manifest["files"] != actual:
-        raise ValueError("Plugin package file hashes differ")
-    for name in ("bin/codex-session-board", "bin/run-plugin"):
-        if not (directory / name).stat().st_mode & 0o111:
-            raise ValueError("Plugin launchers must be executable")
-    if manifest["binary_sha256"] != manifest["files"]["bin/codex-session-board"]:
-        raise ValueError("Plugin binary identity differs")
-    for name in ("plugin.json", ".codex-plugin/plugin.json"):
-        if json.loads((directory / name).read_text())["version"] != manifest["version"]:
-            raise ValueError("Plugin package version differs")
-    return manifest
+def bundle_updater(root, destination):
+    dependency = distribution("websocket-client")
+    if f"websocket-client=={dependency.version}" not in (root / "requirements-delivery.txt").read_text().splitlines():
+        raise ValueError("Install the pinned requirements-delivery.txt before building a plugin")
+    destination.mkdir()
+    for name in ("board_update_job.py", "update_plugin.py", "plugin_package.py", "reload_plugins.py",
+                 "desktop_identity.py"):
+        shutil.copy2(root / "scripts" / name, destination / name)
+    for path in dependency.files:
+        if path.parts[0] == "websocket" and not {"__pycache__", "tests"}.intersection(path.parts):
+            bundled = destination / path
+            bundled.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path.locate(), bundled)
+        elif path.name == "LICENSE":
+            shutil.copy2(path.locate(), destination / "websocket-client-LICENSE")
 
 
 def preflight(root, destination):
@@ -127,6 +113,7 @@ def build(root, target, destination=None):
         shutil.copy2(root / name, destination / name)
     for name in (".codex-plugin", "assets", "skills", ".agents/plugins"):
         shutil.copytree(root / name, destination / name)
+    bundle_updater(root, destination / "updater")
     build_package(root, destination / "SOURCE.tar.gz")
     manifest = {
         "schema_version": 1, "version": version, "target": target, "source_commit": source,
