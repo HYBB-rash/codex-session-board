@@ -204,7 +204,7 @@ try {
   await evaluate('(() => {const card=document.querySelector(".card"), event=new Event("dragstart",{cancelable:true});card.dispatchEvent(event);window.blockedDrag=event.defaultPrevented;void archiveSessions(visibleSessions(),document.querySelector("[data-archive-all]"));void changeColumnSort("to_archive",document.querySelector("#column-to_archive .column-sort"));void confirmArchiveInputs(visibleSessions()[0],document.querySelector("[data-archive-all]"));void moveCard(visibleSessions()[0],"review");void openSession(moving.id);})()');
   await check("等待中直接调用也不能重复写入", 'window.blockedDrag && saving && moving.id === data.sessions[0].id && !opening');
   assert.equal(writes.length, 1);assert.deepEqual(mutations, expectedMutations);assert.deepEqual(opens, []);
-  await evaluate('document.querySelector(".card-title").click()');
+  await evaluate('document.querySelector(".card-title").click();byId("reply-open").click()');
   await until('!opening');
   assert.deepEqual(opens, [otherId]);cases.push("等待中允许打开另一主机的会话");
   await select("host-filter", "host:fixture");

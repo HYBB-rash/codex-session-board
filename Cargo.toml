@@ -32,6 +32,7 @@ anyhow = "1"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 fs2 = "0.4"
+pulldown-cmark = { version = "0.13.6", default-features = false, features = ["html"] }
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 rustix = { version = "1", features = ["process", "net", "fs", "event"] }

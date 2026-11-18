@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "contract_id": "codex-session-board/acceptance-v2",
+  "contract_id": "codex-session-board/acceptance-v3",
   "baseline_plugin_version": "0.2.5",
   "states": [
     ["unknown", "待判断"],
@@ -174,11 +174,11 @@
     },
     {
       "id": "NAV-001",
-      "title": "点击卡片打开对应的已有会话",
+      "title": "点击卡片预览回复并可进入对应原会话",
       "basis": "user",
       "given": "看板中存在已发现会话。",
-      "when": "点击卡片或标题。",
-      "then": ["配置的客户端打开原会话，不创建新会话、不发送消息。", "拖拽标题结束后不会被误识别成点击跳转。"],
+      "when": "点击卡片或标题读取回复，再选择进入原会话。",
+      "then": ["直接预览该会话的最近一条完整助手回复，切换卡片或收起面板后忽略迟到结果。", "当前轮次进行时标明正在阅读上一条完整回复，分别提示暂无完整回复和读取失败。", "进入原会话用会话 ID 区分同名会话，预览和跳转不创建会话、不发送消息、不启动新轮次。", "拖动标题不触发预览或跳转，卡内控件保持原操作。"],
       "verification": "mixed"
     },
     {

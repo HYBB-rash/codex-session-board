@@ -986,7 +986,7 @@ mod state_contract_tests {
             serde_json::from_slice(&std::fs::read(acceptance_path("requirements.json")).unwrap())
                 .unwrap();
         let exported = python_model();
-        assert_eq!(contract["contract_id"], "codex-session-board/acceptance-v2");
+        assert_eq!(contract["contract_id"], "codex-session-board/acceptance-v3");
         assert_eq!(contract["requirements"].as_array().unwrap().len(), 31);
         assert_eq!(contract["states"], exported["states"]);
         assert_eq!(serde_json::to_value(STATES).unwrap(), exported["states"]);
