@@ -61,6 +61,7 @@ pub enum Role {
     Reader,
     NativeReader,
     RemoteObserver,
+    PreviewReader,
     DraftReader,
     CalibrationWriter,
     CatalogReader,
@@ -82,6 +83,7 @@ impl Role {
                 method,
                 "initialize" | "thread/list" | "thread/turns/list" | "threadSection/list"
             ),
+            Self::PreviewReader => matches!(method, "initialize" | "thread/read" | "thread/turns/list"),
             Self::DraftReader => matches!(method, "initialize" | "thread/read"),
             Self::ProjectWriter => matches!(method, "initialize" | "account/read" | "project/read"
                 | "thread/read" | "thread/metadata/update"),
@@ -470,7 +472,7 @@ impl DesktopConnection {
         };
         reader.initialize(source)?;
         reader.title_deadline =
-            matches!(role, Role::TitleWriter | Role::ArchiveWriter).then_some(deadline);
+            matches!(role, Role::TitleWriter | Role::ArchiveWriter | Role::PreviewReader).then_some(deadline);
         Ok(reader)
     }
 
@@ -784,12 +786,7 @@ pub(crate) fn latest_verified_turn(reader: &mut dyn Rpc, id: &str) -> Result<Val
 }
 
 fn read_latest_turn(reader: &mut dyn Rpc, id: &str, confirm_empty: bool) -> Result<Value> {
-    let result = reader.call(
-        "thread/turns/list",
-        json!({
-            "threadId": id, "limit": 1, "sortDirection": "desc", "itemsView": "full"
-        }),
-    )?;
+    let result = latest_turn_page(reader, id, "full")?;
     match result.get("data") {
         None | Some(Value::Null) => Ok(json!({})),
         Some(Value::Array(turns))
@@ -800,6 +797,12 @@ fn read_latest_turn(reader: &mut dyn Rpc, id: &str, confirm_empty: bool) -> Resu
         Some(Value::Array(turns)) => Ok(turns.first().map(summarize_turn).unwrap_or(json!({}))),
         _ => bail!("轮次列表的 data 必须是数组"),
     }
+}
+
+pub(crate) fn latest_turn_page(reader: &mut dyn Rpc, id: &str, view: &str) -> Result<Value> {
+    reader.call("thread/turns/list", json!({
+        "threadId":id,"limit":1,"sortDirection":"desc","itemsView":view
+    }))
 }
 
 pub fn summarize_turn(turn: &Value) -> Value {

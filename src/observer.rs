@@ -146,6 +146,7 @@ fn frame_blocked(note: Option<&str>, updated_at: i64) -> bool {
 }
 
 fn runtime_pause(app: &App, error: &anyhow::Error) -> Result<bool> {
+    app.preview_turns.clear()?;
     app.evidence_gaps.lock().map_err(|_| anyhow::anyhow!("执行信号锁已损坏"))?.0.clear();
     if frame_too_large(error) {
         return Ok(false);
@@ -167,6 +168,15 @@ pub(crate) fn observe_runtime_threads(
     let mut unreadable = 0;
     let mut native_errors = Vec::new();
     let mut unconfirmed = HashSet::new();
+    for thread in threads {
+        let identifier = thread["id"].as_str().context("会话缺少 ID")?;
+        if !matches!(thread["status"]["type"].as_str(), Some("idle" | "notLoaded")) {
+            revisions.remove(identifier);
+            app.preview_turns.remove(identifier)?;
+        } else if revisions.get(identifier) != Some(&thread_revision(thread)) {
+            app.preview_turns.remove(identifier)?;
+        }
+    }
     for thread in threads {
         match observe_one(app, reader, revisions, since, thread)? {
             Seen::Unread => unreadable += 1,
@@ -193,6 +203,10 @@ pub(crate) fn observe_runtime_threads(
         "runtimeError":if warnings.is_empty() {Value::Null} else {json!(warnings.join("。"))}}))
 }
 
+fn thread_revision(thread: &Value) -> String {
+    json!([thread["updatedAt"], thread["status"]]).to_string()
+}
+
 fn observe_one(
     app: &App,
     reader: &mut dyn Rpc,
@@ -214,13 +228,14 @@ fn observe_one(
         return Ok(Seen::Same);
     }
     let status = &thread["status"];
-    let revision = json!([thread["updatedAt"], status]).to_string();
+    let revision = thread_revision(thread);
     if status["type"] != "active" && revisions.get(identifier) == Some(&revision)
         && !app.needs_native_backfill(identifier)? {
         return Ok(Seen::Same);
     }
     match read_runtime_turn(reader, identifier, status, app.config.four_columns) {
         Ok(turn) => {
+            app.preview_turns.observe(identifier, status, &turn)?;
             let unresolved = app.config.four_columns
                 && crate::model::verified_runtime_state(status, &turn).is_none()
                 && (status["type"] == "active" || thread["updatedAt"].as_f64().is_some_and(|time| time >= since)
