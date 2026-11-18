@@ -78,11 +78,7 @@ impl App {
         let mut body = serde_json::to_value(target)?;
         body["id"] = json!(thread);
         let mut writer = app.connection(archive::timeout(app), Role::BatchArchiveWriter)?;
-        let source = archive_source(&mut writer, app);
-        if let Err(error) = &source {
-            eprintln!("归档批次 {batch} 来源暂不可核对: {error:#}");
-        }
-        let source = source.unwrap_or(Value::Null);
+        let source = archive_source(&mut writer, app).context("暂时无法验证归档来源")?;
         archive::request_with_writer(app, &body, Some(&mut writer), || {
             let accepted = self.store.claim_archive_item(batch, &target.id, &source)?;
             claimed.set(accepted);

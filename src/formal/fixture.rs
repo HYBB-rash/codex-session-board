@@ -40,6 +40,7 @@ fn clear(store: &Store) -> Result<()> {
     let transaction = database.transaction()?;
     transaction.execute_batch(
         "DELETE FROM title_updates; DELETE FROM changes; DELETE FROM remote_sessions;
+         DELETE FROM archive_batch_items; DELETE FROM archive_batches;
          DELETE FROM remote_projects; DELETE FROM settings; DELETE FROM sessions;"
     )?;
     transaction.commit()?;

@@ -82,7 +82,13 @@ fn archive_batch_persists_new_input_refusal_without_native_write() -> Result<()>
     let id = uuid::Uuid::new_v4().to_string();
     let mut target = body(&app, "to_archive", "")?;
     target["title"] = json!("有新输入");
-    app.request("/api/archive-batches", Some(&json!({"id":id,"items":[target]})))?;
+    let unknown = uuid::Uuid::new_v4().to_string();
+    let register = |batch: &str| app.request("/api/archive-batches",
+        Some(&json!({"id":batch,"items":[target]})));
+    register(&unknown)?;
+    let unverified = app.request("/api/archive", Some(&json!({"batchId":unknown,"id":FIRST})))?;
+    assert_eq!(unverified["item"]["status"], "rejected");
+    register(&id)?;
     {
         let mut native = server.surface.lock().unwrap();
         native.archive_account = Some("original".into());
