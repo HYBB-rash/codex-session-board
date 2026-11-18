@@ -117,6 +117,17 @@ python3 scripts/update_plugin.py --repository "$PLUGIN_REPOSITORY" \
 固定程序版本不等于任意格式都可逆。
 局域网 SSH 需专用客户端配置时，可向发布或更新脚本传 `--ssh-config PATH`。
 
+## 启用四列看板
+
+安装 0.4.6 后，现有配置继续使用原有列。启用四列前，先备份配置和看板数据库，
+在各已连接主机核对「待判断」的活动和归档成员。按会话去向逐张移列并读回，
+需要稍后归类的会话可通过原生侧栏移回默认区。
+
+停止看板后，在正式配置中设定 `"four_columns": true`，从 `status_sections` 删除 `unknown`，
+保留 `in_progress`、`review`、`blocked`、`to_archive` 的本机配置映射。启动后在网页和 MCP
+核对四列以及「未归列会话」。核对原生旧分区为空后，再用 Codex 删除该分区。
+若旧分区仍有成员或主机暂不可用，保留分区，待读回完整后再处理。
+
 ## 稳定发布
 
 完整 31 条需求与外部环境证据按现有 `scripts/verify_acceptance.py`、
