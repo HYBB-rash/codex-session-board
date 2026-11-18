@@ -38,6 +38,8 @@ fn tools_for_mode(legacy: bool, four_columns: bool) -> Value {
         ("board_connect", "连接已登记的远程主机", false),
         ("board_ssh_setup", "设置远程新建连接", false),
         ("board_refresh", "重新发现", false),
+        ("board_plugin_update_status", "读取插件更新状态", true),
+        ("board_plugin_update_start", "检查并安装本机插件候选版", false),
     ] {
         if legacy && (name.starts_with("board_archive") || matches!(name, "board_new_reset" | "board_connect" | "board_project_assign" | "board_ssh_setup")) {
             continue;
@@ -51,11 +53,19 @@ fn tools_for_mode(legacy: bool, four_columns: bool) -> Value {
         };
         tools.push(json!({"name":name,"title":title,"description":title,
             "inputSchema":{"type":"object","properties":properties,"required":required,"additionalProperties":false},
-            "annotations":{"readOnlyHint":read_only,"destructiveHint":name == "board_archive","openWorldHint":false},
+            "annotations":annotations(name, read_only),
             "icons":[{"src":format!("data:image/svg+xml;base64,{icon}"),"mimeType":"image/svg+xml"}],
             "_meta":meta}));
     }
     json!({"tools":tools})
+}
+
+fn annotations(name: &str, read_only: bool) -> Value {
+    json!({
+        "readOnlyHint":read_only,
+        "destructiveHint":matches!(name, "board_archive" | "board_plugin_update_start"),
+        "openWorldHint":name == "board_plugin_update_start"
+    })
 }
 
 fn schema(name: &str, legacy: bool, four_columns: bool) -> (Value, Value) {
@@ -167,9 +177,10 @@ fn backend(runtime: &mut RuntimeHandle, name: &str, arguments: &Value) -> Result
         "board_connect" => "/api/connect",
         "board_ssh_setup" => "/api/ssh-setup",
         "board_refresh" => "/api/refresh",
+        "board_plugin_update_status" | "board_plugin_update_start" => "/api/plugin-update",
         _ => bail!("未知看板工具"),
     };
-    runtime.request(path, (!matches!(name, "board_snapshot" | "board_archive_batches")).then_some(arguments))
+    runtime.request(path, (!matches!(name, "board_snapshot" | "board_archive_batches" | "board_plugin_update_status")).then_some(arguments))
 }
 
 fn dispatch(method: &str, params: &Value, runtime: &mut RuntimeHandle) -> Result<Value> {

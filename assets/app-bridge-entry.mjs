@@ -38,10 +38,12 @@ const routes = {
   "/api/archive-batches/finish": "board_archive_batch_finish",
   "/api/archive-batches/check": "board_archive_batch_check",
   "/api/column-sort": "board_sort",
+  "/api/plugin-update": "board_plugin_update_status",
 };
 window.boardRequest = async (route, body) => {
   await connected;
   const name = route === "/api/archive-batches" && body ? "board_archive_batch_start"
+    : route === "/api/plugin-update" && body ? "board_plugin_update_start"
     : Object.hasOwn(routes, route) && routes[route];
   if (!name) throw new Error("未知看板操作");
   const result = await app.callServerTool({ name, arguments: body || {} });

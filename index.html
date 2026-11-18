@@ -209,12 +209,14 @@ textarea{resize:vertical;min-height:90px}
     <div id="health" class="health"><span id="health-summary" role="status">正在读取会话…</span> <button id="health-more" type="button" class="row-action" aria-label="查看连接详情">详情</button></div>
     <div class="header-actions">
       <button id="refresh" class="quiet" type="button">刷新</button>
+      <button id="plugin-update" class="quiet" type="button" hidden aria-controls="plugin-update-status">更新</button>
       <button id="archive-results-toggle" class="quiet" type="button" aria-controls="archive-result-list" aria-expanded="false">归档结果</button>
       <button id="ssh-settings" class="quiet" type="button" hidden>连接设置</button>
       <button id="install-app" class="quiet" type="button" hidden>安装应用</button>
       <button id="new-session" class="primary" type="button">＋ 新建会话</button>
     </div>
   </header>
+  <div id="plugin-update-status" class="health" role="status" hidden></div>
   <div id="archive-status" class="health" role="status" hidden></div>
   <section class="archive-results" aria-label="手动归档结果">
     <div id="archive-summary" class="archive-summary" hidden>
@@ -1914,6 +1916,69 @@ byId("draft-restart").onclick = async () => {
 };
 byId("editor").addEventListener("cancel",event => {if (saving) event.preventDefault();});
 byId("editor").addEventListener("close",() => {resetMoveFeedback();editing=null;render();load();});
+const updateButton = byId("plugin-update");
+const updateStatus = byId("plugin-update-status");
+let readingUpdate = false;
+let startingUpdate = false;
+let updateGeneration = 0;
+let updateAvailable;
+const updateStages = {
+  fetching:"正在获取候选包",
+  verifying:"正在校验候选包",
+  installing:"正在安装候选版",
+  reloading:"正在重载并读回看板"
+};
+function showPluginUpdate(result) {
+  updateAvailable = result.available;
+  updateButton.hidden = !updateAvailable;
+  updateButton.disabled = result.busy === true;
+  const version = result.version ? ` ${result.version}` : "";
+  const detail = result.error ? ` 原因：${result.error}` : "";
+  const running = ` 当前运行版本 ${result.runningVersion}。`;
+  const messages = {
+    up_to_date:`已是最新版${version}。`,
+    active:`新版${version}已生效，看板已恢复。`,
+    awaiting_desktop_reload:`${version.trim()} 已安装，待重载。请完全退出并重新启动 Codex，再打开看板。也可点击「更新」重试重载。${running}${detail}`,
+    reopen_board:`${version.trim()} 已安装，已请求重载。请关闭并重新打开看板确认新版。如果仍是旧版，请重启 Codex。${running}`,
+    failed:result.failedStage === "installing"
+      ? `安装${version}失败，未能确认新包安装完成。${running} 请点击「更新」重试安装。${detail}`
+      : result.failedStage === "reloading"
+      ? `已安装${version}，重载结果未确认。${running} 请重启 Codex 后重新打开看板。${detail}`
+      : `更新失败，原安装未更改。请检查网络或包校验报错，再点击「更新」。${detail}`
+  };
+  const message = updateStages[result.phase]
+    ? `${updateStages[result.phase]}${version}…`
+    : messages[result.phase] || (result.busy ? "已有安装任务正在运行…" : "");
+  updateStatus.textContent = message;
+  updateStatus.hidden = !message;
+}
+async function readPluginUpdate(start = false) {
+  if (startingUpdate || updateAvailable === false || (!start && readingUpdate)) return;
+  if (start) {
+    startingUpdate = true;
+    updateGeneration++;
+    updateButton.disabled = true;
+  } else {
+    readingUpdate = true;
+  }
+  const generation = updateGeneration;
+  try {
+    const result = await request("/api/plugin-update",start ? {} : undefined);
+    if (generation === updateGeneration) showPluginUpdate(result);
+  } catch (error) {
+    if (generation === updateGeneration && (updateAvailable || start)) {
+      updateStatus.hidden = false;
+      updateStatus.textContent = `暂时无法确认更新状态。请重新打开看板后核对结果。 ${error.message}`;
+      updateButton.disabled = false;
+    }
+  } finally {
+    if (start) startingUpdate = false;
+    else readingUpdate = false;
+  }
+}
+updateButton.onclick = () => readPluginUpdate(true);
+readPluginUpdate();
+setInterval(readPluginUpdate,2000);
 byId("refresh").onclick = async () => {
   try {
     await post("/api/refresh",{});

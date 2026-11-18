@@ -1,3 +1,5 @@
+mod plugin_update;
+
 use crate::{
     config::Config,
     model::{board_state, now},
@@ -260,18 +262,14 @@ impl App {
             ensure!(self.config.board_states().any(|item| item.0 == state),
                 "该状态已停止使用，请刷新看板并重新选择");
         }
-        if !self.config.legacy_mode
-            && matches!(path, "/api/state" | "/api/archive")
-            && let Some(body) = body
-            && (path != "/api/archive" || body.get("batchId").is_none())
-            && body["id"]
-                .as_str()
-                .is_some_and(|id| id.starts_with("remote:"))
+        if let Some(body) = body
+            && self.routes_remote_write(path, body)
         {
             return self.route_remote(path, body);
         }
         match (path, body) {
             ("/api/sessions", None) => self.snapshot(),
+            ("/api/plugin-update", body) => self.plugin_update(body),
             ("/api/preview-reply", Some(body)) => self.preview_reply(body),
             ("/api/state", Some(body)) => self.save(body),
             ("/api/column-sort", Some(body)) => self.store.save_column_sort(body),
@@ -295,6 +293,13 @@ impl App {
             ("/api/refresh", Some(body)) => self.refresh_hosts(body),
             _ => bail!("接口不存在"),
         }
+    }
+
+    fn routes_remote_write(&self, path: &str, body: &Value) -> bool {
+        !self.config.legacy_mode
+            && matches!(path, "/api/state" | "/api/archive")
+            && (path != "/api/archive" || body.get("batchId").is_none())
+            && body["id"].as_str().is_some_and(|id| id.starts_with("remote:"))
     }
 
     fn new_session(&self, body: &Value) -> Result<Value> {
