@@ -23,6 +23,21 @@ fn metadata(status: &str) -> Value {
     json!({"thread":{"id":"thread","status":{"type":status}}})
 }
 
+#[test]
+fn preview_markdown_formats_text_without_loading_untrusted_content() {
+    let sample = "# 核对记录\n\n- Linux\n- macOS\n\n> 保留报告\n\n```sh\nprintf 'ok'\n```\n\n\
+        | 平台 | 结果 |\n| --- | --- |\n| ARM | 通过 |\n\n[报告](https://example.com/report)\n\n\
+        <script>sample</script>\n\n[禁用](file:///tmp/example) ![图示](https://example.com/image.png)";
+    let rendered = render_markdown(sample);
+    for expected in ["<h1>", "<ul>", "<li>", "<blockquote>", "<pre><code", "<table>",
+        "href=\"https://example.com/report\"", "&lt;script&gt;sample&lt;/script&gt;", "禁用</a> 图示"] {
+        assert!(rendered.contains(expected), "缺少 {expected}: {rendered}");
+    }
+    for excluded in ["<script>", "<img", "file://", "image.png"] {
+        assert!(!rendered.contains(excluded), "意外出现 {excluded}: {rendered}");
+    }
+}
+
 fn page(turn: &str, status: &str, phase: &str) -> Value {
     json!({"data":[{"id":turn,"status":status,"items":[
         {"type":"agentMessage","phase":"commentary","text":"progress"},
@@ -33,37 +48,61 @@ fn page(turn: &str, status: &str, phase: &str) -> Value {
 #[test]
 fn reply_reader_only_returns_the_expected_completed_turn() -> Result<()> {
     let completed = page("first", "completed", "final_answer");
+    let mut running = page("second", "inProgress", "final_answer");
+    running["nextCursor"] = json!("older");
     let mut reader = Fixture(VecDeque::from([
-        ("thread/read", metadata("notLoaded")),
-        ("thread/turns/list", completed.clone()),
+        ("thread/read", metadata("active")),
+        ("thread/turns/list", running.clone()),
         ("thread/turns/list", completed),
-        ("thread/read", metadata("idle")),
+        ("thread/turns/list", running),
+        ("thread/read", metadata("active")),
     ]));
-    assert_eq!(read_reply(&mut reader, "thread", "first")?, "first final\n\nsecond paragraph");
+    assert_eq!(read_reply(&mut reader, "thread")?, json!({
+        "turnId":"first","inProgress":true,"html":"<p>first final</p>\n<p>second paragraph</p>\n"
+    }));
     assert!(reader.0.is_empty());
     Ok(())
 }
 
 #[test]
-fn reply_reader_rejects_active_interrupted_unmarked_and_changed_turns() {
-    for (before, response, after, last_status) in [
-        ("active", page("first", "completed", "final_answer"),
-            page("first", "completed", "final_answer"), "active"),
-        ("idle", page("first", "interrupted", "final_answer"), Value::Null, "idle"),
-        ("idle", page("first", "completed", "commentary"), Value::Null, "idle"),
-        ("idle", page("first", "completed", "final_answer"),
-            page("second", "completed", "final_answer"), "idle"),
-        ("idle", page("first", "completed", "final_answer"),
-            page("first", "completed", "final_answer"), "active"),
+fn reply_reader_distinguishes_empty_from_unknown_and_rechecks_changed_turns() -> Result<()> {
+    for response in [
+        json!({"data":[]}),
+        page("first", "interrupted", "final_answer"),
+        page("first", "failed", "final_answer"),
+        page("first", "completed", "commentary"),
     ] {
         let mut reader = Fixture(VecDeque::from([
-            ("thread/read", metadata(before)),
+            ("thread/read", metadata("notLoaded")),
+            ("thread/turns/list", response.clone()),
             ("thread/turns/list", response),
-            ("thread/turns/list", after),
-            ("thread/read", metadata(last_status)),
+            ("thread/read", metadata("notLoaded")),
         ]));
-        assert!(read_reply(&mut reader, "thread", "first").is_err());
+        assert_eq!(read_reply(&mut reader, "thread")?,
+            json!({"turnId":null,"html":null,"inProgress":false}));
     }
+    let mut unknown = Fixture(VecDeque::from([("thread/read", metadata("systemError"))]));
+    assert!(read_reply(&mut unknown, "thread").is_err());
+    let mut malformed = Fixture(VecDeque::from([
+        ("thread/read", metadata("idle")),
+        ("thread/turns/list", json!({"data":null})),
+    ]));
+    assert!(read_reply(&mut malformed, "thread").is_err());
+    let old = page("first", "completed", "final_answer");
+    let new = page("second", "completed", "final_answer");
+    let mut changed = Fixture(VecDeque::from([
+        ("thread/read", metadata("idle")),
+        ("thread/turns/list", old),
+        ("thread/turns/list", new.clone()),
+        ("thread/read", metadata("idle")),
+        ("thread/read", metadata("idle")),
+        ("thread/turns/list", new.clone()),
+        ("thread/turns/list", new),
+        ("thread/read", metadata("idle")),
+    ]));
+    assert_eq!(read_reply(&mut changed, "thread")?["turnId"], "second");
+    assert!(changed.0.is_empty());
+    Ok(())
 }
 
 #[test]
@@ -91,10 +130,10 @@ fn reply_endpoint_reads_only_on_click_and_retires_on_transport_failure() -> Resu
     assert!(!snapshot.to_string().contains("first final"));
     let thread_id = identifier.clone();
     let backend = std::thread::spawn(move || serve_preview(listener, &thread_id));
-    let result = app.request("/api/preview-reply", Some(&json!({"id":identifier,"turnId":"first"})))?;
+    let result = app.request("/api/preview-reply", Some(&json!({"id":identifier})))?;
     backend.join().map_err(|_| anyhow::anyhow!("测试后台出错"))??;
-    assert_eq!(result["text"], "first final\n\nsecond paragraph");
-    assert!(app.request("/api/preview-reply", Some(&json!({"id":identifier,"turnId":"first"}))).is_err());
+    assert_eq!(result["html"], "<p>first final</p>\n<p>second paragraph</p>\n");
+    assert!(app.request("/api/preview-reply", Some(&json!({"id":identifier}))).is_err());
     app.update_health(json!({"runtimeVerified":false}))?;
     assert!(app.snapshot()?["sessions"][0]["previewTurnId"].is_null());
     Ok(())

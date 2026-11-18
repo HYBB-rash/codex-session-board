@@ -17,6 +17,11 @@ const applyContext = context => {
 };
 app.onhostcontextchanged = applyContext;
 const connected = app.connect().then(() => applyContext(app.getHostContext()));
+window.boardOpenLink = async url => {
+  await connected;
+  const { isError } = await app.openLink({ url });
+  if (isError) throw new Error("无法打开链接");
+};
 const routes = {
   "/api/sessions": "board_snapshot",
   "/api/state": "board_update",
