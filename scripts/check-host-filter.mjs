@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import http from "node:http";
 import { launchBrowser } from "./browser-client.mjs";
+import { archiveFixture } from "./archive-browser-fixture.mjs";
 
 const html = await fs.readFile(new URL("../index.html",import.meta.url),"utf8");
 const fixture = {
@@ -21,12 +22,15 @@ const fixture = {
 };
 const baseline = structuredClone(fixture);
 const writes = [];
+const archive = archiveFixture();
 let pendingNew = false, pendingReply = false, rejectReads = false, releaseNew;
 const server = http.createServer(async (request,response) => {
   let body = "";
   for await (const chunk of request) body += chunk;
+  const input = body ? JSON.parse(body) : null;
+  if (request.method === "POST") writes.push({path:request.url,body:input});
+  if (archive.handle(request.url,request.method,input,response)) return;
   if (request.method === "POST") {
-    writes.push({path:request.url,body:JSON.parse(body)});
     if (request.url === "/api/new" && pendingNew) await new Promise(resolve => {releaseNew = resolve;});
     response.writeHead(200,{"Content-Type":"application/json"});
     response.end(JSON.stringify(pendingReply ? {pending:true,error:"结果待核对"} : {ok:true}));
@@ -102,8 +106,24 @@ try {
   await wait("!creating && !byId('host-filter').disabled");
   await evaluate('byId("filter-toggle").click()');
   await select("project-filter","project:a1");
+  archive.controls.loseReply = true;
   await evaluate('archiveSessions(visibleSessions(),document.querySelector("[data-archive-all]"))');
-  check(writes.filter(row=>row.path === "/api/archive").map(row=>row.body),[{id:"a1",version:1,inputVersion:2,sectionVersion:"fixture"}]);
+  const batchId = writes.find(row=>row.path === "/api/archive-batches").body.id;
+  check(writes.filter(row=>row.path === "/api/archive").map(row=>row.body),[{id:"a1",version:1,inputVersion:2,sectionVersion:"fixture",batchId}]);
+  check(await evaluate('byId("archive-summary-text").textContent.includes("已确认归档 0 / 1 条")'),true);
+  check(await evaluate('document.querySelector(".card[data-id=a1]").textContent.includes("归档结果待核对")'),true);
+  check(await evaluate('document.querySelector("[data-archive-all]").disabled'),true);
+  await evaluate('void byId("archive-results-toggle").onclick()');
+  await wait('byId("archive-result-list").textContent.includes("待核对")');
+  const reopened = await browser.page(`http://127.0.0.1:${server.address().port}/`);
+  const readReopened = () => reopened.evaluate('typeof byId === "function" && byId("archive-summary-text").textContent.includes("1 条待核对") && !archiveChecking');
+  for (let attempt = 0; attempt < 100 && !await readReopened(); attempt++)
+    await new Promise(resolve => setTimeout(resolve,25));
+  check(await readReopened(),true);
+  archive.controls.verify = true;
+  await evaluate('byId("archive-summary-actions").querySelector("button").onclick()');
+  check(await evaluate('byId("archive-summary-text").textContent.includes("已确认归档 1 / 1 条")'),true);
+  check(writes.filter(row=>row.path === "/api/archive").length,1);
   fixture.projectCatalog.items = fixture.projectCatalog.items.filter(item=>item.id !== "a1");
   fixture.health.remoteError = "temporary";
   await refresh();

@@ -25,7 +25,8 @@ let snapshot = fixture(), pending, current, held, openFails;
 const host = `<!doctype html><meta charset="utf-8">
 <style>body{margin:0}iframe{display:block;border:0;width:100vw;height:100vh}</style>
 <script>
-const routes={board_snapshot:"/api/sessions",board_preview_reply:"/api/preview-reply",board_open:"/api/open"};
+const readRoutes={board_snapshot:"/api/sessions",board_archive_batches:"/api/archive-batches"};
+const postRoutes={board_preview_reply:"/api/preview-reply",board_open:"/api/open"};
 addEventListener("message",async event=>{
   if(event.source!==document.querySelector("iframe").contentWindow)return;
   const {method,id,params}=event.data;
@@ -33,8 +34,10 @@ addEventListener("message",async event=>{
   if(method==="ui/initialize")result={protocolVersion:params.protocolVersion,hostInfo:{name:"preview-check",version:"1"},hostCapabilities:{openLinks:{}},hostContext:{}};
   if(method==="ui/open-link"){window.lastLink=params.url;result={};}
   if(method==="tools/call"){
-    const path=routes[params.name];
-    const response=await fetch(path,path==="/api/sessions"?{}:{method:"POST",body:JSON.stringify(params.arguments)});
+    const readPath=readRoutes[params.name];
+    const response=readPath ? await fetch(readPath) : await fetch(postRoutes[params.name],{
+      method:"POST",body:JSON.stringify(params.arguments)
+    });
     const value=await response.json();
     result=!response.ok?{isError:true,content:[{type:"text",text:value.error}]}:params.name==="board_preview_reply"?
       {content:[],_meta:{previewReply:value}}:{content:[],structuredContent:value};
@@ -50,6 +53,9 @@ const server = http.createServer(async (request,response) => {
   }
   response.setHeader("Content-Type","application/json");
   if (request.url === "/api/sessions") return response.end(JSON.stringify(snapshot));
+  if (request.url === "/api/archive-batches" && request.method === "GET") {
+    return response.end(JSON.stringify({batches:[]}));
+  }
   if (request.method !== "POST") return response.writeHead(404).end("{}");
   let encoded = "";
   for await (const chunk of request) encoded += chunk;

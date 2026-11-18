@@ -69,6 +69,7 @@ pub enum Role {
     SetupReader,
     TitleWriter,
     ArchiveWriter,
+    BatchArchiveWriter,
     ProjectWriter,
 }
 
@@ -100,17 +101,21 @@ impl Role {
                     | "account/read" | "fs/getMetadata" | "fs/readFile"),
             Self::SetupReader => matches!(method, "initialize" | "project/list" | "account/read"),
             Self::TitleWriter => matches!(method, "initialize" | "thread/read" | "thread/name/set"),
-            Self::ArchiveWriter => matches!(
+            Self::ArchiveWriter | Self::BatchArchiveWriter => matches!(
                 method,
                 "initialize"
                     | "thread/list"
                     | "thread/read"
                     | "thread/turns/list"
                     | "thread/archive"
-            ),
+            ) || (self == Self::BatchArchiveWriter && method == "account/read"),
         };
         ensure!(allowed, "此 RPC 连接不允许调用 {method}");
         Ok(())
+    }
+
+    fn scoped(self) -> bool {
+        matches!(self, Self::CatalogReader | Self::TargetProjectPreparer | Self::SetupReader | Self::BatchArchiveWriter)
     }
 }
 
@@ -474,7 +479,7 @@ impl DesktopConnection {
         };
         reader.initialize(source)?;
         reader.title_deadline =
-            matches!(role, Role::TitleWriter | Role::ArchiveWriter | Role::PreviewReader).then_some(deadline);
+            matches!(role, Role::TitleWriter | Role::ArchiveWriter | Role::BatchArchiveWriter | Role::PreviewReader).then_some(deadline);
         Ok(reader)
     }
 
@@ -491,7 +496,7 @@ impl DesktopConnection {
             peer.initialize(&response)?;
             binding.confirm(peer, self.call_deadline()?)?;
         }
-        if matches!(self.role, Role::CatalogReader | Role::TargetProjectPreparer | Role::SetupReader) {
+        if self.role.scoped() {
             let mut guard = catalog_guard::CatalogGuard::initialized(&response)?;
             if let Some((binding, peer)) = source {
                 guard.bind(Path::new(&peer.codex_home), json!({"ssh":binding.endpoint, "peer":peer}))?;
@@ -503,12 +508,17 @@ impl DesktopConnection {
     }
 
     pub(crate) fn catalog_source(&self) -> Result<Value> {
-        ensure!(matches!(self.role, Role::CatalogReader | Role::TargetProjectPreparer | Role::SetupReader),
+        ensure!(self.role.scoped(),
             "此连接不是项目目录连接");
         if let Some(authority) = &self.local_authority {
             authority.confirm()?;
         }
         self.catalog_guard.as_ref().context("目录连接尚未初始化")?.source()
+    }
+
+    pub(crate) fn bound_to_deadline(mut self, deadline: Instant) -> Self {
+        self.title_deadline = Some(deadline);
+        self
     }
 
     fn call_deadline(&self) -> Result<Instant> {
@@ -546,9 +556,7 @@ impl DesktopConnection {
 impl Rpc for DesktopConnection {
     fn call(&mut self, method: &str, params: Value) -> Result<Value> {
         self.role.check(method)?;
-        if matches!(self.role, Role::CatalogReader | Role::TargetProjectPreparer | Role::SetupReader)
-            && method != "initialize"
-        {
+        if self.role.scoped() && method != "initialize" {
             self.catalog_source()?;
             self.catalog_guard.as_ref().context("目录连接尚未初始化")?.check(method, &params)?;
         }

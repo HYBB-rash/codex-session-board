@@ -26,6 +26,10 @@ fn tools_for_mode(legacy: bool, four_columns: bool) -> Value {
         ("board_update", "确认工作状态", false),
         ("board_sort", "设置栏目排序", false),
         ("board_archive", "归档待归档会话", false),
+        ("board_archive_batches", "读取归档结果", true),
+        ("board_archive_batch_start", "登记归档批次", false),
+        ("board_archive_batch_finish", "结束本批归档提交", false),
+        ("board_archive_batch_check", "核对原生归档结果", true),
         ("board_open", "打开已有会话", true),
         ("board_preview_reply", "预览最近一条完整回复", true),
         ("board_new", "打开新建会话页", false),
@@ -35,7 +39,7 @@ fn tools_for_mode(legacy: bool, four_columns: bool) -> Value {
         ("board_ssh_setup", "设置远程新建连接", false),
         ("board_refresh", "重新发现", false),
     ] {
-        if legacy && matches!(name, "board_archive" | "board_new_reset" | "board_connect" | "board_project_assign" | "board_ssh_setup") {
+        if legacy && (name.starts_with("board_archive") || matches!(name, "board_new_reset" | "board_connect" | "board_project_assign" | "board_ssh_setup")) {
             continue;
         }
         let (properties, required) = schema(name, legacy, four_columns);
@@ -79,7 +83,8 @@ fn schema(name: &str, legacy: bool, four_columns: bool) -> (Value, Value) {
         ),
         "board_archive" => (
             json!({"id":{"type":"string"},"version":{"type":"integer","minimum":0},
-                "inputVersion":{"type":"integer","minimum":0},"sectionVersion":{"type":["string","null"]}}),
+                "inputVersion":{"type":"integer","minimum":0},"sectionVersion":{"type":["string","null"]},
+                "batchId":{"type":"string","format":"uuid"}}),
             json!(["id", "version", "inputVersion"]),
         ),
         "board_new_reset" => (
@@ -93,6 +98,17 @@ fn schema(name: &str, legacy: bool, four_columns: bool) -> (Value, Value) {
 
 fn basic_schema(name: &str) -> (Value, Value) {
     match name {
+        "board_archive_batch_start" => (
+            json!({"id":{"type":"string","format":"uuid"},
+                "items":{"type":"array","minItems":1,"items":{"type":"object",
+                    "properties":{"id":{"type":"string"},"title":{"type":"string","maxLength":500},
+                        "version":{"type":"integer","minimum":0},"inputVersion":{"type":"integer","minimum":0},
+                        "sectionVersion":{"type":["string","null"]}},
+                    "required":["id","title","version","inputVersion"],"additionalProperties":false}}}),
+            json!(["id", "items"]),
+        ),
+        "board_archive_batch_finish" | "board_archive_batch_check" =>
+            (json!({"id":{"type":"string","format":"uuid"}}), json!(["id"])),
         "board_open" | "board_preview_reply" => (json!({"id":{"type":"string"}}), json!(["id"])),
         "board_connect" => (json!({"hostId":{"type":"string"}}), json!(["hostId"])),
         _ => setup_schema(name),
@@ -140,6 +156,9 @@ fn backend(runtime: &mut RuntimeHandle, name: &str, arguments: &Value) -> Result
         "board_update" => "/api/state",
         "board_sort" => "/api/column-sort",
         "board_archive" => "/api/archive",
+        "board_archive_batches" | "board_archive_batch_start" => "/api/archive-batches",
+        "board_archive_batch_finish" => "/api/archive-batches/finish",
+        "board_archive_batch_check" => "/api/archive-batches/check",
         "board_open" => "/api/open",
         "board_preview_reply" => "/api/preview-reply",
         "board_new" => "/api/new",
@@ -150,7 +169,7 @@ fn backend(runtime: &mut RuntimeHandle, name: &str, arguments: &Value) -> Result
         "board_refresh" => "/api/refresh",
         _ => bail!("未知看板工具"),
     };
-    runtime.request(path, (name != "board_snapshot").then_some(arguments))
+    runtime.request(path, (!matches!(name, "board_snapshot" | "board_archive_batches")).then_some(arguments))
 }
 
 fn dispatch(method: &str, params: &Value, runtime: &mut RuntimeHandle) -> Result<Value> {

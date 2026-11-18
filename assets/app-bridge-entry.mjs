@@ -34,11 +34,15 @@ const routes = {
   "/api/connect": "board_connect",
   "/api/ssh-setup": "board_ssh_setup",
   "/api/archive": "board_archive",
+  "/api/archive-batches": "board_archive_batches",
+  "/api/archive-batches/finish": "board_archive_batch_finish",
+  "/api/archive-batches/check": "board_archive_batch_check",
   "/api/column-sort": "board_sort",
 };
 window.boardRequest = async (route, body) => {
   await connected;
-  const name = Object.hasOwn(routes, route) && routes[route];
+  const name = route === "/api/archive-batches" && body ? "board_archive_batch_start"
+    : Object.hasOwn(routes, route) && routes[route];
   if (!name) throw new Error("未知看板操作");
   const result = await app.callServerTool({ name, arguments: body || {} });
   if (result.isError)

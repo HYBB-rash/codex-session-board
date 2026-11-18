@@ -40,6 +40,7 @@ fn clear(store: &Store) -> Result<()> {
     let transaction = database.transaction()?;
     transaction.execute_batch(
         "DELETE FROM title_updates; DELETE FROM changes; DELETE FROM remote_sessions;
+         DELETE FROM archive_batch_items; DELETE FROM archive_batches;
          DELETE FROM remote_projects; DELETE FROM settings; DELETE FROM sessions;"
     )?;
     transaction.commit()?;
@@ -249,7 +250,10 @@ mod tests {
              INSERT INTO settings(key,value) VALUES('noise','noise');
              INSERT INTO remote_sessions(id,host_id,thread_id,host_label,title,cwd,updated_at)
                  VALUES('noise','host','thread','host','noise','',0);
-             INSERT INTO remote_projects(id,value) VALUES('noise','{}');"
+             INSERT INTO remote_projects(id,value) VALUES('noise','{}');
+             INSERT INTO archive_batches(id,created_at) VALUES('noise',0);
+             INSERT INTO archive_batch_items(batch_id,position,id,target)
+                 VALUES('noise',0,'noise','{}');"
         ).unwrap();
         assert!(crate::formal::records::snapshot(store).unwrap()
             .tables.values().all(|rows| !rows.is_empty()));

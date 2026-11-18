@@ -6,6 +6,7 @@ use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
 mod catalog;
+pub(crate) mod archive_batches;
 mod drafts;
 mod mappings;
 mod native;
@@ -42,6 +43,17 @@ CREATE TABLE IF NOT EXISTS title_updates (
  thread_id TEXT PRIMARY KEY, version INTEGER NOT NULL, state TEXT NOT NULL,
  requested_at REAL NOT NULL, attempted_at REAL, error TEXT);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS archive_batches (
+ id TEXT PRIMARY KEY, created_at REAL NOT NULL, finished_at REAL
+);
+CREATE TABLE IF NOT EXISTS archive_batch_items (
+ batch_id TEXT NOT NULL, position INTEGER NOT NULL, id TEXT NOT NULL,
+ target TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'awaiting',
+ reason TEXT, source TEXT, checked_at REAL,
+ PRIMARY KEY(batch_id, id), UNIQUE(batch_id, position)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS archive_pending_item
+ ON archive_batch_items(id) WHERE status='pending';
 ";
 
 fn row_value(row: &Row<'_>) -> rusqlite::Result<Value> {
@@ -131,14 +143,12 @@ fn validate_selection(
 fn archive_expected(row: &Value, revision: (i64, i64), native: bool) -> Result<Value> {
     ensure!(row["archived"] == 0, "会话已归档，请刷新看板");
     ensure!(row["version"] == revision.0, "状态已更新，请刷新后重试");
-    ensure!(
-        row["input_revision"] == revision.1,
-        "会话有新输入，请刷新并核对后重试"
-    );
-    ensure!(
-        row["needs_review"] == 0,
-        "会话有新输入，请核对后点击卡片上的“确认待归档”"
-    );
+    if row["input_revision"] != revision.1 {
+        return Err(crate::archive::NewInput("会话有新输入，请刷新并核对后重试").into());
+    }
+    if row["needs_review"] != 0 {
+        return Err(crate::archive::NewInput("会话有新输入，请核对后点击卡片上的“确认待归档”").into());
+    }
     ensure!(
         crate::model::board_state(&effective(row, native, false)) == "to_archive",
         "只能归档待归档会话"
