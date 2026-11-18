@@ -119,6 +119,17 @@ async function exercise(surface) {
     const capture = await page.command("Page.captureScreenshot",{format:"png"});
     await writeFile(`${process.argv[2]}/${surface}.png`,Buffer.from(capture.data,"base64"));
   }
+  for (const [width,height] of [[390,600],[390,320],[320,256]]) {
+    await page.command("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:1,mobile:false});
+    assert(await evaluate(`(() => {
+      const reader=byId("reply-reader"), body=byId("reply-body"), open=byId("reply-open");
+      open.focus({preventScroll:true});
+      return body.clientHeight >= 96 && body.scrollHeight > body.clientHeight &&
+        open.getBoundingClientRect().bottom <= reader.getBoundingClientRect().bottom &&
+        document.activeElement === open;
+    })()`),`阅读栏在 ${width}×${height} 中裁切正文或原会话入口`);
+  }
+  await page.command("Emulation.setDeviceMetricsOverride",{width:1680,height:1000,deviceScaleFactor:1,mobile:false});
   const scroll = await evaluate('byId("reply-body").scrollTop=140;byId("reply-body").scrollTop');
   assert(scroll>0);
   snapshot.sessions[1].previewTurnId = "new";
