@@ -7,3 +7,5 @@
 隔离 MCP 进程重启测试分别读回两种失败回执。当前构建与回执匹配时，更新状态为 `active`，会话备注仍可读。
 
 复现、定向回归与 Linux 提交门禁记录位于 `/home/herman/.local/state/codex-session-board/update-button-20261119/pr29-reload-repair/`。
+
+组合门禁的 macOS 运行 `44499016726` 中，两条重载测试在检查私有快照归属时退出。测试夹具沿用 `/tmp` 的别名路径，worker 解析脚本路径后得到真实父目录。Linux 上用隔离临时目录中的符号链接复现两条相同的 `ValueError`。夹具解析根目录后，两条测试均通过，生产归属检查仍在原位置执行。复现与复验记录位于 `/home/herman/.local/state/codex-session-board/update-button-20261119/pr29-macos-fixture-repair/`。
