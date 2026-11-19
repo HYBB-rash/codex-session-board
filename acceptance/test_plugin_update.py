@@ -23,7 +23,12 @@ class PluginUpdateTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(dir="/tmp")
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        temporary_root = Path(self.temporary.name)
+        fixture_root = temporary_root / "fixture"
+        fixture_root.mkdir()
+        fixture_alias = temporary_root / "alias"
+        fixture_alias.symlink_to(fixture_root.resolve(), target_is_directory=True)
+        self.root = fixture_alias.resolve()
         self.home = self.root / "home"
         self.state = self.root / "installation"
         self.source = self.root / "source"
