@@ -242,6 +242,12 @@
         "from": "0.4.11",
         "to": "0.4.12",
         "decision": "冻结发布候选"
+      },
+      {
+        "after_commit": "9bb2fac75959216f2cc77063a552e10543e1e694",
+        "from": "0.4.12",
+        "to": "0.4.13",
+        "decision": "冻结发布候选"
       }
     ],
     "rollover_after": "b7acaa72fb62e2ffaf0d44292956a31d34bee036",
