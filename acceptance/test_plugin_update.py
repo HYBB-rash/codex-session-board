@@ -10,7 +10,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import websocket
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import board_update_job
 import package_plugin
 import reload_plugins
 import update_plugin
@@ -162,9 +165,9 @@ class PluginUpdateTests(unittest.TestCase):
         self.assertTrue(result["installed"])
         self.assertFalse(any(args[:3] == ["codex", "plugin", "add"] for args in self.commands))
 
-    def desktop_connection(self, version=None):
+    def desktop_connection(self, version=None, reload_error=None):
         connection = MagicMock()
-        connection.recv.side_effect = [json.dumps(item) for item in [
+        responses = [json.dumps(item) for item in [
             {"method": "notification"}, {"id": 1, "result": {}},
             {"id": 0, "result": {"thread": {"status": {"type": "idle"}}}},
             {"id": 2, "result": {}}, {"id": 3, "result": {}},
@@ -175,14 +178,14 @@ class PluginUpdateTests(unittest.TestCase):
                 "tools": {"board_view": {}}}], "nextCursor": None}},
             {"id": 6, "result": {"content": [], "structuredContent": {"sessions": []}}},
         ]]
+        connection.recv.side_effect = responses if reload_error is None else responses[:4] + [reload_error]
         return connection
 
     def test_full_update_installs_marketplace_file_on_desktop_before_reload(self):
         connection = self.desktop_connection()
-        websocket = SimpleNamespace(create_connection=MagicMock(return_value=connection))
         with self.isolated(), patch.object(reload_plugins, "desktop_socket", return_value=self.root / "desktop.sock"), \
              patch.object(reload_plugins.socket, "socket") as transport, \
-             patch.dict(sys.modules, {"websocket": websocket}):
+             patch.object(websocket, "create_connection", return_value=connection):
             result = self.update()
         self.assertTrue(result["installed"])
         self.assertTrue(result["desktop_loaded"])
@@ -200,12 +203,45 @@ class PluginUpdateTests(unittest.TestCase):
         connection = self.desktop_connection("old")
         with self.isolated(), patch.object(reload_plugins, "desktop_socket", return_value=self.root / "desktop.sock"), \
              patch.object(reload_plugins.socket, "socket"), \
-             patch.dict(sys.modules, {"websocket": SimpleNamespace(create_connection=lambda *a, **k: connection)}):
+             patch.object(websocket, "create_connection", return_value=connection):
             result = self.update()
         self.assertTrue(result["installed"])
         self.assertFalse(result["desktop_loaded"])
         self.assertIn("version and tools", result["reload_error"])
         self.assertEqual(json.loads((self.state / "current.json").read_text()), result)
+
+    def assert_worker_keeps_install_after_reload_error(self, error):
+        connection = self.desktop_connection(reload_error=error)
+        with update_plugin.update_lock(self.state) as lock:
+            snapshot = self.state / "updater-fixture"
+            snapshot.mkdir()
+            with self.isolated(), patch.object(board_update_job, "__file__", str(snapshot / "board_update_job.py")), \
+                 patch.object(reload_plugins, "desktop_socket", return_value=self.root / "desktop.sock"), \
+                 patch.object(reload_plugins.socket, "socket"), \
+                 patch.object(websocket, "create_connection", return_value=connection):
+                board_update_job.work(self.state, "codex", "old-build", lock.fileno())
+        self.assertEqual(json.loads(connection.send.call_args.args[0])["method"], "config/mcpServer/reload")
+        connection.close.assert_called_once()
+        current = json.loads((self.state / "current.json").read_text())
+        status = json.loads((self.state / board_update_job.STATUS).read_text())
+        self.assertTrue(current["installed"])
+        self.assertFalse(current["desktop_loaded"])
+        self.assertEqual(current["phase"], "awaiting_desktop_reload")
+        self.assertEqual(current["release"], self.manifest)
+        self.assertIn(type(error).__name__, current["reload_error"])
+        self.assertIn(str(error), current["reload_error"])
+        self.assertEqual(status, {"phase": "awaiting_desktop_reload", "version": self.version,
+            "build": self.manifest["binary_sha256"], "installed": True, "error": current["reload_error"]})
+        self.assertFalse((self.state / "pending.json").exists())
+        self.assertFalse(snapshot.exists())
+
+    def test_worker_records_install_when_reload_connection_closes(self):
+        self.assert_worker_keeps_install_after_reload_error(
+            websocket.WebSocketConnectionClosedException("fixture desktop disconnected"))
+
+    def test_worker_records_install_when_reload_connection_times_out(self):
+        self.assert_worker_keeps_install_after_reload_error(
+            websocket.WebSocketTimeoutException("fixture desktop did not reply"))
 
     def test_hash_mismatch_rejects_before_install(self):
         (self.source / "bin/codex-session-board").write_text("tampered")

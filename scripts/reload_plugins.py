@@ -66,6 +66,13 @@ def reload_plugins(codex, directory, version, marketplace_path=None):
     if marketplace is not None and (not marketplace.is_file() or marketplace.name != "marketplace.json"):
         raise ValueError("Desktop plugin install requires a marketplace.json file")
     import websocket
+    try:
+        return reload_over_websocket(websocket.create_connection, path, thread_id, authority, version, marketplace)
+    except websocket.WebSocketException as error:
+        raise ConnectionError(f"{type(error).__name__}: {error}") from error
+
+
+def reload_over_websocket(connect, path, thread_id, authority, version, marketplace):
     with socket.socket(socket.AF_UNIX) as transport:
         transport.settimeout(30)
         transport.connect(str(path))
@@ -73,8 +80,7 @@ def reload_plugins(codex, directory, version, marketplace_path=None):
             peer = socket_peer_pid(transport)
             if authority["pid"] != peer or process_identity(peer) != authority:
                 raise RuntimeError("重载端点不属于启动当前看板的 Codex 后台")
-        connection = websocket.create_connection("ws://localhost/rpc", socket=transport,
-                                                 timeout=30, suppress_origin=True)
+        connection = connect("ws://localhost/rpc", socket=transport, timeout=30, suppress_origin=True)
         def request(identifier, method, params):
             connection.send(json.dumps({"id": identifier, "method": method, "params": params}))
             deadline = time.monotonic() + 30

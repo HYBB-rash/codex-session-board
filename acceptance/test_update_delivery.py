@@ -4,8 +4,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+
+import websocket
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import update_plugin
@@ -70,8 +71,7 @@ class UpdateDeliveryTests(unittest.TestCase):
                             {"id": 5, "result": {"content": [], "structuredContent": {"sessions": []}}},
                         ])
                         connection.recv.side_effect = [json.dumps(item) for item in responses]
-                        module = SimpleNamespace(create_connection=MagicMock(return_value=connection))
-                        with patch.dict(sys.modules, {"websocket": module}), \
+                        with patch.object(websocket, "create_connection", return_value=connection), \
                              patch.dict(reload_plugins.os.environ, {
                                  "CODEX_LINUX_APP_SERVER_BRIDGE_SOCKET": str(path),
                                  "CODEX_THREAD_ID": "fixture-thread"}), \
@@ -134,7 +134,7 @@ class UpdateDeliveryTests(unittest.TestCase):
         with patch.dict(reload_plugins.os.environ, {"CODEX_THREAD_ID": "fixture-thread"}), \
                 patch.object(reload_plugins, "desktop_socket", return_value=Path("/fixture.sock")), \
                 patch.object(reload_plugins.socket, "socket"), \
-                patch.dict(sys.modules, {"websocket": SimpleNamespace(create_connection=MagicMock(return_value=connection))}):
+                patch.object(websocket, "create_connection", return_value=connection):
             with self.assertRaisesRegex(RuntimeError, "not loaded"):
                 reload_plugins.reload_plugins("codex", Path("/fixture"), "new")
         self.assertEqual([json.loads(call.args[0])["method"] for call in connection.send.call_args_list],

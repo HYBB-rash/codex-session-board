@@ -59,6 +59,12 @@ impl Plugin {
         Ok(response["structuredContent"].clone())
     }
 
+    fn update_status(&mut self) -> Result<Value> {
+        let response = self.call("board_plugin_update_status", json!({}))?;
+        ensure!(response["isError"] != true, "{response}");
+        Ok(response["structuredContent"].clone())
+    }
+
     fn close(&mut self) -> Result<()> {
         self.input.take();
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -71,6 +77,40 @@ impl Plugin {
             std::thread::sleep(Duration::from_millis(10));
         }
     }
+}
+
+#[test]
+fn restarted_mcp_reports_active_from_the_installed_build_after_reload_failure() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let root = directory.path();
+    let profile = Profile::new(root)?;
+    profile.seed("preserved after restart")?;
+    let mut first = Plugin::start(Some(&profile.path), Some(root))?;
+    let original = first.snapshot()?;
+    first.close()?;
+    let state = root.join("share/codex-session-board/installation");
+    std::fs::create_dir_all(&state)?;
+    let receipt = state.join("board-update.json");
+    for error in ["WebSocketConnectionClosedException: disconnected", "WebSocketTimeoutException: timed out"] {
+        let expected = json!({"phase":"awaiting_desktop_reload","installed":true,
+            "version":env!("CARGO_PKG_VERSION"),"build":original["runtime"]["build"],"error":error});
+        std::fs::write(&receipt, serde_json::to_vec(&expected)?)?;
+        let mut command = Command::new(env!("CARGO_BIN_EXE_codex-session-board"));
+        command.env_remove("CODEX_APP_SERVER_WS_URL")
+            .env("CODEX_SESSION_BOARD_UPDATER_HOME", root.join("plugin-cache"));
+        let mut restarted = Plugin::launch(command, Some(&profile.path), Some(root))?;
+        let status = restarted.update_status()?;
+        assert_eq!(status["phase"], "active");
+        assert_eq!(status["installed"], true);
+        assert_eq!(status["build"], expected["build"]);
+        assert_eq!(status["error"], error);
+        let snapshot = restarted.snapshot()?;
+        assert_ne!(snapshot["runtime"]["pid"], original["runtime"]["pid"]);
+        assert_eq!(snapshot["sessions"][0]["note"], "preserved after restart");
+        assert_eq!(serde_json::from_slice::<Value>(&std::fs::read(&receipt)?)?, expected);
+        restarted.close()?;
+    }
+    Ok(())
 }
 
 #[path = "plugin_runtime/authority.rs"]
