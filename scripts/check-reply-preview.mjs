@@ -217,8 +217,13 @@ async function exercise(surface) {
   await wait(`${overlayClosed} && document.activeElement.matches(${JSON.stringify(card(remote))})`);
   await press(card("local"));
   await until(()=>pending,"预览请求未被延迟");
-  await click(await gutter());
-  await wait(overlayClosed);
+  const blankHeading = "#column-review .column-heading h2";
+  const outsidePoint = await evaluate(center(blankHeading));
+  const hitHeading = await evaluate(`Boolean(document.elementFromPoint(${outsidePoint.x},${outsidePoint.y})
+    ?.closest(${JSON.stringify(blankHeading)}))`);
+  assert(hitHeading, `${surface} 点击点未命中预览栏外的列标题：${JSON.stringify(outsidePoint)}`);
+  await click(outsidePoint);
+  await until(()=>evaluate(overlayClosed), `${surface} 点击预览栏外的列标题后未收起：${JSON.stringify(outsidePoint)}`);
   release();
   await wait("window.settledLocalReads === 2");
   assert(await evaluate(`${overlayClosed} && !byId("reply-text").textContent`),"迟到正文改变了收起状态");
