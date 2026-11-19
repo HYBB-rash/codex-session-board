@@ -7,13 +7,25 @@ import shutil
 import shlex
 import subprocess
 import tempfile
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
-from package_plugin import TARGETS, command, verify_package
+from plugin_package import TARGETS, verify_package
 from reload_plugins import reload_plugins
 
 
 MARKET = "session-board-rust"
+COMMAND_TIMEOUT = 120
+
+
+def command(arguments, root=None):
+    return subprocess.check_output(
+        arguments, cwd=root, text=True, stderr=subprocess.PIPE, timeout=COMMAND_TIMEOUT).strip()
+
+
+def run(arguments, **kwargs):
+    return subprocess.run(arguments, check=True, text=True, stderr=subprocess.PIPE,
+                          timeout=COMMAND_TIMEOUT, **kwargs)
 
 
 def target():
@@ -25,12 +37,10 @@ def target():
 def install_market(codex, repository, reference):
     markets = json.loads(command([codex, "plugin", "marketplace", "list", "--json"]))
     if any(item["name"] == MARKET for item in markets["marketplaces"]):
-        subprocess.run([codex, "plugin", "marketplace", "remove", MARKET],
-                       check=True, stdout=subprocess.DEVNULL)
-    subprocess.run([codex, "plugin", "marketplace", "add", repository, "--ref", reference, "--json"],
-                   check=True, stdout=subprocess.DEVNULL)
-    subprocess.run([codex, "plugin", "add", f"codex-session-board@{MARKET}", "--json"],
-                   check=True, stdout=subprocess.DEVNULL)
+        run([codex, "plugin", "marketplace", "remove", MARKET], stdout=subprocess.DEVNULL)
+    run([codex, "plugin", "marketplace", "add", repository, "--ref", reference, "--json"],
+        stdout=subprocess.DEVNULL)
+    run([codex, "plugin", "add", f"codex-session-board@{MARKET}", "--json"], stdout=subprocess.DEVNULL)
 
 
 def cache_directory(version):
@@ -78,19 +88,69 @@ def marketplace_file(codex):
     return path
 
 
-def update(repository, channel, revision, state, codex, reload=True, expected_source=None):
+@contextmanager
+def update_lock(state):
     state.mkdir(mode=0o700, parents=True, exist_ok=True)
     with (state / "update.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield lock
+
+
+def matching_install(codex, manifest, revision, previous, running_build):
+    if running_build is None:
+        return False
+    if (running_build != manifest["binary_sha256"]
+            and not (previous and previous.get("installed") and previous.get("release") == manifest)):
+        return False
+    try:
+        return cached_package(codex, manifest["version"], revision) == manifest
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+        return False
+
+
+def install_release(checkout, directory, codex, repository, record):
+    manifest = record["release"]
+    if directory.exists():
+        if verify_package(directory) != manifest:
+            raise ValueError("Existing release directory has a different identity")
+    else:
+        with tempfile.TemporaryDirectory(prefix=".release-", dir=directory.parent) as temporary:
+            staged = Path(temporary) / "package"
+            shutil.copytree(checkout, staged, ignore=shutil.ignore_patterns(".git"))
+            staged.rename(directory)
+    install_market(codex, repository, record["revision"])
+    cached = cached_package(codex, manifest["version"], record["revision"])
+    if cached != manifest:
+        raise ValueError("Installed plugin cache differs from fetched release")
+
+
+def load_release(codex, state, record, reload):
+    if reload:
+        try:
+            record["desktop"] = reload_plugins(
+                codex, state, record["release"]["version"], marketplace_file(codex))
+            record["desktop_loaded"] = record["desktop"]["desktop_loaded"]
+            record["phase"] = record["desktop"]["phase"]
+        except (OSError, ValueError, RuntimeError, ImportError, subprocess.SubprocessError) as error:
+            record["reload_error"] = str(error)
+    else:
+        record["reload_deferred"] = True
+
+
+def update(repository, channel, revision, state, codex, reload=True, expected_source=None,
+           *, inherited_lock=None, progress=None, running_build=None):
+    report = progress or (lambda phase, **fields: None)
+    with update_lock(state) if inherited_lock is None else nullcontext():
         previous_path = state / "current.json"
         previous = json.loads(previous_path.read_text()) if previous_path.exists() else None
-        reference = revision or f"{channel}/{target()}"
+        reference = revision or f"refs/heads/{channel}/{target()}"
+        report("fetching")
         with tempfile.TemporaryDirectory(prefix="fetch-", dir=state) as temporary:
             checkout = Path(temporary)
-            subprocess.run(["git", "init", "-q", str(checkout)], check=True)
-            subprocess.run(["git", "fetch", "-q", "--depth=1", repository, reference],
-                           cwd=checkout, check=True)
-            subprocess.run(["git", "checkout", "-q", "--detach", "FETCH_HEAD"], cwd=checkout, check=True)
+            run(["git", "init", "-q", str(checkout)])
+            run(["git", "fetch", "-q", "--depth=1", repository, reference], cwd=checkout)
+            run(["git", "checkout", "-q", "--detach", "FETCH_HEAD"], cwd=checkout)
+            report("verifying")
             manifest = verify_package(checkout)
             if manifest["target"] != target():
                 raise ValueError("Release targets a different operating system or architecture")
@@ -98,13 +158,11 @@ def update(repository, channel, revision, state, codex, reload=True, expected_so
                 raise ValueError("Candidate for the expected source is not yet available")
             source_revision = command(["git", "rev-parse", "HEAD"], checkout)
             directory = state / "releases" / f"{manifest['version']}-{manifest['binary_sha256'][:12]}"
-            if directory.exists():
-                if verify_package(directory) != manifest:
-                    raise ValueError("Existing release directory has a different identity")
-            else:
-                shutil.copytree(checkout, directory, ignore=shutil.ignore_patterns(".git"))
-            if command([str(directory / "bin/codex-session-board"), "--version"]) != f"codex-session-board {manifest['version']}":
+            if command([str(checkout / "bin/codex-session-board"), "--version"]) != f"codex-session-board {manifest['version']}":
                 raise ValueError("Release executable version differs")
+            matched = matching_install(codex, manifest, source_revision, previous, running_build)
+            if matched and running_build == manifest["binary_sha256"]:
+                return {"phase": "up_to_date", "installed": True, "release": manifest}
             record = {
                 "phase": "installing", "installed": False, "desktop_loaded": False,
                 "release": manifest, "package": str(directory), "reference": reference,
@@ -112,24 +170,16 @@ def update(repository, channel, revision, state, codex, reload=True, expected_so
             }
             if previous is not None:
                 record["legacy_installation"] = previous.get("legacy_installation", previous)
-            write_record(state / "pending.json", record)
-            install_market(codex, repository, source_revision)
-            cached = cached_package(codex, manifest["version"], source_revision)
-            if cached != manifest:
-                raise ValueError("Installed plugin cache differs from fetched release")
+            if not matched:
+                directory.parent.mkdir(mode=0o700, exist_ok=True)
+                write_record(state / "pending.json", record)
+                report("installing", version=manifest["version"])
+                install_release(checkout, directory, codex, repository, record)
             record.update(installed=True, phase="awaiting_desktop_reload")
             write_record(state / "pending.json", record)
             write_record(state / "current.json", record)
-            if reload:
-                try:
-                    record["desktop"] = reload_plugins(
-                        codex, state, manifest["version"], marketplace_file(codex))
-                    record["desktop_loaded"] = record["desktop"]["desktop_loaded"]
-                    record["phase"] = record["desktop"]["phase"]
-                except (OSError, ValueError, RuntimeError, ImportError, subprocess.SubprocessError) as error:
-                    record["reload_error"] = str(error)
-            else:
-                record["reload_deferred"] = True
+            report("reloading", version=manifest["version"])
+            load_release(codex, state, record, reload)
             write_record(state / "current.json", record)
             (state / "pending.json").unlink()
             return record

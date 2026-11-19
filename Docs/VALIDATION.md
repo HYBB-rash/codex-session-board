@@ -49,6 +49,7 @@ CSB_VALIDATION_PYTHON=/path/to/python3.12 ./scripts/validate \
 ```
 
 显式指定的解释器不可用时直接失败，不改用另一个版本。报告记录工具绝对路径和版本；子命令通过本次运行的工具入口继承同一 Python、Git、Cargo、Rust 和 Node。macOS 临时目录固定为 `/private/tmp`，其他平台使用规范化后的临时目录。
+PR 和候选测试中重载回归使用 `requirements-delivery.txt` 固定的 `websocket-client`。本机可将依赖安装在独立 Python 环境，再通过 `CSB_VALIDATION_PYTHON` 指定该环境。
 
 普通验证默认使用本工作树 `target/validation/<工作树身份>`，凭据绑定源码目录的真实路径、设备和目录身份。同一路径删除后重建也使用新缓存。显式 `CARGO_TARGET_DIR` 中已有内容却没有归属凭据，或归属其他源码副本，均拒绝使用；请提供新的空目录，不要删除或伪造凭据。暂存快照使用自己的临时 target，不继承工作树缓存。因此新副本和暂存完整检查有独立编译成本；开发提交仍使用 `./scripts/check --pre-commit` 快检。
 

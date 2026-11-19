@@ -6,6 +6,8 @@ import stat
 import time
 from pathlib import Path
 
+from desktop_identity import process_identity, socket_peer_pid
+
 
 def verify_loaded(request, version, thread_id=None):
     cursor = None
@@ -57,17 +59,28 @@ def desktop_socket():
 def reload_plugins(codex, directory, version, marketplace_path=None):
     path = desktop_socket()
     thread_id = os.environ.get("CODEX_THREAD_ID", "").strip()
-    if path is None or not thread_id:
+    authority = json.loads(os.environ.get("CODEX_SESSION_BOARD_UPDATE_AUTHORITY", "null"))
+    if path is None or (not thread_id and authority is None):
         return {"phase": "awaiting_desktop_reload", "desktop_loaded": False}
     marketplace = Path(marketplace_path) if marketplace_path is not None else None
     if marketplace is not None and (not marketplace.is_file() or marketplace.name != "marketplace.json"):
         raise ValueError("Desktop plugin install requires a marketplace.json file")
     import websocket
+    try:
+        return reload_over_websocket(websocket.create_connection, path, thread_id, authority, version, marketplace)
+    except websocket.WebSocketException as error:
+        raise ConnectionError(f"{type(error).__name__}: {error}") from error
+
+
+def reload_over_websocket(connect, path, thread_id, authority, version, marketplace):
     with socket.socket(socket.AF_UNIX) as transport:
         transport.settimeout(30)
         transport.connect(str(path))
-        connection = websocket.create_connection("ws://localhost/rpc", socket=transport,
-                                                 timeout=30, suppress_origin=True)
+        if authority is not None:
+            peer = socket_peer_pid(transport)
+            if authority["pid"] != peer or process_identity(peer) != authority:
+                raise RuntimeError("重载端点不属于启动当前看板的 Codex 后台")
+        connection = connect("ws://localhost/rpc", socket=transport, timeout=30, suppress_origin=True)
         def request(identifier, method, params):
             connection.send(json.dumps({"id": identifier, "method": method, "params": params}))
             deadline = time.monotonic() + 30
@@ -84,13 +97,18 @@ def reload_plugins(codex, directory, version, marketplace_path=None):
             request(1, "initialize", {"clientInfo": {"name": "session_board_update", "version": "1"},
                                      "capabilities": {"experimentalApi": True}})
             connection.send(json.dumps({"method": "initialized"}))
-            thread = request(0, "thread/read", {"threadId": thread_id, "includeTurns": False})
-            if thread.get("thread", {}).get("status", {}).get("type") not in {"idle", "active", "systemError"}:
-                raise RuntimeError("Current thread is not loaded in the selected desktop; reload was not attempted")
+            if thread_id:
+                thread = request(0, "thread/read", {"threadId": thread_id, "includeTurns": False})
+                if thread.get("thread", {}).get("status", {}).get("type") not in {"idle", "active", "systemError"}:
+                    if authority is None:
+                        raise RuntimeError("Current thread is not loaded in the selected desktop; reload was not attempted")
+                    thread_id = None
             if marketplace is not None:
                 request(2, "plugin/install", {"marketplacePath": str(marketplace),
                                               "pluginName": "codex-session-board"})
             request(3, "config/mcpServer/reload", None)
+            if not thread_id:
+                return {"phase": "awaiting_board_readback", "desktop_loaded": False, "socket": str(path)}
             return {"phase": "desktop_loaded", "desktop_loaded": True,
                     "socket": str(path), "threadId": thread_id, "mcp": verify_loaded(request, version, thread_id)}
         finally:

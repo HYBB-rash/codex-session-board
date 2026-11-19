@@ -101,6 +101,10 @@ try {
   }
   check(await evaluate('boardRequest("/api/archive-batches")'), {ok:true,received:{}});
   check(await page.evaluate("requests.at(-1).name"), "board_archive_batches");
+  check(await evaluate('boardRequest("/api/plugin-update")'), {ok:true,received:{}});
+  check(await page.evaluate("requests.at(-1).name"), "board_plugin_update_status");
+  check(await evaluate('boardRequest("/api/plugin-update",{})'), {ok:true,received:{}});
+  check(await page.evaluate("requests.at(-1).name"), "board_plugin_update_start");
   const previous = await page.evaluate("requests.length");
   check(await evaluate('boardRequest("toString").then(()=>false, error=>error.message)'), "未知看板操作");
   check(await page.evaluate("requests.length"), previous);
