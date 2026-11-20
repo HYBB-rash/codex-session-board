@@ -35,8 +35,13 @@ class PRDutyClaimTests(unittest.TestCase):
         self.config = {"repository": REPOSITORY, "checker_head": MAIN}
 
     def round(self, rows, mode="tick"):
+        def api(endpoint):
+            if endpoint.endswith("/heads/main"):
+                return {"object": {"sha": MAIN}}
+            return next(row for row in rows if str(row["number"]) == endpoint.rsplit("/", 1)[-1])
+
         with patch.object(discovery.forge, "pages", return_value=rows), \
-                patch.object(discovery.forge, "api", return_value={"object": {"sha": MAIN}}), \
+                patch.object(discovery.forge, "api", side_effect=api), \
                 patch.object(duty, "follow", return_value={"result": "waiting-ci", "workflow": {"run": 42}}):
             return duty.run(None, self.config, self.directory, self.directory, SimpleNamespace(command=mode))
 
@@ -75,8 +80,13 @@ class PRDutyClaimTests(unittest.TestCase):
             first = discovery.review_command(self.directory, path, data, args, "coordinator")
             path, data = discovery.load_claims(self.directory, REPOSITORY)
             second = discovery.review_command(self.directory, path, data, args, "coordinator")
-        self.assertEqual((first["result"], second["result"]), ("dispatch-review", "waiting-review"))
-        self.assertEqual(first["request"], second["request"])
+            self.assertEqual((first["result"], second["result"]), ("review-reserved", "review-reserved"))
+            self.assertEqual(first["request"], second["request"])
+            args.command = "begin-review"
+            started = discovery.review_command(self.directory, path, data, args, "coordinator")
+            self.assertEqual(started["result"], "dispatch-review")
+            self.assertEqual(discovery.review_command(self.directory, path, data, args, "coordinator")["result"],
+                             "waiting-review")
         args.command = "record-review"
         args.review_task = "reviewer"
         discovery.review_command(self.directory, path, data, args, "coordinator")
@@ -92,6 +102,23 @@ class PRDutyClaimTests(unittest.TestCase):
         self.assertEqual(claim["heads"][HEAD]["review"]["task"], "reviewer")
         self.assertEqual(discovery.refresh_claim(claim, pull(31, branch="other"))["result"], "needs-user")
         self.assertEqual(claim["source_branch"], "codex/author")
+
+    def test_first_claim_rechecks_the_label_before_it_writes(self):
+        def api(endpoint):
+            return {"object": {"sha": MAIN}} if endpoint.endswith("/heads/main") else pull(31, labels=[])
+
+        with patch.object(discovery.forge, "pages", return_value=[pull(31)]), \
+                patch.object(discovery.forge, "api", side_effect=api):
+            result = duty.run(None, self.config, self.directory, self.directory, SimpleNamespace(command="tick"))
+        self.assertEqual(result["result"], "infrastructure-blocked")
+        self.assertFalse((self.directory / "claims.json").exists())
+
+    def test_completed_pr_remains_visible_while_the_existing_receipt_is_unconfirmed(self):
+        for state in ("sent", "delivery_unknown", "rejected"):
+            entry = {"status": "merged", "pr": 31, "last_result": {"delivery": {"author": {"state": state}}}}
+            self.assertEqual(duty.worklist({"claims": {"31": entry}}, {}), [entry])
+        entry["last_result"]["delivery"]["author"]["state"] = "delivered"
+        self.assertEqual(duty.worklist({"claims": {"31": entry}}, {}), [])
 
     def test_recombination_reuses_queue_identity_and_preserves_old_candidate(self):
         queue = self.directory

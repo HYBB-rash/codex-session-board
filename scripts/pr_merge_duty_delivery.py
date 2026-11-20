@@ -23,7 +23,7 @@ def deliver(directory, route, key, message, skill=None):
     receipt["last_checked_at"] = now()
     try:
         with transport.connect_endpoint(route) as rpc:
-            if receipt.get("attempted_at"):
+            if receipt.get("attempted_at") and receipt["state"] not in {"waiting_idle", "rejected"}:
                 transport.observe(rpc, route, receipt)
                 if receipt.get("turn_id") and receipt.get("acknowledged_at"):
                     receipt["state"] = "delivered"
@@ -49,7 +49,8 @@ def dispatch(config, directory, assignment, result, *, route=None):
     outcome = {}
     feedback = result.get("feedback")
     if (result["result"] in {"needs-author", "needs-evidence"} and isinstance(feedback, dict)
-            and feedback.get("comment") and feedback["kind"] in {"merge", "candidate", "review"}):
+            and feedback.get("comment") and feedback.get("head", head) == head
+            and feedback["kind"] in {"merge", "candidate", "review"}):
         task = load(Path(assignment["author_task"]).resolve(strict=True)) if assignment.get("author_task") else {}
         key = [repository, number, head, "failed", feedback["id"]]
         if task and task.get("mode", "automatic") == "automatic":
@@ -66,8 +67,14 @@ def dispatch(config, directory, assignment, result, *, route=None):
             route = route or assignment["author_route"]
             if task and route["thread_id"] != task["route"]["thread_id"]:
                 raise ValueError("Manual author's route does not match registered UUID")
-            outcome["author"] = deliver(directory, route, key,
-                                        f"PR #{number} 本轮合并失败。反馈 {feedback['comment']}。仅记录这条通知。")
+            message = f"PR #{number} 本轮合并失败。反馈 {feedback['comment']}。"
+            if config.get("mode") == "production-duty":
+                message += (f"请原作者在既有独立工作树修复准确头 `{head}`，按反馈补回归，"
+                            "使用原冻结检查器验证，并沿原分支提交。保留日用客户端。"
+                            "推送后保留准确头的交付报告和原作者会话，供值班员安排独立复审。")
+            else:
+                message += "仅记录这条通知。"
+            outcome["author"] = deliver(directory, route, key, message)
         else:
             outcome["author"] = {"state": "unbound"}
         if config.get("duty_route"):

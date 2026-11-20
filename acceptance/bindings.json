@@ -2212,6 +2212,8 @@
       "acceptance.test_pr_duty_claims.PRDutyClaimTests.test_full_discovery_claims_one_and_keeps_other_ready_prs_visible",
       "acceptance.test_pr_duty_claims.PRDutyClaimTests.test_duplicate_or_failed_pagination_is_never_empty_or_a_partial_claim",
       "acceptance.test_pr_duty_claims.PRDutyClaimTests.test_review_reservation_is_idempotent_and_new_head_keeps_old_receipt",
+      "acceptance.test_pr_duty_claims.PRDutyClaimTests.test_first_claim_rechecks_the_label_before_it_writes",
+      "acceptance.test_pr_duty_claims.PRDutyClaimTests.test_completed_pr_remains_visible_while_the_existing_receipt_is_unconfirmed",
       "acceptance.test_pr_duty_claims.PRDutyClaimTests.test_recombination_reuses_queue_identity_and_preserves_old_candidate",
       "acceptance.test_pr_duty_claims.PRDutyClaimTests.test_follow_retains_exact_ci_run_without_using_stale_author_evidence",
       "acceptance.test_pr_task_github.PRTaskGithubTests.test_revalidated_same_head_feedback_resolves_only_its_exact_original_body",

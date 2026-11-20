@@ -263,11 +263,12 @@ def advance(config, checker, directory, assignment, observed, registered_queue=N
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=("scan", "tick", "pause", "resume", "status",
-                                            "reserve-review", "record-review"))
+                                            "reserve-review", "begin-review", "record-review", "recover-review"))
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--pr", type=int)
     parser.add_argument("--head")
     parser.add_argument("--review-task")
+    parser.add_argument("--recovery-proof")
     arguments = parser.parse_args()
     try:
         config, checker, directory = configuration(arguments.config, arguments.command)
@@ -282,7 +283,7 @@ def main():
                 report = run(sys.modules[__name__], config, checker, directory, arguments)
                 print(json.dumps(report, ensure_ascii=False))
                 return 2 if report["result"] == "infrastructure-blocked" else 0
-            if arguments.command in {"reserve-review", "record-review"} and not paused:
+            if arguments.command not in {"scan", "tick", "pause", "resume", "status"} and not paused:
                 raise ValueError("Review coordination requires production duty mode")
             if arguments.command not in {"scan", "tick"} or paused:
                 print(json.dumps({"result": "paused" if paused else "active"}))

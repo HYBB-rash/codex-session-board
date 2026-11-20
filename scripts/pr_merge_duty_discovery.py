@@ -69,6 +69,16 @@ def claim_one(path, data, pending):
     return claim
 
 
+def confirm_ready(repository, entry):
+    pull = forge.api(f"repos/{repository}/pulls/{entry['pr']}")
+    current = describe(pull)
+    if (current["pr"] == entry["pr"] and pull["state"] == "open" and ready(pull, repository)
+            and current["target_repository"] == repository and current["target_branch"] == "main"
+            and SHA.fullmatch(current["head"])):
+        return current
+    return None
+
+
 def refresh_claim(claim, pull):
     entry = describe(pull)
     fields = ("source_repository", "source_branch", "target_repository", "target_branch")
@@ -104,7 +114,8 @@ def review_state(directory, claim, author=None, coordinator=None):
         return {"result": "review-passed" if receipt["passed"] else "review-failed",
                 "review": str(path), "reviewer": receipt["reviewer"], "request": request}
     key = digest([claim["repository"].lower(), claim["pr"], head, "independent-review"])
-    return {"result": "waiting-review" if request else "review-required", "review": str(path),
+    waiting = request and (request.get("dispatch_started_at") or request.get("task"))
+    return {"result": "waiting-review" if waiting else "review-required", "review": str(path),
             "request": request, "request_id": key}
 
 
@@ -113,19 +124,32 @@ def review_command(directory, path, data, arguments, coordinator):
     if not claim or arguments.head not in claim["heads"]:
         raise ValueError("Review command must identify a recorded full PR head")
     head = claim["heads"][arguments.head]
-    if arguments.command == "reserve-review":
+    if arguments.command in {"reserve-review", "begin-review"}:
         pull = forge.api(f"repos/{claim['repository']}/pulls/{claim['pr']}")
         if refresh_claim(claim, pull) or claim["head"] != arguments.head:
             raise ValueError("Claim changed before review dispatch; refresh the round")
         state = review_state(directory, claim, (claim.get("author") or {}).get("thread_id"), coordinator)
-        if state["result"] == "review-required":
-            request = {"id": state["request_id"], "reserved_at": now()}
-            head["review"] = request
-            save(path, data)
-            return {**state, "result": "dispatch-review", "request": request}
+        if state["result"] != "review-required":
+            return state
+        request = head.setdefault("review", {"id": state["request_id"], "reserved_at": now()})
+        if arguments.command == "begin-review":
+            if not state["request"]:
+                raise ValueError("Reserve the review before beginning dispatch")
+            request["dispatch_started_at"] = now()
+        save(path, data)
+        return {**state, "result": "dispatch-review" if arguments.command == "begin-review" else "review-reserved",
+                "request": request}
+    if arguments.command == "recover-review":
+        request = head.get("review")
+        if not request or request.get("task") or not request.get("dispatch_started_at") or not arguments.recovery_proof:
+            raise ValueError("Recovery requires a verified unsent request without a known reviewer")
+        request.setdefault("recoveries", []).append({"at": now(), "proof": arguments.recovery_proof,
+                                                    "previous_start": request.pop("dispatch_started_at")})
+        save(path, data)
+        return {"result": "review-reserved", "request": request}
         return state
     request = head.get("review")
-    if (not request or not arguments.review_task
+    if (not request or not request.get("dispatch_started_at") or not arguments.review_task
             or arguments.review_task in {coordinator, (claim.get("author") or {}).get("thread_id")}):
         raise ValueError("Retain the reserved request and record its actual reviewer task")
     if request.get("task") not in {None, arguments.review_task}:

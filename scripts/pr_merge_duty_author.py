@@ -68,5 +68,5 @@ def review_feedback(claim, review, report):
         [claim["repository"], claim["pr"], claim["head"], "review-failed"])))
     posted = feedback(claim["repository"], claim["pr"], claim["head"], key, receipt["detail"])
     return {**report, "result": "needs-author", "feedback": {
-        "id": key, "comment": posted["url"], "kind": "review",
+        "id": key, "comment": posted["url"], "kind": "review", "head": claim["head"],
     }}

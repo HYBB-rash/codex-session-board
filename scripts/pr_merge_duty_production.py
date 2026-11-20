@@ -120,7 +120,8 @@ def follow(duty, config, checker, directory, path, data, claim, main):
     if snapshot["head"] != head or snapshot["state"] != "open" or snapshot["draft"]:
         raise forge.ForgeError("Claim changed during readback; repeat with a fresh snapshot")
     if snapshot["items"]:
-        result = {**report, "result": "needs-author", "feedback": (old_item or {}).get("feedback"),
+        previous = (old_item or {}).get("feedback") or {}
+        result = {**report, "result": "needs-author", "feedback": previous if previous.get("head") == head else None,
                   "github_feedback": snapshot["items"]}
         result["delivery"] = author_result(config, directory, claim, author, result)
         return result
@@ -138,7 +139,8 @@ def worklist(data, pulls):
     return sorted((claim for claim in data["claims"].values()
                    if claim["status"] not in discovery.TERMINAL or claim["pr"] in pulls
                    or (claim.get("last_result", {}).get("delivery", {}).get("author", {}).get("state")
-                       in {"pending", "waiting_idle", "archived", "sending", "unknown", "unbound"})),
+                       in {"pending", "waiting_idle", "archived", "sending", "sent", "delivery_unknown",
+                           "rejected", "author_failed", "unbound"})),
                   key=lambda claim: claim["pr"])
 
 
@@ -146,7 +148,7 @@ def run(duty, config, checker, directory, arguments):
     repository = config["repository"]
     identity = {"repository": repository, "source": config["checker_head"], "at": now()}
     path, data = discovery.load_claims(directory, repository)
-    if arguments.command in {"reserve-review", "record-review"}:
+    if arguments.command in {"reserve-review", "begin-review", "record-review", "recover-review"}:
         return {**identity, **discovery.review_command(directory, path, data, arguments,
                                                        config.get("coordinator_thread"))}
     report = directory / ("last-scan.json" if arguments.command == "scan" else "last-tick.json")
@@ -161,8 +163,12 @@ def run(duty, config, checker, directory, arguments):
         current = {**identity, "main": main, "pending": pending,
                    "active": [{key: entry[key] for key in ("pr", "head", "status")} for entry in active]}
         if arguments.command == "tick" and (pending or active):
-            claim = (None if active and data.get("prefer_existing")
-                     else discovery.claim_one(path, data, pending))
+            claim = None
+            if pending and (not active or not data.get("prefer_existing")):
+                confirmed = discovery.confirm_ready(repository, pending[0])
+                if confirmed is None:
+                    raise forge.ForgeError("PR readiness changed before first claim; refresh the full query")
+                claim = discovery.claim_one(path, data, [confirmed])
             if claim:
                 current["claimed"] = {key: claim[key] for key in ("pr", "head", "source_branch")}
                 current["pending"] = pending[1:]
