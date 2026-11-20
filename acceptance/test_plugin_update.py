@@ -18,6 +18,7 @@ import websocket
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import board_update_job
 import package_plugin
+import plugin_publication
 import reload_plugins
 import update_plugin
 import verify_plugin_upgrade
@@ -69,46 +70,55 @@ class PluginUpdateTests(unittest.TestCase):
 
     def run_command(self, arguments, **kwargs):
         self.commands.append(arguments)
+        environment = kwargs.get("env") or os.environ
+        home = Path(environment["CODEX_HOME"])
+        market = home / ".tmp/marketplaces" / update_plugin.MARKET
         if arguments[:2] == ["git", "checkout"]:
             shutil.copytree(self.source, kwargs["cwd"], dirs_exist_ok=True)
         if arguments[:4] == ["codex", "plugin", "marketplace", "add"]:
-            shutil.copytree(self.source, self.market)
-            (self.market / ".git").mkdir()
+            shutil.copytree(self.source, market)
+            (market / ".git").mkdir()
             reference = arguments[arguments.index("--ref") + 1] if "--ref" in arguments else None
-            self.write_market_registration(reference, source=arguments[4])
+            self.write_market_registration(reference, source=arguments[4], home=home)
         if arguments[:4] == ["codex", "plugin", "marketplace", "remove"]:
             shutil.rmtree(self.market)
             self.write_market_registration(None)
         if arguments[:3] == ["codex", "plugin", "add"]:
-            self.pending_at_install = json.loads((self.state / "pending.json").read_text())
-            cache = self.home / "plugins/cache" / update_plugin.MARKET / "codex-session-board" / self.version
-            shutil.copytree(self.source, cache, dirs_exist_ok=True)
+            pending = self.state / "pending.json"
+            self.pending_at_install = json.loads(pending.read_text()) if pending.exists() else None
+            cache = update_plugin.cache_directory(self.version, home=home)
+            shutil.rmtree(cache.parent, ignore_errors=True)
+            shutil.copytree(self.source, cache)
             (cache / ".codex-marketplace-install.json").write_text(json.dumps({
                 "source_type": "git", "revision": self.installed_revision}))
-            environment = kwargs.get("env") or os.environ
-            config = Path(environment["CODEX_HOME"]) / "config.toml"
+            config = home / "config.toml"
             document = update_plugin.read_config(config)
             document.setdefault("plugins", {}).setdefault(update_plugin.PLUGIN_ID, {})["enabled"] = True
             config.write_text(update_plugin.tomlkit.dumps(document))
         return SimpleNamespace(returncode=0)
 
-    def write_market_registration(self, reference, source="mock-repository"):
-        path = self.home / "config.toml"
+    def write_market_registration(self, reference, source="mock-repository", *, home=None, kind="git"):
+        path = (home or self.home) / "config.toml"
         document = update_plugin.tomlkit.parse(update_plugin.config_text(path))
         markets = document.setdefault("marketplaces", {})
-        if reference is None:
+        if reference is None and kind != "local":
             markets.pop(update_plugin.MARKET, None)
         else:
-            markets[update_plugin.MARKET] = {"source": source, "source_type": "git", "ref": reference}
+            markets[update_plugin.MARKET] = {"source": source, "source_type": kind, **({"ref": reference} if reference else {})}
         path.write_text(update_plugin.tomlkit.dumps(document))
 
-    def command(self, arguments, root=None):
+    def command(self, arguments, root=None, *, home=None):
         self.commands.append(arguments)
         if arguments[:4] == ["codex", "plugin", "marketplace", "list"]:
-            settings = update_plugin.market_settings(update_plugin.read_config(self.home / "config.toml"))
-            markets = [{"name": update_plugin.MARKET, "root": str(self.market),
-                        "marketplaceSource": {"sourceType": "git", "source": settings["source"]}}] if settings else []
-            return json.dumps({"marketplaces": markets if self.market.exists() else []})
+            home = home or self.home
+            settings = update_plugin.market_settings(update_plugin.read_config(home / "config.toml"))
+            markets = []
+            if settings:
+                market = home / ".tmp/marketplaces" / update_plugin.MARKET if settings["source_type"] == "git" else Path(settings["source"])
+                if market.is_dir():
+                    markets.append({"name": update_plugin.MARKET, "root": str(market),
+                                    "marketplaceSource": {"sourceType": settings["source_type"], "source": settings["source"]}})
+            return json.dumps({"marketplaces": markets})
         if arguments == ["git", "rev-parse", "HEAD"]:
             return self.revision
         if arguments[-1] == "--version":
@@ -201,7 +211,7 @@ class PluginUpdateTests(unittest.TestCase):
         responses = [json.dumps(item) for item in [
             {"method": "notification"}, {"id": 1, "result": {}},
             {"id": 0, "result": {"thread": {"status": {"type": "idle"}}}},
-            {"id": 2, "result": {}}, {"id": 3, "result": {}},
+            {"id": 3, "result": {}},
             {"id": 4, "result": {"data": [], "nextCursor": "next"}},
             {"id": 5, "result": {"data": [{
                 "pluginId": "codex-session-board@session-board-rust",
@@ -209,10 +219,10 @@ class PluginUpdateTests(unittest.TestCase):
                 "tools": {"board_view": {}}}], "nextCursor": None}},
             {"id": 6, "result": {"content": [], "structuredContent": {"sessions": []}}},
         ]]
-        connection.recv.side_effect = responses if reload_error is None else responses[:4] + [reload_error]
+        connection.recv.side_effect = responses if reload_error is None else responses[:3] + [reload_error]
         return connection
 
-    def test_full_update_installs_marketplace_file_on_desktop_before_reload(self):
+    def test_full_update_reloads_existing_native_install_without_install_rpc(self):
         connection = self.desktop_connection()
         with self.isolated(), patch.object(reload_plugins, "desktop_socket", return_value=self.root / "desktop.sock"), \
              patch.object(reload_plugins.socket, "socket") as transport, \
@@ -223,10 +233,9 @@ class PluginUpdateTests(unittest.TestCase):
         self.assertEqual(result["phase"], "desktop_loaded")
         calls = [json.loads(call.args[0]) for call in connection.send.call_args_list]
         self.assertEqual([call["method"] for call in calls], ["initialize", "initialized",
-            "thread/read", "plugin/install", "config/mcpServer/reload", "mcpServerStatus/list",
+            "thread/read", "config/mcpServer/reload", "mcpServerStatus/list",
             "mcpServerStatus/list", "mcpServer/tool/call"])
-        self.assertEqual(calls[3]["params"], {"marketplacePath": str(self.market / ".agents/plugins/marketplace.json"),
-                                              "pluginName": "codex-session-board"})
+        self.assertTrue((self.market / ".agents/plugins/marketplace.json").is_file())
         transport.return_value.__enter__.return_value.connect.assert_called_once_with(str(self.root / "desktop.sock"))
         connection.close.assert_called_once()
 
@@ -300,10 +309,10 @@ class PluginUpdateTests(unittest.TestCase):
 
     def test_native_market_revision_must_match_even_without_cache_metadata(self):
         original = self.command
-        def command(arguments, root=None):
-            if arguments == ["git", "rev-parse", "HEAD"] and root == self.market:
+        def command(arguments, root=None, *, home=None):
+            if arguments == ["git", "rev-parse", "HEAD"] and root is not None and root.name == update_plugin.MARKET:
                 return "wrong-revision"
-            return original(arguments, root)
+            return original(arguments, root, home=home)
         self.command = command
         with self.isolated(), self.assertRaisesRegex(RuntimeError, "未确认本次候选市场的来源和提交"):
             self.update()
@@ -315,7 +324,7 @@ class PluginUpdateTests(unittest.TestCase):
         def run(arguments, **kwargs):
             result = original(arguments, **kwargs)
             if arguments[:3] == ["codex", "plugin", "add"]:
-                cache = self.home / "plugins/cache" / update_plugin.MARKET / "codex-session-board" / self.version
+                cache = update_plugin.cache_directory(self.version, home=Path(kwargs["env"]["CODEX_HOME"]))
                 (cache / "bin/codex-session-board").write_text("corrupted")
             return result
         self.run_command = run
@@ -359,7 +368,7 @@ class PluginUpdateTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "已恢复上一个插件市场及缓存"):
                 self.update()
             self.assertEqual(update_plugin.cached_package("codex", self.version, self.revision), self.manifest)
-        self.assertEqual([arguments[-1] for arguments in attempts], [self.revision, "baseline"])
+        self.assertEqual([arguments[-1] for arguments in attempts], [self.revision])
         self.assertEqual(tomllib.loads((self.home / "config.toml").read_text())["marketplaces"]
                          [update_plugin.MARKET]["ref"], "baseline")
         self.assertEqual((self.market / "source-only").read_text(), "default branch, no release manifest")
@@ -379,9 +388,10 @@ class PluginUpdateTests(unittest.TestCase):
 
         def run(arguments, **kwargs):
             if arguments[:3] == ["codex", "plugin", "add"]:
-                shutil.rmtree(old)
                 result = original(arguments, **kwargs)
-                (cache / "RELEASE.json").write_text("null")
+                staged = update_plugin.cache_directory(self.version, home=Path(kwargs["env"]["CODEX_HOME"]))
+                self.assertFalse(staged.with_name(old.name).exists())
+                (staged / "RELEASE.json").write_text("null")
                 return result
             return original(arguments, **kwargs)
 
@@ -400,61 +410,148 @@ class PluginUpdateTests(unittest.TestCase):
         shutil.rmtree(self.market)
         self.write_market_registration(None)
         expected = package_plugin.hashes(cache)
-        with self.isolated(), \
-             patch.object(update_plugin, "cached_package", side_effect=TypeError("unexpected verifier failure")), \
-             patch.object(update_plugin, "require_enablement", side_effect=RuntimeError("enablement conflict")), \
-             self.assertRaisesRegex(RuntimeError, "unexpected verifier failure.*enablement conflict.*备份保留在"):
+        verify = update_plugin.verify_candidate_cache
+
+        def fail(codex, manifest, revision, *, home=None):
+            verify(codex, manifest, revision, home=home)
+            if home is None:
+                (cache / "concurrent-file").write_text("external cache modification")
+                raise TypeError("unexpected verifier failure")
+
+        with self.isolated(), patch.object(update_plugin, "verify_candidate_cache", side_effect=fail), \
+             self.assertRaisesRegex(RuntimeError, "unexpected verifier failure.*插件缓存冲突.*备份保留在"):
             self.update(reload=False)
         backup, = cache.parent.parent.glob(".board-rollback-*")
-        self.assertEqual(package_plugin.hashes(backup / "cache" / self.version), expected)
-        self.assertEqual(package_plugin.hashes(cache), expected)
-        self.assertTrue((backup / "failed-cache" / self.version).is_dir())
+        saved = update_plugin.cache_directory(self.version, home=backup / "native")
+        self.assertEqual(package_plugin.hashes(saved), expected)
+        self.assertEqual((cache / "concurrent-file").read_text(), "external cache modification")
         self.assertEqual(json.loads((self.state / "current.json").read_text()), previous)
 
     def test_rollback_does_not_replace_live_config_after_a_late_write(self):
         config = self.home / "config.toml"
         self.home.mkdir()
         config.write_text(f'[plugins."{update_plugin.PLUGIN_ID}"]\nenabled = false\n')
-        read = update_plugin.read_config
-        checks = []
-        replace = os.replace
+        verify = update_plugin.verify_candidate_cache
+        atomic_rename = plugin_publication.atomic_rename
 
-        def write_after_read(path):
-            snapshot = read(path)
-            checks.append(snapshot["plugins"][update_plugin.PLUGIN_ID]["enabled"])
-            with path.open("a") as writer:
-                writer.write("\n[history]\npersistence = 'none'\n")
-            return snapshot
+        def fail(codex, manifest, revision, *, home=None):
+            verify(codex, manifest, revision, home=home)
+            if home is None:
+                raise ValueError("cache check failed")
 
-        def prevent_config_replacement(source, destination):
-            self.assertNotEqual(destination, config)
-            replace(source, destination)
+        def save_history(source, destination, *, exchange):
+            if source == config:
+                with config.open("a") as writer:
+                    writer.write("\n[history]\npersistence = 'none'\n")
+            return atomic_rename(source, destination, exchange=exchange)
 
-        def check_enablement(*args):
-            with patch.object(update_plugin, "read_config", side_effect=write_after_read):
-                return check(*args)
-
-        check = update_plugin.require_enablement
-        with self.isolated(), patch.object(update_plugin.os, "replace", side_effect=prevent_config_replacement), \
-             patch.object(update_plugin, "cached_package", side_effect=ValueError("cache check failed")), \
-             patch.object(update_plugin, "require_enablement", side_effect=check_enablement), \
-             self.assertRaisesRegex(RuntimeError, "未留下市场注册"):
+        with self.isolated(), patch.object(update_plugin, "verify_candidate_cache", side_effect=fail), \
+             patch.object(plugin_publication, "atomic_rename", side_effect=save_history), \
+             self.assertRaisesRegex(RuntimeError, "cache check failed.*配置冲突.*备份保留在"):
             self.update(reload=False)
-        self.assertEqual(checks, [False])
-        self.assertFalse(update_plugin.plugin_enabled(read(config)))
-        self.assertEqual(read(config).unwrap()["history"], {"persistence": "none"})
+        document = update_plugin.read_config(config)
+        self.assertFalse(update_plugin.plugin_enabled(document))
+        self.assertEqual(document.unwrap()["history"], {"persistence": "none"})
 
     def test_marketplace_timeout_preserves_registration_from_another_writer(self):
-        foreign = {"name": update_plugin.MARKET, "root": str(self.root / "foreign"),
-                   "marketplaceSource": {"sourceType": "local", "source": str(self.root / "foreign")}}
-        registrations = [None, foreign]
-        with self.isolated(), patch.object(update_plugin, "market_registration", side_effect=registrations), \
-             patch.object(update_plugin, "add_market", side_effect=subprocess.TimeoutExpired("marketplace add", 120)), \
-             patch.object(update_plugin, "remove_market") as remove, \
-             self.assertRaisesRegex(RuntimeError, "市场注册冲突.*已保留当前来源.*备份保留在"):
-            self.update(reload=False)
-        remove.assert_not_called()
+        original = self.run_command
+
+        def run(arguments, **kwargs):
+            if arguments[:4] == ["codex", "plugin", "marketplace", "add"]:
+                self.register_foreign()
+                raise subprocess.TimeoutExpired("marketplace add", 120)
+            return original(arguments, **kwargs)
+
+        self.run_command = run
+        with self.isolated():
+            with self.assertRaisesRegex(RuntimeError, "市场注册冲突.*已保留当前来源.*备份保留在"):
+                self.update(reload=False)
+            self.assert_foreign_market()
         self.assertFalse((self.state / "current.json").exists())
+
+    def register_foreign(self):
+        foreign = self.root / "foreign"
+        foreign.mkdir(exist_ok=True)
+        self.write_market_registration(None, source=str(foreign), kind="local")
+
+    def assert_foreign_market(self):
+        registration = update_plugin.market_registration("codex")
+        self.assertEqual(registration["marketplaceSource"], {"sourceType": "local", "source": str(self.root / "foreign")})
+
+    def test_late_market_registration_survives_update_and_rollback(self):
+        config = self.home / "config.toml"
+        config.parent.mkdir()
+        config.write_text("# user settings\n")
+        atomic_rename = plugin_publication.atomic_rename
+
+        def register_during_exchange(source, destination, *, exchange):
+            if destination == config:
+                self.register_foreign()
+            return atomic_rename(source, destination, exchange=exchange)
+
+        with self.isolated(), patch.object(plugin_publication, "atomic_rename", side_effect=register_during_exchange):
+            with self.assertRaisesRegex(RuntimeError, "配置冲突.*市场注册冲突.*备份保留在"):
+                self.update(reload=False)
+            self.assert_foreign_market()
+            self.assertFalse(self.market.exists())
+            self.assertFalse(update_plugin.cache_directory().exists())
+
+    def test_rollback_preserves_foreign_installation_and_enabled_setting(self):
+        cache = update_plugin.cache_directory(self.version)
+        verify = update_plugin.verify_candidate_cache
+
+        def fail(codex, manifest, revision, *, home=None):
+            verify(codex, manifest, revision, home=home)
+            if home is None:
+                self.register_foreign()
+                (cache / "foreign-file").write_text("external installation")
+                raise ValueError("failed final candidate check")
+
+        with self.isolated(), patch.object(update_plugin, "verify_candidate_cache", side_effect=fail):
+            with self.assertRaisesRegex(RuntimeError, "failed final candidate check.*市场注册冲突.*备份保留在"):
+                self.update(reload=False)
+            self.assert_foreign_market()
+        self.assertEqual((cache / "foreign-file").read_text(), "external installation")
+        self.assertTrue(update_plugin.plugin_enabled(update_plugin.read_config(self.home / "config.toml")))
+
+    def test_registered_only_final_validation_failure_restores_absent_enabled(self):
+        with self.isolated():
+            self.update(reload=False)
+        config = self.home / "config.toml"
+        current = update_plugin.read_config(config)
+        current.pop("plugins")
+        config.write_text(update_plugin.tomlkit.dumps(current))
+        shutil.rmtree(update_plugin.cache_directory())
+        verify = update_plugin.verify_candidate_cache
+
+        def fail(codex, manifest, revision, *, home=None):
+            verify(codex, manifest, revision, home=home)
+            if home is None:
+                raise ValueError("failed final candidate check")
+
+        with self.isolated(), patch.object(update_plugin, "verify_candidate_cache", side_effect=fail), \
+             self.assertRaisesRegex(RuntimeError, "failed final candidate check.*已恢复上一个插件市场"):
+            self.update(reload=False)
+        self.assertIsNone(update_plugin.plugin_enabled(update_plugin.read_config(config)))
+        self.assertFalse(update_plugin.cache_directory().exists())
+
+    def test_concurrent_disable_at_config_exchange_is_not_overwritten(self):
+        config = self.home / "config.toml"
+        config.parent.mkdir()
+        config.write_text("# user settings\n")
+        atomic_rename = plugin_publication.atomic_rename
+
+        def save_disabled(source, destination, *, exchange):
+            if destination == config:
+                with config.open("a") as writer:
+                    writer.write(f'\n[plugins."{update_plugin.PLUGIN_ID}"]\nenabled = false\n')
+            return atomic_rename(source, destination, exchange=exchange)
+
+        with self.isolated(), patch.object(plugin_publication, "atomic_rename", side_effect=save_disabled), \
+             self.assertRaisesRegex(RuntimeError, "配置冲突.*插件启用状态冲突.*备份保留在"):
+            self.update(reload=False)
+        self.assertFalse(update_plugin.plugin_enabled(update_plugin.read_config(config)))
+        self.assertFalse(update_plugin.cache_directory().exists())
 
     def test_native_recovery_verifier_rejects_an_install_that_did_not_prune_old_cache(self):
         old_cache = update_plugin.cache_directory("old-version")
@@ -473,7 +570,7 @@ class PluginUpdateTests(unittest.TestCase):
 
         with patch.object(update_plugin, "remove_market"), \
              patch.object(verify_plugin_upgrade, "market_registration", return_value=None), \
-             patch.object(verify_plugin_upgrade, "cached_package", side_effect=lambda *args:
+             patch.object(verify_plugin_upgrade, "cached_package", side_effect=lambda *args, **kwargs:
                           package_plugin.verify_package(candidate)), \
              patch.object(verify_plugin_upgrade, "app_server") as host, \
              self.assertRaisesRegex(ValueError, "candidate did not replace the old cache"):
@@ -491,73 +588,41 @@ class PluginUpdateTests(unittest.TestCase):
         config = self.home / "config.toml"
         config.parent.mkdir(parents=True, exist_ok=True)
         multiline_history = 'history = {\n persistence = "none",\n}\n'
-        config.write_text('# user comment\n' + multiline_history + '[analytics]\nenabled = false\n')
+        config.write_text('# user comment\nmodel_instructions_file = "instructions.md"\n'
+                          + multiline_history + '[analytics]\nenabled = false\n')
+        (self.home / "instructions.md").write_text("Test instructions")
         if initial_enabled is not None:
             if not cached_source:
                 shutil.copytree(legacy, old_cache)
             with config.open("a") as settings:
                 settings.write(f"\n[{plugin_key}]\nenabled = {str(initial_enabled).lower()}\n")
-        initial = update_plugin.read_config(config).unwrap()
-        previous = {"name": update_plugin.MARKET, "root": str(legacy),
-                    "marketplaceSource": {"sourceType": "local", "source": str(legacy)}}
-        registration = previous
-        candidate = {"name": update_plugin.MARKET, "root": str(self.market),
-                     "marketplaceSource": {"sourceType": "git", "source": "mock-repository"}}
-
-        def add_market(codex, repository, revision=None, checkout=None):
-            nonlocal registration
-            if checkout is not None and install_failure == "market":
-                raise subprocess.TimeoutExpired("marketplace add", 120)
-            if checkout is None:
-                self.assertTrue(Path(repository).is_dir())
-            registration = candidate if checkout is not None else previous
-            self.write_market_registration(revision)
-
-        def remove_market(codex):
-            nonlocal registration
-            registration = None
-            self.write_market_registration(None)
-
-        def add_plugin(codex, home=None):
-            self.assertIsNotNone(home)
-            shutil.rmtree(old_cache, ignore_errors=True)
-            private_config = home / "config.toml"
-            document = update_plugin.read_config(private_config)
-            document.setdefault("plugins", {}).setdefault(update_plugin.PLUGIN_ID, {})["enabled"] = True
-            private_config.write_text(update_plugin.tomlkit.dumps(document))
-            shutil.copytree(self.source, update_plugin.cache_directory(self.version))
-
-        with patch.object(update_plugin, "market_registration", side_effect=lambda codex: registration), \
-             patch.object(update_plugin, "add_market", side_effect=add_market), \
-             patch.object(update_plugin, "remove_market", side_effect=remove_market), \
-             patch.object(update_plugin, "add_plugin", side_effect=add_plugin) as install, \
-             patch.object(update_plugin, "command", return_value=self.revision):
+        self.write_market_registration(None, source=str(legacy), kind="local")
+        initial = config.read_bytes()
+        with self.isolated():
             if install_failure == "cache":
-                with patch.object(update_plugin, "cached_package", side_effect=ValueError("cache check failed")):
+                with patch.object(update_plugin, "verify_candidate_cache", side_effect=ValueError("cache check failed")):
                     with self.assertRaisesRegex(RuntimeError, "已恢复上一个插件市场"):
                         update_plugin.install_market("codex", "mock-repository", self.revision, self.source, self.manifest)
             elif install_failure == "market":
-                with self.assertRaisesRegex(RuntimeError, "已恢复上一个插件市场"):
+                with patch.object(update_plugin, "add_market", side_effect=subprocess.TimeoutExpired("marketplace add", 120)), \
+                     patch.object(update_plugin, "add_plugin") as install, \
+                     self.assertRaisesRegex(RuntimeError, "已恢复上一个插件市场"):
                     update_plugin.install_market("codex", "mock-repository", self.revision, self.source, self.manifest)
                 install.assert_not_called()
             else:
                 update_plugin.install_market("codex", "mock-repository", self.revision, self.source, self.manifest)
-        self.assertIn("# user comment\n" + multiline_history, config.read_text())
+            registration = update_plugin.market_registration("codex")["marketplaceSource"]
+        self.assertIn('model_instructions_file = "instructions.md"\n' + multiline_history, config.read_text())
         if install_failure:
-            self.assertEqual(registration, previous)
+            self.assertEqual(registration, {"sourceType": "local", "source": str(legacy)})
             self.assertFalse(update_plugin.cache_directory(self.version).exists())
             self.assertEqual(old_cache.exists(), initial_enabled is not None)
             if old_cache.exists():
                 self.assertEqual(package_plugin.hashes(old_cache), legacy_hashes)
-            current = update_plugin.read_config(config).unwrap()
-            for document in (initial, current):
-                for key in ("plugins", "marketplaces"):
-                    if not document.get(key):
-                        document.pop(key, None)
-            self.assertEqual(current, initial)
+            self.assertEqual(config.read_bytes(), initial)
         else:
-            self.assertEqual(registration, candidate)
-            self.assertEqual(update_plugin.verify_package(update_plugin.cache_directory(self.version)), self.manifest)
+            self.assertEqual(registration, {"sourceType": "git", "source": "mock-repository"})
+            self.assertEqual(update_plugin.verify_package(update_plugin.cache_directory(self.version), installed=True), self.manifest)
         shutil.rmtree(self.home)
 
     def test_legacy_local_market_without_release_manifest_can_upgrade_or_restore(self):
