@@ -4,8 +4,8 @@ from pathlib import Path
 from scripts.pr_task_state import ROOT, digest, git, locked, save
 
 
-def registry():
-    return Path(git(ROOT, "rev-parse", "--path-format=absolute", "--git-common-dir")) / "pr-queues"
+def registry(project=ROOT):
+    return Path(git(project, "rev-parse", "--path-format=absolute", "--git-common-dir")) / "pr-queues"
 
 
 def register(directory, state):
@@ -17,8 +17,9 @@ def register(directory, state):
             save(path, record)
 
 
-def locate(repository, number):
-    path = registry() / f"{digest([repository.lower(), number])}.json"
+def locate(repository, number, project=None):
+    folder = registry() if project is None else registry(project)
+    path = folder / f"{digest([repository.lower(), number])}.json"
     record = json.loads(path.read_text())
     matches = []
     for name in record["directories"]:

@@ -219,7 +219,7 @@ def observe_items(rpc, route, receipt):
             raise ValueError("Delivered turn is missing from the original thread")
 
 
-def send(rpc, route, request, receipt, output, prompt=None):
+def send(rpc, route, request, receipt, output, prompt=None, skill=None):
     if receipt["state"] not in {"pending", "waiting_idle", "rejected"}:
         observe(rpc, route, receipt)
         return
@@ -241,10 +241,13 @@ def send(rpc, route, request, receipt, output, prompt=None):
     receipt.setdefault("attempts", []).append({"at": now(), "state": "sending"})
     save(output, receipt)
     try:
+        inputs = [{"type": "text", "text": prompt, "text_elements": []}]
+        if skill is not None:
+            inputs.append({"type": "skill", **skill})
         response = rpc.request("turn/start", {
             "threadId": route["thread_id"], "clientUserMessageId": request["id"],
             "cwd": route["repair_cwd"],
-            "input": [{"type": "text", "text": prompt, "text_elements": []}],
+            "input": inputs,
         })
     except Rejected:
         receipt["state"] = "rejected"
