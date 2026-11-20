@@ -3,6 +3,7 @@ import io
 import json
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -99,7 +100,7 @@ class PluginUpdateTests(unittest.TestCase):
 
     def write_market_registration(self, reference, source="mock-repository", *, home=None, kind="git"):
         path = (home or self.home) / "config.toml"
-        document = update_plugin.tomlkit.parse(update_plugin.config_text(path))
+        document = update_plugin.read_config(path)
         markets = document.setdefault("marketplaces", {})
         if reference is None and kind != "local":
             markets.pop(update_plugin.MARKET, None)
@@ -552,6 +553,123 @@ class PluginUpdateTests(unittest.TestCase):
             self.update(reload=False)
         self.assertFalse(update_plugin.plugin_enabled(update_plugin.read_config(config)))
         self.assertFalse(update_plugin.cache_directory().exists())
+
+    def installation_snapshot(self):
+        return (
+            (self.home / "config.toml").read_bytes(),
+            plugin_publication.fingerprint(self.market),
+            plugin_publication.fingerprint(update_plugin.cache_directory()),
+            (self.state / "current.json").read_bytes(),
+        )
+
+    def test_sigint_after_each_exchange_restores_verified_installation(self):
+        with self.isolated():
+            self.update(reload=False)
+        snapshot = self.installation_snapshot()
+        atomic_rename = plugin_publication.atomic_rename
+        cache = update_plugin.cache_directory()
+        config = self.home / "config.toml"
+        for interrupted_path in (self.market, cache, config):
+            with self.subTest(path=interrupted_path):
+                def interrupt(source, destination, *, exchange):
+                    atomic_rename(source, destination, exchange=exchange)
+                    if destination == interrupted_path:
+                        signal.raise_signal(signal.SIGINT)
+
+                with self.isolated(), patch.object(plugin_publication, "atomic_rename", side_effect=interrupt), \
+                     self.assertRaisesRegex(RuntimeError, "SIGINT.*已恢复上一个插件市场及缓存"):
+                    self.update(reload=False)
+                self.assertEqual(self.installation_snapshot(), snapshot)
+                self.assertFalse(list(cache.parent.glob(".board-rollback-*")))
+                self.assertFalse(list(self.home.glob(".board-rollback-config-*")))
+
+    def test_write_to_displaced_config_is_detected_during_readback(self):
+        with self.isolated():
+            self.update(reload=False)
+        snapshot = self.installation_snapshot()
+        config = self.home / "config.toml"
+        external = snapshot[0].replace(b"enabled = true", b"enabled = false") + b'\n[history]\npersistence = "none"\n'
+        verify = update_plugin.verify_candidate_cache
+        with config.open("r+b") as writer:
+            def write_during_readback(codex, manifest, revision, *, home=None):
+                verify(codex, manifest, revision, home=home)
+                if home is None:
+                    writer.seek(0)
+                    writer.write(external)
+                    writer.truncate()
+                    writer.flush()
+                    os.fsync(writer.fileno())
+
+            with self.isolated(), patch.object(update_plugin, "verify_candidate_cache", side_effect=write_during_readback), \
+                 self.assertRaisesRegex(RuntimeError, "配置冲突.*插件启用状态冲突.*备份保留在"):
+                self.update(reload=False)
+        self.assertEqual(self.installation_snapshot(), (external, *snapshot[1:]))
+
+    def test_config_link_retargeting_restores_both_original_files(self):
+        with self.isolated():
+            self.update(reload=False)
+        snapshot = self.installation_snapshot()
+        config = self.home / "config.toml"
+        original, replacement = self.root / "first.toml", self.root / "second.toml"
+        config.rename(original)
+        replacement.write_bytes(original.read_bytes())
+        config.symlink_to(original)
+        atomic_rename = plugin_publication.atomic_rename
+
+        def retarget(source, destination, *, exchange):
+            if destination == original:
+                other_link = config.with_name("new-link")
+                other_link.symlink_to(replacement)
+                other_link.replace(config)
+            return atomic_rename(source, destination, exchange=exchange)
+
+        with self.isolated(), patch.object(plugin_publication, "atomic_rename", side_effect=retarget), \
+             self.assertRaisesRegex(RuntimeError, "配置文件路径已变化.*备份保留在"):
+            self.update(reload=False)
+        self.assertEqual(config.resolve(), replacement)
+        self.assertEqual(original.read_bytes(), snapshot[0])
+        self.assertEqual(self.installation_snapshot(), snapshot)
+
+    def test_linked_config_is_staged_beside_target_and_preserves_bom(self):
+        config = self.home / "config.toml"
+        self.home.mkdir()
+        external_config = self.root / "settings" / "actual.toml"
+        external_config.parent.mkdir()
+        original = b'\xef\xbb\xbf# settings\n[history]\npersistence = "none"\n'
+        external_config.write_bytes(original)
+        config.symlink_to(external_config)
+        atomic_rename = plugin_publication.atomic_rename
+        config_publications = []
+
+        def require_config_filesystem(source, destination, *, exchange):
+            if destination == external_config:
+                if source.parent.parent != external_config.parent:
+                    raise OSError("cross-device configuration swap")
+                config_publications.append(source)
+            atomic_rename(source, destination, exchange=exchange)
+
+        verify = update_plugin.verify_candidate_cache
+
+        def fail(codex, manifest, revision, *, home=None):
+            verify(codex, manifest, revision, home=home)
+            if home is None:
+                raise ValueError("failed final candidate check")
+
+        with self.isolated(), patch.object(plugin_publication, "atomic_rename", side_effect=require_config_filesystem):
+            with patch.object(update_plugin, "verify_candidate_cache", side_effect=fail), \
+                 self.assertRaisesRegex(RuntimeError, "failed final candidate check.*未留下市场注册"):
+                self.update(reload=False)
+            self.assertEqual(external_config.read_bytes(), original)
+            self.assertFalse(self.market.exists())
+            self.assertFalse(update_plugin.cache_directory().exists())
+            self.assertFalse((self.state / "current.json").exists())
+            result = self.update(reload=False)
+        self.assertEqual(config.resolve(), external_config)
+        self.assertTrue(external_config.read_bytes().startswith(original))
+        self.assertEqual(result["revision"], self.revision)
+        failed_staging, saved_original = config_publications
+        self.assertFalse(failed_staging.exists())
+        self.assertEqual(saved_original.read_bytes(), original)
 
     def test_native_recovery_verifier_rejects_an_install_that_did_not_prune_old_cache(self):
         old_cache = update_plugin.cache_directory("old-version")

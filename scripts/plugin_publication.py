@@ -1,6 +1,7 @@
 import ctypes
 import os
 import platform
+import signal
 
 
 class PublicationConflict(RuntimeError):
@@ -52,16 +53,18 @@ class Publication:
             raise self.conflict()
         self.live.parent.mkdir(parents=True, exist_ok=True)
         try:
-            atomic_rename(self.staged, self.live, exchange=self.prior is not None)
+            mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
+            try:
+                atomic_rename(self.staged, self.live, exchange=self.prior is not None)
+                self.applied = True
+            finally:
+                signal.pthread_sigmask(signal.SIG_SETMASK, mask)
         except (FileExistsError, FileNotFoundError) as error:
             raise self.conflict() from error
-        self.applied = True
-        if fingerprint(self.staged) != self.prior:
-            raise self.conflict()
         self.verify()
 
     def verify(self):
-        if fingerprint(self.live) != self.installed:
+        if fingerprint(self.live) != self.installed or fingerprint(self.staged) != self.prior:
             raise self.conflict()
 
     def restore(self):
@@ -81,3 +84,5 @@ class Publication:
                 if fingerprint(self.live) == saved:
                     atomic_rename(self.live, self.staged, exchange=True)
                 raise self.conflict()
+        if fingerprint(self.live) != saved:
+            raise self.conflict()

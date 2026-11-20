@@ -155,13 +155,17 @@ python3 scripts/verify_plugin_upgrade.py --previous "$PREVIOUS_REVISION" \
 失败返回非零并在出错步骤记录原因。`target_host_acceptance.status=pending` 表示仍缺日用环境验收。
 
 市场注册、原生安装和包校验先在临时 Codex home 完成。更新器发布已校验的 Git 检出和缓存，
-保留日用配置中的相对路径、现有插件启用值和其他设置。若发布后读回失败，更新器尝试还原自己发布的内容。
-宿主重载读回时继续使用已发布的包。
+保留日用配置中的相对路径、现有插件启用值、UTF-8 BOM 和其他设置。若配置是符号链接，
+配置交换在真实配置所在的文件系统完成。发布后核对活动配置的来源和提交。读回失败或收到 SIGINT 时，
+更新器尝试还原自己发布的内容。宿主重载读回时继续使用已发布的包。
 
 若回执报告冲突，先用 `codex plugin marketplace list --json` 核对来源，再在 Codex 插件管理中核对启用开关。
 若当前来源和开关符合预期，回到看板重试。若来源不符，先在 Codex 插件管理中选回所需来源。
-回执所列备用目录可能包含已交换的 `config.toml`、`native/.tmp/marketplaces/session-board-rust` 和
-`native/plugins/cache/session-board-rust/codex-session-board`。恢复前可用其中的配置和检出核对原来源及提交。
+回执所列 `.board-rollback-*` 可能包含 `native/.tmp/marketplaces/session-board-rust` 和
+`native/plugins/cache/session-board-rust/codex-session-board`，配置备份在真实配置旁的私有
+`.board-rollback-config-*/config.toml`。恢复前可用这些文件核对来源及提交。
+更新成功后也会保留交换下来的旧配置文件。若有进程仍持有旧文件描述符，后续写入保存在该备份中。
+关闭持有旧配置的进程并核对备份后，可清理已经确认无用的备份。
 
 用同一个 fixture 核对 GitHub URL 写法。每次运行使用独立 Codex home，并在报告中记录输入 URL。
 

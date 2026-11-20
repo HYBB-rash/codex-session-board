@@ -8,6 +8,7 @@ import shlex
 import stat
 import subprocess
 import tempfile
+from codecs import BOM_UTF8
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
@@ -95,11 +96,11 @@ def git_revision(root):
     return command(["git", "rev-parse", "HEAD"], root)
 
 
-def config_text(path):
+def config_bytes(path):
     try:
-        return path.read_bytes().decode("utf-8")
+        return path.read_bytes()
     except FileNotFoundError:
-        return ""
+        return b""
 
 
 def market_settings(document):
@@ -116,7 +117,7 @@ def owned_market(registered, settings, source, revision):
 
 
 def read_config(path):
-    return tomlkit.parse(config_text(path))
+    return tomlkit.parse(config_bytes(path).decode("utf-8-sig"))
 
 
 def plugin_enabled(config):
@@ -158,9 +159,15 @@ def require_original_config(current, original):
         raise PublicationConflict("插件启用状态冲突：已保留当前配置，请在 Codex 插件管理中核对开关")
 
 
+def require_config_target(logical, resolved):
+    if logical.resolve() != resolved:
+        raise PublicationConflict("Codex 配置冲突：配置文件路径已变化")
+
+
 def install_market(codex, repository, revision, checkout, manifest):
-    home = codex_home().resolve()
-    config = (home / "config.toml").resolve()
+    logical_config = codex_home() / "config.toml"
+    home = logical_config.parent.resolve()
+    config = logical_config.resolve()
     original = read_config(config)
     previous = market_registration(codex)
     market = home / ".tmp/marketplaces" / MARKET
@@ -178,22 +185,28 @@ def install_market(codex, repository, revision, checkout, manifest):
             raise PublicationConflict("市场注册冲突：现有 Git 市场路径与安装入口不一致")
     cache.parent.mkdir(parents=True, exist_ok=True)
     backup = Path(tempfile.mkdtemp(prefix=".board-rollback-", dir=cache.parent))
+    config_backup = None
     publications = []
-    keep_backup = False
+    verified = False
+    retain_displaced_config = False
+    source = market_source(repository)
     try:
         private = backup / "native"
         private.mkdir()
         try:
-            staged_market, settings = stage_candidate(
-                codex, market_source(repository), revision, checkout, manifest, cache, private, original)
+            staged_market, settings = stage_candidate(codex, source, revision, checkout, manifest, cache, private, original)
             prior_config = fingerprint(config)
-            current = read_config(config)
+            contents = config_bytes(config)
+            current = tomlkit.parse(contents.decode("utf-8-sig"))
             require_original_config(current, original)
             current.setdefault("marketplaces", {})[MARKET] = settings
             if plugin_enabled(original) is None:
                 current.setdefault("plugins", {}).setdefault(PLUGIN_ID, {})["enabled"] = True
-            staged_config = backup / "config.toml"
-            write_atomic(staged_config, tomlkit.dumps(current))
+            config.parent.mkdir(parents=True, exist_ok=True)
+            config_backup = Path(tempfile.mkdtemp(prefix=".board-rollback-config-", dir=config.parent))
+            staged_config = config_backup / "config.toml"
+            bom = "\ufeff" if contents.startswith(BOM_UTF8) else ""
+            write_atomic(staged_config, bom + tomlkit.dumps(current))
             if prior_config is not None:
                 staged_config.chmod(stat.S_IMODE(config.stat().st_mode))
             publications.extend([
@@ -201,43 +214,55 @@ def install_market(codex, repository, revision, checkout, manifest):
                 Publication(cache, cache_directory(home=private), old_cache, "插件缓存"),
                 Publication(config, staged_config, prior_config, "Codex 配置"),
             ])
-            if (home / "config.toml").resolve() != config:
-                raise PublicationConflict("Codex 配置冲突：配置文件路径已变化")
+            require_config_target(logical_config, config)
             for publication in publications:
                 publication.publish()
             verify_candidate_cache(codex, manifest, revision)
+            require_config_target(logical_config, config)
+            registered = market_registration(codex)
+            active_settings = market_settings(read_config(logical_config))
+            if not owned_market(registered, active_settings, source, revision):
+                raise PublicationConflict("市场注册冲突：实际配置中的候选来源或提交不匹配")
             for publication in publications:
                 publication.verify()
-        except Exception as error:
+            require_config_target(logical_config, config)
+            retain_displaced_config = prior_config is not None
+            verified = True
+        except (Exception, KeyboardInterrupt) as error:
             failures = []
             for publication in reversed(publications):
                 try:
                     publication.restore()
-                except Exception as restore_error:
+                except (Exception, KeyboardInterrupt) as restore_error:
                     failures.append(command_error(restore_error))
-                    if publication.live == config:
+                    if publication.live == config or isinstance(restore_error, KeyboardInterrupt):
                         break
             try:
-                require_original_config(read_config(config), original)
+                require_original_config(read_config(logical_config), original)
                 if fingerprint(market) != old_market or fingerprint(cache) != old_cache:
                     raise PublicationConflict("市场或插件缓存冲突：检测到其他安装写入")
-            except Exception as conflict:
+            except (Exception, KeyboardInterrupt) as conflict:
                 failures.append(command_error(conflict))
             if failures or isinstance(error, PublicationConflict):
-                keep_backup = True
                 detail = f"。{'；'.join(failures)}" if failures else ""
+                locations = f"{backup} 和 {config_backup}" if config_backup else str(backup)
                 raise RuntimeError(f"{command_error(error)}{detail}。"
-                                   f"备份保留在 {backup}。请按部署文档恢复。") from error
+                                   f"备份保留在 {locations}。请按部署文档恢复。") from error
+            verified = True
             recovery = "已恢复上一个插件市场" if previous else "本次未留下市场注册"
             if old_cache is not None:
                 recovery += "及缓存" if previous else "，已恢复原缓存"
             raise RuntimeError(f"{command_error(error)}。{recovery}。") from error
     finally:
-        if not keep_backup:
+        if verified:
             shutil.rmtree(backup)
+            if config_backup is not None and not retain_displaced_config:
+                shutil.rmtree(config_backup)
 
 
 def command_error(error):
+    if isinstance(error, KeyboardInterrupt):
+        return "更新中断（SIGINT）"
     stderr = getattr(error, "stderr", None)
     if isinstance(stderr, bytes):
         stderr = stderr.decode(errors="replace")
