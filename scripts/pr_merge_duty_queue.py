@@ -73,6 +73,37 @@ def replace_base(queue, state, candidate, main, item):
         save(queue / "queue.json", state)
 
 
+def recover_combination(queue, state, candidate):
+    item = state["items"][0]
+    prefix, head = state["prefix"], git(candidate, "rev-parse", "HEAD")
+    if item["status"] != "submitted" or item.get("feedback") or state.get("frozen_candidate"):
+        return
+    pending = (Path(git(candidate, "rev-parse", "--path-format=absolute", "--git-path", "MERGE_HEAD"))).exists()
+    if head == prefix and not pending:
+        return
+    with (queue / "queue.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if json.loads((queue / "queue.json").read_text()) != state:
+            raise ValueError("Queue changed before recovering the mechanical commit")
+        expected = git(candidate, "merge-tree", "--write-tree", prefix, item["head"])
+        if pending:
+            if (head != prefix or git(candidate, "rev-parse", "MERGE_HEAD") != item["head"]
+                    or git(candidate, "write-tree") != expected or git(candidate, "diff", "--name-only")
+                    or git(candidate, "ls-files", "--others", "--exclude-standard")):
+                raise ValueError("Interrupted index does not match the previously authorized mechanical merge")
+            pr_queue.commit(candidate, f"merge: queue PR {item['number']}")
+            head = git(candidate, "rev-parse", "HEAD")
+        pr_queue.clean(candidate, head)
+        if (git(candidate, "rev-list", "--parents", "-n", "1", head).split()
+                != [head, prefix, item["head"]] or git(candidate, "rev-parse", f"{head}^{{tree}}") != expected):
+            raise ValueError("Interrupted commit does not match the previously authorized mechanical merge")
+        state["prefix"] = head
+        item.update(status="accepted", ingress=head)
+        state["events"].append({"at": now(), "number": item["number"], "head": item["head"], "prefix": prefix,
+                                "ingress": head, "mechanical_recovery": True})
+        save(queue / "queue.json", state)
+
+
 def advance(duty, config, runtime, directory, claim, author, item, main, queue, state):
     checker = Path(state["checker_project"] if state else author["checker_project"]).resolve(strict=True)
     if git(checker, "status", "--porcelain", "--untracked-files=all"):
@@ -100,6 +131,7 @@ def advance(duty, config, runtime, directory, claim, author, item, main, queue, 
         replace_base(queue, state, candidate, main, item)
     elif state:
         candidate = Path(state["project"])
+        recover_combination(queue, state, candidate)
     else:
         candidate = new_candidate(duty, runtime, directory, claim, main)
         queue = directory / f"queue-pr-{claim['pr']}"

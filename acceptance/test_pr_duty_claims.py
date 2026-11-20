@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import subprocess
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
@@ -120,6 +121,16 @@ class PRDutyClaimTests(unittest.TestCase):
         entry["last_result"]["delivery"]["author"]["state"] = "delivered"
         self.assertEqual(duty.worklist({"claims": {"31": entry}}, {}), [])
 
+    def test_author_binding_only_accepts_route_updates_for_the_original_session(self):
+        claim = {}
+        original = {"route": {"thread_id": "author", "socket": "/original"}}
+        refreshed = {"route": {"thread_id": "author", "socket": "/replacement"}}
+        duty.bind_author(claim, original)
+        duty.bind_author(claim, refreshed)
+        with self.assertRaisesRegex(ValueError, "Original author session changed"):
+            duty.bind_author(claim, {"route": {"thread_id": "another-author"}})
+        self.assertEqual(claim["author"], refreshed["route"])
+
     def test_frozen_claim_scope_rejects_same_commit_on_a_different_branch(self):
         scope = {"source_repository": REPOSITORY, "source_branch": "codex/author", "target_branch": "main"}
         with patch.object(discovery.forge, "api", return_value=pull(31, branch="codex/other")):
@@ -157,6 +168,52 @@ class PRDutyClaimTests(unittest.TestCase):
         self.assertNotIn("frozen_candidate", saved)
         self.assertEqual(saved["items"][0]["status"], "submitted")
         self.assertEqual(saved["items"][0]["attempts"], ["prior failure"])
+
+    def test_recovery_reuses_only_the_expected_mechanical_merge(self):
+        for stage in ("staged", "committed", "modified"):
+            with self.subTest(stage=stage):
+                queue = self.directory / stage
+                queue.mkdir()
+
+                def git(*arguments):
+                    return subprocess.run(["git", "-C", str(queue), *arguments], check=True,
+                                          capture_output=True, text=True).stdout.strip()
+
+                git("init", "-b", "codex/candidate")
+                git("config", "user.name", "Fixture")
+                git("config", "user.email", "fixture@example.test")
+                git("config", "commit.gpgSign", "false")
+                git("commit", "--allow-empty", "-m", "main")
+                prefix = git("rev-parse", "HEAD")
+                git("switch", "-c", "author")
+                (queue / "feature").write_text("author version")
+                git("add", "feature")
+                git("commit", "-m", "feature")
+                head = git("rev-parse", "HEAD")
+                state = {"prefix": prefix, "events": [],
+                         "items": [{"number": 31, "head": head, "status": "submitted"}]}
+                state_dir = queue / ".git" / "queue-state"
+                state_dir.mkdir()
+                save(state_dir / "queue.json", state)
+                git("switch", "codex/candidate")
+                git("merge", "--no-ff", "--no-commit", head)
+                if stage == "modified":
+                    (queue / "feature").write_text("changed after the merge")
+                    git("add", "feature")
+                    with self.assertRaisesRegex(ValueError, "Interrupted index"):
+                        queues.recover_combination(state_dir, state, queue)
+                    self.assertEqual(json.loads((state_dir / "queue.json").read_text())["prefix"], prefix)
+                    continue
+                if stage == "committed":
+                    git("commit", "-m", "merge: queue PR 31")
+                with patch.object(queues.pr_queue.shutil, "which", return_value=None):
+                    queues.recover_combination(state_dir, state, queue)
+                recovered = json.loads((state_dir / "queue.json").read_text())
+                self.assertEqual(recovered["prefix"], git("rev-parse", "HEAD"))
+                self.assertEqual(git("rev-list", "--parents", "-n", "1", recovered["prefix"]).split()[1:],
+                                 [prefix, head])
+                self.assertEqual(recovered["items"][0]["status"], "accepted")
+                self.assertTrue(recovered["events"][0]["mechanical_recovery"])
 
     def test_follow_retains_exact_ci_run_without_using_stale_author_evidence(self):
         first = self.round([pull(31)])

@@ -43,6 +43,15 @@ def author_result(config, directory, claim, author, result):
         return {"author": {"state": "pending", "detail": str(error)}}
 
 
+def bind_author(claim, author):
+    if author:
+        route = author["route"]
+        if claim.get("author") and claim["author"]["thread_id"] != route["thread_id"]:
+            raise ValueError("Original author session changed; coordinator must verify the route")
+        claim["author"] = route
+    return author
+
+
 def follow(duty, config, checker, directory, path, data, claim, main):
     repository, number = claim["repository"], claim["pr"]
     pull = forge.api(f"repos/{repository}/pulls/{number}")
@@ -59,17 +68,15 @@ def follow(duty, config, checker, directory, path, data, claim, main):
         result = terminal(duty, config, directory, claim, main, queue, state, observed)
         if result["result"] == "merged":
             try:
-                author = authors.delivery(config, checker, claim, old_item)
+                author = bind_author(claim, authors.delivery(config, checker, claim, old_item))
                 result["delivery"] = author_result(config, directory, claim, author, result)
             except (ValueError, OSError, KeyError) as error:
                 result["delivery"] = {"author": {"state": "pending", "detail": str(error)}}
         return result
 
     head = claim["head"]
-    author = authors.delivery(config, checker, claim, old_item)
+    author = bind_author(claim, authors.delivery(config, checker, claim, old_item))
     author_id = author["route"]["thread_id"] if author else None
-    if author:
-        claim["author"] = author["route"]
     receipt = discovery.review_path(directory, number, head)
     if old_item and old_item["head"] == head and not receipt.exists():
         original = Path(old_item["review"])
