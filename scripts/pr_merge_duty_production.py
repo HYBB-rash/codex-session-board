@@ -189,5 +189,7 @@ def run(duty, config, checker, directory, arguments):
     except (forge.ForgeError, KeyError, TypeError, TimeoutError, subprocess.SubprocessError) as error:
         current = {**identity, "result": "infrastructure-blocked", "detail": str(error),
                    "retry_after": getattr(error, "retry_after", 60)}
+    if current["result"] == "infrastructure-blocked":
+        save(directory / "last-error.json", current)
     save(report, current)
     return current

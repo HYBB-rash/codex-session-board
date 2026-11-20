@@ -99,6 +99,7 @@ def review_state(directory, claim, author=None, coordinator=None):
     receipt = json.loads(path.read_text()) if path.exists() else None
     if (receipt and receipt.get("head") == head and receipt.get("reviewer")
             and author and receipt["reviewer"] not in {author, coordinator}
+            and (request is None or request.get("task") == receipt["reviewer"])
             and isinstance(receipt.get("passed"), bool)):
         return {"result": "review-passed" if receipt["passed"] else "review-failed",
                 "review": str(path), "reviewer": receipt["reviewer"], "request": request}
