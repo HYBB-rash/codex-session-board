@@ -120,6 +120,30 @@ class PRDutyClaimTests(unittest.TestCase):
         entry["last_result"]["delivery"]["author"]["state"] = "delivered"
         self.assertEqual(duty.worklist({"claims": {"31": entry}}, {}), [])
 
+    def test_frozen_claim_scope_rejects_same_commit_on_a_different_branch(self):
+        scope = {"source_repository": REPOSITORY, "source_branch": "codex/author", "target_branch": "main"}
+        with patch.object(discovery.forge, "api", return_value=pull(31, branch="codex/other")):
+            with self.assertRaisesRegex(duty.gates.GateBlocked, "originally claimed"):
+                duty.gates.verify({"repository": REPOSITORY, "items": [{"number": 31, "head": HEAD, "scope": scope}]})
+
+    def test_manual_ci_failure_reuses_same_feedback_and_automatic_task_reuses_event(self):
+        claim = {"repository": REPOSITORY, "pr": 31, "head": HEAD}
+        ci = {"run": 55, "attempt": 2, "conclusion": "failure", "url": "https://example.test/run",
+              "jobs": [{"name": "changes", "url": "https://example.test/job"}]}
+        report = {"workflow": ci}
+        record = {}
+        feedback = {"result": "needs-author", "feedback": {"id": "failure"}}
+        with patch.object(duty.authors, "post_feedback", return_value=feedback) as post:
+            self.assertEqual(duty.authors.ci_feedback(claim, None, report, record)["feedback"]["id"], "failure")
+            self.assertEqual(duty.authors.ci_feedback(claim, None, report, record)["feedback"]["id"], "failure")
+            task = {"author_task": "/task", "mode": "automatic", "events": [{
+                "head": HEAD, "items": [{"kind": "check", "url": ci["jobs"][0]["url"]}],
+                "delivery": {"state": "sent", "turn_id": "original"},
+            }]}
+            reused = duty.authors.ci_feedback(claim, task, report, record)
+            self.assertEqual(reused["delivery"]["author"]["turn_id"], "original")
+            post.assert_called_once()
+
     def test_recombination_reuses_queue_identity_and_preserves_old_candidate(self):
         queue = self.directory
         state = {"project": "/prior", "base": MAIN, "prefix": HEAD, "integration": {"run": 42},

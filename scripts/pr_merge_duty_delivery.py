@@ -50,11 +50,11 @@ def dispatch(config, directory, assignment, result, *, route=None):
     feedback = result.get("feedback")
     if (result["result"] in {"needs-author", "needs-evidence"} and isinstance(feedback, dict)
             and feedback.get("comment") and feedback.get("head", head) == head
-            and feedback["kind"] in {"merge", "candidate", "review"}):
+            and feedback["kind"] in {"merge", "candidate", "review", "ci"}):
         task = load(Path(assignment["author_task"]).resolve(strict=True)) if assignment.get("author_task") else {}
         key = [repository, number, head, "failed", feedback["id"]]
         if task and task.get("mode", "automatic") == "automatic":
-            prefix = "pr-task:feedback " if feedback["kind"] == "review" else "pr-queue:"
+            prefix = "pr-task:feedback " if feedback["kind"] in {"review", "ci"} else "pr-queue:"
             marker = f"<!-- {prefix}{feedback['id']} -->"
             event = next((entry for entry in task["events"]
                           if entry["head"] == head and any(
@@ -71,7 +71,8 @@ def dispatch(config, directory, assignment, result, *, route=None):
             if config.get("mode") == "production-duty":
                 message += (f"请原作者在既有独立工作树修复准确头 `{head}`，按反馈补回归，"
                             "使用原冻结检查器验证，并沿原分支提交。保留日用客户端。"
-                            "推送后保留准确头的交付报告和原作者会话，供值班员安排独立复审。")
+                            "请用项目现有 `pr-task` 登记原作者会话并交付新头，已有作者任务就用原任务，"
+                            "保留准确头的交付报告，供值班员安排独立复审。")
             else:
                 message += "仅记录这条通知。"
             outcome["author"] = deliver(directory, route, key, message)

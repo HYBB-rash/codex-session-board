@@ -80,6 +80,7 @@ def advance(duty, config, runtime, directory, claim, author, item, main, queue, 
     if identity(checker) != (state["checker"] if state else author["checker"]):
         raise ValueError("The frozen checker no longer matches author delivery")
     replacement = state and (state["base"] != main or state["items"][0]["head"] != claim["head"]
+                             or state["items"][0].get("scope") != item["scope"]
                              or state["items"][0].get("recombine_required"))
     if replacement:
         old_item = state["items"][0]

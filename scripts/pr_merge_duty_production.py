@@ -107,6 +107,14 @@ def follow(duty, config, checker, directory, path, data, claim, main):
         report["previous_ci_runs"] = list(head_record["ci_runs"].values())
     if review["result"] != "review-passed":
         return {**report, "result": review["result"]}
+    if ci and ci.get("status") == "completed":
+        if ci["conclusion"] != "failure" or not ci["jobs"]:
+            return {**report, "result": "infrastructure-blocked", "detail": "PR workflow ended without usable failure logs"}
+        result = authors.ci_feedback(claim, author, report, head_record)
+        save(path, data)
+        if result.get("feedback"):
+            result["delivery"] = author_result(config, directory, claim, author, result)
+        return result
     if ci is None or ci.get("status"):
         return {**report, "result": "waiting-ci"}
     if not report["author_evidence"]:
@@ -115,6 +123,8 @@ def follow(duty, config, checker, directory, path, data, claim, main):
         return {**report, "result": "needs-user", "detail": "Author archive could precede result delivery"}
     checker_id = state["checker"] if state else author["checker"]
     item = authors.checked_item(claim, author, checker_id, review["review"])
+    authors.resolve_ci_feedback(claim, head_record)
+    save(path, data)
     snapshot = forge.snapshot({**author, "repository": repository, "pr": number, "branch": claim["source_branch"],
                                "base": "main", "checks": item["checks"], "reviewers": item["reviewers"]})
     if snapshot["head"] != head or snapshot["state"] != "open" or snapshot["draft"]:
