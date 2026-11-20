@@ -153,11 +153,11 @@ def verify_orphan_recovery(codex, root, state, environment, previous, install):
     old_receipt = (state / "current.json").read_bytes()
     observed = {}
 
-    def fail_after_install(*args):
-        observed["version"] = cached_package(*args)["version"]
-        observed["old_cache_pruned"] = not old_cache.exists()
-        (cache_directory(observed["version"]) / "RELEASE.json").write_text("null\n")
-        return cached_package(*args)
+    def fail_after_install(*args, home=None):
+        observed["version"] = cached_package(*args, home=home)["version"]
+        observed["old_cache_pruned"] = not cache_directory(previous["version"], home=home).exists()
+        (cache_directory(observed["version"], home=home) / "RELEASE.json").write_text("null\n")
+        return cached_package(*args, home=home)
 
     with patch.object(update_plugin, "cached_package", fail_after_install):
         try:
@@ -206,6 +206,12 @@ def verify(arguments, report, root):
     with patch.dict(os.environ, environment, clear=True):
         previous = report.step("install_previous_native_package", lambda: install(arguments.previous))
         if arguments.exercise_recovery:
+            home = Path(environment["CODEX_HOME"])
+            config_path = home / "config.toml"
+            instructions = 'model_instructions_file = "instructions.md"\n'
+            (home / "instructions.md").write_text("Isolated upgrade verification\n")
+            config_path.write_text(instructions + config_path.read_text())
+            report.step("native_add_with_relative_config", lambda: update_plugin.add_plugin(codex))
             report.step("unregistered_cache_recovery_and_host_restart",
                         lambda: verify_orphan_recovery(codex, root, state, environment, previous, install))
             report.step("register_baseline_for_remaining_checks", lambda: install(arguments.previous))
@@ -250,6 +256,9 @@ def verify(arguments, report, root):
                                     lambda: install(running=previous["binary_sha256"], reload=True))
             require(candidate["version"] != previous["version"], "Candidate did not advance to a new version")
             require(candidate["marketplace_revision"], "Candidate installation has no immutable revision")
+            if arguments.exercise_recovery:
+                require(update_plugin.read_config(config_path)["model_instructions_file"] == "instructions.md",
+                        "Upgrade changed the relative instructions setting")
             if candidate["phase"] == "desktop_loaded":
                 report.step("read_new_board_from_reloaded_host",
                             lambda: read_board(request, root, candidate["version"], expect_note=True)[1])

@@ -154,12 +154,14 @@ python3 scripts/verify_plugin_upgrade.py --previous "$PREVIOUS_REVISION" \
 保留本次输出文件。报告绑定源码、发布包提交、安装和重载阶段，以及独立的 MCP 读回结果。
 失败返回非零并在出错步骤记录原因。`target_host_acceptance.status=pending` 表示仍缺日用环境验收。
 
-在替换市场前，更新器分别保存市场来源和插件缓存。无市场注册时仍保留原缓存，早期本地市场可从原路径重新注册。
-候选缓存由原生 CLI 安装，用临时配置接收安装过程写入的启用值。回滚先恢复缓存，再恢复原市场，
-并核对日用配置中的启用值。确认为本次写入的候选市场才会移除。
-若回执报告冲突，先用 `codex plugin marketplace list --json` 核对来源，
-再在 Codex 插件管理中核对启用开关。当前配置和备用目录会保留。
-备份中有原缓存，若原市场为 Git，另有原检出和 `market-registration.toml`，可用于确认要恢复的来源和分支。
+市场注册、原生安装和包校验先在临时 Codex home 完成。更新器发布已校验的 Git 检出和缓存，
+保留日用配置中的相对路径、现有插件启用值和其他设置。若发布后读回失败，更新器尝试还原自己发布的内容。
+宿主重载读回时继续使用已发布的包。
+
+若回执报告冲突，先用 `codex plugin marketplace list --json` 核对来源，再在 Codex 插件管理中核对启用开关。
+若当前来源和开关符合预期，回到看板重试。若来源不符，先在 Codex 插件管理中选回所需来源。
+回执所列备用目录可能包含已交换的 `config.toml`、`native/.tmp/marketplaces/session-board-rust` 和
+`native/plugins/cache/session-board-rust/codex-session-board`。恢复前可用其中的配置和检出核对原来源及提交。
 
 用同一个 fixture 核对 GitHub URL 写法。每次运行使用独立 Codex home，并在报告中记录输入 URL。
 

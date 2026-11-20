@@ -37,7 +37,7 @@ def versions(root):
 def bundle_updater(root, destination):
     pins = (root / "requirements-delivery.txt").read_text().splitlines()
     destination.mkdir()
-    for name in ("board_update_job.py", "update_plugin.py", "plugin_package.py", "reload_plugins.py",
+    for name in ("board_update_job.py", "update_plugin.py", "plugin_package.py", "plugin_publication.py", "reload_plugins.py",
                  "desktop_identity.py"):
         shutil.copy2(root / "scripts" / name, destination / name)
     for name, module in (("websocket-client", "websocket"), ("tomlkit", "tomlkit")):
