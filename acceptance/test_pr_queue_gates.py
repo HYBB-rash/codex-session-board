@@ -19,7 +19,7 @@ class PRQueueGateTests(unittest.TestCase):
     def test_only_the_current_head_with_successful_checks_and_no_feedback_can_pass(self):
         for change, outcome in (({}, "passed"), ({"ci": "pending"}, "pending"),
                                 ({"ci": "failed"}, "error"), ({"head": BASE}, "error"),
-                                ({"state": "closed"}, "error"),
+                                ({"state": "closed"}, "error"), ({"draft": True}, "error"),
                                 ({"items": [{"kind": "review"}]}, "error")):
             with self.subTest(change=change), \
                     mock.patch.object(gates.forge, "api", return_value=pull()), \
@@ -42,7 +42,7 @@ class PRQueueGateTests(unittest.TestCase):
         snapshot.assert_not_called()
 
     def test_pr_changed_during_workflow_proof_cannot_pass(self):
-        for change in ({"head": {**pull()["head"], "sha": BASE}}, {"state": "closed"}):
+        for change in ({"head": {**pull()["head"], "sha": BASE}}, {"state": "closed"}, {"draft": True}):
             with self.subTest(change=change), \
                     mock.patch.object(gates.forge, "api", side_effect=[pull(), {**pull(), **change}]), \
                     mock.patch.object(gates.forge, "snapshot", return_value=self.snapshot), \

@@ -75,7 +75,8 @@ def verify(gates):
             "repository": repository, "pr": number, "branch": pr["head"]["ref"],
             "base": "main", "checks": item["checks"], "reviewers": item["reviewers"],
         })
-        if snapshot["head"] != item["head"] or snapshot["state"] not in {"open", "merged"}:
+        if (snapshot["head"] != item["head"] or snapshot["state"] not in {"open", "merged"}
+                or snapshot.get("draft")):
             raise GateBlocked("needs-user", f"PR #{number} changed or closed without merging")
         if snapshot["state"] == "merged":
             snapshot.update(forge.check_state(repository, item["head"], item["checks"],
@@ -89,6 +90,7 @@ def verify(gates):
         after = forge.api(f"repos/{repository}/pulls/{number}")
         if (after["head"]["sha"] != item["head"] or after["base"]["ref"] != "main"
                 or after["head"]["ref"] != pr["head"]["ref"]
+                or after.get("draft")
                 or after["base"]["sha"] != snapshot.get("base", after["base"]["sha"])
                 or ("merged" if after["merged"] else after["state"]) != snapshot["state"]):
             raise GateBlocked("needs-evidence", f"PR #{number} changed while proving its workflow; requeue")
