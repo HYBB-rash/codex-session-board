@@ -149,8 +149,9 @@ python3 scripts/verify_plugin_upgrade.py --previous "$PREVIOUS_REVISION" \
 ```
 
 默认浅取正式 GitHub 候选。日常快检可传入 `--fixture PATH`，该本地 Git 仓库需包含旧版发布包提交，
-以及指向另一版本完整发布包的 `candidate/<Rust target>` 分支。`--exercise-recovery` 注入市场添加超时
-和安装后校验失败，核对旧市场、缓存、回执和重启后的看板，再执行正常重试。
+以及指向另一版本完整发布包的 `candidate/<Rust target>` 分支。`--exercise-recovery` 注入三种故障。
+市场添加超时、暂存缓存校验失败、活动缓存交换后终检失败时，分别检查恢复，随后执行正常重试。
+验证检查旧市场、缓存、回执和重启后的看板。
 保留本次输出文件。报告绑定源码、发布包提交、安装和重载阶段，以及独立的 MCP 读回结果。
 失败返回非零并在出错步骤记录原因。`target_host_acceptance.status=pending` 表示仍缺日用环境验收。
 

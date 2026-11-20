@@ -169,12 +169,32 @@ def verify_orphan_recovery(codex, root, state, environment, previous, install):
             raise ValueError("Expected a reported native install failure")
     require(observed.get("old_cache_pruned") and observed["version"] != previous["version"],
             "The candidate did not replace the old cache")
+    verify_candidate = update_plugin.verify_candidate_cache
+    failure = ValueError("Injected final validation failure with the candidate in the active cache")
+    published = {}
+
+    def fail_after_publish(codex, manifest, revision, *, home=None):
+        verify_candidate(codex, manifest, revision, home=home)
+        if home is None:
+            require(not old_cache.exists(), "The active cache still contains the old package")
+            published.update(version=manifest["version"], revision=revision)
+            raise failure
+
+    with patch.object(update_plugin, "verify_candidate_cache", fail_after_publish):
+        try:
+            install(running=previous["binary_sha256"])
+        except RuntimeError as error:
+            require(error.__cause__ is failure and "已恢复原缓存" in str(error), str(error))
+        else:
+            raise ValueError("Expected a reported post-publication failure")
+    require(published.get("version") == observed["version"], "The candidate never reached the active cache")
     require(market_registration(codex) is None and
             hashes(old_cache) == old_files and (state / "current.json").read_bytes() == old_receipt,
             "Old cache, registration or successful receipt changed")
     with app_server(root, codex, environment, "orphan-restart") as request:
         _, board = read_board(request, root, previous["version"])
-    return {"injected": "null_installed_manifest", "installed_before_failure": observed["version"],
+    return {"injected": ["null_installed_manifest", "active_cache_final_validation"],
+            "installed_before_failure": observed["version"], "published_before_failure": published,
             "restored_binary_sha256": previous["binary_sha256"], "old_board_reopened": board}
 
 

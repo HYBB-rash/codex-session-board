@@ -1,6 +1,7 @@
 import argparse
 import fcntl
 import json
+import math
 import os
 import platform
 import shutil
@@ -138,26 +139,39 @@ def verify_candidate_cache(codex, manifest, revision, *, home=None):
         raise ValueError("原生插件清单中的活动版本与候选版本不一致")
 
 
+def config_values(value):
+    if isinstance(value, dict):
+        return {key: config_values(child) for key, child in value.items()}
+    if isinstance(value, list):
+        return [config_values(child) for child in value]
+    if isinstance(value, float) and math.isnan(value):
+        return (float, "nan")
+    return (type(value), value)
+
+
 def updated_config(contents, settings):
-    current = tomlkit.parse(contents.decode("utf-8-sig"))
+    text = contents.decode("utf-8-sig")
+    current = tomlkit.parse(text)
     expected = current.unwrap()
     expected.setdefault("marketplaces", {})[MARKET] = settings
     groups = ["marketplaces"]
-    entry = current.setdefault("marketplaces", {}).setdefault(MARKET, {})
-    for key in set(entry) - settings.keys():
-        del entry[key]
-    entry.update(settings)
-    if plugin_enabled(current) is None:
+    enable = plugin_enabled(current) is None
+    if enable:
         expected.setdefault("plugins", {}).setdefault(PLUGIN_ID, {})["enabled"] = True
-        current.setdefault("plugins", {}).setdefault(PLUGIN_ID, {})["enabled"] = True
         groups.append("plugins")
-    serialized = current.as_string()
     try:
-        if tomlkit.parse(serialized).unwrap() == expected:
+        entry = current.setdefault("marketplaces", {}).setdefault(MARKET, {})
+        for key in set(entry) - settings.keys():
+            del entry[key]
+        entry.update(settings)
+        if enable:
+            current.setdefault("plugins", {}).setdefault(PLUGIN_ID, {})["enabled"] = True
+        serialized = current.as_string()
+        if config_values(tomlkit.parse(serialized).unwrap()) == config_values(expected):
             return serialized, expected
-    except tomlkit.exceptions.ParseError:
+    except (KeyError, tomlkit.exceptions.ParseError):
         pass
-    current = tomlkit.parse(contents.decode("utf-8-sig"))
+    current = tomlkit.parse(text)
     for group in groups:
         current.pop(group, None)
     for group in groups:
@@ -250,7 +264,7 @@ def install_market(codex, repository, revision, checkout, manifest):
         staged_config = config_backup / "config.toml"
         bom = "\ufeff" if contents.startswith(BOM_UTF8) else ""
         write_atomic(staged_config, bom + serialized)
-        if read_config(staged_config).unwrap() != expected:
+        if config_values(read_config(staged_config).unwrap()) != config_values(expected):
             raise ValueError("暂存配置读回与预期不一致")
         if prior_config is not None:
             staged_config.chmod(stat.S_IMODE(config.stat().st_mode))

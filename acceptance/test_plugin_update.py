@@ -2,6 +2,7 @@ import contextlib
 import errno
 import io
 import json
+import math
 import os
 import shutil
 import signal
@@ -730,6 +731,36 @@ class PluginUpdateTests(unittest.TestCase):
             self.update(reload=False)
         publish.assert_not_called()
         self.assertEqual(self.installation_snapshot(), snapshot)
+
+    def test_dotted_sparse_settings_and_nan_survive_upgrade_and_rollback(self):
+        with self.isolated():
+            self.update(reload=False)
+        config = self.home / "config.toml"
+        market = f"marketplaces.{update_plugin.MARKET}"
+        config.write_text(f'{market}.source = "mock-repository"\n{market}.sparse_paths = []\n'
+                          f'{market}.source_type = "git"\n{market}.ref = "{self.revision}"\n'
+                          f'plugins."{update_plugin.PLUGIN_ID}".enabled = true\n'
+                          '[custom_metrics]\nthreshold = nan\n')
+        original = self.installation_snapshot()
+        self.revision = self.installed_revision = "b" * 40
+        verify = update_plugin.verify_candidate_cache
+
+        def fail_live(codex, manifest, revision, *, home=None):
+            verify(codex, manifest, revision, home=home)
+            if home is None:
+                raise ValueError("injected active cache failure")
+
+        with self.isolated(), patch.object(update_plugin, "verify_candidate_cache", side_effect=fail_live), \
+             self.assertRaisesRegex(RuntimeError, "injected active cache failure.*已恢复"):
+            self.update(reload=False)
+        self.assertEqual(self.installation_snapshot(), original)
+        with self.isolated():
+            self.assertEqual(self.update(reload=False)["revision"], self.revision)
+        document = update_plugin.read_config(config)
+        self.assertTrue(math.isnan(document["custom_metrics"]["threshold"]))
+        self.assertTrue(update_plugin.plugin_enabled(document))
+        self.assertEqual(update_plugin.market_settings(document),
+                         {"source": "mock-repository", "source_type": "git", "ref": self.revision})
 
     def test_linked_config_is_staged_beside_target_and_preserves_bom(self):
         config = self.home / "config.toml"
