@@ -61,6 +61,15 @@ def configuration(path, command="scan"):
     if production:
         if checker != ROOT:
             raise ValueError("Production duty must run from its configured clean checkout")
+        if "registry_project" in config:
+            registry_project = Path(config["registry_project"])
+            if not registry_project.is_absolute():
+                raise ValueError("Use an absolute persistent registry checkout")
+            registry_project = registry_project.resolve(strict=True)
+            if git(registry_project, "rev-parse", "--show-toplevel") != str(registry_project):
+                raise ValueError("The registry checkout must identify a Git root")
+            verify_origin(registry_project, repository)
+            config["registry_project"] = str(registry_project)
         if mode == "production-scan":
             current_main = forge.api(f"repos/{repository}/git/ref/heads/main")["object"]["sha"]
             if current_main != config["checker_head"]:
@@ -272,7 +281,8 @@ def main():
     arguments = parser.parse_args()
     try:
         config, checker, directory = configuration(arguments.config, arguments.command)
-        lock = Path(git(checker, "rev-parse", "--path-format=absolute", "--git-common-dir"))
+        registry_project = Path(config.get("registry_project", checker))
+        lock = Path(git(registry_project, "rev-parse", "--path-format=absolute", "--git-common-dir"))
         with locked(lock / "pr-duty" / config["repository"].lower().replace("/", "+")):
             control = directory / "control.json"
             if arguments.command in {"pause", "resume"}:

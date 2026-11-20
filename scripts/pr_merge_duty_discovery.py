@@ -107,9 +107,10 @@ def review_state(directory, claim, author=None, coordinator=None):
     path = review_path(directory, claim["pr"], head)
     request = claim["heads"][head].get("review")
     receipt = json.loads(path.read_text()) if path.exists() else None
+    expected = request.get("task") if request is not None else claim.get("review_task")
     if (receipt and receipt.get("head") == head and receipt.get("reviewer")
             and author and receipt["reviewer"] not in {author, coordinator}
-            and (request is None or request.get("task") == receipt["reviewer"])
+            and (expected == receipt["reviewer"] or (expected is None and request is None))
             and isinstance(receipt.get("passed"), bool)):
         return {"result": "review-passed" if receipt["passed"] else "review-failed",
                 "review": str(path), "reviewer": receipt["reviewer"], "request": request}
@@ -117,6 +118,21 @@ def review_state(directory, claim, author=None, coordinator=None):
     waiting = request and (request.get("dispatch_started_at") or request.get("task"))
     return {"result": "waiting-review" if waiting else "review-required", "review": str(path),
             "request": request, "request_id": key}
+
+
+def review_route(claim, coordinator):
+    reviewer = claim.get("review_task")
+    for revision, item in reversed(claim["heads"].items()):
+        if revision == claim["head"]:
+            continue
+        prior = item.get("review", {})
+        if prior.get("dispatch_started_at") and not prior.get("task"):
+            return {"action": "recover", "head": revision}
+        if reviewer is None:
+            reviewer = prior.get("task")
+    if reviewer is not None and reviewer in {coordinator, (claim.get("author") or {}).get("thread_id")}:
+        raise ValueError("The dedicated reviewer must differ from the author and coordinator")
+    return {"action": "resume", "task": reviewer} if reviewer else {"action": "create"}
 
 
 def review_command(directory, path, data, arguments, coordinator):
@@ -131,30 +147,38 @@ def review_command(directory, path, data, arguments, coordinator):
         state = review_state(directory, claim, (claim.get("author") or {}).get("thread_id"), coordinator)
         if state["result"] != "review-required":
             return state
+        route = review_route(claim, coordinator)
+        if route["action"] == "recover":
+            return {**state, "result": "waiting-review", "dispatch": route}
         request = head.setdefault("review", {"id": state["request_id"], "reserved_at": now()})
         if arguments.command == "begin-review":
             if not state["request"]:
                 raise ValueError("Reserve the review before beginning dispatch")
             request["dispatch_started_at"] = now()
+            request["dispatch"] = route
         save(path, data)
         return {**state, "result": "dispatch-review" if arguments.command == "begin-review" else "review-reserved",
-                "request": request}
+                "request": request, "dispatch": route}
     if arguments.command == "recover-review":
         request = head.get("review")
         if not request or request.get("task") or not request.get("dispatch_started_at") or not arguments.recovery_proof:
             raise ValueError("Recovery requires a verified unsent request without a known reviewer")
         request.setdefault("recoveries", []).append({"at": now(), "proof": arguments.recovery_proof,
                                                     "previous_start": request.pop("dispatch_started_at")})
+        request.pop("dispatch", None)
         save(path, data)
         return {"result": "review-reserved", "request": request}
-        return state
     request = head.get("review")
     if (not request or not request.get("dispatch_started_at") or not arguments.review_task
             or arguments.review_task in {coordinator, (claim.get("author") or {}).get("thread_id")}):
         raise ValueError("Retain the reserved request and record its actual reviewer task")
     if request.get("task") not in {None, arguments.review_task}:
         raise ValueError("A reviewer task is already recorded for this exact head")
+    bound = claim.get("review_task") or request.get("dispatch", {}).get("task")
+    if bound is not None and bound != arguments.review_task:
+        raise ValueError("Record the dedicated reviewer already selected for this PR")
     request["task"] = arguments.review_task
+    claim.setdefault("review_task", arguments.review_task)
     save(path, data)
     return {"result": "waiting-review", "request": request,
             "review": str(review_path(directory, claim["pr"], arguments.head))}

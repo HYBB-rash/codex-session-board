@@ -71,6 +71,27 @@ class PRMergeDutyTests(unittest.TestCase):
                                               self.assignment, observation), observation)
         queue.assert_not_called()
 
+    def test_production_runtime_and_registry_can_be_separate_git_roots(self):
+        registry = self.directory / "registry"
+        registry.mkdir()
+        config = self.directory / "duty.json"
+        data = {"mode": "production-duty", "repository": duty.PRODUCTION,
+                "checker": str(self.candidate), "checker_head": BASE, "registry_project": str(registry),
+                "state": str(self.directory / "state")}
+        save(config, data)
+        with mock.patch.object(duty, "ROOT", self.candidate), \
+                mock.patch.object(duty, "git", side_effect=[BASE, "", str(registry)]), \
+                mock.patch.object(duty, "verify_origin") as verify_origin:
+            configuration, checker, _ = duty.configuration(config, "tick")
+        self.assertEqual(checker, self.candidate)
+        self.assertEqual(configuration["registry_project"], str(registry))
+        verify_origin.assert_called_once_with(registry, duty.PRODUCTION)
+        save(config, {**data, "registry_project": "registry"})
+        with mock.patch.object(duty, "ROOT", self.candidate), \
+                mock.patch.object(duty, "git", side_effect=[BASE, ""]), \
+                self.assertRaisesRegex(ValueError, "absolute persistent registry"):
+            duty.configuration(config, "tick")
+
     def test_published_draft_reports_pending_ci_without_admitting_source(self):
         checker = {"commit": BASE}
         author_task = {**self.assignment, "repository": "owner/repo", "base": "main",

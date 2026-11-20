@@ -7,9 +7,13 @@ description: 运行 PR 值班发现和跟进，协调准确头的独立审阅，
 保留实际命令、源码、待领列表、处理项和下一步。`idle` 表示完整查询无待领或在办项。
 遇到查询、权限、队列或会话错误，保留详细结果并结束本轮。暂停或回退由协调者操作。
 
-`review-required` 时，安排一个独立审阅任务。先确认当前环境有独立审阅入口，再执行
-`reserve-review --config CONFIG --pr NUMBER --head FULL_SHA`，再用同样参数执行 `begin-review`。
-只有 `begin-review` 返回 `dispatch-review` 时派单，在任务描述里写回 CLI 的稳定请求 ID。
+每个 PR 使用一个专用独立审阅会话。`review-required` 时先确认当前环境有独立审阅入口，再执行
+`reserve-review --config CONFIG --pr NUMBER --head FULL_SHA`。若返回 `dispatch.action=recover`，
+先查 `dispatch.head` 对应的原派单。若返回 `dispatch.action=resume`，先核实 `dispatch.task` 会话可用且空闲。
+忙碌时保留预约等其空闲。无法读取时报告待恢复。
+确认可以派单后，用同样参数执行 `begin-review`。仅在返回 `dispatch-review` 时派单。
+`dispatch.action=create` 时新建专用会话。`dispatch.action=resume` 时向 `dispatch.task` 发送下一轮审阅提示。
+在提示中写入完整新头和 CLI 的稳定请求 ID，并要求重新核查本轮提交。
 审阅者只审阅该 PR 的准确头和交付证据，返回 `head`、`passed`、实际独立审阅任务 `reviewer`，
 未通过时附带可复现的 `detail`。将回执保存到 CLI 指定的 `review` 路径。
 派单后立即用 `record-review --config CONFIG --pr NUMBER --head FULL_SHA --review-task TASK`
