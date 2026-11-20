@@ -1,16 +1,16 @@
 {
   "schema_version": 1,
-  "version": "0.4.15",
+  "version": "0.4.16",
   "target": "x86_64-unknown-linux-gnu",
-  "source_commit": "95caa8479396f4d156fb995443ad44e0a2f68533",
+  "source_commit": "8a44008c926cdbbe6d7cc4114a8a2c54c1dbfe78",
   "contract_sha256": "5b20b6135b59c3daf4002bea17316c0fbaf80228cd822e24ffb9853a4d69c32b",
-  "build_sha256": "937bccc1daa1e467651c8de870e6e4d60b13baecedc7d2184f6d46afed1c5583",
+  "build_sha256": "7930352390b1b1015ccf4d3310d3efd1debc0ecf25d17ab0d2a23281679dcc72",
   "files": {
     ".agents/plugins/marketplace.json": "f4a6622cc875c6e4857666e6e73ad2ab3c4a170323da4131deffa3b5280cb671",
-    ".codex-plugin/plugin.json": "e74d45e282b95c155f5b6a994d22cd0df19421726c5e8a4cb968a6d7b578c77b",
+    ".codex-plugin/plugin.json": "4f394469d5144186fe96a531d3d146c964d95d9276224ddcd218b7c33ba9cb3c",
     ".mcp.json": "4d65a2fe46d33c9ae268f65cea8676ad2eb7896e15ab49764ad13d087d1f6d02",
-    "SOURCE.tar.gz": "488f498ab4e0f30de512fd3030ce30c80a6307600e5ad2745098a0f1424d7ebd",
-    "SOURCE.tar.gz.sha256": "8e65bae2765bc2f84ecfa810898d6e76b622be67eb8749908a1350a8c4335a4f",
+    "SOURCE.tar.gz": "a8764403ad357e51a028fdcc39510ba9299029548b8176c1bbf1343113c6584d",
+    "SOURCE.tar.gz.sha256": "7e5b5049b9b7aa984c647a314b821819da9dd7308d78efccc4b2a79a4b76ecb3",
     "assets/app-bridge-entry.mjs": "ed50b51ae9bb9a4ab09d98964fe640713663be8d15e4be988615f9119ceab07d",
     "assets/app-bridge.js": "88783f3f1c65043049f1b68a05da6332b9cce35f0b9cf5a6a567162e1202fa3f",
     "assets/app-bridge.js.LEGAL.txt": "99845957be48d02957ee10e67e4ec7737d6c750de20016f6f6f6de91871be8da",
@@ -21,11 +21,11 @@
     "assets/pwa.js": "f7cea52d3f8a5f73033f2a2eeece37ca1406cf2b5c9c9d0f10667a8a3ec671f7",
     "assets/sw.js": "8dbd5839272fe2f473fbbb27abfcec839c6272fd864cde06440353b720213ac9",
     "assets/third-party-licenses.txt": "b54e0492ec95c9882816f02c96a0ce4875b5e4fb148347fe20aa82aec8ef3df2",
-    "bin/codex-session-board": "573a412cc3563a7c6a274978b52e36bd27e73d0fab1efe30425a71bcf900990b",
+    "bin/codex-session-board": "ea5696991463bfaec5626e04153105c2279f9b5af55a389dc05e64ff65a56c8b",
     "bin/run-plugin": "72c96ec032862ab328625fd08d7ed79c43e912591ce9cf03fe1b8af61e21f9ed",
     "index.html": "fd6c14619770f11bc5ee319307284d6c8ceb3b9b24cd71773c747058100e80f4",
     "mcp.json": "500cab6c6e1b194804ce77940d39e93814e58f17d2440810e1ce2dd4d6635f9a",
-    "plugin.json": "77d009490e23619c9fb215cc91e36fcbd732a6780a8b163a4b100e7aad5f2780",
+    "plugin.json": "22798ad7d2a5cd15c9100f4cfab00040975fc38270e23a28bbace2c9badb595c",
     "skills/open-session-board/SKILL.md": "155eacabee4f6f7de180109876f605fada402c1c40ce653af6765795ff7bcce8",
     "updater/board_update_job.py": "4d23d9feb841b3ff3a4098431702748ff39467150b2a7aa83b5ad49cd2d1e519",
     "updater/desktop_identity.py": "1b539a408a594762ae70c61132e67da35926e22171cdce918a087ed4fede0919",
@@ -50,5 +50,5 @@
     "updater/websocket/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "updater/websocket-client-LICENSE": "14214b7bbb6952ada76afea206b6c393f2563d4e7678be0232e1a1d216716679"
   },
-  "binary_sha256": "573a412cc3563a7c6a274978b52e36bd27e73d0fab1efe30425a71bcf900990b"
+  "binary_sha256": "ea5696991463bfaec5626e04153105c2279f9b5af55a389dc05e64ff65a56c8b"
 }
