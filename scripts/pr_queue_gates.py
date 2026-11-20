@@ -37,7 +37,7 @@ def from_queue(path, project, repository, candidate):
     return {"repository": repository, "items": items}
 
 
-def workflow(repository, number, head, *, merged_branch=None):
+def workflow(repository, number, head, *, merged_branch=None, include_pending=False):
     deadline = time.monotonic() + 90
     runs = forge.pages(
         f"repos/{repository}/actions/workflows/pr-checks.yml/runs?event=pull_request&head_sha={head}",
@@ -52,6 +52,9 @@ def workflow(repository, number, head, *, merged_branch=None):
         return None
     run = max(matches, key=lambda item: item["id"])
     if run["status"] != "completed":
+        if include_pending:
+            return {"run": run["id"], "attempt": run["run_attempt"], "head": head,
+                    "status": run["status"]}
         return None
     if run["conclusion"] != "success":
         raise GateBlocked("needs-author" if run["conclusion"] == "failure" else "infrastructure-blocked",
