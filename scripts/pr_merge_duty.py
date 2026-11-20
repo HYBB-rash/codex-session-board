@@ -31,18 +31,36 @@ def verify_origin(project, repository):
             raise ValueError("Candidate fetch and push origin must identify the configured repository")
 
 
-def configuration(path):
+def configuration(path, command="scan"):
     config = read(path)
     repository = config["repository"]
     if not REPOSITORY.fullmatch(repository):
         raise ValueError("Configure an explicit GitHub repository")
-    if config.get("mode") != "isolated" or repository.lower() == PRODUCTION:
-        raise ValueError("The duty prototype is for isolated repositories. Use pr-queue for manual merges.")
+    mode = config.get("mode")
+    production = repository.lower() == PRODUCTION
+    if production and mode == "production-scan":
+        if command != "scan":
+            raise ValueError("Production duty only supports read-only scan")
+        handoff = Path(config["handoff"])
+        if not handoff.is_absolute() or "assignments" in config:
+            raise ValueError("Set an absolute production handoff file instead of inline assignments")
+        entries = read(handoff)
+        if entries["repository"] != repository:
+            raise ValueError("The production handoff repository does not match the configuration")
+        config["assignments"] = entries["assignments"]
+    elif mode != "isolated" or production:
+        raise ValueError("Use isolated mode for trial repositories or production-scan for read-only production")
     checker = Path(config["checker"]).resolve(strict=True)
     if not SHA.fullmatch(config["checker_head"]) or git(checker, "rev-parse", "HEAD") != config["checker_head"]:
         raise ValueError("The configured checker must be at the frozen commit")
     if git(checker, "status", "--porcelain", "--untracked-files=all"):
         raise ValueError("The frozen checker must remain clean")
+    if production:
+        if checker != ROOT:
+            raise ValueError("Production scan must run from its configured clean checkout")
+        current_main = forge.api(f"repos/{repository}/git/ref/heads/main")["object"]["sha"]
+        if current_main != config["checker_head"]:
+            raise ValueError("Production scan checkout differs from remote main")
     directory = Path(config["state"]).resolve()
     if not Path(config["state"]).is_absolute() or directory.is_relative_to(checker) or directory.is_relative_to(ROOT):
         raise ValueError("Use an absolute, private state directory outside source")
@@ -244,7 +262,7 @@ def main():
     parser.add_argument("--config", required=True, type=Path)
     arguments = parser.parse_args()
     try:
-        config, checker, directory = configuration(arguments.config)
+        config, checker, directory = configuration(arguments.config, arguments.command)
         lock = Path(git(checker, "rev-parse", "--path-format=absolute", "--git-common-dir"))
         with locked(lock / "pr-duty" / config["repository"].lower().replace("/", "+")):
             control = directory / "control.json"
@@ -261,6 +279,8 @@ def main():
                     observed = advance(config, checker, directory, assignment, observed)
                 items.append(observed)
             report = {"result": "scanned" if items else "idle", "items": items, "at": now()}
+            if config["mode"] == "production-scan":
+                report.update(repository=config["repository"], source=config["checker_head"])
             if arguments.command == "tick":
                 save(directory / "last-tick.json", report)
                 from scripts.pr_merge_duty_delivery import dispatch
