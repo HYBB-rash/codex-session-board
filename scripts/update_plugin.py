@@ -34,13 +34,88 @@ def target():
     return targets[(platform.system(), platform.machine())]
 
 
-def install_market(codex, repository, reference):
+def market_registration(codex):
     markets = json.loads(command([codex, "plugin", "marketplace", "list", "--json"]))
-    if any(item["name"] == MARKET for item in markets["marketplaces"]):
-        run([codex, "plugin", "marketplace", "remove", MARKET], stdout=subprocess.DEVNULL)
-    run([codex, "plugin", "marketplace", "add", repository, "--ref", reference, "--json"],
-        stdout=subprocess.DEVNULL)
+    selected = [item for item in markets["marketplaces"] if item["name"] == MARKET]
+    if len(selected) > 1:
+        raise ValueError("Installed marketplace is ambiguous")
+    return selected[0] if selected else None
+
+
+def fetch_snapshot(checkout, repository, reference):
+    run(["git", "init", "-q", str(checkout)])
+    run(["git", "fetch", "-q", "--depth=1", "--no-tags", repository, reference], cwd=checkout)
+    run(["git", "checkout", "-q", "--detach", "FETCH_HEAD"], cwd=checkout)
+
+
+def remove_market(codex):
+    run([codex, "plugin", "marketplace", "remove", MARKET], stdout=subprocess.DEVNULL)
+
+
+def add_market(codex, repository, revision=None, checkout=None):
+    arguments = [codex, "plugin", "marketplace", "add", repository, "--json"]
+    if checkout is None:
+        run(arguments, stdout=subprocess.DEVNULL)
+        return
+    environment = dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
+                       GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0=f"url.{checkout.as_uri()}.insteadOf",
+                       GIT_CONFIG_VALUE_0=repository, GIT_ALLOW_PROTOCOL="file")
+    environment.pop("GIT_CONFIG_PARAMETERS", None)
+    run([*arguments, "--ref", revision], env=environment, stdout=subprocess.DEVNULL)
+
+
+def add_plugin(codex):
     run([codex, "plugin", "add", f"codex-session-board@{MARKET}", "--json"], stdout=subprocess.DEVNULL)
+
+
+def install_market(codex, repository, revision, checkout, manifest):
+    previous = market_registration(codex)
+    with tempfile.TemporaryDirectory(prefix="restore-", dir=checkout.parent) as temporary:
+        if previous:
+            root = Path(previous["root"]).resolve()
+            old_manifest = verify_package(root)
+            old_source = previous["marketplaceSource"]
+            old_repository = old_source["source"]
+            old_revision = None
+            backup = None
+            if old_source["sourceType"] == "git":
+                old_revision = command(["git", "rev-parse", "HEAD"], root)
+                backup = Path(temporary) / "package"
+                fetch_snapshot(backup, root.as_uri(), old_revision)
+                if verify_package(backup) != old_manifest:
+                    raise ValueError("Previous marketplace snapshot differs from its backup")
+            elif old_source["sourceType"] != "local":
+                raise ValueError("Cannot prepare recovery for this marketplace source")
+        try:
+            if previous:
+                remove_market(codex)
+            add_market(codex, repository, revision, checkout)
+            add_plugin(codex)
+            if cached_package(codex, manifest["version"], revision) != manifest:
+                raise ValueError("Installed plugin cache differs from fetched release")
+        except (OSError, KeyError, ValueError, subprocess.SubprocessError) as error:
+            try:
+                if market_registration(codex):
+                    remove_market(codex)
+                if previous:
+                    add_market(codex, old_repository, old_revision, backup)
+                    add_plugin(codex)
+                    restored = cached_package(codex, old_manifest["version"], old_revision) if old_revision else \
+                        verify_package(cache_directory(old_manifest["version"]), installed=True)
+                    if restored != old_manifest:
+                        raise ValueError("Restored plugin cache differs from previous release")
+            except (OSError, KeyError, ValueError, subprocess.SubprocessError) as restore_error:
+                raise RuntimeError(f"{command_error(error)}。恢复旧市场失败：{command_error(restore_error)}。"
+                                   "请按部署文档使用上次安装回执中的 revision 恢复。") from error
+            recovery = "已恢复上一个插件市场及缓存" if previous else "本次未留下市场注册，原缓存可保留"
+            raise RuntimeError(f"{command_error(error)}。{recovery}。") from error
+
+
+def command_error(error):
+    stderr = getattr(error, "stderr", None)
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode(errors="replace")
+    return stderr.strip()[:1000] if stderr and stderr.strip() else str(error)
 
 
 def cache_directory(version):
@@ -49,11 +124,10 @@ def cache_directory(version):
 
 
 def cached_package(codex, version, revision):
-    markets = json.loads(command([codex, "plugin", "marketplace", "list", "--json"]))
-    selected = [item for item in markets["marketplaces"] if item["name"] == MARKET]
-    if len(selected) != 1 or selected[0].get("marketplaceSource", {}).get("sourceType") != "git":
+    selected = market_registration(codex)
+    if selected is None or selected.get("marketplaceSource", {}).get("sourceType") != "git":
         raise ValueError("Installed marketplace is not the expected native Git snapshot")
-    if command(["git", "rev-parse", "HEAD"], Path(selected[0]["root"])) != revision:
+    if command(["git", "rev-parse", "HEAD"], Path(selected["root"])) != revision:
         raise ValueError("Native marketplace Git revision differs from the fetched release")
     package = cache_directory(version)
     metadata_path = package / ".codex-marketplace-install.json"
@@ -78,11 +152,10 @@ def write_record(path, record):
 
 
 def marketplace_file(codex):
-    markets = json.loads(command([codex, "plugin", "marketplace", "list", "--json"]))
-    selected = [item for item in markets["marketplaces"] if item["name"] == MARKET]
-    if len(selected) != 1:
-        raise ValueError("Installed marketplace is missing or ambiguous")
-    path = Path(selected[0]["root"]) / ".agents/plugins/marketplace.json"
+    selected = market_registration(codex)
+    if selected is None:
+        raise ValueError("Installed marketplace is missing")
+    path = Path(selected["root"]) / ".agents/plugins/marketplace.json"
     if not path.is_file():
         raise ValueError("Installed marketplace must provide a marketplace.json file")
     return path
@@ -118,10 +191,7 @@ def install_release(checkout, directory, codex, repository, record):
             staged = Path(temporary) / "package"
             shutil.copytree(checkout, staged, ignore=shutil.ignore_patterns(".git"))
             staged.rename(directory)
-    install_market(codex, repository, record["revision"])
-    cached = cached_package(codex, manifest["version"], record["revision"])
-    if cached != manifest:
-        raise ValueError("Installed plugin cache differs from fetched release")
+    install_market(codex, repository, record["revision"], checkout, manifest)
 
 
 def load_release(codex, state, record, reload):
@@ -147,9 +217,7 @@ def update(repository, channel, revision, state, codex, reload=True, expected_so
         report("fetching")
         with tempfile.TemporaryDirectory(prefix="fetch-", dir=state) as temporary:
             checkout = Path(temporary)
-            run(["git", "init", "-q", str(checkout)])
-            run(["git", "fetch", "-q", "--depth=1", repository, reference], cwd=checkout)
-            run(["git", "checkout", "-q", "--detach", "FETCH_HEAD"], cwd=checkout)
+            fetch_snapshot(checkout, repository, reference)
             report("verifying")
             manifest = verify_package(checkout)
             if manifest["target"] != target():
@@ -162,7 +230,7 @@ def update(repository, channel, revision, state, codex, reload=True, expected_so
                 raise ValueError("Release executable version differs")
             matched = matching_install(codex, manifest, source_revision, previous, running_build)
             if matched and running_build == manifest["binary_sha256"]:
-                return {"phase": "up_to_date", "installed": True, "release": manifest}
+                return {"phase": "up_to_date", "installed": True, "release": manifest, "revision": source_revision}
             record = {
                 "phase": "installing", "installed": False, "desktop_loaded": False,
                 "release": manifest, "package": str(directory), "reference": reference,

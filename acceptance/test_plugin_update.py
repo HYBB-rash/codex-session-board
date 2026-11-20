@@ -2,7 +2,9 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import socket
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -66,23 +68,25 @@ class PluginUpdateTests(unittest.TestCase):
     def run_command(self, arguments, **kwargs):
         self.commands.append(arguments)
         if arguments[:2] == ["git", "checkout"]:
-            import shutil
             shutil.copytree(self.source, kwargs["cwd"], dirs_exist_ok=True)
+        if arguments[:4] == ["codex", "plugin", "marketplace", "add"]:
+            shutil.copytree(self.source, self.market)
+        if arguments[:4] == ["codex", "plugin", "marketplace", "remove"]:
+            shutil.rmtree(self.market)
         if arguments[:3] == ["codex", "plugin", "add"]:
-            import shutil
             self.pending_at_install = json.loads((self.state / "pending.json").read_text())
             cache = self.home / "plugins/cache" / update_plugin.MARKET / "codex-session-board" / self.version
-            shutil.copytree(self.source, cache)
+            shutil.copytree(self.source, cache, dirs_exist_ok=True)
             (cache / ".codex-marketplace-install.json").write_text(json.dumps({
                 "source_type": "git", "revision": self.installed_revision}))
-            shutil.copytree(self.source, self.market)
         return SimpleNamespace(returncode=0)
 
     def command(self, arguments, root=None):
         self.commands.append(arguments)
         if arguments[:4] == ["codex", "plugin", "marketplace", "list"]:
-            return json.dumps({"marketplaces": [{"name": update_plugin.MARKET,
-                "root": str(self.market), "marketplaceSource": {"sourceType": "git"}}]})
+            markets = [{"name": update_plugin.MARKET, "root": str(self.market),
+                        "marketplaceSource": {"sourceType": "git", "source": "mock-repository"}}]
+            return json.dumps({"marketplaces": markets if self.market.exists() else []})
         if arguments == ["git", "rev-parse", "HEAD"]:
             return self.revision
         if arguments[-1] == "--version":
@@ -267,7 +271,7 @@ class PluginUpdateTests(unittest.TestCase):
 
     def test_wrong_installed_git_revision_does_not_claim_install_success(self):
         self.installed_revision = "b" * 40
-        with self.isolated(), self.assertRaisesRegex(ValueError, "Git revision differs"):
+        with self.isolated(), self.assertRaisesRegex(RuntimeError, "Git revision differs"):
             self.update()
         self.assertFalse((self.state / "current.json").exists())
         self.assertFalse(json.loads((self.state / "pending.json").read_text())["installed"])
@@ -279,7 +283,7 @@ class PluginUpdateTests(unittest.TestCase):
                 return "wrong-revision"
             return original(arguments, root)
         self.command = command
-        with self.isolated(), self.assertRaisesRegex(ValueError, "marketplace Git revision differs"):
+        with self.isolated(), self.assertRaisesRegex(RuntimeError, "marketplace Git revision differs"):
             self.update()
         self.assertFalse((self.state / "current.json").exists())
 
@@ -292,12 +296,11 @@ class PluginUpdateTests(unittest.TestCase):
                 (cache / "bin/codex-session-board").write_text("corrupted")
             return result
         self.run_command = run
-        with self.isolated(), self.assertRaisesRegex(ValueError, "hashes differ"):
+        with self.isolated(), self.assertRaisesRegex(RuntimeError, "hashes differ"):
             self.update()
         self.assertFalse((self.state / "current.json").exists())
 
     def test_install_failure_preserves_previous_current_record(self):
-        import subprocess
         self.state.mkdir()
         previous = {"installed": True, "release": "previous"}
         (self.state / "current.json").write_text(json.dumps(previous))
@@ -307,10 +310,31 @@ class PluginUpdateTests(unittest.TestCase):
                 raise subprocess.CalledProcessError(1, arguments)
             return original(arguments, **kwargs)
         self.run_command = run
-        with self.isolated(), self.assertRaises(subprocess.CalledProcessError):
+        with self.isolated(), self.assertRaisesRegex(RuntimeError, "未留下市场注册"):
             self.update()
         self.assertEqual(json.loads((self.state / "current.json").read_text()), previous)
         self.assertFalse(json.loads((self.state / "pending.json").read_text())["installed"])
+
+    def test_marketplace_timeout_restores_previous_registration_and_cache(self):
+        with self.isolated():
+            previous = self.update()
+        original = self.run_command
+        attempts = []
+
+        def run(arguments, **kwargs):
+            if arguments[:4] == ["codex", "plugin", "marketplace", "add"]:
+                attempts.append(arguments)
+                if len(attempts) == 1:
+                    raise subprocess.TimeoutExpired(arguments, 120)
+            return original(arguments, **kwargs)
+
+        self.run_command = run
+        with self.isolated():
+            with self.assertRaisesRegex(RuntimeError, "已恢复上一个插件市场及缓存"):
+                self.update()
+            self.assertEqual(update_plugin.cached_package("codex", self.version, self.revision), self.manifest)
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(json.loads((self.state / "current.json").read_text()), previous)
 
     def test_lock_contention_never_fetches(self):
         import fcntl

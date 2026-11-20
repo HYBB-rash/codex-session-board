@@ -32,19 +32,19 @@ class UpdateDeliveryTests(unittest.TestCase):
                             update_plugin.cached_package("codex", "new", "expected")
                     verify.assert_not_called()
 
-    def test_install_uses_the_verified_git_snapshot_without_a_second_marketplace_refresh(self):
+    def test_native_add_can_only_clone_the_verified_local_snapshot(self):
         revision = "a" * 40
-        with patch.object(update_plugin, "command", return_value=json.dumps({
-            "marketplaces": [{"name": update_plugin.MARKET}, {"name": "unrelated"}],
-        })):
+        with tempfile.TemporaryDirectory() as temporary:
+            checkout = Path(temporary).resolve()
             with patch.object(update_plugin.subprocess, "run") as run:
-                update_plugin.install_market("codex", "repository", revision)
-        commands = [call.args[0] for call in run.call_args_list]
-        self.assertEqual(commands, [
-            ["codex", "plugin", "marketplace", "remove", update_plugin.MARKET],
-            ["codex", "plugin", "marketplace", "add", "repository", "--ref", revision, "--json"],
-            ["codex", "plugin", "add", "codex-session-board@" + update_plugin.MARKET, "--json"],
-        ])
+                update_plugin.add_market("codex", "repository", revision, checkout)
+            run.assert_called_once()
+            self.assertEqual(run.call_args.args[0],
+                             ["codex", "plugin", "marketplace", "add", "repository", "--json", "--ref", revision])
+            environment = run.call_args.kwargs["env"]
+            self.assertEqual(environment["GIT_ALLOW_PROTOCOL"], "file")
+            self.assertEqual(environment["GIT_CONFIG_KEY_0"], f"url.{checkout.as_uri()}.insteadOf")
+            self.assertEqual(environment["GIT_CONFIG_VALUE_0"], "repository")
 
     def test_reload_targets_the_installed_mcp_without_global_skill_discovery(self):
         server = {"pluginId": "codex-session-board@session-board-rust",
