@@ -20,6 +20,7 @@ import board_update_job
 import package_plugin
 import reload_plugins
 import update_plugin
+import verify_plugin_upgrade
 
 
 class PluginUpdateTests(unittest.TestCase):
@@ -72,8 +73,11 @@ class PluginUpdateTests(unittest.TestCase):
             shutil.copytree(self.source, kwargs["cwd"], dirs_exist_ok=True)
         if arguments[:4] == ["codex", "plugin", "marketplace", "add"]:
             shutil.copytree(self.source, self.market)
+            (self.market / ".git").mkdir()
+            self.write_market_registration(arguments[-1])
         if arguments[:4] == ["codex", "plugin", "marketplace", "remove"]:
             shutil.rmtree(self.market)
+            self.write_market_registration(None)
         if arguments[:3] == ["codex", "plugin", "add"]:
             self.pending_at_install = json.loads((self.state / "pending.json").read_text())
             cache = self.home / "plugins/cache" / update_plugin.MARKET / "codex-session-board" / self.version
@@ -81,6 +85,16 @@ class PluginUpdateTests(unittest.TestCase):
             (cache / ".codex-marketplace-install.json").write_text(json.dumps({
                 "source_type": "git", "revision": self.installed_revision}))
         return SimpleNamespace(returncode=0)
+
+    def write_market_registration(self, reference):
+        path = self.home / "config.toml"
+        document = update_plugin.tomlkit.parse(update_plugin.config_text(path))
+        markets = document.setdefault("marketplaces", {})
+        if reference is None:
+            markets.pop(update_plugin.MARKET, None)
+        else:
+            markets[update_plugin.MARKET] = {"source": "mock-repository", "source_type": "git", "ref": reference}
+        path.write_text(update_plugin.tomlkit.dumps(document))
 
     def command(self, arguments, root=None):
         self.commands.append(arguments)
@@ -319,6 +333,9 @@ class PluginUpdateTests(unittest.TestCase):
     def test_marketplace_timeout_restores_previous_registration_and_cache(self):
         with self.isolated():
             previous = self.update()
+        self.write_market_registration("baseline")
+        (self.market / "RELEASE.json").unlink()
+        (self.market / "source-only").write_text("default branch, no release manifest")
         original = self.run_command
         attempts = []
 
@@ -334,7 +351,10 @@ class PluginUpdateTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "已恢复上一个插件市场及缓存"):
                 self.update()
             self.assertEqual(update_plugin.cached_package("codex", self.version, self.revision), self.manifest)
-        self.assertEqual(len(attempts), 2)
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(tomllib.loads((self.home / "config.toml").read_text())["marketplaces"]
+                         [update_plugin.MARKET]["ref"], "baseline")
+        self.assertEqual((self.market / "source-only").read_text(), "default branch, no release manifest")
         self.assertEqual(json.loads((self.state / "current.json").read_text()), previous)
 
     def test_orphan_cache_survives_candidate_install_and_failed_readback(self):
@@ -353,17 +373,81 @@ class PluginUpdateTests(unittest.TestCase):
             if arguments[:3] == ["codex", "plugin", "add"]:
                 shutil.rmtree(old)
                 result = original(arguments, **kwargs)
-                (cache / "bin/codex-session-board").write_text("invalid candidate")
+                (cache / "RELEASE.json").write_text("null")
                 return result
             return original(arguments, **kwargs)
 
         self.run_command = run
-        with self.isolated(), self.assertRaisesRegex(RuntimeError, "未留下市场注册，已恢复原缓存"):
+        with self.isolated(), self.assertRaisesRegex(RuntimeError, "manifest must be an object.*已恢复原缓存"):
             self.update(reload=False)
         self.assertFalse(self.market.exists())
         self.assertFalse(cache.exists())
         self.assertEqual(package_plugin.hashes(old), old_hashes)
         self.assertEqual(json.loads((self.state / "current.json").read_text()), previous)
+
+    def test_unexpected_install_and_rollback_errors_keep_the_recovery_copy(self):
+        cache = update_plugin.cache_directory(self.version)
+        with self.isolated():
+            previous = self.update(reload=False)
+        shutil.rmtree(self.market)
+        self.write_market_registration(None)
+        expected = package_plugin.hashes(cache)
+        with self.isolated(), \
+             patch.object(update_plugin, "cached_package", side_effect=TypeError("unexpected verifier failure")), \
+             patch.object(update_plugin, "patch_config", side_effect=RuntimeError("cannot restore enablement")), \
+             self.assertRaisesRegex(RuntimeError, "unexpected verifier failure.*cannot restore enablement.*备份保留在"):
+            self.update(reload=False)
+        backup, = cache.parent.parent.glob(".board-rollback-*")
+        self.assertEqual(package_plugin.hashes(backup / "cache" / self.version), expected)
+        self.assertEqual(package_plugin.hashes(cache), expected)
+        self.assertTrue((backup / "failed-cache" / self.version).is_dir())
+        self.assertEqual(json.loads((self.state / "current.json").read_text()), previous)
+
+    def test_rollback_retries_config_edit_without_overwriting_concurrent_settings(self):
+        config = self.root / "config.toml"
+        config.write_text(f'[plugins."{update_plugin.PLUGIN_ID}"]\nenabled = true\n')
+        sync = os.fsync
+        conflict = True
+
+        def concurrent_write(descriptor):
+            nonlocal conflict
+            sync(descriptor)
+            if conflict:
+                conflict = False
+                with config.open("a") as writer:
+                    writer.write("\n[history]\npersistence = 'none'\n")
+
+        with patch.object(os, "fsync", side_effect=concurrent_write) as writes:
+            update_plugin.patch_config(config, lambda document: update_plugin.restore_enabled(
+                document, {"enabled": False}))
+        self.assertEqual(writes.call_count, 2)
+        self.assertEqual(tomllib.loads(config.read_text()), {
+            "plugins": {update_plugin.PLUGIN_ID: {"enabled": False}}, "history": {"persistence": "none"},
+        })
+
+    def test_native_recovery_verifier_rejects_an_install_that_did_not_prune_old_cache(self):
+        old_cache = update_plugin.cache_directory("old-version")
+        shutil.copytree(self.source, old_cache)
+        candidate = update_plugin.cache_directory(self.version)
+        shutil.copytree(self.source, candidate)
+        self.state.mkdir()
+        (self.state / "current.json").write_text("{}")
+        previous = {"version": "old-version", "binary_sha256": "old-build"}
+
+        def install(**kwargs):
+            try:
+                update_plugin.cached_package("codex", self.version, self.revision)
+            except ValueError as error:
+                raise RuntimeError("已恢复原缓存") from error
+
+        with patch.object(update_plugin, "remove_market"), \
+             patch.object(verify_plugin_upgrade, "market_registration", return_value=None), \
+             patch.object(verify_plugin_upgrade, "cached_package", side_effect=lambda *args:
+                          package_plugin.verify_package(candidate)), \
+             patch.object(verify_plugin_upgrade, "app_server") as host, \
+             self.assertRaisesRegex(ValueError, "candidate did not replace the old cache"):
+            verify_plugin_upgrade.verify_orphan_recovery("codex", self.root, self.state, {}, previous, install)
+        host.assert_not_called()
 
     def exercise_local_market(self, root, initial_enabled, install_failure):
         root.mkdir()
