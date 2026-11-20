@@ -57,23 +57,47 @@ def remove_market(codex):
     run([codex, "plugin", "marketplace", "remove", MARKET], stdout=subprocess.DEVNULL)
 
 
-def add_market(codex, repository, revision=None, checkout=None):
-    if checkout is None:
-        run([codex, "plugin", "marketplace", "add", repository, "--json"], stdout=subprocess.DEVNULL)
-        return
+def market_source(repository):
     source = repository.strip().rstrip("/")
     if source.startswith("https://github.com/") and not source.endswith(".git"):
         source += ".git"
+    return source
+
+
+def add_market(codex, repository, revision=None, checkout=None, *, sparse=()):
+    if checkout is None:
+        run([codex, "plugin", "marketplace", "add", repository, "--json"], stdout=subprocess.DEVNULL)
+        return
+    repository = market_source(repository)
     environment = dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
                        GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0=f"url.{checkout.as_uri()}.insteadOf",
-                       GIT_CONFIG_VALUE_0=source, GIT_ALLOW_PROTOCOL="file")
+                       GIT_CONFIG_VALUE_0=repository, GIT_ALLOW_PROTOCOL="file")
     environment.pop("GIT_CONFIG_PARAMETERS", None)
-    run([codex, "plugin", "marketplace", "add", source, "--json", "--ref", revision],
-        env=environment, stdout=subprocess.DEVNULL)
+    arguments = [codex, "plugin", "marketplace", "add", repository, "--json"]
+    if revision is not None:
+        arguments.extend(["--ref", revision])
+    for path in sparse:
+        arguments.extend(["--sparse", path])
+    run(arguments, env=environment, stdout=subprocess.DEVNULL)
 
 
-def add_plugin(codex):
-    run([codex, "plugin", "add", PLUGIN_ID, "--json"], stdout=subprocess.DEVNULL)
+def add_plugin(codex, home=None):
+    environment = dict(os.environ, CODEX_HOME=str(home)) if home else None
+    run([codex, "plugin", "add", PLUGIN_ID, "--json"], env=environment, stdout=subprocess.DEVNULL)
+
+
+def install_candidate_cache(codex, market, config, backup):
+    live_root = Path(market["root"])
+    with tempfile.TemporaryDirectory(prefix="install-", dir=backup) as temporary:
+        home = Path(temporary)
+        checkout = home / live_root.relative_to(codex_home().resolve())
+        checkout.parent.mkdir(parents=True)
+        checkout.symlink_to(live_root, target_is_directory=True)
+        cache = home / "plugins/cache" / MARKET
+        cache.parent.mkdir(parents=True)
+        cache.symlink_to(cache_directory().parent.resolve(), target_is_directory=True)
+        (home / "config.toml").write_text(config_text(config))
+        add_plugin(codex, home)
 
 
 @dataclass
@@ -100,6 +124,8 @@ def backup_market(previous, backup, settings):
         raise ValueError("Cannot prepare recovery for this marketplace source")
     if settings is None:
         raise ValueError("Git marketplace is missing its user registration")
+    if settings.keys() - {"source", "source_type", "ref", "sparse_paths"}:
+        raise ValueError("Git marketplace has registration fields the native CLI cannot restore")
     root = Path(previous["root"]).resolve(strict=True)
     if not (root / ".git").is_dir() or (root / ".git").is_symlink():
         raise ValueError("Marketplace checkout does not have a self-contained Git directory")
@@ -128,50 +154,61 @@ def market_settings(document):
     return settings.unwrap() if settings is not None else None
 
 
-def patch_config(path, edit):
-    for _ in range(5):
-        original = config_text(path)
-        document = tomlkit.parse(original)
-        if not edit(document) or write_atomic(path, tomlkit.dumps(document), expected=original):
-            return
-    raise RuntimeError("User config kept changing during rollback")
-
-
-def restore_git_market(backup, config_path):
-    def restore_registration(document):
-        existing = market_settings(document)
-        if existing == backup.settings:
-            return False
-        if existing is not None:
-            raise ValueError("Marketplace registration changed during rollback")
-        document.setdefault("marketplaces", {})[MARKET] = backup.settings
-        return True
-
+def restore_git_checkout(backup):
     with tempfile.TemporaryDirectory(prefix=".board-market-", dir=backup.root.parent) as temporary:
         staged = Path(temporary) / "market"
         shutil.copytree(backup.copy, staged, symlinks=True)
         compare_market(backup.copy, staged)
-        staged.rename(backup.root)
-    patch_config(config_path, restore_registration)
+        cloned = Path(temporary) / "native-checkout"
+        backup.root.rename(cloned)
+        try:
+            staged.rename(backup.root)
+        except OSError:
+            if not backup.root.exists():
+                cloned.rename(backup.root)
+            raise
 
 
-def restore_market(codex, previous, backup, config_path):
-    registered = market_registration(codex)
+def owned_market(registered, settings, source, revision):
+    return (registered is not None
+            and registered["marketplaceSource"] == {"sourceType": "git", "source": source}
+            and settings is not None and settings.get("source_type") == "git"
+            and settings.get("source") == source and settings.get("ref") == revision and not settings.get("sparse_paths")
+            and git_revision(Path(registered["root"])) == revision)
+
+
+def read_config(path):
+    return tomlkit.parse(config_text(path))
+
+
+def plugin_enabled(config):
+    return config.get("plugins", {}).get(PLUGIN_ID, {}).get("enabled")
+
+
+def restore_market(codex, previous, backup, config_path, source, revision):
+    registered, settings = market_registration(codex), market_settings(read_config(config_path))
     if registered == previous and backup is None:
+        if registered is None and settings is not None:
+            raise ValueError("市场注册冲突：检测到其他进程留下的配置")
         return
-    if registered == previous and backup and market_settings(tomlkit.parse(config_text(config_path))) == backup.settings:
+    if registered == previous and backup and settings == backup.settings:
         try:
             if git_revision(backup.root) == backup.revision:
                 compare_market(backup.copy, backup.root)
                 return
         except (OSError, subprocess.SubprocessError):
             pass
-    if registered:
+    if registered is not None or settings is not None:
+        if not owned_market(registered, settings, source, revision):
+            raise ValueError("市场注册冲突：已保留当前来源，未移除")
         remove_market(codex)
     if backup:
-        restore_git_market(backup, config_path)
-        if (git_revision(backup.root) != backup.revision
-                or market_settings(tomlkit.parse(config_text(config_path))) != backup.settings):
+        old = backup.settings
+        add_market(codex, old["source"], old.get("ref"), backup.copy, sparse=old.get("sparse_paths", ()))
+        if market_registration(codex) != previous or market_settings(read_config(config_path)) != old:
+            raise ValueError("Restored marketplace registration differs")
+        restore_git_checkout(backup)
+        if git_revision(backup.root) != backup.revision:
             raise ValueError("Restored marketplace revision or registration settings differ")
     elif previous:
         add_market(codex, previous["marketplaceSource"]["source"])
@@ -179,25 +216,14 @@ def restore_market(codex, previous, backup, config_path):
         raise ValueError("Restored marketplace registration differs")
 
 
-def restore_enabled(config, previous):
-    plugins = config.get("plugins", {})
-    plugin = plugins.get(PLUGIN_ID)
-    enabled = previous.get("enabled") if previous is not None else None
-    if plugin is None and previous is None:
-        return False
-    if plugin is None:
-        raise ValueError("Plugin config was removed during installation")
-    if plugin.get("enabled") == enabled:
-        return False
-    if plugin.get("enabled") is not True:
-        raise ValueError("Plugin enablement changed during installation")
-    if enabled is None:
-        del plugin["enabled"]
-        if previous is None and not plugin:
-            del plugins[PLUGIN_ID]
-    else:
-        plugin["enabled"] = enabled
-    return True
+def require_enablement(config_path, enabled):
+    if plugin_enabled(read_config(config_path)) != enabled:
+        raise ValueError("插件启用状态发生冲突，已保留当前配置。请在 Codex 插件管理中核对开关")
+
+
+def verify_candidate_cache(codex, manifest, revision):
+    if cached_package(codex, manifest["version"], revision) != manifest:
+        raise ValueError("Installed plugin cache differs from fetched release")
 
 
 def restore_cache(cache, backup):
@@ -218,8 +244,9 @@ def install_market(codex, repository, revision, checkout, manifest):
     if cache.is_symlink():
         raise ValueError("Cannot back up a symlinked plugin cache")
     config = (codex_home() / "config.toml").resolve()
-    original = tomlkit.parse(config_text(config))
-    previous_settings = original.get("plugins", {}).get(PLUGIN_ID)
+    original = read_config(config)
+    enabled = plugin_enabled(original)
+    source = market_source(repository)
     cache.parent.mkdir(parents=True, exist_ok=True)
     backup = Path(tempfile.mkdtemp(prefix=".board-rollback-", dir=cache.parent))
     keep_backup = False
@@ -232,17 +259,23 @@ def install_market(codex, repository, revision, checkout, manifest):
         try:
             if previous:
                 remove_market(codex)
-            add_market(codex, repository, revision, checkout)
+            add_market(codex, source, revision, checkout)
+            candidate = market_registration(codex)
+            if not owned_market(candidate, market_settings(read_config(config)), source, revision):
+                raise ValueError("市场注册冲突：未确认本次候选市场的来源和提交")
             installing_plugin = True
-            add_plugin(codex)
-            if cached_package(codex, manifest["version"], revision) != manifest:
-                raise ValueError("Installed plugin cache differs from fetched release")
+            install_candidate_cache(codex, candidate, config, backup)
+            verify_candidate_cache(codex, manifest, revision)
+            require_enablement(config, enabled)
+            if enabled is None:
+                add_plugin(codex)
+                verify_candidate_cache(codex, manifest, revision)
         except Exception as error:
-            actions = [("市场注册", lambda: restore_market(codex, previous, old_market, config))]
+            actions = []
             if installing_plugin:
-                actions.extend([("插件缓存", lambda: restore_cache(cache, backup)),
-                                ("插件启用状态", lambda: patch_config(
-                                    config, lambda document: restore_enabled(document, previous_settings)))])
+                actions.append(("插件缓存", lambda: restore_cache(cache, backup)))
+            actions.extend([("市场注册", lambda: restore_market(codex, previous, old_market, config, source, revision)),
+                            ("插件启用状态", lambda: require_enablement(config, enabled))])
             failures = []
             for name, action in actions:
                 try:
@@ -299,17 +332,14 @@ def write_record(path, record):
     write_atomic(path, json.dumps(record, indent=2) + "\n")
 
 
-def write_atomic(path, contents, *, expected=None):
+def write_atomic(path, contents):
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as output:
         temporary = Path(output.name)
         try:
             output.write(contents)
             output.flush()
             os.fsync(output.fileno())
-            if expected is not None and config_text(path) != expected:
-                return False
             os.replace(temporary, path)
-            return True
         finally:
             temporary.unlink(missing_ok=True)
 

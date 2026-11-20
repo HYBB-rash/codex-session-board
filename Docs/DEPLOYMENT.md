@@ -155,7 +155,11 @@ python3 scripts/verify_plugin_upgrade.py --previous "$PREVIOUS_REVISION" \
 失败返回非零并在出错步骤记录原因。`target_host_acceptance.status=pending` 表示仍缺日用环境验收。
 
 在替换市场前，更新器分别保存市场来源和插件缓存。无市场注册时仍保留原缓存，早期本地市场可从原路径重新注册。
-失败回滚恢复缓存和该插件的启用值，保留其他配置。若回滚有步骤失败，回执会列出失败项和保留的备份目录。
+候选缓存由原生 CLI 安装，用临时配置接收安装过程写入的启用值。回滚先恢复缓存，再恢复原市场，
+并核对日用配置中的启用值。确认为本次写入的候选市场才会移除。
+若回执报告冲突，先用 `codex plugin marketplace list --json` 核对来源，
+再在 Codex 插件管理中核对启用开关。当前配置和备用目录会保留。
+备份中有原缓存，若原市场为 Git，另有原检出和 `market-registration.toml`，可用于确认要恢复的来源和分支。
 
 用同一个 fixture 核对 GitHub URL 写法。每次运行使用独立 Codex home，并在报告中记录输入 URL。
 
