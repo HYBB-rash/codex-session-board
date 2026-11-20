@@ -34,17 +34,27 @@ class UpdateDeliveryTests(unittest.TestCase):
 
     def test_native_add_can_only_clone_the_verified_local_snapshot(self):
         revision = "a" * 40
+        canonical = "https://github.com/example/repo.git"
+        ssh = "git@github.com:example/repo.git"
+        cases = [
+            ("https://github.com/example/repo", canonical),
+            ("https://github.com/example/repo/", canonical),
+            (canonical, canonical),
+            (f"{canonical}/", canonical),
+            (ssh, ssh),
+        ]
         with tempfile.TemporaryDirectory() as temporary:
             checkout = Path(temporary).resolve()
-            with patch.object(update_plugin.subprocess, "run") as run:
-                update_plugin.add_market("codex", "repository", revision, checkout)
-            run.assert_called_once()
-            self.assertEqual(run.call_args.args[0],
-                             ["codex", "plugin", "marketplace", "add", "repository", "--json", "--ref", revision])
-            environment = run.call_args.kwargs["env"]
-            self.assertEqual(environment["GIT_ALLOW_PROTOCOL"], "file")
-            self.assertEqual(environment["GIT_CONFIG_KEY_0"], f"url.{checkout.as_uri()}.insteadOf")
-            self.assertEqual(environment["GIT_CONFIG_VALUE_0"], "repository")
+            for repository, source in cases:
+                with self.subTest(repository=repository), patch.object(update_plugin.subprocess, "run") as run:
+                    update_plugin.add_market("codex", repository, revision, checkout)
+                    run.assert_called_once()
+                    self.assertEqual(run.call_args.args[0],
+                                     ["codex", "plugin", "marketplace", "add", source, "--json", "--ref", revision])
+                    environment = run.call_args.kwargs["env"]
+                    self.assertEqual(environment["GIT_ALLOW_PROTOCOL"], "file")
+                    self.assertEqual(environment["GIT_CONFIG_KEY_0"], f"url.{checkout.as_uri()}.insteadOf")
+                    self.assertEqual(environment["GIT_CONFIG_VALUE_0"], source)
 
     def test_reload_targets_the_installed_mcp_without_global_skill_discovery(self):
         server = {"pluginId": "codex-session-board@session-board-rust",

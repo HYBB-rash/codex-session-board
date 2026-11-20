@@ -26,3 +26,9 @@ PR #29 分别执行过本地 Git fixture 的按钮升级及真实 GitHub 包下�
 验证入口为 `scripts/verify_plugin_upgrade.py`，参见 `Docs/DEPLOYMENT.md`。
 本机证据目录 `~/.local/state/codex-session-board/real-upgrade-20261120/` 下的 `github-native-final.json`、`fixture-native-final.json` 和 `fixture-no-candidate-final.json` 分别记录正式来源隔离成功、本地快检成功和候选缺失。
 `ui-auto/` 与 `ui-pending/` 保存隔离按钮、回执和截图。日用实例仍需在修复发布后独立取证。
+
+2026-11-21，PR #31 在 `28eec63` 被退回。Codex 0.171.0 会去掉 GitHub HTTPS URL 的尾斜杠并补 `.git`。
+原更新器用输入 URL 匹配 Git 重写，无 `.git` 时 Git 把后缀接到本地目录名上，有尾斜杠时重写未命中。
+原生 Git 两次均退出 128。修复后，两种输入都注册校验过的 `3def989` 浅克隆。
+两次隔离升级均验证了市场添加超时后恢复 `0.4.15`，重试后从独立宿主读回 `0.4.16` 和原有状态与备注。
+本机记录在 `~/.local/state/codex-session-board/real-upgrade-20261121/`。运行方式见部署文档的升级验证报告。

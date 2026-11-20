@@ -53,15 +53,18 @@ def remove_market(codex):
 
 
 def add_market(codex, repository, revision=None, checkout=None):
-    arguments = [codex, "plugin", "marketplace", "add", repository, "--json"]
     if checkout is None:
-        run(arguments, stdout=subprocess.DEVNULL)
+        run([codex, "plugin", "marketplace", "add", repository, "--json"], stdout=subprocess.DEVNULL)
         return
+    source = repository.strip().rstrip("/")
+    if source.startswith("https://github.com/") and not source.endswith(".git"):
+        source += ".git"
     environment = dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
                        GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0=f"url.{checkout.as_uri()}.insteadOf",
-                       GIT_CONFIG_VALUE_0=repository, GIT_ALLOW_PROTOCOL="file")
+                       GIT_CONFIG_VALUE_0=source, GIT_ALLOW_PROTOCOL="file")
     environment.pop("GIT_CONFIG_PARAMETERS", None)
-    run([*arguments, "--ref", revision], env=environment, stdout=subprocess.DEVNULL)
+    run([codex, "plugin", "marketplace", "add", source, "--json", "--ref", revision],
+        env=environment, stdout=subprocess.DEVNULL)
 
 
 def add_plugin(codex):

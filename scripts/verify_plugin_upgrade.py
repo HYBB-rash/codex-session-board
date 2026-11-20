@@ -35,7 +35,7 @@ class UpgradeReport:
         self.record = {
             "schema_version": 1, "scope": "isolated_native_upgrade",
             "started_at": datetime.now(timezone.utc).isoformat(),
-            "source": {"repository": REPOSITORY, "candidate": f"refs/heads/candidate/{target()}",
+            "source": {"repository": arguments.repository, "candidate": f"refs/heads/candidate/{target()}",
                        "transport": "local_fixture" if arguments.fixture else "github",
                        "fixture": str(arguments.fixture) if arguments.fixture else None},
             "requested_previous_revision": arguments.previous,
@@ -159,13 +159,13 @@ def verify(arguments, report, root):
     if arguments.fixture:
         fixture = arguments.fixture.resolve(strict=True).as_uri()
         environment.update(GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0=f"url.{fixture}.insteadOf",
-                           GIT_CONFIG_VALUE_0=REPOSITORY)
+                           GIT_CONFIG_VALUE_0=arguments.repository)
     state = Path(environment["XDG_DATA_HOME"]) / "codex-session-board/installation"
 
     def install(revision=None, running=None, reload=False):
         stages = []
         report.record["steps"][-1]["observed_phases"] = stages
-        receipt = update(REPOSITORY, "candidate", revision, state, codex, reload=reload,
+        receipt = update(arguments.repository, "candidate", revision, state, codex, reload=reload,
                          running_build=running, progress=lambda phase, **fields: stages.append(phase))
         return identity(receipt, stages)
 
@@ -242,6 +242,7 @@ def main():
     parser.add_argument("--previous", required=True, help="Immutable marketplace revision for the installed baseline")
     parser.add_argument("--output", required=True, type=Path, help="New JSON report path")
     parser.add_argument("--fixture", type=Path, help="Optional local Git repository with baseline and candidate revisions")
+    parser.add_argument("--repository", default=REPOSITORY, help="Git repository URL to exercise")
     parser.add_argument("--codex", default="codex")
     parser.add_argument("--exercise-recovery", action="store_true")
     arguments = parser.parse_args()

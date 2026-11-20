@@ -154,6 +154,19 @@ python3 scripts/verify_plugin_upgrade.py --previous "$PREVIOUS_REVISION" \
 保留本次输出文件。报告绑定源码、发布包提交、安装和重载阶段，以及独立的 MCP 读回结果。
 失败返回非零并在出错步骤记录原因。`target_host_acceptance.status=pending` 表示仍缺日用环境验收。
 
+用同一个 fixture 核对 GitHub URL 写法。每次运行使用独立 Codex home，并在报告中记录输入 URL。
+
+```bash
+for variant in no-suffix trailing-slash; do
+  suffix=''
+  if [[ $variant == trailing-slash ]]; then suffix='/'; fi
+  python3 scripts/verify_plugin_upgrade.py --previous "$PREVIOUS_REVISION" \
+    --fixture "$FIXTURE" --exercise-recovery \
+    --repository "https://github.com/HYBB-rash/codex-session-board$suffix" \
+    --output "$REPORT_DIR/native-url-$variant.json"
+done
+```
+
 2026-11-20 在 Fedora 的两次示例使用同一旧包 `0.4.15`（`d5e1b2a`）。
 
 | 报告 | 来源和目标 | 耗时 | 实际结果 |
