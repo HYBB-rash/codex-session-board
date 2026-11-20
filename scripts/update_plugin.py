@@ -124,9 +124,45 @@ def plugin_enabled(config):
     return config.get("plugins", {}).get(PLUGIN_ID, {}).get("enabled")
 
 
+def active_plugin_version(codex, *, home=None):
+    inventory = json.loads(command([codex, "plugin", "list", "--marketplace", MARKET, "--json"], home=home))
+    selected = [entry["version"] for entry in inventory["installed"]
+                if entry["pluginId"] == PLUGIN_ID and entry["installed"] is True]
+    return selected[0] if len(selected) == 1 else None
+
+
 def verify_candidate_cache(codex, manifest, revision, *, home=None):
     if cached_package(codex, manifest["version"], revision, home=home) != manifest:
         raise ValueError("Installed plugin cache differs from fetched release")
+    if active_plugin_version(codex, home=home) != manifest["version"]:
+        raise ValueError("原生插件清单中的活动版本与候选版本不一致")
+
+
+def updated_config(contents, settings):
+    current = tomlkit.parse(contents.decode("utf-8-sig"))
+    expected = current.unwrap()
+    expected.setdefault("marketplaces", {})[MARKET] = settings
+    groups = ["marketplaces"]
+    entry = current.setdefault("marketplaces", {}).setdefault(MARKET, {})
+    for key in set(entry) - settings.keys():
+        del entry[key]
+    entry.update(settings)
+    if plugin_enabled(current) is None:
+        expected.setdefault("plugins", {}).setdefault(PLUGIN_ID, {})["enabled"] = True
+        current.setdefault("plugins", {}).setdefault(PLUGIN_ID, {})["enabled"] = True
+        groups.append("plugins")
+    serialized = current.as_string()
+    try:
+        if tomlkit.parse(serialized).unwrap() == expected:
+            return serialized, expected
+    except tomlkit.exceptions.ParseError:
+        pass
+    current = tomlkit.parse(contents.decode("utf-8-sig"))
+    for group in groups:
+        current.pop(group, None)
+    for group in groups:
+        current[group] = expected[group]
+    return current.as_string(), expected
 
 
 def stage_candidate(codex, source, revision, checkout, manifest, cache, private, original):
@@ -202,22 +238,20 @@ def install_market(codex, repository, revision, checkout, manifest):
         private.mkdir()
         staged_market, settings = stage_candidate(codex, source, revision, checkout, manifest, cache, private, original)
         market.parent.mkdir(parents=True, exist_ok=True)
-        if staged_market.stat().st_dev != market.parent.stat().st_dev:
-            market_backup = Path(tempfile.mkdtemp(prefix=".board-rollback-market-", dir=market.parent))
-            disposable.append(market_backup)
-            staged_market = shutil.copytree(staged_market, market_backup / MARKET, symlinks=True)
+        market_backup = Path(tempfile.mkdtemp(prefix=".board-rollback-market-", dir=market.parent))
+        disposable.append(market_backup)
+        staged_market = shutil.copytree(staged_market, market_backup / MARKET, symlinks=True)
         prior_config = fingerprint(config)
         contents = config_bytes(config)
-        current = tomlkit.parse(contents.decode("utf-8-sig"))
-        require_original_config(current, original)
-        current.setdefault("marketplaces", {})[MARKET] = settings
-        if plugin_enabled(original) is None:
-            current.setdefault("plugins", {}).setdefault(PLUGIN_ID, {})["enabled"] = True
+        require_original_config(tomlkit.parse(contents.decode("utf-8-sig")), original)
+        serialized, expected = updated_config(contents, settings)
         config.parent.mkdir(parents=True, exist_ok=True)
         config_backup = Path(tempfile.mkdtemp(prefix=".board-rollback-config-", dir=config.parent))
         staged_config = config_backup / "config.toml"
         bom = "\ufeff" if contents.startswith(BOM_UTF8) else ""
-        write_atomic(staged_config, bom + tomlkit.dumps(current))
+        write_atomic(staged_config, bom + serialized)
+        if read_config(staged_config).unwrap() != expected:
+            raise ValueError("暂存配置读回与预期不一致")
         if prior_config is not None:
             staged_config.chmod(stat.S_IMODE(config.stat().st_mode))
         config_publication = Publication(config, staged_config, prior_config, "Codex 配置")
@@ -250,8 +284,10 @@ def install_market(codex, repository, revision, checkout, manifest):
                 if publication.live == config or isinstance(restore_error, KeyboardInterrupt):
                     break
         try:
+            require_config_target(logical_config, config)
+            require_install_targets(logical_market, market, logical_cache, cache)
             require_original_config(read_config(logical_config), original)
-            if fingerprint(market) != old_market or fingerprint(cache) != old_cache:
+            if fingerprint(logical_market) != old_market or fingerprint(logical_cache) != old_cache:
                 raise PublicationConflict("市场或插件缓存冲突：检测到其他安装写入")
         except (Exception, KeyboardInterrupt) as conflict:
             failures.append(command_error(conflict))
@@ -356,8 +392,10 @@ def matching_install(codex, manifest, revision, source, previous, running_build)
     try:
         registered = market_registration(codex)
         settings = market_settings(read_config(codex_home() / "config.toml"))
-        return (owned_market(registered, settings, source, revision)
-                and cached_package(codex, manifest["version"], revision) == manifest)
+        if not owned_market(registered, settings, source, revision):
+            return False
+        verify_candidate_cache(codex, manifest, revision)
+        return True
     except (OSError, ValueError, KeyError, subprocess.SubprocessError):
         return False
 

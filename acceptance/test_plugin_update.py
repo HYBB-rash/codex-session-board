@@ -1,4 +1,5 @@
 import contextlib
+import errno
 import io
 import json
 import os
@@ -63,6 +64,7 @@ class PluginUpdateTests(unittest.TestCase):
         self.commands = []
         self.pending_at_install = None
         self.installed_revision = self.revision
+        self.native_selections = []
         self.environment = patch.dict(os.environ, {"CODEX_HOME": str(self.home),
             "CODEX_THREAD_ID": "fixture-thread",
             "CODEX_LINUX_APP_SERVER_BRIDGE_SOCKET": str(self.root / "absent.sock")})
@@ -110,6 +112,13 @@ class PluginUpdateTests(unittest.TestCase):
 
     def command(self, arguments, root=None, *, home=None):
         self.commands.append(arguments)
+        if arguments[:3] == ["codex", "plugin", "list"]:
+            cache = update_plugin.cache_directory(home=home or self.home)
+            versions = [path.name for path in cache.iterdir() if path.is_dir()] if cache.is_dir() else []
+            version = max(versions, default=None)
+            self.native_selections.append(version)
+            return json.dumps({"installed": [{"pluginId": update_plugin.PLUGIN_ID, "installed": True,
+                                             "version": version}] if version else []})
         if arguments[:4] == ["codex", "plugin", "marketplace", "list"]:
             home = home or self.home
             settings = update_plugin.market_settings(update_plugin.read_config(home / "config.toml"))
@@ -206,6 +215,27 @@ class PluginUpdateTests(unittest.TestCase):
         self.assertEqual(result["phase"], "awaiting_board_readback")
         self.assertTrue(result["installed"])
         self.assertFalse(any(args[:3] == ["codex", "plugin", "add"] for args in self.commands))
+
+    def test_receipt_repair_requires_the_native_selected_version(self):
+        with self.isolated():
+            installed = self.update(reload=False)
+        cache = update_plugin.cache_directory()
+        shutil.copytree(cache / self.version, cache / "1.2.4")
+        current = self.state / "current.json"
+        stale = dict(installed, release=dict(self.manifest, version="1.2.4"))
+        current.write_text(json.dumps(stale))
+        pending = self.state / "pending.json"
+        pending.write_text(json.dumps(dict(stale, installed=False)))
+        self.commands.clear()
+        self.native_selections.clear()
+        with self.isolated():
+            result = self.update(running_build=self.manifest["binary_sha256"], reload=False)
+        self.assertEqual(result["phase"], "awaiting_desktop_reload")
+        self.assertEqual(json.loads(current.read_text()), result)
+        self.assertFalse(pending.exists())
+        self.assertEqual(self.native_selections, ["1.2.4", self.version, self.version])
+        self.assertTrue(any(args[:3] == ["codex", "plugin", "add"] for args in self.commands))
+        self.assertFalse((cache / "1.2.4").exists())
 
     def desktop_connection(self, version=None, reload_error=None):
         connection = MagicMock()
@@ -631,6 +661,76 @@ class PluginUpdateTests(unittest.TestCase):
         self.assertEqual(original.read_bytes(), snapshot[0])
         self.assertEqual(self.installation_snapshot(), snapshot)
 
+    def test_rollback_reports_retargeted_cache_entry_and_leaves_new_target_alone(self):
+        cache = self.home / "plugins/cache"
+        cache.parent.mkdir(parents=True)
+        original, replacement = self.root / "cache-a", self.root / "cache-b"
+        original.mkdir()
+        replacement.mkdir()
+        cache.symlink_to(original, target_is_directory=True)
+        with self.isolated():
+            self.update(reload=False)
+        old_plugin = update_plugin.cache_directory().resolve()
+        old_cache = plugin_publication.fingerprint(old_plugin)
+        snapshot = self.installation_snapshot()
+        atomic_rename = plugin_publication.atomic_rename
+
+        def retarget(source, destination, *, exchange):
+            atomic_rename(source, destination, exchange=exchange)
+            if destination == self.home / "config.toml" and cache.resolve() == original:
+                link = cache.with_name("cache-replacement")
+                link.symlink_to(replacement, target_is_directory=True)
+                link.replace(cache)
+
+        self.revision = self.installed_revision = "b" * 40
+        with self.isolated(), patch.object(plugin_publication, "atomic_rename", side_effect=retarget), \
+             self.assertRaisesRegex(RuntimeError, "安装目录已变化.*备份保留在") as failed:
+            self.update(reload=False)
+        self.assertNotIn("已恢复上一个插件市场及缓存", str(failed.exception))
+        self.assertEqual(cache.resolve(), replacement)
+        self.assertEqual(list(replacement.iterdir()), [])
+        self.assertEqual(plugin_publication.fingerprint(old_plugin), old_cache)
+        self.assertEqual((self.state / "current.json").read_bytes(), snapshot[3])
+        self.assertTrue(list(self.market.parent.glob(".board-rollback-market-*")))
+
+    def test_interleaved_dotted_settings_round_trip_with_native_install(self):
+        self.market.mkdir(parents=True)
+        config = self.home / "config.toml"
+        original = (
+            b'\xef\xbb\xbf# retained\n'
+            b'marketplaces.session-board-rust.source = "mock-repository"\n'
+            b'plugins."codex-session-board@session-board-rust".enabled = false\n'
+            b'marketplaces.session-board-rust.source_type = "git"\n'
+            b'marketplaces.session-board-rust.ref = "previous"\n'
+            b'notice.hide_rate_limit_model_nudge = true\n'
+        )
+        config.write_bytes(original)
+        expected = update_plugin.read_config(config).unwrap()
+        expected["marketplaces"][update_plugin.MARKET]["ref"] = self.revision
+        with self.isolated():
+            result = self.update(reload=False)
+        self.assertEqual(result["revision"], self.revision)
+        self.assertTrue(config.read_bytes().startswith(b'\xef\xbb\xbf# retained\n'))
+        self.assertEqual(tomllib.loads(config.read_text(encoding="utf-8-sig")), expected)
+
+    def test_invalid_staged_config_never_publishes_installation(self):
+        with self.isolated():
+            self.update(reload=False)
+        snapshot = self.installation_snapshot()
+        prepare = update_plugin.updated_config
+
+        def invalidate(contents, settings):
+            _, expected = prepare(contents, settings)
+            return "[marketplaces]\n", expected
+
+        self.revision = self.installed_revision = "b" * 40
+        with self.isolated(), patch.object(update_plugin, "updated_config", side_effect=invalidate), \
+             patch.object(plugin_publication.Publication, "publish") as publish, \
+             self.assertRaisesRegex(RuntimeError, "暂存配置读回与预期不一致"):
+            self.update(reload=False)
+        publish.assert_not_called()
+        self.assertEqual(self.installation_snapshot(), snapshot)
+
     def test_linked_config_is_staged_beside_target_and_preserves_bom(self):
         config = self.home / "config.toml"
         self.home.mkdir()
@@ -772,6 +872,24 @@ class PluginUpdateTests(unittest.TestCase):
             self.assertEqual(self.market.stat().st_dev, self.root.stat().st_dev)
             self.assertEqual(update_plugin.cache_directory().stat().st_dev, mount.stat().st_dev)
             self.assertFalse(list(self.market.parent.glob(".board-rollback-market-*")))
+
+    def test_market_staging_stays_on_its_mount_even_when_device_ids_match(self):
+        atomic_rename = plugin_publication.atomic_rename
+        market_moves = []
+
+        def separate_mounts(source, destination, *, exchange):
+            if destination == self.market:
+                self.assertEqual(source.stat().st_dev, destination.parent.stat().st_dev)
+                if source.parent.parent != destination.parent:
+                    raise OSError(errno.EXDEV, os.strerror(errno.EXDEV))
+                market_moves.append(source)
+            atomic_rename(source, destination, exchange=exchange)
+
+        with self.isolated(), patch.object(plugin_publication, "atomic_rename", side_effect=separate_mounts):
+            self.assertTrue(self.update(reload=False)["installed"])
+            self.revision = self.installed_revision = "b" * 40
+            self.assertEqual(self.update(reload=False)["revision"], self.revision)
+        self.assertEqual(len(market_moves), 2)
 
     def test_native_recovery_verifier_rejects_an_install_that_did_not_prune_old_cache(self):
         old_cache = update_plugin.cache_directory("old-version")

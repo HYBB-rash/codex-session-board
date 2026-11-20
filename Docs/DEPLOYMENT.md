@@ -156,14 +156,16 @@ python3 scripts/verify_plugin_upgrade.py --previous "$PREVIOUS_REVISION" \
 
 市场注册、原生安装和包校验先在临时 Codex home 完成。更新器发布已校验的 Git 检出和缓存，
 保留日用配置中的相对路径、现有插件启用值、UTF-8 BOM 和其他设置。若配置是符号链接，
-配置交换在真实配置所在的文件系统完成。市场检出和插件缓存也各自在目标所在的文件系统交换。
-发布后核对活动配置的来源和提交，先保存安装回执再清理市场和缓存备份。
+配置交换在真实配置旁完成。市场检出和插件缓存也各自在目标所在的挂载点暂存和交换。
+交换前重新解析暂存配置。保存或修复安装回执前，核对市场来源、提交和原生插件清单选中的安装版本。
 发布期间读回失败或收到 SIGINT 时，更新器尝试还原自己发布的内容。宿主重载读回时继续使用已发布的包。
 
 若回执报告冲突，先用 `codex plugin marketplace list --json` 核对来源，再在 Codex 插件管理中核对启用开关。
 若当前来源和开关符合预期，回到看板重试。若来源不符，先在 Codex 插件管理中选回所需来源。
-回执所列 `.board-rollback-*` 可能包含 `native/.tmp/marketplaces/session-board-rust` 和
-`native/plugins/cache/session-board-rust/codex-session-board`。跨卷时市场备份在市场检出旁的
+若报告安装目录已变化，先确认 `$CODEX_HOME/.tmp/marketplaces` 和 `$CODEX_HOME/plugins/cache`
+指向预期位置，再用 `codex plugin list --marketplace session-board-rust --json` 核对当前安装版本。
+回执所列 `.board-rollback-*` 可能包含 `native/plugins/cache/session-board-rust/codex-session-board`。
+市场备份在市场检出旁的
 `.board-rollback-market-*`，配置备份在真实配置旁的私有
 `.board-rollback-config-*/config.toml`。恢复前可用这些文件核对来源及提交。
 发布和回滚都会保留换下的配置文件。若有进程仍持有该文件的描述符，后续写入保存在备份中。
