@@ -88,6 +88,15 @@ bin/codex-session-board stop
 `codex-session-board/installation/board-update.json` 与 `board-update.log`。
 重新打开看板即可读回结果。
 
+安装器把已校验的 Git 快照交给 Codex，原生注册复用该快照，保留 GitHub 来源和固定提交。
+替换已有注册前会准备本地恢复副本。安装失败时会核对旧注册和缓存是否恢复，并把结果写入失败回执。
+若失败回执报告无法恢复旧市场，使用 `current.json` 中最近一次成功安装的 `revision` 执行下文的回退命令。
+
+`0.4.15` 和 `0.4.16` 随包的旧更新器遇到 `marketplace add` 超时时，可能留下已安装的旧包但缺少市场注册。
+新版发布后，用**含此修复的可信源码**运行下文的 `update_plugin.py --channel candidate` 一次，
+补齐市场注册并安装固定候选。若运行结果是 `awaiting_desktop_reload`，先按提示重载并独立核对运行版本。
+这次命令行安装记为恢复。下次候选发布后，从含此修复的已安装看板点击「更新」，另行记录按钮验收。
+
 首次安装、以及从没有「更新」按钮的版本升级，仍使用命令行入口。构建插件和直接运行
 源码目录中的更新工具时，先安装打包及重载依赖：
 
@@ -128,6 +137,33 @@ python3 scripts/update_plugin.py --repository "$PLUGIN_REPOSITORY" \
 回退保留当前数据库。数据库格式若有不兼容升级，应先按该升级的迁移文档恢复备份；
 固定程序版本不等于任意格式都可逆。
 局域网 SSH 需专用客户端配置时，可向发布或更新脚本传 `--ssh-config PATH`。
+
+### 升级验证报告
+
+用已安装旧版对应的不可变 **marketplace 提交** 启动隔离验证。命令需要本机 Codex、Git 和
+`requirements-delivery.txt` 中的 Python 依赖，创建临时 Codex home，不读写日用配置或会话。
+
+```bash
+python3 scripts/verify_plugin_upgrade.py --previous "$PREVIOUS_REVISION" \
+  --exercise-recovery --output "$REPORT_DIR/native-upgrade.json"
+```
+
+默认浅取正式 GitHub 候选。日常快检可传入 `--fixture PATH`，该本地 Git 仓库需包含旧版发布包提交，
+以及指向另一版本完整发布包的 `candidate/<Rust target>` 分支。`--exercise-recovery` 在原生添加新市场处
+注入超时，核对旧注册、缓存、从宿主重开的看板和备注，再执行正常重试。
+保留本次输出文件。报告绑定源码、发布包提交、安装和重载阶段，以及独立的 MCP 读回结果。
+失败返回非零并在出错步骤记录原因。`target_host_acceptance.status=pending` 表示仍缺日用环境验收。
+
+2026-11-20 在 Fedora 的两次示例使用同一旧包 `0.4.15`（`d5e1b2a`）。
+
+| 报告 | 来源和目标 | 耗时 | 实际结果 |
+| --- | --- | --- | --- |
+| `fixture-native-final.json` | 本地 fixture，`0.4.16`（`3def989`） | 4.689 秒 | 原生注册失败时恢复旧版。重试成功，隔离宿主读回新版、阻塞状态与备注。已最新版未触发安装。 |
+| `fixture-no-candidate-final.json` | 本地 fixture，缺少候选分支 | 1.470 秒 | 已安装并读回旧版。在 `fetching` 失败，未安装候选，日用验收待验证。 |
+
+日用验收需保留同一次按钮操作的前后证据。记录点击前运行版本、本机候选频道和实际目标提交、
+界面阶段、更新回执、重开看板后的宿主 MCP 版本、会话状态与备注，以及第二次点击的已最新版提示。
+安装回执仍显示待重载时记录提示，再按提示完成重载。日用按钮、宿主读回和用户数据各自缺证时分别标记待验证。
 
 ## 启用四列看板
 
