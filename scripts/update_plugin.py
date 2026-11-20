@@ -164,16 +164,23 @@ def require_config_target(logical, resolved):
         raise PublicationConflict("Codex 配置冲突：配置文件路径已变化")
 
 
+def require_install_targets(logical_market, market, logical_cache, cache):
+    if logical_market.resolve() != market or logical_cache.resolve() != cache:
+        raise PublicationConflict("市场或插件缓存冲突：安装目录已变化")
+
+
 def install_market(codex, repository, revision, checkout, manifest):
     logical_config = codex_home() / "config.toml"
     home = logical_config.parent.resolve()
     config = logical_config.resolve()
     original = read_config(config)
     previous = market_registration(codex)
-    market = home / ".tmp/marketplaces" / MARKET
-    cache = cache_directory()
-    if market.is_symlink() or cache.is_symlink():
+    logical_market = home / ".tmp/marketplaces" / MARKET
+    logical_cache = cache_directory()
+    if logical_market.is_symlink() or logical_cache.is_symlink():
         raise ValueError("Cannot update a symlinked marketplace or plugin cache")
+    market = logical_market.resolve()
+    cache = logical_cache.resolve()
     old_market, old_cache = fingerprint(market), fingerprint(cache)
     if previous:
         prior_source = previous["marketplaceSource"]
@@ -185,79 +192,92 @@ def install_market(codex, repository, revision, checkout, manifest):
             raise PublicationConflict("市场注册冲突：现有 Git 市场路径与安装入口不一致")
     cache.parent.mkdir(parents=True, exist_ok=True)
     backup = Path(tempfile.mkdtemp(prefix=".board-rollback-", dir=cache.parent))
+    disposable = [backup]
     config_backup = None
+    config_publication = None
     publications = []
-    verified = False
-    retain_displaced_config = False
     source = market_source(repository)
     try:
         private = backup / "native"
         private.mkdir()
-        try:
-            staged_market, settings = stage_candidate(codex, source, revision, checkout, manifest, cache, private, original)
-            prior_config = fingerprint(config)
-            contents = config_bytes(config)
-            current = tomlkit.parse(contents.decode("utf-8-sig"))
-            require_original_config(current, original)
-            current.setdefault("marketplaces", {})[MARKET] = settings
-            if plugin_enabled(original) is None:
-                current.setdefault("plugins", {}).setdefault(PLUGIN_ID, {})["enabled"] = True
-            config.parent.mkdir(parents=True, exist_ok=True)
-            config_backup = Path(tempfile.mkdtemp(prefix=".board-rollback-config-", dir=config.parent))
-            staged_config = config_backup / "config.toml"
-            bom = "\ufeff" if contents.startswith(BOM_UTF8) else ""
-            write_atomic(staged_config, bom + tomlkit.dumps(current))
-            if prior_config is not None:
-                staged_config.chmod(stat.S_IMODE(config.stat().st_mode))
-            publications.extend([
-                Publication(market, staged_market, old_market, "市场检出"),
-                Publication(cache, cache_directory(home=private), old_cache, "插件缓存"),
-                Publication(config, staged_config, prior_config, "Codex 配置"),
-            ])
-            require_config_target(logical_config, config)
-            for publication in publications:
-                publication.publish()
-            verify_candidate_cache(codex, manifest, revision)
-            require_config_target(logical_config, config)
-            registered = market_registration(codex)
-            active_settings = market_settings(read_config(logical_config))
-            if not owned_market(registered, active_settings, source, revision):
-                raise PublicationConflict("市场注册冲突：实际配置中的候选来源或提交不匹配")
-            for publication in publications:
-                publication.verify()
-            require_config_target(logical_config, config)
-            retain_displaced_config = prior_config is not None
-            verified = True
-        except (Exception, KeyboardInterrupt) as error:
-            failures = []
-            for publication in reversed(publications):
-                try:
-                    publication.restore()
-                except (Exception, KeyboardInterrupt) as restore_error:
-                    failures.append(command_error(restore_error))
-                    if publication.live == config or isinstance(restore_error, KeyboardInterrupt):
-                        break
+        staged_market, settings = stage_candidate(codex, source, revision, checkout, manifest, cache, private, original)
+        market.parent.mkdir(parents=True, exist_ok=True)
+        if staged_market.stat().st_dev != market.parent.stat().st_dev:
+            market_backup = Path(tempfile.mkdtemp(prefix=".board-rollback-market-", dir=market.parent))
+            disposable.append(market_backup)
+            staged_market = shutil.copytree(staged_market, market_backup / MARKET, symlinks=True)
+        prior_config = fingerprint(config)
+        contents = config_bytes(config)
+        current = tomlkit.parse(contents.decode("utf-8-sig"))
+        require_original_config(current, original)
+        current.setdefault("marketplaces", {})[MARKET] = settings
+        if plugin_enabled(original) is None:
+            current.setdefault("plugins", {}).setdefault(PLUGIN_ID, {})["enabled"] = True
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config_backup = Path(tempfile.mkdtemp(prefix=".board-rollback-config-", dir=config.parent))
+        staged_config = config_backup / "config.toml"
+        bom = "\ufeff" if contents.startswith(BOM_UTF8) else ""
+        write_atomic(staged_config, bom + tomlkit.dumps(current))
+        if prior_config is not None:
+            staged_config.chmod(stat.S_IMODE(config.stat().st_mode))
+        config_publication = Publication(config, staged_config, prior_config, "Codex 配置")
+        publications.extend([
+            Publication(market, staged_market, old_market, "市场检出"),
+            Publication(cache, cache_directory(home=private), old_cache, "插件缓存"),
+            config_publication,
+        ])
+        require_config_target(logical_config, config)
+        require_install_targets(logical_market, market, logical_cache, cache)
+        for publication in publications:
+            publication.publish()
+        verify_candidate_cache(codex, manifest, revision)
+        require_config_target(logical_config, config)
+        registered = market_registration(codex)
+        active_settings = market_settings(read_config(logical_config))
+        if not owned_market(registered, active_settings, source, revision):
+            raise PublicationConflict("市场注册冲突：实际配置中的候选来源或提交不匹配")
+        for publication in publications:
+            publication.verify()
+        require_config_target(logical_config, config)
+        require_install_targets(logical_market, market, logical_cache, cache)
+    except (Exception, KeyboardInterrupt) as error:
+        failures = []
+        for publication in reversed(publications):
             try:
-                require_original_config(read_config(logical_config), original)
-                if fingerprint(market) != old_market or fingerprint(cache) != old_cache:
-                    raise PublicationConflict("市场或插件缓存冲突：检测到其他安装写入")
-            except (Exception, KeyboardInterrupt) as conflict:
-                failures.append(command_error(conflict))
-            if failures or isinstance(error, PublicationConflict):
-                detail = f"。{'；'.join(failures)}" if failures else ""
-                locations = f"{backup} 和 {config_backup}" if config_backup else str(backup)
-                raise RuntimeError(f"{command_error(error)}{detail}。"
-                                   f"备份保留在 {locations}。请按部署文档恢复。") from error
-            verified = True
-            recovery = "已恢复上一个插件市场" if previous else "本次未留下市场注册"
-            if old_cache is not None:
-                recovery += "及缓存" if previous else "，已恢复原缓存"
-            raise RuntimeError(f"{command_error(error)}。{recovery}。") from error
-    finally:
-        if verified:
-            shutil.rmtree(backup)
-            if config_backup is not None and not retain_displaced_config:
-                shutil.rmtree(config_backup)
+                publication.restore()
+            except (Exception, KeyboardInterrupt) as restore_error:
+                failures.append(command_error(restore_error))
+                if publication.live == config or isinstance(restore_error, KeyboardInterrupt):
+                    break
+        try:
+            require_original_config(read_config(logical_config), original)
+            if fingerprint(market) != old_market or fingerprint(cache) != old_cache:
+                raise PublicationConflict("市场或插件缓存冲突：检测到其他安装写入")
+        except (Exception, KeyboardInterrupt) as conflict:
+            failures.append(command_error(conflict))
+        if failures or isinstance(error, PublicationConflict):
+            detail = f"。{'；'.join(failures)}" if failures else ""
+            locations = "、".join(map(str, disposable + ([config_backup] if config_backup else [])))
+            raise RuntimeError(f"{command_error(error)}{detail}。"
+                               f"备份保留在 {locations}。请按部署文档恢复。") from error
+        recovery = "已恢复上一个插件市场" if previous else "本次未留下市场注册"
+        if old_cache is not None:
+            recovery += "及缓存" if previous else "，已恢复原缓存"
+        if config_publication is not None and config_publication.applied:
+            recovery += f"。换下的配置保留在 {config_publication.staged}，请按部署文档核对"
+        elif config_backup is not None:
+            disposable.append(config_backup)
+        for directory in disposable:
+            try:
+                shutil.rmtree(directory)
+            except (OSError, KeyboardInterrupt) as cleanup_error:
+                recovery += f"。清理 {directory} 中断：{command_error(cleanup_error)}"
+                if isinstance(cleanup_error, KeyboardInterrupt):
+                    break
+        raise RuntimeError(f"{command_error(error)}。{recovery}。") from error
+    if prior_config is None:
+        disposable.append(config_backup)
+    return disposable
 
 
 def command_error(error):
@@ -327,14 +347,17 @@ def update_lock(state):
         yield lock
 
 
-def matching_install(codex, manifest, revision, previous, running_build):
+def matching_install(codex, manifest, revision, source, previous, running_build):
     if running_build is None:
         return False
     if (running_build != manifest["binary_sha256"]
             and not (previous and previous.get("installed") and previous.get("release") == manifest)):
         return False
     try:
-        return cached_package(codex, manifest["version"], revision) == manifest
+        registered = market_registration(codex)
+        settings = market_settings(read_config(codex_home() / "config.toml"))
+        return (owned_market(registered, settings, source, revision)
+                and cached_package(codex, manifest["version"], revision) == manifest)
     except (OSError, ValueError, KeyError, subprocess.SubprocessError):
         return False
 
@@ -349,7 +372,7 @@ def install_release(checkout, directory, codex, repository, record):
             staged = Path(temporary) / "package"
             shutil.copytree(checkout, staged, ignore=shutil.ignore_patterns(".git"))
             staged.rename(directory)
-    install_market(codex, repository, record["revision"], checkout, manifest)
+    return install_market(codex, repository, record["revision"], checkout, manifest)
 
 
 def load_release(codex, state, record, reload):
@@ -369,6 +392,7 @@ def update(repository, channel, revision, state, codex, reload=True, expected_so
     report = progress or (lambda phase, **fields: None)
     with update_lock(state) if inherited_lock is None else nullcontext():
         previous_path = state / "current.json"
+        pending_path = state / "pending.json"
         previous = json.loads(previous_path.read_text()) if previous_path.exists() else None
         reference = revision or f"refs/heads/{channel}/{target()}"
         report("fetching")
@@ -385,9 +409,6 @@ def update(repository, channel, revision, state, codex, reload=True, expected_so
             directory = state / "releases" / f"{manifest['version']}-{manifest['binary_sha256'][:12]}"
             if command([str(checkout / "bin/codex-session-board"), "--version"]) != f"codex-session-board {manifest['version']}":
                 raise ValueError("Release executable version differs")
-            matched = matching_install(codex, manifest, source_revision, previous, running_build)
-            if matched and running_build == manifest["binary_sha256"]:
-                return {"phase": "up_to_date", "installed": True, "release": manifest, "revision": source_revision}
             record = {
                 "phase": "installing", "installed": False, "desktop_loaded": False,
                 "release": manifest, "package": str(directory), "reference": reference,
@@ -395,18 +416,35 @@ def update(repository, channel, revision, state, codex, reload=True, expected_so
             }
             if previous is not None:
                 record["legacy_installation"] = previous.get("legacy_installation", previous)
+            matched = matching_install(codex, manifest, source_revision, market_source(repository), previous, running_build)
+            if matched and running_build == manifest["binary_sha256"]:
+                record.update(phase="up_to_date", installed=True)
+                if not previous or not previous.get("installed") or (
+                        previous.get("revision"), previous.get("release")) != (source_revision, manifest):
+                    write_record(previous_path, record)
+                pending_path.unlink(missing_ok=True)
+                return record
+            disposable = []
             if not matched:
                 directory.parent.mkdir(mode=0o700, exist_ok=True)
-                write_record(state / "pending.json", record)
+                write_record(pending_path, record)
                 report("installing", version=manifest["version"])
-                install_release(checkout, directory, codex, repository, record)
+                disposable = install_release(checkout, directory, codex, repository, record)
             record.update(installed=True, phase="awaiting_desktop_reload")
-            write_record(state / "pending.json", record)
-            write_record(state / "current.json", record)
-            report("reloading", version=manifest["version"])
-            load_release(codex, state, record, reload)
-            write_record(state / "current.json", record)
-            (state / "pending.json").unlink()
+            try:
+                write_record(previous_path, record)
+                pending_path.unlink(missing_ok=True)
+                for backup in disposable:
+                    try:
+                        shutil.rmtree(backup)
+                    except OSError as error:
+                        record.setdefault("cleanup_errors", []).append(command_error(error))
+                report("reloading", version=manifest["version"])
+                load_release(codex, state, record, reload)
+            except KeyboardInterrupt:
+                record["reload_error"] = "已安装。更新收尾被中断，请重载 Codex 后重新打开看板"
+                pending_path.unlink(missing_ok=True)
+            write_record(previous_path, record)
             return record
 
 

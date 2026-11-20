@@ -581,7 +581,8 @@ class PluginUpdateTests(unittest.TestCase):
                     self.update(reload=False)
                 self.assertEqual(self.installation_snapshot(), snapshot)
                 self.assertFalse(list(cache.parent.glob(".board-rollback-*")))
-                self.assertFalse(list(self.home.glob(".board-rollback-config-*")))
+                retained = list(self.home.glob(".board-rollback-config-*/config.toml"))
+                self.assertEqual(len(retained), int(interrupted_path == config))
 
     def test_write_to_displaced_config_is_detected_during_readback(self):
         with self.isolated():
@@ -668,8 +669,109 @@ class PluginUpdateTests(unittest.TestCase):
         self.assertTrue(external_config.read_bytes().startswith(original))
         self.assertEqual(result["revision"], self.revision)
         failed_staging, saved_original = config_publications
-        self.assertFalse(failed_staging.exists())
+        self.assertTrue(failed_staging.exists())
         self.assertEqual(saved_original.read_bytes(), original)
+
+    def test_rollback_reports_backup_for_writer_holding_candidate_config(self):
+        with self.isolated():
+            self.update(reload=False)
+        snapshot = self.installation_snapshot()
+        config = self.home / "config.toml"
+        cache = update_plugin.cache_directory()
+        verify = update_plugin.verify_candidate_cache
+        atomic_rename = plugin_publication.atomic_rename
+        history = b'\n[history]\npersistence = "none"\n'
+        with contextlib.ExitStack() as writer_scope:
+            writer = None
+
+            def fail(codex, manifest, revision, *, home=None):
+                nonlocal writer
+                verify(codex, manifest, revision, home=home)
+                if home is None:
+                    writer = writer_scope.enter_context(config.open("ab"))
+                    raise ValueError("failed final candidate check")
+
+            def save_during_cache_restore(source, destination, *, exchange):
+                atomic_rename(source, destination, exchange=exchange)
+                if source == cache:
+                    writer.write(history)
+                    writer.flush()
+                    os.fsync(writer.fileno())
+
+            with self.isolated(), patch.object(update_plugin, "verify_candidate_cache", side_effect=fail), \
+                 patch.object(plugin_publication, "atomic_rename", side_effect=save_during_cache_restore), \
+                 self.assertRaisesRegex(RuntimeError, "已恢复上一个插件市场及缓存.*换下的配置保留在") as failure:
+                self.update(reload=False)
+        retained, = self.home.glob(".board-rollback-config-*/config.toml")
+        self.assertIn(str(retained), str(failure.exception))
+        self.assertTrue(retained.read_bytes().endswith(history))
+        self.assertEqual(self.installation_snapshot(), snapshot)
+
+    def test_install_receipt_precedes_cleanup_and_retry_repairs_stale_receipts(self):
+        with self.isolated():
+            previous = self.update(reload=False)
+        config = self.home / "config.toml"
+        current = self.state / "current.json"
+        pending = self.state / "pending.json"
+        self.revision = self.installed_revision = "b" * 40
+        rmtree = shutil.rmtree
+
+        def interrupt_after_cleanup(path, *args, **kwargs):
+            rmtree(path, *args, **kwargs)
+            if Path(path).name.startswith(".board-rollback-"):
+                record = json.loads(current.read_text())
+                self.assertTrue(record["installed"])
+                self.assertEqual(record["revision"], self.revision)
+                self.assertEqual(record["phase"], "awaiting_desktop_reload")
+                self.assertFalse(pending.exists())
+                signal.raise_signal(signal.SIGINT)
+
+        with self.isolated(), patch.object(shutil, "rmtree", side_effect=interrupt_after_cleanup):
+            result = self.update(reload=False)
+        self.assertIn("收尾被中断", result["reload_error"])
+        self.assertEqual(update_plugin.market_settings(update_plugin.read_config(config))["ref"], self.revision)
+        self.assertEqual(json.loads(current.read_text()), result)
+        self.assertFalse(pending.exists())
+
+        current.write_text(json.dumps(previous))
+        pending.write_text(json.dumps(dict(result, phase="installing", installed=False)))
+        self.commands.clear()
+        with self.isolated():
+            recovered = self.update(running_build=self.manifest["binary_sha256"])
+        self.assertEqual(recovered["phase"], "up_to_date")
+        self.assertEqual(recovered["revision"], self.revision)
+        self.assertEqual(json.loads(current.read_text()), recovered)
+        self.assertFalse(pending.exists())
+        self.assertFalse(any(args[:3] == ["codex", "plugin", "add"] for args in self.commands))
+
+    def test_market_and_cache_on_different_filesystems_publish_and_restore(self):
+        mount = Path("/dev/shm")
+        if not mount.is_dir() or mount.stat().st_dev == self.root.stat().st_dev:
+            self.skipTest("requires a second writable filesystem at /dev/shm")
+        with tempfile.TemporaryDirectory(prefix="board-market-cache-", dir=mount) as cache_root:
+            self.home.mkdir()
+            (self.home / "plugins").mkdir()
+            (self.home / "plugins/cache").symlink_to(cache_root, target_is_directory=True)
+            with self.isolated():
+                self.update(reload=False)
+            snapshot = self.installation_snapshot()
+            verify = update_plugin.verify_candidate_cache
+
+            def fail(codex, manifest, revision, *, home=None):
+                verify(codex, manifest, revision, home=home)
+                if home is None:
+                    raise ValueError("failed final candidate check")
+
+            self.revision = self.installed_revision = "b" * 40
+            with self.isolated(), patch.object(update_plugin, "verify_candidate_cache", side_effect=fail), \
+                 self.assertRaisesRegex(RuntimeError, "failed final candidate check.*已恢复上一个插件市场及缓存"):
+                self.update(reload=False)
+            self.assertEqual(self.installation_snapshot(), snapshot)
+            with self.isolated():
+                self.assertEqual(self.update(reload=False)["revision"], self.revision)
+            self.assertEqual(self.market.stat().st_dev, self.root.stat().st_dev)
+            self.assertEqual(update_plugin.cache_directory().stat().st_dev, mount.stat().st_dev)
+            self.assertFalse(list(self.market.parent.glob(".board-rollback-market-*")))
 
     def test_native_recovery_verifier_rejects_an_install_that_did_not_prune_old_cache(self):
         old_cache = update_plugin.cache_directory("old-version")
