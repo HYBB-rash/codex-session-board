@@ -48,6 +48,9 @@ def configuration(path, command="scan"):
         if entries["repository"] != repository:
             raise ValueError("The production handoff repository does not match the configuration")
         config["assignments"] = entries["assignments"]
+    elif production and mode == "production-duty":
+        if "assignments" in config or "handoff" in config:
+            raise ValueError("Production duty discovers PRs from GitHub")
     elif mode != "isolated" or production:
         raise ValueError("Use isolated mode for trial repositories or production-scan for read-only production")
     checker = Path(config["checker"]).resolve(strict=True)
@@ -57,10 +60,11 @@ def configuration(path, command="scan"):
         raise ValueError("The frozen checker must remain clean")
     if production:
         if checker != ROOT:
-            raise ValueError("Production scan must run from its configured clean checkout")
-        current_main = forge.api(f"repos/{repository}/git/ref/heads/main")["object"]["sha"]
-        if current_main != config["checker_head"]:
-            raise ValueError("Production scan checkout differs from remote main")
+            raise ValueError("Production duty must run from its configured clean checkout")
+        if mode == "production-scan":
+            current_main = forge.api(f"repos/{repository}/git/ref/heads/main")["object"]["sha"]
+            if current_main != config["checker_head"]:
+                raise ValueError("Production scan checkout differs from remote main")
     directory = Path(config["state"]).resolve()
     if not Path(config["state"]).is_absolute() or directory.is_relative_to(checker) or directory.is_relative_to(ROOT):
         raise ValueError("Use an absolute, private state directory outside source")
@@ -169,11 +173,11 @@ def verify_queue(state, config, assignment, checker, candidate):
         raise ValueError("Existing queue does not bind this single authorized PR head")
 
 
-def advance(config, checker, directory, assignment, observed):
+def advance(config, checker, directory, assignment, observed, registered_queue=None):
     repository = config["repository"]
     candidate = Path(assignment["candidate"]).resolve(strict=True)
     identifier = digest([repository.lower(), assignment["pr"], assignment["head"]])
-    queue = directory / f"queue-{identifier}"
+    queue = registered_queue or directory / f"queue-{identifier}"
     if not queue.exists():
         from scripts.pr_queue_registry import locate
         try:
@@ -258,8 +262,13 @@ def advance(config, checker, directory, assignment, observed):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("scan", "tick", "pause", "resume", "status"))
+    parser.add_argument("command", choices=("scan", "tick", "pause", "resume", "status",
+                                            "reserve-review", "begin-review", "record-review", "recover-review"))
     parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument("--pr", type=int)
+    parser.add_argument("--head")
+    parser.add_argument("--review-task")
+    parser.add_argument("--recovery-proof")
     arguments = parser.parse_args()
     try:
         config, checker, directory = configuration(arguments.config, arguments.command)
@@ -269,6 +278,13 @@ def main():
             if arguments.command in {"pause", "resume"}:
                 save(control, {"paused": arguments.command == "pause", "updated_at": now()})
             paused = control.exists() and read(control)["paused"]
+            if config["mode"] == "production-duty" and not paused and arguments.command not in {"pause", "resume", "status"}:
+                from scripts.pr_merge_duty_production import run
+                report = run(sys.modules[__name__], config, checker, directory, arguments)
+                print(json.dumps(report, ensure_ascii=False))
+                return 2 if report["result"] == "infrastructure-blocked" else 0
+            if arguments.command not in {"scan", "tick", "pause", "resume", "status"} and not paused:
+                raise ValueError("Review coordination requires production duty mode")
             if arguments.command not in {"scan", "tick"} or paused:
                 print(json.dumps({"result": "paused" if paused else "active"}))
                 return 0
