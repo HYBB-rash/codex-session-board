@@ -7,6 +7,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -335,6 +336,121 @@ class PluginUpdateTests(unittest.TestCase):
             self.assertEqual(update_plugin.cached_package("codex", self.version, self.revision), self.manifest)
         self.assertEqual(len(attempts), 2)
         self.assertEqual(json.loads((self.state / "current.json").read_text()), previous)
+
+    def test_orphan_cache_survives_candidate_install_and_failed_readback(self):
+        cache = update_plugin.cache_directory(self.version)
+        with self.isolated():
+            previous = self.update(reload=False)
+        shutil.rmtree(self.market)
+        old = cache.with_name("old-version")
+        cache.rename(old)
+        old_hashes = package_plugin.hashes(old)
+        config = self.home / "config.toml"
+        config.write_text(f'[plugins."{update_plugin.PLUGIN_ID}"]\nenabled = true\n')
+        original = self.run_command
+
+        def run(arguments, **kwargs):
+            if arguments[:3] == ["codex", "plugin", "add"]:
+                shutil.rmtree(old)
+                result = original(arguments, **kwargs)
+                (cache / "bin/codex-session-board").write_text("invalid candidate")
+                return result
+            return original(arguments, **kwargs)
+
+        self.run_command = run
+        with self.isolated(), self.assertRaisesRegex(RuntimeError, "未留下市场注册，已恢复原缓存"):
+            self.update(reload=False)
+        self.assertFalse(self.market.exists())
+        self.assertFalse(cache.exists())
+        self.assertEqual(package_plugin.hashes(old), old_hashes)
+        self.assertEqual(json.loads((self.state / "current.json").read_text()), previous)
+
+    def exercise_local_market(self, root, initial_enabled, install_failure):
+        root.mkdir()
+        legacy = root / "legacy"
+        shutil.copytree(self.source, legacy)
+        (legacy / "RELEASE.json").unlink()
+        old_cache = update_plugin.cache_directory("legacy")
+        plugin_key = f'plugins."{update_plugin.PLUGIN_ID}"'
+        config = self.home / "config.toml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text('# user comment\n[analytics]\nenabled = false\n')
+        if initial_enabled is not None:
+            shutil.copytree(legacy, old_cache)
+            with config.open("a") as settings:
+                settings.write(f"\n[{plugin_key}]\nenabled = {str(initial_enabled).lower()}\n")
+        initial = tomllib.loads(config.read_text())
+        previous = {"name": update_plugin.MARKET, "root": str(legacy),
+                    "marketplaceSource": {"sourceType": "local", "source": str(legacy)}}
+        registration = previous
+        candidate = {"name": update_plugin.MARKET, "root": str(self.source),
+                     "marketplaceSource": {"sourceType": "git", "source": "mock-repository"}}
+
+        def add_market(codex, repository, revision=None, checkout=None):
+            nonlocal registration
+            if checkout is not None and install_failure == "market":
+                raise subprocess.TimeoutExpired("marketplace add", 120)
+            registration = candidate if checkout is not None else previous
+
+        def remove_market(codex):
+            nonlocal registration
+            registration = None
+
+        def add_plugin(codex):
+            shutil.rmtree(old_cache, ignore_errors=True)
+            contents = config.read_text()
+            if initial_enabled is not None:
+                contents = contents.partition(f"\n[{plugin_key}]")[0]
+            config.write_text(contents)
+            with config.open("a") as settings:
+                settings.write(f"\n[{plugin_key}]\nenabled = true\n")
+                settings.write("\n[history]\npersistence = 'none'\n")
+            shutil.copytree(self.source, update_plugin.cache_directory(self.version))
+
+        with patch.object(update_plugin, "market_registration", side_effect=lambda codex: registration), \
+             patch.object(update_plugin, "add_market", side_effect=add_market), \
+             patch.object(update_plugin, "remove_market", side_effect=remove_market), \
+             patch.object(update_plugin, "add_plugin", side_effect=add_plugin) as install, \
+             patch.object(update_plugin, "command", return_value=self.revision):
+            if install_failure == "cache":
+                with patch.object(update_plugin, "cached_package", side_effect=ValueError("cache check failed")):
+                    with self.assertRaisesRegex(RuntimeError, "已恢复上一个插件市场"):
+                        update_plugin.install_market("codex", "mock-repository", self.revision, self.source, self.manifest)
+            elif install_failure == "market":
+                with self.assertRaisesRegex(RuntimeError, "已恢复上一个插件市场"):
+                    update_plugin.install_market("codex", "mock-repository", self.revision, self.source, self.manifest)
+                install.assert_not_called()
+            else:
+                update_plugin.install_market("codex", "mock-repository", self.revision, self.source, self.manifest)
+        self.assertIn("# user comment", config.read_text())
+        if install_failure:
+            self.assertEqual(registration, previous)
+            self.assertFalse(update_plugin.cache_directory(self.version).exists())
+            self.assertEqual(old_cache.exists(), initial_enabled is not None)
+            if old_cache.exists():
+                self.assertEqual(package_plugin.hashes(old_cache), package_plugin.hashes(legacy))
+            current = tomllib.loads(config.read_text())
+            if install_failure == "cache":
+                self.assertEqual(current.pop("history"), {"persistence": "none"})
+            for document in (initial, current):
+                if not document.get("plugins"):
+                    document.pop("plugins", None)
+            self.assertEqual(current, initial)
+        else:
+            self.assertEqual(registration, candidate)
+            self.assertEqual(update_plugin.verify_package(update_plugin.cache_directory(self.version)), self.manifest)
+        shutil.rmtree(self.home)
+
+    def test_legacy_local_market_without_release_manifest_can_upgrade_or_restore(self):
+        for failure in (None, "cache"):
+            with self.subTest(failure=failure):
+                self.exercise_local_market(self.root / f"legacy-{failure}", True, failure)
+
+    def test_rollback_keeps_registered_only_and_disabled_plugins_in_their_prior_state(self):
+        for enabled in (None, False):
+            for failure in ("market", "cache"):
+                with self.subTest(enabled=enabled, failure=failure):
+                    self.exercise_local_market(self.root / f"{enabled}-{failure}", enabled, failure)
 
     def test_lock_contention_never_fetches(self):
         import fcntl

@@ -18,6 +18,7 @@ import websocket
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.dev_environment.configuration import child_environment
 from scripts.dev_environment.processes import Child, reap
+from plugin_package import hashes
 from update_plugin import cache_directory, cached_package, command_error, market_registration, target, update
 import update_plugin
 from board_update_job import REPOSITORY
@@ -171,6 +172,38 @@ def verify(arguments, report, root):
 
     with patch.dict(os.environ, environment, clear=True):
         previous = report.step("install_previous_native_package", lambda: install(arguments.previous))
+        if arguments.exercise_recovery:
+            def verify_orphan_recovery():
+                update_plugin.remove_market(codex)
+                require(market_registration(codex) is None, "Expected an unregistered old cache")
+                old_cache = cache_directory(previous["version"])
+                old_files = hashes(old_cache)
+                old_receipt = (state / "current.json").read_bytes()
+                installed = {}
+
+                def fail_after_install(*args):
+                    installed.update(cached_package(*args))
+                    require(installed["version"] != previous["version"] and not old_cache.exists(),
+                            "The candidate did not replace the old cache")
+                    raise ValueError("Injected post-install cache check failure")
+
+                with patch.object(update_plugin, "cached_package", fail_after_install):
+                    try:
+                        install(running=previous["binary_sha256"])
+                    except RuntimeError as error:
+                        require("已恢复原缓存" in str(error), str(error))
+                    else:
+                        raise ValueError("Expected a reported native install failure")
+                require(installed and market_registration(codex) is None and
+                        hashes(old_cache) == old_files and (state / "current.json").read_bytes() == old_receipt,
+                        "Old cache, registration or successful receipt changed")
+                with app_server(root, codex, environment, "orphan-restart") as request:
+                    _, board = read_board(request, root, previous["version"])
+                return {"injected": "post_install_cache_check", "installed_before_failure": installed["version"],
+                        "restored_binary_sha256": previous["binary_sha256"], "old_board_reopened": board}
+
+            report.step("unregistered_cache_recovery_and_host_restart", verify_orphan_recovery)
+            report.step("register_baseline_for_remaining_checks", lambda: install(arguments.previous))
         with app_server(root, codex, environment, "before") as request:
             report.step("read_previous_from_host", lambda: read_board(request, root, previous["version"])[1])
             with sqlite3.connect(root / "board/status.sqlite3") as database:

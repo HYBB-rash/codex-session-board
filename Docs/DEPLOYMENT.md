@@ -79,7 +79,7 @@ bin/codex-session-board stop
 
 已安装的看板可点击页头「更新」。它读取 GitHub 上本机平台的 `candidate/<Rust target>`，
 校验并安装该频道发布的包。运行中的构建和已安装包都匹配时，直接显示「已是最新版」。
-按钮需要本机有 `python3`、`git` 和配置中的 `codex` 命令。Python 的重载依赖已随包提供。
+按钮需要本机有 `python3`、`git` 和配置中的 `codex` 命令。Python 更新和重载依赖已随包提供。
 
 若显示「已安装，待重载」，完全退出并重新启动 Codex，再打开看板。也可点击「更新」
 重试重载。看板成功读回新版和会话列表后才显示「已生效」。下载或校验失败可在网络恢复
@@ -149,10 +149,13 @@ python3 scripts/verify_plugin_upgrade.py --previous "$PREVIOUS_REVISION" \
 ```
 
 默认浅取正式 GitHub 候选。日常快检可传入 `--fixture PATH`，该本地 Git 仓库需包含旧版发布包提交，
-以及指向另一版本完整发布包的 `candidate/<Rust target>` 分支。`--exercise-recovery` 在原生添加新市场处
-注入超时，核对旧注册、缓存、从宿主重开的看板和备注，再执行正常重试。
+以及指向另一版本完整发布包的 `candidate/<Rust target>` 分支。`--exercise-recovery` 注入市场添加超时
+和安装后校验失败，核对旧市场、缓存、回执和重启后的看板，再执行正常重试。
 保留本次输出文件。报告绑定源码、发布包提交、安装和重载阶段，以及独立的 MCP 读回结果。
 失败返回非零并在出错步骤记录原因。`target_host_acceptance.status=pending` 表示仍缺日用环境验收。
+
+在替换市场前，更新器分别保存市场来源和插件缓存。无市场注册时仍保留原缓存，早期本地市场可从原路径重新注册。
+失败回滚恢复缓存和该插件的启用值，保留其他配置。若回滚有步骤失败，回执会列出失败项和保留的备份目录。
 
 用同一个 fixture 核对 GitHub URL 写法。每次运行使用独立 Codex home，并在报告中记录输入 URL。
 
