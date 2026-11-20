@@ -44,16 +44,17 @@ def deliver(directory, route, key, message, skill=None):
     return receipt
 
 
-def dispatch(config, directory, assignment, result):
+def dispatch(config, directory, assignment, result, *, route=None):
     repository, number, head = config["repository"], assignment["pr"], assignment["head"]
     outcome = {}
     feedback = result.get("feedback")
     if (result["result"] in {"needs-author", "needs-evidence"} and isinstance(feedback, dict)
-            and feedback.get("comment") and feedback["kind"] in {"merge", "candidate"}):
-        task = load(Path(assignment["author_task"]).resolve(strict=True))
+            and feedback.get("comment") and feedback["kind"] in {"merge", "candidate", "review"}):
+        task = load(Path(assignment["author_task"]).resolve(strict=True)) if assignment.get("author_task") else {}
         key = [repository, number, head, "failed", feedback["id"]]
-        if task.get("mode", "automatic") == "automatic":
-            marker = f"<!-- pr-queue:{feedback['id']} -->"
+        if task and task.get("mode", "automatic") == "automatic":
+            prefix = "pr-task:feedback " if feedback["kind"] == "review" else "pr-queue:"
+            marker = f"<!-- {prefix}{feedback['id']} -->"
             event = next((entry for entry in task["events"]
                           if entry["head"] == head and any(
                               item["kind"] == "feedback" and marker in item.get("body", "")
@@ -61,9 +62,9 @@ def dispatch(config, directory, assignment, result):
             outcome["author"] = event.get("delivery", {"state": "waiting-for-author-tick"}) if event else {
                 "state": "waiting-for-author-tick",
             }
-        elif assignment.get("author_route"):
-            route = assignment["author_route"]
-            if route["thread_id"] != task["route"]["thread_id"]:
+        elif "socket" in (route or assignment.get("author_route") or {}):
+            route = route or assignment["author_route"]
+            if task and route["thread_id"] != task["route"]["thread_id"]:
                 raise ValueError("Manual author's route does not match registered UUID")
             outcome["author"] = deliver(directory, route, key,
                                         f"PR #{number} 本轮合并失败。反馈 {feedback['comment']}。仅记录这条通知。")
@@ -77,12 +78,12 @@ def dispatch(config, directory, assignment, result):
                                           ROOT / ".agents/skills/pr-merge-duty/SKILL.md")})
     candidate = result.get("candidate") or {}
     if result["result"] == "merged" and candidate.get("status") == "merged":
-        task = load(Path(assignment["author_task"]).resolve(strict=True))
-        route = assignment.get("author_route") or task["route"]
+        task = load(Path(assignment["author_task"]).resolve(strict=True)) if assignment.get("author_task") else {}
+        route = route or assignment.get("author_route") or task.get("route") or {}
         if "socket" not in route:
             outcome["author"] = {"state": "unbound"}
         else:
-            if route["thread_id"] != task["route"]["thread_id"]:
+            if task and route["thread_id"] != task["route"]["thread_id"]:
                 raise ValueError("Author route does not match registered UUID")
             route = {**route, "repair_cwd": route["expected_cwd"]}
             key = [repository, number, head, "merged", candidate["candidate"]]

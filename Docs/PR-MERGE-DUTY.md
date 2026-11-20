@@ -1,4 +1,34 @@
-# PR 合并值班试点
+# PR 合并值班
+
+## 正式定时值班
+
+原生定时任务 `pr` 每十分钟续接同一个 GPT‑6 Luna 会话，在独立的干净主线检出执行
+`python3 -B scripts/pr_merge_duty.py tick --config /absolute/private/duty.json`。
+配置为 `mode: production-duty`，并设置 `repository`、运行检出 `checker`、完整 `checker_head`、
+原值班会话 `coordinator_thread`、源码外的私有 `state`。启用时核对运行入口与远端 `main`。
+之后 `main` 前进时，值班源码必须仍包含在主线，组合门禁按本轮实际远端 `main` 重新准备。
+
+CLI 完整查询 GitHub 打开且目标为 `main` 的 PR。首领只认本仓库来源、非草稿且带
+`ready-for-review` 的 PR。`scan` 预览待领取和在办项，`tick` 持久领取并跟进。
+每轮最多首领一条，其他待领项继续显示，在办和新项轮流推进。
+源仓库、源分支或目标变化时暂停该项。GitHub 查询错或分页重复时保存错误，下一轮重新完整查询。
+同一仓库只允许一个值班 CLI 持锁，领取记录不因空结果、重启或回退消失。
+
+优先通过作者仓库的 `pr-tasks` 登记核验提交及原会话，再复用同一 PR 的 `pr-queues` 登记。
+没有作者任务的既有手动 PR，可以由协调者核对证据并在 `author_receipts` 按 PR 号指定私有 JSON。
+该记录包含 `repository`、`pr`、`branch`、`base`、`base_commit`、`delivery_head`、
+`validation`、`checker`、`checker_project` 和原作者 `route`。没有可信路径或准确头交付时保留待补状态。
+已有的组合、候选、反馈和通知继续使用原队列和回执。刷新源码时保留旧头证据，新头独立审阅；
+重新组合在独立候选中完成，旧组合和跑过的 CI 仍可查。
+
+审阅任务用 `reserve-review` 原子预约一次，用 `record-review` 绑定实际独立任务。
+上轮中断或派单响应遗失时先查原请求和任务记录。回执按完整头区分，不用旧审阅签新头。
+正式合并继续复用冻结检查器、作者交付、准确头 GitHub PR CI 和组合门禁。
+后台写入异常以实际错误为准，合并终态和作者送达分别记录。
+
+上线前备份原任务及只读配置。只在会话空闲时原地更新同一任务 ID。
+回退在原任务恢复下面的 `production-scan` 入口，同步只读检出的 `checker_head` 到远端 `main`；
+`production-duty` 的领取、审阅及队列状态保留在原目录。
 
 ## 正式试跑
 
