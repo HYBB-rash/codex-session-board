@@ -1260,30 +1260,6 @@ mod tests {
     }
 
     #[test]
-    fn roles_reject_all_unrelated_methods_before_io() -> Result<()> {
-        for role in [Role::Reader, Role::TitleWriter] {
-            let (mut connection, _server) = local_connection(role)?;
-            for method in [
-                "turn/start",
-                "thread/archive",
-                "thread/resume",
-                "turn/interrupt",
-                "thread/goal/set",
-            ] {
-                assert!(connection.call(method, json!({})).is_err());
-            }
-            let denied = if role == Role::Reader {
-                "thread/name/set"
-            } else {
-                "thread/list"
-            };
-            assert!(connection.call(denied, json!({})).is_err());
-            assert_eq!(connection.request_id, 0);
-        }
-        Ok(())
-    }
-
-    #[test]
     fn archive_role_rejects_other_writes_before_io() -> Result<()> {
         let (mut connection, _server) = local_connection(Role::ArchiveWriter)?;
         for method in [
@@ -1309,25 +1285,24 @@ mod tests {
 
     #[test]
     fn each_role_accepts_exactly_its_three_declared_methods() -> Result<()> {
-        let roles = [
-            (
-                Role::Reader,
-                ["initialize", "thread/list", "thread/turns/list"],
-            ),
-            (
-                Role::TitleWriter,
-                ["initialize", "thread/read", "thread/name/set"],
-            ),
-        ];
-        for (role, methods) in roles {
+        for (role, methods, other_role_method) in [
+            (Role::Reader, ["initialize", "thread/list", "thread/turns/list"], "thread/name/set"),
+            (Role::TitleWriter, ["initialize", "thread/read", "thread/name/set"], "thread/list"),
+        ] {
             let (mut connection, mut server) = local_connection(role)?;
             let worker = thread::spawn(move || -> Result<()> {
-                for _ in 0..3 {
+                for expected in methods {
                     let request = read_json(&mut server)?;
+                    ensure!(request["method"] == expected, "unexpected RPC: {}", request["method"]);
                     send_response(&mut server, json!({"id": request["id"], "result": {}}))?;
                 }
                 Ok(())
             });
+            for denied in ["turn/start", "thread/archive", "thread/resume", "turn/interrupt",
+                "thread/goal/set", other_role_method] {
+                assert!(connection.call(denied, json!({})).is_err(), "{denied}");
+            }
+            assert_eq!(connection.request_id, 0);
             for method in methods {
                 assert_eq!(connection.call(method, json!({}))?, json!({}));
             }
