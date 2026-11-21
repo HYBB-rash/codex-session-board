@@ -270,7 +270,7 @@ impl App {
                 "该状态已停止使用，请刷新看板并重新选择");
         }
         if self.routes_remote_write(op.action, body) {
-            return self.route_remote(op.path, body);
+            return self.route_remote(op, body);
         }
         match op.action {
             Action::Snapshot => self.snapshot(),

@@ -7,13 +7,13 @@ use std::collections::BTreeMap;
 mod catalog_tests;
 
 impl App {
-    pub(crate) fn route_remote(&self, path: &str, body: &Value) -> Result<Value> {
+    pub(super) fn route_remote(&self, op: &Operation, body: &Value) -> Result<Value> {
         let identifier = body["id"].as_str().context("缺少会话 ID")?;
         let (remote, thread) = self.remote_write_target(identifier)?;
         let mut request = body.clone();
         request["id"] = json!(thread);
-        let result = remote.request(path, Some(&request))?;
-        if path == "/api/state" {
+        let result = remote.execute(op, &request)?;
+        if op.action == Action::Update {
             self.save_receipt(identifier, result)
         } else {
             Ok(result)
