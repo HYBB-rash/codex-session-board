@@ -1,11 +1,18 @@
 import "./reply-preview";
+import { mountBoardBrowse, type CatalogProject, type HostCatalog, type HostIdentity } from "./board-browse";
 import type { BoardSession } from "./board-view";
 
 export interface BoardSnapshot {
   states: Record<string, string>;
   sessions: (BoardSession & { version: number; inputVersion: number; sectionVersion: string | null; readOnly?: boolean })[];
-  health: { sshAliasSetup?: boolean };
-  projectCatalog: { loaded: boolean; items: { id: string; paths: string[] }[] };
+  health: {
+    sshAliasSetup?: boolean;
+    remoteError?: string;
+    remoteConnections?: (HostIdentity & { catalog?: HostCatalog })[];
+    remoteConnectionErrors?: HostIdentity[];
+    remoteRegistry?: HostIdentity[];
+  };
+  projectCatalog: { loaded: boolean; items: CatalogProject[]; error?: string; remoteHosts?: HostIdentity[] };
   legacyMode?: boolean;
   pendingDrafts?: { project: string; requestId: string }[];
 }
@@ -24,6 +31,7 @@ declare global {
     createBoardRequest: typeof createBoardRequest;
     readBoardSnapshot: typeof readBoardSnapshot;
     startBoard: typeof startBoard;
+    mountBoardBrowse: typeof mountBoardBrowse;
   }
 }
 
@@ -69,3 +77,4 @@ function startBoard(load: () => Promise<void>, restore: () => Promise<void> | vo
 window.createBoardRequest = createBoardRequest;
 window.readBoardSnapshot = readBoardSnapshot;
 window.startBoard = startBoard;
+window.mountBoardBrowse = mountBoardBrowse;

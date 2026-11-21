@@ -15,8 +15,8 @@ export interface BoardSession extends PreviewSession {
   presence?: string;
   catalogCurrent?: boolean;
   hostId?: string;
-  projectId?: string;
-  projectIssue?: string;
+  projectId?: string | null;
+  projectIssue?: string | null;
   cwd?: string;
   source?: string;
   followUp?: boolean;

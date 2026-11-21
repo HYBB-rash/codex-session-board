@@ -1,28 +1,7 @@
 import { computed, createApp, nextTick, shallowReactive, Teleport } from "vue";
-
-interface Session {
-  remote?: boolean;
-  archived?: boolean;
-  presence?: string;
-  catalogCurrent?: boolean;
-  projectId?: string | null;
-  projectIssue?: string | null;
-  title: string;
-  cwd?: string;
-  hostLabel?: string;
-}
-
-interface Project {
-  id: string;
-  paths: string[];
-  remote?: boolean;
-  hostId?: string;
-}
-
-interface Host {
-  value: string;
-  enabled?: boolean;
-}
+import type { CatalogProject, HostCatalog, HostOption } from "./board-browse";
+import type { BoardSnapshot } from "./board-start";
+import type { BoardSession } from "./board-view";
 
 interface FilterOption {
   value: string;
@@ -32,20 +11,15 @@ interface FilterOption {
 }
 
 interface Sources {
-  hosts(): Host[];
-  hostName(host: Host): string;
-  hostProjects(host: string): Project[];
-  hostSessions(host: string): Session[];
-  hostCatalog(host: string): {error?: string; cached?: boolean; complete?: boolean} | undefined;
-  projectLabel(project: Project): string;
+  hosts(): HostOption[];
+  hostName(host: HostOption): string;
+  hostProjects(host: string): CatalogProject[];
+  hostSessions(host: string): BoardSession[];
+  hostCatalog(host: string): HostCatalog | undefined;
+  projectLabel(project: CatalogProject): string;
   locked(): boolean;
   changed(): void;
   announce(text: string): void;
-}
-
-interface Snapshot {
-  projectCatalog: {items: Project[]; loaded: boolean; error?: string};
-  health: {remoteError?: string};
 }
 
 const histories = [
@@ -53,11 +27,11 @@ const histories = [
   {value:"all", label:"全部"}, {value:"cached", label:"历史缓存"},
 ];
 
-function mountBoardFilters(container: HTMLElement, scope: HTMLElement, sources: Sources) {
+export function mountBoardFilters(container: HTMLElement, scope: HTMLElement, sources: Sources) {
   const state = shallowReactive({host:"local", project:"all", history:"active", search:false, query:""});
   const view = shallowReactive({
     hosts:[] as FilterOption[], projects:[] as FilterOption[], hostLabel:"本机", scope:"",
-    visible:[] as Session[], total:0, locked:false, projectUnavailable:true,
+    visible:[] as BoardSession[], total:0, locked:false, projectUnavailable:true,
   });
   let searchInput: HTMLInputElement | null = null, projectMenu: HTMLSelectElement | null = null;
   let catalogKey = "", catalogOptions: FilterOption[] = [];
@@ -78,7 +52,7 @@ function mountBoardFilters(container: HTMLElement, scope: HTMLElement, sources: 
     return options;
   }
 
-  function update({projectCatalog, health}: Snapshot) {
+  function update({projectCatalog, health}: BoardSnapshot) {
     const hosts: FilterOption[] = [{value:"all", label:"全部主机"}, ...sources.hosts().map(host => ({
       value:host.value, label:sources.hostName(host) + (host.enabled === false ? " · 未连接" : ""),
     }))];
@@ -174,8 +148,3 @@ function mountBoardFilters(container: HTMLElement, scope: HTMLElement, sources: 
   </>}).mount(container);
   return {state, view, update, updateLock:() => {view.locked = sources.locked();}};
 }
-
-declare global {
-  interface Window { mountBoardFilters: typeof mountBoardFilters }
-}
-window.mountBoardFilters = mountBoardFilters;
