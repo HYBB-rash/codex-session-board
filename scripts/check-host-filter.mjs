@@ -6,6 +6,7 @@ import { archiveFixture } from "./archive-browser-fixture.mjs";
 import { filterSnapshot, checkFilterArchiveScope } from "./filter-archive-scope.mjs";
 import { checkPackagedFilterFrame } from "./filter-package-frame.mjs";
 import { loadFixture } from "./browser-fixture.mjs";
+import { until } from "./browser-actions.mjs";
 
 const html = await fs.readFile(process.argv[3] || new URL("../index.html",import.meta.url),"utf8");
 const resource = process.argv[4] && await fs.readFile(process.argv[4],"utf8");
@@ -28,6 +29,7 @@ const baseline = structuredClone(fixture);
 const writes = [];
 const archive = archiveFixture(fixture);
 let pendingNew = false, pendingReply = false, rejectReads = false, releaseNew;
+let holdConnection = false, releaseConnection;
 const server = http.createServer(async (request,response) => {
   let body = "";
   for await (const chunk of request) body += chunk;
@@ -36,6 +38,11 @@ const server = http.createServer(async (request,response) => {
   if (archive.handle(request.url,request.method,input,response)) return;
   if (request.method === "POST") {
     if (request.url === "/api/new" && pendingNew) await new Promise(resolve => {releaseNew = resolve;});
+    if (request.url === "/api/connect" && holdConnection) {
+      await new Promise(resolve => {releaseConnection = resolve;});
+      return response.writeHead(503,{"Content-Type":"application/json"})
+        .end('{"error":"此主机的连接暂不可用"}');
+    }
     response.writeHead(200,{"Content-Type":"application/json"});
     response.end(JSON.stringify(pendingReply ? {pending:true,error:"结果待核对"} : {ok:true}));
   } else {
@@ -224,6 +231,22 @@ try {
   await evaluate('[...byId("health-detail-list").querySelectorAll("button")].find(button=>button.dataset.focus==="connect:host:b").click()');
   await wait(`Boolean(byId("health-detail-list").querySelector('[data-focus="connect:host:b"]:enabled'))`);
   check(writes.filter(row=>row.path === "/api/connect").map(row=>row.body),[{hostId:"b"}]);
+  holdConnection = true;
+  const connectB = `document.querySelector('[data-focus="connect:host:b"]')`;
+  const connectEmpty = `document.querySelector('[data-focus="connect:host:empty"]')`;
+  await evaluate(`${connectB}.click()`);
+  await wait(`${connectB}.disabled`);
+  await until(() => releaseConnection, "未收到目标主机的连接请求");
+  await evaluate(`connectionHealth.render();void ${connectB}.onclick()`);
+  check(await evaluate(`[${connectB}.disabled,${connectEmpty}.disabled]`),[true,false]);
+  check(writes.filter(row=>row.path === "/api/connect").map(row=>row.body),[{hostId:"b"},{hostId:"b"}]);
+  holdConnection = false;
+  releaseConnection();
+  await wait(`${connectB}.disabled === false && byId("feedback").textContent.includes("此主机的连接暂不可用")`);
+  check(await evaluate('hostHealth(hostOptions().find(host=>host.hostId==="b")).status'),"尚未连接 · 显示缓存");
+  await evaluate(`${connectB}.click()`);
+  await wait(`${connectB}.disabled === false`);
+  check(writes.filter(row=>row.path === "/api/connect").map(row=>row.body),[{hostId:"b"},{hostId:"b"},{hostId:"b"}]);
   await evaluate('byId("health-close").click()');
   fixture.health.remoteConnections[0].writeError = null;
   fixture.sessions.filter(row=>row.hostId === "a").forEach(row=>{row.readOnly=false;row.canArchive=true;});
@@ -268,6 +291,7 @@ try {
   console.log(JSON.stringify({cases,archivedIds,archiveScope:true,embeddedScope:Boolean(resource),httpScope,mcpScope}));
 } finally {
   releaseNew?.();
+  releaseConnection?.();
   if (browser) await browser.close();
   await new Promise(resolve => server.close(resolve));
 }
