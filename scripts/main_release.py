@@ -8,7 +8,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from scripts.main_release_evidence import implementation, select, verify_merge
+from scripts.main_release_evidence import ROOT, implementation, select, verify_release
 from scripts.promote_candidate import git, github
 from scripts.release_plugin import GitHub
 from scripts.package_plugin import TARGETS
@@ -122,6 +122,7 @@ def main():
     parser.add_argument("action", choices=("select", "verify", "dispatch", "status", "record"))
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY"))
     parser.add_argument("--source")
+    parser.add_argument("--checkout", type=Path, default=ROOT)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--github-output", type=Path)
     parser.add_argument("--state", choices=("pending", "success", "failure"))
@@ -133,12 +134,13 @@ def main():
         github("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"]
     source = arguments.source or git("rev-parse", "HEAD")
     if arguments.action == "select":
-        result = select(repository)
-        result["published"] = str(not arguments.exercise and already_published(repository, result)).lower()
+        result = select(repository, arguments.source)
+        result["published"] = str(not (arguments.exercise or arguments.source)
+                                  and already_published(repository, result)).lower()
     elif arguments.action == "verify":
-        if arguments.output is None:
-            parser.error("verify needs an external evidence directory")
-        result = verify_merge(repository, arguments.output)
+        if arguments.output is None or not arguments.run:
+            parser.error("verify needs an external evidence directory and a publication run ID")
+        result = verify_release(repository, arguments.output, arguments.checkout, source, arguments.run)
     elif arguments.action == "dispatch":
         result = dispatch(repository, source)
     elif arguments.action == "status":
