@@ -219,6 +219,12 @@ fn engine_connection(
         let Some(response) = engine_response(&request, &archived, &mut surface.lock().unwrap()) else {
             return Ok(());
         };
+        if request["method"] == "thread/list" && request["params"]["currentAccountOnly"] == false
+            && request["params"]["archived"] == false
+        {
+            let page = surface.lock().unwrap().runtime_page_reply.take();
+            wait_for_release(page)?;
+        }
         socket.send(tungstenite::Message::Text(
             response.to_string().into(),
         ))?;
@@ -253,6 +259,10 @@ fn engine_reply(
     surface.calls.push(method.into());
     Ok(match method {
         "thread/list" => {
+            if let Some(unreadable) = &surface.unreadable_section {
+                anyhow::ensure!(!surface.slots.values().any(|slot| slot == unreadable),
+                    "fixture: native list unavailable");
+            }
             let desired = request["params"]["archived"] == true;
             let values: Vec<_> = surface
                 .slots
@@ -267,6 +277,10 @@ fn engine_reply(
         }
         "threadSection/list" => surface.catalog(),
         "thread/read" => {
+            if let Some(unreadable) = &surface.unreadable_section {
+                anyhow::ensure!(surface.slots.get(identifier) != Some(unreadable),
+                    "fixture: native position unavailable");
+            }
             let mut thread = surface.probe_threads.get(identifier).cloned().unwrap_or(
                 json!({"id":identifier,"status":{"type":surface.thread_status.as_deref().unwrap_or("idle")}}));
             thread["section"] = surface.backend_section(identifier);

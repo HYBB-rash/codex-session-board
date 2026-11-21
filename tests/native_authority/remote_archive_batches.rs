@@ -18,7 +18,7 @@ impl BatchFixture {
         for host in ["mac", "other"] {
             remotes.surface(host).lock().unwrap().archive_account = Some("original".into());
         }
-        let live = launch(&mut server, directory, &remotes)?;
+        let live = launch(&mut server, directory, &remotes, 60)?;
         let client = Client::builder().no_proxy().timeout(Duration::from_secs(8)).build()?;
         live.ready(&client)?;
         let snapshot = wait_remote(&live, &client, true, None)?;

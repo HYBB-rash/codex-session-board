@@ -16,7 +16,6 @@ pub struct Surface {
     pub archived: bool,
     pub authoritative: bool,
     pub fail: Option<&'static str>,
-    pub lost: Option<&'static str>,
     pub writes: Vec<String>,
 }
 
@@ -32,7 +31,6 @@ impl Surface {
             archived: false,
             authoritative: true,
             fail: None,
-            lost: None,
             writes: Vec::new(),
         }
     }
@@ -66,9 +64,6 @@ impl Surface {
             _ => bail!("Unexpected mutation {method}"),
         }
         self.writes.push(method.into());
-        if self.lost.take() == Some(method) {
-            bail!("Lost acknowledgement");
-        }
         Ok(json!({}))
     }
 }

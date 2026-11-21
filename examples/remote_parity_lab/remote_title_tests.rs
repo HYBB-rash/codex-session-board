@@ -1,9 +1,9 @@
 use super::{
     engine::Partition,
-    remote_archive_tests::ready,
-    surface::{Surface, THREAD},
+    surface::{Surface, THREAD, fixture},
 };
 use anyhow::Result;
+use codex_session_board::rpc::summarize_turn;
 use serde_json::Value;
 
 #[test]
@@ -23,7 +23,11 @@ fn check_target_host(
     method: &str,
     write: impl Fn(&Partition, &mut Surface, &Value) -> Result<()>,
 ) -> Result<()> {
-    let (_root, partition, mut surface, row) = ready()?;
+    let (_root, partition, mut surface) = fixture("mac")?;
+    partition.store.observe(THREAD, &summarize_turn(&surface.turn), None)?;
+    partition.save(&mut surface, THREAD, "to_archive", "核对完毕", &partition.row(THREAD)?)?;
+    let row = partition.row(THREAD)?;
+    surface.writes.clear();
     surface.host = "local".into();
     assert!(write(&partition, &mut surface, &row).is_err(), "{method}");
     assert!(surface.writes.is_empty(), "{method}");

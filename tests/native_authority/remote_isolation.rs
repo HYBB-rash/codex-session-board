@@ -237,10 +237,11 @@ fn launch(
     server: &mut Server,
     directory: &std::path::Path,
     remotes: &RemoteFixture,
+    runtime_poll_seconds: u64,
 ) -> Result<Live> {
     server.config.rpc_timeout_seconds = 6;
     server.config.poll_seconds = 60;
-    server.config.runtime_poll_seconds = 60;
+    server.config.runtime_poll_seconds = runtime_poll_seconds;
     setup_remote(server);
     let app = server.app()?;
     for host in ["mac", "other"] {
@@ -323,7 +324,7 @@ fn scenario(mode: &str) -> Result<Value> {
     let directory = tempfile::tempdir()?;
     let mut server = Server::new(directory.path())?;
     let remotes = RemoteFixture::new(&mut server, directory.path())?;
-    let live = launch(&mut server, directory.path(), &remotes)?;
+    let live = launch(&mut server, directory.path(), &remotes, 60)?;
     let client = Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(3))
@@ -362,11 +363,88 @@ fn scenario(mode: &str) -> Result<Value> {
 }
 
 #[test]
+fn remote_page_started_before_a_save_cannot_overwrite_the_confirmed_position() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let mut server = Server::new(directory.path())?;
+    let remotes = RemoteFixture::new(&mut server, directory.path())?;
+    let live = launch(&mut server, directory.path(), &remotes, 1)?;
+    let client = Client::builder().no_proxy().timeout(Duration::from_secs(4)).build()?;
+    live.ready(&client)?;
+    let before = wait_remote(&live, &client, true, None)?;
+    let target = identity("mac", FIRST);
+    let surface = remotes.surface("mac");
+    let pause_page = || {
+        let (started, received) = mpsc::channel();
+        let release = Arc::new((Mutex::new(false), Condvar::new()));
+        surface.lock().unwrap().runtime_page_reply = Some(BlockingMove {
+            identifier: FIRST.into(), started, release: Arc::clone(&release),
+        });
+        (Gate(release), received)
+    };
+    let (stale, started) = pause_page();
+    started.recv_timeout(Duration::from_secs(5))?;
+    live.post_path(&client, "/api/state", &update(row(&before, &target), "review", "新确认"))?
+        .error_for_status()?;
+    let (next, recovering) = pause_page();
+    drop(stale);
+    recovering.recv_timeout(Duration::from_secs(6))?;
+    let after = live.snapshot(&client)?;
+    assert_eq!(row(&after, &target)["state"], "review");
+    assert_eq!(row(&after, &target)["note"], "新确认");
+    drop(next);
+    Ok(())
+}
+
+#[test]
+fn lost_remote_move_and_readback_preserve_the_note_until_refresh_without_replay() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let mut server = Server::new(directory.path())?;
+    let remotes = RemoteFixture::new(&mut server, directory.path())?;
+    let live = launch(&mut server, directory.path(), &remotes, 1)?;
+    let client = Client::builder().no_proxy().timeout(Duration::from_secs(10)).build()?;
+    live.ready(&client)?;
+    let before = wait_remote(&live, &client, true, None)?;
+    let remote_id = identity("mac", FIRST);
+    let surface = remotes.surface("mac");
+    let moves = || surface.lock().unwrap().calls.iter()
+        .filter(|method| *method == "move_thread_to_sidebar_section").count();
+    let initial = moves();
+    {
+        let mut surface = surface.lock().unwrap();
+        surface.lose_receipt = true;
+        surface.unreadable_section = Some("review".into());
+    }
+    let reply = live.post_path(&client, "/api/state",
+        &update(row(&before, &remote_id), "review", "不能报告已保存"))?;
+    assert_eq!(reply.status(), reqwest::StatusCode::BAD_REQUEST);
+    let error = reply.text()?;
+    assert!(error.contains("原生移动结果未确认"), "{error}");
+    assert_eq!(surface.lock().unwrap().slots[FIRST], "review");
+    let uncertain = live.snapshot(&client)?;
+    assert_eq!(row(&uncertain, &remote_id)["note"], "offline-safe note");
+    assert_eq!(row(&uncertain, &remote_id)["state"], "blocked");
+    surface.lock().unwrap().unreadable_section = None;
+    let deadline = Instant::now() + Duration::from_secs(8);
+    loop {
+        let snapshot = live.snapshot(&client)?;
+        let recovered = row(&snapshot, &remote_id);
+        if recovered["state"] == "review" {
+            assert_eq!(recovered["note"], "offline-safe note");
+            break;
+        }
+        anyhow::ensure!(Instant::now() < deadline, "远程移动恢复读回超时");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(moves(), initial + 1);
+    Ok(())
+}
+
+#[test]
 fn local_save_commits_while_same_uuid_remote_move_waits() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let mut server = Server::new(directory.path())?;
     let remotes = RemoteFixture::new(&mut server, directory.path())?;
-    let live = launch(&mut server, directory.path(), &remotes)?;
+    let live = launch(&mut server, directory.path(), &remotes, 60)?;
     let client = Client::builder().no_proxy().timeout(Duration::from_secs(4)).build()?;
     live.ready(&client)?;
     let before = wait_remote(&live, &client, true, None)?;

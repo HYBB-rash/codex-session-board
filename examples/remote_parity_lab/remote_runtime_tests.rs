@@ -166,21 +166,6 @@ fn complete_user_ids_drive_review_and_survive_restart_without_metadata_false_ala
 }
 
 #[test]
-fn external_section_change_rejects_old_save_before_any_mutation() -> Result<()> {
-    let (_root, partition, mut surface) = fixture("mac")?;
-    let old = partition.row(THREAD)?;
-    surface.section = "blocked-id".into();
-    assert!(
-        partition
-            .save(&mut surface, THREAD, "review", "旧备注", &old)
-            .is_err()
-    );
-    assert!(surface.writes.is_empty());
-    assert_eq!(partition.row(THREAD)?["note"], "");
-    Ok(())
-}
-
-#[test]
 fn calibrated_host_clock_reuses_existing_rules_without_a_second_state_machine() -> Result<()> {
     let (_root, partition, mut surface) = fixture("mac")?;
     let turn = json!({"id":"new-but-clock-behind","status":"inProgress","startedAt":50});
@@ -196,30 +181,5 @@ fn calibrated_host_clock_reuses_existing_rules_without_a_second_state_machine() 
         },
     )?;
     assert_eq!(partition.row(THREAD)?["state"], "in_progress");
-    Ok(())
-}
-
-#[test]
-fn snapshot_started_before_a_successful_save_cannot_overwrite_the_confirmation() -> Result<()> {
-    let (_root, partition, mut surface) = fixture("mac")?;
-    let old_generation = partition.generation.load(Ordering::SeqCst);
-    let old = Observation {
-        state: "unknown".into(),
-        version: "unknown-id".into(),
-    };
-    partition.save(
-        &mut surface,
-        THREAD,
-        "review",
-        "保留新确认",
-        &partition.row(THREAD)?,
-    )?;
-    assert!(
-        partition
-            .cache_snapshot(old_generation, THREAD, &old)
-            .is_err()
-    );
-    assert_eq!(partition.row(THREAD)?["state"], "review");
-    assert_eq!(partition.row(THREAD)?["note"], "保留新确认");
     Ok(())
 }
