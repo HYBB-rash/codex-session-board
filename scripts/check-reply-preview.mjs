@@ -308,7 +308,10 @@ async function exercise(surface) {
   await click(await gutter());
   await wait(overlayClosed);
   assert.deepEqual(await evaluate(geometry),narrow);
-  await checkCardDisplay(evaluate, snapshot, wait);
+  await checkCardDisplay(evaluate, snapshot, wait, async selector => {
+    await evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:"center",inline:"nearest",behavior:"instant"})`);
+    await click(await evaluate(center(selector)));
+  });
   if (surface==="http") await checkTitleDrag(page, evaluate);
   checks.push(surface);
 }
