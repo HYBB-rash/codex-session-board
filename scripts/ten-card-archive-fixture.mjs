@@ -2,22 +2,41 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { once } from "node:events";
 
-export async function tenCardArchiveFixture(html, outcomes = ["archived","archived","archived","archived","newInput","rejected","pending"]) {
+const mixedOutcomes = ["archived","archived","archived","archived","newInput","rejected","pending"];
+
+export async function tenCardArchiveFixture(html, {outcomes = mixedOutcomes, remote = false} = {}) {
   const cards = Array.from({length:10}, (_, index) => ({
     id:`11111111-1111-4111-8111-${String(index + 1).padStart(12, "0")}`,
     title:`归档样本 ${String(index + 1).padStart(2, "0")}`, state:"to_archive", note:"",
     version:index + 1, inputVersion:20 + index, sectionVersion:`section-${index}`,
     updatedAt:100 - index, cwd:"/fixture", canArchive:true, canOpen:true,
   }));
+  if (remote) {
+    const subject = cards[3];
+    for (const [index,card] of cards.entries()) {
+      const hostId = index === 0 ? "other" : "mac";
+      const threadId = index === 0 ? subject.id : card.id;
+      if (index === 0) Object.assign(card,{version:subject.version,inputVersion:subject.inputVersion,sectionVersion:subject.sectionVersion});
+      Object.assign(card,{id:`remote:${JSON.stringify(["codex",hostId,threadId])}`,threadId,hostId,hostLabel:hostId,
+        remote:true,catalogCurrent:true,presence:"active",ordinary:true});
+    }
+  }
   const messages = {newInput:"有新输入，本次未提交原生归档", rejected:"当前状态不允许归档"};
   const ledger = [], errors = [];
   const blocked = Promise.withResolvers();
   const nextBatchResponse = Promise.withResolvers();
+  const cancelled = Symbol("cancelled");
   let batch, nextTargets, delayedHistory, prematureBatch, canVerify = false;
+  let nextRefresh, snapshot, restoredSessions;
+  const snapshots = [];
 
-  function handle(method, url, body) {
+  function handle(method, url, body, requestNumber) {
     if (method === "GET" && url === "/api/sessions") {
-      const sessions = cards.filter(card => !["archived","verified"].includes(status(card.id)));
+      const sessions = snapshot ?? restoredSessions ?? cards.filter(card => !["archived","verified"].includes(status(card.id)));
+      if (snapshot) {
+        snapshots.push({request:requestNumber,sessions:structuredClone(sessions)});
+        snapshot = undefined;
+      }
       return {states:{review:"待审阅",to_archive:"待归档"}, health:{},
         projectCatalog:{loaded:true,items:[],remoteHosts:[]}, sessions};
     }
@@ -27,6 +46,14 @@ export async function tenCardArchiveFixture(html, outcomes = ["archived","archiv
     }
     if (method === "GET" && url === "/api/plugin-update") return {};
     assert.equal(method, "POST", `未识别的请求 ${method} ${url}`);
+    if (url === "/api/refresh") {
+      assert.deepEqual(body,{});
+      assert(nextRefresh,"未安排的刷新");
+      snapshot = nextRefresh.sessions;
+      if (nextRefresh.persist) restoredSessions = snapshot;
+      nextRefresh = undefined;
+      return {ok:true};
+    }
     if (url === "/api/archive-batches") {
       assert.match(body.id, /^[0-9a-f-]{36}$/);
       const expected = cards.map(({id,title,version,inputVersion,sectionVersion}) =>
@@ -61,7 +88,7 @@ export async function tenCardArchiveFixture(html, outcomes = ["archived","archiv
       assert.deepEqual(body,{id,state,note,version,inputVersion,sectionVersion});
       card.followUp = false;
       card.version++;
-      return {sectionVersion};
+      return {ok:true,sectionVersion,session:{...card}};
     }
     if (url === "/api/archive-batches/check") {
       assert.deepEqual(body, {id:batch.id});
@@ -106,8 +133,12 @@ export async function tenCardArchiveFixture(html, outcomes = ["archived","archiv
       let text = "";
       for await (const chunk of request) text += chunk;
       const body = text ? JSON.parse(text) : null;
-      ledger.push({method,url,body});
-      const reply = await handle(method, url, body);
+      const requestNumber = ledger.push({method,url,body});
+      const reply = await handle(method, url, body, requestNumber);
+      if (reply === cancelled) {
+        response.writeHead(409,{"Content-Type":"application/json"}).end(JSON.stringify({error:"测试已结束本次建批探测"}));
+        return;
+      }
       if (url === "/api/archive" && reply.item.status === "pending") await blocked.promise;
       response.writeHead(200, {"Content-Type":"application/json","Cache-Control":"no-store"})
         .end(JSON.stringify(reply));
@@ -118,9 +149,23 @@ export async function tenCardArchiveFixture(html, outcomes = ["archived","archiv
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
-  return {url:`http://127.0.0.1:${server.address().port}/`, ledger, errors,
+  return {url:`http://127.0.0.1:${server.address().port}/`, ledger, errors, snapshots,
     batch:() => structuredClone(batch), allowVerification:() => { canVerify = true; },
+    prepareRefresh(label, changed, persist) {
+      const visible = cards.filter(card => !["archived","verified"].includes(status(card.id)));
+      const targets = changed.map(({id,...fields}) => {
+        const card = cards.find(row => row.id === id);
+        assert(card && !visible.includes(card));
+        return {...card,...fields};
+      });
+      const sessions = [...structuredClone(visible),...targets];
+      const marker = sessions.find(card => status(card.id) === "rejected");
+      marker.note = label;
+      nextRefresh = {sessions,persist};
+      return structuredClone(sessions);
+    },
     holdNextBatchFor(ids) { nextTargets = ids; },
+    cancelNextBatch() { nextBatchResponse.resolve(cancelled); },
     holdHistory() { delayedHistory = Promise.withResolvers(); },
     releaseHistory() { delayedHistory?.resolve(); delayedHistory = undefined; },
     release:() => blocked.resolve(), async close() {

@@ -7,7 +7,7 @@ import { tenCardArchiveFixture } from "./ten-card-archive-fixture.mjs";
 import { checkDelayedRestore, closeTab } from "./ten-card-archive-restore.mjs";
 
 const html = await fs.readFile(process.argv[2] || new URL("../index.html", import.meta.url));
-const fixture = await tenCardArchiveFixture(html);
+const fixture = await tenCardArchiveFixture(html,{remote:true});
 const report = {pageSha256:createHash("sha256").update(html).digest("hex"), nativeArchiveWrites:null,
   evidenceScope:"隔离 Chromium 与 HTTP 夹具。原生归档写入次数由 Mac 原生验收单独记录。", requests:fixture.ledger, cleanup:[]};
 const statuses = {archived:"已归档", verified:"核实时已归档", pending:"待核对", newInput:"未归档 · 有新输入",
@@ -18,7 +18,8 @@ const checkButton = "#archive-summary-actions button";
 const count = (method, url) => fixture.ledger.filter(entry => entry.method === method && entry.url === url).length;
 const submitCount = () => count("POST", "/api/archive");
 const checkCount = () => count("POST", "/api/archive-batches/check");
-const cardButton = id => `.card[data-id="${id}"] [data-action="archive"]`;
+const cardSelector = id => `.card[data-id=${JSON.stringify(id)}]`;
+const cardButton = id => `${cardSelector(id)} [data-action="archive"]`;
 let browser, page;
 
 async function waitFor(expression, message) {
@@ -44,6 +45,30 @@ async function cardActions() {
     const button=card.querySelector('[data-action="archive"]');
     return [card.dataset.id,button ? {text:button.innerText,disabled:button.disabled} : null];
   }))`);
+}
+async function showAllHosts() {
+  await waitFor(`document.querySelector('#host-filter option[value="host:mac"]') !== null
+    && !document.querySelector("#host-filter").disabled`,"远端主机尚未出现在筛选中");
+  await page.evaluate(`(() => {
+    const select=document.querySelector("#host-filter");
+    select.value="all";
+    select.dispatchEvent(new Event("change",{bubbles:true}));
+  })()`);
+}
+async function refreshSnapshot(label, changed, {persist = false} = {}) {
+  const start = fixture.ledger.length;
+  const expected = fixture.prepareRefresh(label,changed,persist);
+  await clickNode(page,"#refresh");
+  const marker = JSON.stringify(cardSelector(expected.find(card => card.note === label).id));
+  await waitFor(`document.querySelector(${marker})?.textContent.includes(${JSON.stringify(label)})`,
+    `新快照未显示：${label}`);
+  const writes = fixture.ledger.slice(start).filter(entry => entry.method === "POST");
+  assert.deepEqual(writes.map(entry => entry.url),["/api/refresh"]);
+  const delivered = fixture.snapshots.at(-1);
+  assert.deepEqual(delivered.sessions,expected);
+  assert(delivered.request > fixture.ledger.indexOf(writes[0]) + 1);
+  return {sessions:delivered.sessions,actions:await cardActions(),request:delivered.request,
+    archivePosts:submitCount(),checkPosts:checkCount()};
 }
 function recordCounts() {
   return {archivePosts:submitCount(),checkPosts:checkCount(),batchReads:count("GET","/api/archive-batches")};
@@ -76,6 +101,7 @@ async function closeBrowser() {
 async function run() {
   browser = await launchBrowser();
   page = await browser.page(fixture.url);
+  await showAllHosts();
   await waitFor(`document.querySelectorAll(".card").length===10 &&
     document.querySelector("${archiveButton}")?.disabled===false`, "十张可归档卡片未就绪");
   await clickNode(page, archiveButton);
@@ -100,6 +126,7 @@ async function run() {
   const beforeOpen = recordCounts();
   browser = await launchBrowser();
   page = await browser.page(fixture.url);
+  await showAllHosts();
   await waitFor(`document.querySelector("#archive-summary-text")?.innerText.includes("1 条待核对")`,
     "新页面未从服务端恢复待核对项");
   await until(() => checkCount() > beforeOpen.checkPosts, "重开后未自动核对待定卡片");
@@ -130,7 +157,7 @@ async function run() {
   assert.equal(fixture.ledger.find(entry => entry.url === "/api/open").body.id,newInput.id);
   const confirmStart = fixture.ledger.length;
   await clickNode(page,cardButton(newInput.id));
-  await waitFor(`document.querySelector('${cardButton(newInput.id)}')?.innerText==="归档"`,
+  await waitFor(`document.querySelector(${JSON.stringify(cardButton(newInput.id))})?.innerText==="归档"`,
     "点击确认待归档后，卡片未切回归档动作");
   assert.deepEqual(fixture.ledger.slice(confirmStart).filter(entry => entry.method === "POST").map(entry => entry.url),
     ["/api/state"],"确认新输入仅保存状态");
@@ -163,17 +190,62 @@ async function run() {
   assert.deepEqual(fixture.errors, []);
   Object.assign(report, {verified, batchId:beforeClose.id, persistedAtClose:beforeClose.items, submitted,
     archiveHttpCounts:Object.fromEntries(beforeClose.items.map(item => [item.id,submitted.filter(id => id === item.id).length]))});
+  const confirmedCard = beforeClose.items.find(item => item.status === "pending");
+  const [source,host,uuid] = JSON.parse(confirmedCard.id.slice("remote:".length));
+  assert.deepEqual([source,host],["codex","mac"]);
+  const twin = beforeClose.items.find(item => item.id === `remote:${JSON.stringify([source,"other",uuid])}`);
+  const revisions = card => [card.version,card.inputVersion,card.sectionVersion];
+  assert.deepEqual(revisions(twin),revisions(confirmedCard));
+  const stale = await refreshSnapshot("核实后收到旧修订",[{id:confirmedCard.id}]);
+  report.staleSnapshot = stale;
+  const returned = stale.sessions.find(row => row.id === confirmedCard.id);
+  assert.deepEqual(revisions(returned),revisions(confirmedCard));
+  assert.equal(returned.canArchive,true);
+  assert.deepEqual(stale.actions[twin.id],{text:"归档",disabled:false},"另一主机的同 UUID 活动卡失去了归档动作");
   const eligible = beforeClose.items.filter(item => ["awaiting","newInput","rejected"].includes(item.status));
   fixture.holdNextBatchFor(eligible.map(item => item.id));
   await clickNode(page,archiveButton);
   await until(() => count("POST","/api/archive-batches") === 2, "核实后点击批量归档未另建批次");
   report.nextBatchRequest = fixture.ledger.filter(entry => entry.method === "POST" && entry.url === "/api/archive-batches").at(-1).body;
   assert.equal(submitCount(),7);
-  const confirmedCard = beforeClose.items.find(item => item.status === "pending");
   assert(!report.nextBatchRequest.items.some(item => item.id === confirmedCard.id),
     `核实已归档的卡片仍被选入新批次：${confirmedCard.title} (${confirmedCard.id})`);
   assert(!verified.cards[confirmedCard.id] || verified.cards[confirmedCard.id].disabled,
     `核实已归档的卡片仍可发起归档：${confirmedCard.title} (${confirmedCard.id})`);
+  assert(!stale.actions[confirmedCard.id] || stale.actions[confirmedCard.id].disabled,
+    `新快照使已核实的同一修订重新可归档：${confirmedCard.title}`);
+  assert.deepEqual(fixture.errors,[]);
+  fixture.cancelNextBatch();
+  await waitFor(`document.querySelector("${archiveButton}")?.disabled===false`,"建批探测结束后页面仍被锁定");
+  const [inputChanged,sectionChanged] = beforeClose.items.filter(item => item.status === "archived");
+  const revisionsReturned = [
+    {id:confirmedCard.id,version:confirmedCard.version + 1},
+    {id:inputChanged.id,inputVersion:inputChanged.inputVersion + 1},
+    {id:sectionChanged.id,sectionVersion:`${sectionChanged.sectionVersion}-restored`},
+  ];
+  const restoredRevisions = await refreshSnapshot("已恢复的活动修订",revisionsReturned,{persist:true});
+  report.restoredRevisions = restoredRevisions;
+  for (const change of revisionsReturned) {
+    const original = beforeClose.items.find(row => row.id === change.id);
+    const current = restoredRevisions.sessions.find(row => row.id === change.id);
+    assert.deepEqual(revisions(current),revisions({...original,...change}));
+  }
+  const finishedReads = `performance.getEntriesByType("resource").filter(entry =>
+    new URL(entry.name).pathname==="/api/archive-batches" && entry.responseEnd>0).length`;
+  const beforeHistory = await page.evaluate(finishedReads);
+  await clickNode(page,toggle);
+  await openDetails();
+  await waitFor(`(${finishedReads})>${beforeHistory}`,"未重新读回持久批次");
+  await page.evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+  const afterHistory = await cardActions();
+  for (const {id} of [...revisionsReturned,twin]) {
+    assert.deepEqual(restoredRevisions.actions[id],{text:"归档",disabled:false},`合法活动卡未保留：${id}`);
+    assert.deepEqual(afterHistory[id],restoredRevisions.actions[id],`重读旧批次隐藏了合法活动卡：${id}`);
+  }
+  report.restoredRevisions.afterHistory = afterHistory;
+  verifyRows(await details(),fixture.batch(),[...prefix,"verified","awaiting","awaiting","awaiting"]);
+  assert.equal(submitCount(),7);
+  assert.equal(checkCount(),checks + 2);
   assert.deepEqual(fixture.errors,[]);
   report.passed = true;
 }

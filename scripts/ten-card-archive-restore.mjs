@@ -22,7 +22,7 @@ async function controls(page) {
 }
 
 export async function checkDelayedRestore(html, control) {
-  const fixture = await tenCardArchiveFixture(html,["archived","pending"]);
+  const fixture = await tenCardArchiveFixture(html,{outcomes:["archived","pending"]});
   const report = {control,requests:fixture.ledger,cleanup:[],passed:false};
   const archivePosts = () => fixture.ledger.filter(entry => entry.method === "POST" && entry.url === "/api/archive");
   let browser;
