@@ -8,3 +8,5 @@
 - coordinator: board-refactor-five-rounds
 
 将八个历史 ID 对应到当前发布与验收流程的实际场景。两项已退役规则及另行分派的命令启动故障由协调者单独登记。
+
+逐项 ID、需求依据和证据在 `context/results/round5-historical-regressions-20261121.json`。
