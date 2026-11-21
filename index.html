@@ -1713,7 +1713,12 @@ byId("native-consent-form").onsubmit = event => {
   if (consent) createSession(consent.projectId, consent.operationId, consent.token);
 };
 byId("native-consent-cancel").onclick = () => byId("native-consent").close();
-byId("native-consent").addEventListener("close", () => {nativeConsent=null;updateFilterLock();load();});
+byId("native-consent").addEventListener("close", () => {
+  if (byId("native-consent").open) return;
+  nativeConsent = null;
+  updateFilterLock();
+  load();
+});
 function updateNewProjects() {
   const host = byId("new-host").value;
   const projects = hostProjects(host);

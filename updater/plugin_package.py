@@ -19,7 +19,9 @@ def hashes(directory):
 
 def verify_package(directory, installed=False):
     manifest = json.loads((directory / "RELEASE.json").read_text())
-    if manifest["schema_version"] != 1 or manifest["target"] not in TARGETS:
+    if not isinstance(manifest, dict):
+        raise ValueError("Plugin release manifest must be an object")
+    if manifest.get("schema_version") != 1 or not isinstance(manifest.get("target"), str) or manifest["target"] not in TARGETS:
         raise ValueError("Unsupported plugin release")
     actual = hashes(directory)
     if installed:
@@ -32,6 +34,7 @@ def verify_package(directory, installed=False):
     if manifest["binary_sha256"] != manifest["files"]["bin/codex-session-board"]:
         raise ValueError("Plugin binary identity differs")
     for name in ("plugin.json", ".codex-plugin/plugin.json"):
-        if json.loads((directory / name).read_text())["version"] != manifest["version"]:
+        metadata = json.loads((directory / name).read_text())
+        if not isinstance(metadata, dict) or metadata.get("version") != manifest["version"]:
             raise ValueError("Plugin package version differs")
     return manifest

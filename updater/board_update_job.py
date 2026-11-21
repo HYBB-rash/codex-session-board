@@ -6,18 +6,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-from update_plugin import update, update_lock, write_record
+from update_plugin import command_error, update, update_lock, write_record
 
 
 REPOSITORY = "https://github.com/HYBB-rash/codex-session-board.git"
 STATUS = "board-update.json"
-
-
-def failure_detail(error):
-    stderr = getattr(error, "stderr", None)
-    if isinstance(stderr, bytes):
-        stderr = stderr.decode(errors="replace")
-    return stderr.strip()[:1000] if stderr and stderr.strip() else str(error)
 
 
 def start(state, codex, running_build):
@@ -66,7 +59,7 @@ def work(state, codex, running_build, descriptor):
                  error=result.get("reload_error"))
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
         progress("failed", failedStage=stage["phase"], version=stage.get("version"),
-                 error=failure_detail(error))
+                 error=command_error(error))
         raise
     finally:
         shutil.rmtree(snapshot)
