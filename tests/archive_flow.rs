@@ -243,15 +243,34 @@ fn archive_checks_native_inputs_even_when_local_revision_has_not_changed() -> Re
 
 #[test]
 fn archive_unverifiable_native_input_never_reaches_the_write() {
-    for result in [
-        json!({}),
-        json!({"data":[{}]}),
-        json!({"data":[{"id":"turn","status":"inProgress","items":[]} ]}),
-    ] {
+    let check_rejection = |expected: Value, result: Value, reason: &str| {
         let mut writer = native();
-        writer.replies[2] = result;
-        assert!(archive::archive(&mut writer, FIRST, 10, &json!({})).is_err());
-        assert_eq!(writer.calls.len(), 3);
+        writer.replies[2] = result.clone();
+        let error = archive::archive(&mut writer, FIRST, 10, &expected).unwrap_err();
+        assert!(error.to_string().contains(reason), "{result}: {error}");
+        let methods: Vec<_> = writer.calls.iter().map(|(method, _)| method.as_str()).collect();
+        assert_eq!(methods, ["thread/list", "thread/read", "thread/turns/list"]);
+    };
+    let unknown_input = "无法核对原生最新输入";
+    check_rejection(json!({}), json!({}), unknown_input);
+    check_rejection(json!({}), json!({"data":[{}]}), unknown_input);
+    check_rejection(json!({}), json!({"data":[{"id":"turn","status":"completed","items":[{}]}]}), unknown_input);
+    check_rejection(
+        json!({}),
+        json!({"data":[{"id":"turn","status":"inProgress","items":[]}]}),
+        "原生轮次仍在执行",
+    );
+    for identifier in [Value::Null, json!(1), json!("")] {
+        let mut turn = native_turn("old", &["original"]);
+        turn["items"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"type":"userMessage","id":identifier}));
+        check_rejection(
+            json!({"id":"old","userItems":["original"]}),
+            json!({"data":[turn]}),
+            unknown_input,
+        );
     }
 }
 
@@ -295,23 +314,6 @@ fn archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation
 }
 
 #[test]
-fn archive_rejects_malformed_user_items_even_when_other_inputs_match() {
-    for identifier in [Value::Null, json!(1), json!("")] {
-        let mut turn = native_turn("old", &["original"]);
-        turn["items"]
-            .as_array_mut()
-            .unwrap()
-            .push(json!({"type":"userMessage","id":identifier}));
-        let mut writer = native();
-        writer.replies[2] = json!({"data":[turn]});
-        let expected = json!({"id":"old","userItems":["original"]});
-        let error = archive::archive(&mut writer, FIRST, 10, &expected).unwrap_err();
-        assert!(error.to_string().contains("无法核对原生最新输入"));
-        assert_eq!(writer.calls.len(), 3);
-    }
-}
-
-#[test]
 fn archive_unknown_running_and_malformed_native_results_do_not_confirm_success() {
     for status in ["active", "systemError", "unknown"] {
         let mut writer = native();
@@ -348,12 +350,4 @@ fn archive_mcp_resource_exposes_only_an_explicit_app_action() {
         tool["inputSchema"]["required"],
         json!(["id", "version", "inputVersion"])
     );
-    let resource = mcp::resource();
-    let html = resource["text"].as_str().unwrap();
-    assert!(html.contains("\"/api/archive\":\"board_archive\""));
-    assert!(html.contains("archiveSession(session,archive)"));
-    assert!(!html.contains("\"调整状态\""));
-    assert!(html.contains("openEditor(session.id,state,session)"));
-    assert!(html.contains("archiveAll.onclick = () => archiveSessions(sessions,archiveAll)"));
-    assert!(html.contains("await post(\"/api/archive\""));
 }

@@ -123,6 +123,10 @@ impl Config {
                     && self.host_id == "local",
             "兼容模式仅支持本机六状态记录，不启用原生分区、远程连接或真实归档"
         );
+        ensure!(
+            !self.sync_sections,
+            "sync_sections 已停用，请配置 native_sections"
+        );
         Ok(())
     }
 
@@ -143,10 +147,6 @@ impl Config {
             "代理或时钟命令不得包含空参数"
         );
         ensure!(!self.data_dir.as_os_str().is_empty(), "data_dir 不得为空");
-        ensure!(
-            !self.sync_sections,
-            "sync_sections 已停用，请配置 native_sections"
-        );
         if self.native_sections {
             self.validate_sections()?;
         }
@@ -465,7 +465,8 @@ mod tests {
         let original = fs::read(&path)?;
         initialize_config(&path, &fixture.0.join("different"))?;
         assert_eq!(fs::read(&path)?, original);
-        assert_eq!(fs::metadata(&path)?.permissions().mode() & 0o777, 0o600);
+        fs::OpenOptions::new().write(true).open(&path)?;
+        assert_eq!(fs::metadata(&path)?.permissions().mode() & 0o077, 0);
         assert!(write_json(&path, &serde_json::json!({}), false).is_err());
         assert_eq!(fs::read(&path)?, original);
         Ok(())
@@ -487,7 +488,7 @@ mod tests {
     fn invalid_types_and_zero_quotas_are_rejected_before_creating_data() -> Result<()> {
         let fixture = Fixture::new()?;
         let path = fixture.0.join("config.json");
-        for invalid in [
+        for mut invalid in [
             serde_json::json!({"poll_seconds":0}),
             serde_json::json!({"auto_archive_seconds":0}),
             serde_json::json!({"runtime_poll_seconds":false}),
@@ -500,10 +501,13 @@ mod tests {
             serde_json::json!({"data_dir":""}),
             serde_json::json!([]),
         ] {
+            if let Some(fields) = invalid.as_object_mut() {
+                fields.entry("data_dir").or_insert(serde_json::json!("data"));
+            }
             write_json(&path, &invalid, true)?;
             assert!(load(Some(&path)).is_err(), "{invalid}");
+            assert!(!fixture.0.join("data").exists(), "{invalid}");
         }
-        assert!(!fixture.0.join("data").exists());
         Ok(())
     }
 
@@ -515,9 +519,9 @@ mod tests {
             ..Config::default()
         };
         config.validate()?;
-        config.sync_sections = true;
-        assert!(config.validate().is_err());
-        config.sync_sections = false;
+        let path = fixture.0.join("old.json");
+        write_json(&path, &serde_json::json!({"sync_sections":true,"data_dir":fixture.0}), false)?;
+        assert!(load(Some(&path)).unwrap_err().to_string().contains("请配置 native_sections"));
         config.native_sections = true;
         assert!(config.validate().is_err());
         config.sidebar_socket = fixture.0.join("desktop.sock");

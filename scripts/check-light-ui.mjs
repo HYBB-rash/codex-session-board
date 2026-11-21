@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import http from "node:http";
+import { clickNode } from "./browser-actions.mjs";
 import { launchBrowser } from "./browser-client.mjs";
+import { checkEditorDrafts } from "./check-editor-drafts.mjs";
 
 const html = await fs.readFile(new URL("../index.html",import.meta.url),"utf8");
 const fixture = {
@@ -35,7 +37,7 @@ const server = http.createServer(async (request,response) => {
         state:input.state,note:input.note,version:input.version+1,sectionVersion:"verified-review",placementReason:null
       });
       return response.writeHead(200,{"Content-Type":"application/json"})
-        .end('{"ok":true,"sectionVersion":"verified-review"}');
+        .end(JSON.stringify({ok:true,session:fixture.sessions.find(row=>row.id===input.id)}));
     }
     return response.writeHead(200,{"Content-Type":"application/json"}).end('{"ok":true}');
   }
@@ -43,7 +45,7 @@ const server = http.createServer(async (request,response) => {
   response.end(request.url === "/" ? html : JSON.stringify(fixture));
 });
 await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
-let browser, cases = 0, baselineCases, cleanup, refreshPerformance;
+let browser, cases = 0, baselineCases, cleanup, refreshPerformance, editor;
 const check = (actual,expected,message) => {assert.deepEqual(actual,expected,message);cases++;};
 try {
   browser = await launchBrowser();
@@ -97,19 +99,25 @@ try {
   check(await evaluate(`${card("long")}.querySelector(".note-details").open`),true);
   fixture.sessions.find(row=>row.id === "long").title = "更新后的会话";
   await refresh();
-  check(await evaluate(`originalCard===${card("long")}`),false);
+  check(await evaluate(`${card("long")}.querySelector(".card-title").textContent`),"更新后的会话");
   check(await evaluate('document.activeElement.dataset.action'),"adjust");
   check(await evaluate('document.activeElement.closest(".card").dataset.id'),"long");
   check(await evaluate(`originalWarning===${card("warning")}`),true);
   check(await evaluate(`${card("long")}.querySelector(".project-tag").open`),true);
   check(await evaluate(`${card("long")}.querySelector(".note-details").open`),true);
+  fixture.sessions.find(row=>row.id === "long").observationWarning = "缺少当前执行证据";
+  await refresh();
+  check(await evaluate(`${card("long")}.textContent.includes("缺少当前执行证据")`),true);
+  delete fixture.sessions.find(row=>row.id === "long").observationWarning;
+  await refresh();
+  check(await evaluate(`${card("long")}.textContent.includes("缺少当前执行证据")`),false);
   await evaluate('byId("jump").children[2].focus();render()');
   check(await evaluate('document.activeElement===originalJump'),true);
   await evaluate(`${card("long")}.querySelector('[data-action="adjust"]').click()`);
   check(await evaluate('byId("editor").open'),true);
   check(await evaluate('byId("note").value'),fixture.sessions[0].note);
   check(writes,[]);
-  await evaluate('byId("editor").close();editing=null;render()');
+  await evaluate('byId("cancel").click()');
   check(await evaluate(`${card("readonly")}.querySelector('[data-action="adjust"]').disabled`),true);
   check(await evaluate(`${card("readonly")}.draggable`),false);
   await evaluate(`${card("long")}.querySelector('[data-action="preview"]').click()`);
@@ -147,16 +155,35 @@ try {
   }
   fixture.health = structuredClone(healthBaseline);
   await refresh();
+  const ordinarySessions = fixture.sessions;
+  fixture.sessions = Array.from({length:1500},(_,index)=>({...ordinarySessions[0],id:"performance-"+index,note:"",state:"review"}));
+  const fullRenderMs = await evaluate(`(() => {
+    data.sessions=${JSON.stringify(fixture.sessions)};
+    const initial=performance.now();render();return performance.now()-initial;
+  })()`);
+  const reading = '.card[data-id="performance-0"] .project-tag summary';
+  await clickNode(page, reading);
   refreshPerformance = await evaluate(`(() => {
-    data.sessions=Array.from({length:1500},(_,index)=>({...data.sessions[0],id:"performance-"+index,note:"",state:"review"}));
-    const initial=performance.now();render();const fullRenderMs=performance.now()-initial;
-    const original=[...document.querySelectorAll(".card")],unchangedRenderMs=[];
+    const cards=()=>byId("board").querySelectorAll(".card");
+    const original=new Map(Array.from(cards(),card=>[card.dataset.id,card]));
+    if(original.size!==data.sessions.length || !data.sessions.every(session=>original.has(session.id)))
+      throw Error("初始看板缺少会话或包含重复卡片");
+    const summary=document.querySelector(${JSON.stringify(reading)}),details=summary.closest("details");
+    const readingCard=summary.closest(".card"),unchangedRenderMs=[];
     for(let cycle=0;cycle<8;cycle++){
       data=structuredClone(data);const start=performance.now();render();unchangedRenderMs.push(performance.now()-start);
+      const current=cards();
+      if(current.length!==original.size) throw Error("刷新后卡片数量有变");
+      for(const card of current) {
+        if(original.get(card.dataset.id)!==card || !card.checkVisibility({visibilityProperty:true,opacityProperty:true}))
+          throw Error("第"+(cycle+1)+"次刷新更换或隐藏了会话节点："+card.dataset.id);
+      }
+      if(document.activeElement!==summary || !details.open || !readingCard.contains(details) || !details.contains(summary))
+        throw Error("第"+(cycle+1)+"次刷新打断了正在阅读的项目详情");
     }
-    return {rows:original.length,retained:original.filter(card=>card.isConnected).length,fullRenderMs,unchangedRenderMs};
+    return {rows:original.size,fullRenderMs:${fullRenderMs},unchangedRenderMs};
   })()`);
-  check(refreshPerformance.retained,1500);
+  fixture.sessions = ordinarySessions;
   check(requests.filter(request=>request.method === "POST").map(request=>request.path),["/api/preview-reply","/api/open"]);
   baselineCases = cases;
   fixture.fourColumns = true;
@@ -168,7 +195,7 @@ try {
   },{
     ...fixture.sessions[0],id:"offline",title:"离线示例",remote:true,hostId:"remote-air",
     hostLabel:"离线主机",state:null,placementReason:"上次确认位于自定义分区",
-    canOpen:false,presence:"cachedUnknown",catalogCurrent:true
+    canOpen:false,readOnly:true,canArchive:false,presence:"cachedUnknown",catalogCurrent:true
   });
   await refresh();
   check(await evaluate('[...byId("board").children].map(column=>column.dataset.state)'),
@@ -188,7 +215,7 @@ try {
   await evaluate('byId("edit-form").requestSubmit()');
   check(writes.length,1);
   failedPlacement = true;
-  await evaluate('byId("state").value="review";byId("edit-form").requestSubmit()');
+  await evaluate('byId("state").value="review";byId("state").dispatchEvent(new Event("change"));byId("edit-form").requestSubmit()');
   await wait('!saving && byId("notice").textContent.includes("原生分区写入未确认")');
   check(await evaluate('byId("editor").open'),true);
   check(await evaluate('byId("note").value'),"保留备注");
@@ -199,7 +226,7 @@ try {
   check(writes.slice(1),Array.from({length:2},()=>({
     path:"/api/state",body:{id:"unplaced",state:"review",note:"保留备注",version:7,inputVersion:9,sectionVersion:"unsectioned"}
   })));
-  await evaluate(`byId("search").value="离线示例";byId("host-filter").value="all";
+  await evaluate(`byId("search").value="离线示例";byId("search").dispatchEvent(new Event("input"));byId("host-filter").value="all";
     byId("host-filter").dispatchEvent(new Event("change"));`);
   check(await evaluate('byId("unplaced-summary").textContent'),"未归列会话 1");
   check(await evaluate(`${card("offline")}.classList.contains("offline")`),true);
@@ -210,8 +237,9 @@ try {
   check(await evaluate('byId("reply-open").disabled'),true);
   await evaluate('byId("reply-close").click();openSession("offline")');
   check(writes.length,3);
+  editor = await checkEditorDrafts(browser,html);
 } finally {
   if (browser) cleanup = await browser.close();
   await new Promise(resolve => server.close(resolve));
 }
-console.log(JSON.stringify({cases:baselineCases,fourColumnCases:cases-baselineCases,writes,refreshPerformance,cleanup}));
+console.log(JSON.stringify({cases:baselineCases,fourColumnCases:cases-baselineCases,writes,refreshPerformance,editor,cleanup}));

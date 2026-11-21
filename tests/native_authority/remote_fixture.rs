@@ -240,6 +240,11 @@ impl RemoteFixture {
             .archived.lock().unwrap().clone()
     }
 
+    pub(super) fn restore_archived(&self, host: &str, thread: &str) {
+        assert!(self.engines[HOSTS.iter().position(|entry| *entry == host).unwrap()]
+            .archived.lock().unwrap().remove(thread));
+    }
+
     pub(super) fn pause(&self) -> Result<Pause> {
         let path = self.directory.join("pause");
         drop(

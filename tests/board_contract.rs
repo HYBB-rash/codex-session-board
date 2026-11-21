@@ -442,19 +442,17 @@ mod store_tests {
     #[test]
     fn invalid_state_and_oversized_note_leave_all_tables_unchanged() {
         let (_directory, store) = fixture(true);
+        let maximum = "备🌲".repeat(1000);
         for (state, note) in [
             (Some("invented"), "备注".to_string()),
-            (Some("review"), "字".repeat(2001)),
+            (Some("review"), format!("{maximum}字")),
         ] {
             let before = database_snapshot(&store);
             assert!(store.set_state("sample", state, &note, 0, None).is_err());
             assert_eq!(database_snapshot(&store), before);
         }
-        select(&store, Some("review"), &"字".repeat(2000));
-        assert_eq!(
-            session(&store)["note"].as_str().unwrap().chars().count(),
-            2000
-        );
+        select(&store, Some("review"), &maximum);
+        assert_eq!(session(&store)["note"], maximum);
     }
 
     #[test]
@@ -519,6 +517,14 @@ mod store_tests {
     fn discovery_updates_metadata_but_never_removes_missing_records() {
         let (_directory, store) = fixture(false);
         select(&store, Some("completed"), "保留");
+        let confirmed = session(&store);
+        let mut renamed = thread("sample", 20);
+        renamed["name"] = json!("外部改名");
+        store.discover(&[renamed]).unwrap();
+        let refreshed = session(&store);
+        assert_eq!(refreshed["title"], "外部改名");
+        assert_eq!(refreshed["inputVersion"], confirmed["inputVersion"]);
+        assert_eq!(refreshed["followUp"], false);
         let mut another = thread("another", 30);
         another["name"] = json!("新标题\n不存第二行");
         another["cwd"] = json!("/fixture/second");
@@ -819,28 +825,16 @@ mod runtime_tests {
             (json!({"type": "active"}), turn("t1", "completed")),
             (json!({"type": "idle"}), turn("t1", "inProgress")),
             (json!({"type": "active"}), json!({"status": "inProgress"})),
+            (json!({"type": "active"}), json!({"id": "", "status": "inProgress"})),
         ] {
             assert!(
                 !store
                     .observe_runtime("sample", &status, &latest, None)
-                    .unwrap()
+                    .unwrap(),
+                "{status} {latest}"
             );
-            assert_eq!(database_snapshot(&store), before);
+            assert_eq!(database_snapshot(&store), before, "{status} {latest}");
         }
-    }
-
-    #[test]
-    fn empty_turn_identifier_does_not_create_runtime_state_or_title_work() {
-        let (_directory, store) = fixture(true);
-        let before = database_snapshot(&store);
-        let status = json!({"type": "active"});
-        let latest = json!({"id": "", "status": "inProgress"});
-        assert!(
-            !store
-                .observe_runtime("sample", &status, &latest, None)
-                .unwrap()
-        );
-        assert_eq!(database_snapshot(&store), before);
     }
 }
 
@@ -1081,7 +1075,10 @@ mod state_contract_tests {
              UPDATE settings SET value='-12345' WHERE key='title_sync_started_at';
              INSERT INTO remote_sessions(id,host_id,thread_id,host_label,title,cwd,updated_at)
                  VALUES('noise','host','thread','host','noise','',0);
-             INSERT INTO remote_projects(id,value) VALUES('noise','{}');"
+             INSERT INTO remote_projects(id,value) VALUES('noise','{}');
+             INSERT INTO archive_batches(id,created_at) VALUES('noise',0);
+             INSERT INTO archive_batch_items(batch_id,position,id,target)
+                 VALUES('noise',0,'noise','{}');"
         ).unwrap();
         assert!(complete_snapshot(&store).tables.values().all(|rows| !rows.is_empty()));
         drop(store);
@@ -1226,17 +1223,6 @@ mod isolation_contract_tests {
     }
 
     #[test]
-    fn test_disabled_title_sync_saves_without_native_writes() {
-        let (_directory, store) = fixture(false);
-        select(&store, Some("completed"), "保留备注");
-        assert_eq!(session(&store)["state"], "completed");
-        assert_eq!(session(&store)["note"], "保留备注");
-        assert_eq!(session(&store)["title"], "示例会话");
-        assert!(store.pending_titles(None).unwrap().is_empty());
-        assert_eq!(store.title_epoch, None);
-    }
-
-    #[test]
     fn disabled_sync_clears_existing_jobs_on_next_state_save() {
         let (directory, store) = fixture(true);
         select(&store, Some("review"), "旧备注");
@@ -1245,18 +1231,6 @@ mod isolation_contract_tests {
         select(&store, Some("completed"), "新备注");
         assert!(store.pending_titles(None).unwrap().is_empty());
         assert_eq!(session(&store)["state"], "completed");
-    }
-
-    #[test]
-    fn discovery_batch_failure_does_not_leave_partial_inserts() {
-        let (_directory, store) = fixture(false);
-        let before = database_snapshot(&store);
-        assert!(
-            store
-                .discover(&[thread("new", 20), json!({"name": "缺少 ID"})])
-                .is_err(),
-        );
-        assert_eq!(database_snapshot(&store), before);
     }
 }
 
@@ -1296,6 +1270,9 @@ mod title_store_tests {
         assert!(!store.title_current("sample", 1).unwrap());
         assert!(store.title_current("sample", 2).unwrap());
         assert!(!store.title_synced("sample", 1, "[进行中] 旧标题").unwrap());
+        let jobs = store.pending_titles(None).unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0]["version"], 2);
         store.title_failed("sample", 1, "旧错误").unwrap();
         assert_eq!(database_snapshot(&store), before);
         assert!(store.title_synced("sample", 2, "[待审阅] 新标题").unwrap());

@@ -1,0 +1,72 @@
+{
+  "base": "65dc536222ea885137cfe7f78d6ecfa639c38153",
+  "decisions": [
+    {
+      "old_id": "acceptance.test_main_release_feedback.MainReleaseFeedbackTests.test_broken_main_blocks_unrelated_merges_until_a_referenced_regression_fix",
+      "disposition": "旧合并阻断退役，现役事故恢复已覆盖",
+      "successors": ["acceptance.test_main_release_feedback.MainReleaseFeedbackTests.test_closed_unacknowledged_gate_gap_needs_a_regression_for_recovery"],
+      "source": ["Docs/INTEGRATION.md:31", "Docs/INTEGRATION.md:45"],
+      "evidence": "值班人恢复带 merge-gate-gap 的已关工单。只有回归但引用另一工单、只有正确引用但只改业务代码、两项都缺，均无恢复评论或关单写入。正确引用且包含回归时返回 19，已经确认发布的工单跳过。"
+    },
+    {
+      "old_id": "acceptance.test_promotion.PromotionTests.test_promotion_rejects_missing_failed_skipped_and_neutral_jobs",
+      "disposition": "既有检查足够",
+      "successors": ["acceptance.test_main_release.MainReleaseTests.test_publication_requires_both_platform_jobs_from_its_own_run"],
+      "source": ["Docs/INTEGRATION.md:37", "scripts/main_release_evidence.py:65"],
+      "evidence": "发布维护人读到两项成功作业时获准取证；作业全缺、缺一平台、某项失败或作业来源头不符均拒绝。现行分支统一要求 completed/success。没有按 skipped、neutral、cancelled 再增加三项重复测试。"
+    },
+    {
+      "old_id": "acceptance.test_pr_delivery.PRDeliveryTests.test_foreign_project_python_tests_use_their_own_modules_in_a_fresh_process",
+      "disposition": "现役跨检出验收已覆盖",
+      "successors": ["acceptance.test_gate.GateTests.test_adapter_checks_the_target_instead_of_its_own_project"],
+      "source": ["acceptance/README.md:193", "acceptance/README.md:197"],
+      "evidence": "作者从另一检出运行 rust_adapter。两个目标具有相同模块路径、测试 ID 和测试源码，业务模块分别给出相反结果。实际发现只返回该目标的 ID，实际执行分别报告 pass、fail。原有外部 unittest_adapter 路径同样验证两次。"
+    },
+    {
+      "old_id": "acceptance.test_promotion.PromotionTests.test_promotion_rejects_a_modified_validation_transcript",
+      "disposition": "现役发布证据读取已覆盖",
+      "successors": ["acceptance.test_main_release.ReleaseCandidateEvidenceTests.test_publication_accepts_only_complete_matching_candidate_evidence"],
+      "source": ["Docs/VALIDATION.md:73", "Docs/VALIDATION.md:89"],
+      "evidence": "维护人读回正常候选成功。另一下载副本只有 step-1.log 的 stdout 不同，真实发布读取器从 verify_step 拒绝步骤日志不一致。"
+    },
+    {
+      "old_id": "acceptance.test_promotion.PromotionTests.test_promotion_rejects_legacy_incomplete_or_failed_new_phases",
+      "disposition": "历史查看与现役发布门槛分别覆盖",
+      "successors": [
+        "acceptance.test_main_release.ReleaseCandidateEvidenceTests.test_publication_accepts_only_complete_matching_candidate_evidence",
+        "acceptance.test_validation_cli.ValidationCliTests.test_plan_and_legacy_report_are_read_only_and_do_not_require_environment_setup"
+      ],
+      "source": ["Docs/VALIDATION.md:17", "Docs/VALIDATION.md:89"],
+      "evidence": "下载记录仍声明完整通过，却缺少原本必需的第三项自动验收步骤，发布读取器拒绝步骤集合不完整。旧版报告可只读查看的场景由现役 CLI 测试单独承担。"
+    },
+    {
+      "old_id": "acceptance.test_promotion.PromotionTests.test_promotion_rejects_wrong_repository_workflow_or_branch",
+      "disposition": "旧分支限制退役，现役工作流归属已覆盖",
+      "successors": ["acceptance.test_main_release.MainReleaseTests.test_publication_requires_both_platform_jobs_from_its_own_run"],
+      "source": ["Docs/INTEGRATION.md:35", "Docs/INTEGRATION.md:37", "scripts/main_release_evidence.py:58"],
+      "evidence": "维护人选择同一仓库的其他 workflow，样本仍提供两项同 head 的成功作业，发布时拒绝其工作流身份。现行流程允许从 main 触发。"
+    },
+    {
+      "old_id": "acceptance.test_promotion.PromotionTests.test_promotion_requires_both_platform_identity_and_unchanged_reports",
+      "disposition": "现役平台、源码和自动报告对应关系已覆盖",
+      "successors": [
+        "acceptance.test_main_release.ReleaseCandidateEvidenceTests.test_publication_accepts_only_complete_matching_candidate_evidence",
+        "acceptance.test_main_release.MainReleaseTests.test_release_records_both_platform_reports_for_the_pinned_source"
+      ],
+      "source": ["Docs/INTEGRATION.md:37", "Docs/VALIDATION.md:89"],
+      "evidence": "本机生成的第二版候选在当前平台通过。用另一平台标签、另一预期提交或另一预期指纹分别取证均被拒。单独换成其他 automated.json 触发其专属摘要检查。既有汇总测试同时要求两份平台报告。"
+    },
+    {
+      "old_id": "acceptance.test_promotion.PromotionTests.test_rehashed_receipts_cannot_hide_wrong_ownership_or_unconfirmed_cleanup",
+      "disposition": "现役下载回执归属与收尾拒绝已覆盖",
+      "successors": [
+        "acceptance.test_main_release.ReleaseCandidateEvidenceTests.test_publication_accepts_only_complete_matching_candidate_evidence",
+        "acceptance.test_validation_process.ValidationProcessTests.test_missing_or_unconfirmed_receipts_cannot_prove_cleanup"
+      ],
+      "source": ["Docs/VALIDATION.md:77", "Docs/VALIDATION.md:89"],
+      "evidence": "保留此次真实子进程的完整回执、日志以及原有摘要，只给测试输入指定另一虚构的运行 ID，发布读取器拒绝这些回执。生成收尾时缺少回执和未确认清理仍由进程层回归验证。"
+    }
+  ],
+  "implementation_boundary": "临时无依赖 Rust crate 实际执行项目检查、离线 Clippy、仓库的自动验收器和进程清理。提交及树用无效的本地测试标识占位，下载边界只复制临时目录。没有远程 CI、真实凭据、产品发布或真实 macOS 运行。",
+  "verification": "Fedora。四个相关模块共 33 项通过，另有 2 项关联的 CLI 和回执测试通过；项目解释器发现 220 个 Python ID，与本平台绑定完全相等。发布读取器实际接收 1 份正常材料并拒绝 7 类独立不匹配。独立审阅发现临时目录使用别名会导致夹具误拒，已复现并对齐生产入口的规范源码路径，使用符号链接 TMPDIR 再次验证。"
+}

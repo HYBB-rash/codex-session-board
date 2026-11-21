@@ -59,7 +59,7 @@ def four_column_snapshot(snapshot):
         raise ValueError("Packaged board lost the old section's unplaced session")
 
 
-def mcp(root, version, runtime, four_columns=False):
+def mcp(root, version, runtime, four_columns=False, resource_output=None):
     deadline = time.monotonic() + 30
     requests = [
         {"id": 1, "method": "initialize", "params": {
@@ -98,6 +98,8 @@ def mcp(root, version, runtime, four_columns=False):
     content = resource["contents"][0]
     if content["mimeType"] != "text/html;profile=mcp-app" or "<html" not in content["text"]:
         raise ValueError("Packaged MCP interface resource is missing")
+    if resource_output is not None:
+        resource_output.write_text(content["text"])
     if snapshot.get("isError") or not snapshot["structuredContent"]["sessions"]:
         raise ValueError("Packaged MCP cannot read the isolated fixture")
     if {field: snapshot["structuredContent"]["runtime"][field] for field in IDENTITY_FIELDS} != runtime:
@@ -171,7 +173,8 @@ def verify(package, fixture, output, four_columns=False):
                 config_sha = digest(root / "config.json")
                 report["runtime"] = runtime
                 report["config_sha256"] = config_sha
-                report["mcp"] = mcp(root, manifest["version"], runtime, four_columns)
+                report["mcp"] = mcp(root, manifest["version"], runtime, four_columns,
+                                    output.with_suffix(".resource.html"))
                 if four_columns:
                     report["four_columns"]["mcp"] = True
                 report["mcp_child"] = json.loads((root / "mcp-child.json").read_text())

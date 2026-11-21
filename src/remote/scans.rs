@@ -270,27 +270,76 @@ mod tests {
     use super::*;
     use crate::config::Config;
 
-    struct Page(Value);
+    struct Pages<'a>(std::collections::VecDeque<(Option<&'a str>, Value)>);
 
-    impl Rpc for Page {
+    impl Rpc for Pages<'_> {
         fn call(&mut self, method: &str, params: Value) -> Result<Value> {
             if method == "thread/turns/list" {
                 return Ok(json!({"data":[]}));
             }
             assert_eq!(method, "thread/list");
-            if params["cursor"].is_null() && !self.0["expected"].is_null() {
-                return Ok(json!({"data":self.0.get("head").cloned().unwrap_or(json!([]))}));
+            let (cursor, page) = self.0.pop_front().expect("unexpected extra thread/list request");
+            assert_eq!(params["cursor"], json!(cursor));
+            if page["disconnected"] == true {
+                return Err(std::io::Error::from(std::io::ErrorKind::ConnectionReset).into());
             }
-            assert_eq!(params["cursor"], self.0["expected"]);
-            if self.0["error"].is_object() {
+            if page["error"].is_object() {
                 return Err(rpc::RequestError {
                     method: method.into(),
-                    details: self.0["error"].clone(),
+                    details: page["error"].clone(),
                 }
                 .into());
             }
-            Ok(self.0.clone())
+            Ok(page)
         }
+    }
+
+    fn scan<const COUNT: usize>(app: &App, pages: [(Option<&str>, Value); COUNT]) -> Result<()> {
+        let mut reader = Pages(pages.into());
+        let result = scan_runtime_page(app, &mut reader, &mut HashMap::new(), crate::model::now());
+        assert!(reader.0.is_empty(), "missing thread/list request");
+        result
+    }
+
+    #[test]
+    fn failed_remote_page_keeps_its_cursor_while_another_host_completes() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let host = |name: &str| {
+            App::new(Config {
+                data_dir: directory.path().join(name),
+                host_id: name.into(),
+                sync_titles: false,
+                ..Config::default()
+            })
+        };
+        let first = host("mac")?;
+        let other = host("other")?;
+        let known = uuid::Uuid::new_v4().to_string();
+        let new = uuid::Uuid::new_v4().to_string();
+        let foreign = uuid::Uuid::new_v4().to_string();
+        let cursor = Some("continue");
+        scan(&first, [(None, json!({"data":[{"id":known}],"nextCursor":"continue"}))])?;
+        let disconnected = scan(&first, [(cursor, json!({"disconnected":true}))]).unwrap_err();
+        assert_eq!(disconnected.downcast::<std::io::Error>()?.kind(), std::io::ErrorKind::ConnectionReset);
+        scan(&other, [(None, json!({"data":[{"id":known}]}))])?;
+        assert!(other.is_active(&known)?);
+        assert!(!first.is_active(&known)?);
+        for misplaced in [&foreign, &known] {
+            let mixed = json!({"data":[{"id":new},{"id":misplaced,"hostId":"other"}]});
+            let error = scan(&first, [(cursor, mixed)]).unwrap_err();
+            assert!(error.to_string().contains("主机不匹配"));
+        }
+        let invalid = json!({"data":[{"id":new},{"id":"../escape"}]});
+        let error = scan(&first, [(cursor, invalid)]).unwrap_err();
+        assert!(error.downcast_ref::<uuid::Error>().is_some());
+        assert!(!first.store.contains(&new)?);
+        assert!(!first.store.contains(&foreign)?);
+        assert!(first.store.contains(&known)?);
+        scan(&first, [(cursor, json!({"data":[]})), (None, json!({"data":[]}))])?;
+        assert!(first.is_active(&known)?);
+        assert_eq!(first.store.sessions()?.len(), 1);
+        assert!(first.store.contains(&known)?);
+        Ok(())
     }
 
     #[test]
@@ -304,36 +353,21 @@ mod tests {
         };
         let identifier = uuid::Uuid::new_v4().to_string();
         let first =
-            json!({"expected":null,"data":[{"id":identifier,"name":"first"}],"nextCursor":"next"});
+            json!({"data":[{"id":identifier,"name":"first"}],"nextCursor":"next"});
         let app = App::new(config.clone())?;
-        scan_runtime_page(
-            &app,
-            &mut Page(first),
-            &mut HashMap::new(),
-            crate::model::now(),
-        )?;
+        scan(&app, [(None, first)])?;
         assert!(!app.is_active(&identifier)?);
         drop(app);
         let app = App::new(config)?;
-        let bad = json!({"expected":"next","data":[],"nextCursor":"next"});
-        assert!(
-            scan_runtime_page(
-                &app,
-                &mut Page(bad),
-                &mut HashMap::new(),
-                crate::model::now()
-            )
-            .is_err()
-        );
+        let bad = json!({"data":[],"nextCursor":"next"});
+        let error = scan(&app, [(Some("next"), bad), (None, json!({"data":[]}))]).unwrap_err();
+        assert!(error.to_string().contains("游标重复"));
         assert_eq!(app.store.sessions()?.len(), 1);
-        let final_page = json!({"expected":"next","data":[],"nextCursor":null});
-        scan_runtime_page(
-            &app,
-            &mut Page(final_page),
-            &mut HashMap::new(),
-            crate::model::now(),
-        )?;
+        let final_page = json!({"data":[],"nextCursor":null});
+        scan(&app, [(Some("next"), final_page), (None, json!({"data":[]}))])?;
         assert!(app.is_active(&identifier)?);
+        assert_eq!(app.store.sessions()?.len(), 1);
+        assert!(app.store.contains(&identifier)?);
         assert!(app.health.lock().unwrap()["scanComplete"] == true);
         Ok(())
     }
@@ -375,21 +409,11 @@ mod tests {
             ..Config::default()
         })?;
         let identifier = uuid::Uuid::new_v4().to_string();
-        let first = json!({"expected":null,"data":[],"nextCursor":"next"});
-        scan_runtime_page(
-            &app,
-            &mut Page(first),
-            &mut HashMap::new(),
-            crate::model::now(),
-        )?;
-        let page = json!({"expected":"next","data":[],"nextCursor":"older",
-            "head":[{"id":identifier,"name":"新近会话"}]});
-        scan_runtime_page(
-            &app,
-            &mut Page(page),
-            &mut HashMap::new(),
-            crate::model::now(),
-        )?;
+        let first = json!({"data":[],"nextCursor":"next"});
+        scan(&app, [(None, first)])?;
+        let page = json!({"data":[],"nextCursor":"older"});
+        let head = json!({"data":[{"id":identifier,"name":"新近会话"}]});
+        scan(&app, [(Some("next"), page), (None, head)])?;
         assert_eq!(app.store.sessions()?[0]["id"], identifier);
         assert!(app.health.lock().unwrap()["scanComplete"] == false);
         Ok(())
@@ -404,33 +428,15 @@ mod tests {
             ..Config::default()
         })?;
         let identifier = uuid::Uuid::new_v4().to_string();
-        let first = json!({"expected":null,"data":[{"id":identifier}],"nextCursor":"expired"});
-        scan_runtime_page(
-            &app,
-            &mut Page(first),
-            &mut HashMap::new(),
-            crate::model::now(),
-        )?;
+        let first = json!({"data":[{"id":identifier}],"nextCursor":"expired"});
+        scan(&app, [(None, first)])?;
         let invalid =
-            json!({"expected":"expired","error":{"code":-32602,"message":"Invalid cursor"}});
-        assert!(
-            scan_runtime_page(
-                &app,
-                &mut Page(invalid),
-                &mut HashMap::new(),
-                crate::model::now()
-            )
-            .is_err()
-        );
+            json!({"error":{"code":-32602,"message":"Invalid cursor"}});
+        assert!(scan(&app, [(Some("expired"), invalid)]).is_err());
         assert!(Progress::load(&app)?.cursor.is_none());
         assert_eq!(app.store.sessions()?.len(), 1);
-        let page = json!({"expected":null,"data":[{"id":identifier}],"nextCursor":null});
-        scan_runtime_page(
-            &app,
-            &mut Page(page),
-            &mut HashMap::new(),
-            crate::model::now(),
-        )?;
+        let page = json!({"data":[{"id":identifier}],"nextCursor":null});
+        scan(&app, [(None, page)])?;
         assert!(app.is_active(&identifier)?);
         Ok(())
     }

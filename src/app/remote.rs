@@ -7,8 +7,20 @@ use std::collections::BTreeMap;
 mod catalog_tests;
 
 impl App {
-    pub(crate) fn route_remote(&self, path: &str, body: &Value) -> Result<Value> {
+    pub(super) fn route_remote(&self, op: &Operation, body: &Value) -> Result<Value> {
         let identifier = body["id"].as_str().context("缺少会话 ID")?;
+        let (remote, thread) = self.remote_write_target(identifier)?;
+        let mut request = body.clone();
+        request["id"] = json!(thread);
+        let result = remote.execute(op, &request)?;
+        if op.action == Action::Update {
+            self.save_receipt(identifier, result)
+        } else {
+            Ok(result)
+        }
+    }
+
+    pub(super) fn remote_write_target(&self, identifier: &str) -> Result<(Arc<App>, String)> {
         let (host, thread) = remote_identity(identifier)?;
         let remote = self.remote_app(&host)?;
         let drafts = self.store.catalog_drafts(&host)?;
@@ -19,9 +31,7 @@ impl App {
             "会话只有目录或历史缓存记录，当前不可修改"
         );
         remote.store.note(&thread)?;
-        let mut request = body.clone();
-        request["id"] = json!(thread);
-        remote.request(path, Some(&request))
+        Ok((remote, thread))
     }
 
     pub(super) fn refresh_hosts(&self, body: &Value) -> Result<Value> {
@@ -105,24 +115,14 @@ impl App {
 
     pub(crate) fn annotate_connections(&self, sessions: &mut [Value]) {
         for session in sessions {
-            if !self.config.legacy_mode && session["state"] == "completed" {
-                session["state"] = json!(board_state("completed"));
+            let remote = session["remote"] == true;
+            if remote && self.config.four_columns {
+                session["canOpen"] = json!(super::four_columns::can_open(session));
             }
-            if self.config.legacy_mode {
-                session["canArchive"] = json!(false);
-            }
-            if session["remote"] == true {
-                if session["readOnly"] == true {
-                    session["canArchive"] = json!(false);
-                }
-                continue;
-            }
-            if session["readOnly"] == true
-                || self.config.native_sections && !session["sectionVersion"].is_string()
-            {
-                session["readOnly"] = json!(true);
-                session["canArchive"] = json!(false);
-            }
+            let read_only = session["readOnly"] == true
+                || !remote && self.config.native_sections && !session["sectionVersion"].is_string();
+            session["readOnly"] = json!(read_only);
+            session["canArchive"] = json!(!self.config.legacy_mode && !read_only && session["canArchive"] != false);
         }
     }
 

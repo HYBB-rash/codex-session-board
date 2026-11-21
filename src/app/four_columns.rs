@@ -1,36 +1,4 @@
-use serde_json::{Value, json};
-
-pub(super) fn project(sessions: &mut Vec<Value>) {
-    sessions.retain_mut(|row| {
-        let empty = row.as_object_mut()
-            .and_then(|row| row.remove("confirmedEmpty")) == Some(json!(true));
-        if row["remote"] == true {
-            row["canOpen"] = json!(can_open(row));
-        }
-        if row["suggestion"] == "unknown" {
-            row["suggestion"] = Value::Null;
-        }
-        if row["state"] != "unknown" {
-            return true;
-        }
-        if empty && row["presence"] != "cachedUnknown" && row["archived"] != true
-            && row["note"] == ""
-            && row["sectionVersion"].as_str().is_none_or(|position| {
-                matches!(position, "unsectioned" | "chats" | "threads")
-            })
-        {
-            return false;
-        }
-        row["state"] = Value::Null;
-        row["placementReason"] = json!(match row["sectionVersion"].as_str() {
-            Some("unsectioned" | "chats" | "threads") => "原生侧栏默认区",
-            Some("pinned") => "原生侧栏置顶",
-            Some(_) => "原生侧栏分区未映射",
-            None => "尚未确认原生位置或工作状态",
-        });
-        true
-    });
-}
+use serde_json::Value;
 
 pub(super) fn can_open(row: &Value) -> bool {
     matches!(row["presence"].as_str(), Some("active" | "archived"))
@@ -42,6 +10,7 @@ mod tests {
     use super::*;
     use crate::{app::App, config::Config};
     use anyhow::Result;
+    use serde_json::json;
 
     #[test]
     fn four_column_snapshot_preserves_legacy_cards_and_rejects_retired_writes() -> Result<()> {
@@ -99,17 +68,5 @@ mod tests {
         assert_eq!(app.native_runtime_since("old", 42.0)?, 42.0);
         assert_eq!(app.store.sessions()?[0]["state"], "unknown");
         Ok(())
-    }
-
-    #[test]
-    fn only_current_remote_rows_offer_navigation() {
-        let mut rows = vec![
-            json!({"state":"review","remote":true,"presence":"cachedUnknown","catalogCurrent":true}),
-            json!({"state":"unknown","remote":true,"presence":"active","catalogCurrent":true}),
-        ];
-        project(&mut rows);
-        assert_eq!(rows[0]["canOpen"], false);
-        assert_eq!(rows[1]["canOpen"], true);
-        assert_eq!(rows[1]["state"], Value::Null);
     }
 }

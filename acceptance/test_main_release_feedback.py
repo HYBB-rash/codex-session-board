@@ -5,42 +5,29 @@ from scripts import main_release_feedback as feedback
 
 
 class MainReleaseFeedbackTests(unittest.TestCase):
-    def test_broken_main_blocks_unrelated_merges_until_a_referenced_regression_fix(self):
-        incident = {"number": 19, "body": "<!-- main-release:failure " + "a" * 40 + " -->",
-                    "labels": [{"name": "merge-gate-gap"}]}
-        with patch.object(feedback.forge, "pages", return_value=[incident]):
-            for messages, paths in (("Update UI", "tests/ui_layout.rs"),
-                                    ("Release-Fix: #19", "src/main.rs")):
-                with patch.object(feedback, "git", side_effect=[messages, paths]), \
-                        self.assertRaisesRegex(ValueError, "unresolved release incident #19"):
-                    feedback.require_recovery("owner/repo", "base")
-            with patch.object(feedback, "git", side_effect=["Release-Fix: #19", "acceptance/test_release.py"]):
-                feedback.require_recovery("owner/repo", "base")
-
-    def test_infrastructure_recovery_does_not_require_an_unrelated_business_regression(self):
-        incident = {"number": 19, "body": "<!-- main-release:failure " + "a" * 40 + " -->", "labels": []}
-        with patch.object(feedback.forge, "pages", return_value=[incident]), \
-                patch.object(feedback, "git", side_effect=["Release-Fix: #19", ".github/workflows/release.yml"]):
-            feedback.require_recovery("owner/repo", "base")
-
-    def test_failure_reuses_one_incident_and_confirms_source_bound_author_feedback(self):
+    def test_failure_reuses_one_source_bound_incident_and_reports_previous_channels(self):
         source = "a" * 40
         incident = {"number": 19, "body": f"<!-- main-release:failure {source} -->",
                     "html_url": "issue-url"}
-        pr = {"number": 7, "user": {"login": "author"}}
-        with patch.object(feedback, "channels", return_value={"target": {"source_commit": "old"}}), \
-                patch.object(feedback, "ensure_label"), \
-                patch.object(feedback.forge, "pages", return_value=[incident]), \
-                patch.object(feedback.forge, "api", return_value=incident) as api, \
-                patch.object(feedback, "affected_prs", return_value={7: pr}), \
-                patch.object(feedback, "comment_once", return_value="comment-url") as comment:
+        forge = Mock()
+        forge.pages.return_value = [incident]
+        observed = dict(incident)
+
+        def read_existing(path, method="GET", **fields):
+            self.assertEqual((method, path), ("GET", "issues/19"))
+            return observed
+
+        forge.api.side_effect = read_existing
+        with patch.object(feedback, "GitHub", return_value=forge), \
+                patch.object(feedback, "channels", return_value={"target": {"source_commit": "old"}}), \
+                patch.object(feedback, "ensure_label"):
             result = feedback.failure("owner/repo", source, 8, "run-url")
-        self.assertEqual(api.call_count, 1)
+            observed["body"] = "another source"
+            with self.assertRaises(ValueError):
+                feedback.failure("owner/repo", source, 8, "run-url")
         self.assertEqual(result["issue"], "issue-url")
         self.assertEqual(result["previous"]["target"]["source_commit"], "old")
-        self.assertFalse(result["authors"][0]["accepted"])
-        self.assertIn(source, comment.call_args.args[3])
-        self.assertIn("author", comment.call_args.args[3])
+        self.assertEqual(result["source"], source)
 
     def test_recovery_closes_only_incidents_covered_by_the_published_source(self):
         source, unrelated = "a" * 40, "b" * 40
@@ -49,26 +36,48 @@ class MainReleaseFeedbackTests(unittest.TestCase):
         def ancestor(*arguments):
             if arguments[-2] == unrelated:
                 raise RuntimeError("unrelated branch")
-        with patch.object(feedback.forge, "pages", return_value=issues), \
+        forge = Mock()
+        forge.pages.return_value = issues
+        with patch.object(feedback, "GitHub", return_value=forge), \
                 patch.object(feedback, "git", side_effect=ancestor), \
-                patch.object(feedback, "comment_once") as comment, \
-                patch.object(feedback.forge, "api") as api:
+                patch.object(feedback, "comment_once") as comment:
             self.assertEqual(feedback.recovered("owner/repo", source, 8), [19])
         self.assertEqual(comment.call_count, 1)
-        self.assertEqual(api.call_count, 2)
+        self.assertEqual(forge.api.call_count, 2)
 
-    def test_closed_unacknowledged_incident_still_blocks_and_gate_gap_needs_a_regression(self):
+    def test_closed_unacknowledged_gate_gap_needs_a_regression_for_recovery(self):
         source = "a" * 40
         issue = {"number": 19, "state": "closed", "body": f"<!-- main-release:failure {source} -->",
                  "labels": [{"name": "release-blocker"}, {"name": "merge-gate-gap"}]}
-        with patch.object(feedback.forge, "pages", return_value=[issue]), \
-                patch.object(feedback, "git", side_effect=["", "Unrelated change", "src/main.rs"]), \
-                patch.object(feedback.forge, "api") as api, \
+        forge = Mock()
+        forge.pages.return_value = [issue]
+        for message, path in [
+            ("Unrelated change", "src/main.rs"),
+            ("Release-Fix: #20", "acceptance/test_release.py"),
+            ("Release-Fix: #19", "src/main.rs"),
+        ]:
+            with self.subTest(message=message, path=path), \
+                    patch.object(feedback, "GitHub", return_value=forge), \
+                    patch.object(feedback, "git", side_effect=["", message, path]), \
+                    patch.object(feedback, "comment_once") as comment:
+                self.assertEqual(feedback.recovered("owner/repo", "newer", 8), [])
+                comment.assert_not_called()
+                forge.api.assert_not_called()
+        with patch.object(feedback, "GitHub", return_value=forge), \
+                patch.object(feedback, "git", side_effect=["", "Release-Fix: #19", "acceptance/test_release.py"]), \
                 patch.object(feedback, "comment_once"):
-            self.assertEqual(feedback.recovered("owner/repo", "newer", 8), [])
-            api.assert_not_called()
+            self.assertEqual(feedback.recovered("owner/repo", "newer", 8), [19])
         issue["labels"].append({"name": "release-published"})
-        with patch.object(feedback.forge, "pages", return_value=[issue]), \
-                patch.object(feedback, "git") as git:
-            feedback.require_recovery("owner/repo", "base")
+        with patch.object(feedback, "GitHub", return_value=forge), patch.object(feedback, "git") as git:
+            self.assertEqual(feedback.recovered("owner/repo", "newer", 8), [])
             git.assert_not_called()
+
+    def test_recovery_comment_is_reused_and_confirmed_by_id(self):
+        forge = Mock()
+        saved = {"id": 2, "body": "<!-- marker -->\nrecovered", "html_url": "comment-url"}
+        forge.pages.return_value = [saved]
+        forge.api.return_value = saved
+        self.assertEqual(feedback.comment_once(forge, 19, "<!-- marker -->", "recovered"), "comment-url")
+        forge.api.assert_called_once_with("issues/comments/2")
+        with self.assertRaisesRegex(ValueError, "did not confirm"):
+            feedback.comment_once(forge, 19, "<!-- marker -->", "different source")

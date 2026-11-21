@@ -153,7 +153,7 @@ def verify(project, built, fixture, output, connection=False):
             record["cases"].append(verify_case(
                 startup, package, invalid, output, "service-failure-exit", "提前退出"))
         if connection:
-            from pr_connection_probe import verify_sidebar
+            from package_connection_probe import verify_sidebar
             record["cases"].append(verify_sidebar(startup, package, fixture, output))
         if hashlib.sha256(fixture.read_bytes()).hexdigest() != record["fixture_sha256"]:
             raise ValueError("Fixture changed during actual package checks")

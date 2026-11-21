@@ -1,14 +1,65 @@
 use crate::{
     app::App,
-    rpc::{Role, Rpc, summarize_turn},
+    rpc::{DesktopConnection, Role, Rpc, summarize_turn},
+    store::archive_batches::ArchiveReceipt,
 };
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 use std::collections::HashSet;
+use std::cell::Cell;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+#[derive(Debug)]
+pub(crate) struct NewInput(pub &'static str);
+
+impl std::fmt::Display for NewInput {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.0)
+    }
+}
+
+impl std::error::Error for NewInput {}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ArchiveEffect {
+    Unconfirmed,
+    Confirmed,
+}
+
+impl std::fmt::Display for ArchiveEffect {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Unconfirmed => "归档结果待确认，请核对原会话",
+            Self::Confirmed => "原生归档后本地确认未完成，请刷新核对",
+        })
+    }
+}
+
+impl std::error::Error for ArchiveEffect {}
+
 pub fn request(app: &App, body: &Value) -> Result<Value> {
+    request_with_writer(app, body, None, || Ok(true))
+}
+
+fn may_submit(app: &App, identifier: &str, body: &Value, batched: bool) -> Result<bool> {
+    let key = if app.config.host_id == "local" {
+        identifier.to_owned()
+    } else {
+        crate::store::remote::identity(&app.config.host_id, identifier)
+    };
+    match app.mapping_store.archive_receipt(&key, body)? {
+        Some(ArchiveReceipt::Confirmed) => anyhow::bail!("此修订已确认归档，请刷新看板"),
+        Some(ArchiveReceipt::Pending) if !batched => anyhow::bail!("请先在归档结果中核对这条会话"),
+        Some(ArchiveReceipt::Pending) => Ok(false),
+        None => Ok(true),
+    }
+}
+
+pub(crate) fn request_with_writer(
+    app: &App, body: &Value, writer: Option<&mut DesktopConnection>,
+    claim: impl FnOnce() -> Result<bool>,
+) -> Result<Value> {
     ensure!(
         !app.config.legacy_mode,
         "兼容模式不执行本机或远程会话的真实归档"
@@ -20,45 +71,62 @@ pub fn request(app: &App, body: &Value) -> Result<Value> {
     let input = body["inputVersion"].as_i64().context("缺少输入版本")?;
     uuid::Uuid::parse_str(identifier).context("无效会话 ID")?;
     let operation = app.thread_lock(identifier)?;
-    let _thread = app
-        .config
-        .native_sections
-        .then(|| operation.lock())
-        .transpose()
-        .map_err(|_| anyhow::anyhow!("会话操作锁已损坏"))?;
+    let _thread = operation.lock().map_err(|_| anyhow::anyhow!("会话操作锁已损坏"))?;
     let _titles = (!app.config.native_sections)
         .then(|| app.title_lock.try_lock())
         .transpose()
         .map_err(|_| anyhow::anyhow!("标题同步进行中，请稍后重试归档"))?;
+    if !may_submit(app, identifier, body, writer.is_some())? || !claim()? {
+        return Ok(json!({"ok":true,"skipped":true}));
+    }
     let result = if app.config.native_sections {
-        native_request(app, identifier, (version, input), body)
+        native_request(app, identifier, (version, input), body, writer)
     } else {
-        app.store.archive(identifier, version, input, |expected| {
-            remote(app, identifier, expected, body)
-        })
+        let confirmed = Cell::new(false);
+        let result = app.store.archive(identifier, version, input, |expected| {
+            remote(app, identifier, expected, body, writer)?;
+            confirmed.set(true);
+            Ok(())
+        });
+        if confirmed.get() { result.context(ArchiveEffect::Confirmed) } else { result }
     };
     app.refresh.store(true, Ordering::Relaxed);
     result?;
     Ok(json!({"ok":true,"archived":true}))
 }
 
-fn native_request(app: &App, identifier: &str, revision: (i64, i64), body: &Value) -> Result<()> {
+fn native_request(
+    app: &App, identifier: &str, revision: (i64, i64), body: &Value,
+    writer: Option<&mut DesktopConnection>,
+) -> Result<()> {
     let expected = app.store.prepare_archive(identifier, revision)?;
-    remote(app, identifier, &expected, body)?;
+    remote(app, identifier, &expected, body, writer)?;
     app.store
         .confirm_archive(identifier, revision)
-        .context("原生归档后本地确认未完成，请刷新核对")
+        .context(ArchiveEffect::Confirmed)
 }
 
-fn remote(app: &App, identifier: &str, expected: &Value, body: &Value) -> Result<()> {
-    let timeout = Duration::from_secs(if app.config.native_sections {
+pub(crate) fn timeout(app: &App) -> Duration {
+    Duration::from_secs(if app.config.native_sections {
         app.config.rpc_timeout_seconds
     } else {
         app.config.rpc_timeout_seconds.min(3)
-    });
-    let mut writer = app.connection(timeout, Role::ArchiveWriter)?;
+    })
+}
+
+fn remote(
+    app: &App, identifier: &str, expected: &Value, body: &Value,
+    writer: Option<&mut DesktopConnection>,
+) -> Result<()> {
+    let mut owned_writer;
+    let writer = if let Some(writer) = writer {
+        writer
+    } else {
+        owned_writer = app.connection(timeout(app), Role::ArchiveWriter)?;
+        &mut owned_writer
+    };
     archive_checked(
-        &mut writer,
+        writer,
         identifier,
         app.config.max_pages,
         expected,
@@ -124,8 +192,8 @@ fn archive_checked(
     verify_input(writer, identifier, expected)?;
     let response = writer
         .call("thread/archive", json!({"threadId":identifier}))
-        .context("归档结果待确认，请核对原会话后重试")?;
-    ensure!(response.is_object(), "归档结果待确认，回执格式无效");
+        .context(ArchiveEffect::Unconfirmed)?;
+    ensure!(response.is_object(), ArchiveEffect::Unconfirmed);
     Ok(())
 }
 
@@ -155,10 +223,9 @@ fn verify_input(writer: &mut dyn Rpc, identifier: &str, expected: &Value) -> Res
     }
     let latest = turns.first().map(summarize_turn).unwrap_or(json!({}));
     let users = |turn: &Value| turn["userItems"].as_array().cloned().unwrap_or_default();
-    ensure!(
-        latest["id"] == expected["id"] && users(&latest) == users(expected),
-        "原生会话有新输入或轮次尚未核对，请刷新并重新确认待归档状态"
-    );
+    if latest["id"] != expected["id"] || users(&latest) != users(expected) {
+        return Err(NewInput("原生会话有新输入或轮次尚未核对，请刷新并重新确认待归档状态").into());
+    }
     Ok(())
 }
 
@@ -175,6 +242,15 @@ fn input_items_known(turn: &Value) -> bool {
 }
 
 pub fn archived(writer: &mut dyn Rpc, identifier: &str, max_pages: usize) -> Result<bool> {
+    let mut matched = HashSet::new();
+    archived_ids(writer, HashSet::from([identifier]), max_pages, &mut matched)?;
+    Ok(matched.contains(identifier))
+}
+
+pub(crate) fn archived_ids<'id>(
+    writer: &mut dyn Rpc, mut identifiers: HashSet<&'id str>, max_pages: usize,
+    matched: &mut HashSet<&'id str>,
+) -> Result<()> {
     let mut cursor = Value::Null;
     let mut cursors = HashSet::new();
     for _ in 0..max_pages {
@@ -187,12 +263,14 @@ pub fn archived(writer: &mut dyn Rpc, identifier: &str, max_pages: usize) -> Res
             }),
         )?;
         let threads = result["data"].as_array().context("归档列表格式无效")?;
-        if threads.iter().any(|thread| thread["id"] == identifier) {
-            return Ok(true);
+        for identifier in threads.iter().filter_map(|thread| thread["id"].as_str()) {
+            if let Some(identifier) = identifiers.take(identifier) {
+                matched.insert(identifier);
+            }
         }
         cursor = result.get("nextCursor").cloned().unwrap_or(Value::Null);
-        if cursor.is_null() || cursor == "" {
-            return Ok(false);
+        if identifiers.is_empty() || cursor.is_null() || cursor == "" {
+            return Ok(());
         }
         let next = cursor.as_str().context("归档分页游标无效")?;
         ensure!(cursors.insert(next.to_string()), "归档分页游标重复");

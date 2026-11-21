@@ -41,6 +41,8 @@
 ## 离线桥接构建
 
 可读入口为 `assets/app-bridge-entry.mjs`。
+Vue 回复预览复用这一构建入口，源码、生成区和验证方式见
+[回复预览的 Vue 入口](REPLY-PREVIEW.md)。
 `assets/app-bridge.package.json` 与 `assets/app-bridge.package-lock.json`
 固定原有 SDK 2.0.4 和 esbuild 0.28.2，保留依赖来源与完整性校验。
 锁文件的每个包占一行，避免压缩为单行或引入与改动无关的格式差异。
@@ -53,7 +55,10 @@ node scripts/build-app-bridge.mjs --check --offline
 构建在临时目录执行 `npm ci --ignore-scripts`，产出离线 IIFE 与许可证文件，
 结束时删除临时目录。首次缺少 npm 缓存时省略 `--offline`。
 不要手改生成包，也不要在 Rust 中通过替换压缩字符串增加路由。
-MCP 资源直接内嵌生成包，保留九条操作和结构化、文本及错误结果处理。
+新增共享操作时，在 `assets/board-operations.json` 填写 HTTP 方法、路径、工具名和展示属性，
+再将对应的 Rust `Action` 接到处理函数和参数描述。浏览器桥在构建时读取此表，
+Rust 用同一份表列出工具并分派请求。HTTP 独有入口及 MCP 的 `board_view` 各自在原入口处理。
+MCP 资源直接内嵌生成包。预览正文只通过 `_meta.previewReply` 传回应用。
 
 ## 验证与交付
 

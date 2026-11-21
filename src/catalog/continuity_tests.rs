@@ -131,14 +131,19 @@ fn known_projectless_state_survives_missing_and_current_legacy_intent_still_wins
 #[test]
 fn unknown_or_missing_account_identity_never_continues_previous_membership() -> Result<()> {
     for (previous_identity, next_identity) in [
-        (json!(null), json!(null)),
-        (json!("c".repeat(64)), json!(null)),
-        (json!(null), json!("c".repeat(64))),
-        (json!("invalid"), json!("invalid")),
+        (None, json!(null)),
+        (Some(json!(null)), json!(null)),
+        (Some(json!("c".repeat(64))), json!(null)),
+        (Some(json!(null)), json!("c".repeat(64))),
+        (Some(json!("invalid")), json!("invalid")),
     ] {
         let (_directory, app) = app()?;
         let mut original = assigned();
-        original.source["accountFingerprint"] = previous_identity;
+        if let Some(identity) = previous_identity {
+            original.source["accountFingerprint"] = identity;
+        } else {
+            original.source.as_object_mut().unwrap().remove("accountFingerprint");
+        }
         publish(&app, original.clone())?;
         let mut next = missing(original);
         next.source["accountFingerprint"] = next_identity;
@@ -155,32 +160,5 @@ fn unknown_or_missing_account_identity_never_continues_previous_membership() -> 
             expected
         );
     }
-    Ok(())
-}
-
-#[test]
-fn old_snapshot_without_account_identity_cannot_continue_membership() -> Result<()> {
-    let (_directory, app) = app()?;
-    let mut original = assigned();
-    original
-        .source
-        .as_object_mut()
-        .unwrap()
-        .remove("accountFingerprint");
-    publish(&app, original.clone())?;
-    let mut next = missing(original);
-    next.source["accountFingerprint"] = json!(null);
-    let expected = next.active[0]["catalogProjectId"].clone();
-    publish(&app, next)?;
-    assert_eq!(
-        app.catalog
-            .lock()
-            .unwrap()
-            .snapshot
-            .as_ref()
-            .unwrap()
-            .active[0]["catalogProjectId"],
-        expected
-    );
     Ok(())
 }

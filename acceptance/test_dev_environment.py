@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
 import socket
+import subprocess
 from pathlib import Path
 import tempfile
 import sys
@@ -64,7 +65,12 @@ class DevEnvironmentTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "可写会话"):
                 probe(record)
             row.update(sectionVersion="native:fixture")
+            snapshot["health"]["sectionsError"] = "retired sidebar sync"
             probe(record)
+            snapshot["health"]["nativeError"] = "native position unavailable"
+            with self.assertRaisesRegex(RuntimeError, "native position unavailable"):
+                probe(record)
+            del snapshot["health"]["nativeError"]
             row.update(remote=True)
             with self.assertRaisesRegex(RuntimeError, "可写会话"):
                 probe(record)
@@ -185,7 +191,9 @@ class DevEnvironmentTests(unittest.TestCase):
                 self.assertIsNotNone(child.pid)
             finally:
                 reap([child])
-            self.assertEqual(child.guard.returncode, -9)
+            running = subprocess.check_output(["/bin/ps", "-axo", "pgid=,stat="], text=True)
+            self.assertFalse(any(group == str(child.guard.pid) and not status.startswith("Z")
+                                 for group, status in (line.split() for line in running.splitlines())))
 
     def test_foreign_identity_is_rejected_before_reading_sessions(self):
         from scripts.dev_environment.runtime import probe

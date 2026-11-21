@@ -49,7 +49,8 @@ impl Surface {
     pub fn answer(&mut self, method: &str, params: &Value) -> Result<Value> {
         let identifier = params["threadId"].as_str().unwrap_or("");
         match method {
-            "initialize" => Ok(json!({})),
+            "initialize" => Ok(json!({"codexHome":self.root.join("codex")})),
+            "account/read" if params["refreshToken"] == false => Ok(json!({"requiresOpenaiAuth":false,"account":null})),
             "thread/list" => Ok(json!({"data":self.rows()?.into_iter().filter(|thread|
                 (thread["archived"] == true) == (params["archived"] == true)).collect::<Vec<_>>(),"nextCursor":null})),
             "thread/read" => Ok(json!({"thread":self.rows()?.into_iter()

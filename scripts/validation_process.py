@@ -36,6 +36,8 @@ def supervise(request):
         while True:
             state = child.record()
             receipt["command_pid"] = state["pid"]
+            if "start_error" in state:
+                raise RuntimeError(state["start_error"])
             if state["exit"] is not None:
                 receipt.update(command_returncode=state["exit"], reason="completed")
                 break
@@ -53,7 +55,8 @@ def supervise(request):
                 reap([child])
             receipt["cleanup_confirmed"] = True
         except Exception as error:
-            receipt.update(reason="cleanup_failed", error=str(error))
+            first = receipt.get("error")
+            receipt.update(reason="cleanup_failed", error=f"{first}；清理失败：{error}" if first else str(error))
         receipt["finished_at"] = timestamp()
         write(path, receipt)
     return 0 if receipt["cleanup_confirmed"] else 3
@@ -76,10 +79,13 @@ def execute(name, arguments, output, *, root, environment, timeout, run_id):
             supervisor.wait(timeout=20)
     path = output / f"{name}.lease.json"
     receipt = json.loads(path.read_text())
+    command = f"{name} {arguments!r}"
     if supervisor.returncode != 0 or receipt["cleanup_confirmed"] is not True:
-        raise RuntimeError(f"{name} 未确认清理完成：{receipt}")
+        code = receipt["command_returncode"]
+        outcome = f"退出 {code}；" if code not in (None, 0) else ""
+        raise RuntimeError(f"{command} {outcome}{receipt.get('error', '')}；未确认清理完成，见 {path}")
     if receipt["reason"] != "completed":
-        raise RuntimeError(f"{name} {receipt['reason']}：{receipt.get('error', '')}")
+        raise RuntimeError(f"{command} {receipt['reason']}：{receipt.get('error', '')}")
     return {
         "name": name, "arguments": arguments, "returncode": receipt["command_returncode"],
         "seconds": time.monotonic() - started, "log_sha256": digest(output / f"{name}.log"),

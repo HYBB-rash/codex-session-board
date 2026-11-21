@@ -69,6 +69,7 @@ pub enum Role {
     SetupReader,
     TitleWriter,
     ArchiveWriter,
+    BatchArchiveWriter,
     ProjectWriter,
 }
 
@@ -100,17 +101,21 @@ impl Role {
                     | "account/read" | "fs/getMetadata" | "fs/readFile"),
             Self::SetupReader => matches!(method, "initialize" | "project/list" | "account/read"),
             Self::TitleWriter => matches!(method, "initialize" | "thread/read" | "thread/name/set"),
-            Self::ArchiveWriter => matches!(
+            Self::ArchiveWriter | Self::BatchArchiveWriter => matches!(
                 method,
                 "initialize"
                     | "thread/list"
                     | "thread/read"
                     | "thread/turns/list"
                     | "thread/archive"
-            ),
+            ) || (self == Self::BatchArchiveWriter && method == "account/read"),
         };
         ensure!(allowed, "此 RPC 连接不允许调用 {method}");
         Ok(())
+    }
+
+    fn scoped(self) -> bool {
+        matches!(self, Self::CatalogReader | Self::TargetProjectPreparer | Self::SetupReader | Self::BatchArchiveWriter)
     }
 }
 
@@ -474,7 +479,7 @@ impl DesktopConnection {
         };
         reader.initialize(source)?;
         reader.title_deadline =
-            matches!(role, Role::TitleWriter | Role::ArchiveWriter | Role::PreviewReader).then_some(deadline);
+            matches!(role, Role::TitleWriter | Role::ArchiveWriter | Role::BatchArchiveWriter | Role::PreviewReader).then_some(deadline);
         Ok(reader)
     }
 
@@ -491,7 +496,7 @@ impl DesktopConnection {
             peer.initialize(&response)?;
             binding.confirm(peer, self.call_deadline()?)?;
         }
-        if matches!(self.role, Role::CatalogReader | Role::TargetProjectPreparer | Role::SetupReader) {
+        if self.role.scoped() {
             let mut guard = catalog_guard::CatalogGuard::initialized(&response)?;
             if let Some((binding, peer)) = source {
                 guard.bind(Path::new(&peer.codex_home), json!({"ssh":binding.endpoint, "peer":peer}))?;
@@ -503,12 +508,17 @@ impl DesktopConnection {
     }
 
     pub(crate) fn catalog_source(&self) -> Result<Value> {
-        ensure!(matches!(self.role, Role::CatalogReader | Role::TargetProjectPreparer | Role::SetupReader),
+        ensure!(self.role.scoped(),
             "此连接不是项目目录连接");
         if let Some(authority) = &self.local_authority {
             authority.confirm()?;
         }
         self.catalog_guard.as_ref().context("目录连接尚未初始化")?.source()
+    }
+
+    pub(crate) fn bound_to_deadline(mut self, deadline: Instant) -> Self {
+        self.title_deadline = Some(deadline);
+        self
     }
 
     fn call_deadline(&self) -> Result<Instant> {
@@ -546,9 +556,7 @@ impl DesktopConnection {
 impl Rpc for DesktopConnection {
     fn call(&mut self, method: &str, params: Value) -> Result<Value> {
         self.role.check(method)?;
-        if matches!(self.role, Role::CatalogReader | Role::TargetProjectPreparer | Role::SetupReader)
-            && method != "initialize"
-        {
+        if self.role.scoped() && method != "initialize" {
             self.catalog_source()?;
             self.catalog_guard.as_ref().context("目录连接尚未初始化")?.check(method, &params)?;
         }
@@ -1252,30 +1260,6 @@ mod tests {
     }
 
     #[test]
-    fn roles_reject_all_unrelated_methods_before_io() -> Result<()> {
-        for role in [Role::Reader, Role::TitleWriter] {
-            let (mut connection, _server) = local_connection(role)?;
-            for method in [
-                "turn/start",
-                "thread/archive",
-                "thread/resume",
-                "turn/interrupt",
-                "thread/goal/set",
-            ] {
-                assert!(connection.call(method, json!({})).is_err());
-            }
-            let denied = if role == Role::Reader {
-                "thread/name/set"
-            } else {
-                "thread/list"
-            };
-            assert!(connection.call(denied, json!({})).is_err());
-            assert_eq!(connection.request_id, 0);
-        }
-        Ok(())
-    }
-
-    #[test]
     fn archive_role_rejects_other_writes_before_io() -> Result<()> {
         let (mut connection, _server) = local_connection(Role::ArchiveWriter)?;
         for method in [
@@ -1301,25 +1285,24 @@ mod tests {
 
     #[test]
     fn each_role_accepts_exactly_its_three_declared_methods() -> Result<()> {
-        let roles = [
-            (
-                Role::Reader,
-                ["initialize", "thread/list", "thread/turns/list"],
-            ),
-            (
-                Role::TitleWriter,
-                ["initialize", "thread/read", "thread/name/set"],
-            ),
-        ];
-        for (role, methods) in roles {
+        for (role, methods, other_role_method) in [
+            (Role::Reader, ["initialize", "thread/list", "thread/turns/list"], "thread/name/set"),
+            (Role::TitleWriter, ["initialize", "thread/read", "thread/name/set"], "thread/list"),
+        ] {
             let (mut connection, mut server) = local_connection(role)?;
             let worker = thread::spawn(move || -> Result<()> {
-                for _ in 0..3 {
+                for expected in methods {
                     let request = read_json(&mut server)?;
+                    ensure!(request["method"] == expected, "unexpected RPC: {}", request["method"]);
                     send_response(&mut server, json!({"id": request["id"], "result": {}}))?;
                 }
                 Ok(())
             });
+            for denied in ["turn/start", "thread/archive", "thread/resume", "turn/interrupt",
+                "thread/goal/set", other_role_method] {
+                assert!(connection.call(denied, json!({})).is_err(), "{denied}");
+            }
+            assert_eq!(connection.request_id, 0);
             for method in methods {
                 assert_eq!(connection.call(method, json!({}))?, json!({}));
             }
@@ -1594,10 +1577,12 @@ mod tests {
 printf 'noise\n{"id":1,"result":{}}\n'
 read -r notification
 read -r request
+sleep 0.02
 printf '{"method":"notice"}\n{"id":999,"result":{}}\n{"id":2,"result":{"data":[]}}\n'
 while read -r request; do :; done"#;
         let mut reader = StdioReader::connect(&stdio_command(script), Duration::from_secs(1))?;
         assert!(reader.call("thread/name/set", json!({})).is_err());
+        assert!(reader.call("thread/archive", json!({})).is_err());
         assert_eq!(reader.call("thread/list", json!({}))?, json!({"data": []}));
         let child_id = rustix::process::Pid::from_raw(reader._process.0.id().try_into()?);
         drop(reader);
@@ -1639,7 +1624,7 @@ printf '{"id":2,"result":{"data":[]}}'"#;
     }
 
     #[test]
-    fn stdio_timeout_is_bounded_without_a_reader_thread() -> Result<()> {
+    fn stdio_timeout_bounds_the_request_and_reader_shutdown() -> Result<()> {
         let script = r#"read -r request
 printf '{"id":1,"result":{}}\n'
 read -r notification
@@ -1647,7 +1632,8 @@ read -r request
 while :; do :; done"#;
         let mut reader = StdioReader::connect(&stdio_command(script), Duration::from_millis(100))?;
         let started = Instant::now();
-        assert!(reader.call("thread/list", json!({})).is_err());
+        let error = reader.call("thread/list", json!({})).unwrap_err();
+        assert_eq!(error.downcast::<io::Error>()?.kind(), io::ErrorKind::TimedOut);
         drop(reader);
         assert!(started.elapsed() < Duration::from_millis(500));
         Ok(())

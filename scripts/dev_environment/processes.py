@@ -28,7 +28,10 @@ class Child:
         return json.loads(self.state.read_text()) if self.state.exists() else {"pid": None, "exit": None}
 
     def poll(self):
-        return self.record()["exit"]
+        state = self.record()
+        if "start_error" in state:
+            raise RuntimeError(state["start_error"])
+        return state["exit"]
 
     @property
     def pid(self):
@@ -38,10 +41,16 @@ class Child:
 def guard(path, command):
     for number in (signal.SIGINT, signal.SIGTERM):
         signal.signal(number, lambda *_: None)
-    process = subprocess.Popen(command)
-    write_record(path, {"pid": process.pid, "exit": None})
-    result = process.wait()
-    write_record(path, {"pid": process.pid, "exit": result})
+    try:
+        process = subprocess.Popen(command)
+    except OSError as error:
+        detail = f"{type(error).__name__}: {error}"
+        print(detail, file=sys.stderr, flush=True)
+        write_record(path, {"pid": None, "exit": None, "start_error": detail})
+    else:
+        write_record(path, {"pid": process.pid, "exit": None})
+        result = process.wait()
+        write_record(path, {"pid": process.pid, "exit": result})
     while True:
         signal.pause()
 
@@ -57,7 +66,10 @@ def reap(children):
             errors.append(str(error))
     deadline = time.monotonic() + 4
     try:
-        while time.monotonic() < deadline and any(child.poll() is None for child in children):
+        while time.monotonic() < deadline:
+            states = (child.record() for child in children)
+            if all("start_error" in state or state["exit"] is not None for state in states):
+                break
             time.sleep(0.05)
     except (OSError, ValueError, RuntimeError) as error:
         errors.append(str(error))

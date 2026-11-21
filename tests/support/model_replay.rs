@@ -4,7 +4,8 @@ use rusqlite::{Connection, OpenFlags};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-const TABLES: [&str; 6] = [
+const TABLES: [&str; 8] = [
+    "archive_batch_items", "archive_batches",
     "title_updates", "changes", "remote_sessions", "remote_projects", "sessions", "settings",
 ];
 

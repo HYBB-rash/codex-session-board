@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { launchBrowser } from "./browser-client.mjs";
+import { inputText } from "./browser-actions.mjs";
 
 function installClock() {
   let now = 0, nextId = 0;
@@ -46,22 +47,31 @@ const snapshot = { states: { unknown: "待判断", in_progress: "进行中", rev
     { id: "other-project", label: "另一项目", paths: ["/other"], remote: true, hostId: "other" },
   ] },
   sessions: [
-    { id: 'remote:["codex","fixture","thread"]', title: "远程长标题".repeat(12), state: "in_progress", remote: true, hostId: "fixture", hostLabel: "测试远端", projectId: "project" },
+    { id: 'remote:["codex","fixture","11111111-1111-4111-8111-111111111111"]', title: "远程长标题".repeat(12), state: "in_progress", remote: true, hostId: "fixture", hostLabel: "测试远端", projectId: "project" },
     { id: "local", title: "本机会话", state: "unknown", projectId: null },
-    { id: 'remote:["codex","other","archive-thread"]', title: "另一主机待归档会话", state: "to_archive", remote: true, hostId: "other", hostLabel: "另一主机", projectId: "other-project", canArchive: true },
-  ].map(session => ({ note: "保留原备注", reason: "", version: 3, inputVersion: 5, sectionVersion: "native:source", canArchive: false, ...session })) };
+    { id: 'remote:["codex","other","11111111-1111-4111-8111-111111111111"]', title: "另一主机待归档会话", state: "to_archive", remote: true, hostId: "other", hostLabel: "另一主机", projectId: "other-project", canArchive: true },
+  ].map(session => ({ note: "保留原备注", reason: "", version: 3, inputVersion: 5, sectionVersion: "native:source", readOnly: false, canArchive: false, ...session })) };
 const writes = [], opens = [], mutations = [], responses = [], cases = [];
 let snapshotError = false, refreshError = false, automatic = false, holdSnapshot = false, heldSnapshot, pendingNew;
-const complete = async (status = 200, apply = status === 200, titlePending = false) => {
+let archiveCheck;
+let archiveHistory = [];
+const complete = async (status = 200, apply = status === 200, titlePending = false, receipt = value => value) => {
   for (let attempt = 0; attempt < 150 && !responses.length; attempt++) await delay(40);
   const { response, body } = responses.shift() || assert.fail("等待保存请求送达超时");
-  if (apply) Object.assign(snapshot.sessions.find(row => row.id === body.id),
-    { state: body.state, note: body.note, version: body.version + 1, sectionVersion: "native:" + body.state, titleSyncPending: titlePending });
+  const session = snapshot.sessions.find(row => row.id === body.id);
+  if (apply) Object.assign(session,
+    { state: body.state, note: (body.note ?? session.note).trim(), version: body.version + 1,
+      sectionVersion: "native:" + body.state, titleSyncPending: titlePending });
   response.writeHead(status, { "Content-Type": "application/json" });
-  response.end(JSON.stringify(status === 200 ? { ok: true, titleEnabled: true, titlePending, sectionVersion: "native:" + body.state } : { error: "版本冲突或连接未确认" }));
+  response.end(JSON.stringify(status === 200 ? receipt({ ok: true, titleEnabled: true, titlePending, session }) : { error: "版本冲突或连接未确认" }));
 };
 const server = http.createServer(async (request, response) => {
   if (request.url === "/") { response.setHeader("Content-Type", "text/html; charset=utf-8");response.end(html);return; }
+  if (request.url === "/api/archive-batches" && request.method === "GET") {
+    response.setHeader("Content-Type","application/json");
+    response.end(JSON.stringify({batches:archiveHistory}));
+    return;
+  }
   if (request.url === "/api/sessions") {
     if (holdSnapshot) {holdSnapshot = false;heldSnapshot = { response, text: JSON.stringify(snapshot) };return;}
     response.writeHead(snapshotError ? 503 : 200, { "Content-Type": "application/json" });
@@ -70,6 +80,10 @@ const server = http.createServer(async (request, response) => {
   let text = "";
   for await (const chunk of request) text += chunk;
   const body = JSON.parse(text || "{}");
+  if (request.url === "/api/archive-batches/check" && body.id === "dragged-check") {
+    archiveCheck = response;
+    return;
+  }
   if (request.url === "/api/state") {
     writes.push(body);responses.push({ response, body });if (automatic) await complete();return;
   }
@@ -106,7 +120,7 @@ const check = async (name, expression) => {
   assert(await evaluate(expression), name);cases.push(name);
 };
 const select = (id, value) => evaluate(`byId(${JSON.stringify(id)}).value=${JSON.stringify(value)};byId(${JSON.stringify(id)}).dispatchEvent(new Event("change"))`);
-const drag = async (id, selector) => {
+const drag = async (id, selector, beforeDrop) => {
   const point = selector => evaluate(`(() => {
     const node = document.querySelector(${JSON.stringify(selector)});node.scrollIntoView({block:"center",inline:"nearest"});
     const rect = node.getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+Math.min(30,rect.height/2)};
@@ -121,6 +135,7 @@ const drag = async (id, selector) => {
     await page.command("Input.dispatchMouseEvent", { type: "mouseMoved", x: source.x + 30, y: source.y + 15, buttons: 1, button: "left" });
     const { data } = await intercepted;
     assert(data.items.some(item => item.data === id), "必须捕获真实卡片拖拽");
+    if (beforeDrop) await beforeDrop();
     for (const type of ["dragEnter", "dragOver", "drop"]) await page.command("Input.dispatchDragEvent", { type, ...target, data });
     await page.command("Input.dispatchMouseEvent", { type: "mouseReleased", ...target, button: "left", clickCount: 1 });
   } finally { await page.command("Input.setInterceptDrags", { enabled: false }); }
@@ -154,8 +169,8 @@ try {
   await evaluate('window.pendingCreation=createSession("project");void 0');
   await until('creating');
   await check("新建等待中禁用拖动归档排序与筛选", 'byId("new-session").disabled && byId("host-filter").disabled && document.querySelector("[data-archive-all]").disabled && [...document.querySelectorAll(".card")].every(card=>!card.draggable) && [...document.querySelectorAll(".column-sort")].every(button=>button.disabled)');
-  await evaluate('(() => {const card=document.querySelector(".card"), event=new Event("dragstart",{cancelable:true});card.dispatchEvent(event);window.creationBlockedDrag=event.defaultPrevented;void moveCard(data.sessions[0],"review");void archiveSessions([data.sessions[2]],document.querySelector("[data-archive-all]"));void confirmArchiveInputs(data.sessions[2],document.querySelector("[data-archive-all]"));void changeColumnSort("to_archive",document.querySelector("#column-to_archive .column-sort"));byId("draft-restart").onclick();openEditor(data.sessions[0].id,"blocked");byId("edit-form").onsubmit({preventDefault(){}});})()');
-  await check("新建先开始时各写入口也保持互斥", 'creating && !saving && !dragging && window.creationBlockedDrag && !byId("editor").open');
+  await evaluate('(() => {const card=document.querySelector(".card"), event=new DragEvent("dragstart",{cancelable:true,dataTransfer:new DataTransfer()});card.dispatchEvent(event);window.creationBlockedDrag=event.defaultPrevented;void moveCard(data.sessions[0],"review");void archiveSessions([data.sessions[2]],document.querySelector("[data-archive-all]"));void confirmArchiveInputs(data.sessions[2],document.querySelector("[data-archive-all]"));document.querySelector("#column-to_archive .column-sort").click();document.querySelector("#sort-to_archive .sort-option[data-direction=desc]").click();byId("draft-restart").onclick();openEditor(data.sessions[0].id,"blocked");byId("edit-form").requestSubmit();})()');
+  await check("新建先开始时各写入口也保持互斥", 'creating && !saving && !document.querySelector(".drag-source") && window.creationBlockedDrag && !byId("editor").open');
   for (let attempt = 0; attempt < 150 && !pendingNew; attempt++) await delay(40);
   assert.equal(writes.length, 0);assert.equal(mutations.length, 1);
   assert.equal(mutations[0].path, "/api/new");assert.equal(mutations[0].body.projectId, "project");
@@ -191,17 +206,17 @@ try {
   await screenshot("short-wait");
   await evaluate('void moveCard(data.sessions[0],"to_archive");void load();byId("refresh").click()');
   assert.equal(writes.length, 1, "重复操作不能追加写入");
-  assert.deepEqual(writes[0], { id, state: "review", note: "保留原备注", version: 3, inputVersion: 5, sectionVersion: "native:source" });
+  assert.deepEqual(writes[0], { id, state: "review", version: 3, inputVersion: 5, sectionVersion: "native:source" });
   await select("host-filter", "host:other");
   await select("project-filter", "project:other-project");
-  await check("等待中主机和项目筛选仍可使用", 'selectedHost === "host:other" && selectedProject === "project:other-project" && !byId("host-filter").disabled && !byId("project-filter").disabled && !document.querySelector(".move-pending") && visibleSessions().length === 1');
+  await check("等待中主机和项目筛选仍可使用", 'byId("host-filter").value === "host:other" && byId("project-filter").value === "project:other-project" && !byId("host-filter").disabled && !byId("project-filter").disabled && !document.querySelector(".move-pending,.move-origin") && document.querySelectorAll(".card").length === 1');
   await evaluate('byId("filter-toggle").click();byId("search").value="另一主机";byId("search").dispatchEvent(new Event("input"))');
-  await check("等待中搜索保持所选主机范围", 'filterMode === "search" && !byId("search").disabled && !document.querySelector(".move-pending") && document.querySelectorAll(".card").length === 1 && visibleSessions()[0].hostId === "other"');
+  await check("等待中搜索保持所选主机范围", '!byId("search").hidden && !byId("search").disabled && !document.querySelector(".move-pending,.move-origin") && document.querySelectorAll(".card").length === 1 && document.querySelector(".card").dataset.id === ' + JSON.stringify(snapshot.sessions.find(session=>session.hostId==="other").id));
   await check("等待中禁用归档排序新建和再次拖动", 'byId("new-session").disabled && document.querySelector("[data-archive-all]").disabled && document.querySelector(".card .card-actions button:last-child").disabled && [...document.querySelectorAll(".column-sort")].every(button=>button.disabled) && [...document.querySelectorAll(".card")].every(card=>!card.draggable)');
   await evaluate('byId("new-session").onclick()');
   await check("等待中直接调用新建也不打开对话框", '!byId("new-target").open && !creating && saving');
-  await advance(401);await until('performance.now() > suppressOpenUntil');
-  await evaluate('(() => {const card=document.querySelector(".card"), event=new Event("dragstart",{cancelable:true});card.dispatchEvent(event);window.blockedDrag=event.defaultPrevented;void archiveSessions(visibleSessions(),document.querySelector("[data-archive-all]"));void changeColumnSort("to_archive",document.querySelector("#column-to_archive .column-sort"));void confirmArchiveInputs(visibleSessions()[0],document.querySelector("[data-archive-all]"));void moveCard(visibleSessions()[0],"review");void openSession(moving.id);})()');
+  await advance(401);
+  await evaluate('(() => {const card=document.querySelector(".card"), event=new DragEvent("dragstart",{cancelable:true,dataTransfer:new DataTransfer()});card.dispatchEvent(event);window.blockedDrag=event.defaultPrevented;void archiveSessions(visibleSessions(),document.querySelector("[data-archive-all]"));document.querySelector("#column-to_archive .column-sort").click();document.querySelector("#sort-to_archive .sort-option[data-direction=desc]").click();void confirmArchiveInputs(visibleSessions()[0],document.querySelector("[data-archive-all]"));void moveCard(visibleSessions()[0],"review");void openSession(moving.id);})()');
   await check("等待中直接调用也不能重复写入", 'window.blockedDrag && saving && moving.id === data.sessions[0].id && !opening');
   assert.equal(writes.length, 1);assert.deepEqual(mutations, expectedMutations);assert.deepEqual(opens, []);
   await evaluate('document.querySelector(".card-title").click();byId("reply-open").click()');
@@ -209,7 +224,7 @@ try {
   assert.deepEqual(opens, [otherId]);cases.push("等待中允许打开另一主机的会话");
   await select("host-filter", "host:fixture");
   await evaluate('byId("search").value="";byId("search").dispatchEvent(new Event("input"))');
-  await check("返回来源主机保留临时落位和来源占位", 'selectedHost === "host:fixture" && data.sessions[0].state === "in_progress" && document.querySelector(".move-pending") && document.querySelector("#column-in_progress .move-origin")');
+  await check("返回来源主机保留临时落位和来源占位", 'byId("host-filter").value === "host:fixture" && data.sessions[0].state === "in_progress" && document.querySelector(".move-pending") && document.querySelector("#column-in_progress .move-origin")');
   await select("host-filter", "all");
   refreshError = true;
   await evaluate('byId("refresh").click()');
@@ -242,15 +257,22 @@ try {
   await check("超过可见两秒仍未确认时继续展示", 'performance.now() - moving.shownAt === 6500 && !byId("move-feedback").hidden && byId("move-feedback").classList.contains("waiting")');
   const staleSnapshot = heldSnapshot;
   heldSnapshot = undefined;holdSnapshot = true;
+  const otherBeforeReceipt = structuredClone(snapshot.sessions[2]);
+  await select("host-filter", "host:other");
   await complete(200, true, true);
   await settled();
+  const receiptNotice = await evaluate('byId("feedback").textContent');
+  assert.match(receiptNotice, /状态已保存.*标题同步待重试/);
+  assert.deepEqual(await evaluate(`data.sessions.find(row=>row.id===${JSON.stringify(otherId)})`), otherBeforeReceipt);
+  await check("A迟到回执不改变当前B主机同UUID卡片", `byId("host-filter").value === "host:other" && document.querySelectorAll(".card").length === 1 && document.querySelector("#column-to_archive .card")?.dataset.id === ${JSON.stringify(otherId)}`);
+  await select("host-filter", "all");
   staleSnapshot.response.setHeader("Content-Type", "application/json");staleSnapshot.response.end(staleSnapshot.text);
   await evaluate('window.staleRead');
   for (let attempt = 0; attempt < 100 && !heldSnapshot; attempt++) await delay(20);
   assert(heldSnapshot);
   await check("刷新尚未返回也立即使用回执的原生位置", 'data.sessions[0].sectionVersion === "native:review" && !saving');
-  await check("回执才触发完成且标题待同步独立", 'data.sessions[0].state === "review" && !document.querySelector(".move-pending") && byId("move-feedback").classList.contains("saved") && document.querySelector(".follow").textContent.includes("标题") && byId("feedback").textContent.includes("标题同步待重试")');
-  await check("晚到的旧快照不能回滚成功结果", 'selectedHost === "all" && data.sessions[0].state === "review" && !saving && !moving && !document.querySelector(".move-origin")');
+  await check("回执才触发完成且标题待同步独立", 'data.sessions[0].state === "review" && !document.querySelector(".move-pending") && byId("move-feedback").classList.contains("saved") && document.querySelector(".follow").textContent.includes("标题")');
+  await check("晚到的旧快照不能回滚成功结果", 'byId("host-filter").value === "all" && data.sessions[0].state === "review" && !saving && !moving && !document.querySelector(".move-origin")');
   await screenshot("saved");
   await check("成功态切到庆祝帧", 'getComputedStyle(byId("move-dragon")).animationName === "dragon-success" && getComputedStyle(byId("move-dragon")).top === "-144px"');
   await animationFrames("success-animation", [0, 300, 600, 900, 1500, 1999]);
@@ -282,39 +304,57 @@ try {
   snapshotError = false;
   await evaluate('load()');
   await check("恢复读回实际位置而不重发", 'data.sessions[0].state === "unknown" && unconfirmedMoves.size === 0');
+  for (const malformed of ["missing", "wrong-host", "wrong-id"]) {
+    const beforeUnknown = writes.length;
+    holdSnapshot = true;heldSnapshot = undefined;
+    await move("unknown");
+    await complete(200, true, false, result => {
+      if (malformed === "missing") delete result.session;
+      else if (malformed === "wrong-host") result.session = {...result.session,hostId:"other"};
+      else result.session = {...result.session,id:'remote:["codex","fixture","22222222-2222-4222-8222-222222222222"]'};
+      return result;
+    });
+    await settled();
+    for (let attempt = 0; attempt < 100 && !heldSnapshot; attempt++) await delay(20);
+    assert(heldSnapshot, "未知回执必须读取快照确认");
+    await check(`${malformed}回执保持待核对且不伪报成功`, 'unconfirmedMoves.size === 1 && byId("feedback").textContent.includes("未收到保存确认") && !byId("feedback").textContent.includes("已保存")');
+    heldSnapshot.response.setHeader("Content-Type", "application/json");heldSnapshot.response.end(heldSnapshot.text);
+    await until("unconfirmedMoves.size === 0");
+    assert.equal(writes.length, beforeUnknown + 1, "确认读取不能重发保存");
+  }
   const beforeNoop = writes.length;
   await drag(id, "#column-unknown .cards");
   await drag(id, "#health");
   assert.equal(writes.length, beforeNoop, "同列和列外不保存");cases.push("同列及列外不提交");
   await drag(id, "#column-blocked .cards");
   await check("阻塞仍弹窗提示选填原因", 'byId("editor").open && !moving && data.sessions[0].state === "unknown" && byId("note-help").textContent.includes("暂时不填")');
-  await evaluate('byId("cancel").click()');await until('!byId("editor").open && editing === null');
+  await evaluate('byId("cancel").click()');await until('!byId("editor").open');
   assert.equal(writes.length, beforeNoop, "取消不保存");
   await drag(id, "#column-blocked .cards");
-  await evaluate('byId("note").value="";byId("edit-form").requestSubmit()');
+  await inputText(page, "#note", "");await evaluate('byId("edit-form").requestSubmit()');
   await advanceTo(1500);await until('!byId("move-feedback").hidden');
   await check("空原因允许保存并保持等待保护", 'saving && moving.state === "blocked" && byId("note").readOnly && byId("save").disabled && byId("cancel").disabled && data.sessions[0].state === "unknown"');
   assert.equal(writes.length, beforeNoop + 1);assert.equal(writes.at(-1).note, "");
   await complete(409, false);await settled();
-  await check("空原因失败后保留空草稿", 'byId("editor").open && !byId("note").readOnly && byId("note").value === "" && noteDraft(data.sessions[0].id) === "" && byId("feedback").textContent.includes("未收到保存确认")');
-  await evaluate('byId("cancel").click()');await until('!byId("editor").open && editing === null');
+  await check("空原因失败后保留空草稿", 'byId("editor").open && !byId("note").readOnly && byId("note").value === "" && byId("notice").textContent.includes("草稿已保留") && byId("feedback").textContent.includes("未收到保存确认")');
+  await evaluate('byId("cancel").click()');await until('!byId("editor").open');
   await drag(id, "#column-blocked .cards");
-  await check("等待失败后的空草稿重开仍为空", 'byId("editor").open && byId("note").value === "" && noteDraft(data.sessions[0].id) === ""');
-  await evaluate('byId("note").value="等待环境";byId("edit-form").requestSubmit()');
+  await check("等待失败后的空草稿重开仍为空", 'byId("editor").open && byId("note").value === "" && byId("notice").textContent.includes("已恢复")');
+  await inputText(page, "#note", "等待环境");await evaluate('byId("edit-form").requestSubmit()');
   await advanceTo(1500);await until('!byId("move-feedback").hidden');
   await check("表单内等待可见且不能重复提交", 'byId("editor").contains(byId("move-feedback")) && byId("save").disabled && byId("cancel").disabled && byId("state").disabled && byId("note").readOnly && !byId("notice").textContent && data.sessions[0].state === "unknown"');
   await screenshot("blocked-form");
   await complete(409, false);await settled();
-  await check("表单失败保留草稿并说明未确认", 'byId("editor").open && !byId("state").disabled && !byId("note").readOnly && byId("note").value === "等待环境" && noteDraft(data.sessions[0].id) === "等待环境" && byId("feedback").textContent.includes("未收到保存确认")');
-  await evaluate('byId("cancel").click()');await until('!byId("editor").open && editing === null');
+  await check("表单失败保留草稿并说明未确认", 'byId("editor").open && !byId("state").disabled && !byId("note").readOnly && byId("note").value === "等待环境" && byId("notice").textContent.includes("草稿已保留") && byId("feedback").textContent.includes("未收到保存确认")');
+  await evaluate('byId("cancel").click()');await until('!byId("editor").open');
   await drag(otherId, "#column-blocked .cards");
-  await check("另一会话编辑框不显示前一会话失败面板", `editing.id === ${JSON.stringify(otherId)} && byId("move-feedback").hidden && byId("move-slot").contains(byId("move-feedback")) && unconfirmedMoves.has(data.sessions[0].id) && !unconfirmedMoves.has(editing.id) && byId("note").value === editing.note`);
-  await evaluate('byId("cancel").click()');await until('!byId("editor").open && editing === null');
+  await check("另一会话编辑框不显示前一会话失败面板", `byId("dialog-title").textContent.startsWith(data.sessions[2].title) && byId("move-feedback").hidden && byId("move-slot").contains(byId("move-feedback")) && unconfirmedMoves.has(data.sessions[0].id) && !unconfirmedMoves.has(${JSON.stringify(otherId)}) && byId("note").value === data.sessions[2].note`);
+  await evaluate('byId("cancel").click()');await until('!byId("editor").open');
   await drag(id, "#column-blocked .cards");
   await evaluate('byId("edit-form").requestSubmit()');
   await advanceTo(1500);await until('!byId("move-feedback").hidden');
-  await complete();await settled();await until('!byId("editor").open && editing === null');
-  await check("表单成功才移动清草稿并保留收尾提示", 'data.sessions[0].state === "blocked" && noteDraft(data.sessions[0].id) === null && byId("move-feedback").classList.contains("saved") && !byId("move-feedback").hidden && byId("move-slot").contains(byId("move-feedback"))');
+  await complete();await settled();await until('!byId("editor").open');
+  await check("表单成功才移动并保留收尾提示", 'data.sessions[0].state === "blocked" && data.sessions[0].note === "等待环境" && byId("move-feedback").classList.contains("saved") && !byId("move-feedback").hidden && byId("move-slot").contains(byId("move-feedback"))');
   await advance(1999);
   assert.equal(await evaluate('byId("move-feedback").hidden'), false);
   await advance(1);
@@ -355,6 +395,35 @@ try {
   await advance(1);
   await check("成功画面前台累计两秒收起", 'byId("move-feedback").hidden && moveFeedback === null');
   await evaluate('delete document.hidden');
+  holdSnapshot = true;heldSnapshot = undefined;
+  await move("review");
+  await complete(200, true, false, result => {
+    Object.assign(result.session, {version:result.session.version+7,inputVersion:9,
+      state:"blocked",followUp:true,reason:"保存后出现新的原生状态和用户输入"});
+    return result;
+  });
+  await settled();
+  for (let attempt = 0; attempt < 100 && !heldSnapshot; attempt++) await delay(20);
+  assert(heldSnapshot);
+  assert.deepEqual(await evaluate("data.sessions[0]"), snapshot.sessions[0]);
+  await check("刷新前完整采用确认版本列及新输入提示", 'data.sessions[0].state === "blocked" && data.sessions[0].inputVersion === 9 && data.sessions[0].followUp === true && moving === null');
+  heldSnapshot.response.setHeader("Content-Type", "application/json");heldSnapshot.response.end(heldSnapshot.text);
+  await evaluate("load()");
+  snapshot.fourColumns = true;
+  await evaluate("load()");
+  holdSnapshot = true;heldSnapshot = undefined;
+  await move("review");await advanceTo(1500);await until('!byId("move-feedback").hidden');
+  await complete(200, true, false, result => {
+    Object.assign(result.session, {state:null,sectionVersion:"unsectioned",placementReason:"原生侧栏默认区"});
+    return result;
+  });
+  await settled();
+  for (let attempt = 0; attempt < 100 && !heldSnapshot; attempt++) await delay(20);
+  assert(heldSnapshot);
+  assert.deepEqual(await evaluate("data.sessions[0]"), snapshot.sessions[0]);
+  await check("未归列确认保留实际位置并显示可读完成提示", 'data.sessions[0].state === null && data.sessions[0].placementReason === "原生侧栏默认区" && document.querySelector(".placement-reason").textContent === "原生侧栏默认区" && byId("move-detail").textContent.includes("未归列") && !byId("move-detail").textContent.includes("undefined")');
+  heldSnapshot.response.setHeader("Content-Type", "application/json");heldSnapshot.response.end(heldSnapshot.text);
+  await evaluate("load()");
   const beforeReadonly = writes.length;
   snapshot.sessions[0].readOnly = true;
   await evaluate('load()');
@@ -365,12 +434,55 @@ try {
   snapshot.sessions[0].readOnly = false;
   await evaluate('load()');
   assert.equal(await evaluate('data.sessions[0].readOnly'), false, "必须读回服务器解除只读");
-  automatic = false;await move("unknown");
-  snapshot.sessions[0].state = "in_progress";snapshot.sessions[0].version++;snapshot.sessions[0].inputVersion++;
+  automatic = false;
+  const beforeDrag = {...snapshot.sessions[0]};
+  await evaluate('byId("unplaced").open=true');
+  await drag(id,"#column-review .cards",async () => {
+    Object.assign(snapshot.sessions[0],{state:"in_progress",version:beforeDrag.version+1,inputVersion:beforeDrag.inputVersion+1});
+    await evaluate("load()");
+  });
+  assert.deepEqual(writes.at(-1),{id,state:"review",version:beforeDrag.version,
+    inputVersion:beforeDrag.inputVersion,sectionVersion:beforeDrag.sectionVersion});
   await complete(409, false);await settled();
   await until('data.sessions[0].state === "in_progress"');
-  await check("新输入冲突保留较新的状态", 'data.sessions[0].inputVersion === 6 && data.sessions[0].state === "in_progress" && unconfirmedMoves.size === 0');
+  await check("新输入冲突保留较新的状态", `data.sessions[0].inputVersion === 10 && data.sessions[0].state === "in_progress" &&
+    data.sessions[0].note === ${JSON.stringify(beforeDrag.note)} && unconfirmedMoves.size === 0 &&
+    !document.querySelector(".move-pending,.move-origin,.drop-target,.drag-source") &&
+    [...document.querySelectorAll(".column")].every(node=>Number(node.querySelector(".column-count").textContent)===node.querySelectorAll(".card").length)`);
   await check("保存结束解除离开保护", '(() => {const event=new Event("beforeunload",{cancelable:true});window.dispatchEvent(event);return !event.defaultPrevented;})()');
+  await page.command("Emulation.setDeviceMetricsOverride",{width:575,height:800,deviceScaleFactor:1,mobile:false});
+  const hostBeforeDrag = await evaluate('byId("host-filter").value');
+  await until('!document.querySelector("[data-archive-all]").disabled');
+  archiveHistory=[{id:"dragged-check",createdAt:1,finishedAt:1,
+    items:[{id:"another-archived-session",title:"另一次归档",status:"pending"}]}];
+  await evaluate('byId("archive-results-toggle").click()');
+  await until('byId("archive-summary-text").textContent.includes("1 条待核对")');
+  await evaluate('byId("archive-summary-actions").querySelector("button").click()');
+  await until('document.querySelector("[data-archive-all]").disabled');
+  await evaluate(`(() => {
+    const viewport=byId("board-viewport");
+    viewport.scrollLeft=0; viewport.scrollIntoView({block:"center"});
+    const bounds=viewport.getBoundingClientRect();
+    const cursor={clientX:bounds.right-12,clientY:(bounds.top+bounds.bottom)/2};
+    const transfer=new DataTransfer(), source=document.querySelector(".card[draggable=true]");
+    source.dispatchEvent(new DragEvent("dragstart",{bubbles:true,cancelable:true,dataTransfer:transfer}));
+    byId("board").dispatchEvent(new DragEvent("dragover",{bubbles:true,cancelable:true,dataTransfer:transfer,...cursor}));
+    source.dispatchEvent(new DragEvent("drag",{bubbles:true,dataTransfer:transfer}));
+  })()`);
+  await until('byId("board-viewport").scrollLeft > 12 && document.querySelector(".drag-source")');
+  const alternate = hostBeforeDrag === "local" ? "all" : "local";
+  await select("host-filter",alternate);
+  assert.equal(await evaluate('byId("host-filter").value'),hostBeforeDrag);
+  assert(archiveCheck);
+  archiveHistory[0].items[0].status="verified";
+  archiveCheck.end(JSON.stringify({batch:archiveHistory[0]}));
+  await until('byId("archive-summary-text").textContent.includes("已确认归档 1 / 1")');
+  await evaluate('document.querySelector(".drag-source").dispatchEvent(new DragEvent("dragend",{bubbles:true}))');
+  assert.equal(await evaluate('document.querySelector("[data-archive-all]").disabled'),false);
+  const stopped = await evaluate('byId("board-viewport").scrollLeft');
+  await evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+  assert.equal(await evaluate('byId("board-viewport").scrollLeft'),stopped);
+  assert.equal(await evaluate('Boolean(document.querySelector(".drop-target,.drag-source"))'),false);
   const beforeReload = writes.length;
   await page.command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/` });
   await until('typeof data !== "undefined" && data.sessions?.[0]?.state === "in_progress"');
@@ -392,7 +504,7 @@ try {
 } catch (error) {
   await screenshot("failure");
   await fs.writeFile(path.join(output, "failure.json"), JSON.stringify({ error: error.message, cases, writes, mutations,
-    initialReducedMotion, state: await evaluate('({now:performance.now(),reducedMotion:matchMedia("(prefers-reduced-motion: reduce)").matches,glowAnimation:document.querySelector(".move-pending")?getComputedStyle(document.querySelector(".move-pending"),"::after").animationName:null,hidden:document.hidden,editing,editorOpen:byId("editor").open,dragging,saving,moving,feedback:byId("move-feedback").outerHTML,ids:[...document.querySelectorAll(".card")].map(card=>({id:card.dataset.id,draggable:card.draggable,rect:card.getBoundingClientRect().toJSON()}))})') }, null, 2));
+    initialReducedMotion, state: await evaluate('({now:performance.now(),reducedMotion:matchMedia("(prefers-reduced-motion: reduce)").matches,glowAnimation:document.querySelector(".move-pending")?getComputedStyle(document.querySelector(".move-pending"),"::after").animationName:null,hidden:document.hidden,editorOpen:byId("editor").open,dragging:board.drag.source,saving,moving,sessions:data.sessions,feedbackText:byId("feedback").textContent,follow:[...document.querySelectorAll(".follow")].map(node=>node.textContent),selectedHost:byId("host-filter").value,selectedProject:byId("project-filter").value,feedback:byId("move-feedback").outerHTML,ids:[...document.querySelectorAll(".card")].map(card=>({id:card.dataset.id,draggable:card.draggable,rect:card.getBoundingClientRect().toJSON()}))})') }, null, 2));
   throw error;
 } finally {
   for (const { response } of responses) response.destroy();

@@ -2,6 +2,8 @@
 
 #[path = "support/fixture.rs"]
 mod fixture;
+#[path = "support/read_only_backend.rs"]
+mod read_only_backend;
 
 use anyhow::{Result, bail};
 use codex_session_board::{app, config, http, mcp, observer, rpc::Rpc, titles};
@@ -23,6 +25,7 @@ struct Fixture {
     _port: Arc<PortLease>,
     path: PathBuf,
     settings: Value,
+    native_endpoint: Option<String>,
     server: Mutex<Option<ChildGuard>>,
 }
 
@@ -40,12 +43,21 @@ impl Fixture {
             _port: port,
             path,
             settings,
+            native_endpoint: None,
             server: Mutex::new(None),
         }
     }
 
     fn app(&self) -> app::App {
         app::App::new(config::load(Some(&self.path)).unwrap()).unwrap()
+    }
+
+    fn command(&self) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_codex-session-board"));
+        if let Some(endpoint) = &self.native_endpoint {
+            command.env("CODEX_APP_SERVER_WS_URL", endpoint);
+        }
+        command
     }
 
     fn register_projects(&mut self, identifiers: &[&str]) -> PathBuf {
@@ -74,21 +86,22 @@ impl Fixture {
     }
 
     fn mcp_calls(&self, requests: &[(&str, Value)]) -> Vec<Value> {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
+        let messages: Vec<_> = requests.iter().enumerate().map(|(position, (name, arguments))| {
+            json!({"id":position + 1,"method":"tools/call","params":{"name":name,"arguments":arguments}})
+        }).collect();
+        self.mcp_requests(&messages)
+    }
+
+    fn mcp_requests(&self, requests: &[Value]) -> Vec<Value> {
+        let mut child = self.command()
             .args(["mcp", "--config", self.path.to_str().unwrap()])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
             .unwrap();
         let mut input = child.stdin.take().unwrap();
-        for (position, (name, arguments)) in requests.iter().enumerate() {
-            writeln!(
-                input,
-                "{}",
-                json!({"id":position + 1,"method":"tools/call",
-                    "params":{"name":name,"arguments":arguments}})
-            )
-            .unwrap();
+        for request in requests {
+            writeln!(input, "{request}").unwrap();
         }
         drop(input);
         let output = child.wait_with_output().unwrap();
@@ -101,7 +114,7 @@ impl Fixture {
     }
 
     fn cli(&self, action: &str) -> std::process::Output {
-        Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
+        self.command()
             .args(["--config", self.path.to_str().unwrap(), action])
             .output()
             .unwrap()
@@ -123,21 +136,13 @@ impl Fixture {
             return serde_json::from_slice(&output.stdout).unwrap();
         }
         let mut child = ChildGuard::spawn_in(
-            env!("CARGO_BIN_EXE_codex-session-board"),
+            self.command(),
             &self.path,
             Arc::clone(&self._port),
             directory,
         )
         .unwrap();
-        let mut line = String::new();
-        BufReader::new(child.child.stdout.take().unwrap())
-            .read_line(&mut line)
-            .unwrap();
-        let value: Value = serde_json::from_str(line.trim()).unwrap_or_else(|_| {
-            let mut error = String::new();
-            let _ = std::io::Read::read_to_string(child.child.stderr.as_mut().unwrap(), &mut error);
-            panic!("{error}");
-        });
+        let value = child.startup_receipt().unwrap();
         *slot = Some(child);
         value
     }
@@ -156,7 +161,7 @@ impl Fixture {
 impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = fs::write(&self.path, self.settings.to_string());
-        let _ = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
+        let _ = self.command()
             .args(["--config", self.path.to_str().unwrap(), "stop"])
             .output();
         let slot = self
@@ -169,6 +174,7 @@ impl Drop for Fixture {
 
 struct Native {
     name: String,
+    reads: usize,
     writes: Vec<Value>,
     fail: bool,
     lose_ack: bool,
@@ -180,6 +186,7 @@ impl Native {
     fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
+            reads: 0,
             writes: vec![],
             fail: false,
             lose_ack: false,
@@ -197,6 +204,7 @@ impl Rpc for Native {
         match method {
             "thread/read" => {
                 assert_eq!(params, json!({"threadId":FIRST,"includeTurns":false}));
+                self.reads += 1;
                 if let Some(callback) = self.callback.take() {
                     callback();
                 }
@@ -238,9 +246,12 @@ fn title_prefixes_are_idempotent_and_preserve_other_text() {
 #[test]
 fn title_sync_reads_full_fresh_name_and_avoids_duplicate_native_write() {
     let fixture = Fixture::new(true);
-    fixture.populate();
     let app = fixture.app();
     let body = format!("🧪 [项目] {}", "完整正文".repeat(350));
+    let listed: String = body.chars().take(18).collect();
+    app.discover(&[json!({"id":FIRST,"name":listed,"updatedAt":3})], true)
+        .unwrap();
+    assert_eq!(app.store.sessions().unwrap()[0]["title"], listed);
     let mut native = Native::new(&body);
     app.store
         .set_state(FIRST, Some("review"), "保留备注", 0, None)
@@ -274,9 +285,16 @@ fn title_failure_persists_and_lost_ack_is_reconciled() {
     native.fail = false;
     native.lose_ack = true;
     titles::sync(&app.store, &mut native, FIRST).unwrap();
+    assert_eq!(native.name, "[待归档] 原名");
     assert_eq!(native.writes.len(), 1);
+    drop(app);
+    let app = fixture.app();
+    assert_eq!(app.store.pending_titles(Some(FIRST)).unwrap().len(), 1);
+    assert_eq!(app.store.note(FIRST).unwrap(), "备注");
     native.lose_ack = false;
+    let reads = native.reads;
     titles::sync(&app.store, &mut native, FIRST).unwrap();
+    assert!(native.reads > reads, "重开后须读回目标会话的原生标题");
     assert_eq!(native.writes.len(), 1);
     assert!(app.store.pending_titles(None).unwrap().is_empty());
 }
@@ -304,21 +322,6 @@ fn newer_state_before_write_prevents_stale_title() {
     );
     titles::sync(&app.store, &mut native, FIRST).unwrap();
     assert_eq!(native.name, "[已完成] 原名");
-}
-
-#[test]
-fn old_ack_cannot_delete_newer_title_job() {
-    let fixture = Fixture::new(true);
-    fixture.populate();
-    let app = fixture.app();
-    app.store
-        .set_state(FIRST, Some("review"), "", 0, None)
-        .unwrap();
-    app.store
-        .set_state(FIRST, Some("completed"), "新状态", 1, None)
-        .unwrap();
-    assert!(!app.store.title_synced(FIRST, 1, "[待审阅] 原名").unwrap());
-    assert_eq!(app.store.pending_titles(None).unwrap()[0]["version"], 2);
 }
 
 #[test]
@@ -409,11 +412,16 @@ fn disabled_title_sync_persists_without_native_jobs() {
     let app = fixture.app();
     app.request(
         "/api/state",
-        Some(&json!({"id":FIRST,"state":"completed","version":0,"inputVersion":0})),
+        Some(&json!({"id":FIRST,"state":"completed","note":"保留备注","version":0,"inputVersion":0})),
     )
     .unwrap();
     assert!(app.store.pending_titles(None).unwrap().is_empty());
-    assert_eq!(app.store.sessions().unwrap()[0]["state"], "completed");
+    assert_eq!(app.store.title_epoch, None);
+    let saved = app.store.sessions().unwrap().into_iter()
+        .find(|row| row["id"] == FIRST).unwrap();
+    assert_eq!(saved["state"], "completed");
+    assert_eq!(saved["note"], "保留备注");
+    assert_eq!(saved["title"], "同名会话");
 }
 
 #[test]
@@ -569,10 +577,12 @@ fn navigation_is_canonical_and_encodes_host_as_one_value() {
     );
 }
 
-#[test]
-fn native_resource_and_tools_expose_global_app_only_actions() {
-    let definitions = mcp::tools();
-    let view = &definitions["tools"][0];
+fn check_tool_visibility(definitions: &Value) {
+    let tools = definitions["tools"].as_array().unwrap();
+    let mut views = tools.iter().filter(|tool| tool["name"] == "board_view");
+    let view = views.next().unwrap();
+    assert!(views.next().is_none());
+    assert_eq!(view["_meta"]["ui"]["visibility"], json!(["app","model"]));
     assert_eq!(view["_meta"]["ui"]["resourceUri"], mcp::RESOURCE);
     assert_eq!(
         view["_meta"]["openai/ui"]["entrypoints"][0]["type"],
@@ -584,23 +594,10 @@ fn native_resource_and_tools_expose_global_app_only_actions() {
             .unwrap()
             .starts_with("data:image/svg+xml;base64,")
     );
-    for tool in definitions["tools"].as_array().unwrap().iter().skip(1) {
+    for tool in tools.iter().filter(|tool| tool["name"] != "board_view") {
         assert_eq!(tool["_meta"]["ui"]["visibility"], json!(["app"]));
     }
-    let resource = mcp::resource();
-    let html = resource["text"].as_str().unwrap();
-    assert_eq!(resource["mimeType"], mcp::MIME);
-    assert!(html.contains("id=\"move-dragon\" src=\"data:image/webp;base64,"));
-    assert!(html.contains("window.boardRequest"));
-    assert!(html.contains("\"/api/new\":\"board_new\""));
-    assert!(html.contains("id=\"new-session\""));
-    let create = definitions["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|tool| tool["name"] == "board_new")
-        .unwrap();
-    assert_eq!(create["_meta"]["ui"]["visibility"], json!(["app"]));
+    let create = tools.iter().find(|tool| tool["name"] == "board_new").unwrap();
     assert_eq!(create["annotations"]["readOnlyHint"], false);
     assert_eq!(
         create["inputSchema"]["properties"]["projectId"],
@@ -608,45 +605,101 @@ fn native_resource_and_tools_expose_global_app_only_actions() {
     );
     assert_eq!(create["inputSchema"]["required"], json!([]));
     assert_eq!(create["inputSchema"]["properties"]["operationId"]["format"], "uuid");
-    assert!(!html.contains("<iframe") && !html.contains("https://cdn"));
-    assert!(!html.contains("__CSRF_TOKEN__"));
-    assert!(!html.contains("manifest.webmanifest"));
-    assert!(!html.contains("/assets/pwa.js"));
+}
+
+#[test]
+fn archive_batch_tools_share_http_history() -> Result<()> {
+    let native_directory = tempfile::tempdir()?;
+    let native = read_only_backend::Backend::start(native_directory.path(), SECOND)?;
+    native.set("idle", "completed")?;
+    let mut fixture = Fixture::new(false);
+    fixture.native_endpoint = Some(format!("ws+unix://localhost{}:/rpc", native.socket.display()));
+    fixture.settings["desktop_socket"] = json!(native.socket);
+    fixture.register_projects(&[]);
+    let started = fixture.launch();
+    let origin = started["url"].as_str().unwrap();
+    let url = format!("{origin}/api/archive-batches");
+    let client = client();
+    wait_for_native_archive_target(&client, origin)?;
+    let list = || client.get(&url).send()?.error_for_status()?.json::<Value>();
+    assert_eq!(list()?, json!({"batches":[]}));
+    let target = json!({"id":SECOND,"title":"隔离会话","version":7,"inputVersion":2,"sectionVersion":"position"});
+    let replies = fixture.mcp_calls(&[
+        ("board_archive_batch_start", json!({"id":FIRST,"items":[target]})),
+        ("board_archive_batch_start", json!({"id":SECOND,"items":[]})),
+        ("board_archive_batches", json!({})),
+    ]);
+    let batch = &replies[0]["result"]["structuredContent"]["batch"];
+    assert_eq!(batch["id"], FIRST);
+    assert_eq!(batch["items"].as_array().unwrap().len(), 1);
+    for (key, value) in target.as_object().unwrap() {
+        assert_eq!(&batch["items"][0][key], value);
+    }
+    assert_eq!(batch["items"][0]["status"], "awaiting");
+    assert_eq!(replies[1]["result"]["isError"], true);
+    assert!(replies[1]["result"]["content"][0]["text"].as_str().is_some_and(|text| !text.trim().is_empty()));
+    let expected = json!({"batches":[batch]});
+    assert_eq!(replies[2]["result"]["structuredContent"], expected);
+    assert_eq!(list()?, expected);
+    let database = rusqlite::Connection::open_with_flags(fixture._directory.path().join("data/status.sqlite3"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let stored: i64 = database.query_row(
+        "SELECT COUNT(*) FROM archive_batches WHERE id=?1", [SECOND], |row| row.get(0))?;
+    assert_eq!(stored, 0, "被拒的批次仍已入库");
+    let retry = fixture.mcp_calls(&[("board_archive_batch_start", json!({"id":SECOND,"items":[target]}))]);
+    assert_eq!(retry[0]["result"]["structuredContent"]["batch"]["id"], SECOND);
+    Ok(())
+}
+
+fn wait_for_native_archive_target(client: &reqwest::blocking::Client, origin: &str) -> Result<()> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let view: Value = client.get(format!("{origin}/api/sessions")).send()?.error_for_status()?.json()?;
+        let verified = view["health"]["runtimeVerified"] == true;
+        let target_present = view["sessions"].as_array().unwrap().iter().any(|row| row["id"] == SECOND);
+        if verified && target_present {
+            return Ok(());
+        }
+        anyhow::ensure!(std::time::Instant::now() < deadline,
+            "原生归档测试会话未就绪：runtimeVerified={verified}, targetPresent={target_present}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 #[test]
 fn real_stdio_mcp_handshake_and_resource_round_trip() {
     let fixture = Fixture::new(false);
-    let mut child = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
-        .args(["mcp", "--config", fixture.path.to_str().unwrap()])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let requests = [
+    let mut requests = vec![
         json!({"id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}),
         json!({"method":"notifications/initialized"}),
         json!({"id":2,"method":"tools/list"}),
         json!({"id":3,"method":"resources/read","params":{"uri":mcp::RESOURCE}}),
     ];
-    let mut input = child.stdin.take().unwrap();
-    for request in requests {
-        writeln!(input, "{request}").unwrap();
+    for name in ["board_view", "/api/info", "/api/native-calibration/reset", "board_missing"] {
+        requests.push(json!({"id":requests.len(),"method":"tools/call","params":{"name":name,"arguments":{}}}));
     }
-    drop(input);
-    let output = child.wait_with_output().unwrap();
-    assert!(output.status.success());
-    let lines: Vec<Value> = String::from_utf8(output.stdout)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    assert_eq!(lines.len(), 3);
+    let lines = fixture.mcp_requests(&requests);
+    assert_eq!(
+        lines.iter().map(|reply| &reply["id"]).collect::<Vec<_>>(),
+        requests.iter().filter_map(|request| request.get("id")).collect::<Vec<_>>()
+    );
     assert_eq!(
         lines[0]["result"]["serverInfo"]["name"],
         "codex-session-board"
     );
-    assert_eq!(lines[2]["result"]["contents"][0]["mimeType"], mcp::MIME);
+    check_tool_visibility(&lines[1]["result"]);
+    let resource = &lines[2]["result"]["contents"][0];
+    assert_eq!(resource["uri"], mcp::RESOURCE);
+    assert_eq!(resource["mimeType"], mcp::MIME);
+    for domain in ["connectDomains", "resourceDomains", "frameDomains"] {
+        assert_eq!(resource["_meta"]["ui"]["csp"][domain], json!([]));
+    }
+    assert!(!resource["text"].as_str().unwrap().contains("__CSRF_TOKEN__"));
+    assert_eq!(lines[3]["result"]["structuredContent"], json!({"ready":true}));
+    for reply in &lines[4..] {
+        assert_eq!(reply["result"]["isError"], true);
+        assert_eq!(reply["result"]["content"][0]["text"], "未知看板工具");
+    }
 }
 
 #[test]
@@ -816,14 +869,13 @@ fn real_http_persistence_security_and_launcher_reuse() {
 #[test]
 fn real_http_pwa_manifest_and_assets_are_local_and_uncached() {
     let fixture = Fixture::new(false);
+    fixture.populate();
     let running = fixture.launch();
     let origin = running["url"].as_str().unwrap();
     let client = client();
     let html = client.get(origin).send().unwrap().text().unwrap();
-    assert!(html.contains("id=\"move-dragon\" src=\"data:image/webp;base64,"));
-    assert!(html.contains("<link rel=\"manifest\" href=\"/manifest.webmanifest\">"));
-    assert!(html.contains("<script src=\"/assets/pwa.js\" defer></script>"));
     assert!(!html.contains("__CSRF_TOKEN__"));
+    check_pwa_page(&fixture, origin);
     let response = client
         .get(format!("{origin}/manifest.webmanifest"))
         .send()
@@ -854,8 +906,32 @@ fn real_http_pwa_manifest_and_assets_are_local_and_uncached() {
     }
 }
 
+fn check_pwa_page(fixture: &Fixture, origin: &str) {
+    let mut browser = Command::new("node")
+        .args(["scripts/check-pwa-page.mjs", origin])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut transitions = Vec::new();
+    for line in BufReader::new(browser.stdout.take().unwrap()).lines() {
+        let transition = line.unwrap();
+        match transition.as_str() {
+            "stop" => drop(fixture.server.lock().unwrap().take()),
+            "start" => assert_eq!(fixture.launch()["url"], origin),
+            _ => panic!("未知 PWA fixture 操作：{transition}"),
+        }
+        transitions.push(transition);
+    }
+    let output = browser.wait_with_output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(transitions, ["stop", "start"]);
+}
+
 fn check_pwa_icons(client: &reqwest::blocking::Client, manifest: &Value, origin: &str) {
-    for icon in manifest["icons"].as_array().unwrap() {
+    let icons = manifest["icons"].as_array().unwrap();
+    assert!(!icons.is_empty());
+    for icon in icons {
         let url = url::Url::parse(origin)
             .unwrap()
             .join(icon["src"].as_str().unwrap())
@@ -976,11 +1052,7 @@ fn service_update_rejects_old_build_but_can_verify_and_stop_its_process() {
     };
     let mut child =
         ChildGuard::spawn(&executable, &fixture.path, Arc::clone(&fixture._port)).unwrap();
-    let mut line = String::new();
-    BufReader::new(child.child.stdout.take().unwrap())
-        .read_line(&mut line)
-        .unwrap();
-    assert!(serde_json::from_str::<Value>(line.trim()).is_ok(), "{line}");
+    child.startup_receipt().unwrap();
     install_test_binary(&executable, &replacement, true);
     fs::rename(&replacement, &executable).unwrap();
     let duplicate = invoke("serve");

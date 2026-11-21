@@ -75,43 +75,38 @@ fn literals_lifetimes_and_character_delimiters_are_not_comments() -> Result<()> 
         let byte = b'/';
         fn borrow<'value>(value: &'value str) -> &'value str { value }
     "####;
-    assert!(comments(source)?.is_empty());
+    for input in [
+        source,
+        "let r#invalid = 1; let r#type = r#invalid;",
+        "fn borrow<'r#value>(value: &'r#value str) {}",
+    ] {
+        assert!(comments(input)?.is_empty(), "{input:?}");
+    }
     Ok(())
 }
 
 #[test]
 fn documentation_and_ordinary_comment_boundaries_follow_rust_tokens() -> Result<()> {
-    let source = "/// outer\n//! inner\n/** outer */\n/*! inner */\n//// ordinary\n/**/\n/*** ordinary */\n// ordinary\n";
-    let found = comments(source)?;
-    assert_eq!(
-        found
+    let boundaries = "/// outer\n//! inner\n/** outer */\n/*! inner */\n//// ordinary\n/**/\n/*** ordinary */\n// ordinary\n";
+    let ordinary = [
+        (5, "//// ordinary"),
+        (6, "/**/"),
+        (7, "/*** ordinary */"),
+        (8, "// ordinary"),
+    ];
+    let nested = "/* 外层\n/* 内层 */\n尾部 */\n/** 文档 /* 内层 */ */\n// 末尾";
+    let nested_ordinary = [(1, "/* 外层\n/* 内层 */\n尾部 */"), (5, "// 末尾")];
+    for (source, expected) in [
+        (boundaries, ordinary.as_slice()),
+        (nested, &nested_ordinary),
+    ] {
+        let found = comments(source)?;
+        let actual: Vec<_> = found
             .iter()
-            .map(|comment| comment.text.as_str())
-            .collect::<Vec<_>>(),
-        ["//// ordinary", "/**/", "/*** ordinary */", "// ordinary"]
-    );
-    assert_eq!(
-        found.iter().map(|comment| comment.line).collect::<Vec<_>>(),
-        [5, 6, 7, 8]
-    );
-    Ok(())
-}
-
-#[test]
-fn raw_identifiers_and_raw_lifetimes_are_not_lexical_errors() -> Result<()> {
-    assert!(comments("let r#invalid = 1; let r#type = r#invalid;")?.is_empty());
-    assert!(comments("fn borrow<'r#value>(value: &'r#value str) {}")?.is_empty());
-    Ok(())
-}
-
-#[test]
-fn nested_blocks_are_single_comments_and_doc_blocks_stay_documentation() -> Result<()> {
-    let source = "/* 外层\n/* 内层 */\n尾部 */\n/** 文档 /* 内层 */ */\n// 末尾";
-    let found = comments(source)?;
-    assert_eq!(found.len(), 2);
-    assert_eq!(found[0].text, "/* 外层\n/* 内层 */\n尾部 */");
-    assert_eq!(found[0].line, 1);
-    assert_eq!(found[1].line, 5);
+            .map(|item| (item.line, item.text.as_str()))
+            .collect();
+        assert_eq!(actual, expected, "{source:?}");
+    }
     Ok(())
 }
 
@@ -177,31 +172,32 @@ fn matching_baseline_comments_can_move_or_be_deleted() -> Result<()> {
 
 #[test]
 fn added_modified_and_duplicated_comments_fail_exact_multiset_comparison() -> Result<()> {
-    let (directory, baseline) = fixture(&[("main.rs", "// old\nfn main() {}\n")])?;
-    let root = directory.path();
-    for source in [
-        "// old\n// new\nfn main() {}\n",
-        "// modified\nfn main() {}\n",
-        "// old \nfn main() {}\n",
-        "// old\n// old\nfn main() {}\n",
+    let single = [
+        ("// old\n// new\nfn main() {}\n", false),
+        ("// modified\nfn main() {}\n", false),
+        ("// old \nfn main() {}\n", false),
+        ("// old\n// old\nfn main() {}\n", false),
+    ];
+    let double = [
+        ("\n// same\nfn main() {}\n", true),
+        ("// same\n// same\nfn main() {}\n", true),
+        ("// same\n// same\n// same\n", false),
+    ];
+    for (original, edits) in [
+        ("// old\nfn main() {}\n", single.as_slice()),
+        ("// same\n// same\nfn main() {}\n", &double),
     ] {
-        write_source(root, "main.rs", source)?;
-        assert!(
-            !check(root, root, &baseline)?,
-            "新增普通注释被放行：{source:?}"
-        );
+        let (directory, baseline) = fixture(&[("main.rs", original)])?;
+        let root = directory.path();
+        for &(source, allowed) in edits {
+            write_source(root, "main.rs", source)?;
+            assert_eq!(
+                check(root, root, &baseline)?,
+                allowed,
+                "{original:?} / {source:?}"
+            );
+        }
     }
-    Ok(())
-}
-
-#[test]
-fn duplicate_baseline_counts_allow_only_the_recorded_number() -> Result<()> {
-    let (directory, baseline) = fixture(&[("main.rs", "// same\n// same\nfn main() {}\n")])?;
-    let root = directory.path();
-    write_source(root, "main.rs", "\n// same\nfn main() {}\n")?;
-    assert!(check(root, root, &baseline)?);
-    write_source(root, "main.rs", "// same\n// same\n// same\n")?;
-    assert!(!check(root, root, &baseline)?);
     Ok(())
 }
 

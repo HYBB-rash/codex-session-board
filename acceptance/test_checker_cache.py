@@ -230,12 +230,11 @@ class CheckerCacheTests(unittest.TestCase):
         for value in ([], None, 42, True, "record"):
             with self.subTest(record=value):
                 record.write_text(json.dumps(value))
-                with self.assertRaisesRegex(ValueError, "record must be an object"):
-                    self.resolve()
-                with mock.patch.dict(os.environ, self.environment, clear=True):
-                    with mock.patch.object(checker_cache.sys, "argv", [
-                        "checker_cache.py", "--project", str(self.source), "--", "--help",
-                    ]):
-                        with contextlib.redirect_stderr(io.StringIO()) as error:
-                            self.assertEqual(checker_cache.main(), 2)
-                self.assertIn("record must be an object", error.getvalue())
+                with mock.patch.dict(os.environ, self.environment, clear=True), \
+                        mock.patch.object(checker_cache.sys, "argv", [
+                            "checker_cache.py", "--project", str(self.source), "--", "--help",
+                        ]), mock.patch.object(checker_cache.subprocess, "call") as execute, \
+                        contextlib.redirect_stderr(io.StringIO()) as error:
+                    self.assertEqual(checker_cache.main(), 2)
+                    execute.assert_not_called()
+                    self.assertTrue(error.getvalue().strip())

@@ -1,6 +1,9 @@
+mod plugin_update;
+
 use crate::{
     config::Config,
-    model::{board_state, now},
+    model::now,
+    operations::{Action, Method, Operation},
     rpc::{DesktopConnection, Role, SidebarConnection},
     store::Store,
     titles,
@@ -16,6 +19,7 @@ use std::sync::{
 };
 use std::time::Duration;
 
+mod archive_batches;
 mod drafts;
 mod project_assignment;
 mod native;
@@ -29,6 +33,8 @@ mod target_drafts;
 mod ssh_setup;
 mod connection;
 mod four_columns;
+#[cfg(test)]
+mod placement_tests;
 pub use connection::preflight;
 pub(crate) use connection::ConnectionRequest;
 
@@ -63,10 +69,6 @@ impl App {
             config.local_authority = Some(crate::rpc::authority::LocalAuthority::parent()?);
         }
         config.validate_modes()?;
-        ensure!(
-            !config.sync_sections,
-            "sync_sections 已停用，请配置 native_sections"
-        );
         let store = Arc::new(Store::open_configured(&config)?);
         let native_sections = config.native_sections;
         let catalog = crate::catalog::State::load(&store, &config.host_id);
@@ -233,10 +235,9 @@ impl App {
         self.annotate_previews(&mut sessions)?;
         self.append_remote(&mut sessions, &mut catalog)?;
         self.retain_business_rows(&mut sessions)?;
+        self.store.apply_archive_receipts(&mut sessions)?;
         self.annotate_connections(&mut sessions);
-        if self.config.four_columns {
-            four_columns::project(&mut sessions);
-        }
+        crate::store::placement::project(&mut sessions, self.config.legacy_mode, self.config.four_columns);
         Ok(
             json!({"states":states,"sessions":sessions,"projectCatalog":catalog,"columnSorts":self.store.column_sorts()?,
             "legacyMode":self.config.legacy_mode,"fourColumns":self.config.four_columns,
@@ -253,45 +254,58 @@ impl App {
     }
 
     pub fn request(&self, path: &str, body: Option<&Value>) -> Result<Value> {
-        if self.config.four_columns && matches!(path, "/api/state" | "/api/column-sort")
-            && let Some(state) = body.and_then(|body| body["state"].as_str())
+        if path == "/api/native-calibration/reset" && let Some(body) = body {
+            return self.reset_native_calibration(body);
+        }
+        let method = if body.is_some() { Method::Post } else { Method::Get };
+        let op = Operation::for_request(path, method).context("接口不存在")?;
+        self.execute(op, body.unwrap_or(&Value::Null))
+    }
+
+    pub(crate) fn execute(&self, op: &Operation, body: &Value) -> Result<Value> {
+        if self.config.four_columns && matches!(op.action, Action::Update | Action::Sort)
+            && let Some(state) = body["state"].as_str()
         {
             ensure!(self.config.board_states().any(|item| item.0 == state),
                 "该状态已停止使用，请刷新看板并重新选择");
         }
-        if !self.config.legacy_mode
-            && matches!(path, "/api/state" | "/api/archive")
-            && let Some(body) = body
-            && body["id"]
-                .as_str()
-                .is_some_and(|id| id.starts_with("remote:"))
-        {
-            return self.route_remote(path, body);
+        if self.routes_remote_write(op.action, body) {
+            return self.route_remote(op, body);
         }
-        match (path, body) {
-            ("/api/sessions", None) => self.snapshot(),
-            ("/api/preview-reply", Some(body)) => self.preview_reply(body),
-            ("/api/state", Some(body)) => self.save(body),
-            ("/api/column-sort", Some(body)) => self.store.save_column_sort(body),
-            ("/api/archive", Some(body)) => crate::archive::request(self, body),
-            ("/api/new", Some(body)) => self.new_session(body),
-            ("/api/new/reset", Some(body)) => self.reset_remote_draft(body),
-            ("/api/project/assign", Some(body)) => self.assign_project(body),
-            ("/api/connect", Some(body)) => self.connect_remote(body),
-            ("/api/ssh-setup", Some(body)) => self.ssh_setup(body),
-            ("/api/native-calibration/reset", Some(body)) => self.reset_native_calibration(body),
-            ("/api/open", Some(body)) => {
-                let identifier = body["id"].as_str().context("缺少会话 ID")?;
-                if identifier.starts_with("remote:") {
-                    return self.open_remote(identifier);
-                }
-                ensure!(self.store.contains(identifier)?, "会话不在本地看板中");
-                let url = open_conversation(identifier, &self.config)?;
-                Ok(json!({"ok":true,"url":url}))
-            }
-            ("/api/refresh", Some(body)) => self.refresh_hosts(body),
-            _ => bail!("接口不存在"),
+        match op.action {
+            Action::Snapshot => self.snapshot(),
+            Action::PluginUpdateStatus => self.plugin_update(None),
+            Action::PluginUpdateStart => self.plugin_update(Some(body)),
+            Action::PreviewReply => self.preview_reply(body),
+            Action::Update => self.save(body),
+            Action::Sort => self.store.save_column_sort(body),
+            Action::Archive | Action::ArchiveBatches | Action::ArchiveBatchStart |
+                Action::ArchiveBatchFinish | Action::ArchiveBatchCheck => self.archive_route(op.action, body),
+            Action::New => self.new_session(body),
+            Action::NewReset => self.reset_remote_draft(body),
+            Action::ProjectAssign => self.assign_project(body),
+            Action::Connect => self.connect_remote(body),
+            Action::SshSetup => self.ssh_setup(body),
+            Action::Open => self.open_session(body),
+            Action::Refresh => self.refresh_hosts(body),
         }
+    }
+
+    fn open_session(&self, body: &Value) -> Result<Value> {
+        let identifier = body["id"].as_str().context("缺少会话 ID")?;
+        if identifier.starts_with("remote:") {
+            return self.open_remote(identifier);
+        }
+        ensure!(self.store.contains(identifier)?, "会话不在本地看板中");
+        let url = open_conversation(identifier, &self.config)?;
+        Ok(json!({"ok":true,"url":url}))
+    }
+
+    fn routes_remote_write(&self, action: Action, body: &Value) -> bool {
+        !self.config.legacy_mode
+            && matches!(action, Action::Update | Action::Archive)
+            && (action != Action::Archive || body.get("batchId").is_none())
+            && body["id"].as_str().is_some_and(|id| id.starts_with("remote:"))
     }
 
     fn new_session(&self, body: &Value) -> Result<Value> {
@@ -327,6 +341,21 @@ impl App {
     }
 
     fn save(&self, body: &Value) -> Result<Value> {
+        let result = self.save_state(body)?;
+        self.save_receipt(body["id"].as_str().context("缺少会话 ID")?, result)
+    }
+
+    fn save_receipt(&self, identifier: &str, mut result: Value) -> Result<Value> {
+        let snapshot = self.snapshot().context("保存后读取卡片未完成，请刷新核对")?;
+        result["session"] = snapshot["sessions"]
+            .as_array()
+            .and_then(|rows| rows.iter().find(|row| row["id"] == identifier))
+            .cloned()
+            .context("保存后未能确认卡片，请刷新核对")?;
+        Ok(result)
+    }
+
+    fn save_state(&self, body: &Value) -> Result<Value> {
         let _operation = self.operation()?;
         ensure!(body.is_object(), "请求格式无效");
         let identifier = body["id"].as_str().context("缺少会话 ID")?;
@@ -487,18 +516,27 @@ mod tests {
         })?;
         app.store
             .discover(&[json!({"id":"sample","name":"示例"})])?;
-        let _guard = app.title_lock.lock().unwrap();
-        let started = std::time::Instant::now();
-        let response = app.request(
-            "/api/state",
-            Some(&json!({
-                "id":"sample","state":"review","note":"保留备注","version":0,"inputVersion":0
-            })),
-        )?;
-        assert!(started.elapsed() < Duration::from_millis(150));
+        let response = std::thread::scope(|scope| {
+            let guard = app.title_lock.lock().unwrap();
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let app = &app;
+            scope.spawn(move || {
+                let result = app.request("/api/state", Some(&json!({
+                    "id":"sample","state":"review","note":"保留备注","version":0,"inputVersion":0
+                })));
+                let _ = sender.send(result);
+            });
+            let response = receiver.recv_timeout(Duration::from_secs(10));
+            drop(guard);
+            response
+        }).context("后台仍占用标题锁时前台保存应已返回")??;
         assert_eq!(response["ok"], true);
         assert_eq!(response["titlePending"], true);
-        assert_eq!(app.store.sessions()?[0]["note"], "保留备注");
+        assert_eq!(app.store.note("sample")?, "保留备注");
+        let jobs = app.store.pending_titles(Some("sample"))?;
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0]["state"], "review");
+        assert!(jobs[0]["attempted_at"].is_null());
         Ok(())
     }
 

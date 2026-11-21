@@ -4,6 +4,7 @@ import http from "node:http";
 import { launchBrowser } from "./browser-client.mjs";
 
 const bundle = await fs.readFile(new URL("../assets/app-bridge.js", import.meta.url), "utf8");
+const operations = JSON.parse(await fs.readFile(new URL("../assets/board-operations.json", import.meta.url), "utf8"));
 const app = `<!doctype html><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none';script-src 'unsafe-inline';style-src 'unsafe-inline'">
 <style>:root{color-scheme:light dark}body{background:light-dark(#fff,#1c1d20)}</style>
@@ -39,8 +40,9 @@ const server = http.createServer((request, response) => {
   response.end(request.url === "/host" ? host : request.url === "/app" ? app : "");
 });
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-let browser, cases = 0, cleanup;
-const check = (actual, expected) => { assert.deepEqual(actual, expected); cases++; };
+let browser, cleanup;
+const themes = {};
+const check = assert.deepEqual;
 try {
   browser = await launchBrowser();
   const address = `http://127.0.0.1:${server.address().port}`;
@@ -69,21 +71,29 @@ try {
   };
   await wait('typeof window.boardRequest === "function"');
   check(await evaluate('boardRequest("/api/sessions")'), { ok: true, received: {} });
-  check(await evaluate('getComputedStyle(document.documentElement).colorScheme'), "dark");
+  check(await page.evaluate("requests.at(-1).name"), "board_snapshot");
+  const colorScheme = () => evaluate('getComputedStyle(document.documentElement).colorScheme');
+  themes.initial = await colorScheme();
+  check(themes.initial, "dark");
   check(await evaluate('document.documentElement.style.getPropertyValue("--host-inset-top")'), "12px");
   for (const theme of ["light", "dark"]) {
     await page.evaluate(`notify({theme:${JSON.stringify(theme)}})`);
     await wait(`getComputedStyle(document.documentElement).colorScheme===${JSON.stringify(theme)}`);
+    themes[theme] = await colorScheme();
     check(await evaluate('getComputedStyle(document.body).backgroundColor'),
       theme === "light" ? "rgb(255, 255, 255)" : "rgb(28, 29, 32)");
   }
   await page.evaluate('notify({safeAreaInsets:{top:0,right:0,bottom:0,left:0}})');
   await wait('document.documentElement.style.getPropertyValue("--host-inset-top")==="0px"');
-  check(await evaluate('getComputedStyle(document.documentElement).colorScheme'), "dark");
+  themes.afterInsets = await colorScheme();
+  check(themes.afterInsets, "dark");
   const routes = {
-    "/api/sessions": "board_snapshot", "/api/state": "board_update", "/api/open": "board_open",
+    "/api/state": "board_update", "/api/open": "board_open",
     "/api/refresh": "board_refresh", "/api/new": "board_new", "/api/new/reset": "board_new_reset",
     "/api/connect": "board_connect", "/api/archive": "board_archive", "/api/column-sort": "board_sort",
+    "/api/archive-batches": "board_archive_batch_start",
+    "/api/archive-batches/finish": "board_archive_batch_finish",
+    "/api/archive-batches/check": "board_archive_batch_check",
     "/api/ssh-setup": "board_ssh_setup",
     "/api/project/assign": "board_project_assign",
   };
@@ -96,12 +106,28 @@ try {
     check(await page.evaluate("(({name,arguments:body})=>({name,arguments:body}))(requests.at(-1))"),
       { name, arguments: body });
   }
+  check(await evaluate('boardRequest("/api/archive-batches")'), {ok:true,received:{}});
+  check(await page.evaluate("requests.at(-1).name"), "board_archive_batches");
+  check(await evaluate('boardRequest("/api/plugin-update")'), {ok:true,received:{}});
+  check(await page.evaluate("requests.at(-1).name"), "board_plugin_update_status");
+  check(await evaluate('boardRequest("/api/plugin-update",{})'), {ok:true,received:{}});
+  check(await page.evaluate("requests.at(-1).name"), "board_plugin_update_start");
   const previous = await page.evaluate("requests.length");
-  check(await evaluate('boardRequest("toString").then(()=>false, error=>error.message)'), "未知看板操作");
+  for (const args of [
+    '"toString"', '"/api/info"', '"/api/native-calibration/reset",{}', '"board_view"',
+    '"/api/sessions",{}', '"/api/archive"', '"/api/preview-reply"', '"/api/no-such-operation",{}',
+  ]) check(await evaluate(`boardRequest(${args}).then(()=>false, error=>error.message)`), "未知看板操作");
   check(await page.evaluate("requests.length"), previous);
   check(await evaluate('boardRequest("/api/preview-reply",{id:"fixture"})'), {turnId:"two",html:"<p>本轮答复</p>",inProgress:false});
   check(await page.evaluate("(({name,arguments:body})=>({name,arguments:body}))(requests.at(-1))"),
     {name:"board_preview_reply",arguments:{id:"fixture"}});
+  const firstRegisteredCall = await page.evaluate("requests.length");
+  for (const {method, path} of operations) {
+    const args = method === "POST" ? ",{}" : "";
+    await evaluate(`boardRequest(${JSON.stringify(path)}${args})`);
+  }
+  const actualTools = await page.evaluate(`requests.slice(${firstRegisteredCall}).map(call=>call.name)`);
+  check(actualTools, operations.map(operation => operation.tool));
   for (const [mode, expected] of [["text", { ok: true }], ["error", "fixture-denied"], ["empty", "看板返回了空结果"]]) {
     await page.evaluate(`mode=${JSON.stringify(mode)}`);
     check(await evaluate('boardRequest("/api/sessions").catch(error=>error.message)'), expected);
@@ -113,4 +139,4 @@ try {
   if (browser) cleanup = await browser.close();
   await new Promise(resolve => server.close(resolve));
 }
-console.log(JSON.stringify({ cases, network, cleanup }));
+console.log(JSON.stringify({ themes, network, cleanup }));

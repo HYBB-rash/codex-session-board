@@ -239,7 +239,7 @@ fn native_app() -> Result<(tempfile::TempDir, App, Value)> {
     std::fs::write(&app.config.sidebar_state_file, serde_json::to_vec(&registry)?)?;
     let executable = path.join("codex");
     std::fs::write(&executable, format!(
-        "#!/bin/sh\nsleep 1.1\nprintf '%s\\n' \"$1\" >> '{}'\n", path.join("opens").display()))?;
+        "#!/bin/sh\nsleep 1.1\nprintf '%s\\n' \"$@\" >> '{}'\n", path.join("opens").display()))?;
     std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))?;
     app.config.open_command = vec![executable.to_string_lossy().into()];
     Ok((directory, app, registry))
@@ -271,6 +271,7 @@ fn native_remote_new_only_navigates_to_the_registered_ssh_alias_and_directory() 
     let response = app.request("/api/new", Some(&native_body()))?;
     assert_eq!(response["native"], true);
     let url = url::Url::parse(response["url"].as_str().unwrap())?;
+    assert_eq!(url.scheme(), "codex");
     assert_eq!(url.host_str(), Some("settings"));
     assert_eq!(url.path(), "/connections/ssh/add");
     assert_eq!(url.query_pairs().collect::<Vec<_>>(),

@@ -95,7 +95,6 @@ fn all_520_frozen_edges_replay_through_host_adapter_and_native_writes() -> Resul
         counts += replay_trace(root.path(), trace)?;
     }
     database.reset()?;
-    assert!(counts.steps >= 520);
     assert_eq!(counts, ReplayCounts { traces: 520, steps: 1417, restarts: 40, views: 40 });
     eprintln!("remote adapter: 40 states, 520 edges, {} compared steps", counts.steps);
     Ok(())

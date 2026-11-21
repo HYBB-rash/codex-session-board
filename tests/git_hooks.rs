@@ -460,25 +460,30 @@ fn assert_comment_rejected(output: &Output) {
 
 #[test]
 fn ordinary_comments_block_commits_even_when_tests_and_clippy_pass() -> Result<()> {
-    let directory = fixture(42)?;
-    let root = directory.path();
-    prepend_source(root, "// A new ordinary comment.\n")?;
-    successful_git(root, &["add", "--all"])?;
-    successful_cargo(root, &["test", "--locked", "--offline"])?;
-    successful_cargo(
-        root,
-        &[
-            "clippy",
-            "--all-targets",
-            "--locked",
-            "--offline",
-            "--",
-            "-D",
-            "warnings",
-        ],
-    )?;
-    let output = blocked_commit(root, "ordinary comment is forbidden")?;
-    assert_comment_rejected(&output);
+    for (baseline, added) in [
+        ("", "// A new ordinary comment.\n"),
+        ("// Existing comment.\n", "// Existing comment.\n"),
+    ] {
+        let directory = fixture_with_comments(42, baseline)?;
+        let root = directory.path();
+        prepend_source(root, added)?;
+        successful_git(root, &["add", "--all"])?;
+        successful_cargo(root, &["test", "--locked", "--offline"])?;
+        successful_cargo(
+            root,
+            &[
+                "clippy",
+                "--all-targets",
+                "--locked",
+                "--offline",
+                "--",
+                "-D",
+                "warnings",
+            ],
+        )?;
+        let output = blocked_commit(root, "ordinary comment is forbidden")?;
+        assert_comment_rejected(&output);
+    }
     Ok(())
 }
 
@@ -511,17 +516,17 @@ fn documentation_and_comment_symbols_inside_strings_allow_a_commit() -> Result<(
     let root = directory.path();
     let path = root.join("src/lib.rs");
     let original = fs::read_to_string(&path)?;
-    fs::write(
-        path,
-        format!(
-            "//! Crate documentation.\n/// Value documentation.\n{original}\n{COMMENT_SYMBOLS_SOURCE}"
-        ),
-    )?;
+    let edited = format!(
+        "//! Crate documentation.\n/// Value documentation.\n{original}\n{COMMENT_SYMBOLS_SOURCE}"
+    );
+    fs::write(path, &edited)?;
     successful_git(root, &["add", "--all"])?;
     successful_git(
         root,
         &["commit", "-m", "documentation and strings are allowed"],
     )?;
+    let committed = successful_git(root, &["show", "HEAD:src/lib.rs"])?;
+    assert_eq!(committed.stdout, edited.as_bytes());
     Ok(())
 }
 
@@ -553,17 +558,6 @@ fn unstaged_ordinary_comments_do_not_reject_a_clean_staged_snapshot() -> Result<
     assert_eq!(before, fs::read(root.join("src/lib.rs"))?);
     let committed = successful_git(root, &["show", "HEAD:src/lib.rs"])?;
     assert!(!String::from_utf8_lossy(&committed.stdout).contains("This comment is not staged"));
-    Ok(())
-}
-
-#[test]
-fn duplicating_a_baseline_comment_is_rejected() -> Result<()> {
-    let directory = fixture_with_comments(42, "// Existing comment.\n")?;
-    let root = directory.path();
-    prepend_source(root, "// Existing comment.\n")?;
-    successful_git(root, &["add", "--all"])?;
-    let output = blocked_commit(root, "baseline comments have a fixed multiplicity")?;
-    assert_comment_rejected(&output);
     Ok(())
 }
 

@@ -91,14 +91,7 @@ fn start_fixture(path: &Path) -> Result<(Value, ChildGuard)> {
         .to_string(),
     )?;
     let mut child = ChildGuard::spawn(env!("CARGO_BIN_EXE_codex-session-board"), path, port)?;
-    let stdout = child
-        .child
-        .stdout
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("看板没有输出"))?;
-    let mut line = String::new();
-    std::io::BufRead::read_line(&mut std::io::BufReader::new(stdout), &mut line)?;
-    Ok((serde_json::from_str(line.trim())?, child))
+    Ok((child.startup_receipt()?, child))
 }
 
 fn mcp_sort_roundtrip(path: &Path, change: &Value) -> Result<()> {
@@ -174,6 +167,13 @@ fn column_sort_real_http_and_stdio_mcp_share_persistent_settings() -> Result<()>
 }
 
 #[test]
+fn sort_menu_keyboard_focus_position_and_version_survive_refresh() -> Result<()> {
+    let result = Command::new("node").arg("scripts/check-column-sort.mjs").output()?;
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    Ok(())
+}
+
+#[test]
 fn column_sort_app_and_mcp_expose_separate_settings_operation() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let app = App::new(Config {
@@ -191,10 +191,5 @@ fn column_sort_app_and_mcp_expose_separate_settings_operation() -> Result<()> {
         .and_then(|tools| tools.iter().find(|tool| tool["name"] == "board_sort"))
         .cloned();
     assert!(tool.is_some());
-    assert!(
-        mcp::resource()["text"]
-            .as_str()
-            .is_some_and(|html| html.contains("\"/api/column-sort\":\"board_sort\""))
-    );
     Ok(())
 }

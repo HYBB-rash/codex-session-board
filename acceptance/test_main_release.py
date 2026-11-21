@@ -1,24 +1,120 @@
 import base64
 import json
+import os
 from pathlib import Path
+import platform
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
+from urllib.parse import parse_qs, urlsplit
 
 from scripts import main_release as release
 from scripts import main_release_evidence as evidence
+from scripts import validate_candidate
+from acceptance.test_gate import GateFixture
+
+
+class ReleaseCandidateEvidenceTests(GateFixture):
+    def build_local_candidate(self, output):
+        scripts = self.root / "scripts"
+        scripts.mkdir()
+        shutil.copy(release.ROOT / "scripts/verify_acceptance.py", scripts)
+        (scripts / "check").write_text("#!/bin/sh\ntest -s source.txt\n")
+        (scripts / "check").chmod(0o700)
+        (self.root / "Cargo.toml").write_text(
+            '[package]\nname="release-fixture"\nversion="0.1.0"\nedition="2021"\n')
+        (self.root / "src").mkdir()
+        (self.root / "src/lib.rs").touch()
+        subprocess.run(["cargo", "generate-lockfile", "--offline"], cwd=self.root,
+                       check=True, capture_output=True, timeout=15)
+        source = {"commit": "fixture-commit", "tree": "fixture-tree",
+                  "fingerprint": validate_candidate.fingerprint(self.root, self.bindings["fingerprint_paths"]),
+                  "platform": sys.platform, "machine": platform.machine()}
+        with patch.object(validate_candidate, "ROOT", self.root.resolve()), \
+                patch.object(validate_candidate, "identity", return_value=source), \
+                patch.object(validate_candidate, "git", return_value=""), \
+                patch.dict(os.environ, {"CARGO_TARGET_DIR": str(output.parent / "target")}), \
+                patch.object(sys, "argv", ["validate", "--output", str(output)]):
+            self.assertEqual(validate_candidate.main(), 0)
+        return source
+
+    def test_publication_accepts_only_complete_matching_candidate_evidence(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        artifact = Path(directory.name) / "candidate"
+        source = self.build_local_candidate(artifact)
+        record = json.loads((artifact / "VALIDATION.json").read_text())
+        native = (sys.platform, platform.machine())
+        label = next((key for key, target in evidence.PLATFORMS.items() if target == native), "fixture-native")
+        other = next(key for key in evidence.PLATFORMS if key != label)
+
+        def collect(platform_label=label, pinned=source, replacement=None):
+            def download(*arguments):
+                folder = Path(arguments[-1])
+                shutil.copytree(artifact, folder, dirs_exist_ok=True)
+                if replacement:
+                    name, content = replacement
+                    (folder / name).write_text(content)
+            with tempfile.TemporaryDirectory(dir=directory.name) as destination:
+                return evidence.platform_evidence(Mock(gh=download), 7, pinned, platform_label, 1, Path(destination))
+
+        with patch.dict(evidence.PLATFORMS, {label: native}):
+            received, report = collect()
+            self.assertEqual(received, label)
+            self.assertTrue(report["report"]["scope_passed"])
+            with self.assertRaisesRegex(ValueError, "pinned release source"):
+                collect(platform_label=other)
+            for field in ("commit", "fingerprint"):
+                with self.subTest(field=field), self.assertRaisesRegex(ValueError, "pinned release source"):
+                    collect(pinned={**source, field: "other-fixture"})
+            for scenario, file, content, message in (
+                ("automatic report changed", "automated.json", "{}", "Automatic acceptance evidence changed"),
+                ("step output changed", "step-1.log", "other output", "步骤日志或进程清理凭据"),
+                ("required step missing", "VALIDATION.json", json.dumps({**record, "steps": record["steps"][:-1]}),
+                 "步骤、执行计划或清理集合不完整"),
+                ("receipts belong to a different run", "VALIDATION.json",
+                 json.dumps({**record, "run_id": "different-fixture-run"}), "步骤日志或进程清理凭据"),
+            ):
+                with self.subTest(scenario=scenario), self.assertRaisesRegex(ValueError, message):
+                    collect(replacement=(file, content))
 
 
 class MainReleaseTests(unittest.TestCase):
-    def test_pending_requests_select_latest_main_and_pin_its_implementation(self):
-        with patch.object(evidence, "git", side_effect=["", "newest", '[package]\nversion="0.3.98"']), \
-                patch.object(evidence.subprocess, "run"), \
-                patch.object(evidence, "implementation", return_value="code") as canonical, \
-                patch.object(evidence, "github", return_value=json.dumps({"object": {"sha": "newest"}})):
-            selected = evidence.select("owner/repo")
-        canonical.assert_called_once_with("newest")
-        self.assertEqual((selected["main"], selected["source"], selected["tag"]),
-                         ("newest", "code", "v0.3.98"))
+    def test_pending_requests_select_the_latest_frozen_main_commit(self):
+        git = validate_candidate.git
+
+        def commit_manifest(repository, version, description):
+            (repository / "Cargo.toml").write_text(
+                f'[package]\nname = "fixture"\nversion = "{version}"\ndescription = "{description}"\n')
+            git("add", "Cargo.toml", root=repository)
+            git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                "commit", "--quiet", "-m", description, root=repository)
+            return git("rev-parse", "HEAD", root=repository)
+
+        environment = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
+        environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, environment, clear=True):
+            workspace = Path(directory)
+            origin, checkout = workspace / "origin", workspace / "checkout"
+            git("init", "--quiet", "-b", "main", str(origin), root=workspace)
+            commit_manifest(origin, "0.3.97", "first freeze")
+            git("clone", "--quiet", "--no-local", str(origin), str(checkout), root=workspace)
+            git("switch", "--quiet", "-c", "unmerged", root=checkout)
+            unmerged = commit_manifest(checkout, "0.3.99", "unmerged freeze")
+            latest = commit_manifest(origin, "0.3.98", "second freeze")
+            main = commit_manifest(origin, "0.3.98", "ordinary manifest edit")
+
+            with patch.object(evidence, "ROOT", checkout), patch.object(validate_candidate, "ROOT", checkout), \
+                    patch.object(evidence, "GitHub") as forge:
+                forge.return_value.api.return_value = {"object": {"sha": main}}
+                selected = evidence.select("owner/repo")
+                self.assertEqual((selected["main"], selected["source"], selected["version"], selected["tag"]),
+                                 (main, latest, "0.3.98", "v0.3.98"))
+                with self.assertRaises((ValueError, subprocess.CalledProcessError)):
+                    evidence.select("owner/repo", source=unmerged)
 
     def test_selection_race_or_dirty_tree_cannot_publish_a_mixed_source(self):
         with patch.object(evidence, "git", return_value=" M source"), \
@@ -26,58 +122,72 @@ class MainReleaseTests(unittest.TestCase):
             evidence.select("owner/repo")
         with patch.object(evidence, "git", side_effect=["", "older"]), \
                 patch.object(evidence.subprocess, "run"), \
-                patch.object(evidence, "github", return_value=json.dumps({"object": {"sha": "newer"}})), \
+                patch.object(evidence, "GitHub") as forge, \
                 self.assertRaisesRegex(ValueError, "unavailable"):
+            forge.return_value.api.return_value = {"object": {"sha": "newer"}}
             evidence.select("owner/repo")
 
     def test_only_regular_context_records_share_the_previous_implementation(self):
         parents = {"record2": "record2 record1", "record1": "record1 code", "code": "code previous"}
-        def changed(before, after):
-            return {"source.rs"} if after == "code" else {"context/result.json"}
-        with patch.object(evidence, "git", side_effect=lambda *args: parents[args[-1]]), \
-                patch.object(evidence, "changed", side_effect=changed), \
-                patch.object(evidence, "modes", return_value={"context/result.json": "100644"}):
+        def git(action, *arguments):
+            if action == "rev-list":
+                return parents[arguments[-1]]
+            if action == "diff":
+                return "source.rs\0" if arguments[-1] == "code" else "context/result.json\0"
+            return "100644 blob hash\tcontext/result.json\0"
+        with patch.object(evidence, "git", side_effect=git):
             self.assertEqual(evidence.implementation("record2"), "code")
-        with patch.object(evidence, "git", return_value=parents["record2"]), \
-                patch.object(evidence, "changed", return_value={"context/result.json"}), \
-                patch.object(evidence, "modes", return_value={"context/result.json": "120000"}):
+        with patch.object(evidence, "git", side_effect=[
+            parents["record2"], "context/result.json\0", "120000 blob hash\tcontext/result.json\0",
+        ]):
             self.assertEqual(evidence.implementation("record2"), "record2")
 
-    def test_main_must_have_a_successful_frozen_merge_run(self):
-        runs = [{"id": 1, "head_sha": "source", "head_branch": "codex/integration-old", "event": "push"},
-                {"id": 2, "head_sha": "source", "head_branch": "codex/integration-new", "event": "push"},
-                {"id": 3, "head_sha": "other", "head_branch": "codex/integration-new", "event": "push"}]
-        with patch.object(evidence, "github", side_effect=[
-                json.dumps({"workflow_runs": runs}), json.dumps({"jobs": []})]), \
-                patch.object(evidence, "validate_run") as validate:
-            self.assertEqual(evidence.merge_run("owner/repo", "source")["id"], 2)
-            self.assertEqual(validate.call_args.args[0]["id"], 2)
-        with patch.object(evidence, "github", return_value='{"workflow_runs":[]}'), \
-                self.assertRaisesRegex(ValueError, "no frozen"):
-            evidence.merge_run("owner/repo", "source")
+    def test_publication_requires_both_platform_jobs_from_its_own_run(self):
+        forge = Mock(repository="owner/repo")
+        run = {"path": ".github/workflows/plugin-release.yml", "head_sha": "workflow",
+               "repository": {"full_name": "owner/repo"}}
+        jobs = [{"name": f"Validate release ({label})", "status": "completed", "conclusion": "success",
+                 "head_sha": "workflow", "run_attempt": attempt}
+                for attempt, label in enumerate(evidence.PLATFORMS, 1)]
+        forge.api.side_effect = [run, {"jobs": jobs}]
+        self.assertEqual(evidence.validation_attempts(forge, 7),
+                         {label: attempt for attempt, label in enumerate(evidence.PLATFORMS, 1)})
+        for changed in ([], [jobs[0]], [jobs[0], {**jobs[1], "conclusion": "failure"}],
+                        [jobs[0], {**jobs[1], "head_sha": "other"}]):
+            forge.api.side_effect = [run, {"jobs": changed}]
+            with self.assertRaisesRegex(ValueError, "did not succeed"):
+                evidence.validation_attempts(forge, 7)
+        forge.api.side_effect = [{**run, "path": ".github/workflows/other.yml"}, {"jobs": jobs}]
+        with self.assertRaisesRegex(ValueError, "publication workflow"):
+            evidence.validation_attempts(forge, 7)
 
-    def test_release_reuses_both_merge_reports_without_rebuilding_or_running_tests(self):
+    def test_release_records_both_platform_reports_for_the_pinned_source(self):
         source = {"commit": "source"}
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "evidence"
+            checkout = Path(temporary) / "source"
+            checkout.mkdir()
+            with self.assertRaisesRegex(ValueError, "outside both checkouts"):
+                evidence.verify_release("owner/repo", checkout / "evidence", checkout, "source", 7)
             with patch.object(evidence, "identity", return_value=source), \
                     patch.object(evidence, "git", return_value=""), \
                     patch.object(evidence.subprocess, "run") as run, \
-                    patch.object(evidence, "merge_run", return_value={"id": 7}), \
+                    patch.object(evidence, "validation_attempts",
+                                 return_value=dict.fromkeys(evidence.PLATFORMS, 1)), \
                     patch.object(evidence, "platform_evidence", side_effect=lambda *args: (
                         args[3], {"validation_sha256": "digest"})) as collect:
-                result = evidence.verify_merge("owner/repo", output)
+                result = evidence.verify_release("owner/repo", output, checkout, "source", 7)
             self.assertEqual(set(result["platforms"]), set(evidence.PLATFORMS))
             self.assertEqual(collect.call_count, 2)
             self.assertEqual(run.call_count, 1)
             self.assertEqual(run.call_args.args[0][:3], ["git", "merge-base", "--is-ancestor"])
-            self.assertEqual(json.loads((output / "MERGE.json").read_text())["merge_run"], 7)
+            self.assertEqual(json.loads((output / "VALIDATED-RELEASE.json").read_text())["run"], 7)
 
     def test_dispatch_error_keeps_merge_complete_and_release_pending(self):
-        with patch.object(release, "github", side_effect=RuntimeError("transport failed")):
-            with patch("scripts.main_release_feedback.failure", side_effect=RuntimeError("offline")), \
-                    patch.object(release, "GitHub"):
-                result = release.dispatch("owner/repo", "source")
+        with patch("scripts.main_release_feedback.failure", side_effect=RuntimeError("offline")), \
+                patch.object(release, "GitHub") as forge:
+            forge.return_value.gh.side_effect = RuntimeError("transport failed")
+            result = release.dispatch("owner/repo", "source")
         self.assertEqual(result["status"], "pending")
         self.assertEqual(result["requested_source"], "source")
         self.assertIn("transport failed", result["dispatch_error"])
@@ -132,17 +242,18 @@ class MainReleaseTests(unittest.TestCase):
             forge.api.return_value = {"sha": "source"}
             self.assertTrue(release.already_published("owner/repo", selected))
 
-    def test_changed_implementation_needs_a_fresh_unclaimed_version(self):
-        with patch.object(evidence, "git", side_effect=['[package]\nversion="0.3.97"'] * 2), \
-                self.assertRaisesRegex(ValueError, "fresh"):
-            evidence.require_version("owner/repo", "base")
-        forge = Mock()
-        forge.api.side_effect = [{}, {"sha": "other"}]
-        with patch("scripts.release_plugin.GitHub", return_value=forge), \
-                patch.object(evidence, "git", side_effect=[
-                    '[package]\nversion="0.3.97"', '[package]\nversion="0.3.98"', "source"]), \
-                self.assertRaisesRegex(ValueError, "different immutable source"):
-            evidence.require_version("owner/repo", "base")
+    def test_explicit_validation_pins_only_a_full_commit_contained_in_main(self):
+        main, source = "b" * 40, "a" * 40
+        with patch.object(evidence, "git", side_effect=["", main, '[package]\nversion="0.3.97"']) as git, \
+                patch.object(evidence.subprocess, "run") as run, patch.object(evidence, "GitHub") as forge:
+            forge.return_value.api.return_value = {"object": {"sha": main}}
+            self.assertEqual(evidence.select("owner/repo", source)["source"], source)
+            self.assertEqual(run.call_args.args[0], ["git", "merge-base", "--is-ancestor", source, main])
+            self.assertEqual(git.call_count, 3)
+        with patch.object(evidence, "git", side_effect=["", main]), patch.object(evidence.subprocess, "run"), \
+                patch.object(evidence, "GitHub") as forge, self.assertRaisesRegex(ValueError, "full main commit"):
+            forge.return_value.api.return_value = {"object": {"sha": main}}
+            evidence.select("owner/repo", "main")
 
     def test_old_success_status_without_delivery_evidence_cannot_claim_publication(self):
         forge = Mock()
@@ -157,7 +268,16 @@ class MainReleaseTests(unittest.TestCase):
         self.assertIsNone(result["covered_by"])
         self.assertEqual(result["latest_attempt"]["state"], "success")
     def test_channel_manifest_reads_existing_candidate_branches(self):
+        expected = {target: {"source_commit": str(index)} for index, target in enumerate(release.TARGETS)}
+
+        def read_manifest(endpoint):
+            url = urlsplit(endpoint)
+            self.assertEqual(url.path, "contents/RELEASE.json")
+            [reference] = parse_qs(url.query)["ref"]
+            channel, target = reference.split("/", 1)
+            self.assertEqual(channel, "candidate")
+            return {"content": base64.b64encode(json.dumps(expected[target]).encode()).decode()}
+
         forge = Mock()
-        forge.api.return_value = {"content": base64.b64encode(b'{"source_commit":"fixed"}').decode()}
-        self.assertEqual(len(release.channels(forge)), 2)
-        self.assertTrue(all("candidate%2F" in call.args[0] for call in forge.api.call_args_list))
+        forge.api.side_effect = read_manifest
+        self.assertEqual(release.channels(forge), expected)

@@ -28,15 +28,20 @@ pub(super) fn section_id(state: &str) -> String {
 #[derive(Default)]
 pub(super) struct Surface {
     pub latest_turn: Option<Value>,
+    pub preview_revision: Option<Value>,
     pub thread_status: Option<String>,
     pub slots: BTreeMap<String, String>,
     pub calls: Vec<String>,
+    pub archive_writes: Vec<String>,
     pub notes_during_move: Vec<String>,
     pub lose_receipt: bool,
+    pub unreadable_section: Option<String>,
     pub lose_archive_receipt: bool,
+    pub archive_account: Option<String>,
     pub reject_move: Option<String>,
     pub blocked: Option<BlockingMove>,
     pub read_blocked: Option<BlockingMove>,
+    pub runtime_page_reply: Option<BlockingMove>,
     pub remote_projects: Vec<Value>,
     pub remote_threads: Vec<Value>,
     pub remote_disconnected: bool,
@@ -194,6 +199,10 @@ pub(super) struct Server {
 }
 
 impl Server {
+    pub(super) fn restore_archived(&self, id: &str) {
+        assert!(self._engine.archived.lock().unwrap().remove(id));
+    }
+
     pub(super) fn pause_discovery_after_archive(&self) -> super::archive::DiscoveryPause {
         self._engine.pause_discovery_after_archive()
     }
@@ -311,10 +320,16 @@ fn blocking_request(surface: &Surface, params: &Value) -> Option<BlockingMove> {
     }
     match params["tool"].as_str().unwrap_or("") {
         "list_threads" => surface.read_blocked.clone(),
-        "move_thread_to_sidebar_section" => surface
-            .blocked
-            .clone()
-            .filter(|blocked| params["arguments"]["threadId"] == blocked.identifier),
+        "move_thread_to_sidebar_section" => {
+            let arguments = &params["arguments"];
+            let gate = if arguments["hostId"] == "local" {
+                surface.blocked.clone()
+            } else {
+                surface.remote_surfaces.get(arguments["hostId"].as_str()?)?
+                    .lock().unwrap().blocked.clone()
+            };
+            gate.filter(|blocked| arguments["threadId"] == blocked.identifier)
+        }
         _ => None,
     }
 }

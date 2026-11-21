@@ -8,6 +8,7 @@ pub const THREAD: &str = "11111111-1111-4111-8111-111111111111";
 #[derive(Clone, Debug, PartialEq)]
 pub struct Surface {
     pub host: String,
+    data_host: String,
     pub title: String,
     pub section: String,
     pub status: Value,
@@ -15,8 +16,6 @@ pub struct Surface {
     pub archived: bool,
     pub authoritative: bool,
     pub fail: Option<&'static str>,
-    pub lost: Option<&'static str>,
-    pub race_title: Option<String>,
     pub writes: Vec<String>,
 }
 
@@ -24,6 +23,7 @@ impl Surface {
     pub fn new(host: &str) -> Self {
         Self {
             host: host.into(),
+            data_host: host.into(),
             title: "完整标题".into(),
             section: "unknown-id".into(),
             status: json!({"type":"idle"}),
@@ -31,8 +31,6 @@ impl Surface {
             archived: false,
             authoritative: true,
             fail: None,
-            lost: None,
-            race_title: None,
             writes: Vec::new(),
         }
     }
@@ -43,7 +41,7 @@ impl Surface {
             .map(|(state, label)| {
                 let section = format!("{state}-id");
                 let items = if self.section == section && !self.archived {
-                    vec![format!("codex:thread:{}:{THREAD}", self.host)]
+                    vec![format!("codex:thread:{}:{THREAD}", self.data_host)]
                 } else {
                     vec![]
                 };
@@ -56,22 +54,16 @@ impl Surface {
     fn mutate(&mut self, method: &str, params: &Value) -> Result<Value> {
         match method {
             "move_thread_to_sidebar_section" => {
-                ensure!(params["hostId"] == self.host, "Wrong target host");
+                ensure!(params["hostId"] == self.data_host, "Wrong target host");
                 self.section = params["sectionId"].as_str().unwrap().into();
             }
             "thread/name/set" => {
-                if let Some(title) = self.race_title.take() {
-                    self.title = title;
-                }
                 self.title = params["name"].as_str().unwrap().into();
             }
             "thread/archive" => self.archived = true,
             _ => bail!("Unexpected mutation {method}"),
         }
         self.writes.push(method.into());
-        if self.lost.take() == Some(method) {
-            bail!("Lost acknowledgement");
-        }
         Ok(json!({}))
     }
 }

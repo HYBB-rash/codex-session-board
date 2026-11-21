@@ -6,6 +6,9 @@ on:
     - cron: "*/10 * * * *"
   workflow_dispatch:
     inputs:
+      verify_source:
+        type: string
+        description: Full main commit SHA to validate without publishing
       exercise_failure:
         type: boolean
         default: false
@@ -38,31 +41,137 @@ jobs:
       published: ${{ steps.select.outputs.published }}
     env:
       GH_TOKEN: ${{ github.token }}
+      VERIFY_SOURCE: ${{ inputs.verify_source || '' }}
+      EXERCISE: ${{ inputs.exercise_failure || inputs.exercise_hold_seconds != '' && inputs.exercise_hold_seconds != '0' }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - id: select
-        run: ./scripts/release main select ${{ (inputs.exercise_failure || inputs.exercise_hold_seconds != '' && inputs.exercise_hold_seconds != '0') && '--exercise' || '' }} --github-output "$GITHUB_OUTPUT" --output "$RUNNER_TEMP/source.json"
-      - run: git checkout --detach "${{ steps.select.outputs.source }}"
-      - run: ./scripts/release main verify --output "$RUNNER_TEMP/merge-evidence"
-        if: steps.select.outputs.published != 'true'
+        run: |
+          args=()
+          if [[ -n "$VERIFY_SOURCE" ]]; then
+            args+=(--source "$VERIFY_SOURCE")
+          else
+            test "$GITHUB_REF" = refs/heads/main
+          fi
+          if [[ "$EXERCISE" == true ]]; then args+=(--exercise); fi
+          ./scripts/release main select "${args[@]}" --github-output "$GITHUB_OUTPUT" --output "$RUNNER_TEMP/source.json"
       - run: ./scripts/release main record --source "${{ steps.select.outputs.source }}" --state pending
-        if: inputs.exercise_failure != true && steps.select.outputs.published != 'true'
+        if: inputs.verify_source == '' && inputs.exercise_failure != true && steps.select.outputs.published != 'true'
       - uses: actions/upload-artifact@v4
         with:
-          name: release-source
-          path: |
-            ${{ runner.temp }}/source.json
-            ${{ runner.temp }}/merge-evidence/
-  package:
-    name: Package (${{ matrix.target }})
+          name: release-source-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/source.json
+  validate:
+    name: Validate release (${{ matrix.label }})
     needs: source
     if: needs.source.outputs.published != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, label: linux-x86_64 }
+          - { runner: macos-26, label: macos-arm64 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    env:
+      RUSTUP_TOOLCHAIN: 1.99.1
+      GIT_AUTHOR_NAME: Codex plugin publisher
+      GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+      GIT_COMMITTER_NAME: Codex plugin publisher
+      GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.source }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: ./scripts/validate --scope preflight --output "$RUNNER_TEMP/preflight"
+      - run: python3 -m pip install -r requirements-delivery.txt
+      - run: rustup toolchain install 1.99.1 --profile minimal --component clippy
+      - id: target
+        run: |
+          rustc -vV | sed -n 's/^host: /target=/p' >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cache/codex-session-board/checker
+            target
+          key: candidate-${{ steps.target.outputs.target }}-1.99.1-${{ hashFiles('Cargo.lock') }}-${{ needs.source.outputs.source }}
+          restore-keys: |
+            candidate-${{ steps.target.outputs.target }}-1.99.1-${{ hashFiles('Cargo.lock') }}-
+            candidate-${{ steps.target.outputs.target }}-1.99.1-
+      - run: |
+          cargo fetch --locked
+          cargo fetch --locked --manifest-path scripts/checker/Cargo.toml
+      - run: ./scripts/install-git-hooks
+      - run: node scripts/build-app-bridge.mjs --check
+      - run: TMPDIR=/tmp ./scripts/validate --scope candidate --output "$RUNNER_TEMP/validation"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-validation-${{ matrix.label }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/validation/
+  evidence:
+    name: Confirm both platform reports
+    needs: [source, validate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE: ${{ needs.source.outputs.source }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          git fetch origin main
+          git worktree add --detach "$RUNNER_TEMP/pinned" "$SOURCE"
+          ./scripts/release main verify --checkout "$RUNNER_TEMP/pinned" --source "$SOURCE" --output "$RUNNER_TEMP/evidence"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-release-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/evidence/VALIDATED-RELEASE.json
+  prepare:
+    name: Prepare shared release
+    needs: [source, evidence]
+    if: inputs.verify_source == '' && needs.source.outputs.published != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.draft.outputs.release_id }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.source }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - id: draft
+        run: |
+          ./scripts/release candidate --prepare-only | tee "$RUNNER_TEMP/draft.json"
+          jq -er '"release_id=\(.release_id)"' "$RUNNER_TEMP/draft.json" >> "$GITHUB_OUTPUT"
+  package:
+    name: Package (${{ matrix.target }})
+    needs: [source, prepare]
     strategy:
       fail-fast: false
       matrix:
@@ -103,15 +212,17 @@ jobs:
           cargo fetch --locked
           cargo fetch --locked --manifest-path scripts/checker/Cargo.toml
       - run: cargo build --locked --offline --example dev_fixture
-      - run: TMPDIR=/tmp ./scripts/release candidate --local --save-only --target "${{ matrix.target }}" --fixture "$PWD/target/debug/examples/dev_fixture" --startup-report "$RUNNER_TEMP/startup/STARTUP.json"
+      - run: TMPDIR=/tmp ./scripts/release candidate --local --save-only --release-id "$RELEASE_ID" --target "${{ matrix.target }}" --fixture "$PWD/target/debug/examples/dev_fixture" --startup-report "$RUNNER_TEMP/startup/STARTUP.json"
+        env:
+          RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: release-startup-${{ matrix.target }}
+          name: release-startup-${{ matrix.target }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/startup/
   publish:
     name: Publish immutable plugins
-    needs: [source, package]
+    needs: [source, prepare, package]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -124,6 +235,7 @@ jobs:
       GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
       EXERCISE_FAILURE: ${{ inputs.exercise_failure || false }}
       EXERCISE_HOLD: ${{ inputs.exercise_hold_seconds || '0' }}
+      RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -138,24 +250,26 @@ jobs:
           test "$EXERCISE_FAILURE" != true
       - run: |
           gh auth setup-git
-          ./scripts/release candidate --finalize
+          ./scripts/release candidate --finalize --release-id "$RELEASE_ID"
   result:
     name: Record publication
-    if: always()
-    needs: [source, package, publish]
+    if: always() && inputs.verify_source == ''
+    needs: [source, validate, evidence, prepare, package, publish]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
       statuses: write
       issues: write
-      pull-requests: write
     env:
       GH_TOKEN: ${{ github.token }}
       SOURCE: ${{ needs.source.outputs.source || github.sha }}
       PUBLISHED: ${{ needs.publish.result }}
       ALREADY_PUBLISHED: ${{ needs.source.outputs.published }}
       SOURCE_RESULT: ${{ needs.source.result }}
+      VALIDATE_RESULT: ${{ needs.validate.result }}
+      EVIDENCE_RESULT: ${{ needs.evidence.result }}
+      PREPARE_RESULT: ${{ needs.prepare.result }}
       PACKAGE_RESULT: ${{ needs.package.result }}
       EXERCISE_FAILURE: ${{ inputs.exercise_failure || false }}
     steps:
@@ -174,10 +288,13 @@ jobs:
           test "$EXERCISE_FAILURE" != true || exercise=(--exercise)
           phase=publish
           test "$PACKAGE_RESULT" != failure || phase=package
+          test "$PREPARE_RESULT" != failure || phase=prepare
+          test "$EVIDENCE_RESULT" != failure || phase=evidence
+          test "$VALIDATE_RESULT" != failure || phase=validation
           test "$SOURCE_RESULT" != failure || phase=source
           ./scripts/release main record --source "$SOURCE" --state "$state" --phase "$phase" "${exercise[@]}" --output "$RUNNER_TEMP/RELEASE.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: release-result
+          name: release-result-${{ github.run_attempt }}
           path: ${{ runner.temp }}/RELEASE.json

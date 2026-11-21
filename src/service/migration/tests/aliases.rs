@@ -54,11 +54,21 @@ fn migration_accepts_source_and_destination_root_aliases() -> Result<()> {
         data_dir: target.clone(),
         ..fixture.config.clone()
     };
+    let directory_alias = fixture.directory.path().join("profile-alias");
+    let original = directory_alias.join("config.json");
+    let destination = fixture.configuration();
+    let parent = destination.parent().unwrap();
+    fs::create_dir(parent)?;
+    symlink(parent, &directory_alias)?;
+    let resolved = config::resolve_path(&original)?;
+    assert_eq!(configuration(&original)?, destination);
+    assert_eq!(configuration(&resolved)?, destination);
     assert!(publish(
-        &fixture.configuration(),
+        &resolved,
         &config,
         &source.join("status.sqlite3")
     )?);
+    assert!(original.is_file());
     fixture.assert_preserved()?;
     let published = load_source(&fixture.configuration())?;
     assert_eq!(published.data_dir, fixture.config.data_dir);
@@ -85,27 +95,6 @@ fn migration_accepts_directory_ancestor_aliases_for_missing_targets() -> Result<
         fixture.directory.path().join("nested/data")
     );
     assert!(fs::symlink_metadata(alias)?.file_type().is_symlink());
-    Ok(())
-}
-
-#[test]
-fn migration_accepts_default_configuration_parent_alias_after_cli_resolution() -> Result<()> {
-    let fixture = Fixture::new()?;
-    let real = fixture.directory.path().join("real");
-    let alias = fixture.directory.path().join("alias");
-    fs::create_dir(&real)?;
-    symlink(&real, &alias)?;
-    let original = alias.join("config.json");
-    let resolved = config::resolve_path(&original)?;
-    assert_eq!(configuration(&original)?, real.join("config.json"));
-    assert_eq!(configuration(&resolved)?, real.join("config.json"));
-    assert!(publish(
-        &resolved,
-        &fixture.config,
-        &fixture.source.join("status.sqlite3")
-    )?);
-    assert!(original.is_file());
-    fixture.assert_preserved()?;
     Ok(())
 }
 

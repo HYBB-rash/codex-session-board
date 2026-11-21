@@ -1,4 +1,4 @@
-use crate::{config::Config, service};
+use crate::{config::Config, operations::{Method, Operation}, service};
 use anyhow::{Context, Result, ensure};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -64,11 +64,11 @@ impl RuntimeHandle {
         Ok(())
     }
 
-    pub(crate) fn request(&mut self, path: &str, body: Option<&Value>) -> Result<Value> {
+    pub(crate) fn request(&mut self, op: &Operation, arguments: &Value) -> Result<Value> {
         self.acquire()?;
         match self.board.as_ref().context("插件运行时未取得所有权")? {
-            Board::Owned(board) => board.app.request(path, body),
-            Board::Shared(url) => self.forward(url, path, body),
+            Board::Owned(board) => board.app.execute(op, arguments),
+            Board::Shared(url) => self.forward(url, op.path, (op.method == Method::Post).then_some(arguments)),
         }
     }
 

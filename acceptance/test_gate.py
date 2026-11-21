@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tarfile
@@ -17,7 +18,7 @@ from scripts.verify_acceptance import (
 )
 
 
-class GateTests(unittest.TestCase):
+class GateFixture(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.root = Path(self.directory.name)
@@ -64,6 +65,8 @@ class GateTests(unittest.TestCase):
     def run_gate(self, scope="release", evidence=None):
         return verify(self.root, self.contract_path, self.bindings_path, scope, evidence)
 
+
+class GateTests(GateFixture):
     def test_platform_branches_select_real_tests_and_keep_common_checks(self):
         mapping = {"common": ["shared"], "linux": ["proc"], "darwin": ["rejection"]}
         for platform, expected in (("linux", ["shared", "proc"]),
@@ -171,26 +174,35 @@ class GateTests(unittest.TestCase):
     def test_adapter_checks_the_target_instead_of_its_own_project(self):
         targets = [self.root / "project-a", self.root / "project-b"]
         for target, passes in zip(targets, (True, False)):
-            target.mkdir()
-            (target / "test_target.py").write_text(
-                "import unittest\n"
+            for package in ("acceptance", "scripts"):
+                (target / package).mkdir(parents=True)
+                (target / package / "__init__.py").touch()
+            (target / "scripts/validate_candidate.py").write_text(f"matches = {passes!r}\n")
+            (target / "acceptance/test_target.py").write_text(
+                "import unittest\nfrom scripts import validate_candidate\n"
                 "class TargetTests(unittest.TestCase):\n"
                 "    def test_implementation(self):\n"
-                f"        self.assertTrue({passes!r})\n"
+                "        self.assertTrue(validate_candidate.matches)\n"
             )
+            (target / "acceptance/unittest_adapter.py").write_bytes(
+                (ROOT / "acceptance/unittest_adapter.py").read_bytes())
         adapter = targets[0] / "acceptance/unittest_adapter.py"
-        adapter.parent.mkdir()
-        adapter.write_bytes((ROOT / "acceptance/unittest_adapter.py").read_bytes())
         bindings = {"adapter": {"command": [sys.executable, str(adapter)]}}
-        identifier = "test_target.TargetTests.test_implementation"
-        self.assertEqual(
-            execute_adapter(targets[0], bindings, [identifier])[identifier]["status"],
-            "pass",
-        )
-        self.assertEqual(
-            execute_adapter(targets[1], bindings, [identifier])[identifier]["status"],
-            "fail",
-        )
+        identifier = "acceptance.test_target.TargetTests.test_implementation"
+        probe = ("import json, runpy, sys\n"
+                 "adapter = runpy.run_path(sys.argv[1])\n"
+                 "names = adapter['python_inventory']()\n"
+                 "if names != [sys.argv[2]]: sys.exit('unexpected target inventory')\n"
+                 "print(json.dumps(adapter['run_python'](names)))")
+        for target, expected in zip(targets, ("pass", "fail")):
+            with self.subTest(target=target.name):
+                self.assertEqual(execute_adapter(target, bindings, [identifier])[identifier]["status"],
+                                 expected)
+                run = subprocess.run([sys.executable, "-I", "-c", probe,
+                                      ROOT / "scripts/rust_adapter.py", identifier],
+                                     cwd=target, capture_output=True, text=True, timeout=30)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                self.assertEqual(json.loads(run.stdout)[identifier]["status"], expected)
 
     def test_report_cannot_overwrite_evidence_artifacts_or_verified_inputs(self):
         evidence = self.root / "evidence.json"
@@ -278,7 +290,6 @@ class PackageTests(unittest.TestCase):
             manifest = tomllib.loads((source / "Cargo.toml").read_text())
             self.assertEqual(manifest["package"]["build"], "build.rs")
             patterns = json.loads((source / "acceptance/bindings.json").read_text())["fingerprint_paths"]
-            self.assertIn("build.rs", patterns)
             before = fingerprint(source, patterns)
             gate = source / "build.rs"
             gate.write_bytes(gate.read_bytes() + b"\n")
@@ -295,8 +306,9 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(accepted.returncode, 0, accepted.stderr)
             entry = source / "src/main.rs"
             original = entry.read_text()
-            self.assertIn("mcp::serve(Some(path))", original)
-            entry.write_text(original.replace("mcp::serve(Some(path))", "mcp::serve(None)"))
+            broken, edits = re.subn(r"(Action::Mcp\s*=>)\s*[^,]+", r"\1 mcp::serve(None)", original, count=1)
+            self.assertEqual(edits, 1)
+            entry.write_text(broken)
             rejected = subprocess.run(
                 [str(executable)], cwd=source, capture_output=True, text=True, timeout=10,
             )

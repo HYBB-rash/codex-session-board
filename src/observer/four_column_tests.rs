@@ -83,19 +83,27 @@ fn a_terminal_event_older_than_the_manual_choice_keeps_the_card() -> Result<()> 
 fn empty_requires_complete_response_and_an_inactive_verified_backend() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let app = app(&directory, true)?;
-    for (revision, status, response) in [
-        (1,"idle",json!({"data":null})),
-        (2,"idle",json!({"data":[],"nextCursor":"more"})),
-        (3,"active",json!({"data":[],"nextCursor":null})),
-        (4,"idle",json!({"data":[],"nextCursor":null})),
+    for (revision, status, response, visible) in [
+        (1,"idle",json!({"data":null}),true),
+        (2,"idle",json!({"data":[],"nextCursor":"more"}),true),
+        (3,"active",json!({"data":[],"nextCursor":null}),true),
+        (4,"idle",json!({"data":[],"nextCursor":null}),false),
     ] {
         observe(&app, revision, status, response)?;
-        assert_eq!(app.store.sessions()?[0]["confirmedEmpty"], revision == 4);
+        let snapshot = app.snapshot()?;
+        let cards = snapshot["sessions"].as_array().unwrap();
+        assert_eq!(cards.len(), usize::from(visible));
+        if visible {
+            assert_eq!(cards[0]["id"], "session");
+            assert_eq!(cards[0].get("state"), Some(&Value::Null));
+        }
     }
-    let legacy_directory = tempfile::tempdir()?;
-    let legacy = self::app(&legacy_directory, false)?;
-    observe(&legacy, 1, "idle", json!({"data":[],"nextCursor":null}))?;
-    assert!(legacy.store.sessions()?[0].get("confirmedEmpty").is_none());
+    let five_directory = tempfile::tempdir()?;
+    let five = self::app(&five_directory, false)?;
+    observe(&five, 1, "idle", json!({"data":[],"nextCursor":null}))?;
+    let snapshot = five.snapshot()?;
+    assert_eq!(snapshot["sessions"][0]["id"], "session");
+    assert_eq!(snapshot["sessions"][0]["state"], "unknown");
     Ok(())
 }
 
@@ -126,13 +134,39 @@ fn standalone_history_discovery_does_not_replace_verified_turns_in_four_column_m
     Ok(())
 }
 #[test]
-fn warnings_require_two_complete_observations_and_thirty_seconds() {
-    let start = std::time::Instant::now();
-    let mut gaps = super::EvidenceGaps::default();
-    let unresolved = || std::collections::HashSet::from(["session".to_owned()]);
-    assert_eq!(gaps.record(unresolved(), start), 0);
-    assert_eq!(gaps.record(unresolved(), start + std::time::Duration::from_secs(29)), 0);
-    assert_eq!(gaps.record(unresolved(), start + std::time::Duration::from_secs(30)), 1);
-    assert_eq!(gaps.record(Default::default(), start + std::time::Duration::from_secs(31)), 0);
-    assert_eq!(gaps.record(unresolved(), start + std::time::Duration::from_secs(60)), 0);
+fn warnings_require_two_complete_observations_and_thirty_seconds() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let app = app(&directory, true)?;
+    app.discover(&[json!({"id":"session","updatedAt":1})], true)?;
+    app.request("/api/state", Some(&json!({"id":"session","state":"to_archive",
+        "note":"保留人工备注","version":0,"inputVersion":0})))?;
+    let start = Instant::now();
+    let mut revisions = RuntimeRevisions::new();
+    for (seconds, reliable, warning) in [
+        (0, false, false), (29, false, false), (30, false, true),
+        (31, true, false),
+        (60, false, false), (89, false, false), (90, false, true),
+        (91, true, false),
+        (120, false, false), (150, false, true),
+    ] {
+        let status = if reliable { "idle" } else { "active" };
+        let threads = [json!({"id":"session","updatedAt":1,"status":{"type":status}})];
+        let response = turn("old", "completed", 1.0, reliable.then_some(2.0));
+        observe_runtime_threads_at(&app, &mut Turns(response), &mut revisions, 0.0,
+            &threads, start + Duration::from_secs(seconds))?;
+        let snapshot = app.snapshot()?;
+        let error = snapshot["health"].get("runtimeError").unwrap();
+        if warning {
+            assert!(error.as_str().is_some_and(|text| text.contains("持续无法确认执行状态")),
+                "第 {seconds} 秒应提示持续缺证，实际为 {error}");
+        } else {
+            assert!(error.is_null(), "第 {seconds} 秒出现意外告警 {error}");
+        }
+        let row = &snapshot["sessions"][0];
+        assert_eq!(row["id"], "session");
+        assert_eq!(row["state"], "to_archive", "第 {seconds} 秒");
+        assert_eq!(row["manual"], true);
+        assert_eq!(row["note"], "保留人工备注");
+    }
+    Ok(())
 }

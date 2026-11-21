@@ -9,6 +9,7 @@ pub mod model;
 pub mod native_sections;
 mod native_new;
 pub mod observer;
+mod operations;
 pub use app::preflight;
 pub mod projects;
 pub mod remote;

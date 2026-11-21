@@ -54,8 +54,19 @@ try {
   const view = await snapshot();
   report.id = view.sessions.find(row => !row.remote && !row.readOnly)?.id;
   assert(/^[0-9a-f-]{36}$/.test(report.id || ""), "没有可写的隔离会话");
-  await evaluate(`window.optionalStatePosts=0;window.optionalFetch=window.fetch;
-    window.fetch=async function(url,options){if(String(url)==="/api/state")optionalStatePosts++;return optionalFetch.call(this,url,options)};`);
+  await evaluate(`window.optionalStatePosts=0;window.optionalReceipts=[];window.originalOptionalFetch=window.fetch;
+    window.optionalFetch=async function(url,options){
+      if(String(url)==="/api/sessions" && window.optionalPendingReceipt){
+        optionalPendingReceipt.beforeRefresh=data.sessions.find(row=>row.id===optionalPendingReceipt.request.id);
+        optionalReceipts.push(optionalPendingReceipt);window.optionalPendingReceipt=null;
+      }
+      const response=await originalOptionalFetch.call(this,url,options);
+      if(String(url)==="/api/state"){
+        optionalStatePosts++;
+        if(response.ok)window.optionalPendingReceipt={request:JSON.parse(options.body),receipt:await response.clone().json()};
+      }
+      return response;
+    };window.fetch=window.optionalFetch;`);
   await check("取消按钮不改状态或备注", async () => {
     const before = fields(await current());
     await open(); await input("不应保存的内容"); await click("#cancel"); await closed();
@@ -104,6 +115,23 @@ try {
     await open(); await input(" \t\n　"); await save();
     assert.equal((await current()).note, ""); assert.equal((await current()).manual, true);
   });
+  await check("两个空格在刷新前采用后端空备注回执", async () => {
+    await drag("review");
+    await until(async () => (await current()).state === "review" && await evaluate("!saving"), "未进入待审阅");
+    await evaluate("load()");
+    const before = await current();
+    await open(); await input("  "); await save();
+    const record = await evaluate("optionalReceipts.at(-1)");
+    const readback = await current();
+    report.twoSpaceSave = { ...record, readback };
+    assert.equal(record.request.id, before.id);
+    assert.equal(record.request.sectionVersion, before.sectionVersion);
+    assert.equal(record.request.note, "  ");
+    assert.equal(record.receipt.session.state, "blocked");
+    assert.equal(record.receipt.session.note, "");
+    assert.deepEqual(record.beforeRefresh, record.receipt.session);
+    assert.deepEqual(readback, record.receipt.session);
+  });
   await check("失败后清空重试且空草稿可重新打开", async () => {
     await open(); await input("旧草稿");
     await evaluate(`window.fetch=async function(url,options){if(String(url)==="/api/state"){
@@ -114,12 +142,13 @@ try {
     await until(() => evaluate('!saving && document.querySelector("#notice").textContent.includes("保存失败")'), "未收到预期错误");
     await input(""); await click("#save");
     await until(() => evaluate('!saving && document.querySelector("#notice").textContent.includes("保存失败")'), "清空后未收到预期错误");
-    assert.equal(await evaluate(`noteDraft(${JSON.stringify(report.id)})`), "");
     await escape(); await closed(); await open();
     assert.equal(await evaluate('document.querySelector("#note").value'), "");
+    assert.match(await evaluate('document.querySelector("#notice").textContent'), /已恢复/);
     assert.deepEqual(fields(await current()), before);
     await evaluate("window.fetch=window.optionalFetch"); await save();
-    assert.equal(await evaluate(`noteDraft(${JSON.stringify(report.id)})`), null);
+    await open(); assert.equal(await evaluate('document.querySelector("#notice").textContent'), "");
+    await escape(); await closed();
   });
   await check("保存进行中禁用取消并阻止Escape", async () => {
     await open(); await input("");
@@ -132,11 +161,14 @@ try {
     await evaluate("releaseOptionalSave()"); await closed();
   });
   report.final = fields(await current());
+  report.receipts = await evaluate("optionalReceipts");
+  for (const record of report.receipts) assert.deepEqual(record.beforeRefresh, record.receipt.session);
+  assert(report.receipts.some(record => !Object.hasOwn(record.request, "note")), "普通拖放必须省略备注");
   report.passed = true;
 } catch (error) {
   report.error = error.stack;
   if (page) {
-    report.page = await evaluate('({dragging:dragging?.id,html:document.querySelector(".board")?.outerHTML,notice:document.querySelector("#notice").textContent})');
+    report.page = await evaluate('({dragging:document.querySelector(".drag-source")?.dataset.id,html:document.querySelector(".board")?.outerHTML,notice:document.querySelector("#notice").textContent})');
   }
   process.exitCode = 1;
 } finally {

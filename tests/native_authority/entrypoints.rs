@@ -7,8 +7,9 @@ use super::{
 mod fixture;
 
 use fixture::{ChildGuard, PortLease};
+use anyhow::Context;
 use serde_json::Value;
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -49,15 +50,8 @@ impl Live {
         let path = directory.join("config.json");
         std::fs::write(&path, serde_json::to_vec(&*config)?)?;
         let mut child = ChildGuard::spawn(env!("CARGO_BIN_EXE_codex-session-board"), &path, port)?;
-        let stdout = child
-            .child
-            .stdout
-            .take()
-            .ok_or_else(|| anyhow::anyhow!("看板没有输出"))?;
-        let mut line = String::new();
-        BufReader::new(stdout).read_line(&mut line)?;
-        let started: Value = serde_json::from_str(line.trim())?;
-        anyhow::ensure!(started["started"] == true, "{line}");
+        let started = child.startup_receipt()?;
+        anyhow::ensure!(started["started"] == true, "{started}");
         let url = format!("http://127.0.0.1:{}", config.port);
         let csrf = csrf(&url)?;
         Ok(Self {
@@ -123,6 +117,7 @@ impl Live {
             .args(["mcp", "--config", self.path.to_str().unwrap()])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()?;
         writeln!(
             child.stdin.take().unwrap(),
@@ -130,8 +125,23 @@ impl Live {
             json!({"id":1,"method":"tools/call","params":{"name":name,"arguments":body}})
         )?;
         let result = child.wait_with_output()?;
-        anyhow::ensure!(result.status.success(), "MCP process failed");
-        Ok(serde_json::from_slice::<Value>(&result.stdout)?["result"].clone())
+        let receipt = || format!("stdio tools/call {name}：{}，stdout={} 字节，stderr：{}",
+            result.status, result.stdout.len(), String::from_utf8_lossy(&result.stderr));
+        anyhow::ensure!(result.status.success(), "{}", receipt());
+        Ok(serde_json::from_slice::<Value>(&result.stdout).with_context(receipt)?["result"].clone())
+    }
+
+    pub(super) fn check_panel(&self, arguments: &[&str]) -> Result<()> {
+        let mut mcp = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
+            .args(["mcp", "--config"]).arg(&self.path)
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()?;
+        let output = Command::new("node").arg("scripts/check-card-panel.mjs").args(arguments)
+            .stdin(mcp.stdout.take().unwrap()).stdout(mcp.stdin.take().unwrap()).output();
+        let status = mcp.wait()?;
+        let output = output?;
+        anyhow::ensure!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        anyhow::ensure!(status.success(), "MCP process failed: {status}");
+        Ok(())
     }
 }
 
@@ -182,12 +192,17 @@ fn optional_update(live: &Live, client: &reqwest::blocking::Client, note: Option
     } else {
         body.as_object_mut().unwrap().remove("note");
     }
-    if mcp {
-        assert_eq!(live.mcp("board_update", body)?["structuredContent"]["ok"], true);
+    let receipt = if mcp {
+        live.mcp("board_update", body)?["structuredContent"].clone()
     } else {
-        live.post(client, &body)?.error_for_status()?;
-    }
+        live.post(client, &body)?.error_for_status()?.json::<Value>()?
+    };
+    assert_eq!(receipt["ok"], true);
     let after = live.snapshot(client)?;
+    for field in ["id", "state", "note", "manual", "version", "inputVersion",
+        "sectionVersion", "followUp", "source", "reason", "titleSyncPending", "titleSyncError"] {
+        assert_eq!(receipt["session"][field], session(&after)[field], "{field}");
+    }
     assert_eq!(session(&after)["manual"], true);
     assert_eq!(session(&after)["state"], "blocked");
     assert_eq!(session(&after)["version"], session(&before)["version"].as_i64().unwrap() + 1);
@@ -208,6 +223,52 @@ fn invalid_optional_notes(live: &Live, client: &reqwest::blocking::Client) -> Re
     let mut stale = update(session(&before), "blocked", "");
     stale["version"] = json!(0);
     assert!(!live.post(client, &stale)?.status().is_success());
+    assert_eq!(live.mcp("board_update", stale)?["isError"], true);
+    let mut stale_input = update(session(&before), "blocked", "不能确认新输入");
+    stale_input["inputVersion"] = json!(-1);
+    assert!(!live.post(client, &stale_input)?.status().is_success());
+    assert_eq!(live.mcp("board_update", stale_input)?["isError"], true);
+    let after = live.snapshot(client)?;
+    assert_eq!(session(&after)["version"], session(&before)["version"]);
+    assert_eq!(session(&after)["note"], session(&before)["note"]);
+    Ok(())
+}
+
+#[test]
+fn preview_tool_keeps_reply_out_of_model_content() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let mut server = Server::new(directory.path())?;
+    server.config.desktop_socket = directory.path().join("engine.sock");
+    let _engine = Engine::new(&server.config.desktop_socket, std::sync::Arc::clone(&server.surface))?;
+    let image_probe = std::net::TcpListener::bind(("127.0.0.1", 0))?;
+    let markdown = format!("# 核对记录\n\n- Linux\n- macOS\n\n> 保留报告\n\n```sh\nprintf 'ok'\n```\n\n\
+        | 平台 | 结果 |\n| --- | --- |\n| ARM | 通过 |\n\n\
+        [报告](https://example.com/report) [索引](http://example.com/index)\n\n\
+        <script>sample</script>\n\n[禁用](file:///tmp/example) \
+        [账号链接](https://reader@example.invalid/private) ![图示](http://{}/preview-image.png)",
+        image_probe.local_addr()?);
+    {
+        let mut native = server.surface.lock().unwrap();
+        native.preview_revision = Some(json!({"id":"preview","status":"completed"}));
+        native.latest_turn = Some(json!({"id":"preview","status":"completed","items":[
+            {"id":"answer","type":"agentMessage","phase":"final_answer","text":markdown}]}));
+    }
+    drop(server.app()?);
+    let live = Live::new(&mut server.config, directory.path())?;
+    let client = reqwest::blocking::Client::builder().no_proxy().timeout(Duration::from_secs(5)).build()?;
+    live.ready(&client)?;
+    let body = json!({"id":FIRST});
+    let reply: Value = live.post_path(&client, "/api/preview-reply", &body)?.error_for_status()?.json()
+        .context("解码 HTTP /api/preview-reply 回执")?;
+    assert_eq!(reply["turnId"], "preview");
+    assert_eq!(live.mcp("board_preview_reply", body)?, json!({"content":[],"_meta":{"previewReply":reply}}));
+    live.check_panel(&["--preview", FIRST, &live.url])?;
+    image_probe.set_nonblocking(true)?;
+    match image_probe.accept() {
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => (),
+        Err(error) => return Err(error.into()),
+        Ok(_) => anyhow::bail!("回复预览访问了图片地址"),
+    }
     Ok(())
 }
 

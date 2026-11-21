@@ -1,7 +1,6 @@
 import argparse
 import hashlib
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -12,20 +11,11 @@ from urllib.parse import quote
 
 from package_plugin import ROOT, TARGETS, build, command, verify_package, versions
 from publish_plugin import authorize
-from validate_context import require_remote_target, require_target
 from verify_package_startup import CHECKS
 
 
-def release_tag(source, reference="refs/heads/main"):
-    branch = os.environ.get("GITHUB_REF_NAME") or command(["git", "branch", "--show-current"])
-    if reference == "refs/heads/main":
-        require_target(reference, "", branch)
-        return f"v{versions(ROOT)}"
-    configuration = json.loads(command(["git", "show", f"{source}:context/integration-target.json"]))
-    git_command = lambda *arguments: command(["git", *arguments])
-    require_target(reference, configuration["base"], branch, source, git_command=git_command)
-    require_remote_target(reference, (configuration["base"], source), git_command=git_command)
-    return f"rehearsal-{source}"
+def release_tag():
+    return f"v{versions(ROOT)}"
 
 
 class GitHub:
@@ -33,10 +23,10 @@ class GitHub:
         self.repository = repository
         self.release_ids = {}
 
-    def gh(self, *arguments, check=True):
+    def gh(self, *arguments, check=True, timeout=None):
         return subprocess.run(
             ["gh", *arguments, "--repo", self.repository], check=check,
-            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout,
         )
 
     def api(self, path, method="GET", **fields):
@@ -53,6 +43,13 @@ class GitHub:
             raise RuntimeError(result.stderr)
         return json.loads(result.stdout or "null")
 
+    def pages(self, path):
+        separator = "&" if "?" in path else "?"
+        page = 1
+        while entries := self.api(f"{path}{separator}per_page=100&page={page}"):
+            yield from entries
+            page += 1
+
     def remember_release(self, tag, release):
         identifier = release.get("id") if isinstance(release, dict) else None
         if (type(identifier) is not int or identifier <= 0 or release.get("tag_name") != tag
@@ -68,15 +65,27 @@ class GitHub:
                 raise ValueError(f"Confirmed release {self.release_ids[tag]} for {tag} is not readable")
             return self.remember_release(tag, release)
         release = self.api(f"releases/tags/{tag}")
-        if release is not None:
+        if release is not None and release.get("draft") is False:
             return self.remember_release(tag, release)
+        matches = {}
+        if release is not None:
+            matches[release["id"]] = release
         page = 1
         while releases := self.api(f"releases?per_page=100&page={page}"):
             for release in releases:
                 if release["tag_name"] == tag:
-                    return self.remember_release(tag, release)
+                    matches[release["id"]] = release
             page += 1
-        return None
+        if len(matches) > 1:
+            raise ValueError(f"Multiple drafts for {tag}: {sorted(matches)}")
+        return self.remember_release(tag, next(iter(matches.values()))) if matches else None
+
+    def pin_release(self, tag, source, identifier):
+        release = self.api(f"releases/{identifier}")
+        if (not release or release["id"] != identifier or self.api(f"commits/{tag}")["sha"] != source
+                or (release["draft"] and release.get("target_commitish") != source)):
+            raise ValueError(f"Release {identifier} does not match the pinned source {source}")
+        return self.remember_release(tag, release)
 
     def ensure_draft(self, tag, source):
         existing = self.api(f"git/ref/tags/{tag}")
@@ -123,7 +132,8 @@ class GitHub:
                                  "--input", str(path)], text=True, capture_output=True)
         if result.returncode:
             release = self.release(tag)
-            if not release or not any(asset["name"] == path.name for asset in release["assets"]):
+            if not release or not any(asset["name"] == path.name and asset["state"] == "uploaded"
+                                      for asset in release["assets"]):
                 raise RuntimeError(result.stderr)
 
     def edit(self, tag, **fields):
@@ -204,7 +214,7 @@ def read_package(github, tag, target, source, directory):
         raise ValueError("GitHub asset digest is missing or does not match downloaded bytes")
     package = directory / "package"
     manifest = unpack(archive, package)
-    version = versions(ROOT) if tag == f"rehearsal-{source}" else tag[1:]
+    version = tag[1:]
     if (manifest["source_commit"], manifest["version"], manifest["target"]) != (source, version, target):
         raise ValueError("Saved package belongs to different source, version or platform")
     return package
@@ -293,12 +303,7 @@ def require_main_ancestor(github, source):
         raise ValueError("Candidate publication requires a source contained in main")
 
 
-def publish_saved(github, tag, source, channel, evidence, directory, reference="refs/heads/main"):
-    rehearsal = reference != "refs/heads/main"
-    if rehearsal and (channel != "candidate" or tag != release_tag(source, reference)):
-        raise ValueError("Rehearsal releases require the exact source tag and candidate validation")
-    if not rehearsal and tag.startswith("rehearsal-"):
-        raise ValueError("Rehearsal releases cannot update delivery channels")
+def publish_saved(github, tag, source, channel, evidence, directory):
     if channel == "stable" and evidence is None:
         raise ValueError("Stable promotion requires reviewed evidence for both platforms")
     release = github.release(tag)
@@ -311,7 +316,7 @@ def publish_saved(github, tag, source, channel, evidence, directory, reference="
         if channel == "stable" or not release["draft"]:
             raise ValueError("Release is missing required platform packages or checksums")
         return {"status": "incomplete", "tag": tag, "message": "Draft retained; waiting for both platforms"}
-    if channel == "candidate" and not rehearsal:
+    if channel == "candidate":
         require_main_ancestor(github, source)
     checkout = directory / "source"
     source_checkout(source, checkout)
@@ -358,9 +363,6 @@ def publish_saved(github, tag, source, channel, evidence, directory, reference="
     if (not isinstance(published, dict) or published.get("immutable") is not True
             or published.get("draft") is not False):
         raise ValueError("Release must be immutable and published before updating channels")
-    if rehearsal:
-        return {"status": "published", "channel": None, "reference": reference,
-                "tag": tag, "source": source}
     arguments = [sys.executable, str(checkout / "scripts/publish_plugin.py"),
                  "--repository", f"https://github.com/{github.repository}.git", "--channel", channel]
     arguments.extend(["--packages", *(str(package) for package, _ in packages)])
@@ -386,29 +388,42 @@ def main():
     parser.add_argument("--local", action="store_true")
     parser.add_argument("--evidence", type=Path)
     parser.add_argument("--repository")
-    parser.add_argument("--reference", default="refs/heads/main")
     parser.add_argument("--target", choices=sorted(TARGETS))
-    parser.add_argument("--finalize", action="store_true", help=argparse.SUPPRESS)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--prepare-only", action="store_true")
+    mode.add_argument("--finalize", action="store_true")
+    parser.add_argument("--release-id", type=int)
     parser.add_argument("--save-only", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--startup-report", type=Path)
     parser.add_argument("--fixture", type=Path)
     arguments = parser.parse_args()
+    use_saved_release = arguments.local or arguments.finalize
+    if (use_saved_release != (arguments.release_id is not None)
+            or (use_saved_release and arguments.release_id <= 0)):
+        parser.error("--local and --finalize require the prepared --release-id")
+    if arguments.channel != "candidate" and (arguments.prepare_only or use_saved_release):
+        parser.error("Only candidates can be prepared, saved locally, or finalized")
+    if (arguments.local and (arguments.prepare_only or arguments.finalize)
+            or (arguments.save_only and not arguments.local)):
+        parser.error("Use one of --prepare-only, --local or --finalize")
     if bool(arguments.startup_report) != bool(arguments.fixture) or (
             arguments.startup_report and not (arguments.channel == "candidate" and arguments.local)):
         parser.error("--startup-report and --fixture require a local candidate")
     repository = arguments.repository or json.loads(command(["gh", "repo", "view", "--json", "nameWithOwner"]))["nameWithOwner"]
     github = GitHub(repository)
     source = command(["git", "rev-parse", "HEAD"])
-    tag = release_tag(source, arguments.reference)
-    if arguments.reference != "refs/heads/main" and (
-            arguments.channel != "candidate" or not (arguments.local or arguments.finalize)):
-        parser.error("Rehearsal publication requires the explicit local or finalize candidate path")
+    tag = release_tag()
     if command(["git", "status", "--porcelain", "--untracked-files=all"]):
         raise ValueError("Release requires a clean committed source tree")
     evidence = arguments.evidence.resolve() if arguments.evidence else None
     if arguments.channel == "stable" and evidence is None:
         parser.error("stable requires --evidence")
-    if arguments.channel == "candidate" and not arguments.local and not arguments.finalize:
+    if arguments.prepare_only:
+        require_main_ancestor(github, source)
+        release = github.ensure_draft(tag, source)
+        print(json.dumps({"status": "prepared", "tag": tag, "source": source, "release_id": release["id"]}))
+        return 0
+    if arguments.channel == "candidate" and not use_saved_release:
         github.gh("workflow", "run", "plugin-release.yml", "--ref", "main")
         print(json.dumps({"status": "dispatched", "requested_source": source,
                           "workflow": "plugin-release.yml", "reference": "main"}))
@@ -416,7 +431,7 @@ def main():
     with tempfile.TemporaryDirectory() as temporary:
         directory = Path(temporary)
         if arguments.channel == "candidate":
-            github.ensure_draft(tag, source)
+            github.pin_release(tag, source, arguments.release_id)
             if arguments.local:
                 target = arguments.target or command(["rustc", "-vV"]).split("host: ")[1].splitlines()[0]
                 if target not in TARGETS:
@@ -424,11 +439,14 @@ def main():
                 save_platform(github, tag, target, source, directory,
                               arguments.startup_report, arguments.fixture)
                 if arguments.save_only:
-                    print(json.dumps({"status": "saved", "tag": tag, "target": target}))
+                    print(json.dumps({"status": "saved", "tag": tag, "target": target,
+                                      "release_id": arguments.release_id}))
                     return 0
         elif github.release(tag) is None:
             raise ValueError("No saved candidate exists for this version")
-        result = publish_saved(github, tag, source, arguments.channel, evidence, directory, arguments.reference)
+        result = publish_saved(github, tag, source, arguments.channel, evidence, directory)
+        if use_saved_release:
+            result["release_id"] = arguments.release_id
         print(json.dumps(result))
         return 0 if result["status"] == "published" else 1
 

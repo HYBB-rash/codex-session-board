@@ -4,15 +4,15 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import os
+import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from scripts.main_release_evidence import implementation, select, verify_merge
-from scripts.promote_candidate import git, github
+from scripts.main_release_evidence import ancestor, implementation, select, verify_release
+from scripts.validate_candidate import ROOT, git
 from scripts.release_plugin import GitHub
 from scripts.package_plugin import TARGETS
-from scripts.integration_plan import ancestor
 
 
 def dispatch(repository, source):
@@ -20,7 +20,7 @@ def dispatch(repository, source):
               "requested_at": datetime.now(timezone.utc).isoformat()}
     for attempt in range(1, 4):
         try:
-            github("workflow", "run", "plugin-release.yml", "--repo", repository, "--ref", "main", timeout=10)
+            GitHub(repository).gh("workflow", "run", "plugin-release.yml", "--ref", "main", timeout=10)
             result.update(trigger="workflow_dispatch", attempts=attempt)
             return result
         except Exception as error:
@@ -122,6 +122,7 @@ def main():
     parser.add_argument("action", choices=("select", "verify", "dispatch", "status", "record"))
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY"))
     parser.add_argument("--source")
+    parser.add_argument("--checkout", type=Path, default=ROOT)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--github-output", type=Path)
     parser.add_argument("--state", choices=("pending", "success", "failure"))
@@ -129,16 +130,17 @@ def main():
     parser.add_argument("--exercise", action="store_true")
     parser.add_argument("--phase", default="unknown")
     arguments = parser.parse_args()
-    repository = arguments.repository or json.loads(
-        github("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"]
+    repository = arguments.repository or json.loads(subprocess.check_output(
+        ["gh", "repo", "view", "--json", "nameWithOwner"], cwd=ROOT, text=True))["nameWithOwner"]
     source = arguments.source or git("rev-parse", "HEAD")
     if arguments.action == "select":
-        result = select(repository)
-        result["published"] = str(not arguments.exercise and already_published(repository, result)).lower()
+        result = select(repository, arguments.source)
+        result["published"] = str(not (arguments.exercise or arguments.source)
+                                  and already_published(repository, result)).lower()
     elif arguments.action == "verify":
-        if arguments.output is None:
-            parser.error("verify needs an external evidence directory")
-        result = verify_merge(repository, arguments.output)
+        if arguments.output is None or not arguments.run:
+            parser.error("verify needs an external evidence directory and a publication run ID")
+        result = verify_release(repository, arguments.output, arguments.checkout, source, arguments.run)
     elif arguments.action == "dispatch":
         result = dispatch(repository, source)
     elif arguments.action == "status":

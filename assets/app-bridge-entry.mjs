@@ -1,4 +1,5 @@
 import { App, applyDocumentTheme } from "@modelcontextprotocol/ext-apps";
+import { routes, previewTool } from "./bridge-routes.json";
 
 const app = new App(
   { name: "Codex session board", version: "0.2.0" },
@@ -22,28 +23,15 @@ window.boardOpenLink = async url => {
   const { isError } = await app.openLink({ url });
   if (isError) throw new Error("无法打开链接");
 };
-const routes = {
-  "/api/sessions": "board_snapshot",
-  "/api/state": "board_update",
-  "/api/open": "board_open",
-  "/api/preview-reply": "board_preview_reply",
-  "/api/refresh": "board_refresh",
-  "/api/new": "board_new",
-  "/api/new/reset": "board_new_reset",
-  "/api/project/assign": "board_project_assign",
-  "/api/connect": "board_connect",
-  "/api/ssh-setup": "board_ssh_setup",
-  "/api/archive": "board_archive",
-  "/api/column-sort": "board_sort",
-};
 window.boardRequest = async (route, body) => {
   await connected;
-  const name = Object.hasOwn(routes, route) && routes[route];
-  if (!name) throw new Error("未知看板操作");
-  const result = await app.callServerTool({ name, arguments: body || {} });
+  const methods = body === undefined ? routes.GET : routes.POST;
+  if (!Object.hasOwn(methods, route)) throw new Error("未知看板操作");
+  const name = methods[route];
+  const result = await app.callServerTool({ name, arguments: body === undefined ? {} : body });
   if (result.isError)
     throw new Error(result.content?.find(item => item.type === "text")?.text || "操作失败");
-  if (name === "board_preview_reply" && result._meta?.previewReply)
+  if (name === previewTool && result._meta?.previewReply)
     return result._meta.previewReply;
   if (result.structuredContent) return result.structuredContent;
   const content = result.content?.find(item => item.type === "text");

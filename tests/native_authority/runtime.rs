@@ -224,6 +224,8 @@ fn baseline_history_never_overwrites_an_existing_native_selection() -> Result<()
     )?;
     let done = json!({"id":"old-turn","status":"completed","startedAt":1,"completedAt":2});
     assert!(store.pending_titles(None)?.is_empty());
+    store.observe(FIRST, &done, None)?;
+    assert_eq!(store.sessions()?[0]["state"], "to_archive");
     assert!(store
         .prepare_native_runtime(FIRST, &json!({"type":"idle"}), &done, 3.0)?
         .is_none());

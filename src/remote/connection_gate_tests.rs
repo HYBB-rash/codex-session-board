@@ -1,6 +1,10 @@
 use super::*;
+use crate::operations::Operation;
 use crate::rpc::{Role, identity_fixture::Fixture};
 use std::time::Duration;
+
+#[path = "card_action_tests.rs"]
+mod card_actions;
 
 fn managed(fixture: &Fixture) -> Result<(App, Arc<App>)> {
     let mut settings = fixture.config.clone();
@@ -51,8 +55,11 @@ fn failed_runtime_keeps_own_pending_drafts_visible_but_rejects_state_writes() ->
     let before = remote.store.sessions()?;
     let body = json!({"id":crate::store::remote::identity(&fixture.host.host_id,&thread),
         "state":"blocked","note":"must not write","version":0,"inputVersion":0});
-    let error = root.route_remote("/api/state", &body).unwrap_err();
+    let error = root.request("/api/state", Some(&body)).unwrap_err();
     assert!(error.to_string().contains("当前不可修改"), "{error:#}");
+    let error = root.request("/api/archive", Some(&body)).unwrap_err();
+    assert!(error.to_string().contains("当前不可修改"), "{error:#}");
+    assert!(!fixture.events().lines().any(|event| event.starts_with("thread/archive")));
     assert_eq!(remote.store.sessions()?, before);
     remote.update_health(json!({"runtimeVerified":true,"runtimeError":null}))?;
     assert_eq!(draft_row(&root, &remote)?["readOnly"], false);
@@ -68,23 +75,32 @@ fn managed_write_gate_requires_initialization_and_preserves_notes_after_home_cha
     remote.discover(&[json!({"id":identifier,"name":"test"})], true)?;
     let mut body = json!({
         "id":crate::store::remote::identity(&fixture.host.host_id, &identifier),
-        "state":"review","note":"keep","version":0,"inputVersion":0
+        "state":"to_archive","note":"keep","version":0,"inputVersion":0
     });
-    assert!(root.route_remote("/api/state", &body).is_err());
+    assert!(root.request("/api/state", Some(&body)).is_err());
     assert_eq!(remote.store.note(&identifier)?, "");
     drop(remote.connection(Duration::from_secs(3), Role::RemoteObserver)?);
     remote.update_health(json!({"runtimeVerified":true}))?;
-    root.route_remote("/api/state", &body)?;
+    let renamed = Operation { path: "/fixture/renamed-update", ..*Operation::for_tool("board_update").unwrap() };
+    let receipt = root.execute(&renamed, &body)?;
     assert_eq!(remote.store.note(&identifier)?, "keep");
+    let snapshot = root.request("/api/sessions", None)?;
+    let card = &snapshot["sessions"][0];
+    assert_eq!(&receipt["session"], card);
+    assert_eq!(card["hostId"], fixture.host.host_id);
+    assert_eq!(card["id"], body["id"]);
+    assert_eq!(card["state"], "to_archive");
+    assert_eq!(card["readOnly"], false);
     let source = remote.config.data_dir.join("source.json");
     let before = std::fs::read(&source)?;
     let mut peer = fixture.peer()?;
     peer.codex_home = "/other".into();
     peer.declared_codex_home = "/other".into();
     fixture.update("peer", serde_json::to_value(peer)?)?;
-    body["version"] = json!(1);
+    body["version"] = card["version"].clone();
     body["note"] = json!("do not save");
-    assert!(root.route_remote("/api/state", &body).is_err());
+    assert!(root.request("/api/state", Some(&body)).is_err());
+    assert!(root.request("/api/archive", Some(card)).is_err());
     assert_eq!(remote.store.note(&identifier)?, "keep");
     assert_eq!(std::fs::read(source)?, before);
     assert!(

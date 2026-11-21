@@ -254,6 +254,29 @@ impl Store {
         Ok(())
     }
 
+    pub(crate) fn matches_active_revision(&self, id: &str, target: &archive_batches::Target) -> Result<bool> {
+        Self::active_archive_revision(&*self.connection()?, id, target, self.native_sections)
+    }
+
+    fn active_archive_revision(database: &Connection, id: &str, target: &archive_batches::Target, native: bool)
+        -> Result<bool> {
+        Ok(database.query_row(
+            "SELECT EXISTS (SELECT 1 FROM sessions WHERE id=? AND archived=0 AND version=? AND input_revision=?
+             AND (NOT ? OR native_section IS ?))",
+            params![id, target.version, target.input_version, native, target.section_version], |row| row.get(0))?)
+    }
+
+    pub(crate) fn restore_failed_archive(&self, id: &str, target: &archive_batches::Target) -> Result<()> {
+        let mut database = self.connection()?;
+        let transaction = database.transaction()?;
+        if Self::active_archive_revision(&transaction, id, target, self.native_sections)? {
+            write_daily(&transaction, id, &DailyWrite { bump_version: true, ..DailyWrite::default() })?;
+            transaction.execute("DELETE FROM title_updates WHERE thread_id=? AND version=?", params![id, target.version])?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn native_version(&self, identifier: &str) -> Result<String> {
         let database = self.connection()?;
         get_row(&database, identifier)?["native_section"]

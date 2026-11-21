@@ -1,15 +1,29 @@
 import json
 import socket
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+
+import websocket
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import update_plugin
 import reload_plugins
+
+
+def desktop_responses(respond):
+    connection = MagicMock()
+    def messages():
+        yield json.dumps({"method": "notification"})
+        while True:
+            request = json.loads(connection.send.call_args.args[0])
+            result = respond(request["method"], request["params"])
+            yield json.dumps({"id": request["id"], "result": result})
+    connection.recv.side_effect = messages()
+    return connection
 
 
 class UpdateDeliveryTests(unittest.TestCase):
@@ -31,19 +45,31 @@ class UpdateDeliveryTests(unittest.TestCase):
                             update_plugin.cached_package("codex", "new", "expected")
                     verify.assert_not_called()
 
-    def test_install_uses_the_verified_git_snapshot_without_a_second_marketplace_refresh(self):
+    def test_native_add_can_only_clone_the_verified_local_snapshot(self):
         revision = "a" * 40
-        with patch.object(update_plugin, "command", return_value=json.dumps({
-            "marketplaces": [{"name": update_plugin.MARKET}, {"name": "unrelated"}],
-        })):
-            with patch.object(update_plugin.subprocess, "run") as run:
-                update_plugin.install_market("codex", "repository", revision)
-        commands = [call.args[0] for call in run.call_args_list]
-        self.assertEqual(commands, [
-            ["codex", "plugin", "marketplace", "remove", update_plugin.MARKET],
-            ["codex", "plugin", "marketplace", "add", "repository", "--ref", revision, "--json"],
-            ["codex", "plugin", "add", "codex-session-board@" + update_plugin.MARKET, "--json"],
-        ])
+        canonical = "https://github.com/example/repo.git"
+        ssh = "git@github.com:example/repo.git"
+        cases = [
+            ("https://github.com/example/repo", canonical),
+            ("https://github.com/example/repo/", canonical),
+            (canonical, canonical),
+            (f"{canonical}/", canonical),
+            (ssh, ssh),
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            checkout = Path(temporary).resolve()
+            git = subprocess.run
+            for repository, source in cases:
+                with self.subTest(repository=repository), patch.object(update_plugin.subprocess, "run") as run:
+                    update_plugin.add_market("codex", repository, revision, checkout)
+                    run.assert_called_once()
+                    self.assertEqual(run.call_args.args[0],
+                                     ["codex", "plugin", "marketplace", "add", source, "--json", "--ref", revision])
+                    environment = run.call_args.kwargs["env"]
+                    self.assertEqual(environment["GIT_ALLOW_PROTOCOL"], "file")
+                    resolved = git(["git", "ls-remote", "--get-url", source], cwd=checkout,
+                                   env=environment, check=True, capture_output=True, text=True)
+                    self.assertEqual(resolved.stdout.strip(), checkout.as_uri())
 
     def test_reload_targets_the_installed_mcp_without_global_skill_discovery(self):
         server = {"pluginId": "codex-session-board@session-board-rust",
@@ -70,8 +96,7 @@ class UpdateDeliveryTests(unittest.TestCase):
                             {"id": 5, "result": {"content": [], "structuredContent": {"sessions": []}}},
                         ])
                         connection.recv.side_effect = [json.dumps(item) for item in responses]
-                        module = SimpleNamespace(create_connection=MagicMock(return_value=connection))
-                        with patch.dict(sys.modules, {"websocket": module}), \
+                        with patch.object(websocket, "create_connection", return_value=connection), \
                              patch.dict(reload_plugins.os.environ, {
                                  "CODEX_LINUX_APP_SERVER_BRIDGE_SOCKET": str(path),
                                  "CODEX_THREAD_ID": "fixture-thread"}), \
@@ -126,19 +151,21 @@ class UpdateDeliveryTests(unittest.TestCase):
         self.assertEqual(reload_plugins.verify_loaded(response, "new")["pluginId"], server["pluginId"])
         with self.assertRaisesRegex(RuntimeError, "snapshot"):
             reload_plugins.verify_loaded(response, "new", "fixture-thread")
-        connection = MagicMock()
-        connection.recv.side_effect = [json.dumps(item) for item in [
-            {"id": 1, "result": {}},
-            {"id": 0, "result": {"thread": {"status": {"type": "notLoaded"}}}},
-        ]]
+        def desktop(method, params):
+            if method == "thread/read":
+                self.assertEqual(params["threadId"], "fixture-thread")
+                return {"thread": {"status": {"type": "notLoaded"}}}
+            return {}
+        connection = desktop_responses(desktop)
         with patch.dict(reload_plugins.os.environ, {"CODEX_THREAD_ID": "fixture-thread"}), \
                 patch.object(reload_plugins, "desktop_socket", return_value=Path("/fixture.sock")), \
                 patch.object(reload_plugins.socket, "socket"), \
-                patch.dict(sys.modules, {"websocket": SimpleNamespace(create_connection=MagicMock(return_value=connection))}):
+                patch.object(websocket, "create_connection", return_value=connection):
             with self.assertRaisesRegex(RuntimeError, "not loaded"):
                 reload_plugins.reload_plugins("codex", Path("/fixture"), "new")
-        self.assertEqual([json.loads(call.args[0])["method"] for call in connection.send.call_args_list],
-                         ["initialize", "initialized", "thread/read"])
+        methods = {json.loads(call.args[0])["method"] for call in connection.send.call_args_list}
+        self.assertIn("thread/read", methods)
+        self.assertLessEqual(methods, {"initialize", "initialized", "thread/read", "mcpServerStatus/list"})
 
     def test_wrong_architecture_is_rejected_before_stopping_or_installing(self):
         with tempfile.TemporaryDirectory() as temporary:

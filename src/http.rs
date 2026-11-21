@@ -1,4 +1,5 @@
 use crate::app::App;
+use crate::operations::{Action, Method as BoardMethod, Operation};
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -51,15 +52,15 @@ fn json_response(request: Request, status: u16, body: Value) {
     );
 }
 
-fn body(request: &mut Request) -> Result<Value> {
+fn body(request: &mut Request, maximum: usize) -> Result<Value> {
     let length = request.body_length().context("请求大小无效")?;
-    anyhow::ensure!(length > 0 && length <= 12000, "请求大小无效");
+    anyhow::ensure!(length > 0 && length <= maximum, "请求大小无效");
     let mut buffer = String::new();
     request
         .as_reader()
-        .take(12001)
+        .take((maximum + 1) as u64)
         .read_to_string(&mut buffer)?;
-    anyhow::ensure!(buffer.len() <= 12000, "请求大小无效");
+    anyhow::ensure!(buffer.len() <= maximum, "请求大小无效");
     let body: Value = serde_json::from_str(&buffer)?;
     anyhow::ensure!(body.is_object(), "请求格式无效");
     Ok(body)
@@ -104,7 +105,7 @@ fn web_asset(path: &str) -> Option<(&'static str, &'static str)> {
     }
 }
 
-pub fn handle(mut request: Request, app: &App, token: &str, port: u16) {
+pub fn handle(request: Request, app: &App, token: &str, port: u16) {
     let writing = request.method() != &Method::Get;
     if !authorized(
         header(&request, "Host"),
@@ -123,22 +124,35 @@ pub fn handle(mut request: Request, app: &App, token: &str, port: u16) {
     if !writing && let Some((body, content_type)) = web_asset(&path) {
         return response(request, 200, body.to_string(), content_type);
     }
-    let result = if !writing && path == "/api/info" {
+    handle_api(request, app, token, &path);
+}
+
+fn handle_api(mut request: Request, app: &App, token: &str, path: &str) {
+    let op = match request.method() {
+        Method::Get => Operation::for_request(path, BoardMethod::Get),
+        Method::Post => Operation::for_request(path, BoardMethod::Post),
+        _ => None,
+    };
+    let result = if request.method() == &Method::Get && path == "/api/info" {
         info(app).map(|mut identity| {
             identity["requestToken"] = json!(token);
             identity
         })
     } else if request.method() == &Method::Post {
-        body(&mut request).and_then(|body| app.request(&path, Some(&body)))
-    } else if !writing {
-        app.request(&path, None)
+        let maximum = if op.is_some_and(|op| op.action == Action::ArchiveBatchStart) { 1024 * 1024 } else { 12000 };
+        body(&mut request, maximum).and_then(|body| match op {
+            Some(op) => app.execute(op, &body),
+            None => app.request(path, Some(&body)),
+        })
+    } else if request.method() == &Method::Get {
+        op.context("接口不存在").and_then(|op| app.execute(op, &Value::Null))
     } else {
         bail_result()
     };
     match result {
         Ok(value) => json_response(
             request,
-            if path == "/api/refresh" { 202 } else { 200 },
+            if op.is_some_and(|op| op.action == Action::Refresh) { 202 } else { 200 },
             value,
         ),
         Err(error) => json_response(request, 400, json!({"error":error.to_string()})),

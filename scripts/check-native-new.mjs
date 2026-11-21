@@ -20,7 +20,7 @@ const fixture = {
   sessions: [{ id: identifier, threadId: "actual-uuid", title: "刚创建的会话",
     remote: true, hostId: "remote:a", hostLabel: "Mac", cwd: "/remote/project",
     state: "review", note: "", ordinary: true, catalogCurrent: true, presence: "active",
-    archived: false, projectId: null, version: 0, inputVersion: 1 }],
+    archived: false, projectId: null, version: 0, inputVersion: 1, readOnly: false, canArchive: true }],
 };
 const writes = [];
 let failAssignment = true, failNavigation = false, browser, cleanup, cases = 0;
@@ -110,8 +110,8 @@ try {
     await fs.writeFile(`${evidence}/${name}.png`, Buffer.from(image.data, "base64"));
   };
   await wait('typeof data !== "undefined" && data.sessions.length === 1');
-  await evaluate(`byId("host-filter").value="host:remote:a";byId("host-filter").dispatchEvent(new Event("change"));
-    byId("project-filter").value=${JSON.stringify("project:" + project)};
+  await evaluate('byId("host-filter").value="host:remote:a";byId("host-filter").dispatchEvent(new Event("change"))');
+  await evaluate(`byId("project-filter").value=${JSON.stringify("project:" + project)};
     byId("project-filter").dispatchEvent(new Event("change"))`);
   check(await evaluate('canCreateProject(data.projectCatalog.items[0])'), true);
   await clickNode(page, "#new-session");
@@ -177,6 +177,7 @@ try {
   await clickNode(page, "#native-consent-cancel");
   check(writes.length, beforeCancel);
   await evaluate(`createSession(${JSON.stringify(project)})`);
+  await evaluate('byId("native-consent").dispatchEvent(new Event("close"))');
   await evaluate('byId("native-consent-form").requestSubmit()');
   await wait('!creating && !byId("native-consent").open');
   check(writes.at(-1).body.consent, "approved-connection");

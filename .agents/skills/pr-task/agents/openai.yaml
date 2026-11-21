@@ -1,5 +1,0 @@
-interface:
-  display_name: "项目 PR 作者任务"
-  short_description: "开发提 PR，手动交接审阅与修复，显式收尾"
-policy:
-  allow_implicit_invocation: false

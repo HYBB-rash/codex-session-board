@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
-delivery_python="${XDG_DATA_HOME:-$HOME/.local/share}/codex-session-board/delivery-venv/bin/python"
-if [[ -x "$delivery_python" ]]; then
-  exec "$delivery_python" scripts/integrate_candidate.py "$@"
-fi
-exec python3 scripts/integrate_candidate.py "$@"

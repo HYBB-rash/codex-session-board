@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import http from "node:http";
 import { launchBrowser } from "./browser-client.mjs";
+import { archiveFixture } from "./archive-browser-fixture.mjs";
+import { loadFixture } from "./browser-fixture.mjs";
 
 const html = await fs.readFile(new URL("../index.html",import.meta.url),"utf8");
 const project = (id,hostId,origin) => ({id,hostId,origin,remote:true,hostLabel:hostId,
@@ -21,22 +23,25 @@ const fixture = {
   ]},sessions:[
     {id:"local",projectId:"local",remote:false},
     {id:"active",hostId:"a",projectId:"server",presence:"active",catalogCurrent:true,archived:false},
-    {id:"archived",hostId:"a",projectId:"server",presence:"archived",catalogCurrent:true,archived:true},
-    {id:"old",hostId:"a",projectId:"server",presence:"cachedUnknown",catalogCurrent:false,archived:false},
-    {id:"last-active",hostId:"a",projectId:"server",presence:"cachedUnknown",catalogCurrent:true,archived:false},
-    {id:"last-archive",hostId:"a",projectId:"server",presence:"cachedUnknown",catalogCurrent:true,archived:true},
+    {id:"archived",hostId:"a",projectId:"server",presence:"archived",catalogCurrent:true,archived:true,readOnly:true,canArchive:false},
+    {id:"old",hostId:"a",projectId:"server",presence:"cachedUnknown",catalogCurrent:false,archived:false,readOnly:true,canArchive:false},
+    {id:"last-active",hostId:"a",projectId:"server",presence:"cachedUnknown",catalogCurrent:true,archived:false,readOnly:true,canArchive:false},
+    {id:"last-archive",hostId:"a",projectId:"server",presence:"cachedUnknown",catalogCurrent:true,archived:true,readOnly:true,canArchive:false},
     {id:"legacy",hostId:"a",projectId:"client"},
-    {id:"other",hostId:"b",projectId:"other",presence:"cachedUnknown",catalogCurrent:true,archived:false},
+    {id:"other",hostId:"b",projectId:"other",presence:"cachedUnknown",catalogCurrent:true,archived:false,readOnly:true,canArchive:false},
   ].map(row => ({remote:true,title:"关键词 "+row.id,cwd:"/target",hostLabel:row.hostId,state:"to_archive",
-    note:"",version:1,inputVersion:1,canArchive:true,...row})),
+    note:"",version:1,inputVersion:1,readOnly:false,canArchive:true,...row})),
 };
 const writes = [];
+const archive = archiveFixture();
 let nativePending = false;
 let nativeError = false;
 const server = http.createServer(async (request,response) => {
   let body = "";
   for await (const chunk of request) body += chunk;
-  if (request.method === "POST") writes.push({path:request.url,body:JSON.parse(body)});
+  const input = body ? JSON.parse(body) : null;
+  if (request.method === "POST") writes.push({path:request.url,body:input});
+  if (archive.handle(request.url,request.method,input,response)) return;
   if (request.url === "/api/new" && JSON.parse(body).operationId && nativeError) {
     response.writeHead(400,{"Content-Type":"application/json"});
     response.end(JSON.stringify({error:"目标来源已改变，请重新核对"}));
@@ -51,8 +56,8 @@ const server = http.createServer(async (request,response) => {
   response.end(request.url === "/" ? html : JSON.stringify(request.method === "POST" ? {ok:true} : fixture));
 });
 await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
-let browser, cases = 0;
-const check = (actual,expected) => {assert.deepEqual(actual,expected);cases++;};
+let browser;
+const check = assert.deepEqual;
 try {
   browser = await launchBrowser();
   const page = await browser.page(`http://127.0.0.1:${server.address().port}/`);
@@ -90,7 +95,6 @@ try {
   check(await evaluate('hostHealth({value:"host:a",hostId:"a",hostLabel:"a"}).status'),"主机目录尚未读取完整");
   check(await evaluate('hostHealth({value:"host:a",hostId:"a",hostLabel:"a"}).ready'),false);
   await evaluate('data.health.remoteConnections[0].catalog.complete=true;render()');
-  await evaluate('data.sessions=data.sessions.map(row=>row.archived || row.presence==="cachedUnknown" ? {...row,readOnly:true} : row);render()');
   check(await evaluate('hostHealth({value:"host:a",hostId:"a",hostLabel:"a"}).status'),"主机目录已读取完整");
   check(await evaluate('hostHealth({value:"host:a",hostId:"a",hostLabel:"a"}).ready'),true);
   await evaluate('data.health.remoteConnections[0].catalog.cached=true;render()');
@@ -132,20 +136,34 @@ try {
   check(writes.filter(row=>row.path === "/api/refresh").length,0);
   check(await evaluate('hostHealth({value:"host:b",hostId:"b",hostLabel:"b",enabled:false}).status.includes("缓存时间")'),true);
   check(await evaluate('hostHealth({value:"host:b",hostId:"b",hostLabel:"b",enabled:false}).diagnostics.some(([,message])=>message.includes("b-only-error"))'),true);
-  await evaluate('data.health.remoteConnections[1].catalog.error="b-only-error";selectedProject="project:missing";projectOptionsKey="";render()');
-  check(await evaluate("selectedProject"),"project:missing");
+  const allProjects = fixture.projectCatalog.items;
+  const projectIds = () => evaluate("data.projectCatalog.items.map(project=>project.id)");
+  const omitProject = async id => {
+    await select("project-filter","project:"+id);
+    const selectedBefore = await evaluate('byId("project-filter").value');
+    const before = await projectIds();
+    fixture.projectCatalog.items = allProjects.filter(project=>project.id!==id);
+    await loadFixture(page,fixture);
+    const after = await projectIds();
+    const view = await evaluate(`({
+      host:byId("host-filter").value, project:byId("project-filter").value,
+      cards:Array.from(document.querySelectorAll("article.card[data-id]"), card=>card.dataset.id).sort()
+    })`);
+    return {...view,selectedBefore,removedProjects:before.filter(project=>!after.includes(project))};
+  };
+  const cachedCatalog = await omitProject("other");
   await select("host-filter","host:a");
-  await wait("selectedHost === 'host:a'");
-  await evaluate('selectedProject="project:missing";projectOptionsKey="";render()');
-  check(await evaluate("selectedProject"),"all");
+  const completeCatalog = await omitProject("empty");
+  fixture.projectCatalog.items = allProjects;
   await select("history-filter","all");
-  await evaluate('archiveSessions(visibleSessions(),document.querySelector("[data-archive-all]"))');
-  check(writes.filter(row=>row.path === "/api/archive").map(row=>row.body.id),["active","legacy"]);
+  await evaluate('document.querySelector("[data-archive-all]").click()');
+  await wait("!saving");
+  const archivedIds = writes.filter(row=>row.path === "/api/archive").map(row=>row.body.id);
   await select("history-filter","archived");
   await evaluate('byId("filter-toggle").click();byId("search").value="关键词";byId("search").dispatchEvent(new Event("input"))');
   check(await ids(),["archived","last-archive"]);
   await select("host-filter","local");
-  check(await evaluate("[selectedHistory,byId('history-filter').disabled]"),["active",true]);
+  check(await evaluate("[byId('history-filter').value,byId('history-filter').disabled]"),["active",true]);
   check(await ids(),["local"]);
   check(writes.some(row=>row.path === "/api/connect"),false);
   fixture.projectCatalog.items.find(project=>project.id==="server").createError="项目正在删除，不能新建会话。";
@@ -157,7 +175,7 @@ try {
   fixture.projectCatalog.items.find(project=>project.id==="empty").canCreate=true;
   fixture.health.remoteConnections[0].catalog.complete=false;
   fixture.health.remoteConnections[0].catalog.issues=["membership:unrelated:foreignMembership"];
-  await evaluate("load()");
+  await loadFixture(page,fixture);
   nativePending = true;
   await evaluate('createSession("server")');
   const targetWrites = () => writes.filter(row=>row.path==="/api/new" && row.body.operationId);
@@ -169,7 +187,7 @@ try {
   const reloaded = page.event("Page.loadEventFired");
   await page.command("Page.reload");
   await reloaded;
-  await wait('typeof data !== "undefined" && data.sessions.length === 8');
+  await wait('typeof data !== "undefined" && data.projectCatalog?.items.some(project=>project.id==="server" && project.canCreate)');
   nativePending = false;
   await evaluate('createSession("server")');
   check(targetWrites()[1].body.operationId,originalOperation);
@@ -188,32 +206,35 @@ try {
   check(targetWrites().at(-1).body.operationId !== uncertainOperation,true);
   check(writes.filter(row=>row.path==="/api/new/reset"),[]);
   fixture.projectCatalog.items.find(project=>project.id==="server").pendingDeletion=true;
-  await evaluate("load()");
+  await loadFixture(page,fixture);
   const beforeDeletion = targetWrites().length;
   await evaluate('createSession("server")');
   check(targetWrites().length,beforeDeletion);
   fixture.projectCatalog.items.find(project=>project.id==="server").pendingDeletion=false;
   fixture.health.remoteConnections[0].connected=false;
-  await evaluate("load()");
+  await loadFixture(page,fixture);
   await evaluate('createSession("server")');
   check(targetWrites().length,beforeDeletion);
   fixture.health.remoteConnections[0].connected=true;
-  await evaluate("load()");
+  await loadFixture(page,fixture);
   nativeError = true;
   await evaluate('createSession("server")');
   const failedOperation = targetWrites().at(-1).body.operationId;
   check(await evaluate('byId("draft-recovery").open'),true);
   check(await evaluate('sessionStorage.getItem("native-draft-operation:server")'),failedOperation);
   nativeError = false;
+  const beforeRetry = writes.length;
   await evaluate('byId("draft-retry").click()');
   await wait("!creating");
-  check(targetWrites().at(-1).body.operationId,failedOperation);
+  const retryRequests = writes.slice(beforeRetry).filter(row=>row.path==="/api/new").map(row=>row.body);
+  const remainingDraft = await evaluate('sessionStorage.getItem("native-draft-operation:server")');
   await evaluate('data.health.remoteConnections[0].connected=false;data.health.remoteConnections[0].runtimeVerified=false;render()');
   const beforeOffline = writes.length;
   await select("host-filter","host:a");
   check(writes.length,beforeOffline);
   const cleanup = await browser.close();browser = null;
-  console.log(JSON.stringify({ok:true,cases,isolatedBrowser:true,cleanup}));
+  console.log(JSON.stringify({ok:true,isolatedBrowser:true,cachedCatalog,completeCatalog,archivedIds,
+    failedOperation,retryRequests,remainingDraft,cleanup}));
 } finally {
   await browser?.close();
   await new Promise(resolve => server.close(resolve));

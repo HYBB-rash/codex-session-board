@@ -102,7 +102,7 @@ def probe(record):
             raise RuntimeError("服务身份不匹配，未读取会话")
         snapshot = read("/api/sessions")
     health = snapshot["health"]
-    errors = [health.get(key) for key in ("error", "runtimeError", "nativeError", "nativeStageError", "sectionsError")]
+    errors = [health.get(key) for key in ("error", "runtimeError", "nativeError", "nativeStageError")]
     errors.extend(session.get("observationError") for session in snapshot["sessions"])
     verified = all(health.get(key) is True for key in ("scanComplete", "runtimeVerified", "nativeVerified"))
     if not verified or any(errors) or not snapshot["projectCatalog"]["loaded"]:

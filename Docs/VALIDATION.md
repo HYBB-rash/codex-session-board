@@ -5,8 +5,6 @@
 ## 常用操作
 
 ```sh
-./scripts/validate --scope pr --base origin/main --output /tmp/board-pr-review
-./scripts/validate --scope pr --stage submit --base origin/main --output /tmp/board-pr-submit
 ./scripts/validate --scope candidate --output /tmp/board-candidate
 ./scripts/validate --scope preflight --output /tmp/board-source-preflight
 ./scripts/validate --staged --output /tmp/board-staged
@@ -18,24 +16,14 @@
 
 `--plan` 只列出检查命令，不创建报告、编译缓存或执行检查。`--report` 只读取；第二版通过报告会重新核对阶段、日志和清理凭据。第一版报告仍可回看，但不能用于新候选晋升。
 
-PR 范围使用 `Docs/PR-DELIVERY.md` 的严格测试清单与源码包预检，支持固定
-`--project`、`--expect-head` 和只追加的 `--risk`。该范围保留第一版专用报告，
-只初始化一次，绑定目标源码与检查器；它不是 R1 第二版候选报告，不能用于晋升。
-R1 的统一环境、托管进程及第二版阶段凭据覆盖 candidate、preflight 和 staged；
-PR 仍使用自己的总预算、进程组退出及场景清理。不能据此声称 PR 父进程被强杀后
-已有 R1 清理回执。实际发布包和隔离启动由 main 发布流水线执行。
-未指定 `--integration-base` 的 candidate 保留以下三个步骤及顺序：
+`candidate` 供发布前验证，在固定 `main` 提交上执行三步：
 
 1. 项目规则检查。
 2. 全部目标 Clippy，警告视为错误。
 3. 完整自动验收，通过独立验收入口核对绑定、测试结果和需求。
 
-主线已有的 `--integration-base <固定基线>` 继续支持：工具重算分级计划，第三步按原规则执行完整或限定范围验证。限定范围报告单独记录未运行测试，完整自动验收和目标环境验收保持待验证；晋升时重算计划并核对实际步骤，不能把限定范围报告当作完整自动验收。
-
-`--stage` 仅用于 PR。`submit` 是作者本机交付范围，默认 `ci` 是 PR CI 范围。
-两者均记录准确来源、完整 inventory、实际 selected 和 not_run，较小报告不能冒充较大计划。
-应用候选包括新增普通业务文件、已知原生适配和打包脚本，执行全部业务及 Python，
-只排除未受影响的 hooks 和项目检查器自测。修改工具依赖或未知输入仍走完整 automated。
+日常合入执行本机项目规则检查和与改动相关的测试。具体顺序见 [本地合并与发布](INTEGRATION.md)。
+发布 CI 汇总两个平台的完整候选报告和原始日志，核对源码后才打包。
 
 preflight 检查便携源码包及指纹，不要求先安装 Rust。staged 只检查索引快照，并分别核对源提交、索引树和快照指纹；未暂存的修复不能使它通过。
 
@@ -49,6 +37,7 @@ CSB_VALIDATION_PYTHON=/path/to/python3.12 ./scripts/validate \
 ```
 
 显式指定的解释器不可用时直接失败，不改用另一个版本。报告记录工具绝对路径和版本；子命令通过本次运行的工具入口继承同一 Python、Git、Cargo、Rust 和 Node。macOS 临时目录固定为 `/private/tmp`，其他平台使用规范化后的临时目录。
+重载回归使用 `requirements-delivery.txt` 固定的 `websocket-client`。本机可将依赖安装在独立 Python 环境，再通过 `CSB_VALIDATION_PYTHON` 指定该环境。
 
 普通验证默认使用本工作树 `target/validation/<工作树身份>`，凭据绑定源码目录的真实路径、设备和目录身份。同一路径删除后重建也使用新缓存。显式 `CARGO_TARGET_DIR` 中已有内容却没有归属凭据，或归属其他源码副本，均拒绝使用；请提供新的空目录，不要删除或伪造凭据。暂存快照使用自己的临时 target，不继承工作树缓存。因此新副本和暂存完整检查有独立编译成本；开发提交仍使用 `./scripts/check --pre-commit` 快检。
 
@@ -97,8 +86,7 @@ CI 与 `dev setup` 的现有在线准备步骤分别 fetch 根锁和工具锁，
 | 3 | 环境、工具、超时或清理错误 |
 | 130 | 验证被中断 |
 
-首次失败保留，不自动重试至通过。`scope_passed`、`release_ready` 和目标验收状态独立；自动范围通过仍可能有真实环境待验。候选晋升核对第二版阶段、日志摘要、进程归属、清理凭据、自动报告及平台。
-包启动证明在发布前核对，不是推进 main 的条件。
+首次失败保留。`scope_passed`、`release_ready` 和目标验收状态独立。发布流水线核对第二版阶段、日志摘要、进程归属、清理凭据、自动报告及平台，再检查实际包的隔离启动和故障场景。
 
 ## 连接边界
 

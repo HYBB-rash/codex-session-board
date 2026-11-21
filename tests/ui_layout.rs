@@ -1,6 +1,22 @@
 use std::process::Command;
 
 #[test]
+fn ten_card_archive_recovers_after_closing_the_submitting_page() {
+    let result = Command::new("node")
+        .arg("scripts/check-ten-card-archive.mjs")
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "十卡批量归档浏览器回归失败：\n{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(report["passed"], true);
+}
+
+#[test]
 fn host_catalog_filters_preserve_cached_rows_and_isolated_native_drafts() {
     let result = Command::new("node")
         .arg("scripts/check-remote-catalog.mjs")
@@ -13,7 +29,39 @@ fn host_catalog_filters_preserve_cached_rows_and_isolated_native_drafts() {
         String::from_utf8_lossy(&result.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(report["cases"], 67);
+    assert_eq!(report["cachedCatalog"], serde_json::json!({
+        "host": "host:b", "selectedBefore": "project:other", "removedProjects": ["other"],
+        "project": "project:other", "cards": ["other"]
+    }));
+    assert_eq!(report["completeCatalog"], serde_json::json!({
+        "host": "host:a", "selectedBefore": "project:empty", "removedProjects": ["empty"],
+        "project": "all", "cards": ["active", "last-active", "legacy"]
+    }));
+    assert_eq!(report["archivedIds"], serde_json::json!(["active", "legacy"]));
+    let failed_operation = report["failedOperation"].as_str().unwrap();
+    assert!(uuid::Uuid::parse_str(failed_operation).is_ok());
+    assert_eq!(report["retryRequests"], serde_json::json!([
+        {"projectId": "server", "operationId": failed_operation}
+    ]));
+    assert_eq!(report.get("remainingDraft"), Some(&serde_json::Value::Null));
+    assert_eq!(report["cleanup"]["groupEmpty"], true);
+    assert_eq!(report["cleanup"]["profileRemoved"], true);
+}
+
+#[test]
+fn catalog_load_waits_for_latest_snapshot_before_native_creation() {
+    let result = Command::new("node")
+        .arg("scripts/check-catalog-load-wait.mjs")
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "目录快照加载交错回归失败：\n{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(report["passed"], true);
     assert_eq!(report["cleanup"]["groupEmpty"], true);
     assert_eq!(report["cleanup"]["profileRemoved"], true);
 }
@@ -31,18 +79,29 @@ fn mcp_bridge_preserves_routes_results_and_host_theme() {
         String::from_utf8_lossy(&result.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(report["cases"], 37);
+    assert_eq!(report["themes"], serde_json::json!({
+        "initial":"dark", "light":"light", "dark":"dark", "afterInsets":"dark"
+    }));
     assert_eq!(report["cleanup"]["groupEmpty"], true);
     assert_eq!(report["cleanup"]["profileRemoved"], true);
 }
 
 #[test]
 fn reply_preview_preserves_scroll_focus_and_rejects_late_bodies() {
-    let result = Command::new("node").arg("scripts/check-reply-preview.mjs").output().unwrap();
+    let build = Command::new("node").args(["scripts/build-app-bridge.mjs", "--check", "--offline"]).output().unwrap();
+    assert!(build.status.success(), "预览类型或离线产物不一致：\n{}\n{}",
+        String::from_utf8_lossy(&build.stdout),String::from_utf8_lossy(&build.stderr));
+    let output = tempfile::tempdir().unwrap();
+    let resource = output.path().join("mcp-resource.html");
+    std::fs::write(&resource, codex_session_board::mcp::resource()["text"].as_str().unwrap()).unwrap();
+    let result = Command::new("node").arg("scripts/check-reply-preview.mjs")
+        .arg(output.path()).arg(&resource).output().unwrap();
     assert!(result.status.success(), "答复预览失败：\n{}\n{}",
         String::from_utf8_lossy(&result.stdout),String::from_utf8_lossy(&result.stderr));
     let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
     assert_eq!(report["passed"], true);
+    assert_eq!(report["checks"], serde_json::json!(["http","mcp"]));
+    assert_eq!(report["embeddedResource"].as_str(), resource.to_str());
     assert_eq!(report["cleanup"]["profileRemoved"], true);
 }
 
@@ -60,8 +119,9 @@ fn long_content_and_project_filters_preserve_browser_column_geometry() {
         String::from_utf8_lossy(&result.stdout),
         String::from_utf8_lossy(&result.stderr)
     );
-    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(report["cases"], 48);
+    let measurements = std::fs::read(output.path().join("measurements.json")).unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&measurements).unwrap();
+    assert_layout_coverage(report["measurements"].as_array().unwrap());
     let filters = Command::new("node")
         .arg("scripts/check-host-filter.mjs")
         .output()
@@ -73,7 +133,26 @@ fn long_content_and_project_filters_preserve_browser_column_geometry() {
         String::from_utf8_lossy(&filters.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&filters.stdout).unwrap();
-    assert_eq!(report["cases"], 54);
+    assert_eq!(report["archivedIds"], serde_json::json!(["a1", "a-default"]));
+}
+
+fn assert_layout_coverage(samples: &[serde_json::Value]) {
+    for theme in ["light", "dark"] {
+        for columns in [5, 6] {
+            let require = |scenario: &str, width: u32| {
+                assert!(samples.iter().any(|sample| {
+                    sample["theme"] == theme && sample["window"] == width && sample["scenario"] == scenario
+                        && sample["columns"].as_array().is_some_and(|sizes| sizes.len() == columns)
+                }), "缺少布局实测：{theme}，{columns} 列，{width}px，{scenario}");
+            };
+            for scenario in ["short", "long", "project:first", "project:second", "all", "empty-search", "long-host"] {
+                require(scenario, 1474);
+            }
+            for width in [801, 800, 600, 390, 320] {
+                require("narrow", width);
+            }
+        }
+    }
 }
 
 #[test]
@@ -89,8 +168,8 @@ fn light_ui_refresh_health_and_catalog_preserve_interaction() {
         String::from_utf8_lossy(&interaction.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&interaction.stdout).unwrap();
-    assert_eq!(report["cases"], 81);
-    assert_eq!(report["fourColumnCases"], 21);
+    assert_eq!(report["refreshPerformance"]["rows"], 1500);
+    assert_eq!(report["writes"][1]["body"]["id"], "unplaced");
     assert_eq!(report["cleanup"]["groupEmpty"], true);
     assert_eq!(report["cleanup"]["profileRemoved"], true);
 }
@@ -129,6 +208,41 @@ fn transfer_feedback_waits_for_receipts_and_preserves_interaction() {
         String::from_utf8_lossy(&result.stderr),
         diagnosis
     );
-    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(report["cases"], 64);
+    #[derive(serde::Deserialize)]
+    struct TransferReport {
+        cases: Vec<String>,
+    }
+    let summary: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    let evidence = std::fs::read(output.path().join("transfer.json")).unwrap();
+    let completed: TransferReport = serde_json::from_slice(&evidence).unwrap();
+    assert!(!completed.cases.is_empty(), "等待反馈脚本没有执行场景");
+    assert_eq!(summary["cases"], completed.cases.len());
+    check_transfer_scenarios(&completed.cases);
+}
+
+fn check_transfer_scenarios(completed: &[String]) {
+    for required in [
+        "临时落位不修改已确认记录",
+        "A迟到回执不改变当前B主机同UUID卡片",
+        "刷新尚未返回也立即使用回执的原生位置",
+        "晚到的旧快照不能回滚成功结果",
+        "冲突恢复已知位置并留下核对说明",
+        "丢回执加读取失败不伪造回滚",
+        "恢复读回实际位置而不重发",
+        "missing回执保持待核对且不伪报成功",
+        "wrong-host回执保持待核对且不伪报成功",
+        "wrong-id回执保持待核对且不伪报成功",
+        "空原因失败后保留空草稿",
+        "等待失败后的空草稿重开仍为空",
+        "刷新前完整采用确认版本列及新输入提示",
+        "未归列确认保留实际位置并显示可读完成提示",
+        "只读卡片保持只读",
+        "新输入冲突保留较新的状态",
+        "重载读真实位置且不重放操作",
+    ] {
+        assert!(
+            completed.iter().any(|name| name == required),
+            "缺少已通过的场景「{required}」"
+        );
+    }
 }
