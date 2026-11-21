@@ -84,16 +84,37 @@ class ReleaseCandidateEvidenceTests(GateFixture):
 
 class MainReleaseTests(unittest.TestCase):
     def test_pending_requests_select_the_latest_frozen_main_commit(self):
-        main, source = "b" * 40, "a" * 40
-        with patch.object(evidence, "git", side_effect=["", main, source, '[package]\nversion="0.3.98"']) as git, \
-                patch.object(evidence.subprocess, "run") as run, \
-                patch.object(evidence, "GitHub") as forge:
-            forge.return_value.api.return_value = {"object": {"sha": main}}
-            selected = evidence.select("owner/repo")
-        self.assertIn("-G^version[[:space:]]*=", git.call_args_list[2].args)
-        self.assertEqual(run.call_args.args[0], ["git", "merge-base", "--is-ancestor", source, main])
-        self.assertEqual((selected["main"], selected["source"], selected["tag"]),
-                         (main, source, "v0.3.98"))
+        git = validate_candidate.git
+
+        def commit_manifest(repository, version, description):
+            (repository / "Cargo.toml").write_text(
+                f'[package]\nname = "fixture"\nversion = "{version}"\ndescription = "{description}"\n')
+            git("add", "Cargo.toml", root=repository)
+            git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                "commit", "--quiet", "-m", description, root=repository)
+            return git("rev-parse", "HEAD", root=repository)
+
+        environment = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
+        environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, environment, clear=True):
+            workspace = Path(directory)
+            origin, checkout = workspace / "origin", workspace / "checkout"
+            git("init", "--quiet", "-b", "main", str(origin), root=workspace)
+            commit_manifest(origin, "0.3.97", "first freeze")
+            git("clone", "--quiet", "--no-local", str(origin), str(checkout), root=workspace)
+            git("switch", "--quiet", "-c", "unmerged", root=checkout)
+            unmerged = commit_manifest(checkout, "0.3.99", "unmerged freeze")
+            latest = commit_manifest(origin, "0.3.98", "second freeze")
+            main = commit_manifest(origin, "0.3.98", "ordinary manifest edit")
+
+            with patch.object(evidence, "ROOT", checkout), patch.object(validate_candidate, "ROOT", checkout), \
+                    patch.object(evidence, "GitHub") as forge:
+                forge.return_value.api.return_value = {"object": {"sha": main}}
+                selected = evidence.select("owner/repo")
+                self.assertEqual((selected["main"], selected["source"], selected["version"], selected["tag"]),
+                                 (main, latest, "0.3.98", "v0.3.98"))
+                with self.assertRaises((ValueError, subprocess.CalledProcessError)):
+                    evidence.select("owner/repo", source=unmerged)
 
     def test_selection_race_or_dirty_tree_cannot_publish_a_mixed_source(self):
         with patch.object(evidence, "git", return_value=" M source"), \
