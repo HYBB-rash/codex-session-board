@@ -8,7 +8,7 @@ import { tenCardArchiveFixture } from "./ten-card-archive-fixture.mjs";
 const html = await fs.readFile(process.argv[2] || new URL("../index.html", import.meta.url));
 const fixture = await tenCardArchiveFixture(html);
 const report = {pageSha256:createHash("sha256").update(html).digest("hex"), nativeArchiveWrites:null,
-  evidenceScope:"隔离 Chromium 与 HTTP 夹具。原生归档写入次数由 Mac 原生验收单独记录。", cleanup:[]};
+  evidenceScope:"隔离 Chromium 与 HTTP 夹具。原生归档写入次数由 Mac 原生验收单独记录。", requests:fixture.ledger, cleanup:[]};
 const statuses = {archived:"已归档", verified:"核实时已归档", pending:"待核对", newInput:"未归档 · 有新输入",
   rejected:"未归档", awaiting:"尚无提交记录", submitting:"正在提交", queued:"等候提交"};
 const archiveButton = "#column-to_archive [data-archive-all]";
@@ -17,6 +17,7 @@ const checkButton = "#archive-summary-actions button";
 const count = (method, url) => fixture.ledger.filter(entry => entry.method === method && entry.url === url).length;
 const submitCount = () => count("POST", "/api/archive");
 const checkCount = () => count("POST", "/api/archive-batches/check");
+const cardButton = id => `.card[data-id="${id}"] [data-action="archive"]`;
 let browser, page;
 
 async function waitFor(expression, message) {
@@ -129,6 +130,12 @@ async function run() {
   await clickNode(page, `#archive-result-list li:nth-child(${rowIndex + 1}) button`);
   await until(() => count("POST","/api/open") === 1, "明细打开会话未送达");
   assert.equal(fixture.ledger.find(entry => entry.url === "/api/open").body.id,newInput.id);
+  const confirmStart = fixture.ledger.length;
+  await clickNode(page,cardButton(newInput.id));
+  await waitFor(`document.querySelector('${cardButton(newInput.id)}')?.innerText==="归档"`,
+    "点击确认待归档后，卡片未切回归档动作");
+  assert.deepEqual(fixture.ledger.slice(confirmStart).filter(entry => entry.method === "POST").map(entry => entry.url),
+    ["/api/state"],"确认新输入仅保存状态");
   const index = await page.evaluate(`[...document.querySelectorAll("${checkButton}")].indexOf(${action})`);
   const selector = `#archive-summary-actions button:nth-of-type(${index + 1})`;
   const manualStart = fixture.ledger.length;
@@ -142,8 +149,9 @@ async function run() {
   fixture.allowVerification();
   await clickNode(page, selector);
   await waitFor('document.querySelector("#archive-summary-text").innerText.includes("已确认归档 5 / 10 条")',
-    "原生结果可读后未显示五张已确认卡片");
+    "核对接口返回已归档后未显示五张已确认卡片");
   const verified = await details();
+  verified.cards = await cardActions();
   verifyRows(verified, fixture.batch(), [...prefix,"verified","awaiting","awaiting","awaiting"]);
   assert(!verified.actions.some(button => button.text === "核对结果"));
   assert.equal(checkCount(), checks + 2);
@@ -156,9 +164,22 @@ async function run() {
   assert.equal(count("POST","/api/archive-batches/finish"),0);
   assert.deepEqual(fixture.errors, []);
   Object.assign(report, {verified, batchId:beforeClose.id, persistedAtClose:beforeClose.items, submitted,
-    archiveHttpCounts:Object.fromEntries(beforeClose.items.map(item => [item.id,submitted.filter(id => id === item.id).length])),
-    requests:fixture.ledger, passed:true});
+    archiveHttpCounts:Object.fromEntries(beforeClose.items.map(item => [item.id,submitted.filter(id => id === item.id).length]))});
+  const awaiting = beforeClose.items.find(item => item.status === "awaiting");
+  fixture.holdNextBatchFor(awaiting.id);
+  await clickNode(page,cardButton(awaiting.id));
+  await until(() => count("POST","/api/archive-batches") === 2, "点击尚无提交记录的卡片未另建批次");
+  assert.deepEqual(fixture.errors,[]);
+  report.nextBatchRequest = fixture.ledger.filter(entry => entry.method === "POST" && entry.url === "/api/archive-batches").at(-1).body;
+  assert.equal(submitCount(),7);
+  const confirmedCard = beforeClose.items.find(item => item.status === "pending");
+  assert(!verified.cards[confirmedCard.id] || verified.cards[confirmedCard.id].disabled,
+    `核实已归档的卡片仍可发起归档：${confirmedCard.title} (${confirmedCard.id})`);
+  report.passed = true;
 }
 try { await run(); }
-finally { try { await closeBrowser(); } finally { await fixture.close(); } }
-console.log(JSON.stringify(report));
+catch (error) { report.passed = false; report.failure = error.message; throw error; }
+finally {
+  try { await closeBrowser(); } finally { await fixture.close(); }
+  console.log(JSON.stringify(report));
+}

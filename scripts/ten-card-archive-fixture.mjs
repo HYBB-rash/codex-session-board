@@ -13,12 +13,12 @@ export async function tenCardArchiveFixture(html) {
   const messages = {newInput:"有新输入，本次未提交原生归档", rejected:"当前状态不允许归档"};
   const ledger = [], errors = [];
   const blocked = Promise.withResolvers();
-  let batch, canVerify = false;
+  const nextBatchResponse = Promise.withResolvers();
+  let batch, nextTarget, canVerify = false;
 
   function handle(method, url, body) {
     if (method === "GET" && url === "/api/sessions") {
-      const sessions = cards.filter(card => !["archived","verified"].includes(status(card.id)))
-        .map(card => ({...card, followUp:status(card.id) === "newInput"}));
+      const sessions = cards.filter(card => !["archived","verified"].includes(status(card.id)));
       return {states:{review:"待审阅",to_archive:"待归档"}, health:{},
         projectCatalog:{loaded:true,items:[],remoteHosts:[]}, sessions};
     }
@@ -26,10 +26,16 @@ export async function tenCardArchiveFixture(html) {
     if (method === "GET" && url === "/api/plugin-update") return {};
     assert.equal(method, "POST", `未识别的请求 ${method} ${url}`);
     if (url === "/api/archive-batches") {
-      assert.equal(batch, undefined, "意外创建第二个批次");
       assert.match(body.id, /^[0-9a-f-]{36}$/);
       const expected = cards.map(({id,title,version,inputVersion,sectionVersion}) =>
         ({id,title,version,inputVersion,sectionVersion}));
+      if (nextTarget) {
+        assert.notEqual(body.id,batch.id, "另行归档不得复用原批次");
+        assert.deepEqual(body.items,expected.filter(card => card.id === nextTarget));
+        nextTarget = undefined;
+        return nextBatchResponse.promise;
+      }
+      assert.equal(batch, undefined, "意外创建第二个批次");
       const byId = (first, second) => first.id.localeCompare(second.id);
       assert.deepEqual([...body.items].sort(byId), expected.sort(byId));
       batch = {id:body.id, createdAt:1760000000, finishedAt:null,
@@ -39,6 +45,15 @@ export async function tenCardArchiveFixture(html) {
     if (url === "/api/open") {
       assert.equal(status(body.id), "newInput");
       return {ok:true};
+    }
+    if (url === "/api/state") {
+      const card = cards.find(card => card.id === body.id);
+      assert.equal(card?.followUp,true);
+      const {id,state,note,version,inputVersion,sectionVersion} = card;
+      assert.deepEqual(body,{id,state,note,version,inputVersion,sectionVersion});
+      card.followUp = false;
+      card.version++;
+      return {sectionVersion};
     }
     if (url === "/api/archive-batches/check") {
       assert.deepEqual(body, {id:batch.id});
@@ -57,6 +72,11 @@ export async function tenCardArchiveFixture(html) {
     assert(index < outcomes.length, `请求中断后仍在提交 ${id}`);
     item.status = outcomes[index];
     item.message = messages[item.status] ?? null;
+    if (item.status === "newInput") {
+      const card = cards.find(card => card.id === item.id);
+      card.inputVersion++;
+      card.followUp = true;
+    }
     return {item};
   }
   function status(id) { return batch?.items.find(item => item.id === id)?.status; }
@@ -72,7 +92,7 @@ export async function tenCardArchiveFixture(html) {
       for await (const chunk of request) text += chunk;
       const body = text ? JSON.parse(text) : null;
       ledger.push({method,url,body});
-      const reply = handle(method, url, body);
+      const reply = await handle(method, url, body);
       if (url === "/api/archive" && reply.item.status === "pending") await blocked.promise;
       response.writeHead(200, {"Content-Type":"application/json","Cache-Control":"no-store"})
         .end(JSON.stringify(reply));
@@ -83,10 +103,12 @@ export async function tenCardArchiveFixture(html) {
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
-  return {url:`http://127.0.0.1:${server.address().port}/`, cards, ledger, errors,
+  return {url:`http://127.0.0.1:${server.address().port}/`, ledger, errors,
     batch:() => structuredClone(batch), allowVerification:() => { canVerify = true; },
+    holdNextBatchFor(id) { nextTarget = id; },
     release:() => blocked.resolve(), async close() {
       blocked.resolve();
+      nextBatchResponse.resolve({});
       const closed = once(server, "close");
       server.close();
       server.closeAllConnections();

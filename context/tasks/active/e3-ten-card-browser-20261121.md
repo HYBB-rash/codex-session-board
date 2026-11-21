@@ -12,3 +12,7 @@ coordinator: 五轮重构总协调
 直接运行 `node scripts/check-ten-card-archive.mjs` 输出 JSON，其中有三个阶段的逐项详情、逐卡归档 HTTP 次数和核对请求流水。也可运行 `cargo test --locked --offline --test ui_layout ten_card_archive_recovers_after_closing_the_submitting_page -- --exact`。
 
 产品首件 `161e983` 的上一版 `735b368` 将仍在提交的第七张卡显示为“待核对”。脚本的可选参数接受导出的页面文件，可以用同一场景复核这项差异。Mac 原生写入次数由原生验收作者提供。
+
+重开后实际点击新输入卡的“打开会话”和“确认待归档”，后者只保存当前输入版本。核对成功时立即记录卡片的可用动作，再点击一张“尚无提交记录”的卡。夹具扣住这张卡单独建批的响应，原十卡批次的归档 HTTP 次数可独立核算。
+
+`161e983` 和 `b1ced225daf74b520975eb091cfa8f57595a5e8a` 均重现同一处不一致：核对后明细已将第七项计入五张已确认卡，卡片仍有可点击的“归档”。JSON 的 `verified.cards` 和 `failure` 保留了出错项。
