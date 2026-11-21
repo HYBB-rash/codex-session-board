@@ -32,6 +32,7 @@ pub(super) struct Surface {
     pub thread_status: Option<String>,
     pub slots: BTreeMap<String, String>,
     pub calls: Vec<String>,
+    pub archive_writes: Vec<String>,
     pub notes_during_move: Vec<String>,
     pub lose_receipt: bool,
     pub unreadable_section: Option<String>,

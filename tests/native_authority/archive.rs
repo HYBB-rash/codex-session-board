@@ -213,7 +213,8 @@ fn engine_connection(
         });
         wait_for_release(block)?;
         if request["method"] == "thread/read" {
-            let block = surface.lock().unwrap().read_blocked.clone();
+            let block = surface.lock().unwrap().read_blocked.clone()
+                .filter(|block| block.identifier == identifier);
             wait_for_release(block)?;
         }
         let Some(response) = engine_response(&request, &archived, &mut surface.lock().unwrap()) else {
@@ -289,6 +290,7 @@ fn engine_reply(
         "thread/start" | "thread/name/set" => probe_reply(request,surface)?,
         "thread/turns/list" => turns_list(&request["params"], identifier, surface),
         "thread/archive" => {
+            surface.archive_writes.push(identifier.into());
             archived.lock().unwrap().insert(identifier.into());
             json!({})
         }

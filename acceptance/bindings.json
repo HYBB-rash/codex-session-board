@@ -421,6 +421,7 @@
       "test::native_authority::remote_isolation::archive_batches::remote_batch_owner_persists_new_input_refusal_without_a_native_write",
       "test::native_authority::remote_isolation::archive_batches::remote_batch_owner_keeps_pending_when_the_bound_source_changes",
       "test::native_authority::remote_isolation::archive_batches::remote_batch_owner_persists_a_success_receipt_in_root_and_confirms_only_the_target",
+      "test::native_authority::remote_isolation::archive_batches::ten_cards::ten_card_batch_reopens_from_storage_and_checks_without_repeating_native_writes",
       "test::native_authority::archive::native_archive_keeps_its_configured_budget_during_slow_section_verification",
       "test::native_authority::entrypoints::built_binary_preserves_native_position_guards_over_http_and_mcp",
       "lib::codex_session_board::native_sections::tests::native_aliases_confirm_canonical_ids_without_repeating_moves",

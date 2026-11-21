@@ -2,6 +2,9 @@ use super::*;
 use codex_session_board::remote::hosts::Host;
 use std::path::Path;
 
+#[path = "ten_card_archive.rs"]
+mod ten_cards;
+
 struct BatchFixture {
     live: Option<Live>,
     remotes: RemoteFixture,
@@ -13,11 +16,16 @@ struct BatchFixture {
 
 impl BatchFixture {
     fn new(directory: &Path) -> Result<Self> {
+        Self::with_surface(directory, |_, _| {})
+    }
+
+    fn with_surface(directory: &Path, seed: impl FnOnce(&Server, &RemoteFixture)) -> Result<Self> {
         let mut server = Server::new(directory)?;
         let remotes = RemoteFixture::new(&mut server, directory)?;
         for host in ["mac", "other"] {
             remotes.surface(host).lock().unwrap().archive_account = Some("original".into());
         }
+        seed(&server, &remotes);
         let live = launch(&mut server, directory, &remotes, 60)?;
         let client = Client::builder().no_proxy().timeout(Duration::from_secs(8)).build()?;
         live.ready(&client)?;
