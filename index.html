@@ -580,21 +580,6 @@ async function archiveSessions(sessions) {
 function canChangeColumnSort() {
   return !saving && !creating && !board.drag.source && !byId("editor").open;
 }
-function compareSessions(first, second, preference) {
-  let comparison = 0;
-  switch (preference.field) {
-    case "updated_at": {
-      const valid = value => Number.isFinite(value) && value > 0 && value <= 8640000000000;
-      const firstValid = valid(first.updatedAt), secondValid = valid(second.updatedAt);
-      if (firstValid !== secondValid) return firstValid ? -1 : 1;
-      if (firstValid) comparison = first.updatedAt - second.updatedAt;
-      break;
-    }
-    default: throw new Error("不支持的排序字段，请刷新看板。");
-  }
-  if (comparison) return preference.direction === "asc" ? comparison : -comparison;
-  return first.id < second.id ? -1 : first.id > second.id ? 1 : 0;
-}
 async function saveColumnSort(state, preference) {
   if (!canChangeColumnSort()) return;
   let changed = false;
