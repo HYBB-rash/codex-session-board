@@ -3,7 +3,7 @@
 owner: E3 浏览器验收作者
 execution_mode: isolated_write
 allowed_write_set: scripts/check-ten-card-archive.mjs、scripts/ten-card-archive-fixture.mjs、scripts/ten-card-archive-restore.mjs、tests/ui_layout.rs 和 acceptance/bindings.json 的测试入口、本卡
-base_commit: bf952640416de65ed33e363842fd981ef53dd303
+base_commit: 53820014df838caa84a13f9ec280bdfde838c01d
 worktree_path: /home/herman/.codex/worktrees/e3-ten-card-browser/notion-program
 coordinator: 五轮重构总协调
 
@@ -18,3 +18,5 @@ coordinator: 五轮重构总协调
 `161e983` 和 `b1ced225daf74b520975eb091cfa8f57595a5e8a` 均重现同一处不一致：核对后明细已将第七项计入五张已确认卡，卡片仍有可点击的“归档”。在 `bf95264` 上实际点击列头，建批请求选入六张，包含刚核实的第七项。`verified.cards` 和 `nextBatchRequest` 可对照按钮与实际名单。
 
 `delayedRestore` 另外记录两次独立的十卡操作。两次都在第二次归档请求处关闭原标签，让新页面先收到会话列表，再扣住批次读回。分别点击单卡、批量按钮。`b1ced22` 两次都把仍待核对的原卡编入新批并再次发送归档。`bf95264` 在等待期间没有写请求，读回后实际点击分别选中一张、八张可写卡。第七项核实后的按钮问题在该产品提交上仍可复现。
+
+产品提交 `5382001` 通过同一组断言。原批次关闭前发出七次归档 HTTP 请求，重开自动核对一次、手动核对两次后仍是七次。第五张核实已归档后，下一批实际只选中其余五张。两个慢读场景在读回前均为零次写请求，读回后单卡选中一张、批量选中八张。新增测试只绑定 `MANUAL-001`。
