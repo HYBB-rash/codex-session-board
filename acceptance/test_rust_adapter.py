@@ -48,12 +48,27 @@ class RustAdapterTests(unittest.TestCase):
                 self.assertEqual(timing["threads"], threads)
 
     def test_selection_does_not_execute_unselected_groups(self):
-        names = {"test::first::case": ("test::first", "case"),
-                 "test::second::case": ("test::second", "case")}
-        with mock.patch.object(rust_adapter, "run_target", return_value=({}, {})) as run:
-            rust_adapter.run_rust(
-                {"test::first": "/first", "test::second": "/second"},
-                names, {"test::first::case"},
+        targets = {"test::board_io": "/board_io", "example::project_check": "/project_check"}
+        selected = "test::board_io::case"
+        unselected = "example::project_check::case"
+        executed = []
+
+        def binary(arguments, **options):
+            if "--list" in arguments:
+                return self.target("case: test\n")
+            executed.append(arguments[0])
+            return self.target("test case ... ok\n")
+
+        with (
+            mock.patch.object(rust_adapter, "executables", return_value=targets),
+            mock.patch.object(rust_adapter, "python_inventory", return_value=[]),
+            mock.patch.object(rust_adapter, "command", side_effect=binary),
+        ):
+            report = rust_adapter.run(
+                {"protocol": 1, "tests": [selected, unselected]}, prefixes=["test::board_io"]
             )
-        self.assertEqual(run.call_count, 1)
-        self.assertEqual(run.call_args.args[0], "test::first")
+        self.assertEqual(executed, ["/board_io"])
+        self.assertEqual(report["selected"], [selected])
+        self.assertEqual(report["not_run"], [unselected])
+        results = [(row["id"], row["status"]) for row in report["results"]]
+        self.assertEqual(results, [(selected, "pass")])
