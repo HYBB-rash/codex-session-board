@@ -1,4 +1,4 @@
-import { createApp, nextTick, shallowReactive, Teleport } from "vue";
+import { computed, createApp, nextTick, shallowReactive, Teleport } from "vue";
 
 interface Session {
   remote?: boolean;
@@ -60,6 +60,23 @@ function mountBoardFilters(container: HTMLElement, scope: HTMLElement, sources: 
     visible:[] as Session[], total:0, locked:false, projectUnavailable:true,
   });
   let searchInput: HTMLInputElement | null = null, projectMenu: HTMLSelectElement | null = null;
+  let catalogKey = "", catalogOptions: FilterOption[] = [];
+
+  function projectOptions(host: string) {
+    const items = sources.hostProjects(host);
+    const key = JSON.stringify([host,items]);
+    if (key === catalogKey) return catalogOptions;
+    const all = host === "all";
+    const options: FilterOption[] = [{value:"all", label:all ? "先选择一台主机" : "全部项目"}];
+    if (!all) options.push({value:"default", label:"默认工作区"});
+    for (const item of items) {
+      options.push({value:"project:" + item.id, label:sources.projectLabel(item),
+        path:item.paths.join(" · "), hostId:item.remote ? item.hostId : undefined});
+    }
+    catalogKey = key;
+    catalogOptions = options;
+    return options;
+  }
 
   function update({projectCatalog, health}: Snapshot) {
     const hosts: FilterOption[] = [{value:"all", label:"全部主机"}, ...sources.hosts().map(host => ({
@@ -73,12 +90,7 @@ function mountBoardFilters(container: HTMLElement, scope: HTMLElement, sources: 
     const allHosts = state.host === "all", local = state.host === "local";
     const remote = sources.hostCatalog(state.host);
     view.projectUnavailable = allHosts || !projectCatalog.loaded && (local || !remote);
-    const projects: FilterOption[] = [{value:"all", label:allHosts ? "先选择一台主机" : "全部项目"}];
-    if (!allHosts) projects.push({value:"default", label:"默认工作区"});
-    for (const item of sources.hostProjects(state.host)) {
-      projects.push({value:"project:" + item.id, label:sources.projectLabel(item),
-        path:item.paths.join(" · "), hostId:item.remote ? item.hostId : undefined});
-    }
+    let projects = projectOptions(state.host);
     let project = projects.find(option => option.value === state.project);
     if (!project) {
       const failed = local ? projectCatalog.error || !projectCatalog.loaded :
@@ -86,7 +98,7 @@ function mountBoardFilters(container: HTMLElement, scope: HTMLElement, sources: 
       if (failed) {
         const previous = view.projects.find(option => option.value === state.project)?.label || "上次选择的项目";
         project = {value:state.project, label:previous.replace(/ · 资料暂不可读$/, "") + " · 资料暂不可读"};
-        projects.push(project);
+        projects = [...projects,project];
       } else {
         project = projects[0];
         state.project = "all";
@@ -141,13 +153,14 @@ function mountBoardFilters(container: HTMLElement, scope: HTMLElement, sources: 
   }
   const options = (items: FilterOption[]) => items.map(item =>
     <option key={item.value} value={item.value} title={item.path} data-host-id={item.hostId}>{item.label}</option>);
+  const projectNodes = computed(() => options(view.projects));
   createApp({setup:() => () => <>
     <label class="filter-field">主机<select id="host-filter" aria-label="选择主机" value={state.host}
       disabled={view.locked} onChange={event => select("host",event)}>{options(view.hosts)}</select></label>
     <div class="filter-field"><span>项目</span>
       <select id="project-filter" aria-label="选择项目" ref={node => {projectMenu = node as HTMLSelectElement;}}
         hidden={state.search} value={state.project} disabled={view.locked || view.projectUnavailable}
-        onChange={event => select("project",event)}>{options(view.projects)}</select>
+        onChange={event => select("project",event)}>{projectNodes.value}</select>
     </div>
     <label class="filter-field">会话<select id="history-filter" aria-label="选择会话范围" value={state.history}
       disabled={view.locked || state.host === "local"} onChange={event => select("history",event)}>{options(histories)}</select></label>
