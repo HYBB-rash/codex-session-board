@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { launchBrowser } from "./browser-client.mjs";
-import { clickNode, until } from "./browser-actions.mjs";
+import { clickNode, inputText, until } from "./browser-actions.mjs";
 
 const origin = new URL(process.argv[2]).origin;
 assert.equal(new URL(origin).hostname, "127.0.0.1");
@@ -22,6 +22,8 @@ try {
   })()`);
   assert.deepEqual(assets, {manifest:origin + "/manifest.webmanifest", installScript:true, worker:origin + "/sw.js",
     scope:origin + "/", embeddedImage:true, loadedSessions:true});
+  const before = await (await fetch(origin + "/api/info")).json();
+  assert(before.requestToken);
 
   const reachable = () => fetch(origin + "/api/info", {signal:AbortSignal.timeout(1000)})
     .then(response => response.ok, () => false);
@@ -41,6 +43,27 @@ try {
   await until(reachable, "隔离 HTTP 服务未恢复");
   await clickNode(page, 'a[href="/"]');
   await until(() => page.evaluate('Boolean(document.querySelector("#board-viewport"))'), "重新连接后未回到看板");
+  const after = await (await fetch(origin + "/api/info")).json();
+  assert.notEqual(after.pid, before.pid);
+  assert(after.requestToken);
+  assert.notEqual(after.requestToken, before.requestToken);
+  const {sessions:[card]} = await (await fetch(origin + "/api/sessions")).json();
+  const note = "PWA 重连后保存";
+  const denied = await fetch(origin + "/api/state", {
+    method:"POST", headers:{"Content-Type":"application/json", "Origin":origin, "X-CSRF-Token":before.requestToken},
+    body:JSON.stringify({id:card.id,state:card.state,note,version:card.version,inputVersion:card.inputVersion,
+      sectionVersion:card.sectionVersion}),
+  });
+  assert.equal(denied.status, 403);
+  await until(() => page.evaluate(`Boolean(document.querySelector('[data-id="${card.id}"] [data-action="adjust"]:not(:disabled)'))`),
+    "重连后未显示可编辑卡片");
+  await clickNode(page, `[data-id="${card.id}"] [data-action="adjust"]`);
+  await inputText(page, "#note", note);
+  await clickNode(page, "#save");
+  await until(async () => {
+    const {sessions} = await (await fetch(origin + "/api/sessions")).json();
+    return sessions.some(row => row.id === card.id && row.note === note && row.version > card.version);
+  }, "重连后的页面令牌未能保存会话");
 } finally {
   await browser.close();
 }

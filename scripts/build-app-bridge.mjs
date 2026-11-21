@@ -17,6 +17,7 @@ try {
     ["app-bridge.package.json", "package.json"],
     ["app-bridge.package-lock.json", "package-lock.json"],
     ["app-bridge-entry.mjs", "app-bridge-entry.mjs"],
+    ["board-pwa.ts", "board-pwa.ts"],
   ]) await fs.copyFile(path.join(root, "assets", source), path.join(temporary, destination));
   execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund",
     ...(process.argv.includes("--offline") ? ["--offline"] : [])], { cwd: temporary, stdio: "inherit" });
@@ -43,10 +44,13 @@ async function buildBridge() {
   }
   const previewTool = operations.find(operation => operation.action === "PreviewReply").tool;
   await fs.writeFile(path.join(temporary, "bridge-routes.json"), JSON.stringify({routes, previewTool}));
-  execFileSync(process.execPath, [path.join(temporary, "node_modules/esbuild/bin/esbuild"),
+  const esbuild = path.join(temporary, "node_modules/esbuild/bin/esbuild");
+  execFileSync(process.execPath, [esbuild,
     "app-bridge-entry.mjs", "--bundle", "--minify", "--format=iife", "--legal-comments=external",
     "--outfile=app-bridge.js"], { cwd: temporary, stdio: "inherit" });
-  const files = ["app-bridge.js", "app-bridge.js.LEGAL.txt"];
+  execFileSync(process.execPath, [esbuild, "board-pwa.ts", "--bundle", "--minify", "--format=iife",
+    "--target=es2022", "--outfile=pwa.js"], { cwd: temporary, stdio: "inherit" });
+  const files = ["app-bridge.js", "app-bridge.js.LEGAL.txt", "pwa.js"];
   const report = {};
   for (const file of files) {
     const generated = await fs.readFile(path.join(temporary, file));
