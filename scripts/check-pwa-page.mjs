@@ -22,6 +22,24 @@ try {
   })()`);
   assert.deepEqual(assets, {manifest:origin + "/manifest.webmanifest", installScript:true, worker:origin + "/sw.js",
     scope:origin + "/", embeddedImage:true, loadedSessions:true});
+  const showFakePrompt = `failure => {
+    const prompt = new Event("beforeinstallprompt", {cancelable:true});
+    prompt.prompt = async () => {
+      window.installCalls = (window.installCalls || 0) + 1;
+      if (failure) throw new Error("fixture prompt failure");
+    };
+    prompt.userChoice = Promise.resolve({outcome:"dismissed"});
+    window.dispatchEvent(prompt);
+    const button = document.querySelector("#install-app");
+    const shown = !button.hidden;
+    button.click();
+    return prompt.defaultPrevented && shown && button.hidden;
+  }`;
+  assert(await page.evaluate(`(${showFakePrompt})(true)`));
+  await until(() => page.evaluate('document.querySelector("#feedback").textContent.includes("未能打开安装窗口")'),
+    "安装提示失败后未显示浏览器菜单说明");
+  assert(await page.evaluate(`(${showFakePrompt})(false)`));
+  assert.equal(await page.evaluate("window.installCalls"), 2);
   const before = await (await fetch(origin + "/api/info")).json();
   assert(before.requestToken);
 

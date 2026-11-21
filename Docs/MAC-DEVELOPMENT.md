@@ -87,7 +87,9 @@ Codex 环境动作、串行集成和交付封装仍待实施，现行版本与�
 需要 Node.js 22.12 或更新版本。开发页复用本工作树的 Rust fixture 和请求令牌，
 远程连接、SSH 设置和插件更新写入在开发入口关闭。退出 Vite 用 Ctrl+C，再执行 `./scripts/dev stop`。
 生产构建用 `node scripts/build-app-bridge.mjs` 将 Vite 的单一脚本嵌入 `index.html`，
-HTTP 和 MCP 共用该离线页面。MCP 协议桥仍由同一命令调用 esbuild 生成。
+HTTP 和 MCP 共用该离线页面。页面组合入口是 `assets/board-start.ts`。
+组件的 `<style scoped>` 和入口导入的 `assets/board-*.css` 随页面内嵌。
+MCP 协议桥和 HTTP 专用的安装入口 `assets/board-pwa.ts` 由同一命令调用 esbuild 打包。
 `node scripts/build-app-bridge.mjs --check --offline` 校验类型和已提交的产物字节。
 
 双任务浏览器检查使用 Node.js 和 Chrome，每次创建独立 profile/CDP 端口：

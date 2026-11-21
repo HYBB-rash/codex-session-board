@@ -7,7 +7,6 @@
 `assets/reply-preview.ts` 定义看板与预览之间的类型边界并挂载组件。
 看板只传递读取、跳转、链接、快照与拖动保护，不持有正文或请求选择状态。
 组件的所有读取入口先调用宿主的 canRead，同一守卫保护卡片点击、重试和查看新答复。
-卡片和编辑框继续沿用原实现，后续迁移单独安排。
 
 ```sh
 node scripts/build-app-bridge.mjs
@@ -22,7 +21,8 @@ SFC 在构建时编译，运行时不下载依赖或编译模板。
 之后完整自动验收中的预览测试执行离线重建与逐字节比对。
 发布验证先执行 `--check`，在相同冻结源码上准备依赖缓存，随后仍运行完整门禁。
 
-看板 IIFE（包含回复预览）写入 `index.html` 的 `reply-preview-code` 生成区。
+看板 IIFE（包含回复预览）写入 `index.html` 的 `reply-preview-code` 生成区，
+组件样式写入 `board-component-styles`。
 HTTP 与 MCP 原有入口都读取这一份 HTML，不新增另一份页面装配规则。
 不要手改生成区。预览源文件平放在 `assets/`，沿用源码包和实现指纹的覆盖。
 锁文件每包一行，完整 Vue MIT 许可证和生成的来源声明随包提供。

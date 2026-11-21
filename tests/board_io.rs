@@ -700,6 +700,7 @@ fn real_stdio_mcp_handshake_and_resource_round_trip() {
         assert_eq!(reply["result"]["isError"], true);
         assert_eq!(reply["result"]["content"][0]["text"], "未知看板工具");
     }
+    check_plugin_update_page(&fixture, resource["text"].as_str().unwrap()).unwrap();
 }
 
 #[test]
@@ -945,6 +946,20 @@ fn check_pwa_icons(client: &reqwest::blocking::Client, manifest: &Value, origin:
         );
         assert!(response.text().unwrap().starts_with("<svg"));
     }
+}
+
+fn check_plugin_update_page(fixture: &Fixture, html: &str) -> Result<()> {
+    let running = fixture.launch();
+    let resource = fixture._directory.path().join("update-resource.html");
+    fs::write(&resource, html)?;
+    let output = Command::new("node").arg("scripts/check-plugin-update-page.mjs")
+        .arg(running["url"].as_str().unwrap()).arg(resource).output()?;
+    assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr));
+    let report: Value = serde_json::from_slice(&output.stdout)?;
+    assert_eq!(report["surfaces"], json!(["http", "mcp"]));
+    assert_eq!(report["cleanup"]["profileRemoved"], true);
+    Ok(())
 }
 
 #[test]
