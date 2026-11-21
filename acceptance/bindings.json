@@ -416,6 +416,7 @@
       "test::remote_sessions::remote_validation_is_atomic_and_rejects_cross_host_data",
       "test::native_authority::archive::a_slow_native_archive_does_not_hold_the_database_lock_for_other_chats",
       "test::native_authority::archive::archive_batch_recovers_lost_receipt_after_reopen_without_replay",
+      "test::ui_layout::ten_card_archive_recovers_after_closing_the_submitting_page",
       "test::native_authority::archive::archive_batch_persists_new_input_refusal_without_native_write",
       "test::native_authority::remote_isolation::archive_batches::remote_batch_owner_recovers_a_lost_receipt_once_and_preserves_same_uuid_on_other_hosts",
       "test::native_authority::remote_isolation::archive_batches::remote_batch_owner_persists_new_input_refusal_without_a_native_write",

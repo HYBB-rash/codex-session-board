@@ -1,6 +1,22 @@
 use std::process::Command;
 
 #[test]
+fn ten_card_archive_recovers_after_closing_the_submitting_page() {
+    let result = Command::new("node")
+        .arg("scripts/check-ten-card-archive.mjs")
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "十卡批量归档浏览器回归失败：\n{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(report["passed"], true);
+}
+
+#[test]
 fn host_catalog_filters_preserve_cached_rows_and_isolated_native_drafts() {
     let result = Command::new("node")
         .arg("scripts/check-remote-catalog.mjs")
