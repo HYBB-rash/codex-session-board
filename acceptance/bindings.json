@@ -1237,6 +1237,7 @@
     ],
     "MCP-001": [
       "test::board_io::archive_batch_tools_share_http_history",
+      "test::native_authority::entrypoints::preview_tool_keeps_reply_out_of_model_content",
       "test::ui_layout::mcp_bridge_preserves_routes_results_and_host_theme",
       "test::column_sort::column_sort_app_and_mcp_expose_separate_settings_operation",
       "test::column_sort::column_sort_real_http_and_stdio_mcp_share_persistent_settings",

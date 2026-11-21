@@ -273,21 +273,26 @@ fn engine_reply(
             json!({"thread":thread})
         }
         "thread/start" | "thread/name/set" => probe_reply(request,surface)?,
-        "thread/turns/list" => {
-            if request["params"]["itemsView"] != "summary" {
-                assert_eq!(request["params"]["itemsView"], "full");
-            }
-            let turns = surface.probe_threads.get(identifier)
-                .map(|thread| thread["turns"].as_array().unwrap().clone())
-                .unwrap_or_else(|| surface.latest_turn.iter().cloned().collect::<Vec<_>>());
-            json!({"data":turns})
-        }
+        "thread/turns/list" => turns_list(&request["params"], identifier, surface),
         "thread/archive" => {
             archived.lock().unwrap().insert(identifier.into());
             json!({})
         }
         _ => return archive_identity_reply(method, surface),
     })
+}
+
+fn turns_list(params: &Value, identifier: &str, surface: &Surface) -> Value {
+    if params["itemsView"] == "notLoaded" && let Some(revision) = &surface.preview_revision {
+        return json!({"data":[revision]});
+    }
+    if params["itemsView"] != "summary" {
+        assert_eq!(params["itemsView"], "full");
+    }
+    let turns = surface.probe_threads.get(identifier)
+        .map(|thread| thread["turns"].as_array().unwrap().clone())
+        .unwrap_or_else(|| surface.latest_turn.iter().cloned().collect::<Vec<_>>());
+    json!({"data":turns})
 }
 
 fn archive_identity_reply(method: &str, surface: &Surface) -> Result<Value> {

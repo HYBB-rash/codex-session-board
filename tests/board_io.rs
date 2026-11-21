@@ -554,10 +554,10 @@ fn navigation_is_canonical_and_encodes_host_as_one_value() {
     );
 }
 
-#[test]
-fn native_resource_and_tools_expose_global_app_only_actions() {
-    let definitions = mcp::tools();
+fn check_tool_visibility(definitions: &Value) {
     let view = &definitions["tools"][0];
+    assert_eq!(view["name"], "board_view");
+    assert_eq!(view["_meta"]["ui"]["visibility"], json!(["app","model"]));
     assert_eq!(view["_meta"]["ui"]["resourceUri"], mcp::RESOURCE);
     assert_eq!(
         view["_meta"]["openai/ui"]["entrypoints"][0]["type"],
@@ -572,6 +572,22 @@ fn native_resource_and_tools_expose_global_app_only_actions() {
     for tool in definitions["tools"].as_array().unwrap().iter().skip(1) {
         assert_eq!(tool["_meta"]["ui"]["visibility"], json!(["app"]));
     }
+    let fixture = Fixture::new(false);
+    let calls = fixture.mcp_calls(&[
+        ("board_view", json!({})), ("/api/info", json!({})),
+        ("/api/native-calibration/reset", json!({})), ("board_missing", json!({})),
+    ]);
+    assert_eq!(calls[0]["result"]["structuredContent"], json!({"ready":true}));
+    for reply in &calls[1..] {
+        assert_eq!(reply["result"]["isError"], true);
+        assert_eq!(reply["result"]["content"][0]["text"], "未知看板工具");
+    }
+}
+
+#[test]
+fn native_resource_and_tools_expose_global_app_only_actions() {
+    let definitions = mcp::tools();
+    check_tool_visibility(&definitions);
     let resource = mcp::resource();
     let html = resource["text"].as_str().unwrap();
     assert_eq!(resource["mimeType"], mcp::MIME);

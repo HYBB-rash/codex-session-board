@@ -212,6 +212,30 @@ fn invalid_optional_notes(live: &Live, client: &reqwest::blocking::Client) -> Re
 }
 
 #[test]
+fn preview_tool_keeps_reply_out_of_model_content() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let mut server = Server::new(directory.path())?;
+    server.config.desktop_socket = directory.path().join("engine.sock");
+    let _engine = Engine::new(&server.config.desktop_socket, std::sync::Arc::clone(&server.surface))?;
+    {
+        let mut native = server.surface.lock().unwrap();
+        native.preview_revision = Some(json!({"id":"preview","status":"completed"}));
+        native.latest_turn = Some(json!({"id":"preview","status":"completed","items":[
+            {"id":"answer","type":"agentMessage","phase":"final_answer","text":"隔离回复正文"}]}));
+    }
+    drop(server.app()?);
+    let live = Live::new(&mut server.config, directory.path())?;
+    let client = reqwest::blocking::Client::builder().no_proxy().timeout(Duration::from_secs(5)).build()?;
+    live.ready(&client)?;
+    let body = json!({"id":FIRST});
+    let reply: Value = live.post_path(&client, "/api/preview-reply", &body)?.error_for_status()?.json()?;
+    assert_eq!(reply["turnId"], "preview");
+    assert!(reply["html"].as_str().unwrap().contains("隔离回复正文"));
+    assert_eq!(live.mcp("board_preview_reply", body)?, json!({"content":[],"_meta":{"previewReply":reply}}));
+    Ok(())
+}
+
+#[test]
 fn built_binary_distinguishes_omitted_and_empty_notes_over_http_and_mcp() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let mut server = Server::new(directory.path())?;

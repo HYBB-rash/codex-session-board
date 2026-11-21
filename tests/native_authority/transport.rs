@@ -28,6 +28,7 @@ pub(super) fn section_id(state: &str) -> String {
 #[derive(Default)]
 pub(super) struct Surface {
     pub latest_turn: Option<Value>,
+    pub preview_revision: Option<Value>,
     pub thread_status: Option<String>,
     pub slots: BTreeMap<String, String>,
     pub calls: Vec<String>,
