@@ -1,6 +1,7 @@
 import "./board-view";
-import { mountBoardArchive, type AutoArchiveHealth } from "./board-archive";
-import { mountBoardBrowse, type CatalogProject, type HostCatalog, type HostIdentity } from "./board-browse";
+import { mountBoardArchive } from "./board-archive";
+import { mountBoardBrowse, type CatalogProject, type HostIdentity } from "./board-browse";
+import { createBoardHealthReports, type BoardHealth } from "./board-health-report";
 import { mountBoardSessionReader } from "./board-session-reader";
 import { mountMoveFeedback } from "./board-move-feedback";
 import { mountBoardEdits } from "./board-edits";
@@ -14,14 +15,11 @@ import type { BoardSession } from "./board-view";
 export interface BoardSnapshot {
   states: Record<string, string>;
   sessions: BoardSession[];
-  health: AutoArchiveHealth & {
-    sshAliasSetup?: boolean;
-    remoteError?: string;
-    remoteConnections?: (HostIdentity & { connected?: boolean; catalog?: HostCatalog })[];
-    remoteConnectionErrors?: HostIdentity[];
-    remoteRegistry?: HostIdentity[];
+  health: BoardHealth;
+  projectCatalog: {
+    loaded: boolean; items: CatalogProject[]; error?: string | null; remoteHosts?: HostIdentity[];
+    cached?: boolean; incomplete?: boolean; pending?: boolean;
   };
-  projectCatalog: { loaded: boolean; items: CatalogProject[]; error?: string; remoteHosts?: HostIdentity[] };
   legacyMode?: boolean;
   pendingDrafts?: { project: string; requestId: string }[];
   columnSorts?: Record<string, SortPreference>;
@@ -31,6 +29,7 @@ declare global {
   interface Window {
     boardRequest?: (path: string, body?: object) => Promise<unknown>;
     createBoardRequest: typeof createBoardRequest;
+    createBoardHealthReports: typeof createBoardHealthReports;
     startBoard: typeof startBoard;
     mountBoardArchive: typeof mountBoardArchive;
     mountBoardBrowse: typeof mountBoardBrowse;
@@ -76,6 +75,7 @@ function startBoard(load: () => Promise<void>, restore: () => Promise<void> | vo
 }
 
 window.createBoardRequest = createBoardRequest;
+window.createBoardHealthReports = createBoardHealthReports;
 window.startBoard = startBoard;
 window.mountBoardArchive = mountBoardArchive;
 window.mountBoardBrowse = mountBoardBrowse;

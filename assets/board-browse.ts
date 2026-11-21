@@ -13,9 +13,13 @@ export interface HostOption extends HostIdentity {
 }
 
 export interface HostCatalog {
-  error?: string;
+  error?: string | null;
   cached?: boolean;
   complete?: boolean;
+  pending?: boolean;
+  capturedAt?: number | null;
+  issues?: unknown[];
+  coverage?: unknown;
 }
 
 export interface CatalogProject extends HostIdentity {
