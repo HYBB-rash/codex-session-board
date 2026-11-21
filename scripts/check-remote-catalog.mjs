@@ -144,7 +144,8 @@ try {
   await evaluate('selectedProject="project:missing";projectOptionsKey="";render()');
   check(await evaluate("selectedProject"),"all");
   await select("history-filter","all");
-  await evaluate('archiveSessions(visibleSessions(),document.querySelector("[data-archive-all]"))');
+  await evaluate('document.querySelector("[data-archive-all]").click()');
+  await wait("!saving");
   check(writes.filter(row=>row.path === "/api/archive").map(row=>row.body.id),["active","legacy"]);
   await select("history-filter","archived");
   await evaluate('byId("filter-toggle").click();byId("search").value="关键词";byId("search").dispatchEvent(new Event("input"))');

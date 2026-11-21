@@ -30,9 +30,9 @@ defineProps<{ model: BoardModel; dependencies: BoardDependencies; unplaced?: boo
       <span class="sort-slot" style="display:contents"></span>
       <button v-if="column.state === 'to_archive' && !model.legacyMode" type="button"
         class="row-action" data-archive-all=""
-        :disabled="model.saving || model.creating || !column.sessions.some(dependencies.canArchive)"
+        :disabled="!column.archiveCount" :title="model.scope + '；只归档本列可归档的会话'"
         @click="dependencies.archiveAll(column.sessions, $event.currentTarget as HTMLButtonElement)">
-        归档 {{ column.sessions.filter(dependencies.canArchive).length }} 条
+        归档 {{ column.archiveCount }} 条
       </button>
     </div>
     <div class="cards">

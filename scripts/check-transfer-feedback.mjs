@@ -196,9 +196,9 @@ try {
   assert.deepEqual(writes[0], { id, state: "review", version: 3, inputVersion: 5, sectionVersion: "native:source" });
   await select("host-filter", "host:other");
   await select("project-filter", "project:other-project");
-  await check("等待中主机和项目筛选仍可使用", 'selectedHost === "host:other" && selectedProject === "project:other-project" && !byId("host-filter").disabled && !byId("project-filter").disabled && !document.querySelector(".move-pending") && visibleSessions().length === 1');
+  await check("等待中主机和项目筛选仍可使用", 'selectedHost === "host:other" && selectedProject === "project:other-project" && !byId("host-filter").disabled && !byId("project-filter").disabled && !document.querySelector(".move-pending,.move-origin") && visibleSessions().length === 1');
   await evaluate('byId("filter-toggle").click();byId("search").value="另一主机";byId("search").dispatchEvent(new Event("input"))');
-  await check("等待中搜索保持所选主机范围", 'filterMode === "search" && !byId("search").disabled && !document.querySelector(".move-pending") && document.querySelectorAll(".card").length === 1 && visibleSessions()[0].hostId === "other"');
+  await check("等待中搜索保持所选主机范围", 'filterMode === "search" && !byId("search").disabled && !document.querySelector(".move-pending,.move-origin") && document.querySelectorAll(".card").length === 1 && visibleSessions()[0].hostId === "other"');
   await check("等待中禁用归档排序新建和再次拖动", 'byId("new-session").disabled && document.querySelector("[data-archive-all]").disabled && document.querySelector(".card .card-actions button:last-child").disabled && [...document.querySelectorAll(".column-sort")].every(button=>button.disabled) && [...document.querySelectorAll(".card")].every(card=>!card.draggable)');
   await evaluate('byId("new-session").onclick()');
   await check("等待中直接调用新建也不打开对话框", '!byId("new-target").open && !creating && saving');

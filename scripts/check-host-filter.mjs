@@ -107,7 +107,8 @@ try {
   await evaluate('byId("filter-toggle").click()');
   await select("project-filter","project:a1");
   archive.controls.loseReply = true;
-  await evaluate('archiveSessions(visibleSessions(),document.querySelector("[data-archive-all]"))');
+  await evaluate('document.querySelector("[data-archive-all]").click()');
+  await wait("!saving");
   const batchId = writes.find(row=>row.path === "/api/archive-batches").body.id;
   check(writes.filter(row=>row.path === "/api/archive").map(row=>row.body),[{id:"a1",version:1,inputVersion:2,sectionVersion:"fixture",batchId}]);
   check(await evaluate('byId("archive-summary-text").textContent.includes("已确认归档 0 / 1 条")'),true);
@@ -124,6 +125,14 @@ try {
   await evaluate('byId("archive-summary-actions").querySelector("button").onclick()');
   check(await evaluate('byId("archive-summary-text").textContent.includes("已确认归档 1 / 1 条")'),true);
   check(writes.filter(row=>row.path === "/api/archive").length,1);
+  archive.controls.loseReply = false;
+  await select("project-filter","default");
+  await evaluate('document.querySelector(".card [data-action=archive]").click()');
+  await wait("!saving");
+  const singleBatch = writes.filter(row=>row.path === "/api/archive-batches").at(-1).body.id;
+  check(writes.filter(row=>row.path === "/api/archive").at(-1).body,
+    {id:"a-default",version:1,inputVersion:2,sectionVersion:"fixture",batchId:singleBatch});
+  await select("project-filter","project:a1");
   fixture.projectCatalog.items = fixture.projectCatalog.items.filter(item=>item.id !== "a1");
   fixture.health.remoteError = "temporary";
   await refresh();

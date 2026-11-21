@@ -33,7 +33,8 @@ export interface ProjectTag {
 
 export interface BoardModel {
   states: Record<string, string>;
-  columns: { state: string; label: string; sessions: BoardSession[]; unread: boolean }[];
+  columns: { state: string; label: string; sessions: BoardSession[]; unread: boolean; archiveCount: number }[];
+  scope: string;
   unplaced: BoardSession[];
   legacyMode: boolean;
   saving: boolean;
@@ -47,9 +48,10 @@ export interface BoardModel {
 export interface BoardDependencies {
   date: (value: number) => string;
   project: (session: BoardSession) => ProjectTag;
-  readOnly: (session: BoardSession) => boolean;
-  archiveEligible: (session: BoardSession) => boolean;
-  canArchive: (session: BoardSession) => boolean;
+  actions: (session: BoardSession) => {
+    readOnly: boolean; canAdjust: boolean; pendingArchive: boolean;
+    archive: "archive" | "confirm" | null; canSubmit: boolean;
+  };
   canAssign: (session: BoardSession) => boolean;
   preview: (session: BoardSession, focus?: boolean) => void;
   edit: (id: string) => void;

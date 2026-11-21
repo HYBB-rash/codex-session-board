@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import http from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 import { launchBrowser } from "./browser-client.mjs";
+import { checkCardDisplay } from "./check-card-display.mjs";
 
 const html = await readFile(process.argv[4] || new URL("../index.html", import.meta.url), "utf8");
 const bridge = await readFile(new URL("../assets/app-bridge.js", import.meta.url), "utf8");
@@ -143,12 +144,27 @@ async function exercise(surface) {
   })()`);
   await wait(`Boolean(document.querySelector(${JSON.stringify(card("local"))}))`);
   await evaluate(`(() => {
-    const readReply = openReply;
     window.settledLocalReads = 0;
-    openReply = async (session, focus) => {
-      await readReply(session, focus);
-      if (session.id === "local") window.settledLocalReads++;
-    };
+    const local = (path, body) => path === "/api/preview-reply" && body?.id === "local";
+    if (window.boardRequest) {
+      const request = window.boardRequest;
+      window.boardRequest = async (path, body) => {
+        try {return await request(path, body);}
+        finally {if (local(path, body)) window.settledLocalReads++;}
+      };
+    } else {
+      const fetch = window.fetch;
+      window.fetch = async (path, options) => {
+        const response = await fetch(path, options);
+        if (!local(path, options?.body && JSON.parse(options.body))) return response;
+        const json = response.json.bind(response);
+        response.json = async () => {
+          try {return await json();}
+          finally {window.settledLocalReads++;}
+        };
+        return response;
+      };
+    }
   })()`);
   await evaluate('byId("host-filter").value="all";byId("host-filter").dispatchEvent(new Event("change"))');
   await evaluate(`document.querySelector(${JSON.stringify(card("local"))}).scrollIntoView({block:"nearest"})`);
@@ -292,6 +308,7 @@ async function exercise(surface) {
   await click(await gutter());
   await wait(overlayClosed);
   assert.deepEqual(await evaluate(geometry),narrow);
+  await checkCardDisplay(evaluate, snapshot, wait);
   if (surface==="http") await checkTitleDrag(page, evaluate);
   checks.push(surface);
 }
