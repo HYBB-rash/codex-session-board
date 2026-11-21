@@ -8,9 +8,9 @@
     "jsx": "preserve",
     "jsxImportSource": "vue",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": [],
+    "types": ["vite/client"],
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["reply-*.ts", "reply-*.tsx", "reply-*.vue"]
+  "include": ["*.ts", "*.tsx", "*.vue"]
 }

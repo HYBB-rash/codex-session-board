@@ -3,6 +3,17 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { pathToFileURL } from "node:url";
+
+export const boardScript = /<script id="reply-preview-code">[\s\S]*?<\/script>/;
+
+export async function loadBoardVite(root, temporary) {
+  const configPath = path.join(temporary, "board-vite.config.mjs");
+  await fs.copyFile(path.join(root, "assets/board-vite.config.mjs"), configPath);
+  const { default: boardViteConfig } = await import(pathToFileURL(configPath));
+  const vite = await import(pathToFileURL(path.join(temporary, "node_modules/vite/dist/node/index.js")));
+  return { vite, config: { ...boardViteConfig(), configFile: false, publicDir: false } };
+}
 
 export async function buildReplyPreview(root, temporary, check) {
   for (const file of await fs.readdir(path.join(root, "assets"))) {
@@ -12,36 +23,34 @@ export async function buildReplyPreview(root, temporary, check) {
   const require = createRequire(path.join(temporary, "package.json"));
   execFileSync(process.execPath, [require.resolve("vue-tsc/bin/vue-tsc.js"),
     "--project", "reply-preview.tsconfig.json"], { cwd: temporary, stdio: "inherit" });
-  const { parse, compileScript } = require("vue/compiler-sfc");
-  const { build } = require("esbuild");
-  await build({
-    absWorkingDir: temporary, entryPoints: ["reply-preview.ts"], outfile: "reply-preview.js",
-    bundle: true, minify: true, format: "iife", legalComments: "external",
-    jsx: "automatic", jsxImportSource: "vue",
-    alias: { vue: require.resolve("vue/dist/vue.runtime.esm-bundler.js"),
-      "vue/jsx-runtime": require.resolve("vue/jsx-runtime") },
-    define: { "process.env.NODE_ENV": '"production"', __VUE_OPTIONS_API__: "false",
-      __VUE_PROD_DEVTOOLS__: "false", __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: "false" },
-    plugins: [{ name: "reply-vue", setup(builder) {
-      builder.onLoad({ filter: /\.vue$/ }, async ({ path: filename }) => {
-        const { descriptor, errors } = parse(await fs.readFile(filename, "utf8"), { filename });
-        if (errors.length) throw errors[0];
-        return { contents: compileScript(descriptor,
-          { id: "reply-preview", isProd: true, inlineTemplate: true }).content, loader: "ts" };
-      });
-    } }],
+  const { vite, config } = await loadBoardVite(root, temporary);
+  const licenseName = "reply-preview.js.LEGAL.txt";
+  const result = await vite.build({
+    ...config,
+    root: temporary,
+    define: { ...config.define, "process.env.NODE_ENV": JSON.stringify("production") },
+    build: {
+      write: false, minify: "esbuild", modulePreload: false, target: "es2022",
+      license: { fileName: licenseName },
+      lib: { entry: "board-start.ts", name: "CodexSessionBoard", formats: ["iife"] },
+      rollupOptions: { output: { inlineDynamicImports: true } },
+    },
   });
-  const bundle = (await fs.readFile(path.join(temporary, "reply-preview.js"), "utf8")).trim();
+  const output = [result].flat().flatMap(build => build.output);
+  const chunk = output.find(file => file.type === "chunk");
+  const notice = output.find(file => file.type === "asset" && file.fileName === licenseName);
+  if (output.length !== 2 || !chunk || !notice || chunk.imports.length || chunk.dynamicImports.length)
+    throw new Error("看板必须构建为独立的单页脚本");
+  const bundle = chunk.code.trim();
   const htmlPath = path.join(root, "index.html");
   const html = await fs.readFile(htmlPath, "utf8");
-  const marker = /(<script id="reply-preview-code">)[\s\S]*?(<\/script>)/;
-  if (!marker.test(html)) throw new Error("缺少回复预览产物位置");
-  const generated = html.replace(marker, () =>
+  if (!boardScript.test(html)) throw new Error("缺少看板产物位置");
+  const generated = html.replace(boardScript, () =>
     `<script id="reply-preview-code">\n${bundle.replaceAll("</script", "<\\/script")}\n</script>`);
   if (check && generated !== html) throw new Error("回复预览产物与源码不一致");
   if (!check) await fs.writeFile(htmlPath, generated);
-  const license = await fs.readFile(path.join(temporary, "reply-preview.js.LEGAL.txt"));
-  const licensePath = path.join(root, "assets/reply-preview.js.LEGAL.txt");
+  const license = Buffer.from(notice.source);
+  const licensePath = path.join(root, "assets", licenseName);
   if (check && !license.equals(await fs.readFile(licensePath))) throw new Error("回复预览许可证与构建不一致");
   if (!check) await fs.writeFile(licensePath, license);
   const vueLicense = await fs.readFile(path.join(path.dirname(require.resolve("vue/package.json")), "LICENSE"));

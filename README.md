@@ -51,7 +51,7 @@ python3 scripts/verify_acceptance.py --evidence /path/to/evidence.json --report 
 
 验收使用指定会话交付的 acceptance-v1，31 条需求与独立模型保持原始 SHA256。
 业务测试调用 Rust 实现；Python 仅用于独立验收工具和参考模型。
-浏览器布局回归还需 Node.js 22 或更新版本及 Chrome/Chromium。
+浏览器布局回归还需 Node.js 22.12 或更新版本及 Chrome/Chromium。
 可通过 `CODEX_BOARD_BROWSER` 指定浏览器可执行文件。
 单独运行 `node scripts/check-ui-layout.mjs /tmp/session-board-layout`，
 会使用合成数据验证五/六列、长内容、项目筛选、搜索和窄屏滚动，并保存测量与截图。
