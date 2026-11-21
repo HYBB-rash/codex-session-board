@@ -3,8 +3,9 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import { launchBrowser } from "./browser-client.mjs";
 import { archiveFixture } from "./archive-browser-fixture.mjs";
+import { filterSnapshot, checkFilterArchiveScope } from "./filter-archive-scope.mjs";
 
-const html = await fs.readFile(new URL("../index.html",import.meta.url),"utf8");
+const html = await fs.readFile(process.argv[3] || new URL("../index.html",import.meta.url),"utf8");
 const fixture = {
   states:{unknown:"待判断",review:"待审阅",to_archive:"待归档"},health:{
     remoteRegistry:[{hostId:"a",hostLabel:"同名主机",enabled:true},{hostId:"b",hostLabel:"同名主机",enabled:false},{hostId:"empty",hostLabel:"空主机",enabled:false}],
@@ -251,7 +252,12 @@ try {
   await refresh();
   check(await evaluate('hostOptions().some(host=>host.hostId==="cached-only")'),true);
   await evaluate('byId("new-target-cancel").click()');
-  console.log(JSON.stringify({cases, archivedIds:writes.filter(row=>row.path === "/api/archive").map(row=>row.body.id)}));
+  const archivedIds = writes.filter(row=>row.path === "/api/archive").map(row=>row.body.id);
+  archive.controls.loseReply = false;
+  Object.assign(fixture,structuredClone(filterSnapshot));
+  await refresh();
+  await checkFilterArchiveScope(evaluate,writes);
+  console.log(JSON.stringify({cases,archivedIds,archiveScope:true}));
 } finally {
   releaseNew?.();
   if (browser) await browser.close();
