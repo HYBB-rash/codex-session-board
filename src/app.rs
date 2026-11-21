@@ -2,7 +2,7 @@ mod plugin_update;
 
 use crate::{
     config::Config,
-    model::{board_state, now},
+    model::now,
     rpc::{DesktopConnection, Role, SidebarConnection},
     store::Store,
     titles,
@@ -239,9 +239,7 @@ impl App {
         self.append_remote(&mut sessions, &mut catalog)?;
         self.retain_business_rows(&mut sessions)?;
         self.annotate_connections(&mut sessions);
-        if self.config.four_columns {
-            four_columns::project(&mut sessions);
-        }
+        crate::store::placement::project(&mut sessions, self.config.legacy_mode, self.config.four_columns);
         Ok(
             json!({"states":states,"sessions":sessions,"projectCatalog":catalog,"columnSorts":self.store.column_sorts()?,
             "legacyMode":self.config.legacy_mode,"fourColumns":self.config.four_columns,

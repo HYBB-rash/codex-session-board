@@ -110,13 +110,13 @@ impl App {
 
     pub(crate) fn annotate_connections(&self, sessions: &mut [Value]) {
         for session in sessions {
-            if !self.config.legacy_mode && session["state"] == "completed" {
-                session["state"] = json!(board_state("completed"));
-            }
             if self.config.legacy_mode {
                 session["canArchive"] = json!(false);
             }
             if session["remote"] == true {
+                if self.config.four_columns {
+                    session["canOpen"] = json!(super::four_columns::can_open(session));
+                }
                 if session["readOnly"] == true {
                     session["canArchive"] = json!(false);
                 }

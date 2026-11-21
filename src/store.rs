@@ -12,6 +12,7 @@ mod mappings;
 mod native;
 mod native_backfill;
 mod native_drafts;
+pub(crate) mod placement;
 pub mod remote;
 mod runtime_native;
 mod sorting;
@@ -97,15 +98,7 @@ fn suggestion(row: &Value) -> (&'static str, &'static str) {
 }
 
 fn effective(row: &Value, native: bool, history_suggestions: bool) -> String {
-    if native {
-        return row["native_state"].as_str().unwrap_or("unknown").into();
-    }
-    row["selected_state"]
-        .as_str()
-        .or_else(|| row["automatic_state"].as_str())
-        .or_else(|| history_suggestions.then(|| suggestion(row).0))
-        .unwrap_or("unknown")
-        .to_string()
+    placement::WorkState::read(row, native, history_suggestions).state.to_owned()
 }
 
 fn get_row(database: &Connection, identifier: &str) -> Result<Value> {
@@ -755,27 +748,19 @@ impl Store {
         let native = self.native_sections;
         let job = job.filter(|job| !self.four_columns || job["state"] != "unknown");
         let turn = turn_of(row);
-        let (suggestion, reason) = if self.four_columns {
-            ("unknown", "尚无可确认的工作状态。")
-        } else {
-            suggestion(row)
-        };
+        let work = placement::WorkState::read(row, native, !self.four_columns);
         let selected = row["selected_state"].is_string();
         let mut value = json!({
             "id":row["id"], "title":row["title"], "cwd":row["cwd"], "updatedAt":row["updated_at"],
-            "seenAt":row["seen_at"], "observedAt":row["observed_at"], "state":effective(row,native,!self.four_columns), "manual":selected,
+            "seenAt":row["seen_at"], "observedAt":row["observed_at"], "state":work.state, "manual":selected,
             "sectionVersion":if native {row["native_section"].clone()} else {Value::Null},
-            "suggestion":row["automatic_state"].as_str().unwrap_or(suggestion),
-            "reason":if native {"状态来自 Codex 原生分区。"}else{row["automatic_reason"].as_str().unwrap_or(reason)},
-            "source":if native {"codex"}else if selected {"manual"} else if row["automatic_state"].is_string() {"runtime"} else {"history"},
+            "suggestion":work.suggestion, "reason":work.reason, "source":work.source,
             "note":row["note"], "followUp":row["needs_review"]==1, "observationError":row["observation_error"],
             "titleSyncPending":job.is_some(), "titleSyncError":job.map(|job| &job["error"]),
             "turnStatus":turn["status"], "version":row["version"], "inputVersion":row["input_revision"]
         });
         if self.four_columns {
-            value["confirmedEmpty"] = json!(turn["confirmedEmpty"] == true
-                && row["observed_revision"] == row["updated_at"] && !selected
-                && row["automatic_state"].is_null() && row["runtime_key"].is_null());
+            value["confirmedEmpty"] = json!(placement::confirmed_empty(row, &turn));
         }
         value
     }
