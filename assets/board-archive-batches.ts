@@ -3,7 +3,6 @@ import { computed, reactive } from "vue";
 export interface ArchiveTarget {
   id: string; title: string; version: number; inputVersion: number; sectionVersion: string | null;
 }
-export type ArchiveRevision = Pick<ArchiveTarget, "id" | "version" | "inputVersion" | "sectionVersion">;
 interface Item extends ArchiveTarget {
   status: "awaiting" | "pending" | "archived" | "verified" | "newInput" | "rejected";
   message?: string | null;
@@ -15,6 +14,7 @@ interface Submission {
 export interface ArchiveRequests {
   request<T>(path: string, body?: object): Promise<T>;
   changed(): void;
+  refresh(ids: Set<string>): void;
 }
 
 function batchId() {
@@ -41,12 +41,6 @@ export function archiveBatches(actions: ArchiveRequests) {
   const pending = computed(() => new Set(state.batches.flatMap(batch => batch.items
     .filter(item => ["pending", "submitting"].includes(status(item, batch))).map(item => item.id))));
   const find = (id: string) => state.batches.find(batch => batch.id === id);
-  const revision = (card: ArchiveRevision) => JSON.stringify([card.id, card.version, card.inputVersion, card.sectionVersion ?? null]);
-  const confirmed = computed(() => new Set(state.batches.flatMap(batch => batch.items
-    .filter(item => item.status === "archived" || item.status === "verified").map(revision))));
-  function visible<T extends ArchiveRevision & {archived?: boolean}>(sessions: T[]) {
-    return confirmed.value.size ? sessions.filter(card => card.archived || !confirmed.value.has(revision(card))) : sessions;
-  }
   function receive(batch: Batch) {
     ++readVersion;
     const previous = find(batch.id);
@@ -77,10 +71,18 @@ export function archiveBatches(actions: ArchiveRequests) {
       const {batches} = await request<{batches: Batch[]}>("/api/archive-batches", undefined, 8000);
       if (version !== readVersion) return;
       if (!Array.isArray(batches)) throw new Error("归档记录格式不正确");
+      const changed = new Set<string>();
+      for (const batch of batches) {
+        const previous = new Map(find(batch.id)?.items.map(item => [item.id,item.status]));
+        for (const item of batch.items) {
+          if (item.status !== "awaiting" && previous.get(item.id) !== item.status) changed.add(item.id);
+        }
+      }
       state.batches = batches;
       state.loaded = true;
       state.readError = false;
-      actions.changed();
+      if (changed.size) actions.refresh(changed);
+      else actions.changed();
     } catch {
       if (version !== readVersion) return;
       state.readError = true;
@@ -98,7 +100,10 @@ export function archiveBatches(actions: ArchiveRequests) {
         receive((await request<{batch: Batch}>("/api/archive-batches/check", {id}, 8000)).batch);
       if (manual && pending.value.size) state.notice = "刚刚核对，仍有结果待确认。";
     } catch { state.notice = "暂时无法核对结果，请稍后再试。"; }
-    finally { state.checking = false; actions.changed(); }
+    finally {
+      state.checking = false;
+      actions.refresh(new Set(batches.flatMap(batch => batch.items.filter(item => item.status === "pending").map(item => item.id))));
+    }
   }
   async function submit(items: ArchiveTarget[]) {
     if (!canSubmit.value || !items.length) return;
@@ -137,6 +142,7 @@ export function archiveBatches(actions: ArchiveRequests) {
       await read();
     } finally {
       window.clearTimeout(timer);
+      actions.refresh(state.run.submitted);
       state.run = null;
       actions.changed();
     }
@@ -145,5 +151,5 @@ export function archiveBatches(actions: ArchiveRequests) {
     await read();
     if (!state.run) await check(toCheck.value);
   }
-  return {state, canSubmit, status, toCheck, pending, visible, read, check, restore, submit};
+  return {state, canSubmit, status, toCheck, pending, read, check, restore, submit};
 }

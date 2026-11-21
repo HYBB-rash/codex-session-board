@@ -1,18 +1,18 @@
 import { computed, createApp, nextTick, ref, shallowRef, Teleport } from "vue";
-import { archiveBatches, type ArchiveRequests, type ArchiveRevision } from "./board-archive-batches";
+import { archiveBatches, type ArchiveRequests } from "./board-archive-batches";
 
 const labels = {
   awaiting: "尚无提交记录", queued: "等候提交", submitting: "正在提交", pending: "待核对",
   archived: "已归档", verified: "核实时已归档", newInput: "未归档 · 有新输入", rejected: "未归档",
 };
-interface Board { legacyMode?: boolean; sessions: (ArchiveRevision & {archived?: boolean; canOpen?: boolean})[] }
+interface Board { legacyMode?: boolean; sessions: {id: string; canOpen?: boolean}[] }
 interface Actions extends ArchiveRequests {
   open(id: string): void;
   date(timestamp: number): string;
 }
 
 function mountArchiveResults(host: HTMLElement, actions: Actions) {
-  const {state, canSubmit, status, toCheck, pending, visible, read, check, restore, submit} = archiveBatches(actions);
+  const {state, canSubmit, status, toCheck, pending, read, check, restore, submit} = archiveBatches(actions);
   const board = shallowRef<Board>({ sessions: [] });
   const expanded = ref(false);
   const toggle = ref<HTMLButtonElement>();
@@ -78,10 +78,7 @@ function mountArchiveResults(host: HTMLElement, actions: Actions) {
     </>;
   }}).mount(host);
   return { restore, submit, get canSubmit() { return canSubmit.value; }, get pending() { return pending.value; },
-    updateBoard<T extends Board>(value: T) {
-      board.value = value;
-      return {...value, sessions:visible(value.sessions)};
-    } };
+    updateBoard(value: Board) { board.value = value; } };
 }
 
 declare global { interface Window { mountArchiveResults: typeof mountArchiveResults } }
