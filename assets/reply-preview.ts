@@ -16,6 +16,7 @@ export interface PreviewDependencies {
   openLink: (url: string) => void;
   changed: () => void;
   canDismiss: () => boolean;
+  canRead: (id: string) => boolean;
 }
 
 export interface PreviewHandle {

@@ -50,6 +50,7 @@ function validReply(value: unknown): value is { turnId: string | null; html: str
     typeof result.turnId === "string" && typeof result.html === "string");
 }
 async function open(session: PreviewSession, focus = false) {
+  if (!props.dependencies.canRead(session.id)) return;
   const current = reactive<Reading>({ session, observedTurnId: session.previewTurnId, html: "",
     busy: true, ready: false, status: "正在读取回复…", action: "", error: false });
   reading.value = current;

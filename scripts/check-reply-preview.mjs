@@ -212,8 +212,24 @@ async function exercise(surface) {
   await wait('byId("reply-refresh").textContent === "查看新答复"');
   assert(await evaluate('byId("reply-text").innerHTML.includes("隔离启动")'));
   assert.equal(await evaluate('byId("reply-body").scrollTop'),scroll);
+  const readingState = `({html:byId("reply-text").innerHTML,scroll:byId("reply-body").scrollTop,
+    busy:byId("reply-body").getAttribute("aria-busy"),
+    selected:document.querySelector(".card-title[aria-expanded=true]").closest(".card").dataset.id})`;
+  const preserved = await evaluate(readingState), beforeRefresh = requests.length;
+  for (const operation of ["dragging={}", "saving=true", "creating=true",
+    `moving={id:${JSON.stringify(remote)}}`, "suppressOpenUntil=performance.now()+100000"]) {
+    await evaluate(operation);
+    await press("#reply-refresh");
+    await evaluate("new Promise(resolve=>requestAnimationFrame(resolve))");
+    assert.equal(requests.length,beforeRefresh,`${surface} ${operation} 期间重读了回复`);
+    assert.deepEqual(await evaluate(readingState),preserved);
+    await evaluate("dragging=null;saving=false;creating=false;moving=null;suppressOpenUntil=0");
+  }
+  await evaluate('saving=true;moving={id:"another-card"}');
   await press("#reply-refresh");
   await wait('byId("reply-text").textContent === "本轮已完成"');
+  assert.equal(requests.length,beforeRefresh+1);
+  await evaluate("saving=false;moving=null");
   await evaluate('byId("host-filter").focus({preventScroll:true})');
   await page.command("Input.dispatchKeyEvent",{type:"keyDown",key:"Escape",code:"Escape",windowsVirtualKeyCode:27});
   await wait(`${overlayClosed} && document.activeElement.matches(${JSON.stringify(card(remote))})`);

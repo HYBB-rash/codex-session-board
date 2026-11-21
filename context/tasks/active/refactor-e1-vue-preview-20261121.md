@@ -3,10 +3,11 @@
 - owner: E1 author
 - execution_mode: isolated_write
 - coordinator: Herman / 01a1fc2d-af6f-7d50-9759-33835b51eaeb
-- base_commit: b859880165908a848a4982d2cfd9b722e9aeb912
+- base_commit: e31cbe7ce7261f596168dda92e1569efc518ca58
+- started_from: b859880165908a848a4982d2cfd9b722e9aeb912
 - worktree_path: /Users/hongyong/.codex/worktrees/ae2e/codex-session-board
 - branch: codex/refactor-e1-vue-preview
-- status: in_progress
+- status: implemented
 - allowed_write_set: index.html 的预览实现与接线；assets/reply-*；assets/app-bridge.package*；scripts/build-app-bridge.mjs；预览相关浏览器及 Rust 测试；必要构建/打包边界；本项独有任务和结果记录。
 
 ## 维护动作与首件
@@ -55,3 +56,12 @@ lib::codex_session_board::app::preview::tests::snapshot_tracks_observed_turns_ac
 记录失败与修复，不把浏览器或资源验证写成真实客户端签收。
 Herman 决定合入顺序；本项不更新 main、不推送、不部署。
 共享 STATE、日志、归档和登记由协调者处理。
+
+## 实现与回执入口
+
+已完成共享 HTML 中的 Vue 预览，删除旧布局和手工 DOM 行为。
+初次双入口浏览器首件通过。补查发现刷新绕过操作守卫，先用新增断言复现，再统一 canRead 并通过双入口回归。
+等价事件写法通过，迟到覆盖故障及 Vue/TSX 类型错误均被断言或编译器拒绝。
+最终候选、实际包资源和独立复审记录入口见 `context/results/refactor-e1-vue-preview-20261121.md`。
+第一轮候选验证为修复守卫而主动取消，owner_lost 清理回执保留，不作为最终通过证据。
+最终验证前已吸收 B1 的 dce3536 及随后 e31cbe7；rebase 无源码冲突。
