@@ -85,7 +85,7 @@ try {
       calls.map(call => [call.name,call.result.isError && call.result.content]));
     throw error;
   }
-  if (process.argv[4] === "--editor") {
+  if (target === "--editor") {
     releaseRefresh();
     const read = async () => (await rpc("tools/call",{name:"board_snapshot",arguments:{}})).structuredContent;
     const report = await checkPackagedEditor({evaluate,command:outer.command},read);
