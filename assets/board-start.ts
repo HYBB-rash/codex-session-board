@@ -5,6 +5,7 @@ import { mountBoardSessionReader } from "./board-session-reader";
 import { mountMoveFeedback } from "./board-move-feedback";
 import { mountBoardEdits } from "./board-edits";
 import { mountBoardRefresh } from "./board-refresh";
+import { mountProjectAssignment } from "./board-project-assignment";
 import { createColumnSortSave, type SortPreference } from "./board-sorting";
 import type { BoardSession } from "./board-view";
 
@@ -35,6 +36,7 @@ declare global {
     mountMoveFeedback: typeof mountMoveFeedback;
     mountBoardEdits: typeof mountBoardEdits;
     mountBoardRefresh: typeof mountBoardRefresh;
+    mountProjectAssignment: typeof mountProjectAssignment;
     createColumnSortSave: typeof createColumnSortSave;
   }
 }
@@ -77,4 +79,5 @@ window.mountBoardSessionReader = mountBoardSessionReader;
 window.mountMoveFeedback = mountMoveFeedback;
 window.mountBoardEdits = mountBoardEdits;
 window.mountBoardRefresh = mountBoardRefresh;
+window.mountProjectAssignment = mountProjectAssignment;
 window.createColumnSortSave = createColumnSortSave;

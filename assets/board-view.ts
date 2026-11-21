@@ -23,6 +23,7 @@ export interface BoardSession extends PreviewSession {
   archivePending?: boolean;
   presence?: string;
   catalogCurrent?: boolean;
+  ordinary?: boolean;
   hostId?: string;
   projectId?: string | null;
   projectIssue?: string | null;
