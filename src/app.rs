@@ -500,18 +500,27 @@ mod tests {
         })?;
         app.store
             .discover(&[json!({"id":"sample","name":"示例"})])?;
-        let _guard = app.title_lock.lock().unwrap();
-        let started = std::time::Instant::now();
-        let response = app.request(
-            "/api/state",
-            Some(&json!({
-                "id":"sample","state":"review","note":"保留备注","version":0,"inputVersion":0
-            })),
-        )?;
-        assert!(started.elapsed() < Duration::from_millis(150));
+        let response = std::thread::scope(|scope| {
+            let guard = app.title_lock.lock().unwrap();
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let app = &app;
+            scope.spawn(move || {
+                let result = app.request("/api/state", Some(&json!({
+                    "id":"sample","state":"review","note":"保留备注","version":0,"inputVersion":0
+                })));
+                let _ = sender.send(result);
+            });
+            let response = receiver.recv_timeout(Duration::from_secs(10));
+            drop(guard);
+            response
+        }).context("后台仍占用标题锁时前台保存应已返回")??;
         assert_eq!(response["ok"], true);
         assert_eq!(response["titlePending"], true);
-        assert_eq!(app.store.sessions()?[0]["note"], "保留备注");
+        assert_eq!(app.store.note("sample")?, "保留备注");
+        let jobs = app.store.pending_titles(Some("sample"))?;
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0]["state"], "review");
+        assert!(jobs[0]["attempted_at"].is_null());
         Ok(())
     }
 

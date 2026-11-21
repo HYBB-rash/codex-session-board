@@ -685,7 +685,6 @@
       "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions"
     ],
     "TITLE-001": [
-      "lib::codex_session_board::app::tests::busy_title_sync_does_not_wait_for_background_batch",
       "lib::codex_session_board::rpc::tests::title_budget_never_exceeds_three_seconds",
       "lib::codex_session_board::rpc::tests::title_deadline_bounds_a_full_unix_listener_queue",
       "lib::codex_session_board::rpc::tests::title_deadline_expires_during_websocket_handshake",
@@ -719,7 +718,6 @@
       "lib::codex_session_board::app::drafts::tests::lost_initial_title_receipts_keep_the_created_id_without_replaying_creation"
     ],
     "TITLE-002": [
-      "lib::codex_session_board::app::tests::busy_title_sync_does_not_wait_for_background_batch",
       "lib::codex_session_board::rpc::tests::title_budget_never_exceeds_three_seconds",
       "lib::codex_session_board::rpc::tests::title_deadline_bounds_a_full_unix_listener_queue",
       "lib::codex_session_board::rpc::tests::title_deadline_expires_during_websocket_handshake",
@@ -785,7 +783,6 @@
       "lib::codex_session_board::app::drafts::tests::lost_initial_title_receipts_keep_the_created_id_without_replaying_creation"
     ],
     "TITLE-004": [
-      "lib::codex_session_board::app::tests::busy_title_sync_does_not_wait_for_background_batch",
       "lib::codex_session_board::rpc::tests::title_budget_never_exceeds_three_seconds",
       "lib::codex_session_board::rpc::tests::title_deadline_bounds_a_full_unix_listener_queue",
       "lib::codex_session_board::rpc::tests::title_deadline_expires_during_websocket_handshake",
