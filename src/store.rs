@@ -55,6 +55,10 @@ CREATE TABLE IF NOT EXISTS archive_batch_items (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS archive_pending_item
  ON archive_batch_items(id) WHERE status='pending';
+CREATE INDEX IF NOT EXISTS archive_receipt_by_id ON archive_batch_items(id)
+ WHERE status IN ('pending','archived','verified');
+CREATE INDEX IF NOT EXISTS archive_failed_mark ON archive_batch_items(id)
+ WHERE status IN ('archived','verified') AND reason IS NOT NULL AND source IS NOT NULL;
 ";
 
 fn row_value(row: &Row<'_>) -> rusqlite::Result<Value> {

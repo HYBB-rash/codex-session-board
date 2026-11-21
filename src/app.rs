@@ -235,7 +235,7 @@ impl App {
         self.annotate_previews(&mut sessions)?;
         self.append_remote(&mut sessions, &mut catalog)?;
         self.retain_business_rows(&mut sessions)?;
-        self.store.mark_pending_archives(&mut sessions)?;
+        self.store.apply_archive_receipts(&mut sessions)?;
         self.annotate_connections(&mut sessions);
         crate::store::placement::project(&mut sessions, self.config.legacy_mode, self.config.four_columns);
         Ok(

@@ -70,5 +70,31 @@ fn card_buttons_and_batch_submit_only_eligible_revisions() -> Result<()> {
         ("Local".into(), 1, 0, "rejected".into()), ("Online".into(), 1, 0, "pending".into())]);
     assert_eq!(revisions(&batches[0]), [("Follow".into(), 2, 1, "rejected".into())]);
     assert_eq!(fixture.events().lines().filter(|line| *line == "thread/archive").count(), 1);
+    assert_receipt_versions(&root, &thread, &batches[1])
+}
+
+fn assert_receipt_versions(root: &App, thread: &str, batch: &crate::store::archive_batches::Batch) -> Result<()> {
+    let accepted = &batch.items.iter().find(|item| item.status == "pending").unwrap().target;
+    root.store.record_archive_result(&batch.id,&accepted.id,"pending","verified",None)?;
+    let original = serde_json::to_value(accepted)?;
+    let mut distinct = vec![];
+    for (key,value) in [("version",json!(accepted.version+1)),("inputVersion",json!(accepted.input_version+1)),
+        ("sectionVersion",json!("another-section")),("archived",json!(true)),
+        ("id",json!(crate::store::remote::identity("another-host", thread)))] {
+        let mut card = original.clone();
+        card[key] = value;
+        distinct.push(card);
+    }
+    for native in [false, true] {
+        let mut store = crate::store::Store::open(&root.config.data_dir, false)?;
+        store.native_sections = native;
+        let mut visible = distinct.clone();
+        visible.push(original.clone());
+        store.apply_archive_receipts(&mut visible)?;
+        let expected: Vec<_> = distinct.iter()
+            .filter(|card| native || card["sectionVersion"] == original["sectionVersion"])
+            .cloned().collect();
+        assert_eq!(visible, expected, "原生分区启用时才把分区版本作为不同修订");
+    }
     Ok(())
 }

@@ -12,6 +12,22 @@ mod host;
 use host::HostArchive;
 
 impl App {
+    pub(crate) fn reconcile_restored_archives(&self, observed: &[Value]) -> Result<()> {
+        let failed = self.mapping_store.failed_archive_marks()?;
+        if failed.is_empty() { return Ok(()) }
+        let active: HashSet<_> = observed.iter().filter_map(|entry| entry["id"].as_str()).collect();
+        let mut candidates = Vec::new();
+        for (target, source) in failed {
+            let (host, thread) = host_thread(&target.id)?;
+            if host == self.config.host_id && active.contains(thread.as_str())
+                && self.store.matches_active_revision(&thread, &target)? {
+                candidates.push((thread, target, source));
+            }
+        }
+        if candidates.is_empty() { return Ok(()) }
+        HostArchive { root_batches: &self.mapping_store, target_host: self }.restore(&candidates)
+    }
+
     pub(super) fn archive_route(&self, action: Action, body: &Value) -> Result<Value> {
         ensure!(!self.config.legacy_mode, "兼容模式不执行本机或远程会话的真实归档");
         let batch = match action {

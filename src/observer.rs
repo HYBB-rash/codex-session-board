@@ -196,7 +196,11 @@ pub(crate) fn observe_runtime_threads(
     since: f64,
     threads: &[Value],
 ) -> Result<()> {
-    observe_runtime_threads_at(app, reader, revisions, since, threads, Instant::now())
+    observe_runtime_threads_at(app, reader, revisions, since, threads, Instant::now())?;
+    if let Err(error) = app.reconcile_restored_archives(threads) {
+        eprintln!("主机 {} 归档恢复待核对：{error:#}", app.config.host_id);
+    }
+    Ok(())
 }
 
 pub(crate) fn observe_runtime_threads_at(

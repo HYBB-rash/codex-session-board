@@ -1,6 +1,7 @@
 use crate::{
     app::App,
     rpc::{DesktopConnection, Role, Rpc, summarize_turn},
+    store::archive_batches::ArchiveReceipt,
 };
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
@@ -41,6 +42,20 @@ pub fn request(app: &App, body: &Value) -> Result<Value> {
     request_with_writer(app, body, None, || Ok(true))
 }
 
+fn may_submit(app: &App, identifier: &str, body: &Value, batched: bool) -> Result<bool> {
+    let key = if app.config.host_id == "local" {
+        identifier.to_owned()
+    } else {
+        crate::store::remote::identity(&app.config.host_id, identifier)
+    };
+    match app.mapping_store.archive_receipt(&key, body)? {
+        Some(ArchiveReceipt::Confirmed) => anyhow::bail!("此修订已确认归档，请刷新看板"),
+        Some(ArchiveReceipt::Pending) if !batched => anyhow::bail!("请先在归档结果中核对这条会话"),
+        Some(ArchiveReceipt::Pending) => Ok(false),
+        None => Ok(true),
+    }
+}
+
 pub(crate) fn request_with_writer(
     app: &App, body: &Value, writer: Option<&mut DesktopConnection>,
     claim: impl FnOnce() -> Result<bool>,
@@ -61,15 +76,7 @@ pub(crate) fn request_with_writer(
         .then(|| app.title_lock.try_lock())
         .transpose()
         .map_err(|_| anyhow::anyhow!("标题同步进行中，请稍后重试归档"))?;
-    if writer.is_none() {
-        let key = if app.config.host_id == "local" {
-            identifier.to_owned()
-        } else {
-            crate::store::remote::identity(&app.config.host_id, identifier)
-        };
-        ensure!(!app.mapping_store.archive_is_pending(&key)?, "请先在归档结果中核对这条会话");
-    }
-    if !claim()? {
+    if !may_submit(app, identifier, body, writer.is_some())? || !claim()? {
         return Ok(json!({"ok":true,"skipped":true}));
     }
     let result = if app.config.native_sections {

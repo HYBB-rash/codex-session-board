@@ -15,6 +15,40 @@ pub(super) struct HostArchive<'a> {
 }
 
 impl HostArchive<'_> {
+    pub(super) fn restore(&self, candidates: &[(String, Target, String)]) -> Result<()> {
+        let _operation = self.target_host.operation()?;
+        let timeout = Duration::from_secs(2);
+        let deadline = crate::rpc::deadline_after(timeout)?;
+        let mut reader = self.target_host.connection(timeout, Role::CatalogReader)?.bound_to_deadline(deadline);
+        let source = self.source(&mut reader)?;
+        let source_json = source.to_string();
+        let matching: Vec<_> = candidates.iter().filter(|(_, _, recorded)| recorded == &source_json).collect();
+        if matching.is_empty() { return Ok(()) }
+        let active = self.listed(&mut reader, false)?;
+        if !matching.iter().any(|(thread, _, _)| active.contains(thread)) { return Ok(()) }
+        let archived = self.listed(&mut reader, true)?;
+        ensure!(self.source(&mut reader)? == source, "核对恢复期间 Codex 来源已变化");
+        for (thread, revision, _) in matching {
+            if !active.contains(thread) || archived.contains(thread) { continue; }
+            let lock = self.target_host.thread_lock(thread)?;
+            let Ok(_guard) = lock.try_lock() else { continue; };
+            self.target_host.store.restore_failed_archive(thread, revision)?;
+        }
+        Ok(())
+    }
+
+    fn listed(&self, reader: &mut DesktopConnection, archived: bool) -> Result<HashSet<String>> {
+        let config = &self.target_host.config;
+        let (entries, complete) = crate::rpc::collect_threads(reader, config.page_size, config.max_pages, archived)?;
+        ensure!(!archived || complete, "归档列表尚未完整读取");
+        entries.iter().map(|entry| {
+            let id = entry["id"].as_str().context("列表缺少会话 ID")?;
+            ensure!(uuid::Uuid::parse_str(id)?.to_string() == id &&
+                entry.get("hostId").is_none_or(|host| host == &config.host_id), "会话列表身份不匹配");
+            Ok(id.to_owned())
+        }).collect()
+    }
+
     pub(super) fn submit(
         &self, batch: &str, target: &Target, thread: &str, claimed: &Cell<bool>,
     ) -> Result<Value> {

@@ -124,6 +124,31 @@ fn seed_native(app: &App, threads: &[Value; 5]) -> Result<()> {
     Ok(())
 }
 
+fn snapshot_with_busy_hosts(root: &App, remote: &App, thread: &Value) -> Result<()> {
+    let cards = rows(root)?;
+    let targets: Vec<_> = cards.iter().filter(|card| card["title"] == thread["name"])
+        .map(|card| serde_json::from_value(card.clone())).collect::<serde_json::Result<_>>()?;
+    assert_eq!(targets.len(), 2);
+    let batch = Uuid::new_v4().to_string();
+    root.store.create_archive_batch(&batch, &targets)?;
+    for target in &targets {
+        root.store.claim_archive_item(&batch, &target.id, &json!({"home":"offline"}))?;
+        root.store.record_archive_result(&batch, &target.id, "pending", "verified", Some("等待目标库"))?;
+    }
+    std::thread::scope(|scope| -> Result<()> {
+        let local_lock = root.lifecycle.write().unwrap();
+        let remote_lock = remote.lifecycle.write().unwrap();
+        let (send, receive) = std::sync::mpsc::channel();
+        scope.spawn(move || { let _ = send.send(rows(root)); });
+        let result = receive.recv_timeout(std::time::Duration::from_secs(2));
+        drop((local_lock, remote_lock));
+        let visible = result.context("目标主机被占用时读取快照超时")??;
+        assert!(visible.iter().all(|card| card["title"] != thread["name"]));
+        assert!(!visible.is_empty());
+        Ok(())
+    })
+}
+
 #[test]
 fn snapshot_respects_native_positions_and_remote_presence() -> Result<()> {
     let threads = threads(["已映射", "位置未确认", "默认区", "置顶", "未映射分区"]);
@@ -152,6 +177,7 @@ fn snapshot_respects_native_positions_and_remote_presence() -> Result<()> {
                 assert!(cached.iter().any(|row| row["remote"] == true && row["title"] == label
                     && row["placementReason"] == reason));
             }
+            snapshot_with_busy_hosts(&root, &remote, &threads[0])?;
         }
     }
     Ok(())

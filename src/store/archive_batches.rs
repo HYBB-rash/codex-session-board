@@ -2,7 +2,18 @@ use super::{Store, now};
 use anyhow::{Context, Result, ensure};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
+
+#[derive(Clone)]
+pub(crate) enum ArchiveReceipt {
+    Pending,
+    Confirmed,
+}
+
+fn revision(id: &str, card: &Value) -> Value {
+    json!({"id":id,"version":card["version"],"inputVersion":card["inputVersion"],
+        "sectionVersion":card["sectionVersion"]})
+}
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -86,24 +97,63 @@ impl Store {
         identifiers.map(|id| batch(&database, &id?)?.context("归档批次不存在")).collect()
     }
 
-    pub(crate) fn archive_is_pending(&self, id: &str) -> Result<bool> {
-        Ok(self.connection()?.query_row(
-            "SELECT EXISTS(SELECT 1 FROM archive_batch_items WHERE id=? AND status='pending')",
-            [id], |row| row.get(0),
-        )?)
+    pub(crate) fn archive_receipt(&self, id: &str, card: &Value) -> Result<Option<ArchiveReceipt>> {
+        Ok(self.archive_receipts(&[revision(id, card)])?.pop().flatten())
     }
 
-    pub(crate) fn mark_pending_archives(&self, sessions: &mut [Value]) -> Result<()> {
+    fn archive_receipts(&self, revisions: &[Value]) -> Result<Vec<Option<ArchiveReceipt>>> {
+        if revisions.is_empty() { return Ok(Vec::new()) }
         let database = self.connection()?;
-        let mut query = database.prepare("SELECT id FROM archive_batch_items WHERE status='pending'")?;
-        let pending = query.query_map([], |row| row.get::<_, String>(0))?
-            .collect::<rusqlite::Result<std::collections::HashSet<_>>>()?;
-        for session in sessions {
-            if session["id"].as_str().is_some_and(|id| pending.contains(id)) {
-                session["archivePending"] = Value::Bool(true);
-            }
+        let mut query = database.prepare_cached(
+            "WITH cards AS MATERIALIZED (
+               SELECT key, CAST(value ->> 'id' AS TEXT) AS id, value ->> 'version' AS version,
+                 value ->> 'inputVersion' AS input, value ->> 'sectionVersion' AS section FROM json_each(?)
+             )
+             SELECT cards.key, MAX(receipt.status != 'pending')
+             FROM cards CROSS JOIN archive_batch_items AS receipt ON receipt.id=cards.id
+             WHERE receipt.status IN ('pending','archived','verified')
+               AND (receipt.status='pending' OR (cards.version=receipt.target ->> 'version'
+                 AND cards.input=receipt.target ->> 'inputVersion'
+                 AND (NOT ?2 OR cards.section IS receipt.target ->> 'sectionVersion')))
+             GROUP BY cards.key"
+        )?;
+        let mut rows = query.query(params![serde_json::to_string(revisions)?, self.native_sections])?;
+        let mut receipts = vec![None; revisions.len()];
+        while let Some(row) = rows.next()? {
+            let position = usize::try_from(row.get::<_, i64>(0)?)?;
+            receipts[position] = Some(if row.get(1)? {
+                ArchiveReceipt::Confirmed
+            } else {
+                ArchiveReceipt::Pending
+            });
         }
+        Ok(receipts)
+    }
+
+    pub(crate) fn apply_archive_receipts(&self, sessions: &mut Vec<Value>) -> Result<()> {
+        let revisions: Vec<_> = sessions.iter().map(|card|
+            revision(card["id"].as_str().unwrap_or_default(),card)).collect();
+        let mut receipts = self.archive_receipts(&revisions)?.into_iter();
+        sessions.retain_mut(|card| match receipts.next().flatten() {
+            Some(ArchiveReceipt::Confirmed) => card["archived"] == true,
+            Some(ArchiveReceipt::Pending) => { card["archivePending"] = Value::Bool(true); true }
+            None => true,
+        });
         Ok(())
+    }
+
+    pub(crate) fn failed_archive_marks(&self) -> Result<Vec<(Target, String)>> {
+        let database = self.connection()?;
+        let mut query = database.prepare_cached(
+            "SELECT DISTINCT target,source FROM archive_batch_items
+             WHERE status IN ('archived','verified') AND reason IS NOT NULL AND source IS NOT NULL"
+        )?;
+        let mut rows = query.query([])?;
+        let mut targets = Vec::new();
+        while let Some(row) = rows.next()? {
+            targets.push((serde_json::from_str(&row.get::<_, String>(0)?)?, row.get(1)?));
+        }
+        Ok(targets)
     }
 
     pub(crate) fn claim_archive_item(&self, batch: &str, id: &str, source: &Value) -> Result<bool> {
