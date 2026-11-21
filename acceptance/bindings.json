@@ -1257,6 +1257,7 @@
       "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation"
     ],
     "DATA-001": [
+      "lib::codex_session_board::remote::scans::tests::failed_remote_page_keeps_its_cursor_while_another_host_completes",
       "lib::codex_session_board::store::native_drafts::tests::native_draft_retries_preserve_source_target_and_operation_after_restart",
       "lib::codex_session_board::store::native_drafts::tests::native_drafts_allow_distinct_operations_without_reusing_legacy_receipts",
       "acceptance.test_dev_environment.DevEnvironmentTests.test_boundary_accepts_a_system_parent_directory_alias",

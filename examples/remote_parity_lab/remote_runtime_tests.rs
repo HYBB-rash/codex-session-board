@@ -164,9 +164,12 @@ fn complete_user_ids_drive_review_and_survive_restart_without_metadata_false_ala
     let confirmed = partition.row(THREAD)?;
     partition.discover(
         "mac",
-        &[json!({"hostId":"mac","id":THREAD,"title":"更名","updatedAt":now()})],
+        &[json!({"hostId":"mac","id":THREAD,"title":"更名","updatedAt":2})],
     )?;
     let renamed = partition.row(THREAD)?;
+    assert_eq!(confirmed["updatedAt"], 1);
+    assert_eq!(renamed["title"], "更名");
+    assert_eq!(renamed["updatedAt"], 2);
     assert_eq!(renamed["followUp"], false);
     assert_eq!(renamed["inputVersion"], confirmed["inputVersion"]);
     turn["userItems"] = json!(["first", "second"]);
