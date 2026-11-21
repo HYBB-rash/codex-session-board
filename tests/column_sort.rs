@@ -174,6 +174,13 @@ fn column_sort_real_http_and_stdio_mcp_share_persistent_settings() -> Result<()>
 }
 
 #[test]
+fn sort_menu_keyboard_focus_position_and_version_survive_refresh() -> Result<()> {
+    let result = Command::new("node").arg("scripts/check-column-sort.mjs").output()?;
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    Ok(())
+}
+
+#[test]
 fn column_sort_app_and_mcp_expose_separate_settings_operation() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let app = App::new(Config {

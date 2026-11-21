@@ -525,6 +525,7 @@
       "lib::codex_session_board::remote::scans::restore_tests::unconfirmed_archived_cards_do_not_fetch_potentially_oversized_turns"
     ],
     "MANUAL-002": [
+      "test::column_sort::sort_menu_keyboard_focus_position_and_version_survive_refresh",
       "lib::codex_session_board::formal::versions::position_and_manual_writes_increment_versions_without_false_conflicts",
       "lib::codex_session_board::formal::versions::input_revisions_count_new_batches_and_preserve_confirmation",
       "lib::codex_session_board::formal::versions::stale_edits_reject_each_revision_without_persistent_side_effects",
@@ -1165,6 +1166,7 @@
       "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions"
     ],
     "UI-003": [
+      "test::column_sort::sort_menu_keyboard_focus_position_and_version_survive_refresh",
       "test::ui_layout::light_ui_refresh_health_and_catalog_preserve_interaction",
       "test::ui_layout::reply_preview_preserves_scroll_focus_and_rejects_late_bodies",
       "test::ui_layout::long_content_and_project_filters_preserve_browser_column_geometry",
