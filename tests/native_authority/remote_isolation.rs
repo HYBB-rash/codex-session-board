@@ -362,6 +362,40 @@ fn scenario(mode: &str) -> Result<Value> {
 }
 
 #[test]
+fn local_save_commits_while_same_uuid_remote_move_waits() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let mut server = Server::new(directory.path())?;
+    let remotes = RemoteFixture::new(&mut server, directory.path())?;
+    let live = launch(&mut server, directory.path(), &remotes)?;
+    let client = Client::builder().no_proxy().timeout(Duration::from_secs(4)).build()?;
+    live.ready(&client)?;
+    let before = wait_remote(&live, &client, true, None)?;
+    let remote_id = identity("mac", FIRST);
+    let remote = update(row(&before, &remote_id), "review", "远端");
+    let local = update(row(&before, FIRST), "to_archive", "本机");
+    let (started, received) = mpsc::channel();
+    let release = Arc::new((Mutex::new(false), Condvar::new()));
+    remotes.surface("mac").lock().unwrap().blocked = Some(BlockingMove {
+        identifier: FIRST.into(), started, release: Arc::clone(&release),
+    });
+    std::thread::scope(|scope| -> Result<()> {
+        let gate = Gate(release);
+        let saving = scope.spawn(|| live.post_path(&client, "/api/state", &remote));
+        received.recv_timeout(Duration::from_secs(3))?;
+        live.post_path(&client, "/api/state", &local)?.error_for_status()?;
+        assert_eq!(row(&live.snapshot(&client)?, FIRST)["note"], "本机");
+        assert_eq!(remotes.surface("mac").lock().unwrap().slots[FIRST], "blocked");
+        drop(gate);
+        saving.join().unwrap()?.error_for_status()?;
+        Ok(())
+    })?;
+    let after = live.snapshot(&client)?;
+    assert_eq!(row(&after, &remote_id)["note"], "远端");
+    assert_eq!(row(&after, FIRST)["note"], "本机");
+    Ok(())
+}
+
+#[test]
 fn remote_online_disconnected_and_scanning_do_not_delay_local_http_mutations() -> Result<()> {
     let mut reports = Vec::new();
     for mode in [

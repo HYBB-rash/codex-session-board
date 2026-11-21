@@ -313,10 +313,16 @@ fn blocking_request(surface: &Surface, params: &Value) -> Option<BlockingMove> {
     }
     match params["tool"].as_str().unwrap_or("") {
         "list_threads" => surface.read_blocked.clone(),
-        "move_thread_to_sidebar_section" => surface
-            .blocked
-            .clone()
-            .filter(|blocked| params["arguments"]["threadId"] == blocked.identifier),
+        "move_thread_to_sidebar_section" => {
+            let arguments = &params["arguments"];
+            let gate = if arguments["hostId"] == "local" {
+                surface.blocked.clone()
+            } else {
+                surface.remote_surfaces.get(arguments["hostId"].as_str()?)?
+                    .lock().unwrap().blocked.clone()
+            };
+            gate.filter(|blocked| arguments["threadId"] == blocked.identifier)
+        }
         _ => None,
     }
 }

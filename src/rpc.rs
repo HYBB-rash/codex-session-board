@@ -1582,6 +1582,7 @@ printf '{"method":"notice"}\n{"id":999,"result":{}}\n{"id":2,"result":{"data":[]
 while read -r request; do :; done"#;
         let mut reader = StdioReader::connect(&stdio_command(script), Duration::from_secs(1))?;
         assert!(reader.call("thread/name/set", json!({})).is_err());
+        assert!(reader.call("thread/archive", json!({})).is_err());
         assert_eq!(reader.call("thread/list", json!({}))?, json!({"data": []}));
         let child_id = rustix::process::Pid::from_raw(reader._process.0.id().try_into()?);
         drop(reader);

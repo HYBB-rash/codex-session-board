@@ -456,6 +456,7 @@ fn native_archive_rejects_external_moves_before_archiving_and_accepts_fresh_conf
         .insert(FIRST.into(), "review".into());
     assert!(app.request("/api/archive", Some(&stale)).is_err());
     assert!(engine.archived.lock().unwrap().is_empty());
+    assert_eq!(app.snapshot()?["sessions"][0]["id"], FIRST);
     server
         .surface
         .lock()

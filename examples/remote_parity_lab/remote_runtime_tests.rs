@@ -83,30 +83,6 @@ fn manual_choice_survives_repeated_phase_but_new_phase_takes_effect() -> Result<
 }
 
 #[test]
-fn history_only_connection_cannot_drive_runtime_or_authorize_archive() -> Result<()> {
-    let (_root, partition, mut surface) = fixture("mac")?;
-    surface.authoritative = false;
-    let turn = json!({"id":"old","status":"completed","startedAt":1,"completedAt":2});
-    assert!(
-        observe(
-            &partition,
-            &mut surface,
-            &json!({"type":"notLoaded"}),
-            &turn
-        )
-        .is_err()
-    );
-    assert!(
-        partition
-            .archive(&mut surface, THREAD, &partition.row(THREAD)?)
-            .is_err()
-    );
-    assert!(surface.writes.is_empty());
-    assert_eq!(partition.row(THREAD)?["state"], "unknown");
-    Ok(())
-}
-
-#[test]
 fn late_snapshot_and_runtime_from_a_previous_connection_are_rejected() -> Result<()> {
     let (_root, partition, mut surface) = fixture("mac")?;
     partition.reconnect();

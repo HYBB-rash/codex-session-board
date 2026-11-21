@@ -56,6 +56,9 @@ fn failed_runtime_keeps_own_pending_drafts_visible_but_rejects_state_writes() ->
         "state":"blocked","note":"must not write","version":0,"inputVersion":0});
     let error = root.route_remote("/api/state", &body).unwrap_err();
     assert!(error.to_string().contains("当前不可修改"), "{error:#}");
+    let error = root.route_remote("/api/archive", &body).unwrap_err();
+    assert!(error.to_string().contains("当前不可修改"), "{error:#}");
+    assert!(!fixture.events().lines().any(|event| event.starts_with("thread/archive")));
     assert_eq!(remote.store.sessions()?, before);
     remote.update_health(json!({"runtimeVerified":true,"runtimeError":null}))?;
     assert_eq!(draft_row(&root, &remote)?["readOnly"], false);

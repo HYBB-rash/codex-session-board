@@ -254,6 +254,7 @@ fn archive_unverifiable_native_input_never_reaches_the_write() {
     let unknown_input = "无法核对原生最新输入";
     check_rejection(json!({}), json!({}), unknown_input);
     check_rejection(json!({}), json!({"data":[{}]}), unknown_input);
+    check_rejection(json!({}), json!({"data":[{"id":"turn","status":"completed","items":[{}]}]}), unknown_input);
     check_rejection(
         json!({}),
         json!({"data":[{"id":"turn","status":"inProgress","items":[]}]}),
