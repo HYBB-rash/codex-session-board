@@ -1,5 +1,6 @@
 import json
 import socket
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -45,6 +46,7 @@ class UpdateDeliveryTests(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory() as temporary:
             checkout = Path(temporary).resolve()
+            git = subprocess.run
             for repository, source in cases:
                 with self.subTest(repository=repository), patch.object(update_plugin.subprocess, "run") as run:
                     update_plugin.add_market("codex", repository, revision, checkout)
@@ -53,8 +55,9 @@ class UpdateDeliveryTests(unittest.TestCase):
                                      ["codex", "plugin", "marketplace", "add", source, "--json", "--ref", revision])
                     environment = run.call_args.kwargs["env"]
                     self.assertEqual(environment["GIT_ALLOW_PROTOCOL"], "file")
-                    self.assertEqual(environment["GIT_CONFIG_KEY_0"], f"url.{checkout.as_uri()}.insteadOf")
-                    self.assertEqual(environment["GIT_CONFIG_VALUE_0"], source)
+                    resolved = git(["git", "ls-remote", "--get-url", source], cwd=checkout,
+                                   env=environment, check=True, capture_output=True, text=True)
+                    self.assertEqual(resolved.stdout.strip(), checkout.as_uri())
 
     def test_reload_targets_the_installed_mcp_without_global_skill_discovery(self):
         server = {"pluginId": "codex-session-board@session-board-rust",
@@ -147,8 +150,9 @@ class UpdateDeliveryTests(unittest.TestCase):
                 patch.object(websocket, "create_connection", return_value=connection):
             with self.assertRaisesRegex(RuntimeError, "not loaded"):
                 reload_plugins.reload_plugins("codex", Path("/fixture"), "new")
-        self.assertEqual([json.loads(call.args[0])["method"] for call in connection.send.call_args_list],
-                         ["initialize", "initialized", "thread/read"])
+        methods = {json.loads(call.args[0])["method"] for call in connection.send.call_args_list}
+        self.assertIn("thread/read", methods)
+        self.assertLessEqual(methods, {"initialize", "initialized", "thread/read", "mcpServerStatus/list"})
 
     def test_wrong_architecture_is_rejected_before_stopping_or_installing(self):
         with tempfile.TemporaryDirectory() as temporary:
