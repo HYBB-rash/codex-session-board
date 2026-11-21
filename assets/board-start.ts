@@ -3,6 +3,7 @@ import { mountBoardArchive } from "./board-archive";
 import { mountBoardBrowse, type CatalogProject, type HostIdentity } from "./board-browse";
 import { createBoardHealthReports, type BoardHealth } from "./board-health-report";
 import { mountBoardHealth } from "./board-health";
+import { mountPluginUpdate } from "./board-plugin-update";
 import { mountBoardSshSetup } from "./board-ssh-setup";
 import { mountBoardSessionReader } from "./board-session-reader";
 import { mountMoveFeedback } from "./board-move-feedback";
@@ -33,6 +34,7 @@ declare global {
     createBoardRequest: typeof createBoardRequest;
     createBoardHealthReports: typeof createBoardHealthReports;
     mountBoardHealth: typeof mountBoardHealth;
+    mountPluginUpdate: typeof mountPluginUpdate;
     mountBoardSshSetup: typeof mountBoardSshSetup;
     startBoard: typeof startBoard;
     mountBoardArchive: typeof mountBoardArchive;
@@ -81,6 +83,7 @@ function startBoard(load: () => Promise<void>, restore: () => Promise<void> | vo
 window.createBoardRequest = createBoardRequest;
 window.createBoardHealthReports = createBoardHealthReports;
 window.mountBoardHealth = mountBoardHealth;
+window.mountPluginUpdate = mountPluginUpdate;
 window.mountBoardSshSetup = mountBoardSshSetup;
 window.startBoard = startBoard;
 window.mountBoardArchive = mountBoardArchive;
