@@ -76,8 +76,7 @@ export async function serveFrontend(root, temporary) {
     plugins: [...config.plugins, {
       name: "board-dev-fixture",
       transformIndexHtml: { order: "pre", handler(html) {
-        return html.replace(boardStyles, "").replace(boardScript, "").replace(/<script>\n([\s\S]*?)<\/script>/, (_, legacy) =>
-          `<script type="module">\nimport "/assets/board-start.ts";\n${legacy}</script>`);
+        return html.replace(boardStyles, "").replace(boardScript, '<script type="module" src="/assets/board-start.ts"></script>');
       } },
       configureServer(server) {
         server.middlewares.use((incoming, response, next) => {

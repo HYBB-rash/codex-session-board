@@ -83,13 +83,7 @@ export interface BoardHandle {
   update: (model: BoardModel, resetState?: string | null) => void;
 }
 
-declare global {
-  interface Window {
-    mountBoard: (elements: BoardElements, dependencies: BoardDependencies) => BoardHandle;
-  }
-}
-
-window.mountBoard = (elements, dependencies) => {
+export function mountBoard(elements: BoardElements, dependencies: BoardDependencies): BoardHandle {
   const { viewport } = elements;
   const layout = createBoardLayout(elements);
   const drag = createCardDrag(viewport, dependencies);
@@ -104,4 +98,4 @@ window.mountBoard = (elements, dependencies) => {
         focusedSort.focus({ preventScroll: true });
     }, resetState),
   };
-};
+}

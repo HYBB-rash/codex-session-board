@@ -5,9 +5,12 @@ export function beforeBoardScript(html, source) {
   return html.replace(boardScriptTag, () => `<script>${source.replaceAll("</script", "<\\/script")}</script>\n${boardScriptTag}`);
 }
 
-export const boardFixtureSource = `window.__boardFixture = bindings => {
-  Object.defineProperties(window, Object.getOwnPropertyDescriptors(bindings));
-};`;
+export const boardFixtureSource = `addEventListener("DOMContentLoaded", () => {
+  const page = window.CodexSessionBoard?.boardPage;
+  if (!page) return;
+  Object.defineProperties(window, Object.getOwnPropertyDescriptors(page));
+  window.byId = id => document.getElementById(id);
+}, {once: true});`;
 
 export function fixtureBoardHtml(html) {
   return beforeBoardScript(html, boardFixtureSource);
