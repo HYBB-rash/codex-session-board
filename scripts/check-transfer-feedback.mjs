@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { launchBrowser } from "./browser-client.mjs";
+import { inputText } from "./browser-actions.mjs";
 
 function installClock() {
   let now = 0, nextId = 0;
@@ -156,7 +157,7 @@ try {
   await evaluate('window.pendingCreation=createSession("project");void 0');
   await until('creating');
   await check("新建等待中禁用拖动归档排序与筛选", 'byId("new-session").disabled && byId("host-filter").disabled && document.querySelector("[data-archive-all]").disabled && [...document.querySelectorAll(".card")].every(card=>!card.draggable) && [...document.querySelectorAll(".column-sort")].every(button=>button.disabled)');
-  await evaluate('(() => {const card=document.querySelector(".card"), event=new Event("dragstart",{cancelable:true});card.dispatchEvent(event);window.creationBlockedDrag=event.defaultPrevented;void moveCard(data.sessions[0],"review");void archiveSessions([data.sessions[2]],document.querySelector("[data-archive-all]"));void confirmArchiveInputs(data.sessions[2],document.querySelector("[data-archive-all]"));void changeColumnSort("to_archive",document.querySelector("#column-to_archive .column-sort"));byId("draft-restart").onclick();openEditor(data.sessions[0].id,"blocked");byId("edit-form").onsubmit({preventDefault(){}});})()');
+  await evaluate('(() => {const card=document.querySelector(".card"), event=new Event("dragstart",{cancelable:true});card.dispatchEvent(event);window.creationBlockedDrag=event.defaultPrevented;void moveCard(data.sessions[0],"review");void archiveSessions([data.sessions[2]],document.querySelector("[data-archive-all]"));void confirmArchiveInputs(data.sessions[2],document.querySelector("[data-archive-all]"));void changeColumnSort("to_archive",document.querySelector("#column-to_archive .column-sort"));byId("draft-restart").onclick();openEditor(data.sessions[0].id,"blocked");byId("edit-form").requestSubmit();})()');
   await check("新建先开始时各写入口也保持互斥", 'creating && !saving && !dragging && window.creationBlockedDrag && !byId("editor").open');
   for (let attempt = 0; attempt < 150 && !pendingNew; attempt++) await delay(40);
   assert.equal(writes.length, 0);assert.equal(mutations.length, 1);
@@ -315,33 +316,33 @@ try {
   assert.equal(writes.length, beforeNoop, "同列和列外不保存");cases.push("同列及列外不提交");
   await drag(id, "#column-blocked .cards");
   await check("阻塞仍弹窗提示选填原因", 'byId("editor").open && !moving && data.sessions[0].state === "unknown" && byId("note-help").textContent.includes("暂时不填")');
-  await evaluate('byId("cancel").click()');await until('!byId("editor").open && editing === null');
+  await evaluate('byId("cancel").click()');await until('!byId("editor").open');
   assert.equal(writes.length, beforeNoop, "取消不保存");
   await drag(id, "#column-blocked .cards");
-  await evaluate('byId("note").value="";byId("edit-form").requestSubmit()');
+  await inputText(page, "#note", "");await evaluate('byId("edit-form").requestSubmit()');
   await advanceTo(1500);await until('!byId("move-feedback").hidden');
   await check("空原因允许保存并保持等待保护", 'saving && moving.state === "blocked" && byId("note").readOnly && byId("save").disabled && byId("cancel").disabled && data.sessions[0].state === "unknown"');
   assert.equal(writes.length, beforeNoop + 1);assert.equal(writes.at(-1).note, "");
   await complete(409, false);await settled();
-  await check("空原因失败后保留空草稿", 'byId("editor").open && !byId("note").readOnly && byId("note").value === "" && noteDraft(data.sessions[0].id) === "" && byId("feedback").textContent.includes("未收到保存确认")');
-  await evaluate('byId("cancel").click()');await until('!byId("editor").open && editing === null');
+  await check("空原因失败后保留空草稿", 'byId("editor").open && !byId("note").readOnly && byId("note").value === "" && byId("notice").textContent.includes("草稿已保留") && byId("feedback").textContent.includes("未收到保存确认")');
+  await evaluate('byId("cancel").click()');await until('!byId("editor").open');
   await drag(id, "#column-blocked .cards");
-  await check("等待失败后的空草稿重开仍为空", 'byId("editor").open && byId("note").value === "" && noteDraft(data.sessions[0].id) === ""');
-  await evaluate('byId("note").value="等待环境";byId("edit-form").requestSubmit()');
+  await check("等待失败后的空草稿重开仍为空", 'byId("editor").open && byId("note").value === "" && byId("notice").textContent.includes("已恢复")');
+  await inputText(page, "#note", "等待环境");await evaluate('byId("edit-form").requestSubmit()');
   await advanceTo(1500);await until('!byId("move-feedback").hidden');
   await check("表单内等待可见且不能重复提交", 'byId("editor").contains(byId("move-feedback")) && byId("save").disabled && byId("cancel").disabled && byId("state").disabled && byId("note").readOnly && !byId("notice").textContent && data.sessions[0].state === "unknown"');
   await screenshot("blocked-form");
   await complete(409, false);await settled();
-  await check("表单失败保留草稿并说明未确认", 'byId("editor").open && !byId("state").disabled && !byId("note").readOnly && byId("note").value === "等待环境" && noteDraft(data.sessions[0].id) === "等待环境" && byId("feedback").textContent.includes("未收到保存确认")');
-  await evaluate('byId("cancel").click()');await until('!byId("editor").open && editing === null');
+  await check("表单失败保留草稿并说明未确认", 'byId("editor").open && !byId("state").disabled && !byId("note").readOnly && byId("note").value === "等待环境" && byId("notice").textContent.includes("草稿已保留") && byId("feedback").textContent.includes("未收到保存确认")');
+  await evaluate('byId("cancel").click()');await until('!byId("editor").open');
   await drag(otherId, "#column-blocked .cards");
-  await check("另一会话编辑框不显示前一会话失败面板", `editing.id === ${JSON.stringify(otherId)} && byId("move-feedback").hidden && byId("move-slot").contains(byId("move-feedback")) && unconfirmedMoves.has(data.sessions[0].id) && !unconfirmedMoves.has(editing.id) && byId("note").value === editing.note`);
-  await evaluate('byId("cancel").click()');await until('!byId("editor").open && editing === null');
+  await check("另一会话编辑框不显示前一会话失败面板", `byId("dialog-title").textContent.startsWith(data.sessions[2].title) && byId("move-feedback").hidden && byId("move-slot").contains(byId("move-feedback")) && unconfirmedMoves.has(data.sessions[0].id) && !unconfirmedMoves.has(${JSON.stringify(otherId)}) && byId("note").value === data.sessions[2].note`);
+  await evaluate('byId("cancel").click()');await until('!byId("editor").open');
   await drag(id, "#column-blocked .cards");
   await evaluate('byId("edit-form").requestSubmit()');
   await advanceTo(1500);await until('!byId("move-feedback").hidden');
-  await complete();await settled();await until('!byId("editor").open && editing === null');
-  await check("表单成功才移动清草稿并保留收尾提示", 'data.sessions[0].state === "blocked" && noteDraft(data.sessions[0].id) === null && byId("move-feedback").classList.contains("saved") && !byId("move-feedback").hidden && byId("move-slot").contains(byId("move-feedback"))');
+  await complete();await settled();await until('!byId("editor").open');
+  await check("表单成功才移动并保留收尾提示", 'data.sessions[0].state === "blocked" && data.sessions[0].note === "等待环境" && byId("move-feedback").classList.contains("saved") && !byId("move-feedback").hidden && byId("move-slot").contains(byId("move-feedback"))');
   await advance(1999);
   assert.equal(await evaluate('byId("move-feedback").hidden'), false);
   await advance(1);
@@ -448,7 +449,7 @@ try {
 } catch (error) {
   await screenshot("failure");
   await fs.writeFile(path.join(output, "failure.json"), JSON.stringify({ error: error.message, cases, writes, mutations,
-    initialReducedMotion, state: await evaluate('({now:performance.now(),reducedMotion:matchMedia("(prefers-reduced-motion: reduce)").matches,glowAnimation:document.querySelector(".move-pending")?getComputedStyle(document.querySelector(".move-pending"),"::after").animationName:null,hidden:document.hidden,editing,editorOpen:byId("editor").open,dragging,saving,moving,sessions:data.sessions,feedbackText:byId("feedback").textContent,follow:[...document.querySelectorAll(".follow")].map(node=>node.textContent),selectedHost,selectedProject,feedback:byId("move-feedback").outerHTML,ids:[...document.querySelectorAll(".card")].map(card=>({id:card.dataset.id,draggable:card.draggable,rect:card.getBoundingClientRect().toJSON()}))})') }, null, 2));
+    initialReducedMotion, state: await evaluate('({now:performance.now(),reducedMotion:matchMedia("(prefers-reduced-motion: reduce)").matches,glowAnimation:document.querySelector(".move-pending")?getComputedStyle(document.querySelector(".move-pending"),"::after").animationName:null,hidden:document.hidden,editorOpen:byId("editor").open,dragging,saving,moving,sessions:data.sessions,feedbackText:byId("feedback").textContent,follow:[...document.querySelectorAll(".follow")].map(node=>node.textContent),selectedHost,selectedProject,feedback:byId("move-feedback").outerHTML,ids:[...document.querySelectorAll(".card")].map(card=>({id:card.dataset.id,draggable:card.draggable,rect:card.getBoundingClientRect().toJSON()}))})') }, null, 2));
   throw error;
 } finally {
   for (const { response } of responses) response.destroy();

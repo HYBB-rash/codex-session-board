@@ -1,5 +1,6 @@
 import { createApp } from "vue";
 import "./board-view";
+import "./board-editor";
 import ReplyPreview from "./reply-preview.vue";
 
 export interface PreviewSession {

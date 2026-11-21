@@ -142,12 +142,13 @@ try {
     await until(() => evaluate('!saving && document.querySelector("#notice").textContent.includes("保存失败")'), "未收到预期错误");
     await input(""); await click("#save");
     await until(() => evaluate('!saving && document.querySelector("#notice").textContent.includes("保存失败")'), "清空后未收到预期错误");
-    assert.equal(await evaluate(`noteDraft(${JSON.stringify(report.id)})`), "");
     await escape(); await closed(); await open();
     assert.equal(await evaluate('document.querySelector("#note").value'), "");
+    assert.match(await evaluate('document.querySelector("#notice").textContent'), /已恢复/);
     assert.deepEqual(fields(await current()), before);
     await evaluate("window.fetch=window.optionalFetch"); await save();
-    assert.equal(await evaluate(`noteDraft(${JSON.stringify(report.id)})`), null);
+    await open(); assert.equal(await evaluate('document.querySelector("#notice").textContent'), "");
+    await escape(); await closed();
   });
   await check("保存进行中禁用取消并阻止Escape", async () => {
     await open(); await input("");

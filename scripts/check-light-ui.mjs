@@ -115,7 +115,7 @@ try {
   check(await evaluate('byId("editor").open'),true);
   check(await evaluate('byId("note").value'),fixture.sessions[0].note);
   check(writes,[]);
-  await evaluate('byId("editor").close();editing=null;render()');
+  await evaluate('byId("cancel").click()');
   check(await evaluate(`${card("readonly")}.querySelector('[data-action="adjust"]').disabled`),true);
   check(await evaluate(`${card("readonly")}.draggable`),false);
   await evaluate(`${card("long")}.querySelector('[data-action="preview"]').click()`);
@@ -194,7 +194,7 @@ try {
   await evaluate('byId("edit-form").requestSubmit()');
   check(writes.length,1);
   failedPlacement = true;
-  await evaluate('byId("state").value="review";byId("edit-form").requestSubmit()');
+  await evaluate('byId("state").value="review";byId("state").dispatchEvent(new Event("change"));byId("edit-form").requestSubmit()');
   await wait('!saving && byId("notice").textContent.includes("原生分区写入未确认")');
   check(await evaluate('byId("editor").open'),true);
   check(await evaluate('byId("note").value'),"保留备注");
