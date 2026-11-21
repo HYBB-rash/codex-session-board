@@ -64,7 +64,12 @@ class DevEnvironmentTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "可写会话"):
                 probe(record)
             row.update(sectionVersion="native:fixture")
+            snapshot["health"]["sectionsError"] = "retired sidebar sync"
             probe(record)
+            snapshot["health"]["nativeError"] = "native position unavailable"
+            with self.assertRaisesRegex(RuntimeError, "native position unavailable"):
+                probe(record)
+            del snapshot["health"]["nativeError"]
             row.update(remote=True)
             with self.assertRaisesRegex(RuntimeError, "可写会话"):
                 probe(record)

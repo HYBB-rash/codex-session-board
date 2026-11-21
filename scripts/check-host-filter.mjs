@@ -212,7 +212,12 @@ try {
   fixture.sessions.filter(row=>row.hostId === "a").forEach(row=>{row.readOnly=false;row.canArchive=true;});
   fixture.health.remoteConnections[0].nativeStageError = "partial fixture";
   await refresh();
-  check(await evaluate('hostHealth(hostOptions().find(host=>host.hostId==="a")).status'),"部分自动状态更新未完成");
+  await evaluate('byId("health-more").click()');
+  check(await evaluate(`[
+    byId("health-summary").textContent.includes("部分自动状态更新未完成"),
+    document.querySelector('[data-key="diagnostics:host:a"] p').textContent
+  ]`),[true,"状态更新：partial fixture"]);
+  await evaluate('byId("health-close").click()');
   fixture.health.remoteError = "another host project failure";
   await refresh();
   check(await evaluate('document.querySelector("[data-id=a1] .project-tag summary").textContent.includes("待确认")'),false);
@@ -228,10 +233,11 @@ try {
   await refresh();
   check(await evaluate('document.querySelector(".empty-column").textContent'),"暂无匹配的会话");
   await select("host-filter","local");
+  fixture.health.sectionsError = "旧侧栏同步错误";
   fixture.health.runtimeVerified = false;fixture.health.runtimeError = "waiting";fixture.health.lastSuccessAt = fixture.health.lastScanAt = null;
   await refresh();
   check(await evaluate('hostHealth(hostOptions()[0]).attention'),false);
-  check(await evaluate('byId("health-summary").textContent.includes("自动状态已连接")'),false);
+  check(await evaluate('byId("health-summary").textContent.includes("显示已有会话，更新时间待确认")'),true);
   fixture.health.remoteConnections.push({hostId:"cached-only",hostLabel:"只留缓存的主机"});
   await refresh();
   check(await evaluate('hostOptions().some(host=>host.hostId==="cached-only")'),true);

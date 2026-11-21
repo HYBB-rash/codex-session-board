@@ -123,6 +123,10 @@ impl Config {
                     && self.host_id == "local",
             "兼容模式仅支持本机六状态记录，不启用原生分区、远程连接或真实归档"
         );
+        ensure!(
+            !self.sync_sections,
+            "sync_sections 已停用，请配置 native_sections"
+        );
         Ok(())
     }
 
@@ -143,10 +147,6 @@ impl Config {
             "代理或时钟命令不得包含空参数"
         );
         ensure!(!self.data_dir.as_os_str().is_empty(), "data_dir 不得为空");
-        ensure!(
-            !self.sync_sections,
-            "sync_sections 已停用，请配置 native_sections"
-        );
         if self.native_sections {
             self.validate_sections()?;
         }
@@ -515,9 +515,9 @@ mod tests {
             ..Config::default()
         };
         config.validate()?;
-        config.sync_sections = true;
-        assert!(config.validate().is_err());
-        config.sync_sections = false;
+        let path = fixture.0.join("old.json");
+        write_json(&path, &serde_json::json!({"sync_sections":true,"data_dir":fixture.0}), false)?;
+        assert!(load(Some(&path)).unwrap_err().to_string().contains("请配置 native_sections"));
         config.native_sections = true;
         assert!(config.validate().is_err());
         config.sidebar_socket = fixture.0.join("desktop.sock");

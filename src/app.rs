@@ -68,10 +68,6 @@ impl App {
             config.local_authority = Some(crate::rpc::authority::LocalAuthority::parent()?);
         }
         config.validate_modes()?;
-        ensure!(
-            !config.sync_sections,
-            "sync_sections 已停用，请配置 native_sections"
-        );
         let store = Arc::new(Store::open_configured(&config)?);
         let native_sections = config.native_sections;
         let catalog = crate::catalog::State::load(&store, &config.host_id);
