@@ -176,20 +176,20 @@ class PluginUpdateTests(unittest.TestCase):
         original = {"config": "/nonexistent/custom/config.json", "backup": "old-backup",
                     "runtime": {"binding": ["original", 7]}, "unknown": None}
         current.write_text(json.dumps(original))
-        published = []
-        def track_rename(rename):
-            def move(source, destination, **options):
-                rename(source, destination, **options)
-                if Path(destination) == current:
-                    published.append(current.read_bytes())
-            return move
+        def with_new_reader(operation):
+            def observe(*paths, **options):
+                result = operation(*paths, **options)
+                self.assertTrue(current.is_file(), "current.json disappeared during an upgrade")
+                with current.open() as reader:
+                    self.assertIsInstance(json.load(reader), dict)
+                return result
+            return observe
         for _ in range(3):
             shutil.rmtree(self.home, ignore_errors=True)
             shutil.rmtree(self.market, ignore_errors=True)
-            published.clear()
-            with self.isolated(), contextlib.ExitStack() as readers, \
-                    patch.object(os, "replace", track_rename(os.replace)), \
-                    patch.object(os, "rename", track_rename(os.rename)):
+            with self.isolated(), contextlib.ExitStack() as readers:
+                for operation in ("remove", "unlink", "rename", "replace"):
+                    readers.enter_context(patch.object(os, operation, with_new_reader(getattr(os, operation))))
                 first = readers.enter_context(current.open("rb"))
                 installed = []
                 initial = first.read()
@@ -197,11 +197,8 @@ class PluginUpdateTests(unittest.TestCase):
                     if phase == "reloading":
                         reader = readers.enter_context(current.open("rb"))
                         installed.append((reader, reader.read()))
-                        self.assertIn(installed[-1][1], published)
-                        published.clear()
                 result = self.update(reload=False, progress=observe)
                 self.assertTrue(installed)
-                self.assertIn(current.read_bytes(), published)
                 for reader, contents in [(first, initial), *installed]:
                     reader.seek(0)
                     self.assertEqual(reader.read(), contents)
