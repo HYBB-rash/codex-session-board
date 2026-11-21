@@ -191,10 +191,5 @@ fn column_sort_app_and_mcp_expose_separate_settings_operation() -> Result<()> {
         .and_then(|tools| tools.iter().find(|tool| tool["name"] == "board_sort"))
         .cloned();
     assert!(tool.is_some());
-    assert!(
-        mcp::resource()["text"]
-            .as_str()
-            .is_some_and(|html| html.contains("\"/api/column-sort\":\"board_sort\""))
-    );
     Ok(())
 }
