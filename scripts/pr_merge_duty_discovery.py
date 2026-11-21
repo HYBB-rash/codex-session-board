@@ -107,7 +107,7 @@ def review_state(directory, claim, author=None, coordinator=None):
     path = review_path(directory, claim["pr"], head)
     request = claim["heads"][head].get("review")
     receipt = json.loads(path.read_text()) if path.exists() else None
-    route = review_route(claim, coordinator) if request is None else None
+    route = review_route(claim, coordinator, directory) if request is None else None
     expected = request.get("task") if request is not None else route.get("task")
     if (receipt and receipt.get("head") == head and receipt.get("reviewer")
             and author and receipt["reviewer"] not in {author, coordinator}
@@ -121,16 +121,34 @@ def review_state(directory, claim, author=None, coordinator=None):
             "request": request, "request_id": key}
 
 
-def review_route(claim, coordinator):
+def imported_reviewer(directory, claim, revision, coordinator):
+    author = (claim.get("author") or {}).get("thread_id")
+    if directory is None or not author:
+        return None
+    path = review_path(directory, claim["pr"], revision)
+    previous = claim.get("last_result", {}).get("review") or {}
+    if (previous.get("review") == str(path) and previous.get("request") is None
+            and previous.get("result") in {"review-passed", "review-failed"}):
+        reviewer = previous.get("reviewer")
+    elif revision != claim["head"] and path.is_file():
+        receipt = json.loads(path.read_text())
+        reviewer = receipt.get("reviewer") if (receipt.get("head") == revision
+                                               and isinstance(receipt.get("passed"), bool)) else None
+    else:
+        reviewer = None
+    return reviewer if reviewer and reviewer not in {author, coordinator} else None
+
+
+def review_route(claim, coordinator, directory=None):
     reviewer = claim.get("review_task")
     for revision, item in reversed(claim["heads"].items()):
-        if revision == claim["head"]:
-            continue
         prior = item.get("review", {})
         if prior.get("dispatch_started_at") and not prior.get("task"):
             return {"action": "recover", "head": revision}
         if reviewer is None:
             reviewer = prior.get("task")
+            if reviewer is None and not prior:
+                reviewer = imported_reviewer(directory, claim, revision, coordinator)
     if reviewer is not None and reviewer in {coordinator, (claim.get("author") or {}).get("thread_id")}:
         raise ValueError("The dedicated reviewer must differ from the author and coordinator")
     return {"action": "resume", "task": reviewer} if reviewer else {"action": "create"}
@@ -138,25 +156,11 @@ def review_route(claim, coordinator):
 
 def remember_legacy_review(directory, claim, coordinator):
     author = (claim.get("author") or {}).get("thread_id")
-    if not author or review_route(claim, coordinator)["action"] != "create":
+    if not author or claim.get("review_task"):
         return
-    review = claim.get("last_result", {}).get("review") or {}
-    reviewer = review.get("reviewer")
-    if (review.get("result") in {"review-passed", "review-failed"} and review.get("request") is None
-            and reviewer and reviewer not in {author, coordinator}):
-        claim["review_task"] = reviewer
-        return
-    for head, item in reversed(claim["heads"].items()):
-        if head == claim["head"] or item.get("review"):
-            continue
-        path = review_path(directory, claim["pr"], head)
-        if path.is_file():
-            receipt = json.loads(path.read_text())
-            reviewer = receipt.get("reviewer")
-            if (receipt.get("head") == head and isinstance(receipt.get("passed"), bool)
-                    and reviewer and reviewer not in {author, coordinator}):
-                claim["review_task"] = reviewer
-                return
+    route = review_route(claim, coordinator, directory)
+    if route["action"] == "resume":
+        claim["review_task"] = route["task"]
 
 
 def review_command(directory, path, data, arguments, coordinator):
@@ -172,7 +176,7 @@ def review_command(directory, path, data, arguments, coordinator):
         state = review_state(directory, claim, (claim.get("author") or {}).get("thread_id"), coordinator)
         if state["result"] != "review-required":
             return state
-        route = review_route(claim, coordinator)
+        route = review_route(claim, coordinator, directory)
         if route["action"] == "recover":
             return {**state, "result": "waiting-review", "dispatch": route}
         request = head.setdefault("review", {"id": state["request_id"], "reserved_at": now()})
