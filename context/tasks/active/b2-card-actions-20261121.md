@@ -37,4 +37,4 @@ B1 `96ad327` 的根 `/api/sessions` 返回十张卡；B1 与接单基线的 `ind
 
 依据为 `Docs/ARCHIVING.md`、五轮委托中的 B2 与 T3，以及 `Docs/REMOTE-SESSIONS.md` 中的缓存与来源边界。真实客户端验收由协调者另行安排。
 
-B1 进入远端后已在作者树重基并重跑首件。首轮复审基线 `3de9e0f00f5458eda255b59e81cc54e63818f071` 包含 B1 `dce3536b70459c2962fa225320ecb88a8cde7522`。随后按队列固定到包含 D 与四列告警 T3 的 `f2a09ef9b685f1cddb1963e0ff885e9da1ad07fa`。分支、审阅与故障注入见[结果记录](../../results/b2-card-actions-20261121.md)。
+B1 进入远端后已在作者树重基并重跑首件。首轮复审基线 `3de9e0f00f5458eda255b59e81cc54e63818f071` 包含 B1 `dce3536b70459c2962fa225320ecb88a8cde7522`。D 与四列告警 T3 的复验基线为 `f2a09ef9b685f1cddb1963e0ff885e9da1ad07fa`。最终采用协调者给定的 E1 提交 `fd6aeff666efa9f7e5164d7d008004ad19a4591f`，其中包含 A `72b0199`。分支、审阅与故障注入见[结果记录](../../results/b2-card-actions-20261121.md)。

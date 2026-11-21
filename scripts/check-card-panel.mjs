@@ -42,6 +42,8 @@ addEventListener("message",async event=>{
 const calls = [];
 let releaseWrite;
 const heldWrite = new Promise(resolve => {releaseWrite = resolve;});
+let releaseRefresh;
+const heldRefresh = new Promise(resolve => {releaseRefresh = resolve;});
 const server = http.createServer(async (request,response) => {
   if (request.method === "POST" && request.url === relay) {
     let text = "";
@@ -52,6 +54,7 @@ const server = http.createServer(async (request,response) => {
     }));
     calls.push({...params,result});
     if (params.name === "board_archive") await heldWrite;
+    if (params.name === "board_snapshot" && calls.some(call => call.name === "board_update")) await heldRefresh;
     return response.writeHead(200,{"Content-Type":"application/json"}).end(JSON.stringify(result));
   }
   if (request.url === "/panel") response.setHeader("Content-Security-Policy",
@@ -94,6 +97,14 @@ try {
   await evaluate('byId("history-filter").value="all";byId("history-filter").dispatchEvent(new Event("change"))');
   assert.equal(await evaluate(`${button(target)}.textContent`), "归档");
   assert.equal(await evaluate(`${button(follow)}.textContent`), "确认待归档");
+  await evaluate(`${button(follow)}.closest(".card").querySelector(".card-title").click()`);
+  await until(() => calls.some(call => call.name === "board_preview_reply") &&
+    evaluate('!byId("reply-reader").hidden && byId("reply-body").getAttribute("aria-busy")==="false"'), "预览未完成");
+  assert.equal(await evaluate('byId("reply-text").textContent.trim()'), "归档前核对",
+    JSON.stringify(calls.find(call => call.name === "board_preview_reply").result));
+  await evaluate('byId("reply-close").click()');
+  await until(() => evaluate('byId("reply-reader").hidden'), "预览未收起");
+  assert.equal(calls.some(call => ["board_archive","board_update"].includes(call.name)), false);
   const ready = rows.find(row => row.id === target), pending = rows.find(row => row.id === follow);
   await evaluate('document.querySelector("[data-archive-all]").click()');
   await until(() => calls.some(call => call.name === "board_archive"), "未收到归档工具调用");
@@ -109,11 +120,16 @@ try {
   await until(() => evaluate(`${button(follow)}?.disabled === false && !saving`), "确认按钮未恢复");
   await evaluate(`${button(follow)}.click()`);
   await until(() => evaluate(`${button(follow)}?.textContent === "归档" && !saving`), "新输入未确认");
-  assert.deepEqual(calls.filter(call => call.name === "board_update").map(call => call.arguments),
-    [{...revision(pending),state:"to_archive",note:pending.note}]);
+  const updates = calls.filter(call => call.name === "board_update");
+  assert.deepEqual(updates.map(call => call.arguments), [{...revision(pending),state:"to_archive",note:pending.note}]);
+  const confirmed = updates[0].result.structuredContent.session;
+  assert.equal(confirmed.followUp, false);
+  assert.equal(confirmed.id, follow);
+  assert.deepEqual(await evaluate(`data.sessions.find(row => row.id === ${JSON.stringify(follow)})`), confirmed);
   assert.equal(calls.filter(call => call.name === "board_archive").length, 1);
 } finally {
   releaseWrite();
+  releaseRefresh();
   if (browser) await browser.close();
   await new Promise(resolve => server.close(resolve));
   input.close();

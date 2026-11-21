@@ -158,6 +158,12 @@ fn offline_panel_confirms_new_input_and_archives_only_the_ready_host() -> Result
     live.post_path(&fixture.client, "/api/state", &update(row(&snapshot, SECOND), "to_archive", "复核"))?
         .error_for_status()?;
     local.observe(SECOND, &json!({"id":"turn","userItems":["input"]}), None)?;
+    {
+        let mut native = fixture.server.surface.lock().unwrap();
+        native.preview_revision = Some(json!({"id":"turn","status":"completed"}));
+        native.latest_turn = Some(json!({"id":"turn","status":"completed","items":[
+            {"id":"input","type":"userMessage"},{"type":"agentMessage","phase":"final_answer","text":"归档前核对"}]}));
+    }
     use std::process::{Command, Stdio};
     let mut mcp = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
         .args(["mcp","--config"]).arg(directory.path().join("config.json"))
