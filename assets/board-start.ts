@@ -6,6 +6,7 @@ import { mountMoveFeedback } from "./board-move-feedback";
 import { mountBoardEdits } from "./board-edits";
 import { mountBoardRefresh } from "./board-refresh";
 import { mountProjectAssignment } from "./board-project-assignment";
+import { mountBoardNewSession } from "./board-new-session";
 import { createColumnSortSave, type SortPreference } from "./board-sorting";
 import type { BoardSession } from "./board-view";
 
@@ -15,7 +16,7 @@ export interface BoardSnapshot {
   health: AutoArchiveHealth & {
     sshAliasSetup?: boolean;
     remoteError?: string;
-    remoteConnections?: (HostIdentity & { catalog?: HostCatalog })[];
+    remoteConnections?: (HostIdentity & { connected?: boolean; catalog?: HostCatalog })[];
     remoteConnectionErrors?: HostIdentity[];
     remoteRegistry?: HostIdentity[];
   };
@@ -37,6 +38,7 @@ declare global {
     mountBoardEdits: typeof mountBoardEdits;
     mountBoardRefresh: typeof mountBoardRefresh;
     mountProjectAssignment: typeof mountProjectAssignment;
+    mountBoardNewSession: typeof mountBoardNewSession;
     createColumnSortSave: typeof createColumnSortSave;
   }
 }
@@ -80,4 +82,5 @@ window.mountMoveFeedback = mountMoveFeedback;
 window.mountBoardEdits = mountBoardEdits;
 window.mountBoardRefresh = mountBoardRefresh;
 window.mountProjectAssignment = mountProjectAssignment;
+window.mountBoardNewSession = mountBoardNewSession;
 window.createColumnSortSave = createColumnSortSave;

@@ -183,7 +183,7 @@ try {
   check(/^[0-9a-f-]{36}$/.test(originalOperation),true);
   check(targetWrites()[0].body,{projectId:"server",operationId:originalOperation});
   check(await evaluate('byId("draft-recovery").open'),true);
-  check(await evaluate('draftRequests.has("server")'),false);
+  check(await evaluate('newSession.hasPendingDraft("server")'),false);
   const reloaded = page.event("Page.loadEventFired");
   await page.command("Page.reload");
   await reloaded;

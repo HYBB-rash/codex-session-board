@@ -25,6 +25,8 @@ export interface CatalogProject extends HostIdentity {
   remote?: boolean;
   cached?: boolean;
   pendingDeletion?: boolean;
+  canCreate?: boolean;
+  createError?: string;
   origin?: "targetServer" | "targetLegacy" | "clientRemote";
 }
 
