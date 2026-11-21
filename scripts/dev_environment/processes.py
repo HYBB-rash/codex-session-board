@@ -44,7 +44,9 @@ def guard(path, command):
     try:
         process = subprocess.Popen(command)
     except OSError as error:
-        write_record(path, {"pid": None, "exit": None, "start_error": f"{type(error).__name__}: {error}"})
+        detail = f"{type(error).__name__}: {error}"
+        print(detail, file=sys.stderr, flush=True)
+        write_record(path, {"pid": None, "exit": None, "start_error": detail})
     else:
         write_record(path, {"pid": process.pid, "exit": None})
         result = process.wait()
