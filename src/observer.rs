@@ -233,7 +233,7 @@ pub(crate) fn observe_runtime_threads_at(
         }
     }
     let delayed = app.evidence_gaps.lock().map_err(|_| anyhow::anyhow!("执行信号锁已损坏"))?
-        .record(unconfirmed, std::time::Instant::now());
+        .record(unconfirmed, observed_at);
     let warnings = [
         (unreadable > 0).then(|| format!("{unreadable} 个会话的执行状态暂不可读")),
         (delayed > 0).then(|| format!("{delayed} 个会话持续无法确认执行状态，已保留原位置")),
