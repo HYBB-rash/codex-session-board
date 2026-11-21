@@ -81,7 +81,16 @@ Codex 环境动作、串行集成和交付封装仍待实施，现行版本与�
 这里运行真实 Rust 看板、HTTP 与数据库，桌面/侧栏依赖连接本任务 fixture，
 导航只记录到任务目录。它覆盖状态、备注、导航和重启持久性；
 新建会话等未实现的 fixture 方法明确失败，不能代签真实 Codex 或远程验收。
-双任务浏览器检查使用 Node.js 22+ 和 Chrome，每次创建独立 profile/CDP 端口：
+
+修改 Vue、TypeScript 或 TSX 时，在 `./scripts/dev start` 后另开终端运行
+`node scripts/build-app-bridge.mjs --dev`，用独立浏览器 profile 打开 Vite 输出的回环 URL。
+需要 Node.js 22.12 或更新版本。开发页复用本工作树的 Rust fixture 和请求令牌，
+远程连接、SSH 设置和插件更新写入在开发入口关闭。退出 Vite 用 Ctrl+C，再执行 `./scripts/dev stop`。
+生产构建用 `node scripts/build-app-bridge.mjs` 将 Vite 的单一脚本嵌入 `index.html`，
+HTTP 和 MCP 共用该离线页面。MCP 协议桥仍由同一命令调用 esbuild 生成。
+`node scripts/build-app-bridge.mjs --check --offline` 校验类型和已提交的产物字节。
+
+双任务浏览器检查使用 Node.js 和 Chrome，每次创建独立 profile/CDP 端口：
 
 ```zsh
 node scripts/check-dev-isolation.mjs "$URL_A" "$URL_B" "$OUTPUT"

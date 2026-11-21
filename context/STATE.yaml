@@ -2,12 +2,13 @@
   "schema_version": 1,
   "updated_at": "2026-11-22",
   "current_phase": {
-    "id": "board-refactor-five-rounds-20261121",
-    "status": "completed",
+    "id": "vue-frontend-migration-20261122",
+    "status": "in_progress",
     "as_of": "2026-11-22",
-    "summary": "会话看板五轮重构的业务组合为 2633ab6。收尾的四项行为断言与一项 EOF 诊断已随 aa31604 全部进入主线，103 项相关测试通过。真实客户端验收另行取证。"
+    "summary": "按 Herman 确认的七个功能切面迁移看板前端开发与交付入口，使用隔离工作树依次验收并合入。"
   },
   "active_tasks": [
+    "context/tasks/active/vue-frontend-migration-20261122.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",

@@ -8,8 +8,9 @@ import { buildReplyPreview } from "./build-reply-preview.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const check = process.argv.includes("--check");
-if (process.argv.slice(2).some(argument => !["--check", "--offline"].includes(argument)))
-  throw new Error("用法：node scripts/build-app-bridge.mjs [--check] [--offline]");
+const dev = process.argv.includes("--dev");
+if ((check && dev) || process.argv.slice(2).some(argument => !["--check", "--offline", "--dev"].includes(argument)))
+  throw new Error("用法：node scripts/build-app-bridge.mjs [--check | --dev] [--offline]");
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "board-bridge-build-"));
 try {
   for (const [source, destination] of [
@@ -17,6 +18,19 @@ try {
     ["app-bridge.package-lock.json", "package-lock.json"],
     ["app-bridge-entry.mjs", "app-bridge-entry.mjs"],
   ]) await fs.copyFile(path.join(root, "assets", source), path.join(temporary, destination));
+  execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund",
+    ...(process.argv.includes("--offline") ? ["--offline"] : [])], { cwd: temporary, stdio: "inherit" });
+  if (dev) {
+    const { serveFrontend } = await import("./dev-frontend.mjs");
+    await serveFrontend(root, temporary);
+  } else {
+    await buildBridge();
+  }
+} finally {
+  await fs.rm(temporary, { recursive: true, force: true });
+}
+
+async function buildBridge() {
   const operations = JSON.parse(await fs.readFile(path.join(root, "assets/board-operations.json"), "utf8"));
   const routes = { GET: {}, POST: {} };
   const tools = new Set(), actions = new Set();
@@ -29,8 +43,6 @@ try {
   }
   const previewTool = operations.find(operation => operation.action === "PreviewReply").tool;
   await fs.writeFile(path.join(temporary, "bridge-routes.json"), JSON.stringify({routes, previewTool}));
-  execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund",
-    ...(process.argv.includes("--offline") ? ["--offline"] : [])], { cwd: temporary, stdio: "inherit" });
   execFileSync(process.execPath, [path.join(temporary, "node_modules/esbuild/bin/esbuild"),
     "app-bridge-entry.mjs", "--bundle", "--minify", "--format=iife", "--legal-comments=external",
     "--outfile=app-bridge.js"], { cwd: temporary, stdio: "inherit" });
@@ -46,6 +58,4 @@ try {
   }
   const preview = await buildReplyPreview(root, temporary, check);
   console.log(JSON.stringify({ check, files: report, preview }));
-} finally {
-  await fs.rm(temporary, { recursive: true, force: true });
 }
