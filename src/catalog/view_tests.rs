@@ -65,7 +65,7 @@ fn cached_snapshot_requires_live_reverification_after_restart() -> Result<()> {
     )?;
     let remote = Arc::new(App::new(remote_config)?);
     root.remotes.lock().unwrap().insert(HOST.into(), remote.clone());
-    let check = |live: bool| -> Result<()> {
+    let check = |live: bool, writable: bool| -> Result<()> {
         let board = root.request("/api/sessions", None)?;
         let rows = board["sessions"].as_array().unwrap();
         assert_eq!(rows.len(), 1);
@@ -75,17 +75,19 @@ fn cached_snapshot_requires_live_reverification_after_restart() -> Result<()> {
         assert_eq!(row["presence"], if live { "active" } else { "cachedUnknown" });
         assert_eq!(row["catalogCurrent"], true);
         assert_eq!(row["canOpen"], live);
-        assert_eq!(row["readOnly"], !live);
+        assert_eq!(row["readOnly"], !writable);
         let catalog = &board["health"]["remoteConnections"][0]["catalog"];
         assert_eq!(catalog["complete"], live);
         assert_eq!(catalog["cached"], !live);
         Ok(())
     };
-    check(false)?;
+    check(false, false)?;
     install(&remote, super::test_support::snapshot(), true);
-    check(true)?;
+    check(true, false)?;
+    remote.store.discover(&[thread(FIRST, false, true)])?;
+    check(true, true)?;
     remote.deactivate()?;
-    check(false)
+    check(false, false)
 }
 
 #[test]
