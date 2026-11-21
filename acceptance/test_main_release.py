@@ -68,6 +68,10 @@ class MainReleaseTests(unittest.TestCase):
         source = {"commit": "source"}
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "evidence"
+            checkout = Path(temporary) / "source"
+            checkout.mkdir()
+            with self.assertRaisesRegex(ValueError, "outside both checkouts"):
+                evidence.verify_release("owner/repo", checkout / "evidence", checkout, "source", 7)
             with patch.object(evidence, "identity", return_value=source), \
                     patch.object(evidence, "git", return_value=""), \
                     patch.object(evidence.subprocess, "run") as run, \
@@ -75,7 +79,7 @@ class MainReleaseTests(unittest.TestCase):
                                  return_value=dict.fromkeys(evidence.PLATFORMS, 1)), \
                     patch.object(evidence, "platform_evidence", side_effect=lambda *args: (
                         args[3], {"validation_sha256": "digest"})) as collect:
-                result = evidence.verify_release("owner/repo", output, Path(temporary), "source", 7)
+                result = evidence.verify_release("owner/repo", output, checkout, "source", 7)
             self.assertEqual(set(result["platforms"]), set(evidence.PLATFORMS))
             self.assertEqual(collect.call_count, 2)
             self.assertEqual(run.call_count, 1)
