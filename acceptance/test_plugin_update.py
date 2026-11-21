@@ -893,13 +893,21 @@ class PluginUpdateTests(unittest.TestCase):
 
     def test_market_and_cache_on_different_filesystems_publish_and_restore(self):
         mount = Path("/dev/shm")
-        if not mount.is_dir() or mount.stat().st_dev == self.root.stat().st_dev:
-            self.skipTest("requires a second writable filesystem at /dev/shm")
-        with tempfile.TemporaryDirectory(prefix="board-market-cache-", dir=mount) as cache_root:
+        separate_device = mount.is_dir() and mount.stat().st_dev != self.root.stat().st_dev
+        with tempfile.TemporaryDirectory(prefix="board-market-cache-", dir=mount if separate_device else self.root) as temp:
+            cache_root = Path(temp)
             self.home.mkdir()
             (self.home / "plugins").mkdir()
             (self.home / "plugins/cache").symlink_to(cache_root, target_is_directory=True)
-            with self.isolated():
+            atomic_rename = plugin_publication.atomic_rename
+
+            def rename_on_same_volume(source, destination, *, exchange):
+                if source.is_relative_to(cache_root) != destination.is_relative_to(cache_root):
+                    raise OSError(errno.EXDEV, os.strerror(errno.EXDEV))
+                atomic_rename(source, destination, exchange=exchange)
+
+            rename = patch.object(plugin_publication, "atomic_rename", side_effect=rename_on_same_volume)
+            with self.isolated(), rename:
                 self.update(reload=False)
             snapshot = self.installation_snapshot()
             verify = update_plugin.verify_candidate_cache
@@ -910,14 +918,14 @@ class PluginUpdateTests(unittest.TestCase):
                     raise ValueError("failed final candidate check")
 
             self.revision = self.installed_revision = "b" * 40
-            with self.isolated(), patch.object(update_plugin, "verify_candidate_cache", side_effect=fail), \
+            with self.isolated(), rename, patch.object(update_plugin, "verify_candidate_cache", side_effect=fail), \
                  self.assertRaisesRegex(RuntimeError, "failed final candidate check.*已恢复上一个插件市场及缓存"):
                 self.update(reload=False)
             self.assertEqual(self.installation_snapshot(), snapshot)
-            with self.isolated():
+            with self.isolated(), rename:
                 self.assertEqual(self.update(reload=False)["revision"], self.revision)
             self.assertEqual(self.market.stat().st_dev, self.root.stat().st_dev)
-            self.assertEqual(update_plugin.cache_directory().stat().st_dev, mount.stat().st_dev)
+            self.assertEqual(update_plugin.cache_directory().stat().st_dev, cache_root.stat().st_dev)
             self.assertFalse(list(self.market.parent.glob(".board-rollback-market-*")))
 
     def test_market_staging_stays_on_its_mount_even_when_device_ids_match(self):

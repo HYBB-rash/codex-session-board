@@ -177,6 +177,7 @@ try {
   await clickNode(page, "#native-consent-cancel");
   check(writes.length, beforeCancel);
   await evaluate(`createSession(${JSON.stringify(project)})`);
+  await evaluate('byId("native-consent").dispatchEvent(new Event("close"))');
   await evaluate('byId("native-consent-form").requestSubmit()');
   await wait('!creating && !byId("native-consent").open');
   check(writes.at(-1).body.consent, "approved-connection");
