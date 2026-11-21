@@ -1,6 +1,7 @@
 import { h, render } from "vue";
 import BoardColumns from "./board-columns.vue";
 import { createCardDrag } from "./board-drag";
+import { createBoardLayout, type BoardElements } from "./board-layout";
 import { sortColumn, type SortPreference, type SortMenuProps } from "./board-sorting";
 import type { PreviewSession } from "./reply-preview";
 
@@ -73,23 +74,28 @@ export type BoardControls = BoardDependencies & { drag: ReturnType<typeof create
 export interface BoardHandle {
   sortColumn: typeof sortColumn;
   drag: ReturnType<typeof createCardDrag>;
-  update: (model: BoardModel) => void;
+  update: (model: BoardModel, resetState?: string | null) => void;
 }
 
 declare global {
   interface Window {
-    mountBoard: (host: HTMLElement, unplaced: HTMLElement, dependencies: BoardDependencies) => BoardHandle;
+    mountBoard: (elements: BoardElements, dependencies: BoardDependencies) => BoardHandle;
   }
 }
 
-window.mountBoard = (host, unplaced, dependencies) => {
-  const drag = createCardDrag(host, dependencies);
+window.mountBoard = (elements, dependencies) => {
+  const { viewport } = elements;
+  const layout = createBoardLayout(elements);
+  const drag = createCardDrag(viewport, dependencies);
   const controls = { ...dependencies, drag };
-  return { drag, sortColumn, update: model => {
-    const focusedSort = host.querySelector<HTMLButtonElement>(".column-sort:focus");
-    render(h(BoardColumns, { model, dependencies: controls }), host);
-    render(h(BoardColumns, { model, dependencies: controls, unplaced: true }), unplaced);
-    if (focusedSort?.isConnected && document.activeElement === document.body)
-      focusedSort.focus({ preventScroll: true });
-  } };
+  return {
+    drag, sortColumn,
+    update: (model, resetState) => layout.update(model, () => {
+      const focusedSort = viewport.querySelector<HTMLButtonElement>(".column-sort:focus");
+      render(h(BoardColumns, { model, dependencies: controls }), viewport);
+      render(h(BoardColumns, { model, dependencies: controls, unplaced: true }), layout.unplacedCards);
+      if (focusedSort?.isConnected && document.activeElement === document.body)
+        focusedSort.focus({ preventScroll: true });
+    }, resetState),
+  };
 };
