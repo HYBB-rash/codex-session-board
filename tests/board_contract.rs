@@ -819,28 +819,16 @@ mod runtime_tests {
             (json!({"type": "active"}), turn("t1", "completed")),
             (json!({"type": "idle"}), turn("t1", "inProgress")),
             (json!({"type": "active"}), json!({"status": "inProgress"})),
+            (json!({"type": "active"}), json!({"id": "", "status": "inProgress"})),
         ] {
             assert!(
                 !store
                     .observe_runtime("sample", &status, &latest, None)
-                    .unwrap()
+                    .unwrap(),
+                "{status} {latest}"
             );
-            assert_eq!(database_snapshot(&store), before);
+            assert_eq!(database_snapshot(&store), before, "{status} {latest}");
         }
-    }
-
-    #[test]
-    fn empty_turn_identifier_does_not_create_runtime_state_or_title_work() {
-        let (_directory, store) = fixture(true);
-        let before = database_snapshot(&store);
-        let status = json!({"type": "active"});
-        let latest = json!({"id": "", "status": "inProgress"});
-        assert!(
-            !store
-                .observe_runtime("sample", &status, &latest, None)
-                .unwrap()
-        );
-        assert_eq!(database_snapshot(&store), before);
     }
 }
 
@@ -1226,17 +1214,6 @@ mod isolation_contract_tests {
         assert_eq!(row["state"], "to_archive");
         assert_eq!(row["note"], "保留备注");
         assert_eq!(row["title"], "[待归档] 第一会话");
-    }
-
-    #[test]
-    fn test_disabled_title_sync_saves_without_native_writes() {
-        let (_directory, store) = fixture(false);
-        select(&store, Some("completed"), "保留备注");
-        assert_eq!(session(&store)["state"], "completed");
-        assert_eq!(session(&store)["note"], "保留备注");
-        assert_eq!(session(&store)["title"], "示例会话");
-        assert!(store.pending_titles(None).unwrap().is_empty());
-        assert_eq!(store.title_epoch, None);
     }
 
     #[test]

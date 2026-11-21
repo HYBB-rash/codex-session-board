@@ -394,11 +394,16 @@ fn disabled_title_sync_persists_without_native_jobs() {
     let app = fixture.app();
     app.request(
         "/api/state",
-        Some(&json!({"id":FIRST,"state":"completed","version":0,"inputVersion":0})),
+        Some(&json!({"id":FIRST,"state":"completed","note":"保留备注","version":0,"inputVersion":0})),
     )
     .unwrap();
     assert!(app.store.pending_titles(None).unwrap().is_empty());
-    assert_eq!(app.store.sessions().unwrap()[0]["state"], "completed");
+    assert_eq!(app.store.title_epoch, None);
+    let saved = app.store.sessions().unwrap().into_iter()
+        .find(|row| row["id"] == FIRST).unwrap();
+    assert_eq!(saved["state"], "completed");
+    assert_eq!(saved["note"], "保留备注");
+    assert_eq!(saved["title"], "同名会话");
 }
 
 #[test]
