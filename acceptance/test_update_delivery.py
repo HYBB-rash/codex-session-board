@@ -14,6 +14,18 @@ import update_plugin
 import reload_plugins
 
 
+def desktop_responses(respond):
+    connection = MagicMock()
+    def messages():
+        yield json.dumps({"method": "notification"})
+        while True:
+            request = json.loads(connection.send.call_args.args[0])
+            result = respond(request["method"], request["params"])
+            yield json.dumps({"id": request["id"], "result": result})
+    connection.recv.side_effect = messages()
+    return connection
+
+
 class UpdateDeliveryTests(unittest.TestCase):
     def test_cache_provenance_requires_the_native_git_revision_even_without_a_cache_marker(self):
         markets = json.dumps({"marketplaces": [{
@@ -139,11 +151,12 @@ class UpdateDeliveryTests(unittest.TestCase):
         self.assertEqual(reload_plugins.verify_loaded(response, "new")["pluginId"], server["pluginId"])
         with self.assertRaisesRegex(RuntimeError, "snapshot"):
             reload_plugins.verify_loaded(response, "new", "fixture-thread")
-        connection = MagicMock()
-        connection.recv.side_effect = [json.dumps(item) for item in [
-            {"id": 1, "result": {}},
-            {"id": 0, "result": {"thread": {"status": {"type": "notLoaded"}}}},
-        ]]
+        def desktop(method, params):
+            if method == "thread/read":
+                self.assertEqual(params["threadId"], "fixture-thread")
+                return {"thread": {"status": {"type": "notLoaded"}}}
+            return {}
+        connection = desktop_responses(desktop)
         with patch.dict(reload_plugins.os.environ, {"CODEX_THREAD_ID": "fixture-thread"}), \
                 patch.object(reload_plugins, "desktop_socket", return_value=Path("/fixture.sock")), \
                 patch.object(reload_plugins.socket, "socket"), \

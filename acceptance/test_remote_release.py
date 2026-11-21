@@ -625,7 +625,8 @@ class RemoteReleaseTests(unittest.TestCase):
                 self.path.write_text(f'{{"schema_version":{first_version},' + valid_manifest[1:])
                 gate.verify(self.root, self.path, self.binary)
         (self.root / "acceptance/model.py").write_text("changed frozen model")
-        self.reject()
+        with self.assertRaisesRegex(ValueError, r"model\.py"):
+            self.run_gate()
 
     def test_report_cannot_overwrite_inputs_attachments_or_fingerprinted_sources(self):
         legacy_only = self.artifact("legacy-only.txt", "legacy attachment")

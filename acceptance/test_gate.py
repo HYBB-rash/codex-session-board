@@ -295,7 +295,9 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(accepted.returncode, 0, accepted.stderr)
             entry = source / "src/main.rs"
             original = entry.read_text()
-            entry.write_text(re.sub(r"(Action::Mcp\s*=>)[^,\n]+", r"\1 mcp::serve(None)", original, count=1))
+            broken, edits = re.subn(r"(Action::Mcp\s*=>)\s*[^,]+", r"\1 mcp::serve(None)", original, count=1)
+            self.assertEqual(edits, 1)
+            entry.write_text(broken)
             rejected = subprocess.run(
                 [str(executable)], cwd=source, capture_output=True, text=True, timeout=10,
             )

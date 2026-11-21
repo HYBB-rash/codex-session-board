@@ -126,14 +126,24 @@ class DeliveryTests(unittest.TestCase):
     def test_bulk_cli_preserves_legacy_single_package_and_requires_both_records(self):
         second = self.platform_package("aarch64-apple-darwin", "0.2.93")
         def publish(repository, packages, channel):
-            self.assertEqual((repository, channel), ("fixture", "candidate"))
+            self.assertEqual(repository, "fixture")
+            for path, evidence in packages:
+                if channel == "stable":
+                    self.assertEqual(evidence.read_text(), package_plugin.verify_package(path)["target"])
+                else:
+                    self.assertIsNone(evidence)
             return [{"target": package_plugin.verify_package(path)["target"]} for path, _ in packages]
 
         first_result = {"target": self.manifest["target"]}
         second_result = {"target": package_plugin.verify_package(second)["target"]}
+        evidence = [self.root / "first.json", self.root / "second.json"]
+        for path, result in zip(evidence, (first_result, second_result)):
+            path.write_text(result["target"])
+        both = {"publications": [first_result, second_result]}
         for arguments, expected in ((["--package", str(self.package)], first_result),
-                                    (["--packages", str(self.package), str(second)],
-                                     {"publications": [first_result, second_result]})):
+                                    (["--packages", str(self.package), str(second)], both),
+                                    (["--channel", "stable", "--packages", str(self.package), str(second),
+                                      "--evidence", str(evidence[0]), "--evidence", str(evidence[1])], both)):
             with patch.object(sys, "argv", ["publish", "--repository", "fixture", *arguments]), \
                     patch.object(publish_plugin, "publish_many", side_effect=publish), \
                     patch("builtins.print") as output:

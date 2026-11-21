@@ -10,10 +10,12 @@ from pathlib import Path
 from threading import Barrier, Lock
 from types import SimpleNamespace
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import package_plugin
 import package_scenarios
+import publish_plugin
 import release_plugin
 import release_scenarios
 import verify_package_startup
@@ -272,9 +274,14 @@ class SavedReleaseTests(unittest.TestCase):
     def test_draft_release_discovery_paginates_and_preserves_asset_digests(self):
         github = release_plugin.GitHub("owner/plugin")
         expected = {"id": 7, "tag_name": self.tag, "draft": True, "assets": [{"digest": "sha256:original"}]}
-        pages = {f"releases/tags/{self.tag}": None, "releases?per_page=100&page=1": [{"tag_name": "v0.0.1"}],
-                 "releases?per_page=100&page=2": [expected], "releases?per_page=100&page=3": []}
-        with patch.object(github, "api", side_effect=pages.__getitem__):
+        pages = [[{"tag_name": "v0.0.1"}], [expected], []]
+        def listed(url):
+            if url == f"releases/tags/{self.tag}":
+                return None
+            parts = urlsplit(url)
+            self.assertEqual(parts.path, "releases")
+            return pages[int(parse_qs(parts.query)["page"][0]) - 1]
+        with patch.object(github, "api", side_effect=listed):
             self.assertEqual(github.release(self.tag), expected)
         published = {**expected, "draft": False, "immutable": True, "assets": [{"digest": "sha256:updated"}]}
         with patch.object(github, "api", return_value=published) as api:
@@ -303,7 +310,8 @@ class SavedReleaseTests(unittest.TestCase):
             self.assertEqual(github.release(self.tag), published)
             api.assert_called_once_with(f"releases/tags/{self.tag}")
         github = release_plugin.GitHub("owner/plugin")
-        with patch.object(github, "api", side_effect=[None, [expected, {**expected, "id": 8}], []]):
+        pages = [[expected], [{**expected, "id": 8}], []]
+        with patch.object(github, "api", side_effect=listed):
             with self.assertRaisesRegex(ValueError, "Multiple drafts"):
                 github.release(self.tag)
 
@@ -593,26 +601,33 @@ class SavedReleaseTests(unittest.TestCase):
             return original_api(path)
         def checkout(source, destination):
             (destination / "scripts").mkdir(parents=True)
+        publications = []
+        def publish(repository, packages, channel):
+            publications.extend(package_plugin.verify_package(path)["target"] for path, _ in packages)
+            return [{} for _ in packages]
+        def run_command(arguments, **options):
+            if len(arguments) > 1 and Path(arguments[1]).name == "publish_plugin.py":
+                with patch.object(sys, "argv", arguments[1:]), \
+                        patch.object(publish_plugin, "publish_many", side_effect=publish), patch("builtins.print"):
+                    publish_plugin.main()
         with patch.object(self.github, "api", side_effect=api), \
                 patch.object(release_plugin, "source_checkout", side_effect=checkout), \
-                patch.object(release_plugin.subprocess, "run") as run:
+                patch.object(release_plugin.subprocess, "run", side_effect=run_command):
             release_plugin.publish_saved(self.github, self.tag, self.github.source, "candidate", None, self.root)
         self.assertFalse(self.github.draft)
-        [publication] = [call.args[0] for call in run.call_args_list if "--packages" in call.args[0]]
-        packages = publication[publication.index("--packages") + 1:]
-        self.assertCountEqual([package_plugin.verify_package(Path(package))["target"] for package in packages],
-                              package_plugin.TARGETS)
+        self.assertCountEqual(publications, package_plugin.TARGETS)
+        publications.clear()
         observed_release = self.github.release
         for draft, immutable in ((False, False), (True, True)):
             with patch.object(self.github, "release", side_effect=lambda tag: {
                 **observed_release(tag), "draft": draft, "immutable": immutable,
             }), patch.object(release_plugin, "source_checkout", side_effect=checkout), \
-                    patch.object(release_plugin.subprocess, "run") as run:
+                    patch.object(release_plugin.subprocess, "run", side_effect=run_command):
                 retry = self.root / f"mutable-{draft}"
                 retry.mkdir()
                 with self.assertRaisesRegex(ValueError, "must be immutable"):
                     release_plugin.publish_saved(self.github, self.tag, self.github.source, "candidate", None, retry)
-                self.assertFalse(any("--packages" in call.args[0] for call in run.call_args_list))
+                self.assertEqual(publications, [])
         with patch.object(self.github, "release", return_value=None):
             with self.assertRaisesRegex(ValueError, "has not been saved"):
                 release_plugin.publish_saved(self.github, self.tag, self.github.source, "candidate", None, self.root)

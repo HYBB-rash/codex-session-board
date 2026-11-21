@@ -18,6 +18,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import websocket
+from acceptance.test_update_delivery import desktop_responses
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import board_update_job
@@ -178,14 +179,22 @@ class PluginUpdateTests(unittest.TestCase):
         for _ in range(3):
             shutil.rmtree(self.home, ignore_errors=True)
             shutil.rmtree(self.market, ignore_errors=True)
-            with self.isolated(), patch.object(update_plugin.os, "replace", wraps=os.replace) as replace:
-                result = self.update(reload=False)
+            with self.isolated(), contextlib.ExitStack() as readers:
+                first = readers.enter_context(current.open("rb"))
+                installed = []
+                initial = first.read()
+                def observe(phase, **fields):
+                    if phase == "reloading":
+                        reader = readers.enter_context(current.open("rb"))
+                        installed.append((reader, reader.read()))
+                result = self.update(reload=False, progress=observe)
+                self.assertTrue(installed)
+                for reader, contents in [(first, initial), *installed]:
+                    reader.seek(0)
+                    self.assertEqual(reader.read(), contents)
             self.assertEqual(result["legacy_installation"], original)
             self.assertEqual(json.loads(current.read_text()), result)
             self.assertEqual(self.pending_at_install["legacy_installation"], original)
-            writes = [call.args for call in replace.call_args_list if call.args[1] == current]
-            self.assertTrue(writes)
-            self.assertTrue(all(source.parent == current.parent for source, _ in writes))
             self.assertFalse(Path(original["config"]).exists())
 
     def test_defer_reload_preserves_installed_but_unloaded_result(self):
@@ -256,7 +265,22 @@ class PluginUpdateTests(unittest.TestCase):
         return connection
 
     def test_full_update_reloads_existing_native_install_without_install_rpc(self):
-        connection = self.desktop_connection()
+        server = {"pluginId": "codex-session-board@session-board-rust",
+                  "serverInfo": {"name": "codex-session-board", "version": self.version},
+                  "tools": {"board_view": {}}}
+        def respond(method, params):
+            if method == "mcpServerStatus/list":
+                self.assertEqual(params["threadId"], "fixture-thread")
+                return {"data": [server], "nextCursor": None} if params["cursor"] else {"data": [], "nextCursor": "next"}
+            if method == "mcpServer/tool/call":
+                self.assertEqual((params["threadId"], params["server"], params["tool"]),
+                                 ("fixture-thread", "session_board", "board_snapshot"))
+                return {"structuredContent": {"sessions": []}}
+            if method == "thread/read":
+                self.assertEqual(params["threadId"], "fixture-thread")
+                return {"thread": {"status": {"type": "idle"}}}
+            return {}
+        connection = desktop_responses(respond)
         with self.isolated(), patch.object(reload_plugins, "desktop_socket", return_value=self.root / "desktop.sock"), \
              patch.object(reload_plugins.socket, "socket") as transport, \
              patch.object(websocket, "create_connection", return_value=connection):
@@ -265,11 +289,10 @@ class PluginUpdateTests(unittest.TestCase):
         self.assertTrue(result["desktop_loaded"])
         self.assertEqual(result["phase"], "desktop_loaded")
         calls = [json.loads(call.args[0]) for call in connection.send.call_args_list]
-        methods = {call["method"] for call in calls}
-        self.assertIn("config/mcpServer/reload", methods)
-        self.assertIn("mcpServerStatus/list", methods)
-        self.assertTrue(any(call["method"] == "mcpServer/tool/call" and call["params"]["tool"] == "board_snapshot"
-                            for call in calls))
+        methods = [call["method"] for call in calls]
+        reload = methods.index("config/mcpServer/reload")
+        self.assertIn("thread/read", methods[:reload])
+        self.assertIn("mcpServerStatus/list", methods[reload:methods.index("mcpServer/tool/call")])
         self.assertNotIn("plugin/install", methods)
         self.assertTrue((self.market / ".agents/plugins/marketplace.json").is_file())
         transport.return_value.__enter__.return_value.connect.assert_called_once_with(str(self.root / "desktop.sock"))
