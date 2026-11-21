@@ -4,8 +4,11 @@ import http from "node:http";
 import { launchBrowser } from "./browser-client.mjs";
 import { archiveFixture } from "./archive-browser-fixture.mjs";
 import { filterSnapshot, checkFilterArchiveScope } from "./filter-archive-scope.mjs";
+import { filterFrame, filterHost } from "./filter-package-frame.mjs";
+import { until } from "./browser-actions.mjs";
 
 const html = await fs.readFile(process.argv[3] || new URL("../index.html",import.meta.url),"utf8");
+const resource = process.argv[4] && await fs.readFile(process.argv[4],"utf8");
 const fixture = {
   states:{unknown:"待判断",review:"待审阅",to_archive:"待归档"},health:{
     remoteRegistry:[{hostId:"a",hostLabel:"同名主机",enabled:true},{hostId:"b",hostLabel:"同名主机",enabled:false},{hostId:"empty",hostLabel:"空主机",enabled:false}],
@@ -26,6 +29,10 @@ const writes = [];
 const archive = archiveFixture();
 let pendingNew = false, pendingReply = false, rejectReads = false, releaseNew;
 const server = http.createServer(async (request,response) => {
+  if (resource && ["/filter-host","/filter-resource"].includes(request.url)) {
+    return response.writeHead(200,{"Content-Type":"text/html; charset=utf-8"}).end(
+      request.url === "/filter-host" ? filterHost : resource);
+  }
   let body = "";
   for await (const chunk of request) body += chunk;
   const input = body ? JSON.parse(body) : null;
@@ -205,6 +212,7 @@ try {
   check(await evaluate('Boolean(byId("health-detail-list").querySelector("script"))'),false);
   if (process.argv[2]) {
     await fs.mkdir(process.argv[2],{recursive:true});
+    await page.command("Page.bringToFront");
     await evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
     const image = await page.command("Page.captureScreenshot",{format:"png"});
     await fs.writeFile(`${process.argv[2]}/host-error-details.png`,Buffer.from(image.data,"base64"));
@@ -257,7 +265,13 @@ try {
   Object.assign(fixture,structuredClone(filterSnapshot));
   await refresh();
   await checkFilterArchiveScope(evaluate,writes);
-  console.log(JSON.stringify({cases,archivedIds,archiveScope:true}));
+  if (resource) {
+    const frame = await filterFrame(browser,`http://127.0.0.1:${server.address().port}`);
+    await until(() => frame('!!document.querySelector("#host-filter option[value=\'host:host-b\']")'),
+      "嵌入资源没有读到同名主机");
+    await checkFilterArchiveScope(frame,writes);
+  }
+  console.log(JSON.stringify({cases,archivedIds,archiveScope:true,embeddedScope:Boolean(resource)}));
 } finally {
   releaseNew?.();
   if (browser) await browser.close();
