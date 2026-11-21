@@ -29,7 +29,21 @@ fn host_catalog_filters_preserve_cached_rows_and_isolated_native_drafts() {
         String::from_utf8_lossy(&result.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(report["cases"], 67);
+    assert_eq!(report["cachedCatalog"], serde_json::json!({
+        "host": "host:b", "selectedBefore": "project:other", "removedProjects": ["other"],
+        "project": "project:other", "cards": ["other"]
+    }));
+    assert_eq!(report["completeCatalog"], serde_json::json!({
+        "host": "host:a", "selectedBefore": "project:empty", "removedProjects": ["empty"],
+        "project": "all", "cards": ["active", "last-active", "legacy"]
+    }));
+    assert_eq!(report["archivedIds"], serde_json::json!(["active", "legacy"]));
+    let failed_operation = report["failedOperation"].as_str().unwrap();
+    assert!(uuid::Uuid::parse_str(failed_operation).is_ok());
+    assert_eq!(report["retryRequests"], serde_json::json!([
+        {"projectId": "server", "operationId": failed_operation}
+    ]));
+    assert_eq!(report.get("remainingDraft"), Some(&serde_json::Value::Null));
     assert_eq!(report["cleanup"]["groupEmpty"], true);
     assert_eq!(report["cleanup"]["profileRemoved"], true);
 }

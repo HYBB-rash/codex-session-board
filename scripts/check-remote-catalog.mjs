@@ -56,8 +56,8 @@ const server = http.createServer(async (request,response) => {
   response.end(request.url === "/" ? html : JSON.stringify(request.method === "POST" ? {ok:true} : fixture));
 });
 await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
-let browser, cases = 0;
-const check = (actual,expected) => {assert.deepEqual(actual,expected);cases++;};
+let browser;
+const check = assert.deepEqual;
 try {
   browser = await launchBrowser();
   const page = await browser.page(`http://127.0.0.1:${server.address().port}/`);
@@ -136,17 +136,29 @@ try {
   check(writes.filter(row=>row.path === "/api/refresh").length,0);
   check(await evaluate('hostHealth({value:"host:b",hostId:"b",hostLabel:"b",enabled:false}).status.includes("缓存时间")'),true);
   check(await evaluate('hostHealth({value:"host:b",hostId:"b",hostLabel:"b",enabled:false}).diagnostics.some(([,message])=>message.includes("b-only-error"))'),true);
-  await select("project-filter","project:other");
-  await evaluate('data.projectCatalog.items=data.projectCatalog.items.filter(item=>item.id!=="other");render()');
-  check(await evaluate('byId("project-filter").value'),"project:other");
+  const allProjects = fixture.projectCatalog.items;
+  const projectIds = () => evaluate("data.projectCatalog.items.map(project=>project.id)");
+  const omitProject = async id => {
+    await select("project-filter","project:"+id);
+    const selectedBefore = await evaluate('byId("project-filter").value');
+    const before = await projectIds();
+    fixture.projectCatalog.items = allProjects.filter(project=>project.id!==id);
+    await loadFixture(page,fixture);
+    const after = await projectIds();
+    const view = await evaluate(`({
+      host:byId("host-filter").value, project:byId("project-filter").value,
+      cards:Array.from(document.querySelectorAll("article.card[data-id]"), card=>card.dataset.id).sort()
+    })`);
+    return {...view,selectedBefore,removedProjects:before.filter(project=>!after.includes(project))};
+  };
+  const cachedCatalog = await omitProject("other");
   await select("host-filter","host:a");
-  await select("project-filter","project:empty");
-  await evaluate('data.projectCatalog.items=data.projectCatalog.items.filter(item=>item.id!=="empty");render()');
-  check(await evaluate('byId("project-filter").value'),"all");
+  const completeCatalog = await omitProject("empty");
+  fixture.projectCatalog.items = allProjects;
   await select("history-filter","all");
   await evaluate('document.querySelector("[data-archive-all]").click()');
   await wait("!saving");
-  check(writes.filter(row=>row.path === "/api/archive").map(row=>row.body.id),["active","legacy"]);
+  const archivedIds = writes.filter(row=>row.path === "/api/archive").map(row=>row.body.id);
   await select("history-filter","archived");
   await evaluate('byId("filter-toggle").click();byId("search").value="关键词";byId("search").dispatchEvent(new Event("input"))');
   check(await ids(),["archived","last-archive"]);
@@ -211,15 +223,18 @@ try {
   check(await evaluate('byId("draft-recovery").open'),true);
   check(await evaluate('sessionStorage.getItem("native-draft-operation:server")'),failedOperation);
   nativeError = false;
+  const beforeRetry = writes.length;
   await evaluate('byId("draft-retry").click()');
   await wait("!creating");
-  check(targetWrites().at(-1).body.operationId,failedOperation);
+  const retryRequests = writes.slice(beforeRetry).filter(row=>row.path==="/api/new").map(row=>row.body);
+  const remainingDraft = await evaluate('sessionStorage.getItem("native-draft-operation:server")');
   await evaluate('data.health.remoteConnections[0].connected=false;data.health.remoteConnections[0].runtimeVerified=false;render()');
   const beforeOffline = writes.length;
   await select("host-filter","host:a");
   check(writes.length,beforeOffline);
   const cleanup = await browser.close();browser = null;
-  console.log(JSON.stringify({ok:true,cases,isolatedBrowser:true,cleanup}));
+  console.log(JSON.stringify({ok:true,isolatedBrowser:true,cachedCatalog,completeCatalog,archivedIds,
+    failedOperation,retryRequests,remainingDraft,cleanup}));
 } finally {
   await browser?.close();
   await new Promise(resolve => server.close(resolve));
