@@ -144,6 +144,39 @@ fn isolated(directory: &Path, test: &str) -> Result<bool> {
 }
 
 #[test]
+fn offline_panel_confirms_new_input_and_archives_only_the_ready_host() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    if isolated(directory.path(), "offline_panel_confirms_new_input_and_archives_only_the_ready_host")? {
+        return Ok(());
+    }
+    let fixture = BatchFixture::new(directory.path())?;
+    let local = fixture.store("local")?;
+    local.discover_remote("offline", "离线主机", &[json!({"id":FIRST,"hostId":"offline","title":"缓存","updatedAt":1})])?;
+    local.observe(SECOND, &json!({"id":"turn","userItems":[]}), None)?;
+    let live = fixture.live.as_ref().unwrap();
+    let snapshot = live.snapshot(&fixture.client)?;
+    live.post_path(&fixture.client, "/api/state", &update(row(&snapshot, SECOND), "to_archive", "复核"))?
+        .error_for_status()?;
+    local.observe(SECOND, &json!({"id":"turn","userItems":["input"]}), None)?;
+    use std::process::{Command, Stdio};
+    let mut mcp = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
+        .args(["mcp","--config"]).arg(directory.path().join("config.json"))
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()?;
+    let output = Command::new("node").arg("scripts/check-card-panel.mjs").args([&fixture.target, SECOND])
+        .stdin(mcp.stdout.take().unwrap()).stdout(mcp.stdin.take().unwrap()).output();
+    assert!(mcp.wait()?.success());
+    let output = output?;
+    anyhow::ensure!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(fixture.writes("mac"), 1);
+    assert_eq!(fixture.writes("other"), 0);
+    assert!(!fixture.server.surface.lock().unwrap().calls.iter().any(|method| method == "thread/archive"));
+    let after = live.snapshot(&fixture.client)?;
+    assert_eq!(row(&after, SECOND)["followUp"], false);
+    assert!(fixture.remotes.archived("mac").contains(FIRST));
+    Ok(())
+}
+
+#[test]
 fn remote_batch_owner_persists_a_success_receipt_in_root_and_confirms_only_the_target() -> Result<()> {
     let directory = tempfile::tempdir()?;
     if isolated(directory.path(),

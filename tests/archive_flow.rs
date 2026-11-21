@@ -349,7 +349,4 @@ fn archive_mcp_resource_exposes_only_an_explicit_app_action() {
         tool["inputSchema"]["required"],
         json!(["id", "version", "inputVersion"])
     );
-    let resource = mcp::resource();
-    let html = resource["text"].as_str().unwrap();
-    assert!(html.contains("\"/api/archive\":\"board_archive\""));
 }
