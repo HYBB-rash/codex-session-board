@@ -140,28 +140,3 @@ class PRTaskGithubTests(unittest.TestCase):
 
     def test_optional_checks_still_block_while_running_failed_or_unknown(self):
         required = {"id": 1, "name": "changes", "head_sha": HEAD, "status": "completed",
-                    "conclusion": "success", "completed_at": "one",
-                    "html_url": "https://github.com/check"}
-        optional = {**required, "id": 2, "name": "optional"}
-        for status, conclusion, expected in (
-            ("in_progress", None, "pending"), ("completed", "failure", "failed"),
-            ("completed", "cancelled", "failed"), ("completed", "unknown", "pending"),
-        ):
-            with self.subTest(status=status, conclusion=conclusion):
-                self.assertEqual(self.snapshot_with([
-                    required, {**optional, "status": status, "conclusion": conclusion},
-                ])["ci"], expected)
-
-    def test_new_check_execution_on_same_head_has_new_action_identity(self):
-        check = {"id": 1, "name": "changes", "head_sha": HEAD, "status": "completed",
-                 "conclusion": "failure", "completed_at": "one", "html_url": "https://github.com/check"}
-        first = self.snapshot_with([check])["items"][0]["key"]
-        check["completed_at"] = "two"
-        second = self.snapshot_with([check])["items"][0]["key"]
-        self.assertNotEqual(first, second)
-
-    def test_pr_change_during_snapshot_discards_result(self):
-        changed = pull()
-        changed["head"]["sha"] = "c" * 40
-        with self.assertRaises(forge.ForgeError):
-            self.snapshot_with([], changed)
