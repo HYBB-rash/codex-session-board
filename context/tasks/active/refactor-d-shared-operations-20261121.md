@@ -20,3 +20,14 @@ branch: codex/refactor-d-shared-operations
 | `test::legacy_mode::compatibility_tools_and_direct_routes_keep_archive_and_remote_creation_disabled` | 兼容模式工具可见性和直接调用限制。 |
 | `test::native_authority::archive::archive_batch_recovers_lost_receipt_after_reopen_without_replay` | 原生归档回执丢失重开，验证分派仍走原业务规则。 |
 | `test::ui_layout::reply_preview_preserves_scroll_focus_and_rejects_late_bodies` | E1 相邻边界。旧网页和嵌入资源均实际加载预览。 |
+| `test::native_authority::entrypoints::preview_tool_keeps_reply_out_of_model_content` | 实际 stdio 调用预览；与同一隔离 HTTP 服务读出的正文逐字段比较，整个 MCP 回执只含空 content 和 `_meta.previewReply`。新增，绑定 MCP-001。 |
+
+## 作者交付
+
+最终队列基线为 `b794c8a076760e7d5ea6936a118a168b57f7fa95`，实现及测试提交为 `804e92ca174caeec97e20bce45eab285dba1c7d0`。起始基线已逐次接入 C1、T2、B1，再接入协调者冻结的 T1 队列。B1 到 T1 的六个 D 提交经 `git range-diff` 逐项等价。
+
+18 个共享操作共用 16 条路径。原有四处人工登记分别位于浏览器桥、MCP 工具列表、MCP 到 HTTP 的转发和 App 的 HTTP 分派。现只在 `assets/board-operations.json` 登记方法、路径、工具名及标题和只读提示。增加业务操作时实现 `Action` 分支及对应参数描述，运行 `node scripts/build-app-bridge.mjs` 重建离线包。E1 如改桥接构建，后合入的一方须基于组合入口重生成，再验桥接与预览。HTTP 私有端点及 MCP 私有 `board_view` 仍由原入口负责。
+
+独审在临时副本只改 `board_connect` 工具名、保留旧 bundle，原 56 项桥接断言全部通过。修复后，`test::ui_layout::mcp_bridge_preserves_routes_results_and_host_theme` 的第 57 项逐项比对登记和实际调用，这一故障会令测试退出 1。原工具名、同路径双方法、未知拒绝及预览的独立预期也保留。预览测试首轮遇到原生 fixture 不支持 `notLoaded`，已补入稳定的轮次确认回应。
+
+B1 组合头 `f5b955ca75ae99550bcb5c0786ea7eefc46ed3b2` 的 Linux 定向 108 项、Clippy、源码包预检、离线产物逐字节复建、项目和上下文检查均通过。独审在该头复测了工具改名反例、归档跨入口、预览及三组 B1 归列。本卡随分支交协调者；最终队列头回执随作者交付消息提供，合入顺序由 Herman 决定。
