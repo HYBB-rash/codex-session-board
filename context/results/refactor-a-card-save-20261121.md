@@ -7,10 +7,12 @@
 普通拖放省略备注，编辑框仍明确提交字符串；失败草稿、临时落位和等待提示保持。
 
 - 作者分支：`codex/refactor-a-card-save`
-- 实际基线：`b859880165908a848a4982d2cfd9b722e9aeb912`
-- 业务及审阅修复提交：`6a83c5b3c6684256f57b7e2a936b78c009ea9a23`
+- 接单基线：`b859880165908a848a4982d2cfd9b722e9aeb912`
+- 最终交付基线：`808a0f518b06c052cb3bc98654b8b48506b84936`
+- 业务及审阅修复提交：`4b4d4834039dd1798b15631d955eed995e4872e9`
+- rebase 后完整复验提交：`3d3cd8ffeca1b91995f80fdb55bccd59cfe27eb6`，仅比业务提交多 context 记录。
 - 版本保持 `0.4.19`。后续收尾提交只修改本任务 context 记录。
-- 实现指纹：`7e262cd57d2abca310c191425c900979ca9e4afafd9f336bbc3e3cc69b6d15e9`
+- 实现指纹：`e515bd351a851df38f8a764dc5b8a33bff64d6957881951277174d68ee18819d`
 - 交付范围：独立作者分支。等待 Herman 点名，不推进 main、推送、安装或部署。
 
 `App::save_receipt` 直接从 `App::snapshot` 选取确认卡片。  
@@ -26,8 +28,8 @@
 | 审阅修复后源码 | `"  "` | `""` | `""` | `""` |
 
 最后一轮先将真实 fixture 卡片放到待审阅，再实际拖进已阻塞并输入两个空格。  
-请求原生位置为待审阅，回执位置为已阻塞；回执、刷新前卡片和最终读回的版本均为 24。  
-未修复和最终证据分别为 `refactor-a-first-baseline.json`、`refactor-a-first-reviewed-code.json`。  
+请求原生位置为待审阅，回执位置为已阻塞；回执、刷新前卡片和最终读回的版本一致。  
+未修复和最终证据分别为 `refactor-a-first-baseline.json`、`refactor-a-rebased-first.json`。  
 后者绑定上述准确业务提交及实现指纹，包含浏览器进程组退出和 profile 删除回执。
 
 ## 测试服务的对象
@@ -60,22 +62,22 @@
 ```zsh
 ./scripts/dev setup
 ./scripts/dev start
-node /private/tmp/refactor-a-first.mjs /private/tmp/refactor-a-first-reviewed-code.json --expect-fixed
-node scripts/check-blocked-optional.mjs /private/tmp/refactor-a-blocked-reviewed-code.json
-node scripts/check-transfer-feedback.mjs /private/tmp/refactor-a-transfer-reviewed-code
+node /private/tmp/refactor-a-first.mjs /private/tmp/refactor-a-rebased-first.json --expect-fixed
+node scripts/check-blocked-optional.mjs /private/tmp/refactor-a-rebased-blocked.json
+node scripts/check-transfer-feedback.mjs /private/tmp/refactor-a-rebased-transfer
 node scripts/check-light-ui.mjs
 node scripts/check-app-bridge.mjs
 ./scripts/dev stop
 ./scripts/dev status
 ./scripts/check
-NATIVE_LATENCY_REPORT=/private/tmp/refactor-a-latency-fixed-code.json cargo test --locked --offline --test native_authority --test board_contract --test board_io --test remote_sessions -- --test-threads=1
+NATIVE_LATENCY_REPORT=/private/tmp/refactor-a-rebased-latency.json cargo test --locked --offline --test native_authority --test board_contract --test board_io --test remote_sessions -- --test-threads=1
 cargo test --locked --offline --lib app::four_columns -- --test-threads=1
 cargo clippy --locked --offline --all-targets -- -D warnings
 ```
 
-Rust 分组为 60、30、41、8 和 3 项，共 142 项。  
-日志为 `refactor-a-business-fixed-code.log`、`refactor-a-four-columns-fixed-code.log`、`refactor-a-clippy-fixed-code.log` 和 `refactor-a-check-fixed-code.log`。  
-每次提交前均审阅暂存内容、执行 `./scripts/check --pre-commit` 并使用 `agent-git commit`。  
+Rust 分组为 60、29、45、8 和 3 项，共 145 项，包含最新基线的 C1/T2 变化。  
+日志为 `refactor-a-rebased-business.log`、`refactor-a-rebased-four-columns.log`、`refactor-a-rebased-clippy.log` 和 `refactor-a-rebased-check.log`。  
+各开发检查点提交前均审阅暂存内容、执行 `./scripts/check --pre-commit` 并使用 `agent-git commit`。  
 各开发提交分别为 5 文件 94 行、7 文件 137 行和 2 文件 18 行，保持原版本。  
 收尾记录完成后再执行 context 校验和项目检查，并请独立审阅者核对最终准确提交。
 
@@ -87,6 +89,8 @@ Rust 分组为 60、30、41、8 和 3 项，共 142 项。
 - 首轮全目标 Clippy 发现测试函数 42/41 行。将就绪和保存回执核对放入辅助函数后复验通过，未放宽限制。
 - 独立审阅在 `2410bf7` 发现 P2，合法 `state:null` 回执会显示“已移到undefined”。新增实际浏览器断言在未修复代码上失败，修复提示后 69 场景通过。
 - 独立续审准确提交 `6a83c5b3c6684256f57b7e2a936b78c009ea9a23`，无剩余阻塞项。原审阅与续审分别为 `refactor-a-review-code.json`、`refactor-a-review-fixed-code.json`。
+- 最后 fetch 发现 main 前进后，已将 A 的四个提交 rebase 到上述交付基线，未发生源码冲突。普通 Git 的个人 1Password 签名失败后，使用 `agent-git` 完成滞留提交和 rebase，未修改个人签名配置。
+- 独立复审 rebase 后准确提交 `3d3cd8ffeca1b91995f80fdb55bccd59cfe27eb6`，无业务阻塞项。C1/T2 的独占文件与基线 blob 一致，共享测试文件保留其模块声明。报告为 `refactor-a-review-rebased-code.json`。
 
 原失败材料保留在 `refactor-a-transfer-first/`、`refactor-a-transfer-second/`、`refactor-a-unplaced-regression/` 和 `refactor-a-clippy-first.log`，不覆盖成通过结果。
 
@@ -97,7 +101,7 @@ Rust 分组为 60、30、41、8 和 3 项，共 142 项。
 本任务开发目录 `/Users/hongyong/.csb-dev/0803d672b832` 已停止，`cleanup_confirmed=true`。  
 独立 Chrome 均确认进程组退出并删除自己的 profile。
 
-31 条需求、`requirements.json`、独立 `model.py`、`contract.lock.json` 和 `bindings.json` 相对基线均未修改。  
+31 条需求、`requirements.json`、独立 `model.py`、`contract.lock.json` 和 `bindings.json` 相对交付基线均未修改。  
 没有改归档批次、T0 清单机制、Vue 或列业务规则。  
 这是 Mac 隔离 fixture、独立网页和共享 MCP 的开发验证，不代签日用 Codex 原生容器、两台现场主机、Linux 或完整 31 条目标环境验收。  
 没有执行发布或宣称 `release_ready=true`。
