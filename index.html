@@ -416,8 +416,9 @@ function updateMoveFeedback(operation = moveFeedback) {
   const panel = byId("move-feedback"), saved = operation.result === "saved";
   panel.hidden = false;panel.className = "move-feedback " + (waiting ? "waiting" : operation.result);
   const slow = elapsed >= moveDelays.slow;
+  const savedDetail = Object.hasOwn(data.states,operation.state) ? `已移到${data.states[operation.state]}` : "状态已保存，当前未归列";
   byId("move-heading").textContent = waiting ? slow ? "还在等确认，龙娘陪你等" : "龙娘抱着卡片，等保存确认" : saved ? "保存好了！" : "这次保存还需要核对";
-  byId("move-detail").textContent = waiting ? `${data.states[operation.state]} · 等待${operation.host}确认\n${operation.title}` : saved ? `已移到${data.states[operation.state]}` : "未收到保存确认，先显示上次已知位置。请核对后再操作。";
+  byId("move-detail").textContent = waiting ? `${data.states[operation.state]} · 等待${operation.host}确认\n${operation.title}` : saved ? savedDetail : "未收到保存确认，先显示上次已知位置。请核对后再操作。";
   byId("move-detail").title = operation.title;
   if (waiting && slow && !operation.slow) {operation.slow = true;announce("这次响应较慢，仍在等待保存确认。");}
   if (!saved) return;

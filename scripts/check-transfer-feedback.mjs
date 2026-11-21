@@ -395,6 +395,21 @@ try {
   await check("刷新前完整采用确认版本列及新输入提示", 'data.sessions[0].state === "blocked" && data.sessions[0].inputVersion === 9 && data.sessions[0].followUp === true && moving === null');
   heldSnapshot.response.setHeader("Content-Type", "application/json");heldSnapshot.response.end(heldSnapshot.text);
   await evaluate("load()");
+  snapshot.fourColumns = true;
+  await evaluate("load()");
+  holdSnapshot = true;heldSnapshot = undefined;
+  await move("review");await advanceTo(1500);await until('!byId("move-feedback").hidden');
+  await complete(200, true, false, result => {
+    Object.assign(result.session, {state:null,sectionVersion:"unsectioned",placementReason:"原生侧栏默认区"});
+    return result;
+  });
+  await settled();
+  for (let attempt = 0; attempt < 100 && !heldSnapshot; attempt++) await delay(20);
+  assert(heldSnapshot);
+  assert.deepEqual(await evaluate("data.sessions[0]"), snapshot.sessions[0]);
+  await check("未归列确认保留实际位置并显示可读完成提示", 'data.sessions[0].state === null && data.sessions[0].placementReason === "原生侧栏默认区" && document.querySelector(".placement-reason").textContent === "原生侧栏默认区" && byId("move-detail").textContent.includes("未归列") && !byId("move-detail").textContent.includes("undefined")');
+  heldSnapshot.response.setHeader("Content-Type", "application/json");heldSnapshot.response.end(heldSnapshot.text);
+  await evaluate("load()");
   const beforeReadonly = writes.length;
   snapshot.sessions[0].readOnly = true;
   await evaluate('load()');
