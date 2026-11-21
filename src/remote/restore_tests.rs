@@ -12,7 +12,7 @@ struct Surface<'a> {
     pages: VecDeque<Value>,
     archive_queries: usize,
     action: Option<fn(&App) -> Result<()>>,
-    turn_error: bool,
+    turn_error: Option<(&'static str, anyhow::Error)>,
 }
 
 impl<'a> Surface<'a> {
@@ -24,7 +24,7 @@ impl<'a> Surface<'a> {
             pages: pages.into(),
             archive_queries: 0,
             action: None,
-            turn_error: false,
+            turn_error: None,
         }
     }
 
@@ -50,12 +50,18 @@ impl Rpc for Surface<'_> {
             "thread/list" => {
                 let page = self.active_pages.pop_front().unwrap_or_else(|| json!({"data":self.active}));
                 if page["error"].is_object() {
+                    assert_eq!(params["cursor"], page["expectedCursor"]);
                     return Err(rpc::RequestError { method: method.into(), details: page["error"].clone() }.into());
                 }
                 Ok(page)
             }
-            "thread/turns/list" if self.turn_error => anyhow::bail!("Message too long"),
-            "thread/turns/list" => Ok(json!({"data":[]})),
+            "thread/turns/list" => match self.turn_error.take() {
+                Some((identifier, error)) => {
+                    assert_eq!(params["threadId"], identifier);
+                    Err(error)
+                }
+                None => Ok(json!({"data":[]})),
+            },
             _ => anyhow::bail!("意外的写入请求：{method}"),
         }
     }
@@ -254,7 +260,7 @@ fn restoration_warnings_reach_root_and_survive_unrelated_pages_restart_and_expir
     let directory = tempfile::tempdir()?;
     let reopened = App::new(pending_restoration(directory.path())?)?;
     let mut reader = Surface::new(&reopened, &[], vec![]);
-    reader.active_pages = [json!({"error":{"message":"Invalid cursor"}})].into();
+    reader.active_pages = [json!({"expectedCursor":"last","error":{"message":"Invalid cursor"}})].into();
     assert!(reader.scan().is_err());
     let progress = Progress::load(&reopened)?;
     assert!(progress.cursor.is_none());
@@ -274,23 +280,29 @@ fn restoration_warnings_reach_root_and_survive_unrelated_pages_restart_and_expir
 
 #[test]
 fn restoration_warning_is_durable_when_a_later_runtime_read_disconnects() -> Result<()> {
-    let directory = tempfile::tempdir()?;
-    let app = app(directory.path())?;
-    archive(&app)?;
-    let mut reader = Surface::new(&app, &[FIRST, SECOND], vec![json!({"error":true})]);
-    reader.turn_error = true;
-    assert!(reader.scan().is_err());
-    let progress = Progress::load(&app)?;
-    assert!(progress.cursor.is_none());
-    assert!(progress.restoration_errors.contains_key(FIRST));
-    assert!(!app.store.contains(FIRST)?);
-    drop(reader);
-    let config = app.config.clone();
-    drop(app);
-    let reopened = App::new(config)?;
-    Surface::new(&reopened, &[], vec![json!({"data":[]})]).scan()?;
-    assert!(reopened.health.lock().unwrap()["error"].is_string());
-    assert!(!reopened.store.contains(FIRST)?);
+    for failure in [
+        std::io::Error::from(std::io::ErrorKind::ConnectionReset).into(),
+        anyhow::anyhow!("Message too long"),
+    ] {
+        let directory = tempfile::tempdir()?;
+        let app = app(directory.path())?;
+        archive(&app)?;
+        let mut reader = Surface::new(&app, &[FIRST, SECOND], vec![json!({"error":true})]);
+        let expected = failure.to_string();
+        reader.turn_error = Some((SECOND, failure));
+        assert_eq!(reader.scan().unwrap_err().root_cause().to_string(), expected);
+        let progress = Progress::load(&app)?;
+        assert!(progress.cursor.is_none());
+        assert!(progress.restoration_errors.contains_key(FIRST));
+        assert!(!app.store.contains(FIRST)?);
+        drop(reader);
+        let config = app.config.clone();
+        drop(app);
+        let reopened = App::new(config)?;
+        Surface::new(&reopened, &[], vec![json!({"data":[]})]).scan()?;
+        assert!(reopened.health.lock().unwrap()["error"].is_string());
+        assert!(!reopened.store.contains(FIRST)?);
+    }
     Ok(())
 }
 
@@ -300,7 +312,7 @@ fn unconfirmed_archived_cards_do_not_fetch_potentially_oversized_turns() -> Resu
     let app = app(directory.path())?;
     archive(&app)?;
     let mut reader = Surface::new(&app, &[FIRST], vec![json!({"error":true})]);
-    reader.turn_error = true;
+    reader.turn_error = Some((FIRST, anyhow::anyhow!("Message too long")));
     reader.scan()?;
     assert!(!app.store.contains(FIRST)?);
     assert!(app.health.lock().unwrap()["error"].is_string());
