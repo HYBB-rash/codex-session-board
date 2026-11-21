@@ -4,6 +4,7 @@ import http from "node:http";
 import { launchBrowser } from "./browser-client.mjs";
 
 const bundle = await fs.readFile(new URL("../assets/app-bridge.js", import.meta.url), "utf8");
+const operations = JSON.parse(await fs.readFile(new URL("../assets/board-operations.json", import.meta.url), "utf8"));
 const app = `<!doctype html><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none';script-src 'unsafe-inline';style-src 'unsafe-inline'">
 <style>:root{color-scheme:light dark}body{background:light-dark(#fff,#1c1d20)}</style>
@@ -116,6 +117,13 @@ try {
   check(await evaluate('boardRequest("/api/preview-reply",{id:"fixture"})'), {turnId:"two",html:"<p>本轮答复</p>",inProgress:false});
   check(await page.evaluate("(({name,arguments:body})=>({name,arguments:body}))(requests.at(-1))"),
     {name:"board_preview_reply",arguments:{id:"fixture"}});
+  const actualTools = [];
+  for (const {method, path} of operations) {
+    const args = method === "POST" ? ",{}" : "";
+    await evaluate(`boardRequest(${JSON.stringify(path)}${args})`);
+    actualTools.push(await page.evaluate("requests.at(-1).name"));
+  }
+  check(actualTools, operations.map(operation => operation.tool));
   for (const [mode, expected] of [["text", { ok: true }], ["error", "fixture-denied"], ["empty", "看板返回了空结果"]]) {
     await page.evaluate(`mode=${JSON.stringify(mode)}`);
     check(await evaluate('boardRequest("/api/sessions").catch(error=>error.message)'), expected);

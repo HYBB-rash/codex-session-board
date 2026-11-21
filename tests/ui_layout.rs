@@ -49,7 +49,7 @@ fn mcp_bridge_preserves_routes_results_and_host_theme() {
         String::from_utf8_lossy(&result.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(report["cases"], 56);
+    assert_eq!(report["cases"], 57);
     assert_eq!(report["cleanup"]["groupEmpty"], true);
     assert_eq!(report["cleanup"]["profileRemoved"], true);
 }
