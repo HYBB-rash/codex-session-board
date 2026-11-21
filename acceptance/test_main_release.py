@@ -33,7 +33,7 @@ class ReleaseCandidateEvidenceTests(GateFixture):
         source = {"commit": "fixture-commit", "tree": "fixture-tree",
                   "fingerprint": validate_candidate.fingerprint(self.root, self.bindings["fingerprint_paths"]),
                   "platform": sys.platform, "machine": platform.machine()}
-        with patch.object(validate_candidate, "ROOT", self.root), \
+        with patch.object(validate_candidate, "ROOT", self.root.resolve()), \
                 patch.object(validate_candidate, "identity", return_value=source), \
                 patch.object(validate_candidate, "git", return_value=""), \
                 patch.dict(os.environ, {"CARGO_TARGET_DIR": str(output.parent / "target")}), \
