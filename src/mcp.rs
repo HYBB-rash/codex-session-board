@@ -1,4 +1,4 @@
-use crate::{config, runtime::RuntimeHandle};
+use crate::{config, operations::{Action, OPERATIONS, Operation}, runtime::RuntimeHandle};
 use anyhow::{Context, Result, bail, ensure};
 use base64::Engine;
 use serde_json::{Value, json};
@@ -7,6 +7,7 @@ use std::path::Path;
 
 pub const RESOURCE: &str = "ui://session-board/index.html";
 pub const MIME: &str = "text/html;profile=mcp-app";
+const VIEW: &str = "board_view";
 
 pub fn tools() -> Value {
     tools_for(false)
@@ -17,67 +18,43 @@ pub fn tools_for(legacy: bool) -> Value {
 }
 
 fn tools_for_mode(legacy: bool, four_columns: bool) -> Value {
-    let mut tools = Vec::new();
     let icon =
         base64::engine::general_purpose::STANDARD.encode(include_bytes!("../assets/board.svg"));
-    for (name, title, read_only) in [
-        ("board_view", "会话看板", true),
-        ("board_snapshot", "读取会话状态", true),
-        ("board_update", "确认工作状态", false),
-        ("board_sort", "设置栏目排序", false),
-        ("board_archive", "归档待归档会话", false),
-        ("board_archive_batches", "读取归档结果", true),
-        ("board_archive_batch_start", "登记归档批次", false),
-        ("board_archive_batch_finish", "结束本批归档提交", false),
-        ("board_archive_batch_check", "核对原生归档结果", true),
-        ("board_open", "打开已有会话", true),
-        ("board_preview_reply", "预览最近一条完整回复", true),
-        ("board_new", "打开新建会话页", false),
-        ("board_new_reset", "确认已核对新建结果", false),
-        ("board_project_assign", "确认新会话项目归属", false),
-        ("board_connect", "连接已登记的远程主机", false),
-        ("board_ssh_setup", "设置远程新建连接", false),
-        ("board_refresh", "重新发现", false),
-        ("board_plugin_update_status", "读取插件更新状态", true),
-        ("board_plugin_update_start", "检查并安装本机插件候选版", false),
-    ] {
-        if legacy && (name.starts_with("board_archive") || matches!(name, "board_new_reset" | "board_connect" | "board_project_assign" | "board_ssh_setup")) {
+    let describe = |name: &str, title: &str, read_only, action, schema: (Value, Value), meta| {
+        let (properties, required) = schema;
+        json!({"name":name,"title":title,"description":title,
+            "inputSchema":{"type":"object","properties":properties,"required":required,"additionalProperties":false},
+            "annotations":{"readOnlyHint":read_only,
+                "destructiveHint":matches!(action, Some(Action::Archive | Action::PluginUpdateStart)),
+                "openWorldHint":action == Some(Action::PluginUpdateStart)},
+            "icons":[{"src":format!("data:image/svg+xml;base64,{icon}"),"mimeType":"image/svg+xml"}],
+            "_meta":meta})
+    };
+    let mut tools = vec![describe(VIEW, "会话看板", true, None, (json!({}), json!([])),
+        json!({"ui":{"resourceUri":RESOURCE,"visibility":["app","model"]},
+            "openai/ui":{"entrypoints":[{"type":"global"}]}}))];
+    for op in OPERATIONS.iter() {
+        if legacy && matches!(op.action, Action::Archive | Action::ArchiveBatches | Action::ArchiveBatchStart
+            | Action::ArchiveBatchFinish | Action::ArchiveBatchCheck | Action::NewReset | Action::Connect
+            | Action::ProjectAssign | Action::SshSetup) {
             continue;
         }
-        let (properties, required) = schema(name, legacy, four_columns);
-        let meta = if name == "board_view" {
-            json!({"ui":{"resourceUri":RESOURCE,"visibility":["app","model"]},
-                "openai/ui":{"entrypoints":[{"type":"global"}]}})
-        } else {
-            json!({"ui":{"visibility":["app"]}})
-        };
-        tools.push(json!({"name":name,"title":title,"description":title,
-            "inputSchema":{"type":"object","properties":properties,"required":required,"additionalProperties":false},
-            "annotations":annotations(name, read_only),
-            "icons":[{"src":format!("data:image/svg+xml;base64,{icon}"),"mimeType":"image/svg+xml"}],
-            "_meta":meta}));
+        tools.push(describe(op.tool, op.title, op.read_only, Some(op.action),
+            schema(op.action, legacy, four_columns), json!({"ui":{"visibility":["app"]}})));
     }
     json!({"tools":tools})
 }
 
-fn annotations(name: &str, read_only: bool) -> Value {
-    json!({
-        "readOnlyHint":read_only,
-        "destructiveHint":matches!(name, "board_archive" | "board_plugin_update_start"),
-        "openWorldHint":name == "board_plugin_update_start"
-    })
-}
-
-fn schema(name: &str, legacy: bool, four_columns: bool) -> (Value, Value) {
-    match name {
-        "board_sort" => (
+fn schema(action: Action, legacy: bool, four_columns: bool) -> (Value, Value) {
+    match action {
+        Action::Sort => (
             json!({"state":{"type":"string","enum":crate::model::visible_states(legacy, four_columns).map(|item| item.0).collect::<Vec<_>>()},
                 "field":{"type":"string","enum":["updated_at"]},
                 "direction":{"type":"string","enum":["asc","desc"]},
                 "version":{"type":"integer","minimum":0}}),
             json!(["state", "field", "direction", "version"]),
         ),
-        "board_update" => (
+        Action::Update => (
             json!({
                 "id":{"type":"string"}, "state":{"type":["string","null"],
                     "enum":crate::model::visible_states(legacy, four_columns).map(|item| json!(item.0)).chain([Value::Null]).collect::<Vec<_>>()},
@@ -87,28 +64,28 @@ fn schema(name: &str, legacy: bool, four_columns: bool) -> (Value, Value) {
             }),
             json!(["id", "state", "version", "inputVersion"]),
         ),
-        "board_project_assign" => (
+        Action::ProjectAssign => (
             json!({"id":{"type":"string"},"projectId":{"type":"string"},"confirmed":{"type":"boolean","const":true}}),
             json!(["id","projectId","confirmed"]),
         ),
-        "board_archive" => (
+        Action::Archive => (
             json!({"id":{"type":"string"},"version":{"type":"integer","minimum":0},
                 "inputVersion":{"type":"integer","minimum":0},"sectionVersion":{"type":["string","null"]},
                 "batchId":{"type":"string","format":"uuid"}}),
             json!(["id", "version", "inputVersion"]),
         ),
-        "board_new_reset" => (
+        Action::NewReset => (
             json!({"projectId":{"type":"string"},
             "requestId":{"type":"string"},"confirmed":{"type":"boolean","const":true}}),
             json!(["projectId", "requestId", "confirmed"]),
         ),
-        _ => basic_schema(name),
+        _ => basic_schema(action),
     }
 }
 
-fn basic_schema(name: &str) -> (Value, Value) {
-    match name {
-        "board_archive_batch_start" => (
+fn basic_schema(action: Action) -> (Value, Value) {
+    match action {
+        Action::ArchiveBatchStart => (
             json!({"id":{"type":"string","format":"uuid"},
                 "items":{"type":"array","minItems":1,"items":{"type":"object",
                     "properties":{"id":{"type":"string"},"title":{"type":"string","maxLength":500},
@@ -117,21 +94,21 @@ fn basic_schema(name: &str) -> (Value, Value) {
                     "required":["id","title","version","inputVersion"],"additionalProperties":false}}}),
             json!(["id", "items"]),
         ),
-        "board_archive_batch_finish" | "board_archive_batch_check" =>
+        Action::ArchiveBatchFinish | Action::ArchiveBatchCheck =>
             (json!({"id":{"type":"string","format":"uuid"}}), json!(["id"])),
-        "board_open" | "board_preview_reply" => (json!({"id":{"type":"string"}}), json!(["id"])),
-        "board_connect" => (json!({"hostId":{"type":"string"}}), json!(["hostId"])),
-        _ => setup_schema(name),
+        Action::Open | Action::PreviewReply => (json!({"id":{"type":"string"}}), json!(["id"])),
+        Action::Connect => (json!({"hostId":{"type":"string"}}), json!(["hostId"])),
+        _ => setup_schema(action),
     }
 }
 
-fn setup_schema(name: &str) -> (Value, Value) {
-    if name == "board_new" {
+fn setup_schema(action: Action) -> (Value, Value) {
+    if action == Action::New {
         return (json!({"projectId":{"type":"string"},"requestId":{"type":"string"},
             "hostId":{"type":"string"},"operationId":{"type":"string","format":"uuid"},
             "consent":{"type":"string"}}), json!([]));
     }
-    if name != "board_ssh_setup" {
+    if action != Action::SshSetup {
         return (json!({}), json!([]));
     }
     (json!({
@@ -158,29 +135,20 @@ pub fn resource() -> Value {
 }
 
 fn backend(runtime: &mut RuntimeHandle, name: &str, arguments: &Value) -> Result<Value> {
-    if name == "board_view" {
-        return Ok(json!({"ready":true}));
+    if name == VIEW {
+        return Ok(ordinary_result(json!({"ready":true})));
     }
-    let path = match name {
-        "board_snapshot" => "/api/sessions",
-        "board_update" => "/api/state",
-        "board_sort" => "/api/column-sort",
-        "board_archive" => "/api/archive",
-        "board_archive_batches" | "board_archive_batch_start" => "/api/archive-batches",
-        "board_archive_batch_finish" => "/api/archive-batches/finish",
-        "board_archive_batch_check" => "/api/archive-batches/check",
-        "board_open" => "/api/open",
-        "board_preview_reply" => "/api/preview-reply",
-        "board_new" => "/api/new",
-        "board_new_reset" => "/api/new/reset",
-        "board_project_assign" => "/api/project/assign",
-        "board_connect" => "/api/connect",
-        "board_ssh_setup" => "/api/ssh-setup",
-        "board_refresh" => "/api/refresh",
-        "board_plugin_update_status" | "board_plugin_update_start" => "/api/plugin-update",
-        _ => bail!("未知看板工具"),
-    };
-    runtime.request(path, (!matches!(name, "board_snapshot" | "board_archive_batches" | "board_plugin_update_status")).then_some(arguments))
+    let op = Operation::for_tool(name).context("未知看板工具")?;
+    let value = runtime.request(op, arguments)?;
+    Ok(if op.action == Action::PreviewReply {
+        json!({"content":[],"_meta":{"previewReply":value}})
+    } else {
+        ordinary_result(value)
+    })
+}
+
+fn ordinary_result(value: Value) -> Value {
+    json!({"content":[{"type":"text","text":value.to_string()}],"structuredContent":value})
 }
 
 fn dispatch(method: &str, params: &Value, runtime: &mut RuntimeHandle) -> Result<Value> {
@@ -209,12 +177,7 @@ fn dispatch(method: &str, params: &Value, runtime: &mut RuntimeHandle) -> Result
                 params["name"].as_str().context("缺少工具名称")?,
                 params.get("arguments").unwrap_or(&json!({})),
             ) {
-                Ok(value) if params["name"] == "board_preview_reply" => {
-                    json!({"content":[],"_meta":{"previewReply":value}})
-                }
-                Ok(value) => {
-                    json!({"content":[{"type":"text","text":value.to_string()}],"structuredContent":value})
-                }
+                Ok(result) => result,
                 Err(error) => {
                     json!({"isError":true,"content":[{"type":"text","text":error.to_string()}]})
                 }
