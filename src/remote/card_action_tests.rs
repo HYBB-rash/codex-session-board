@@ -28,9 +28,10 @@ fn populate(root: &App, remote: &App) -> Result<String> {
     }]})))?;
     assert!(root.store.claim_archive_item(&batch, pending["id"].as_str().unwrap(), &json!({}))?);
     let id = ready["id"].as_str().unwrap().to_owned();
+    let metadata = json!({"id":uuid::Uuid::new_v4().to_string(),"name":"Catalog","ordinary":true});
     let mut catalog = remote.catalog.lock().unwrap();
     catalog.snapshot = Some(crate::catalog::Snapshot { source: json!({}), captured_at:1.0,
-        active:vec![ready], archived:vec![archived], projects:vec![], coverage:json!({}), issues:vec![] });
+        active:vec![ready,metadata], archived:vec![archived], projects:vec![], coverage:json!({}), issues:vec![] });
     catalog.live = true;
     Ok(id)
 }

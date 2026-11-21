@@ -135,10 +135,11 @@ fn owned_pending_draft_cannot_resurrect_a_previously_published_session() -> Resu
 #[test]
 fn catalog_metadata_preserves_notes_and_explicit_projectless_membership() -> Result<()> {
     let (_directory, app) = app()?;
+    install(&app, snapshot(), true);
+    assert_eq!(view::read(&app, &[])?.rows[0]["readOnly"], true);
     app.store.discover(&[thread(FIRST, false, true)])?;
     app.store
         .set_state(FIRST, Some("review"), "保留本机备注", 0, Some(0))?;
-    install(&app, snapshot(), true);
     let rows = view::read(&app, &[])?.rows;
     assert_eq!(rows[0]["title"], "远程目录标题");
     assert_eq!(rows[0]["note"], "保留本机备注");

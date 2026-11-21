@@ -37,7 +37,7 @@ fn merged(root: &App, remote: &App) -> Result<Vec<Value>> {
     let mut rows = root.store.remote_sessions()?;
     let legacy = rows.clone();
     root.append_managed_host(remote, &mut rows, &legacy, &mut Vec::new())?;
-    root.annotate_card_access(&mut rows)?;
+    root.annotate_connections(&mut rows);
     Ok(rows)
 }
 

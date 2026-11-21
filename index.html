@@ -700,7 +700,7 @@ function archiveBatchId() {
 async function confirmArchiveInputs(session, button) {
   const actions = cardActions(session);
   if (!actions.canSubmit || actions.archive !== "confirm" || dragging || byId("editor").open) return;
-  saving = true;button.disabled = true;
+  saving = true;button.disabled = true;render();
   try {
     await persist(session,"to_archive",session.note);
     announce("已确认待归档。现在可以点击归档或一键归档。");
@@ -1236,7 +1236,7 @@ function toggleFilter() {
   byId(filterMode === "project" ? "project-filter" : "search").focus();
 }
 function render(resetState = null) {
-  if (dragging || saving && !moving && !archiveRun || byId("editor").open) return;
+  if (dragging || byId("editor").open) return;
   updateProjectOptions();
   updateFilterLock();
   const host = byId("host-filter").selectedOptions[0]?.textContent || selectedHost;

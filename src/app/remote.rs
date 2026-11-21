@@ -113,12 +113,8 @@ impl App {
         Ok(hosts.into_values().collect())
     }
 
-    pub(crate) fn annotate_card_access(&self, sessions: &mut [Value]) -> Result<()> {
-        let pending = self.store.pending_archive_ids()?;
+    pub(crate) fn annotate_connections(&self, sessions: &mut [Value]) {
         for session in sessions {
-            if session["id"].as_str().is_some_and(|id| pending.contains(id)) {
-                session["archivePending"] = json!(true);
-            }
             if self.config.legacy_mode {
                 session["canArchive"] = json!(false);
             }
@@ -138,7 +134,6 @@ impl App {
                 session["canArchive"] = json!(false);
             }
         }
-        Ok(())
     }
 
     fn append_managed_remote(

@@ -51,7 +51,7 @@ fn placeholder(metadata: &Value) -> Value {
     json!({
         "id":metadata["id"],"title":"空会话","cwd":metadata["cwd"],
         "updatedAt":metadata["updatedAt"],"state":"unknown","note":"","manual":false,
-        "followUp":false,"version":0,"inputVersion":0,"sectionVersion":null,
+        "readOnly":true,"followUp":false,"version":0,"inputVersion":0,"sectionVersion":null,
         "reason":"仅目录元数据，未读取执行历史。"
     })
 }
@@ -85,7 +85,7 @@ fn snapshot_row(mut row: Value, metadata: &Value, live: bool, at: f64) -> Value 
     });
     row["catalogEvidence"] = json!("snapshot");
     row["catalogAt"] = json!(at);
-    row["readOnly"] = json!(!live || archived || metadata["ordinary"] != true);
+    row["readOnly"] = json!(row["readOnly"] == true || !live || archived || metadata["ordinary"] != true);
     if row["readOnly"] == true {
         row["canArchive"] = json!(false);
     }

@@ -93,10 +93,17 @@ impl Store {
         )?)
     }
 
-    pub(crate) fn pending_archive_ids(&self) -> Result<std::collections::HashSet<String>> {
+    pub(crate) fn mark_pending_archives(&self, sessions: &mut [Value]) -> Result<()> {
         let database = self.connection()?;
         let mut query = database.prepare("SELECT id FROM archive_batch_items WHERE status='pending'")?;
-        Ok(query.query_map([], |row| row.get(0))?.collect::<rusqlite::Result<_>>()?)
+        let pending = query.query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<std::collections::HashSet<_>>>()?;
+        for session in sessions {
+            if session["id"].as_str().is_some_and(|id| pending.contains(id)) {
+                session["archivePending"] = Value::Bool(true);
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn claim_archive_item(&self, batch: &str, id: &str, source: &Value) -> Result<bool> {
