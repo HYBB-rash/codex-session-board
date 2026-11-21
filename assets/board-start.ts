@@ -3,6 +3,7 @@ import "./board-editor";
 import "./board-archive-results";
 import { mountBoardBrowse, type CatalogProject, type HostCatalog, type HostIdentity } from "./board-browse";
 import { mountBoardSessionReader } from "./board-session-reader";
+import { mountMoveFeedback } from "./board-move-feedback";
 import type { BoardSession } from "./board-view";
 
 export interface BoardSnapshot {
@@ -36,6 +37,7 @@ declare global {
     startBoard: typeof startBoard;
     mountBoardBrowse: typeof mountBoardBrowse;
     mountBoardSessionReader: typeof mountBoardSessionReader;
+    mountMoveFeedback: typeof mountMoveFeedback;
   }
 }
 
@@ -83,3 +85,4 @@ window.readBoardSnapshot = readBoardSnapshot;
 window.startBoard = startBoard;
 window.mountBoardBrowse = mountBoardBrowse;
 window.mountBoardSessionReader = mountBoardSessionReader;
+window.mountMoveFeedback = mountMoveFeedback;

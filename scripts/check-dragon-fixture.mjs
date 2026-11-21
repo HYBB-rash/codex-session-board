@@ -68,23 +68,23 @@ const drag = async state => {
 };
 const release = async () => {
   await evaluate("fixtureRelease()");
-  await wait('!saving && !moving && byId("move-feedback").classList.contains("saved")');
+  await wait('!saving && !movePanel.moving && byId("move-feedback").classList.contains("saved")');
 };
 try {
   page = await browser.page(runtime.url);
-  await wait('typeof data!=="undefined" && data.health.runtimeVerified && data.health.nativeVerified && moveArtReady && data.sessions.some(row=>!row.remote && !row.readOnly && typeof row.sectionVersion==="string")');
+  await wait('typeof data!=="undefined" && data.health.runtimeVerified && data.health.nativeVerified && movePanel.artReady && data.sessions.some(row=>!row.remote && !row.readOnly && typeof row.sectionVersion==="string")');
   report.id = await evaluate('data.sessions.find(row=>!row.remote && !row.readOnly && typeof row.sectionVersion==="string").id');
   assert.match(report.id, /^[0-9a-f-]{36}$/);
   const before = await read(), target = before.state === "review" ? "unknown" : "review";
   await evaluate('window.fixtureWrites=[];window.fixtureFetch=window.fetch;window.fetch=async function(url,options){const state=String(url)==="/api/state";if(state)await new Promise(resolve=>window.fixtureRelease=resolve);const response=await fixtureFetch.call(this,url,options);if(state)fixtureWrites.push({request:JSON.parse(options.body),status:response.status,body:await response.clone().json()});return response}');
   await drag(target);await wait('!byId("move-feedback").hidden');
-  report.waitAppearedAfterMs = await evaluate("moving.shownAt-moving.started");
+  report.waitAppearedAfterMs = await evaluate("movePanel.moving.shownAt-movePanel.moving.started");
   assert(report.waitAppearedAfterMs >= 1500);
   assert.equal((await read()).state, before.state);
-  await check("真实Rust等待态不冒充服务端已保存", 'saving && moveFeedback===moving && byId("move-feedback").classList.contains("waiting")');
+  await check("真实Rust等待态不冒充服务端已保存", 'saving && movePanel.feedback===movePanel.moving && byId("move-feedback").classList.contains("waiting")');
   await screenshot("wait");await recordMotion("waiting");
   await delay(600);
-  await check("角色实际可见超过两秒后仍等待回执", 'performance.now()-moving.shownAt>=2000 && !byId("move-feedback").hidden && saving');
+  await check("角色实际可见超过两秒后仍等待回执", 'performance.now()-movePanel.moving.shownAt>=2000 && !byId("move-feedback").hidden && saving');
   await page.command("Emulation.setDeviceMetricsOverride", { width: 320, height: 568, deviceScaleFactor: 1, mobile: false });
   await check("320乘568窄屏角色与收起按钮均在视口内", '(() => {const panel=byId("move-feedback").getBoundingClientRect(),button=byId("move-dismiss").getBoundingClientRect();return document.documentElement.scrollWidth<=innerWidth && panel.left>=0 && panel.top>=0 && panel.right<=innerWidth && panel.bottom<=innerHeight && button.bottom<=innerHeight;})()');
   await screenshot("narrow");
@@ -92,8 +92,8 @@ try {
   await release();
   const saved = await read();
   assert.equal(saved.state, target);assert(saved.version > before.version);
-  await check("服务端保存成功且动画期间立即恢复后续操作", '!saving && !moving && !byId("move-feedback").hidden && [...document.querySelectorAll(".card")].every(card=>card.draggable)');
-  await evaluate('window.fixtureSuccessAt=moveFeedback.visibleSince;window.fixtureHiddenAt=null;window.fixtureObserver=new MutationObserver(()=>{if(byId("move-feedback").hidden && fixtureHiddenAt===null)fixtureHiddenAt=performance.now()});fixtureObserver.observe(byId("move-feedback"),{attributes:true,attributeFilter:["hidden"]})');
+  await check("服务端保存成功且动画期间立即恢复后续操作", '!saving && !movePanel.moving && !byId("move-feedback").hidden && [...document.querySelectorAll(".card")].every(card=>card.draggable)');
+  await evaluate('window.fixtureSuccessAt=movePanel.feedback.visibleSince;window.fixtureHiddenAt=null;window.fixtureObserver=new MutationObserver(()=>{if(byId("move-feedback").hidden && fixtureHiddenAt===null)fixtureHiddenAt=performance.now()});fixtureObserver.observe(byId("move-feedback"),{attributes:true,attributeFilter:["hidden"]})');
   await screenshot("saved");await recordMotion("success");await wait("fixtureHiddenAt!==null");
   report.successVisibleMs = await evaluate("fixtureHiddenAt-fixtureSuccessAt");
   assert(report.successVisibleMs >= 2000 && report.successVisibleMs < 2500);
@@ -101,10 +101,10 @@ try {
   await evaluate("fixtureObserver.disconnect()");
   await drag(target === "review" ? "unknown" : "review");await wait('!byId("move-feedback").hidden');await release();
   await drag(target);await wait('!byId("move-feedback").hidden');await delay(650);
-  await check("连续真实拖动跨旧截止点不隐藏新等待", 'performance.now()-moving.started>2000 && !byId("move-feedback").hidden && byId("move-feedback").classList.contains("waiting")');
+  await check("连续真实拖动跨旧截止点不隐藏新等待", 'performance.now()-movePanel.moving.started>2000 && !byId("move-feedback").hidden && byId("move-feedback").classList.contains("waiting")');
   await clickNode(page, "#move-dismiss");
-  await check("手动收起立即生效且保存继续", 'saving && moving.dismissed && byId("move-feedback").hidden');
-  await evaluate("fixtureRelease()");await wait("!saving && !moving");
+  await check("手动收起立即生效且保存继续", 'saving && movePanel.moving.dismissed && byId("move-feedback").hidden');
+  await evaluate("fixtureRelease()");await wait("!saving && !movePanel.moving");
   assert.equal((await read()).state, target);
   await check("收起后保存成功也不重新弹出角色", 'byId("move-feedback").hidden');
   report.writes = await evaluate("fixtureWrites");

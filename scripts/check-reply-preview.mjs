@@ -367,21 +367,23 @@ async function exercisePage(surface, page) {
     selected:document.querySelector(".card-title[aria-expanded=true]").closest(".card").dataset.id})`;
   const preserved = await evaluate(readingState), beforeRefresh = requests.length;
   const dragEvent = type => `document.querySelector(".card").dispatchEvent(new DragEvent("${type}",{bubbles:true,dataTransfer:new DataTransfer()}))`;
+  const startMove = id => `{const session=data.sessions.find(row=>row.id===${JSON.stringify(id)});movePanel.start(session,session.state);}`;
+  const endMove = "if(movePanel.moving){movePanel.finish(movePanel.moving,false);render();}";
   for (const operation of [dragEvent("dragstart"), dragEvent("dragend"), "saving=true", "creating=true",
-    `moving={id:${JSON.stringify(remote)}}`]) {
+    startMove(remote)]) {
     await evaluate(operation);
     await press("#reply-refresh");
     await evaluate("new Promise(resolve=>requestAnimationFrame(resolve))");
     assert.equal(requests.length,beforeRefresh,`${surface} ${operation} 期间重读了回复`);
     assert.deepEqual(await evaluate(readingState),preserved);
-    await evaluate("saving=false;creating=false;moving=null");
+    await evaluate("saving=false;creating=false;" + endMove);
     if (operation === dragEvent("dragend")) await delay(410);
   }
-  await evaluate('saving=true;moving={id:"another-card"}');
+  await evaluate('saving=true;' + startMove("local"));
   await press("#reply-refresh");
   await wait('byId("reply-text").textContent === "本轮已完成"');
   assert.equal(requests.length,beforeRefresh+1);
-  await evaluate("saving=false;moving=null");
+  await evaluate("saving=false;" + endMove);
   await evaluate('byId("host-filter").focus({preventScroll:true})');
   await evaluate("titleWrites.length=0");
   await page.command("Input.dispatchKeyEvent",{type:"keyDown",key:"Escape",code:"Escape",windowsVirtualKeyCode:27});

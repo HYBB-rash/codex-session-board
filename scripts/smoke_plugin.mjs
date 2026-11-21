@@ -155,12 +155,12 @@ try {
     unchanged(await current(), owned);
     assert(await evaluate('Boolean(document.querySelector(".move-pending")) && saving'));
     await until(() => evaluate('!document.querySelector("#move-feedback").hidden'), "未出现等待提示");
-    report.early_feedback_ms = await evaluate("performance.now()-moving.started");
+    report.early_feedback_ms = await evaluate("performance.now()-movePanel.moving.started");
     await select("#host-filter", "all");
     assert.equal(await evaluate('document.querySelector("#host-filter").disabled'), false);
     await select("#host-filter", "local");
-    await until(() => evaluate("moving?.slow === true"), "未出现慢响应提示");
-    report.slow_feedback_ms = await evaluate("performance.now()-moving.started");
+    await until(() => evaluate("movePanel.moving?.slow === true"), "未出现慢响应提示");
+    report.slow_feedback_ms = await evaluate("performance.now()-movePanel.moving.started");
     unchanged(await current(), owned);
     await screenshot("pending.png");
     const body = await permit();
