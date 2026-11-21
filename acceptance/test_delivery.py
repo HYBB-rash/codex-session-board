@@ -97,8 +97,9 @@ class DeliveryTests(unittest.TestCase):
             self.assertEqual(len(pushes), 1)
             self.assertIn("--atomic", pushes[0])
             updated = references()
-            self.assertEqual(dict(line.split()[::-1] for line in updated.splitlines()),
-                             {f"refs/heads/{entry['reference']}": entry["revision"] for entry in published})
+            remote = dict(line.split()[::-1] for line in updated.splitlines())
+            self.assertEqual(set(remote), {f"refs/heads/candidate/{target}" for target in targets})
+            self.assertEqual(remote, {f"refs/heads/{entry['reference']}": entry["revision"] for entry in published})
             self.assertTrue(all(entry["revision"] not in previous for entry in published))
             self.assertEqual(publish_plugin.publish_many(str(repository), packages, "candidate"), published)
             self.assertEqual(references(), updated)
@@ -127,8 +128,10 @@ class DeliveryTests(unittest.TestCase):
         second = self.platform_package("aarch64-apple-darwin", "0.2.93")
         def publish(repository, packages, channel):
             self.assertEqual(repository, "fixture")
+            self.assertEqual(channel, "stable" if "--channel" in arguments else "candidate")
             for path, evidence in packages:
                 if channel == "stable":
+                    self.assertIsNotNone(evidence)
                     self.assertEqual(evidence.read_text(), package_plugin.verify_package(path)["target"])
                 else:
                     self.assertIsNone(evidence)

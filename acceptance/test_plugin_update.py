@@ -176,10 +176,20 @@ class PluginUpdateTests(unittest.TestCase):
         original = {"config": "/nonexistent/custom/config.json", "backup": "old-backup",
                     "runtime": {"binding": ["original", 7]}, "unknown": None}
         current.write_text(json.dumps(original))
+        published = []
+        def track_rename(rename):
+            def move(source, destination, **options):
+                rename(source, destination, **options)
+                if Path(destination) == current:
+                    published.append(current.read_bytes())
+            return move
         for _ in range(3):
             shutil.rmtree(self.home, ignore_errors=True)
             shutil.rmtree(self.market, ignore_errors=True)
-            with self.isolated(), contextlib.ExitStack() as readers:
+            published.clear()
+            with self.isolated(), contextlib.ExitStack() as readers, \
+                    patch.object(os, "replace", track_rename(os.replace)), \
+                    patch.object(os, "rename", track_rename(os.rename)):
                 first = readers.enter_context(current.open("rb"))
                 installed = []
                 initial = first.read()
@@ -187,8 +197,11 @@ class PluginUpdateTests(unittest.TestCase):
                     if phase == "reloading":
                         reader = readers.enter_context(current.open("rb"))
                         installed.append((reader, reader.read()))
+                        self.assertIn(installed[-1][1], published)
+                        published.clear()
                 result = self.update(reload=False, progress=observe)
                 self.assertTrue(installed)
+                self.assertIn(current.read_bytes(), published)
                 for reader, contents in [(first, initial), *installed]:
                     reader.seek(0)
                     self.assertEqual(reader.read(), contents)
