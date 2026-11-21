@@ -111,8 +111,10 @@ fn canonical_target_request_uses_verified_rpc_and_only_opens_native_input() -> R
     assert_eq!(query["enabled"], "true");
     assert_eq!(query["activate"], "true");
     assert!(fixture.imports().is_empty());
-    assert!(!fixture.peer.events().contains("thread/start"));
-    assert!(!fixture.peer.events().contains("turn/start"));
+    let events = fixture.peer.events();
+    for method in ["thread/start", "turn/start", "thread/resume"] {
+        assert!(!events.contains(method), "{method}");
+    }
     assert!(fixture.root.store.pending_drafts()?.is_empty());
     Ok(())
 }

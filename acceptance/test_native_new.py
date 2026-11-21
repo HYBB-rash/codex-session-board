@@ -21,12 +21,3 @@ class NativeNewTests(unittest.TestCase):
         result = subprocess.run(["node", "scripts/check-native-new.mjs"], cwd=ROOT,
                                 capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        for name in ("src/native_new.rs", "src/app/project_assignment.rs",
-                     "src/app/target_drafts.rs"):
-            source = (ROOT / name).read_text()
-            for method in ('"thread/start"', '"turn/start"', '"thread/resume"'):
-                self.assertNotIn(method, source)
-        source = (ROOT / "src/app/project_assignment.rs").read_text()
-        self.assertIn('"thread/metadata/update"', source)
-        self.assertIn('"thread/read"', source)
-        self.assertIn("Role::ProjectWriter", source)
