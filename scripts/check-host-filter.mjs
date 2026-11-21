@@ -26,7 +26,7 @@ const fixture = {
 };
 const baseline = structuredClone(fixture);
 const writes = [];
-const archive = archiveFixture();
+const archive = archiveFixture(fixture);
 let pendingNew = false, pendingReply = false, rejectReads = false, releaseNew;
 const server = http.createServer(async (request,response) => {
   let body = "";
