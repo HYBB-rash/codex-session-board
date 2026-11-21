@@ -128,7 +128,8 @@ class PRDutyClaimTests(unittest.TestCase):
         path, data = discovery.load_claims(self.directory, REPOSITORY)
         claim = discovery.claim_one(path, data, [discovery.describe(pull(31))])
         intermediate = "d" * 40
-        claim["heads"][HEAD]["review"] = {"task": "first"}
+        claim["author"] = {"thread_id": "author"}
+        claim["heads"][HEAD]["review"] = {"dispatch_started_at": "first-start"}
         discovery.refresh_claim(claim, pull(31, head=intermediate))
         claim["heads"][intermediate]["review"] = {"dispatch_started_at": "previous-start"}
         discovery.refresh_claim(claim, pull(31, head=REPAIR))
@@ -140,6 +141,13 @@ class PRDutyClaimTests(unittest.TestCase):
             self.assertNotIn("review", claim["heads"][REPAIR])
             prior = SimpleNamespace(command="record-review", pr=31, head=intermediate, review_task="latest")
             discovery.review_command(self.directory, path, data, prior, "coordinator")
+            waiting = discovery.review_command(self.directory, path, data, args, "coordinator")
+            self.assertEqual(waiting["dispatch"], {"action": "recover", "head": HEAD})
+            prior.head, prior.review_task = HEAD, "first"
+            discovery.review_command(self.directory, path, data, prior, "coordinator")
+            save(discovery.review_path(self.directory, 31, REPAIR),
+                 {"head": REPAIR, "passed": True, "reviewer": "first"})
+            self.assertEqual(discovery.review_state(self.directory, claim, "author")["result"], "review-required")
             reserved = discovery.review_command(self.directory, path, data, args, "coordinator")
         self.assertEqual(reserved["dispatch"], {"action": "resume", "task": "latest"})
         another = discovery.claim_one(path, data, [discovery.describe(pull(32))])
@@ -272,7 +280,7 @@ class PRDutyClaimTests(unittest.TestCase):
                 patch.object(duty.authors, "delivery", return_value=author) as delivery, \
                 patch.object(duty.gates, "workflow", return_value=run):
             result = duty.follow(None, self.config, self.directory, self.directory, path, data, claim, MAIN)
-        locate.assert_called_once_with(registry_project, claim)
+        locate.assert_called_once_with(registry_project, claim, self.directory)
         delivery.assert_called_once_with(self.config, registry_project, claim, None)
         self.assertEqual(result["result"], "waiting-ci")
         self.assertFalse(result["author_evidence"])

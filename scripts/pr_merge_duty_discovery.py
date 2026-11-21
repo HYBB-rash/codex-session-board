@@ -107,10 +107,11 @@ def review_state(directory, claim, author=None, coordinator=None):
     path = review_path(directory, claim["pr"], head)
     request = claim["heads"][head].get("review")
     receipt = json.loads(path.read_text()) if path.exists() else None
-    expected = request.get("task") if request is not None else claim.get("review_task")
+    route = review_route(claim, coordinator) if request is None else None
+    expected = request.get("task") if request is not None else route.get("task")
     if (receipt and receipt.get("head") == head and receipt.get("reviewer")
             and author and receipt["reviewer"] not in {author, coordinator}
-            and (expected == receipt["reviewer"] or (expected is None and request is None))
+            and (expected == receipt["reviewer"] or (route is not None and route["action"] == "create"))
             and isinstance(receipt.get("passed"), bool)):
         return {"result": "review-passed" if receipt["passed"] else "review-failed",
                 "review": str(path), "reviewer": receipt["reviewer"], "request": request}
@@ -174,11 +175,13 @@ def review_command(directory, path, data, arguments, coordinator):
         raise ValueError("Retain the reserved request and record its actual reviewer task")
     if request.get("task") not in {None, arguments.review_task}:
         raise ValueError("A reviewer task is already recorded for this exact head")
-    bound = claim.get("review_task") or request.get("dispatch", {}).get("task")
+    dispatch = request.get("dispatch")
+    bound = (claim.get("review_task") or dispatch.get("task")) if dispatch is not None else None
     if bound is not None and bound != arguments.review_task:
         raise ValueError("Record the dedicated reviewer already selected for this PR")
     request["task"] = arguments.review_task
-    claim.setdefault("review_task", arguments.review_task)
+    if dispatch is not None:
+        claim.setdefault("review_task", arguments.review_task)
     save(path, data)
     return {"result": "waiting-review", "request": request,
             "review": str(review_path(directory, claim["pr"], arguments.head))}

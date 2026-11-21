@@ -2204,6 +2204,7 @@
       "acceptance.test_pr_merge_duty.PRMergeDutyTests.test_duty_configuration_rejects_production_and_legacy_authorized_mode",
       "acceptance.test_pr_merge_duty.PRMergeDutyTests.test_production_scan_reads_its_handoff_and_requires_remote_main",
       "acceptance.test_pr_merge_duty.PRMergeDutyTests.test_production_runtime_and_registry_can_be_separate_git_roots",
+      "acceptance.test_pr_merge_duty.PRMergeDutyTests.test_duty_recovers_queue_initialized_before_registry_write",
       "acceptance.test_pr_merge_duty.PRMergeDutyTests.test_waiting_review_ci_or_changed_head_never_creates_a_queue",
       "acceptance.test_pr_merge_duty.PRMergeDutyTests.test_published_draft_reports_pending_ci_without_admitting_source",
       "acceptance.test_pr_merge_duty.PRMergeDutyTests.test_resume_uses_the_saved_candidate_and_run",

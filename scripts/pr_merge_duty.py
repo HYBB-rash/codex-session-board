@@ -211,6 +211,9 @@ def advance(config, checker, directory, assignment, observed, registered_queue=N
     else:
         state = queue_command(checker, "status", queue)
     verify_queue(state, config, assignment, checker, candidate)
+    if config.get("registry_project"):
+        from scripts.pr_queue_registry import register
+        register(queue, state, project=Path(config["registry_project"]))
     item = state["items"][0]
     if observed["result"] == "closed" and item["status"] == "merged":
         state = queue_command(checker, "status", queue, "--refresh")
