@@ -3,10 +3,10 @@
 - owner: E2a Fedora 作者
 - execution_mode: isolated_write
 - coordinator: Herman / 01a1fc2d-af6f-7d50-9759-33835b51eaeb
-- base_commit: ba7d2a3
+- base_commit: f140da291d5588eed6a36c0fccbf8517cc7e37e8
 - worktree_path: /home/herman/.codex/worktrees/e2a-card-display-fedora/notion-program
 - branch: codex/e2a-card-display-fedora
-- status: implementing
+- status: awaiting_integration
 - allowed_write_set: 卡片和列的 Vue/TSX 源码与生成资产、index.html 的对应接线、E1 构建入口的增量接入、卡片浏览器回归及关联测试和本项独有记录。
 
 ## 维护动作与首件
