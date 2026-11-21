@@ -68,6 +68,33 @@ impl BatchFixture {
             .filter(|method| *method == "thread/archive").count()
     }
 
+    fn submit_losing_receipt(&self) -> Result<()> {
+        let release = Arc::new((Mutex::new(false), Condvar::new()));
+        let gate = Gate(Arc::clone(&release));
+        let (started, received) = mpsc::channel();
+        {
+            let surface = self.remotes.surface("mac");
+            let mut surface = surface.lock().unwrap();
+            surface.lose_archive_receipt = true;
+            surface.read_blocked = Some(BlockingMove {
+                identifier: FIRST.into(), started, release,
+            });
+        }
+        std::thread::scope(|scope| -> Result<()> {
+            let request = scope.spawn(|| self.post("/api/archive"));
+            received.recv_timeout(Duration::from_secs(5))?;
+            assert_eq!(self.status()?, "pending");
+            self.assert_owners(false)?;
+            assert_eq!(self.writes("mac"), 0);
+            eprintln!("C1_TRACE before-native-write root=pending mac.session=active other.session=active mac.native_writes=0");
+            drop(gate);
+            assert_eq!(request.join().unwrap()?["item"]["status"], "pending");
+            Ok(())
+        })?;
+        self.remotes.surface("mac").lock().unwrap().read_blocked = None;
+        Ok(())
+    }
+
     fn assert_owners(&self, archived: bool) -> Result<()> {
         for host in ["local", "mac", "other"] {
             let store = self.store(host)?;
@@ -147,8 +174,7 @@ fn remote_batch_owner_recovers_a_lost_receipt_once_and_preserves_same_uuid_on_ot
     let mut fixture = BatchFixture::new(directory.path())?;
     fixture.assert_owners(false)?;
     assert_eq!(fixture.status()?, "awaiting");
-    fixture.remotes.surface("mac").lock().unwrap().lose_archive_receipt = true;
-    assert_eq!(fixture.post("/api/archive")?["item"]["status"], "pending");
+    fixture.submit_losing_receipt()?;
     assert_eq!(fixture.status()?, "pending");
     assert!(fixture.remotes.archived("mac").contains(FIRST));
     assert_eq!(fixture.writes("mac"), 1);

@@ -53,3 +53,11 @@ remote_isolation::archive_batches:: -- --nocapture --test-threads=1。
 目标主机库 confirm_archive 与根库 record_archive_result 在真实调用处分别表达。
 改动后的首轮相关测试 16 项 native_authority 归档及 11 项 archive_flow 通过，
 相关 lib/test Clippy 通过。正常回执用例及最终提交验证继续执行。
+
+正常回执及前三项远程场景均通过，四项共 20.22 秒。
+进一步在目标主机 thread/read 断点直接读取三库：原生写入前根库已 pending，
+本机和两台远程主机的会话均未归档，原生写入为 0；丢回执和重开后为 1，
+核对后仍为 1。该单项再次通过，5.86 秒，相关 Clippy 通过。
+实现检查点为 3079cc7baf7405bb55c119a40f4ac23fb053257b。
+再次 fetch/rebase 后 origin/main 仍为最初基线，无相关上游改动。
+结果及证据入口见 context/results/refactor-c1-archive-ownership-20261121.md。
