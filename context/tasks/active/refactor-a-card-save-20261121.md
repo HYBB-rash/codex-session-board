@@ -7,7 +7,7 @@
 - worktree_path: /Users/hongyong/.codex/worktrees/51f3/codex-session-board
 - coordinator: Herman / source chat 01a1fc2d-af6f-7d50-9759-33835b51eaeb
 - branch: codex/refactor-a-card-save
-- status: in_progress
+- status: author_ready
 
 ## 范围和成败标准
 
@@ -44,3 +44,12 @@
 基线真实 Rust fixture 的请求 note 为两个空格，回执只有同步提示。
 刷新前页面卡片 note 为两个空格，刷新后 note 为空串，已复现结果不一致。
 四份原值及独立 Chrome 清理凭据保存在 `/private/tmp/refactor-a-first-baseline.json`。
+
+## 交付
+
+实现及审阅修复提交为 `6a83c5b3c6684256f57b7e2a936b78c009ea9a23`。
+142 项相关 Rust 测试、11 项真实备注场景、69 项回执场景、102 项页面断言和 49 项桥接断言通过。
+独立审阅发现的未归列完成提示 P2 已复现、修复并续审，无剩余阻塞项。
+本任务 fixture 已停止，`cleanup_confirmed=true`。
+详见 `context/results/refactor-a-card-save-20261121.md`。
+等待 Herman 点名合入。共享状态、任务归档和 journal 由协调者收尾。
