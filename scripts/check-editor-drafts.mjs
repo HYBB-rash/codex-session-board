@@ -29,7 +29,7 @@ export async function checkPackagedEditor(page, readSnapshot) {
 
 export async function checkEditorDrafts(browser, html) {
   const local = {id:"same",threadId:"same",title:"本机卡片",state:"review",note:"原备注",version:4,
-    inputVersion:7,sectionVersion:"first",projectId:"",updatedAt:1,source:"codex"};
+    inputVersion:7,sectionVersion:"first",projectId:"",updatedAt:1,source:"codex",readOnly:false,canArchive:true};
   const remote = {...local,id:'remote:["codex","mac","same"]',hostId:"mac",hostLabel:"Mac",remote:true,
     title:"远程卡片",note:"远程原备注"};
   const data = {states:{review:"待审阅",blocked:"已阻塞",to_archive:"待归档"},sessions:[local,remote],
