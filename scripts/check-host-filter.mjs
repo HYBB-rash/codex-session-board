@@ -216,13 +216,13 @@ try {
     const image = await page.command("Page.captureScreenshot",{format:"png"});
     await fs.writeFile(`${process.argv[2]}/host-error-details.png`,Buffer.from(image.data,"base64"));
   }
-  await evaluate('const diagnostic=[...document.querySelectorAll(".diagnostics")][0];diagnostic.open=true;diagnostic.querySelector("summary").focus();renderHealth()');
+  await evaluate('const diagnostic=[...document.querySelectorAll(".diagnostics")][0];diagnostic.open=true;diagnostic.querySelector("summary").focus();connectionHealth.render()');
   check(await evaluate('[...document.querySelectorAll(".diagnostics")][0].open'),true);
   check(await evaluate('document.activeElement.dataset.focus'),"diagnostics:host:a");
-  check(await evaluate('(async()=>{let changes=0;const observer=new MutationObserver(()=>changes++);observer.observe(byId("health-summary"),{childList:true});renderHealth();renderHealth();await Promise.resolve();observer.disconnect();return changes})()'),0);
+  check(await evaluate('(async()=>{let changes=0;const observer=new MutationObserver(()=>changes++);observer.observe(byId("health-summary"),{childList:true});connectionHealth.render();connectionHealth.render();await Promise.resolve();observer.disconnect();return changes})()'),0);
   check(writes.filter(row=>row.path === "/api/connect").length,0);
   await evaluate('[...byId("health-detail-list").querySelectorAll("button")].find(button=>button.dataset.focus==="connect:host:b").click()');
-  await wait("connectingHosts.size === 0");
+  await wait(`Boolean(byId("health-detail-list").querySelector('[data-focus="connect:host:b"]:enabled'))`);
   check(writes.filter(row=>row.path === "/api/connect").map(row=>row.body),[{hostId:"b"}]);
   await evaluate('byId("health-close").click()');
   fixture.health.remoteConnections[0].writeError = null;

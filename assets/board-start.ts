@@ -2,6 +2,7 @@ import "./board-view";
 import { mountBoardArchive } from "./board-archive";
 import { mountBoardBrowse, type CatalogProject, type HostIdentity } from "./board-browse";
 import { createBoardHealthReports, type BoardHealth } from "./board-health-report";
+import { mountBoardHealth } from "./board-health";
 import { mountBoardSessionReader } from "./board-session-reader";
 import { mountMoveFeedback } from "./board-move-feedback";
 import { mountBoardEdits } from "./board-edits";
@@ -30,6 +31,7 @@ declare global {
     boardRequest?: (path: string, body?: object) => Promise<unknown>;
     createBoardRequest: typeof createBoardRequest;
     createBoardHealthReports: typeof createBoardHealthReports;
+    mountBoardHealth: typeof mountBoardHealth;
     startBoard: typeof startBoard;
     mountBoardArchive: typeof mountBoardArchive;
     mountBoardBrowse: typeof mountBoardBrowse;
@@ -76,6 +78,7 @@ function startBoard(load: () => Promise<void>, restore: () => Promise<void> | vo
 
 window.createBoardRequest = createBoardRequest;
 window.createBoardHealthReports = createBoardHealthReports;
+window.mountBoardHealth = mountBoardHealth;
 window.startBoard = startBoard;
 window.mountBoardArchive = mountBoardArchive;
 window.mountBoardBrowse = mountBoardBrowse;

@@ -169,10 +169,10 @@ try {
     const baseline = await measure("short");
     assert.match(await evaluate('byId("health-summary").textContent'),/连接正常/);
     for (const [field,message] of [["scanComplete","尚未读取完整"],["runtimeVerified","尚未连接"],["nativeVerified","尚未确认"]]) {
-      await evaluate(`data.health.${field}=false;renderHealth()`);
+      await evaluate(`data.health.${field}=false;connectionHealth.render()`);
       assert((await evaluate('byId("health-summary").textContent')).includes(message),"未确认的连接被缩写为正常");
       assert.equal(await evaluate('byId("health").classList.contains("ready")'),false);
-      await evaluate(`data.health.${field}=true;renderHealth()`);
+      await evaluate(`data.health.${field}=true;connectionHealth.render()`);
     }
     assert.equal(await evaluate('document.querySelector(".project-info").checkVisibility()'),false,"完整目录默认应收起");
     await evaluate('document.querySelector(".project-tag summary").focus()');
