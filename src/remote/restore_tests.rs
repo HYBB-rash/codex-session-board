@@ -259,22 +259,25 @@ fn pending_restoration(directory: &std::path::Path) -> Result<Config> {
 fn restoration_warnings_reach_root_and_survive_unrelated_pages_restart_and_expired_cursor() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let reopened = App::new(pending_restoration(directory.path())?)?;
+    let archive_version = reopened.store.archived_revisions()?[FIRST];
     let mut reader = Surface::new(&reopened, &[], vec![]);
     reader.active_pages = [json!({"expectedCursor":"last","error":{"message":"Invalid cursor"}})].into();
     assert!(reader.scan().is_err());
     let progress = Progress::load(&reopened)?;
     assert!(progress.cursor.is_none());
-    assert!(progress.restoration_errors.contains_key(FIRST));
+    let warning = &progress.restoration_errors[FIRST];
+    assert!(warning.contains("归档列表暂不可读"));
     reader.pages.push_back(json!({"data":[]}));
     reader.scan()?;
     assert!(!reopened.store.contains(FIRST)?);
-    assert!(reopened.health.lock().unwrap()["error"].is_string());
-    assert!(Progress::load(&reopened)?.restoration_errors.contains_key(FIRST));
+    assert_eq!(reopened.health.lock().unwrap()["error"], warning.as_str());
+    assert_eq!(&Progress::load(&reopened)?.restoration_errors[FIRST], warning);
     reader.pages.push_back(json!({"data":[{"id":FIRST}]}));
     reader.scan()?;
     assert!(!reopened.store.contains(FIRST)?);
     assert!(reopened.health.lock().unwrap()["error"].is_null());
     assert!(Progress::load(&reopened)?.restoration_errors.is_empty());
+    assert_eq!(reopened.store.archived_revisions()?[FIRST], archive_version);
     Ok(())
 }
 
@@ -287,21 +290,24 @@ fn restoration_warning_is_durable_when_a_later_runtime_read_disconnects() -> Res
         let directory = tempfile::tempdir()?;
         let app = app(directory.path())?;
         archive(&app)?;
+        let archive_version = app.store.archived_revisions()?[FIRST];
         let mut reader = Surface::new(&app, &[FIRST, SECOND], vec![json!({"error":true})]);
         let expected = failure.to_string();
         reader.turn_error = Some((SECOND, failure));
         assert_eq!(reader.scan().unwrap_err().root_cause().to_string(), expected);
         let progress = Progress::load(&app)?;
         assert!(progress.cursor.is_none());
-        assert!(progress.restoration_errors.contains_key(FIRST));
+        let warning = &progress.restoration_errors[FIRST];
+        assert!(warning.contains("归档列表暂不可读"));
         assert!(!app.store.contains(FIRST)?);
         drop(reader);
         let config = app.config.clone();
         drop(app);
         let reopened = App::new(config)?;
         Surface::new(&reopened, &[], vec![json!({"data":[]})]).scan()?;
-        assert!(reopened.health.lock().unwrap()["error"].is_string());
+        assert_eq!(reopened.health.lock().unwrap()["error"], warning.as_str());
         assert!(!reopened.store.contains(FIRST)?);
+        assert_eq!(reopened.store.archived_revisions()?[FIRST], archive_version);
     }
     Ok(())
 }
