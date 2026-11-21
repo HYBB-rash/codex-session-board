@@ -70,23 +70,3 @@ CLI 核对当前头、作者的 submit 报告和独立审阅，保留当前 PR C
 ```json
 {
   "mode": "isolated",
-  "repository": "OWNER/TRIAL-REPO",
-  "checker": "/absolute/frozen-checker",
-  "checker_head": "FULL_CHECKER_SHA",
-  "state": "/absolute/private/duty-state",
-  "assignments": [{
-    "pr": 1,
-    "head": "FULL_AUTHORIZED_PR_SHA",
-    "candidate": "/absolute/candidate-worktree",
-    "author_task": "/absolute/author-task-state",
-    "review": "/absolute/independent-review.json"
-  }]
-}
-```
-
-候选独占 `codex/integration-*` 分支，首次从当前远端 `main` 创建，fetch 和 push
-地址均指向配置的 GitHub 仓库。作者通过同一干净检查器提交并保留 `task.json`。
-审阅使用队列已有的 `head`、`reviewer`、`passed` 记录。
-
-`last-tick.json` 保存隔离试点的最近结果。队列目录保留组合源码、运行身份、反馈和失败证据。
-隔离 `delivery-*.json` 保存测试会话、请求和轮次供复核。
