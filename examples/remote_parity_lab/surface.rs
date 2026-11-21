@@ -8,7 +8,7 @@ pub const THREAD: &str = "11111111-1111-4111-8111-111111111111";
 #[derive(Clone, Debug, PartialEq)]
 pub struct Surface {
     pub host: String,
-    pub connection_host: String,
+    data_host: String,
     pub title: String,
     pub section: String,
     pub status: Value,
@@ -24,7 +24,7 @@ impl Surface {
     pub fn new(host: &str) -> Self {
         Self {
             host: host.into(),
-            connection_host: host.into(),
+            data_host: host.into(),
             title: "完整标题".into(),
             section: "unknown-id".into(),
             status: json!({"type":"idle"}),
@@ -43,7 +43,7 @@ impl Surface {
             .map(|(state, label)| {
                 let section = format!("{state}-id");
                 let items = if self.section == section && !self.archived {
-                    vec![format!("codex:thread:{}:{THREAD}", self.host)]
+                    vec![format!("codex:thread:{}:{THREAD}", self.data_host)]
                 } else {
                     vec![]
                 };
@@ -56,7 +56,7 @@ impl Surface {
     fn mutate(&mut self, method: &str, params: &Value) -> Result<Value> {
         match method {
             "move_thread_to_sidebar_section" => {
-                ensure!(params["hostId"] == self.host, "Wrong target host");
+                ensure!(params["hostId"] == self.data_host, "Wrong target host");
                 self.section = params["sectionId"].as_str().unwrap().into();
             }
             "thread/name/set" => {
@@ -98,7 +98,7 @@ impl Rpc for Surface {
 
 impl HostRpc for Surface {
     fn host(&self) -> &str {
-        &self.connection_host
+        &self.host
     }
 
     fn execution_authority(&self) -> bool {

@@ -24,10 +24,10 @@ fn check_target_host(
     write: impl Fn(&Partition, &mut Surface, &Value) -> Result<()>,
 ) -> Result<()> {
     let (_root, partition, mut surface, row) = ready()?;
-    surface.connection_host = "local".into();
+    surface.host = "local".into();
     assert!(write(&partition, &mut surface, &row).is_err(), "{method}");
     assert!(surface.writes.is_empty(), "{method}");
-    surface.connection_host = partition.host.clone();
+    surface.host = partition.host.clone();
     write(&partition, &mut surface, &row)?;
     assert_eq!(surface.writes, [method]);
     Ok(())
