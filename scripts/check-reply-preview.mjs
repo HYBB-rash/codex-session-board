@@ -179,6 +179,7 @@ async function exercise(surface) {
       const box = button.getBoundingClientRect();
       return {x:box.left+box.width/2,y:box.top+box.height/2};
     })()`);
+    assert.deepEqual(await page.evaluate("window.creations"),[],"点击前宿主已收到新建请求");
     await click(position);
     await until(()=>page.evaluate("window.creations.length > 0"),"点击新建后宿主没有收到 board_new");
   }
