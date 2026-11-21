@@ -8,6 +8,9 @@ fn catalog_failure_or_last_project_removal_does_not_erase_known_hosts() {
     let (hosts, error) = host_plan(&known, &cached, Err("Catalog failed".into()), &[]);
     assert_eq!(hosts, vec!["mac", "other"]);
     assert_eq!(error.as_deref(), Some("Catalog failed"));
+    let (hosts, error) = host_plan(&known, &cached, Ok(vec![]), &[]);
+    assert_eq!(hosts, vec!["mac", "other"]);
+    assert!(error.is_none());
     let (hosts, error) = host_plan(&known, &cached, Ok(vec![]), &["mac".into()]);
     assert_eq!(hosts, vec!["other"]);
     assert!(error.is_none());

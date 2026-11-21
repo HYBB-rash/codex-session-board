@@ -1068,6 +1068,7 @@
       "lib::codex_session_board::rpc::framing::tests::project_writer_rechecks_alias_and_peer_before_metadata_updates"
     ],
     "DISCOVERY-002": [
+      "lib::codex_session_board::remote::scans::tests::failed_remote_page_keeps_its_cursor_while_another_host_completes",
       "lib::codex_session_board::remote::cache::tests::malformed_runtime_after_explicit_connection_keeps_cached_rows_read_only",
       "test::native_authority::native_archive_list_absence_keeps_position_without_an_unread_error",
       "lib::codex_session_board::app::remote_snapshot::tests::unpublished_empty_chat_survives_complete_scan_and_restart_as_read_only",
@@ -1278,7 +1279,6 @@
       "lib::codex_session_board::remote::hosts::tests::registered_hosts_do_not_depend_on_projects_and_respect_disabled_connections",
       "lib::codex_session_board::remote::hosts::tests::host_paths_cannot_escape_and_ssh_options_cannot_be_injected",
       "example::remote_parity_lab::host_isolation_tests::host_re_registration_requires_explicit_migration",
-      "example::remote_parity_lab::host_isolation_tests::malformed_thread_and_traversal_host_cannot_escape_partition",
       "example::remote_parity_lab::host_isolation_tests::mixed_host_page_is_rejected_without_partial_import",
       "example::remote_parity_lab::host_isolation_tests::same_uuid_on_three_hosts_keeps_independent_durable_state",
       "lib::codex_session_board::config::tests::initialization_never_overwrites_and_uses_private_permissions",

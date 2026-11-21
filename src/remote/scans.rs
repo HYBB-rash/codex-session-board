@@ -278,6 +278,7 @@ mod tests {
                 return Ok(json!({"data":[]}));
             }
             assert_eq!(method, "thread/list");
+            assert!(!self.0.is_null(), "unexpected extra thread/list request");
             assert_eq!(params["cursor"], self.0["expected"]);
             if self.0["disconnected"] == true {
                 return Err(std::io::Error::from(std::io::ErrorKind::ConnectionReset).into());
@@ -289,9 +290,20 @@ mod tests {
                 }
                 .into());
             }
-            let head = self.0.get("head").cloned().unwrap_or(json!([]));
-            Ok(std::mem::replace(&mut self.0, json!({"data":head})))
+            let next = if self.0["expected"].is_null() {
+                Value::Null
+            } else {
+                json!({"data":self.0["head"].as_array().cloned().unwrap_or_default()})
+            };
+            Ok(std::mem::replace(&mut self.0, next))
         }
+    }
+
+    fn scan(app: &App, response: Value) -> Result<()> {
+        let mut reader = Page(response);
+        scan_runtime_page(app, &mut reader, &mut HashMap::new(), crate::model::now())?;
+        assert!(reader.0.is_null(), "continued scan did not read the head page");
+        Ok(())
     }
 
     #[test]
@@ -305,9 +317,6 @@ mod tests {
                 ..Config::default()
             })
         };
-        let scan = |app: &App, page| {
-            scan_runtime_page(app, &mut Page(page), &mut HashMap::new(), crate::model::now())
-        };
         let first = host("mac")?;
         let other = host("other")?;
         let known = uuid::Uuid::new_v4().to_string();
@@ -320,11 +329,15 @@ mod tests {
         assert!(!first.is_active(&known)?);
         let mixed = json!({"expected":"continue","data":[{"id":new},{"id":foreign,"hostId":"other"}]});
         assert!(scan(&first, mixed).is_err());
+        let invalid = json!({"expected":"continue","data":[{"id":new},{"id":"not-a-uuid"}]});
+        assert!(scan(&first, invalid).is_err());
         assert!(!first.store.contains(&new)?);
         assert!(!first.store.contains(&foreign)?);
         assert!(first.store.contains(&known)?);
         scan(&first, json!({"expected":"continue","data":[]}))?;
         assert!(first.is_active(&known)?);
+        assert_eq!(first.store.sessions()?.len(), 1);
+        assert!(first.store.contains(&known)?);
         Ok(())
     }
 
@@ -341,34 +354,18 @@ mod tests {
         let first =
             json!({"expected":null,"data":[{"id":identifier,"name":"first"}],"nextCursor":"next"});
         let app = App::new(config.clone())?;
-        scan_runtime_page(
-            &app,
-            &mut Page(first),
-            &mut HashMap::new(),
-            crate::model::now(),
-        )?;
+        scan(&app, first)?;
         assert!(!app.is_active(&identifier)?);
         drop(app);
         let app = App::new(config)?;
         let bad = json!({"expected":"next","data":[],"nextCursor":"next"});
-        assert!(
-            scan_runtime_page(
-                &app,
-                &mut Page(bad),
-                &mut HashMap::new(),
-                crate::model::now()
-            )
-            .is_err()
-        );
+        assert!(scan(&app, bad).is_err());
         assert_eq!(app.store.sessions()?.len(), 1);
         let final_page = json!({"expected":"next","data":[],"nextCursor":null});
-        scan_runtime_page(
-            &app,
-            &mut Page(final_page),
-            &mut HashMap::new(),
-            crate::model::now(),
-        )?;
+        scan(&app, final_page)?;
         assert!(app.is_active(&identifier)?);
+        assert_eq!(app.store.sessions()?.len(), 1);
+        assert!(app.store.contains(&identifier)?);
         assert!(app.health.lock().unwrap()["scanComplete"] == true);
         Ok(())
     }
@@ -411,20 +408,10 @@ mod tests {
         })?;
         let identifier = uuid::Uuid::new_v4().to_string();
         let first = json!({"expected":null,"data":[],"nextCursor":"next"});
-        scan_runtime_page(
-            &app,
-            &mut Page(first),
-            &mut HashMap::new(),
-            crate::model::now(),
-        )?;
+        scan(&app, first)?;
         let page = json!({"expected":"next","data":[],"nextCursor":"older",
             "head":[{"id":identifier,"name":"新近会话"}]});
-        scan_runtime_page(
-            &app,
-            &mut Page(page),
-            &mut HashMap::new(),
-            crate::model::now(),
-        )?;
+        scan(&app, page)?;
         assert_eq!(app.store.sessions()?[0]["id"], identifier);
         assert!(app.health.lock().unwrap()["scanComplete"] == false);
         Ok(())
@@ -440,32 +427,14 @@ mod tests {
         })?;
         let identifier = uuid::Uuid::new_v4().to_string();
         let first = json!({"expected":null,"data":[{"id":identifier}],"nextCursor":"expired"});
-        scan_runtime_page(
-            &app,
-            &mut Page(first),
-            &mut HashMap::new(),
-            crate::model::now(),
-        )?;
+        scan(&app, first)?;
         let invalid =
             json!({"expected":"expired","error":{"code":-32602,"message":"Invalid cursor"}});
-        assert!(
-            scan_runtime_page(
-                &app,
-                &mut Page(invalid),
-                &mut HashMap::new(),
-                crate::model::now()
-            )
-            .is_err()
-        );
+        assert!(scan(&app, invalid).is_err());
         assert!(Progress::load(&app)?.cursor.is_none());
         assert_eq!(app.store.sessions()?.len(), 1);
         let page = json!({"expected":null,"data":[{"id":identifier}],"nextCursor":null});
-        scan_runtime_page(
-            &app,
-            &mut Page(page),
-            &mut HashMap::new(),
-            crate::model::now(),
-        )?;
+        scan(&app, page)?;
         assert!(app.is_active(&identifier)?);
         Ok(())
     }

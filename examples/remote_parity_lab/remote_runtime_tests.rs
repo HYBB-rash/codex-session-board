@@ -162,6 +162,13 @@ fn complete_user_ids_drive_review_and_survive_restart_without_metadata_false_ala
         &partition.row(THREAD)?,
     )?;
     let confirmed = partition.row(THREAD)?;
+    partition.discover(
+        "mac",
+        &[json!({"hostId":"mac","id":THREAD,"title":"更名","updatedAt":now()})],
+    )?;
+    let renamed = partition.row(THREAD)?;
+    assert_eq!(renamed["followUp"], false);
+    assert_eq!(renamed["inputVersion"], confirmed["inputVersion"]);
     turn["userItems"] = json!(["first", "second"]);
     partition.store.observe(THREAD, &turn, None)?;
     let changed = partition.row(THREAD)?;
@@ -169,7 +176,7 @@ fn complete_user_ids_drive_review_and_survive_restart_without_metadata_false_ala
     assert!(changed["inputVersion"].as_i64() > confirmed["inputVersion"].as_i64());
     assert!(
         partition
-            .save(&mut surface, THREAD, "to_archive", "", &confirmed)
+            .save(&mut surface, THREAD, "to_archive", "", &renamed)
             .is_err()
     );
     drop(partition);

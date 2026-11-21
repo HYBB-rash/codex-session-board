@@ -1,7 +1,6 @@
 use super::engine::{Partition, seed};
 use anyhow::Result;
 use codex_session_board::native_sections::Observation;
-use serde_json::json;
 
 const THREAD: &str = "11111111-1111-4111-8111-111111111111";
 
@@ -57,22 +56,5 @@ fn host_re_registration_requires_explicit_migration() -> Result<()> {
     replacement.discover("connection-new", &[seed("connection-new", THREAD)])?;
     assert_eq!(replacement.row(THREAD)?["note"], "");
     assert_eq!(original.row(THREAD)?["note"], "保留人工判断");
-    Ok(())
-}
-
-#[test]
-fn malformed_thread_and_traversal_host_cannot_escape_partition() -> Result<()> {
-    let root = tempfile::tempdir()?;
-    let partition = Partition::open(root.path(), "../../other")?;
-    assert!(
-        partition
-            .discover(
-                "../../other",
-                &[json!({"id":"../escape","hostId":"../../other"})]
-            )
-            .is_err()
-    );
-    assert!(partition.store.sessions()?.is_empty());
-    assert_eq!(std::fs::read_dir(root.path())?.count(), 1);
     Ok(())
 }
