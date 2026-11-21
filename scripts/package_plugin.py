@@ -35,20 +35,22 @@ def versions(root):
 
 
 def bundle_updater(root, destination):
-    dependency = distribution("websocket-client")
-    if f"websocket-client=={dependency.version}" not in (root / "requirements-delivery.txt").read_text().splitlines():
-        raise ValueError("Install the pinned requirements-delivery.txt before building a plugin")
+    pins = (root / "requirements-delivery.txt").read_text().splitlines()
     destination.mkdir()
-    for name in ("board_update_job.py", "update_plugin.py", "plugin_package.py", "reload_plugins.py",
+    for name in ("board_update_job.py", "update_plugin.py", "plugin_package.py", "plugin_publication.py", "reload_plugins.py",
                  "desktop_identity.py"):
         shutil.copy2(root / "scripts" / name, destination / name)
-    for path in dependency.files:
-        if path.parts[0] == "websocket" and not {"__pycache__", "tests"}.intersection(path.parts):
-            bundled = destination / path
-            bundled.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path.locate(), bundled)
-        elif path.name == "LICENSE":
-            shutil.copy2(path.locate(), destination / "websocket-client-LICENSE")
+    for name, module in (("websocket-client", "websocket"), ("tomlkit", "tomlkit")):
+        dependency = distribution(name)
+        if f"{name}=={dependency.version}" not in pins:
+            raise ValueError("Install the pinned requirements-delivery.txt before building a plugin")
+        for path in dependency.files:
+            if path.parts[0] == module and not {"__pycache__", "tests"}.intersection(path.parts):
+                bundled = destination / path
+                bundled.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(path.locate(), bundled)
+            elif path.name == "LICENSE":
+                shutil.copy2(path.locate(), destination / f"{name}-LICENSE")
 
 
 def preflight(root, destination):
