@@ -66,10 +66,9 @@ impl RuntimeHandle {
 
     pub(crate) fn request(&mut self, op: &Operation, arguments: &Value) -> Result<Value> {
         self.acquire()?;
-        let body = (op.method == Method::Post).then_some(arguments);
         match self.board.as_ref().context("插件运行时未取得所有权")? {
-            Board::Owned(board) => board.app.request(op.path, body),
-            Board::Shared(url) => self.forward(url, op.path, body),
+            Board::Owned(board) => board.app.execute(op, arguments),
+            Board::Shared(url) => self.forward(url, op.path, (op.method == Method::Post).then_some(arguments)),
         }
     }
 

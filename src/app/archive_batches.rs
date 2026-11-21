@@ -1,6 +1,7 @@
 use super::{App, remote::remote_identity};
 use crate::{
     archive::{self, ArchiveEffect, NewInput},
+    operations::Action,
     store::archive_batches::{Batch, Item, Target},
 };
 use anyhow::{Context, Result, ensure};
@@ -11,23 +12,15 @@ mod host;
 use host::HostArchive;
 
 impl App {
-    pub(super) fn archive_route(&self, path: &str, body: Option<&Value>) -> Result<Value> {
+    pub(super) fn archive_route(&self, action: Action, body: &Value) -> Result<Value> {
         ensure!(!self.config.legacy_mode, "兼容模式不执行本机或远程会话的真实归档");
-        match (path, body) {
-            ("/api/archive", Some(body)) if body.get("batchId").is_some() => self.submit_archive_item(body),
-            ("/api/archive", Some(body)) => archive::request(self, body),
-            ("/api/archive-batches", None) => Ok(json!({"batches":self.store.archive_batches()?})),
-            (_, Some(body)) if path != "/api/archive" => self.archive_batch_action(path, body),
-            _ => anyhow::bail!("接口不存在"),
-        }
-    }
-
-    fn archive_batch_action(&self, path: &str, body: &Value) -> Result<Value> {
-        let id = batch_id(&body["id"])?;
-        let batch = match path {
-            "/api/archive-batches" => self.start_archive_batch(id, body)?,
-            "/api/archive-batches/finish" => self.store.finish_archive_batch(id)?,
-            "/api/archive-batches/check" => self.check_archive_batch(id)?,
+        let batch = match action {
+            Action::Archive if body.get("batchId").is_some() => return self.submit_archive_item(body),
+            Action::Archive => return archive::request(self, body),
+            Action::ArchiveBatches => return Ok(json!({"batches":self.store.archive_batches()?})),
+            Action::ArchiveBatchStart => self.start_archive_batch(batch_id(&body["id"])?, body)?,
+            Action::ArchiveBatchFinish => self.store.finish_archive_batch(batch_id(&body["id"])?)?,
+            Action::ArchiveBatchCheck => self.check_archive_batch(batch_id(&body["id"])?)?,
             _ => anyhow::bail!("未知归档批次操作"),
         };
         Ok(json!({"batch":batch}))

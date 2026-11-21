@@ -3,6 +3,7 @@ mod plugin_update;
 use crate::{
     config::Config,
     model::now,
+    operations::{Action, Method, Operation},
     rpc::{DesktopConnection, Role, SidebarConnection},
     store::Store,
     titles,
@@ -252,49 +253,57 @@ impl App {
     }
 
     pub fn request(&self, path: &str, body: Option<&Value>) -> Result<Value> {
-        if self.config.four_columns && matches!(path, "/api/state" | "/api/column-sort")
-            && let Some(state) = body.and_then(|body| body["state"].as_str())
+        if path == "/api/native-calibration/reset" && let Some(body) = body {
+            return self.reset_native_calibration(body);
+        }
+        let method = if body.is_some() { Method::Post } else { Method::Get };
+        let op = Operation::for_request(path, method).context("接口不存在")?;
+        self.execute(op, body.unwrap_or(&Value::Null))
+    }
+
+    pub(crate) fn execute(&self, op: &Operation, body: &Value) -> Result<Value> {
+        if self.config.four_columns && matches!(op.action, Action::Update | Action::Sort)
+            && let Some(state) = body["state"].as_str()
         {
             ensure!(self.config.board_states().any(|item| item.0 == state),
                 "该状态已停止使用，请刷新看板并重新选择");
         }
-        if let Some(body) = body
-            && self.routes_remote_write(path, body)
-        {
-            return self.route_remote(path, body);
+        if self.routes_remote_write(op.action, body) {
+            return self.route_remote(op.path, body);
         }
-        match (path, body) {
-            ("/api/sessions", None) => self.snapshot(),
-            ("/api/plugin-update", body) => self.plugin_update(body),
-            ("/api/preview-reply", Some(body)) => self.preview_reply(body),
-            ("/api/state", Some(body)) => self.save(body),
-            ("/api/column-sort", Some(body)) => self.store.save_column_sort(body),
-            ("/api/archive" | "/api/archive-batches" | "/api/archive-batches/finish" | "/api/archive-batches/check", body) =>
-                self.archive_route(path, body),
-            ("/api/new", Some(body)) => self.new_session(body),
-            ("/api/new/reset", Some(body)) => self.reset_remote_draft(body),
-            ("/api/project/assign", Some(body)) => self.assign_project(body),
-            ("/api/connect", Some(body)) => self.connect_remote(body),
-            ("/api/ssh-setup", Some(body)) => self.ssh_setup(body),
-            ("/api/native-calibration/reset", Some(body)) => self.reset_native_calibration(body),
-            ("/api/open", Some(body)) => {
-                let identifier = body["id"].as_str().context("缺少会话 ID")?;
-                if identifier.starts_with("remote:") {
-                    return self.open_remote(identifier);
-                }
-                ensure!(self.store.contains(identifier)?, "会话不在本地看板中");
-                let url = open_conversation(identifier, &self.config)?;
-                Ok(json!({"ok":true,"url":url}))
-            }
-            ("/api/refresh", Some(body)) => self.refresh_hosts(body),
-            _ => bail!("接口不存在"),
+        match op.action {
+            Action::Snapshot => self.snapshot(),
+            Action::PluginUpdateStatus => self.plugin_update(None),
+            Action::PluginUpdateStart => self.plugin_update(Some(body)),
+            Action::PreviewReply => self.preview_reply(body),
+            Action::Update => self.save(body),
+            Action::Sort => self.store.save_column_sort(body),
+            Action::Archive | Action::ArchiveBatches | Action::ArchiveBatchStart |
+                Action::ArchiveBatchFinish | Action::ArchiveBatchCheck => self.archive_route(op.action, body),
+            Action::New => self.new_session(body),
+            Action::NewReset => self.reset_remote_draft(body),
+            Action::ProjectAssign => self.assign_project(body),
+            Action::Connect => self.connect_remote(body),
+            Action::SshSetup => self.ssh_setup(body),
+            Action::Open => self.open_session(body),
+            Action::Refresh => self.refresh_hosts(body),
         }
     }
 
-    fn routes_remote_write(&self, path: &str, body: &Value) -> bool {
+    fn open_session(&self, body: &Value) -> Result<Value> {
+        let identifier = body["id"].as_str().context("缺少会话 ID")?;
+        if identifier.starts_with("remote:") {
+            return self.open_remote(identifier);
+        }
+        ensure!(self.store.contains(identifier)?, "会话不在本地看板中");
+        let url = open_conversation(identifier, &self.config)?;
+        Ok(json!({"ok":true,"url":url}))
+    }
+
+    fn routes_remote_write(&self, action: Action, body: &Value) -> bool {
         !self.config.legacy_mode
-            && matches!(path, "/api/state" | "/api/archive")
-            && (path != "/api/archive" || body.get("batchId").is_none())
+            && matches!(action, Action::Update | Action::Archive)
+            && (action != Action::Archive || body.get("batchId").is_none())
             && body["id"].as_str().is_some_and(|id| id.starts_with("remote:"))
     }
 

@@ -1,4 +1,5 @@
 use crate::app::App;
+use crate::operations::{Action, Method as BoardMethod, Operation};
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -104,7 +105,7 @@ fn web_asset(path: &str) -> Option<(&'static str, &'static str)> {
     }
 }
 
-pub fn handle(mut request: Request, app: &App, token: &str, port: u16) {
+pub fn handle(request: Request, app: &App, token: &str, port: u16) {
     let writing = request.method() != &Method::Get;
     if !authorized(
         header(&request, "Host"),
@@ -123,23 +124,35 @@ pub fn handle(mut request: Request, app: &App, token: &str, port: u16) {
     if !writing && let Some((body, content_type)) = web_asset(&path) {
         return response(request, 200, body.to_string(), content_type);
     }
-    let result = if !writing && path == "/api/info" {
+    handle_api(request, app, token, &path);
+}
+
+fn handle_api(mut request: Request, app: &App, token: &str, path: &str) {
+    let op = match request.method() {
+        Method::Get => Operation::for_request(path, BoardMethod::Get),
+        Method::Post => Operation::for_request(path, BoardMethod::Post),
+        _ => None,
+    };
+    let result = if request.method() == &Method::Get && path == "/api/info" {
         info(app).map(|mut identity| {
             identity["requestToken"] = json!(token);
             identity
         })
     } else if request.method() == &Method::Post {
-        let maximum = if path == "/api/archive-batches" { 1024 * 1024 } else { 12000 };
-        body(&mut request, maximum).and_then(|body| app.request(&path, Some(&body)))
-    } else if !writing {
-        app.request(&path, None)
+        let maximum = if op.is_some_and(|op| op.action == Action::ArchiveBatchStart) { 1024 * 1024 } else { 12000 };
+        body(&mut request, maximum).and_then(|body| match op {
+            Some(op) => app.execute(op, &body),
+            None => app.request(path, Some(&body)),
+        })
+    } else if request.method() == &Method::Get {
+        op.context("接口不存在").and_then(|op| app.execute(op, &Value::Null))
     } else {
         bail_result()
     };
     match result {
         Ok(value) => json_response(
             request,
-            if path == "/api/refresh" { 202 } else { 200 },
+            if op.is_some_and(|op| op.action == Action::Refresh) { 202 } else { 200 },
             value,
         ),
         Err(error) => json_response(request, 400, json!({"error":error.to_string()})),
