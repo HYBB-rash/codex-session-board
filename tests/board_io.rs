@@ -307,21 +307,6 @@ fn newer_state_before_write_prevents_stale_title() {
 }
 
 #[test]
-fn old_ack_cannot_delete_newer_title_job() {
-    let fixture = Fixture::new(true);
-    fixture.populate();
-    let app = fixture.app();
-    app.store
-        .set_state(FIRST, Some("review"), "", 0, None)
-        .unwrap();
-    app.store
-        .set_state(FIRST, Some("completed"), "新状态", 1, None)
-        .unwrap();
-    assert!(!app.store.title_synced(FIRST, 1, "[待审阅] 原名").unwrap());
-    assert_eq!(app.store.pending_titles(None).unwrap()[0]["version"], 2);
-}
-
-#[test]
 fn title_ack_during_newer_manual_selection_leaves_new_job_for_retry() {
     let fixture = Fixture::new(true);
     fixture.populate();

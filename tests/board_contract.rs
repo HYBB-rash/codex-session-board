@@ -1299,6 +1299,9 @@ mod title_store_tests {
         assert!(!store.title_current("sample", 1).unwrap());
         assert!(store.title_current("sample", 2).unwrap());
         assert!(!store.title_synced("sample", 1, "[进行中] 旧标题").unwrap());
+        let jobs = store.pending_titles(None).unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0]["version"], 2);
         store.title_failed("sample", 1, "旧错误").unwrap();
         assert_eq!(database_snapshot(&store), before);
         assert!(store.title_synced("sample", 2, "[待审阅] 新标题").unwrap());
