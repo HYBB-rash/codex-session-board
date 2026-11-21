@@ -2,6 +2,9 @@ use super::*;
 use crate::rpc::{Role, identity_fixture::Fixture};
 use std::time::Duration;
 
+#[path = "card_action_tests.rs"]
+mod card_actions;
+
 fn managed(fixture: &Fixture) -> Result<(App, Arc<App>)> {
     let mut settings = fixture.config.clone();
     settings.sidebar_state_file = settings.data_dir.with_file_name("sidebar.json");
@@ -68,23 +71,29 @@ fn managed_write_gate_requires_initialization_and_preserves_notes_after_home_cha
     remote.discover(&[json!({"id":identifier,"name":"test"})], true)?;
     let mut body = json!({
         "id":crate::store::remote::identity(&fixture.host.host_id, &identifier),
-        "state":"review","note":"keep","version":0,"inputVersion":0
+        "state":"to_archive","note":"keep","version":0,"inputVersion":0
     });
     assert!(root.route_remote("/api/state", &body).is_err());
     assert_eq!(remote.store.note(&identifier)?, "");
     drop(remote.connection(Duration::from_secs(3), Role::RemoteObserver)?);
     remote.update_health(json!({"runtimeVerified":true}))?;
-    root.route_remote("/api/state", &body)?;
+    root.request("/api/state", Some(&body))?;
     assert_eq!(remote.store.note(&identifier)?, "keep");
+    let snapshot = root.request("/api/sessions", None)?;
+    let card = &snapshot["sessions"][0];
+    assert_eq!(card["id"], body["id"]);
+    assert_eq!(card["state"], "to_archive");
+    assert_eq!(card["readOnly"], false);
     let source = remote.config.data_dir.join("source.json");
     let before = std::fs::read(&source)?;
     let mut peer = fixture.peer()?;
     peer.codex_home = "/other".into();
     peer.declared_codex_home = "/other".into();
     fixture.update("peer", serde_json::to_value(peer)?)?;
-    body["version"] = json!(1);
+    body["version"] = card["version"].clone();
     body["note"] = json!("do not save");
-    assert!(root.route_remote("/api/state", &body).is_err());
+    assert!(root.request("/api/state", Some(&body)).is_err());
+    assert!(root.request("/api/archive", Some(card)).is_err());
     assert_eq!(remote.store.note(&identifier)?, "keep");
     assert_eq!(std::fs::read(source)?, before);
     assert!(

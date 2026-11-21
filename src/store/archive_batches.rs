@@ -93,6 +93,12 @@ impl Store {
         )?)
     }
 
+    pub(crate) fn pending_archive_ids(&self) -> Result<std::collections::HashSet<String>> {
+        let database = self.connection()?;
+        let mut query = database.prepare("SELECT id FROM archive_batch_items WHERE status='pending'")?;
+        Ok(query.query_map([], |row| row.get(0))?.collect::<rusqlite::Result<_>>()?)
+    }
+
     pub(crate) fn claim_archive_item(&self, batch: &str, id: &str, source: &Value) -> Result<bool> {
         Ok(self.connection()?.execute(
             "UPDATE OR IGNORE archive_batch_items SET status='pending', source=?

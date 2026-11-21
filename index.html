@@ -557,14 +557,22 @@ function updateNotePreviews() {
 }
 new ResizeObserver(updateNotePreviews).observe(byId("board-viewport"));
 byId("unplaced").addEventListener("toggle",updateNotePreviews);
-function sessionReadOnly(session) {
-  return session.readOnly || session.remote && (session.canOpen === false || session.archived || session.presence === "cachedUnknown");
+function cardActions(session) {
+  const readOnly = session.readOnly || session.remote &&
+    (session.canOpen === false || session.archived || session.presence === "cachedUnknown");
+  const canAdjust = !readOnly && !saving && !creating && moving?.id !== session.id;
+  const pendingArchive = session.archivePending || archivePending.has(session.id);
+  const archive = session.state === "to_archive" && !readOnly && session.canArchive !== false && !pendingArchive
+    ? session.followUp ? "confirm" : "archive" : null;
+  const canSubmit = canAdjust && archive !== null && !archiveChecking;
+  return {readOnly,canAdjust,pendingArchive,archive,canSubmit,inBatch:canSubmit && archive === "archive"};
 }
 function makeCard(session) {
   const card = element("article",undefined,"card");
   card.dataset.id = session.id;
   const pending = moving?.id === session.id;
-  card.draggable = !saving && !creating && !sessionReadOnly(session);
+  const eligibility = cardActions(session);
+  card.draggable = eligibility.canAdjust;
   if (pending) {card.classList.add("move-pending");card.setAttribute("aria-busy","true");}
   if (session.canOpen === false) card.classList.add("offline");
   card.setAttribute("aria-label",session.title);
@@ -588,8 +596,8 @@ function makeCard(session) {
   if (session.note) card.append(makeNote(session.note));
   if (!session.manual && session.state === "blocked") card.append(element("div",session.reason,"card-note"));
   if (session.followUp) card.append(element("div","有新输入，待复核","follow"));
-  if (archivePending.has(session.id)) card.append(element("div","归档结果待核对","follow"));
-  if (sessionReadOnly(session)) card.append(element("div","当前仅供查看","follow"));
+  if (eligibility.pendingArchive) card.append(element("div","归档结果待核对","follow"));
+  if (eligibility.readOnly) card.append(element("div","当前仅供查看","follow"));
   if (session.observationError) card.append(element("div","历史读取失败，保留原状态","follow"));
   if (session.observationWarning) card.append(element("div",session.observationWarning,"follow"));
   if (session.projectIssue) card.append(element("div","项目归属待确认","follow"));
@@ -599,7 +607,7 @@ function makeCard(session) {
   const actions = element("div",undefined,"card-actions");
   const adjust = element("button",session.state === null ? "归列" : "调整","row-action");
   adjust.type = "button";adjust.dataset.action = "adjust";
-  adjust.disabled = saving || creating || pending || sessionReadOnly(session);
+  adjust.disabled = !eligibility.canAdjust;
   adjust.title = (session.state === null ? "归列：" : "调整状态或备注：") + session.title;
   adjust.setAttribute("aria-label",adjust.title);
   adjust.onclick = () => openEditor(session.id);
@@ -612,13 +620,14 @@ function makeCard(session) {
     assign.onclick = () => openProjectAssignment(session);
     actions.append(assign);
   }
-  if (archiveEligible(session) && !archivePending.has(session.id)) {
-    const archive = element("button",session.followUp ? "确认待归档" : "归档","row-action");
+  if (eligibility.archive) {
+    const confirmInputs = eligibility.archive === "confirm";
+    const archive = element("button",confirmInputs ? "确认待归档" : "归档","row-action");
     archive.type = "button";
     archive.dataset.action = "archive";
-    archive.disabled = saving || creating || pending;
-    archive.title = session.followUp ? "请先打开会话核对输入；确认仅保存待归档状态，不执行归档" : "直接归档此 Codex 会话";
-    archive.onclick = () => session.followUp ? confirmArchiveInputs(session,archive) : archiveSession(session,archive);
+    archive.disabled = !eligibility.canSubmit;
+    archive.title = confirmInputs ? "请先打开会话核对输入；确认仅保存待归档状态，不执行归档" : "直接归档此 Codex 会话";
+    archive.onclick = () => confirmInputs ? confirmArchiveInputs(session,archive) : archiveSessions([session],archive);
     actions.append(archive);
   }
   footer.append(updated,actions);
@@ -628,7 +637,7 @@ function makeCard(session) {
     if (!pending && !(control && card.contains(control))) openReply(session);
   };
   card.ondragstart = event => {
-    if (saving || creating || sessionReadOnly(session) || byId("editor").open ||
+    if (!cardActions(session).canAdjust || byId("editor").open ||
         event.target.closest(".card-actions")) {event.preventDefault();return;}
     dragging = {...session};
     event.dataTransfer.effectAllowed = "move";
@@ -680,15 +689,6 @@ async function openSession(id) {
   } catch (error) {announce(error.message,true);}
   finally {opening = false;}
 }
-function archiveEligible(session) {
-  return session.state === "to_archive" && !sessionReadOnly(session) && session.canArchive !== false;
-}
-function canArchiveSession(session) {
-  return archiveEligible(session) && !session.followUp && !archivePending.has(session.id);
-}
-function archiveSession(session, button) {
-  return archiveSessions([session],button);
-}
 function archiveBatchId() {
   if (crypto.randomUUID) return crypto.randomUUID();
   const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -698,7 +698,8 @@ function archiveBatchId() {
   return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
 }
 async function confirmArchiveInputs(session, button) {
-  if (saving || creating || dragging || byId("editor").open) return;
+  const actions = cardActions(session);
+  if (!actions.canSubmit || actions.archive !== "confirm" || dragging || byId("editor").open) return;
   saving = true;button.disabled = true;
   try {
     await persist(session,"to_archive",session.note);
@@ -708,7 +709,7 @@ async function confirmArchiveInputs(session, button) {
 }
 async function archiveSessions(sessions, button) {
   if (saving || creating || dragging || archiveChecking || byId("editor").open) return;
-  const targets = sessions.filter(canArchiveSession);
+  const targets = sessions.filter(session => cardActions(session).inBatch);
   if (!targets.length) {announce("当前列没有可归档的会话。");return;}
   const id = archiveBatchId();
   const items = targets.map(({id,title,version,inputVersion,sectionVersion}) =>
@@ -717,6 +718,7 @@ async function archiveSessions(sessions, button) {
   ++archiveRead;
   archiveRun = {id,index:0,total:items.length,submitted:new Set(),sending:true};
   archiveNotice = "";
+  render();
   renderArchiveResults();
   try {
     let batch;
@@ -828,6 +830,7 @@ async function checkArchiveResults(batches,manual) {
   ++archiveRead;
   archiveChecking = true;
   archiveNotice = "";
+  render();
   renderArchiveResults();
   try {
     for (const {id} of batches) {
@@ -836,7 +839,7 @@ async function checkArchiveResults(batches,manual) {
     }
     if (manual && archivePending.size) archiveNotice = "刚刚核对，仍有结果待确认。";
   } catch {archiveNotice = "暂时无法核对结果，请稍后再试。";}
-  finally {archiveChecking = false;renderArchiveResults();}
+  finally {archiveChecking = false;renderArchiveResults();render();}
 }
 function archiveResultButton(label, action) {
   const button = element("button",label,"row-action");
@@ -1060,8 +1063,8 @@ function updateColumn(column, state, sessions) {
   }
   const archiveAll = column.querySelector("[data-archive-all]");
   if (archiveAll) {
-    const count = sessions.filter(canArchiveSession).length;
-    archiveAll.disabled = saving || creating || !count;
+    const count = sessions.filter(session => cardActions(session).inBatch).length;
+    archiveAll.disabled = !count;
     archiveAll.textContent = `归档 ${count} 条`;
     archiveAll.title = byId("filter-scope").textContent + "；只归档本列可归档的会话";
     archiveAll.onclick = () => archiveSessions(sessions,archiveAll);
@@ -1070,7 +1073,7 @@ function updateColumn(column, state, sessions) {
   const unread = !hostSessions().length && healthReports().some(host => (selectedHost === "all" || host.key === selectedHost) && !host.lastRead);
   const origin = moving?.from === state && visibleSessions().some(session => session.id === moving.id);
   const signature = JSON.stringify([sessions,data.projectCatalog,data.states,selectedHost,data.legacyMode,
-    moving,[...unconfirmedMoves],[...archivePending],saving,creating,unread,origin,Boolean(snapshotError)]);
+    moving,[...unconfirmedMoves],[...archivePending],saving,creating,archiveChecking,unread,origin,Boolean(snapshotError)]);
   if (columnContent.get(column) === signature) return false;
   columnContent.set(column,signature);
   cards.replaceChildren(...sessions.map(makeCard));
@@ -1233,7 +1236,7 @@ function toggleFilter() {
   byId(filterMode === "project" ? "project-filter" : "search").focus();
 }
 function render(resetState = null) {
-  if (dragging || saving && !moving || byId("editor").open) return;
+  if (dragging || saving && !moving && !archiveRun || byId("editor").open) return;
   updateProjectOptions();
   updateFilterLock();
   const host = byId("host-filter").selectedOptions[0]?.textContent || selectedHost;
@@ -1470,7 +1473,7 @@ function openEditor(id, state, snapshot) {
   resetMoveFeedback();
   editing = snapshot || data.sessions.find(session => session.id === id);
   if (!editing) return;
-  if (sessionReadOnly(editing)) {editing=null;announce("当前会话仅供查看，不能修改状态或备注。",true);return;}
+  if (!cardActions(editing).canAdjust) {editing=null;announce("当前会话仅供查看，不能修改状态或备注。",true);return;}
   byId("dialog-title").textContent = editing.title + (editing.remote ? " · " + editing.hostLabel : "");
   byId("state").replaceChildren();
   if (editing.state === null) {
@@ -1535,7 +1538,7 @@ function syncNotice(result) {
   return result.titleEnabled ? result.titlePending ? "标题同步待重试。" + (result.titleError || "") : "标题已同步。" : "";
 }
 async function moveCard(session, state) {
-  if (saving || creating || sessionReadOnly(session)) return;
+  if (!cardActions(session).canAdjust) return;
   saving = true;
   const operation = startMove(session,state);
   let saved = false;

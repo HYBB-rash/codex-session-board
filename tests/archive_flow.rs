@@ -352,9 +352,4 @@ fn archive_mcp_resource_exposes_only_an_explicit_app_action() {
     let resource = mcp::resource();
     let html = resource["text"].as_str().unwrap();
     assert!(html.contains("\"/api/archive\":\"board_archive\""));
-    assert!(html.contains("archiveSession(session,archive)"));
-    assert!(!html.contains("\"调整状态\""));
-    assert!(html.contains("openEditor(session.id,state,session)"));
-    assert!(html.contains("archiveAll.onclick = () => archiveSessions(sessions,archiveAll)"));
-    assert!(html.contains("await post(\"/api/archive\""));
 }

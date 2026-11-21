@@ -609,6 +609,7 @@
       "test::column_sort::column_sort_rejects_invalid_requests_without_touching_sessions"
     ],
     "MANUAL-003": [
+      "lib::codex_session_board::remote::instances::identity_gate_tests::card_actions::card_buttons_and_batch_submit_only_eligible_revisions",
       "lib::codex_session_board::formal::paths::input_history_and_reconfirmation_follow_real_continuous_paths",
       "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation",
       "test::archive_flow::archive_checks_native_inputs_even_when_local_revision_has_not_changed",
