@@ -105,6 +105,9 @@ def platform_evidence(forge, run, source, label, attempt, directory):
 
 
 def verify_release(repository, directory, checkout, source_commit, run):
+    directory = directory.resolve()
+    if any(directory.is_relative_to(root.resolve()) for root in (checkout, ROOT)):
+        raise ValueError("Release evidence must use a directory outside both checkouts")
     source = identity(checkout)
     if source["commit"] != source_commit or git("status", "--porcelain", "--untracked-files=all", root=checkout):
         raise ValueError("Release verification requires a clean fixed main source")
@@ -117,7 +120,7 @@ def verify_release(repository, directory, checkout, source_commit, run):
         futures = [workers.submit(platform_evidence, forge, run, source, label, attempt, directory)
                    for label, attempt in attempts.items()]
         reports = dict(future.result() for future in futures)
-    if identity(checkout) != source:
+    if identity(checkout) != source or git("status", "--porcelain", "--untracked-files=all", root=checkout):
         raise ValueError("Release source changed while checking publication evidence")
     result = {"source": source, "run": run, "platforms": reports,
               "verified_at": datetime.now(timezone.utc).isoformat()}

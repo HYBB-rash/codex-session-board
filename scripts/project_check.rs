@@ -325,7 +325,7 @@ fn check_hooks(root: &Path) -> bool {
     })();
     match result {
         Ok(()) => {
-            println!("[通过] 已启用暂存区快检；完整测试在集成候选门禁执行。");
+            println!("[通过] 已启用暂存区快检。双平台完整验证在发布阶段执行。");
             true
         }
         Err(error) => {

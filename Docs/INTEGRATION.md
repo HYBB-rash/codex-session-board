@@ -9,7 +9,10 @@ Herman 点名一个分支后，由该分支作者在独立工作树完成合并�
 3. 在干净的本地 `main` 检出获取最新远端分支。先快进至 `origin/main`，确认它仍是验证时的基线，再用 `git merge --ff-only` 合入验证过的提交并普通推送。
 4. 读回 `refs/heads/main`，确认目标提交已进入主线。基线在推送前已变，或推送因远端前进被拒绝时，回到作者分支重新 rebase、验证。下一条分支由 Herman 安排。
 
-第三步使用下面的命令。`VALIDATED_BASE` 和 `VALIDATED_COMMIT` 是第二步记录的完整提交号。日用 `main` 若有未提交、未推送或冲突中的改动，使用单独的干净检出，保留原工作树供原任务处理。
+第三步使用下面的命令。`VALIDATED_BASE` 和 `VALIDATED_COMMIT` 是第二步记录的完整提交号。
+日用 `main` 若有未提交、未推送或冲突中的改动，使用单独的干净检出。
+如果该检出属于另一个克隆，先从作者工作树执行 `git fetch /absolute/author-worktree refs/heads/BRANCH`，
+并核对 `FETCH_HEAD` 与 `VALIDATED_COMMIT` 一致。
 
 ```bash
 set -e

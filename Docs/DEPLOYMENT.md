@@ -19,7 +19,9 @@ Mac 的开发入口与迁移记录见 `Docs/MAC-DEVELOPMENT.md`。
 已有分支按正常 Git 快进提交更新，远端读回确认 SHA 后才报告发布成功。
 重复发布相同包保持同一提交。
 
-提交并推送源码后执行统一入口。默认命令触发 `.github/workflows/plugin-release.yml`。
+发布版本冻结并快进到 `main` 后自动触发 `.github/workflows/plugin-release.yml`。
+默认命令也可手动触发该流程。两个平台先对固定的升版提交运行完整自动验证。
+仅验证固定提交的入口见 [本地合并与发布](INTEGRATION.md)。
 工作流只准备一次 Release，两个平台及最终发布都使用准备步骤返回的同一个数字 ID。
 手动补充平台前，使用 `--prepare-only` 获取 ID，再使用 `--local --release-id ID`。
 手动准备和发布工作流须串行执行。已有包会下载并校验后复用。
