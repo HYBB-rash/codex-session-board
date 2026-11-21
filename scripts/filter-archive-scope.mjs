@@ -6,7 +6,7 @@ const hostLabel = "工作主机";
 const hosts = ["host-a", "host-b"];
 const session = (hostId, threadId, projectId, version) => ({
   id: "remote:" + JSON.stringify(["codex", hostId, threadId]), remote: true, hostId, hostLabel,
-  title: "检查归档", projectId, cwd: "/example", state: "to_archive", canArchive: true,
+  title: "检查归档", projectId, cwd: "/example", state: "to_archive", readOnly: false, canArchive: true,
   version, inputVersion: version + 4, sectionVersion: "section-" + version,
 });
 const paired = hosts.map((host, index) => session(host, uuid, host + "/project", 10 + index));
