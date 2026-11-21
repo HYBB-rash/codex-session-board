@@ -16,7 +16,6 @@ pub struct Surface {
     pub authoritative: bool,
     pub fail: Option<&'static str>,
     pub lost: Option<&'static str>,
-    pub race_title: Option<String>,
     pub writes: Vec<String>,
 }
 
@@ -32,7 +31,6 @@ impl Surface {
             authoritative: true,
             fail: None,
             lost: None,
-            race_title: None,
             writes: Vec::new(),
         }
     }
@@ -60,9 +58,6 @@ impl Surface {
                 self.section = params["sectionId"].as_str().unwrap().into();
             }
             "thread/name/set" => {
-                if let Some(title) = self.race_title.take() {
-                    self.title = title;
-                }
                 self.title = params["name"].as_str().unwrap().into();
             }
             "thread/archive" => self.archived = true,

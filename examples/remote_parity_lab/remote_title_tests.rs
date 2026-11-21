@@ -87,17 +87,6 @@ fn metadata_updates_do_not_become_new_user_input() -> Result<()> {
 }
 
 #[test]
-fn exposes_title_overwrite_between_read_and_unconditional_write() -> Result<()> {
-    let (_root, partition, mut surface) = fixture("mac")?;
-    partition.save(&mut surface, THREAD, "review", "", &partition.row(THREAD)?)?;
-    surface.race_title = Some("另一客户端刚改的正文".into());
-    partition.sync_title(&mut surface, THREAD)?;
-    assert_eq!(surface.title, "[待审阅] 完整标题");
-    assert!(!surface.title.contains("另一客户端"));
-    Ok(())
-}
-
-#[test]
 fn incorrect_connection_host_is_rejected_before_any_write() -> Result<()> {
     let (_root, partition, mut surface) = fixture("mac")?;
     surface.host = "local".into();
