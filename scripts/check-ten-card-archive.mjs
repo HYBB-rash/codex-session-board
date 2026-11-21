@@ -171,6 +171,13 @@ async function run() {
   assert.equal(checkCount(), checks + 1);
   assert.deepEqual(fixture.batch(), beforeClose);
   report.phases.stillPending = recordCounts();
+  const oldLabel = "核实之前发出的读取";
+  fixture.prepareRefresh(oldLabel,[],false,true);
+  await clickNode(page,"#refresh");
+  await until(() => fixture.snapshots.length === 1,"旧会话读取未到达");
+  const old = fixture.snapshots[0];
+  assert.equal(fixture.ledger[old.request - 1].responseStatus,undefined);
+  const beforeConfirmation = await page.evaluate("performance.now()");
   fixture.allowVerification();
   await clickNode(page, selector);
   await waitFor('document.querySelector("#archive-summary-text").innerText.includes("已确认归档 5 / 10 条")',
@@ -181,7 +188,7 @@ async function run() {
   assert(!verified.actions.some(button => button.text === "核对结果"));
   assert.equal(checkCount(), checks + 2);
   assert.deepEqual(fixture.ledger.slice(manualStart).filter(entry => entry.method === "POST").map(entry => entry.url),
-    ["/api/archive-batches/check","/api/archive-batches/check"]);
+    ["/api/archive-batches/check","/api/refresh","/api/archive-batches/check"]);
   report.phases.verified = recordCounts();
   const submitted = fixture.ledger.filter(call => call.url === "/api/archive").map(call => call.body.id);
   assert.deepEqual(submitted, beforeClose.items.slice(0,7).map(item => item.id));
@@ -196,11 +203,24 @@ async function run() {
   const twin = beforeClose.items.find(item => item.id === `remote:${JSON.stringify([source,"other",uuid])}`);
   const revisions = card => [card.version,card.inputVersion,card.sectionVersion];
   assert.deepEqual(revisions(twin),revisions(confirmedCard));
-  const stale = await refreshSnapshot("核实后收到旧修订",[{id:confirmedCard.id}]);
-  report.staleSnapshot = stale;
-  const returned = stale.sessions.find(row => row.id === confirmedCard.id);
+  assert.equal(fixture.ledger[old.request - 1].responseStatus,undefined);
+  const releaseTime = await page.evaluate("performance.now()");
+  fixture.releaseOldRead();
+  await waitFor(`performance.getEntriesByType("resource").some(entry =>
+    new URL(entry.name).pathname==="/api/sessions" && entry.startTime<=${beforeConfirmation} && entry.responseEnd>=${releaseTime})`,
+    "核实前发出的快照没有在确认之后送达");
+  await waitFor(`document.querySelector("#health-summary").textContent.includes("连接暂时断开")`,
+    "核实后新发起的快照未显示读取失败");
+  const failedRead = fixture.ledger.findIndex((entry,index) => index + 1 > old.request && entry.responseStatus === 503) + 1;
+  assert(failedRead > old.request);
+  await page.evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+  assert.equal(fixture.ledger[old.request - 1].responseStatus,200);
+  const stale = {...old,failedRead,actions:await cardActions(),archivePosts:submitCount()};
+  report.lateSnapshot = stale;
+  const returned = old.sessions.find(row => row.id === confirmedCard.id);
   assert.deepEqual(revisions(returned),revisions(confirmedCard));
   assert.equal(returned.canArchive,true);
+  assert(!returned.archivePending);
   assert.deepEqual(stale.actions[twin.id],{text:"归档",disabled:false},"另一主机的同 UUID 活动卡失去了归档动作");
   const eligible = beforeClose.items.filter(item => ["awaiting","newInput","rejected"].includes(item.status));
   fixture.holdNextBatchFor(eligible.map(item => item.id));
@@ -210,13 +230,18 @@ async function run() {
   assert.equal(submitCount(),7);
   assert(!report.nextBatchRequest.items.some(item => item.id === confirmedCard.id),
     `核实已归档的卡片仍被选入新批次：${confirmedCard.title} (${confirmedCard.id})`);
-  assert(!verified.cards[confirmedCard.id] || verified.cards[confirmedCard.id].disabled,
-    `核实已归档的卡片仍可发起归档：${confirmedCard.title} (${confirmedCard.id})`);
-  assert(!stale.actions[confirmedCard.id] || stale.actions[confirmedCard.id].disabled,
-    `新快照使已核实的同一修订重新可归档：${confirmedCard.title}`);
+  assert.equal(verified.cards[confirmedCard.id],null,"确认后当前卡应仍可见且没有归档动作");
+  assert.equal(stale.actions[confirmedCard.id],null,"旧响应晚到后原卡重新可归档或消失");
+  assert(!await page.evaluate(`document.querySelector("#board").textContent.includes(${JSON.stringify(oldLabel)})`),
+    "旧响应已替换当前会话列表");
   assert.deepEqual(fixture.errors,[]);
   fixture.cancelNextBatch();
   await waitFor(`document.querySelector("${archiveButton}")?.disabled===false`,"建批探测结束后页面仍被锁定");
+  const fresh = await refreshSnapshot("成功重读根快照",[]);
+  report.rootSnapshot = fresh;
+  assert(!fresh.sessions.some(row => row.id === confirmedCard.id));
+  assert(!Object.hasOwn(fresh.actions,confirmedCard.id));
+  assert.deepEqual(fresh.actions[twin.id],{text:"归档",disabled:false});
   const [inputChanged,sectionChanged] = beforeClose.items.filter(item => item.status === "archived");
   const revisionsReturned = [
     {id:confirmedCard.id,version:confirmedCard.version + 1},

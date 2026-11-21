@@ -24,21 +24,30 @@ export async function tenCardArchiveFixture(html, {outcomes = mixedOutcomes, rem
   const messages = {newInput:"有新输入，本次未提交原生归档", rejected:"当前状态不允许归档"};
   const ledger = [], errors = [];
   const blocked = Promise.withResolvers();
+  const oldRead = Promise.withResolvers();
+  const unavailable = Symbol("snapshot unavailable");
   const nextBatchResponse = Promise.withResolvers();
   const cancelled = Symbol("cancelled");
   let batch, nextTargets, delayedHistory, prematureBatch, canVerify = false;
-  let nextRefresh, snapshot, restoredSessions;
+  let nextRefresh, snapshot, restoredSessions, holdSnapshot = false, failReads = false;
   const snapshots = [];
 
   function handle(method, url, body, requestNumber) {
     if (method === "GET" && url === "/api/sessions") {
-      const sessions = snapshot ?? restoredSessions ?? cards.filter(card => !["archived","verified"].includes(status(card.id)));
+      if (failReads) return unavailable;
+      const sessions = snapshot ?? restoredSessions ?? cards.filter(card => !["archived","verified"].includes(status(card.id)))
+        .map(card => status(card.id) === "pending" ? {...card,archivePending:true} : card);
       if (snapshot) {
         snapshots.push({request:requestNumber,sessions:structuredClone(sessions)});
         snapshot = undefined;
       }
-      return {states:{review:"待审阅",to_archive:"待归档"}, health:{},
+      const result = {states:{review:"待审阅",to_archive:"待归档"}, health:{},
         projectCatalog:{loaded:true,items:[],remoteHosts:[]}, sessions};
+      if (holdSnapshot) {
+        holdSnapshot = false;
+        return oldRead.promise.then(() => result);
+      }
+      return result;
     }
     if (method === "GET" && url === "/api/archive-batches") {
       const snapshot = {batches:batch ? [structuredClone(batch)] : []};
@@ -50,6 +59,8 @@ export async function tenCardArchiveFixture(html, {outcomes = mixedOutcomes, rem
       assert.deepEqual(body,{});
       assert(nextRefresh,"未安排的刷新");
       snapshot = nextRefresh.sessions;
+      holdSnapshot = nextRefresh.hold;
+      failReads = false;
       if (nextRefresh.persist) restoredSessions = snapshot;
       nextRefresh = undefined;
       return {ok:true};
@@ -93,7 +104,10 @@ export async function tenCardArchiveFixture(html, {outcomes = mixedOutcomes, rem
     if (url === "/api/archive-batches/check") {
       assert.deepEqual(body, {id:batch.id});
       if (canVerify) for (const item of batch.items) {
-        if (item.status === "pending") item.status = "verified";
+        if (item.status === "pending") {
+          item.status = "verified";
+          failReads = true;
+        }
       }
       return {batch};
     }
@@ -135,6 +149,11 @@ export async function tenCardArchiveFixture(html, {outcomes = mixedOutcomes, rem
       const body = text ? JSON.parse(text) : null;
       const requestNumber = ledger.push({method,url,body});
       const reply = await handle(method, url, body, requestNumber);
+      if (url === "/api/sessions") ledger[requestNumber - 1].responseStatus = reply === unavailable ? 503 : 200;
+      if (reply === unavailable) {
+        response.writeHead(503,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify({error:"读取根快照失败"}));
+        return;
+      }
       if (reply === cancelled) {
         response.writeHead(409,{"Content-Type":"application/json"}).end(JSON.stringify({error:"测试已结束本次建批探测"}));
         return;
@@ -151,7 +170,8 @@ export async function tenCardArchiveFixture(html, {outcomes = mixedOutcomes, rem
   await once(server, "listening");
   return {url:`http://127.0.0.1:${server.address().port}/`, ledger, errors, snapshots,
     batch:() => structuredClone(batch), allowVerification:() => { canVerify = true; },
-    prepareRefresh(label, changed, persist) {
+    releaseOldRead() { oldRead.resolve(); },
+    prepareRefresh(label, changed, persist, hold = false) {
       const visible = cards.filter(card => !["archived","verified"].includes(status(card.id)));
       const targets = changed.map(({id,...fields}) => {
         const card = cards.find(row => row.id === id);
@@ -161,7 +181,7 @@ export async function tenCardArchiveFixture(html, {outcomes = mixedOutcomes, rem
       const sessions = [...structuredClone(visible),...targets];
       const marker = sessions.find(card => status(card.id) === "rejected");
       marker.note = label;
-      nextRefresh = {sessions,persist};
+      nextRefresh = {sessions,persist,hold};
       return structuredClone(sessions);
     },
     holdNextBatchFor(ids) { nextTargets = ids; },
@@ -170,6 +190,7 @@ export async function tenCardArchiveFixture(html, {outcomes = mixedOutcomes, rem
     releaseHistory() { delayedHistory?.resolve(); delayedHistory = undefined; },
     release:() => blocked.resolve(), async close() {
       blocked.resolve();
+      oldRead.resolve();
       delayedHistory?.resolve();
       nextBatchResponse.resolve({});
       const closed = once(server, "close");
