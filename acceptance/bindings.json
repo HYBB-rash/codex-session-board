@@ -1208,7 +1208,8 @@
     ],
     "UI-001": [
       "lib::codex_session_board::app::remote_snapshot::tests::native_project_creation_requires_a_live_connected_non_deleting_target",
-      "test::ui_layout::host_catalog_filters_preserve_cached_rows_and_isolated_native_drafts"
+      "test::ui_layout::host_catalog_filters_preserve_cached_rows_and_isolated_native_drafts",
+      "test::ui_layout::catalog_load_waits_for_latest_snapshot_before_native_creation"
     ],
     "UI-002": [
       "test::native_authority::entrypoints::built_binary_distinguishes_omitted_and_empty_notes_over_http_and_mcp",

@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import { launchBrowser } from "./browser-client.mjs";
 import { archiveFixture } from "./archive-browser-fixture.mjs";
+import { loadFixture } from "./browser-fixture.mjs";
 
 const html = await fs.readFile(new URL("../index.html",import.meta.url),"utf8");
 const project = (id,hostId,origin) => ({id,hostId,origin,remote:true,hostLabel:hostId,
@@ -161,7 +162,7 @@ try {
   fixture.projectCatalog.items.find(project=>project.id==="empty").canCreate=true;
   fixture.health.remoteConnections[0].catalog.complete=false;
   fixture.health.remoteConnections[0].catalog.issues=["membership:unrelated:foreignMembership"];
-  await evaluate("load()");
+  await loadFixture(page,fixture);
   nativePending = true;
   await evaluate('createSession("server")');
   const targetWrites = () => writes.filter(row=>row.path==="/api/new" && row.body.operationId);
@@ -192,17 +193,17 @@ try {
   check(targetWrites().at(-1).body.operationId !== uncertainOperation,true);
   check(writes.filter(row=>row.path==="/api/new/reset"),[]);
   fixture.projectCatalog.items.find(project=>project.id==="server").pendingDeletion=true;
-  await evaluate("load()");
+  await loadFixture(page,fixture);
   const beforeDeletion = targetWrites().length;
   await evaluate('createSession("server")');
   check(targetWrites().length,beforeDeletion);
   fixture.projectCatalog.items.find(project=>project.id==="server").pendingDeletion=false;
   fixture.health.remoteConnections[0].connected=false;
-  await evaluate("load()");
+  await loadFixture(page,fixture);
   await evaluate('createSession("server")');
   check(targetWrites().length,beforeDeletion);
   fixture.health.remoteConnections[0].connected=true;
-  await evaluate("load()");
+  await loadFixture(page,fixture);
   nativeError = true;
   await evaluate('createSession("server")');
   const failedOperation = targetWrites().at(-1).body.operationId;
