@@ -1111,7 +1111,7 @@ function render(resetState = null) {
     {project:card.querySelector(".project-tag").open,note:Boolean(card.querySelector(".note-details[open]"))}]));
   const filtered = visibleSessions().map(session => moving?.id === session.id ? {...session,state:moving.state} : session);
   const unplaced = data.fourColumns ? filtered.filter(session => session.state === null) : [];
-  unplaced.sort((first,second) => compareSessions(first,second,{direction:"desc"}));
+  unplaced.sort((first,second) => compareSessions(first,second,{field:"updated_at",direction:"desc"}));
   const position = captureScroll(byId("unplaced-cards"));
   const visibleMove = filtered.some(session => session.id === moving?.id) ? moving : null;
   const unread = !hostSessions().length && healthReports().some(host => (selectedHost === "all" || host.key === selectedHost) && !host.lastRead);
@@ -1150,7 +1150,7 @@ function render(resetState = null) {
       if (note) {note.open = previous.note;if (note.open) note.classList.add("expandable");}
     }
   }
-  if (focus && !active.isConnected) {
+  if (focus && (active !== document.activeElement || active.disabled)) {
     const card = [...document.querySelectorAll(".card")].find(card => card.dataset.id === focus.id);
     const target = card?.querySelector(focus.action === "project" ? ".project-tag summary" : `[data-action="${focus.action}"]`);
     const fallback = byId("column-" + focus.state)?.querySelector(".column-sort") ||
