@@ -488,7 +488,7 @@ mod tests {
     fn invalid_types_and_zero_quotas_are_rejected_before_creating_data() -> Result<()> {
         let fixture = Fixture::new()?;
         let path = fixture.0.join("config.json");
-        for invalid in [
+        for mut invalid in [
             serde_json::json!({"poll_seconds":0}),
             serde_json::json!({"auto_archive_seconds":0}),
             serde_json::json!({"runtime_poll_seconds":false}),
@@ -501,10 +501,13 @@ mod tests {
             serde_json::json!({"data_dir":""}),
             serde_json::json!([]),
         ] {
+            if let Some(fields) = invalid.as_object_mut() {
+                fields.entry("data_dir").or_insert(serde_json::json!("data"));
+            }
             write_json(&path, &invalid, true)?;
             assert!(load(Some(&path)).is_err(), "{invalid}");
+            assert!(!fixture.0.join("data").exists(), "{invalid}");
         }
-        assert!(!fixture.0.join("data").exists());
         Ok(())
     }
 
