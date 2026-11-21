@@ -182,12 +182,17 @@ fn optional_update(live: &Live, client: &reqwest::blocking::Client, note: Option
     } else {
         body.as_object_mut().unwrap().remove("note");
     }
-    if mcp {
-        assert_eq!(live.mcp("board_update", body)?["structuredContent"]["ok"], true);
+    let receipt = if mcp {
+        live.mcp("board_update", body)?["structuredContent"].clone()
     } else {
-        live.post(client, &body)?.error_for_status()?;
-    }
+        live.post(client, &body)?.error_for_status()?.json::<Value>()?
+    };
+    assert_eq!(receipt["ok"], true);
     let after = live.snapshot(client)?;
+    for field in ["id", "state", "note", "manual", "version", "inputVersion",
+        "sectionVersion", "followUp", "source", "reason", "titleSyncPending", "titleSyncError"] {
+        assert_eq!(receipt["session"][field], session(&after)[field], "{field}");
+    }
     assert_eq!(session(&after)["manual"], true);
     assert_eq!(session(&after)["state"], "blocked");
     assert_eq!(session(&after)["version"], session(&before)["version"].as_i64().unwrap() + 1);
@@ -208,6 +213,14 @@ fn invalid_optional_notes(live: &Live, client: &reqwest::blocking::Client) -> Re
     let mut stale = update(session(&before), "blocked", "");
     stale["version"] = json!(0);
     assert!(!live.post(client, &stale)?.status().is_success());
+    assert_eq!(live.mcp("board_update", stale)?["isError"], true);
+    let mut stale_input = update(session(&before), "blocked", "不能确认新输入");
+    stale_input["inputVersion"] = json!(-1);
+    assert!(!live.post(client, &stale_input)?.status().is_success());
+    assert_eq!(live.mcp("board_update", stale_input)?["isError"], true);
+    let after = live.snapshot(client)?;
+    assert_eq!(session(&after)["version"], session(&before)["version"]);
+    assert_eq!(session(&after)["note"], session(&before)["note"]);
     Ok(())
 }
 

@@ -12,7 +12,12 @@ impl App {
         let (remote, thread) = self.remote_write_target(identifier)?;
         let mut request = body.clone();
         request["id"] = json!(thread);
-        remote.request(path, Some(&request))
+        let result = remote.request(path, Some(&request))?;
+        if path == "/api/state" {
+            self.save_receipt(identifier, result)
+        } else {
+            Ok(result)
+        }
     }
 
     pub(super) fn remote_write_target(&self, identifier: &str) -> Result<(Arc<App>, String)> {

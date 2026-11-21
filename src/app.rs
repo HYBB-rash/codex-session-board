@@ -340,6 +340,21 @@ impl App {
     }
 
     fn save(&self, body: &Value) -> Result<Value> {
+        let result = self.save_state(body)?;
+        self.save_receipt(body["id"].as_str().context("缺少会话 ID")?, result)
+    }
+
+    fn save_receipt(&self, identifier: &str, mut result: Value) -> Result<Value> {
+        let snapshot = self.snapshot().context("保存后读取卡片未完成，请刷新核对")?;
+        result["session"] = snapshot["sessions"]
+            .as_array()
+            .and_then(|rows| rows.iter().find(|row| row["id"] == identifier))
+            .cloned()
+            .context("保存后未能确认卡片，请刷新核对")?;
+        Ok(result)
+    }
+
+    fn save_state(&self, body: &Value) -> Result<Value> {
         let _operation = self.operation()?;
         ensure!(body.is_object(), "请求格式无效");
         let identifier = body["id"].as_str().context("缺少会话 ID")?;
