@@ -178,6 +178,8 @@ async function exercisePage(surface, page) {
       for (const type of ["mousemove","pointerdown","pointerup","click"]) window.addEventListener(type,event=>{
         const hit = {type,target:event.target.tagName,id:event.target.id,card:event.target.closest(".card")?.dataset.id,
           blank:event.target === document.querySelector("main"),trusted:event.isTrusted,x:event.clientX,y:event.clientY};
+        if (type === "pointerdown" && document.getElementById("reply-reader"))
+          hit.previewOpen = !document.getElementById("reply-reader").hidden && !document.getElementById("reply-scrim").hidden;
         if (type === "mousemove") window.gutterMove = hit;
         else window.gutterEvents.push(hit);
       },{capture:true,signal:window.gutterTrace.signal})`;
@@ -205,6 +207,8 @@ async function exercisePage(surface, page) {
     const detail = JSON.stringify(receipt);
     assert.deepEqual(events.filter(event => event.blank && event.trusted && event.x===point.x && event.y===point.y)
       .map(event => event.type), ["pointerdown","pointerup","click"], `${surface} 空白未收到完整物理点击 ${detail}`);
+    assert.equal(events.find(event => event.type==="pointerdown" && event.trusted).previewOpen,true,
+      `${surface} 物理按下前预览已收起 ${detail}`);
     await until(()=>evaluate(overlayClosed),`${surface} 页面空白收到点击后预览未收起 ${detail}`);
   };
   await wait(`Boolean(document.querySelector(${JSON.stringify(card("local"))}))`);
