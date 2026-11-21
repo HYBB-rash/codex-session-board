@@ -26,6 +26,11 @@ const markdown = "<h1>隔离启动</h1><ul><li>Linux</li></ul><blockquote>检查
 const prior = {turnId:"old",inProgress:true,html:markdown};
 const requests = [];
 const blockedResources = [];
+const pairUuid = "00000000-0000-4000-8000-000000000081";
+const pairedRows = ["pair-a", "pair-b"].map(hostId =>
+  session("remote:" + JSON.stringify(["codex", hostId, pairUuid]), "review", "重复 UUID", {
+    remote:true,hostId,hostLabel:"同名主机",
+  }));
 let snapshot = fixture(), pending, current, held, openFails;
 const host = `<!doctype html><meta charset="utf-8">
 <style>body{margin:0}iframe{position:fixed;top:48px;left:0;border:0;width:100vw;height:calc(100vh - 48px)}</style>
@@ -91,8 +96,10 @@ const server = http.createServer(async (request,response) => {
     return response.writeHead(503).end('{"error":"未连接"}');
   }
   if (id === "local" && held) {pending = response;return;}
+  const paired = pairedRows.find(row => row.id === id);
   const reply = id === "empty" ? {turnId:null,html:null,inProgress:false} : id === "local" ?
-    {turnId:"local",html:"<p>本机内容</p>",inProgress:false} : current;
+    {turnId:"local",html:"<p>本机内容</p>",inProgress:false} : paired ?
+    {turnId:paired.hostId,html:`<p>${paired.hostId}</p>`,inProgress:false} : current;
   response.end(JSON.stringify(reply));
 });
 await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
@@ -100,6 +107,7 @@ let browser, cleanup, failure;
 const checks = [];
 const firstClicks = {};
 const gutterClicks = {http:[],mcp:[]};
+const pairedOpens = {};
 const address = `http://127.0.0.1:${server.address().port}`;
 const until = async (predicate, message) => {
   for (let attempt=0;attempt<150;attempt++) {
@@ -442,10 +450,39 @@ async function exercisePage(surface, page) {
     await evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:"center",inline:"nearest",behavior:"instant"})`);
     await click(await evaluate(center(selector)));
   });
+  pairedOpens[surface] = await checkPairedSessions(evaluate, press, wait);
   if (surface==="http") await checkTitleDrag(page, evaluate);
   if (surface === "mcp") assert.deepEqual(await page.evaluate("window.creations"),[{}]);
   checks.push(surface);
 }
+async function checkPairedSessions(evaluate, press, wait) {
+  const select = host => evaluate(`{
+    const filter = byId("host-filter");
+    filter.value = ${JSON.stringify(host)};
+    filter.dispatchEvent(new Event("change"));
+  }`);
+  const previousHost = await evaluate('byId("host-filter").value');
+  snapshot.sessions.push(...pairedRows);
+  snapshot.health.remoteRegistry = pairedRows.map(row => ({hostId:row.hostId,hostLabel:row.hostLabel,enabled:true}));
+  await evaluate("load()");
+  await wait('Boolean(byId("host-filter").querySelector(\'option[value="host:pair-b"]\'))');
+  const start = requests.length;
+  for (const row of pairedRows) {
+    await select("host:" + row.hostId);
+    assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".card"), card => card.dataset.id)'), [row.id]);
+    assert.equal(await evaluate('byId("count").textContent'), "显示 1 / 当前主机范围共 1 条");
+    assert.equal(await evaluate('byId("jump").querySelector(\'[data-state="review"]\').textContent'), "待审阅 1");
+    await press(".card .card-title");
+    await wait(`byId("reply-text").textContent === ${JSON.stringify(row.hostId)}`);
+    await press("#reply-open");
+    await wait(`${overlayClosed} && !sessionReader.opening`);
+  }
+  await select(previousHost);
+  const entries = requests.slice(start);
+  assert.deepEqual(entries, pairedRows.flatMap(row => [["/api/preview-reply",row.id],["/api/open",row.id]]));
+  return entries.filter(([path]) => path === "/api/open").map(([, id]) => id);
+}
+
 async function checkTitleDrag(page, evaluate) {
   await page.command("Emulation.setDeviceMetricsOverride",{width:1680,height:1000,deviceScaleFactor:1,mobile:false});
   await evaluate(`document.querySelector(${JSON.stringify(card("local"))}).scrollIntoView({block:"center"})`);
@@ -476,5 +513,5 @@ try {
   if (browser) cleanup = await browser.close();
   await new Promise(resolve=>server.close(resolve));
 }
-console.log(JSON.stringify({passed:!failure,checks,firstClicks,gutterClicks,embeddedResource:process.argv[3] || "fixture",cleanup}));
+console.log(JSON.stringify({passed:!failure,checks,firstClicks,gutterClicks,pairedOpens,embeddedResource:process.argv[3] || "fixture",cleanup}));
 if (failure) throw failure;
