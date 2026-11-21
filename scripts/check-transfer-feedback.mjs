@@ -439,6 +439,26 @@ try {
     !document.querySelector(".move-pending,.move-origin,.drop-target,.drag-source") &&
     [...document.querySelectorAll(".column")].every(node=>Number(node.querySelector(".column-count").textContent)===node.querySelectorAll(".card").length)`);
   await check("保存结束解除离开保护", '(() => {const event=new Event("beforeunload",{cancelable:true});window.dispatchEvent(event);return !event.defaultPrevented;})()');
+  await page.command("Emulation.setDeviceMetricsOverride",{width:575,height:800,deviceScaleFactor:1,mobile:false});
+  const hostBeforeDrag = await evaluate('byId("host-filter").value');
+  await evaluate(`(() => {
+    const viewport=byId("board-viewport");
+    viewport.scrollLeft=0; viewport.scrollIntoView({block:"center"});
+    const bounds=viewport.getBoundingClientRect();
+    const cursor={clientX:bounds.right-12,clientY:(bounds.top+bounds.bottom)/2};
+    const transfer=new DataTransfer(), source=document.querySelector(".card[draggable=true]");
+    source.dispatchEvent(new DragEvent("dragstart",{bubbles:true,cancelable:true,dataTransfer:transfer,...cursor}));
+    byId("column-review").dispatchEvent(new DragEvent("dragover",{bubbles:true,cancelable:true,dataTransfer:transfer,...cursor}));
+  })()`);
+  await until('byId("board-viewport").scrollLeft > 12 && document.querySelector(".drag-source")');
+  const alternate = hostBeforeDrag === "local" ? "all" : "local";
+  await select("host-filter",alternate);
+  assert.equal(await evaluate('byId("host-filter").value'),hostBeforeDrag);
+  await evaluate('document.querySelector(".drag-source").dispatchEvent(new DragEvent("dragend",{bubbles:true}))');
+  const stopped = await evaluate('byId("board-viewport").scrollLeft');
+  await evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+  assert.equal(await evaluate('byId("board-viewport").scrollLeft'),stopped);
+  assert.equal(await evaluate('Boolean(document.querySelector(".drop-target,.drag-source"))'),false);
   const beforeReload = writes.length;
   await page.command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/` });
   await until('typeof data !== "undefined" && data.sessions?.[0]?.state === "in_progress"');
