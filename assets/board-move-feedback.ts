@@ -1,16 +1,6 @@
-interface MoveSession {
-  id: string;
-  title: string;
-  state: string | null;
-  remote?: boolean;
-  hostLabel?: string;
-  hostId?: string;
-  version: number;
-  inputVersion: number;
-  sectionVersion: string | null;
-}
+import type { BoardSession } from "./board-view";
 
-interface MoveOperation extends MoveSession {
+interface MoveOperation extends BoardSession {
   from: string | null;
   started: number;
   host: string;
@@ -55,7 +45,8 @@ export function mountMoveFeedback(elements: FeedbackElements, ports: {
     operation.shownAt ??= performance.now();
     const saved = operation.result === "saved";
     const slow = elapsed >= delays.slow;
-    const label = operation.state === null ? undefined : ports.states()[operation.state];
+    const states = ports.states();
+    const label = operation.state !== null && Object.hasOwn(states, operation.state) ? states[operation.state] : undefined;
     panel.hidden = false;
     panel.className = "move-feedback " + (operation.result ?? "waiting");
     heading.textContent = waiting
@@ -93,7 +84,7 @@ export function mountMoveFeedback(elements: FeedbackElements, ports: {
     slot.append(panel);
   }
 
-  function start(session: MoveSession, state: string | null) {
+  function start(session: BoardSession, state: string | null) {
     dismiss();
     const host = session.remote ? session.hostLabel || session.hostId || "远端" : "本机";
     const operation: MoveOperation = {

@@ -7,7 +7,12 @@ import type { PreviewSession } from "./reply-preview";
 
 export interface BoardSession extends PreviewSession {
   state: string | null;
-  note?: string;
+  note: string;
+  threadId?: string;
+  version: number;
+  inputVersion: number;
+  sectionVersion: string | null;
+  readOnly?: boolean;
   manual?: boolean;
   reason?: string;
   placementReason?: string;
@@ -43,7 +48,7 @@ export interface BoardModel {
   saving: boolean;
   creating: boolean;
   selectedId?: string;
-  moving?: { id: string; state: string; from: string | null } | null;
+  moving?: { id: string; state: string | null; from: string | null } | null;
   unconfirmed: string[];
   archivePending: string[];
 }

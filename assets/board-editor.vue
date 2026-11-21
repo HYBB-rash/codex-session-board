@@ -3,13 +3,14 @@ const transientNotes = new Map<string, string>();
 </script>
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, shallowRef } from "vue";
-import type { EditorPorts, EditorSession } from "./board-editor";
+import type { EditorPorts } from "./board-editor";
+import type { BoardSession } from "./board-view";
 import EditFields from "./board-edit-fields";
 
 const { ports } = defineProps<{ ports: EditorPorts }>();
 const dialog = ref<HTMLDialogElement>();
 const form = ref<HTMLFormElement>();
-const session = shallowRef<EditorSession>();
+const session = shallowRef<BoardSession>();
 const states = shallowRef<Record<string, string>>({});
 const state = ref("");
 const note = ref("");
@@ -19,11 +20,11 @@ const failed = ref(false);
 let retained: string | null = null;
 let noteEdited = false;
 
-function draftKey(card: EditorSession) {
+function draftKey(card: BoardSession) {
   return "card-note:" + JSON.stringify([card.hostId || "local", card.threadId || card.id]);
 }
 
-function writeDraft(card: EditorSession, value: string | null) {
+function writeDraft(card: BoardSession, value: string | null) {
   const key = draftKey(card);
   if (value === null) transientNotes.delete(key);
   else transientNotes.set(key, value);
@@ -35,7 +36,7 @@ function writeDraft(card: EditorSession, value: string | null) {
   } catch { return false; }
 }
 
-function readDraft(card: EditorSession) {
+function readDraft(card: BoardSession) {
   const key = draftKey(card);
   if (transientNotes.has(key)) return transientNotes.get(key)!;
   try {
@@ -47,7 +48,7 @@ function readDraft(card: EditorSession) {
   } catch { return null; }
 }
 
-function open(card: EditorSession, options: Record<string, string>, target?: string) {
+function open(card: BoardSession, options: Record<string, string>, target?: string) {
   if (session.value) return;
   session.value = card;
   states.value = options;

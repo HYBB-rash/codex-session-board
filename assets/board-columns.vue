@@ -11,7 +11,7 @@ defineProps<{ model: BoardModel; dependencies: BoardControls; unplaced?: boolean
     <SessionCard v-for="session in model.unplaced" :key="session.id"
       :session="session" :model="model" :dependencies="dependencies" />
     <div v-if="model.moving?.from === null" class="move-origin">
-      移往{{ model.states[model.moving.state] }} · 等待确认
+      移往{{ model.moving.state === null ? "" : model.states[model.moving.state] }} · 等待确认
     </div>
   </template>
   <div v-else id="board" class="board" aria-label="会话状态看板" :style="{ '--columns': model.columns.length }"
@@ -43,7 +43,7 @@ defineProps<{ model: BoardModel; dependencies: BoardControls; unplaced?: boolean
       <SessionCard v-for="session in column.sessions" :key="session.id"
         :session="session" :model="model" :dependencies="dependencies" />
       <div v-if="model.moving?.from === column.state" class="move-origin">
-        移往{{ model.states[model.moving.state] }} · 等待确认
+        移往{{ model.moving.state === null ? "" : model.states[model.moving.state] }} · 等待确认
       </div>
       <div v-if="!column.sessions.length && model.moving?.from !== column.state" class="empty-column">
         {{ column.unread ? "尚未读取会话，可查看连接详情" : column.state === "to_archive" && model.archivePending.length ?

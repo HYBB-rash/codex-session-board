@@ -4,11 +4,12 @@ import "./board-archive-results";
 import { mountBoardBrowse, type CatalogProject, type HostCatalog, type HostIdentity } from "./board-browse";
 import { mountBoardSessionReader } from "./board-session-reader";
 import { mountMoveFeedback } from "./board-move-feedback";
+import { mountBoardEdits } from "./board-edits";
 import type { BoardSession } from "./board-view";
 
 export interface BoardSnapshot {
   states: Record<string, string>;
-  sessions: (BoardSession & { version: number; inputVersion: number; sectionVersion: string | null; readOnly?: boolean })[];
+  sessions: BoardSession[];
   health: {
     sshAliasSetup?: boolean;
     remoteError?: string;
@@ -38,6 +39,7 @@ declare global {
     mountBoardBrowse: typeof mountBoardBrowse;
     mountBoardSessionReader: typeof mountBoardSessionReader;
     mountMoveFeedback: typeof mountMoveFeedback;
+    mountBoardEdits: typeof mountBoardEdits;
   }
 }
 
@@ -86,3 +88,4 @@ window.startBoard = startBoard;
 window.mountBoardBrowse = mountBoardBrowse;
 window.mountBoardSessionReader = mountBoardSessionReader;
 window.mountMoveFeedback = mountMoveFeedback;
+window.mountBoardEdits = mountBoardEdits;
