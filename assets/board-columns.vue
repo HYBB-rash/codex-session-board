@@ -13,7 +13,8 @@ defineProps<{ model: BoardModel; dependencies: BoardControls; unplaced?: boolean
       移往{{ model.states[model.moving.state] }} · 等待确认
     </div>
   </template>
-  <template v-else>
+  <div v-else id="board" class="board" aria-label="会话状态看板" :style="{ '--columns': model.columns.length }"
+    @dragover="dependencies.drag.track" @dragleave="dependencies.drag.leaveBoard">
     <section v-for="column in model.columns" :id="'column-' + column.state" :key="column.state"
     :class="['column', column.state, { 'drag-active': dependencies.drag.source,
       'drop-target': dependencies.drag.target === column.state }]" :data-state="column.state" :aria-label="column.label"
@@ -48,5 +49,5 @@ defineProps<{ model: BoardModel; dependencies: BoardControls; unplaced?: boolean
       </div>
     </div>
     </section>
-  </template>
+  </div>
 </template>

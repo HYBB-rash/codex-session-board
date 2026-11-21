@@ -13,7 +13,9 @@ export function createCardDrag(viewport: HTMLElement, dependencies: BoardDepende
   }
 
   function scroll() {
-    if (!source.value || !point) return;
+    if (!source.value) return;
+    frame = requestAnimationFrame(scroll);
+    if (!point) return;
     const bounds = viewport.getBoundingClientRect();
     if (point.y >= bounds.top && point.y <= bounds.bottom) {
       if (point.x > bounds.right - 45) viewport.scrollLeft += 12;
@@ -25,7 +27,6 @@ export function createCardDrag(viewport: HTMLElement, dependencies: BoardDepende
         else if (point.y > rect.bottom - 45) list.scrollTop += 10;
       }
     }
-    frame = requestAnimationFrame(scroll);
   }
 
   function end() {
@@ -57,7 +58,6 @@ export function createCardDrag(viewport: HTMLElement, dependencies: BoardDepende
     over(state: string, event: DragEvent) {
       if (!source.value || !event.dataTransfer) return;
       event.preventDefault();
-      track(event);
       const accepts = source.value.state !== state || state === "blocked";
       target.value = accepts ? state : null;
       event.dataTransfer.dropEffect = accepts ? "move" : "none";
@@ -75,9 +75,19 @@ export function createCardDrag(viewport: HTMLElement, dependencies: BoardDepende
       if (state === "blocked") {
         dependencies.edit(session.id, state, session);
         dependencies.announce("请说明卡在哪里，暂时不填也可以保存。");
-      } else if (session.state === state) dependencies.announce("状态未改变。");
-      else dependencies.move(session, state);
+      } else if (session.state === state) {
+        dependencies.announce("状态未改变。");
+        dependencies.refresh();
+      } else dependencies.move(session, state);
     },
-    track, end,
+    track,
+    leaveBoard(event: DragEvent) {
+      if (!(event.relatedTarget instanceof Node && viewport.contains(event.relatedTarget))) point = null;
+    },
+    cancel() {
+      if (!source.value) return;
+      end();
+      dependencies.refresh();
+    },
   };
 }

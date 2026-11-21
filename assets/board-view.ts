@@ -60,6 +60,7 @@ export interface BoardDependencies {
   archive: (session: BoardSession) => void;
   archiveAll: (sessions: BoardSession[]) => void;
   editorOpen: () => boolean;
+  refresh: () => void;
   announce: (message: string) => void;
   move: (session: BoardSession, state: string) => void;
 }
@@ -78,7 +79,7 @@ declare global {
 }
 
 window.mountBoard = (host, unplaced, dependencies) => {
-  const drag = createCardDrag(host.parentElement!, dependencies);
+  const drag = createCardDrag(host, dependencies);
   const controls = { ...dependencies, drag };
   return { drag, update: model => {
     render(h(BoardColumns, { model, dependencies: controls }), host);

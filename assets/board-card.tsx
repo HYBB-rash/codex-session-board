@@ -20,7 +20,7 @@ export default defineComponent({
         "drag-source": dependencies.drag.source?.id === session.id }]}
         data-id={session.id} aria-label={session.title} aria-busy={pending ? "true" : undefined}
         draggable={actions.canAdjust} onDragstart={event => dependencies.drag.start(session, event)}
-        onDrag={dependencies.drag.track} onDragend={dependencies.drag.end}
+        onDragend={dependencies.drag.cancel}
         onClick={event => {
           const control = (event.target as Element).closest("button,a,input,select,textarea,details");
           if (!pending && !(control && (event.currentTarget as HTMLElement).contains(control))) dependencies.preview(session);

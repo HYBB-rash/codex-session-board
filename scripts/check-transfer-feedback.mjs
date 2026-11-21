@@ -53,6 +53,8 @@ const snapshot = { states: { unknown: "待判断", in_progress: "进行中", rev
   ].map(session => ({ note: "保留原备注", reason: "", version: 3, inputVersion: 5, sectionVersion: "native:source", canArchive: false, ...session })) };
 const writes = [], opens = [], mutations = [], responses = [], cases = [];
 let snapshotError = false, refreshError = false, automatic = false, holdSnapshot = false, heldSnapshot, pendingNew;
+let archiveCheck;
+let archiveHistory = [];
 const complete = async (status = 200, apply = status === 200, titlePending = false, receipt = value => value) => {
   for (let attempt = 0; attempt < 150 && !responses.length; attempt++) await delay(40);
   const { response, body } = responses.shift() || assert.fail("等待保存请求送达超时");
@@ -65,6 +67,11 @@ const complete = async (status = 200, apply = status === 200, titlePending = fal
 };
 const server = http.createServer(async (request, response) => {
   if (request.url === "/") { response.setHeader("Content-Type", "text/html; charset=utf-8");response.end(html);return; }
+  if (request.url === "/api/archive-batches" && request.method === "GET") {
+    response.setHeader("Content-Type","application/json");
+    response.end(JSON.stringify({batches:archiveHistory}));
+    return;
+  }
   if (request.url === "/api/sessions") {
     if (holdSnapshot) {holdSnapshot = false;heldSnapshot = { response, text: JSON.stringify(snapshot) };return;}
     response.writeHead(snapshotError ? 503 : 200, { "Content-Type": "application/json" });
@@ -73,6 +80,10 @@ const server = http.createServer(async (request, response) => {
   let text = "";
   for await (const chunk of request) text += chunk;
   const body = JSON.parse(text || "{}");
+  if (request.url === "/api/archive-batches/check" && body.id === "dragged-check") {
+    archiveCheck = response;
+    return;
+  }
   if (request.url === "/api/state") {
     writes.push(body);responses.push({ response, body });if (automatic) await complete();return;
   }
@@ -158,7 +169,7 @@ try {
   await evaluate('window.pendingCreation=createSession("project");void 0');
   await until('creating');
   await check("新建等待中禁用拖动归档排序与筛选", 'byId("new-session").disabled && byId("host-filter").disabled && document.querySelector("[data-archive-all]").disabled && [...document.querySelectorAll(".card")].every(card=>!card.draggable) && [...document.querySelectorAll(".column-sort")].every(button=>button.disabled)');
-  await evaluate('(() => {const card=document.querySelector(".card"), event=new Event("dragstart",{cancelable:true});card.dispatchEvent(event);window.creationBlockedDrag=event.defaultPrevented;void moveCard(data.sessions[0],"review");void archiveSessions([data.sessions[2]],document.querySelector("[data-archive-all]"));void confirmArchiveInputs(data.sessions[2],document.querySelector("[data-archive-all]"));void changeColumnSort("to_archive",document.querySelector("#column-to_archive .column-sort"));byId("draft-restart").onclick();openEditor(data.sessions[0].id,"blocked");byId("edit-form").requestSubmit();})()');
+  await evaluate('(() => {const card=document.querySelector(".card"), event=new DragEvent("dragstart",{cancelable:true,dataTransfer:new DataTransfer()});card.dispatchEvent(event);window.creationBlockedDrag=event.defaultPrevented;void moveCard(data.sessions[0],"review");void archiveSessions([data.sessions[2]],document.querySelector("[data-archive-all]"));void confirmArchiveInputs(data.sessions[2],document.querySelector("[data-archive-all]"));void changeColumnSort("to_archive",document.querySelector("#column-to_archive .column-sort"));byId("draft-restart").onclick();openEditor(data.sessions[0].id,"blocked");byId("edit-form").requestSubmit();})()');
   await check("新建先开始时各写入口也保持互斥", 'creating && !saving && !document.querySelector(".drag-source") && window.creationBlockedDrag && !byId("editor").open');
   for (let attempt = 0; attempt < 150 && !pendingNew; attempt++) await delay(40);
   assert.equal(writes.length, 0);assert.equal(mutations.length, 1);
@@ -205,7 +216,7 @@ try {
   await evaluate('byId("new-session").onclick()');
   await check("等待中直接调用新建也不打开对话框", '!byId("new-target").open && !creating && saving');
   await advance(401);
-  await evaluate('(() => {const card=document.querySelector(".card"), event=new Event("dragstart",{cancelable:true});card.dispatchEvent(event);window.blockedDrag=event.defaultPrevented;void archiveSessions(visibleSessions(),document.querySelector("[data-archive-all]"));void changeColumnSort("to_archive",document.querySelector("#column-to_archive .column-sort"));void confirmArchiveInputs(visibleSessions()[0],document.querySelector("[data-archive-all]"));void moveCard(visibleSessions()[0],"review");void openSession(moving.id);})()');
+  await evaluate('(() => {const card=document.querySelector(".card"), event=new DragEvent("dragstart",{cancelable:true,dataTransfer:new DataTransfer()});card.dispatchEvent(event);window.blockedDrag=event.defaultPrevented;void archiveSessions(visibleSessions(),document.querySelector("[data-archive-all]"));void changeColumnSort("to_archive",document.querySelector("#column-to_archive .column-sort"));void confirmArchiveInputs(visibleSessions()[0],document.querySelector("[data-archive-all]"));void moveCard(visibleSessions()[0],"review");void openSession(moving.id);})()');
   await check("等待中直接调用也不能重复写入", 'window.blockedDrag && saving && moving.id === data.sessions[0].id && !opening');
   assert.equal(writes.length, 1);assert.deepEqual(mutations, expectedMutations);assert.deepEqual(opens, []);
   await evaluate('document.querySelector(".card-title").click();byId("reply-open").click()');
@@ -441,20 +452,33 @@ try {
   await check("保存结束解除离开保护", '(() => {const event=new Event("beforeunload",{cancelable:true});window.dispatchEvent(event);return !event.defaultPrevented;})()');
   await page.command("Emulation.setDeviceMetricsOverride",{width:575,height:800,deviceScaleFactor:1,mobile:false});
   const hostBeforeDrag = await evaluate('byId("host-filter").value');
+  await until('!document.querySelector("[data-archive-all]").disabled');
+  archiveHistory=[{id:"dragged-check",createdAt:1,finishedAt:1,
+    items:[{id:"another-archived-session",title:"另一次归档",status:"pending"}]}];
+  await evaluate('byId("archive-results-toggle").click()');
+  await until('byId("archive-summary-text").textContent.includes("1 条待核对")');
+  await evaluate('byId("archive-summary-actions").querySelector("button").click()');
+  await until('document.querySelector("[data-archive-all]").disabled');
   await evaluate(`(() => {
     const viewport=byId("board-viewport");
     viewport.scrollLeft=0; viewport.scrollIntoView({block:"center"});
     const bounds=viewport.getBoundingClientRect();
     const cursor={clientX:bounds.right-12,clientY:(bounds.top+bounds.bottom)/2};
     const transfer=new DataTransfer(), source=document.querySelector(".card[draggable=true]");
-    source.dispatchEvent(new DragEvent("dragstart",{bubbles:true,cancelable:true,dataTransfer:transfer,...cursor}));
-    byId("column-review").dispatchEvent(new DragEvent("dragover",{bubbles:true,cancelable:true,dataTransfer:transfer,...cursor}));
+    source.dispatchEvent(new DragEvent("dragstart",{bubbles:true,cancelable:true,dataTransfer:transfer}));
+    byId("board").dispatchEvent(new DragEvent("dragover",{bubbles:true,cancelable:true,dataTransfer:transfer,...cursor}));
+    source.dispatchEvent(new DragEvent("drag",{bubbles:true,dataTransfer:transfer}));
   })()`);
   await until('byId("board-viewport").scrollLeft > 12 && document.querySelector(".drag-source")');
   const alternate = hostBeforeDrag === "local" ? "all" : "local";
   await select("host-filter",alternate);
   assert.equal(await evaluate('byId("host-filter").value'),hostBeforeDrag);
+  assert(archiveCheck);
+  archiveHistory[0].items[0].status="verified";
+  archiveCheck.end(JSON.stringify({batch:archiveHistory[0]}));
+  await until('byId("archive-summary-text").textContent.includes("已确认归档 1 / 1")');
   await evaluate('document.querySelector(".drag-source").dispatchEvent(new DragEvent("dragend",{bubbles:true}))');
+  assert.equal(await evaluate('document.querySelector("[data-archive-all]").disabled'),false);
   const stopped = await evaluate('byId("board-viewport").scrollLeft');
   await evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
   assert.equal(await evaluate('byId("board-viewport").scrollLeft'),stopped);
