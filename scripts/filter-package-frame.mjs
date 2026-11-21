@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import http from "node:http";
+import { archiveFixture } from "./archive-browser-fixture.mjs";
 import { until } from "./browser-actions.mjs";
+import { checkFilterArchiveScope, filterSnapshot } from "./filter-archive-scope.mjs";
 
-export const filterHost = `<!doctype html><meta charset="utf-8">
+const filterHost = `<!doctype html><meta charset="utf-8">
 <iframe sandbox="allow-scripts" src="/filter-resource"></iframe>
 <script>
 const routes = {board_snapshot:["GET","/api/sessions"], board_archive_batches:["GET","/api/archive-batches"],
@@ -22,7 +25,7 @@ addEventListener("message",async event=>{
 });
 </script>`;
 
-export async function filterFrame(browser, address) {
+async function filterFrame(browser, address) {
   await browser.page(address + "/filter-host");
   let child;
   await until(async () => {
@@ -36,4 +39,36 @@ export async function filterFrame(browser, address) {
     assert(!value.exceptionDetails,JSON.stringify(value.exceptionDetails));
     return value.result.value;
   };
+}
+
+export async function checkPackagedFilterFrame(browser, resource) {
+  const archive = archiveFixture(), writes = [];
+  const server = http.createServer(async (request,response) => {
+    if (["/filter-host","/filter-resource"].includes(request.url)) {
+      return response.writeHead(200,{"Content-Type":"text/html; charset=utf-8"}).end(
+        request.url === "/filter-host" ? filterHost : resource);
+    }
+    if (request.method === "GET" && request.url === "/api/sessions") {
+      return response.writeHead(200,{"Content-Type":"application/json"}).end(JSON.stringify(filterSnapshot));
+    }
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    const input = body ? JSON.parse(body) : null;
+    if (request.method === "POST") writes.push({path:request.url,body:input});
+    if (archive.handle(request.url,request.method,input,response)) return;
+    if (request.url === "/api/plugin-update") return response.end('{"available":false}');
+    response.writeHead(404).end();
+  });
+  await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
+  try {
+    const address = `http://127.0.0.1:${server.address().port}`;
+    const batches = await fetch(address + "/api/archive-batches");
+    assert.deepEqual(await batches.json(),{batches:[]});
+    const frame = await filterFrame(browser,address);
+    await until(() => frame('!!document.querySelector("#host-filter option[value=\'host:host-b\']")'),
+      "嵌入资源没有读到同名主机");
+    return await checkFilterArchiveScope(frame,writes);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
 }

@@ -31,13 +31,17 @@ export async function checkFilterArchiveScope(evaluate, writes) {
   const options = await evaluate('Array.from(document.querySelector("#host-filter").options, option => option.textContent)');
   for (const row of paired) assert(options.includes(hostLabel + " · " + row.hostId));
   const cards = () => evaluate('Array.from(document.querySelectorAll(".card"), card => card.dataset.id)');
+  const receipts = [];
   for (const row of paired) {
     await select("host-filter", "host:" + row.hostId);
     await select("project-filter", "project:" + row.projectId);
-    assert.deepEqual(await cards(), [row.id]);
+    const visible = await cards();
+    assert.deepEqual(visible, [row.id]);
     const scope = `${hostLabel} · ${row.hostId} · 目标项目 · 活动`;
     assert.equal(await evaluate('document.querySelector("#filter-scope").textContent'), scope);
     assert((await evaluate('document.querySelector("#column-to_archive [data-archive-all]").title')).startsWith(scope));
+    await until(() => evaluate('!!document.querySelector("#column-to_archive [data-archive-all]:enabled")'),
+      "批次记录读回后，所选卡片仍不可归档");
     const start = writes.length;
     await evaluate('document.querySelector("#column-to_archive [data-archive-all]").click()');
     await until(() => writes.slice(start).some(write => write.path === "/api/archive-batches/finish"),
@@ -49,8 +53,10 @@ export async function checkFilterArchiveScope(evaluate, writes) {
     const batch = registrations[0].body;
     assert(batch.id);
     assert.deepEqual(batch.items, [{...revision, title:row.title}]);
-    assert.deepEqual(entries.filter(write => write.path === "/api/archive").map(write => write.body),
-      [{...revision, batchId:batch.id}]);
+    const submissions = entries.filter(write => write.path === "/api/archive").map(write => write.body);
+    assert.deepEqual(submissions,[{...revision, batchId:batch.id}]);
+    receipts.push({scope,visible,batch,submissions});
     await until(() => evaluate('!document.querySelector("#host-filter").disabled'), "归档后的筛选控件仍被锁定");
   }
+  return receipts;
 }
