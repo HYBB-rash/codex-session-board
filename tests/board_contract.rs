@@ -519,10 +519,17 @@ mod store_tests {
     fn discovery_updates_metadata_but_never_removes_missing_records() {
         let (_directory, store) = fixture(false);
         select(&store, Some("completed"), "保留");
+        let confirmed = session(&store);
+        let mut renamed = thread("sample", 20);
+        renamed["name"] = json!("外部改名");
         let mut another = thread("another", 30);
         another["name"] = json!("新标题\n不存第二行");
         another["cwd"] = json!("/fixture/second");
-        store.discover(&[another]).unwrap();
+        store.discover(&[renamed, another]).unwrap();
+        let refreshed = session(&store);
+        assert_eq!(refreshed["title"], "外部改名");
+        assert_eq!(refreshed["inputVersion"], confirmed["inputVersion"]);
+        assert_eq!(refreshed["followUp"], false);
         let rows = store.sessions().unwrap();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0]["id"], "another");

@@ -238,9 +238,12 @@ fn title_prefixes_are_idempotent_and_preserve_other_text() {
 #[test]
 fn title_sync_reads_full_fresh_name_and_avoids_duplicate_native_write() {
     let fixture = Fixture::new(true);
-    fixture.populate();
     let app = fixture.app();
     let body = format!("🧪 [项目] {}", "完整正文".repeat(350));
+    let listed: String = body.chars().take(18).collect();
+    app.discover(&[json!({"id":FIRST,"name":listed,"updatedAt":3})], true)
+        .unwrap();
+    assert_eq!(app.store.sessions().unwrap()[0]["title"], listed);
     let mut native = Native::new(&body);
     app.store
         .set_state(FIRST, Some("review"), "保留备注", 0, None)
@@ -274,7 +277,12 @@ fn title_failure_persists_and_lost_ack_is_reconciled() {
     native.fail = false;
     native.lose_ack = true;
     titles::sync(&app.store, &mut native, FIRST).unwrap();
+    assert_eq!(native.name, "[待归档] 原名");
     assert_eq!(native.writes.len(), 1);
+    drop(app);
+    let app = fixture.app();
+    assert_eq!(app.store.pending_titles(Some(FIRST)).unwrap().len(), 1);
+    assert_eq!(app.store.note(FIRST).unwrap(), "备注");
     native.lose_ack = false;
     titles::sync(&app.store, &mut native, FIRST).unwrap();
     assert_eq!(native.writes.len(), 1);
