@@ -18,7 +18,7 @@
 
 | 组、候选 ID 方法名 | 处置与后继 | 保留的输入、可观察结果与故障证据 |
 | --- | --- | --- |
-| P `test_worker_records_install_when_reload_connection_closes` | 保留原 ID；超时对照 `test_worker_records_install_when_reload_connection_times_out` 也保留。 | 两个方法已共用同一断言，各自通过 `setUp` 获得空安装目录、锁、市场和回执。分别注入连接关闭及超时，检查末次 reload RPC、连接关闭、安装成功但待重载、清单、错误类型及原文、状态文件、pending 与 worker 快照清理。复用一次安装会改变第二种异常的前置状态。逐类丢类型或丢文本各令对应测试失败。001–004。 |
+| P `test_worker_records_install_when_reload_connection_closes` | 保留原 ID；超时对照 `test_worker_records_install_when_reload_connection_times_out` 也保留。 | 两个方法共用断言，各次 `setUp` 准备新的临时目录，测试运行时取得安装锁、登记市场并写入回执。分别注入连接关闭及超时，检查末次 reload RPC、连接关闭、安装成功但待重载、清单、错误类型及原文、状态文件、pending 与 worker 快照清理。复用一次安装会改变第二种异常的前置状态。逐类丢类型或丢文本各令对应测试失败。001–004。 |
 | C `copying_to_another_file_does_not_inherit_its_comment_allowance` | 保留原 ID；同文件对照继续由 `added_modified_and_duplicated_comments_fail_exact_multiset_comparison` 承接。 | 跨路径 fixture 先保留 `original.rs` 并复制到 `copy.rs`，再删除原件。两次都须拒绝。同文件重数表无法区分复制和移动。只在原件存在或只在原件消失时转移额度，分别触发第一或第二个断言。005–006。 |
 | C `duplicate_baseline_counts_allow_only_the_recorded_number` | 合并至 `added_modified_and_duplicated_comments_fail_exact_multiset_comparison`。 | 两个独立基线。单份 `// old` 分别追加新注释、改字、仅增空格、复制旧注释，四次都须拒绝。双份 `// same` 单独验证减到一份、保留两份、增到三份，依次允许、允许、拒绝。对应故障依次误放新增、忽略字母或空格、多算单份额度、强求两份、放过第三份、把两份额度压成一份。007–013。 |
 | C `nested_blocks_are_single_comments_and_doc_blocks_stay_documentation` | 合并至 `documentation_and_ordinary_comment_boundaries_follow_rust_tokens`。 | 两段原输入分别解析。四种近似文档的普通注释须在 5、6、7、8 行精确出现；四种文档标志均排除。另一段须在第 1 行返回完整嵌套普通块，在第 5 行返回 `// 末尾`，嵌套文档块排除。逐项测试误报、漏报、截断、错行或改末行正文。014–032。 |
