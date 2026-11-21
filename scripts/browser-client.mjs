@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { boardFixtureSource } from "./browser-fixture.mjs";
 
 export async function launchBrowser() {
   assert.equal(typeof WebSocket, "function", "需要 Node.js 22 或更新版本");
@@ -101,11 +102,12 @@ export async function launchBrowser() {
         events.delete(listener); clearTimeout(listener.timer); listener.resolve(message.params);
       }
     });
-    return { profile, port, pid: chrome.pid, startup, command, close, async page(url) {
+    return { profile, port, pid: chrome.pid, startup, command, close, async page(url, { fixture = true } = {}) {
       const { targetId } = await command("Target.createTarget", { url: "about:blank" });
       const { sessionId } = await command("Target.attachToTarget", { targetId, flatten: true });
       const scoped = (method, params) => command(method, params, sessionId);
       await scoped("Page.enable");
+      if (fixture) await scoped("Page.addScriptToEvaluateOnNewDocument", { source: boardFixtureSource });
       await scoped("Emulation.setDeviceMetricsOverride", { width: 1680, height: 1000, deviceScaleFactor: 1, mobile: false });
       await scoped("Page.navigate", { url });
       return { command: scoped, async evaluate(expression) {

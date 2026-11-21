@@ -3,12 +3,13 @@ import { readFile, writeFile } from "node:fs/promises";
 import http from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 import { launchBrowser } from "./browser-client.mjs";
+import { beforeBoardScript, fixtureBoardHtml } from "./browser-fixture.mjs";
 import { checkCardDisplay } from "./check-card-display.mjs";
 
 const html = await readFile(process.argv[4] || new URL("../index.html", import.meta.url), "utf8");
 const bridge = await readFile(new URL("../assets/app-bridge.js", import.meta.url), "utf8");
-const embedded = process.argv[3] ? await readFile(process.argv[3], "utf8") :
-  html.replace("<script>",()=>`<script>${bridge.replaceAll("</script","<\\/script")}</script><script>`);
+const embedded = fixtureBoardHtml(process.argv[3] ? await readFile(process.argv[3], "utf8") :
+  beforeBoardScript(html, bridge));
 const states = {in_progress:"进行中",review:"待审阅",blocked:"已阻塞",to_archive:"待归档"};
 const sharedTitle = "核对发布及隔离启动历史记录".repeat(6);
 const session = (id, state, title = sharedTitle, extra = {}) => ({

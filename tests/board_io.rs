@@ -974,7 +974,7 @@ fn real_http_pwa_assets_preserve_host_and_mutation_checks() {
 fn save_over_http(url: &str, client: &reqwest::blocking::Client) {
     let html = client.get(url).send().unwrap().text().unwrap();
     let token = html
-        .split("const csrf = \"")
+        .split("<meta name=\"board-request-token\" content=\"")
         .nth(1)
         .unwrap()
         .split('"')
@@ -1122,7 +1122,7 @@ fn open_and_new_survive_removed_service_working_directory() {
     let url = running["url"].as_str().unwrap();
     let client = client();
     let html = client.get(url).send().unwrap().text().unwrap();
-    let token = html.split("const csrf = \"").nth(1).unwrap().split('"').next().unwrap();
+    let token = html.split("<meta name=\"board-request-token\" content=\"").nth(1).unwrap().split('"').next().unwrap();
     for (endpoint, body) in [("open", json!({"id":FIRST})), ("new", json!({})), ("new", json!({"projectId":"project-a"}))] {
         assert!(client.post(format!("{url}/api/{endpoint}"))
             .header("X-CSRF-Token", token).json(&body).send().unwrap().status().is_success());

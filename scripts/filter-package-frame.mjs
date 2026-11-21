@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { archiveFixture } from "./archive-browser-fixture.mjs";
 import { until } from "./browser-actions.mjs";
+import { fixtureBoardHtml } from "./browser-fixture.mjs";
 import { checkFilterArchiveScope, filterSnapshot } from "./filter-archive-scope.mjs";
 
 const filterHost = `<!doctype html><meta charset="utf-8">
@@ -43,10 +44,11 @@ async function filterFrame(browser, address) {
 
 export async function checkPackagedFilterFrame(browser, resource) {
   const archive = archiveFixture(), writes = [];
+  const fixtureHtml = fixtureBoardHtml(resource);
   const server = http.createServer(async (request,response) => {
     if (["/filter-host","/filter-resource"].includes(request.url)) {
       return response.writeHead(200,{"Content-Type":"text/html; charset=utf-8"}).end(
-        request.url === "/filter-host" ? filterHost : resource);
+        request.url === "/filter-host" ? filterHost : fixtureHtml);
     }
     if (request.method === "GET" && request.url === "/api/sessions") {
       return response.writeHead(200,{"Content-Type":"application/json"}).end(JSON.stringify(filterSnapshot));

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { Agent, createServer, request } from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { boardScript, loadBoardVite } from "./build-reply-preview.mjs";
+import { boardScript, boardStyles, loadBoardVite } from "./build-reply-preview.mjs";
 
 function sendError(response, status, error) {
   response.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
@@ -76,7 +76,7 @@ export async function serveFrontend(root, temporary) {
     plugins: [...config.plugins, {
       name: "board-dev-fixture",
       transformIndexHtml: { order: "pre", handler(html) {
-        return html.replace(boardScript, "").replace(/<script>\n([\s\S]*?)<\/script>/, (_, legacy) =>
+        return html.replace(boardStyles, "").replace(boardScript, "").replace(/<script>\n([\s\S]*?)<\/script>/, (_, legacy) =>
           `<script type="module">\nimport "/assets/board-start.ts";\n${legacy}</script>`);
       } },
       configureServer(server) {

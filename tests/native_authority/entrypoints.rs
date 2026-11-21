@@ -30,7 +30,7 @@ fn csrf(url: &str) -> Result<String> {
         .send()?
         .error_for_status()?
         .text()?;
-    html.split("const csrf = \"")
+    html.split("<meta name=\"board-request-token\" content=\"")
         .nth(1)
         .and_then(|tail| tail.split('"').next())
         .map(str::to_owned)

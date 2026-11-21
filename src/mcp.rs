@@ -122,13 +122,10 @@ fn setup_schema(action: Action) -> (Value, Value) {
 
 pub fn resource() -> Value {
     let bridge = include_str!("../assets/app-bridge.js").replace("</script", "<\\/script");
+    let board = r#"<script id="reply-preview-code">"#;
     let html = include_str!("../index.html")
         .replace("__CSRF_TOKEN__", "")
-        .replacen(
-            "<script>",
-            &format!("<script>{bridge}</script>\n<script>"),
-            1,
-        );
+        .replacen(board, &format!("<script>{bridge}</script>\n{board}"), 1);
     json!({"uri":RESOURCE,"mimeType":MIME,"text":html,
         "_meta":{"ui":{"prefersBorder":false,"csp":{"connectDomains":[],"resourceDomains":[],"frameDomains":[]}},
         "openai/ui":{"preferredDisplayMode":"fullscreen","availableDisplayModes":["inline","fullscreen"]}}})

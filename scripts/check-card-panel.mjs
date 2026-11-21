@@ -5,6 +5,7 @@ import {createInterface} from "node:readline";
 import {launchBrowser} from "./browser-client.mjs";
 import {until} from "./browser-actions.mjs";
 import {checkPackagedEditor} from "./check-editor-drafts.mjs";
+import {fixtureBoardHtml} from "./browser-fixture.mjs";
 
 const [target,follow,boardUrl] = process.argv.slice(2);
 const replies = new Map(), input = createInterface({input:process.stdin});
@@ -29,6 +30,7 @@ process.stdout.write(JSON.stringify({jsonrpc:"2.0",method:"notifications/initial
 const {resources} = await rpc("resources/list",{});
 const {contents:[panel]} = await rpc("resources/read",{uri:resources[0].uri});
 assert.deepEqual(panel._meta.ui.csp.connectDomains, []);
+const boardHtml = fixtureBoardHtml(panel.text);
 const relay = "/"+randomUUID();
 const host = `<!doctype html><style>html,body,iframe{margin:0;border:0;width:100%;height:100%}</style><script>
 addEventListener("message",async event=>{
@@ -61,7 +63,7 @@ const server = http.createServer(async (request,response) => {
   if (request.url === "/panel") response.setHeader("Content-Security-Policy",
     "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'");
   response.writeHead(200,{"Content-Type":"text/html; charset=utf-8"}).end(
-    request.url === "/" ? host : request.url === "/panel" ? panel.text : "");
+    request.url === "/" ? host : request.url === "/panel" ? boardHtml : "");
 });
 await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
 let browser;

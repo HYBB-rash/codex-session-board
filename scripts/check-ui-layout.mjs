@@ -5,11 +5,12 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { fixtureBoardHtml } from "./browser-fixture.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const output = process.argv[2] || await fs.mkdtemp(path.join(os.tmpdir(), "board-layout-"));
 await fs.mkdir(output, { recursive: true });
-const html = await fs.readFile(process.env.CODEX_BOARD_TEST_HTML || path.join(root, "index.html"), "utf8");
+const html = fixtureBoardHtml(await fs.readFile(process.env.CODEX_BOARD_TEST_HTML || path.join(root, "index.html"), "utf8"));
 const states = { unknown: "待判断", in_progress: "进行中", review: "待审阅", blocked: "已阻塞", to_archive: "待归档" };
 const fixture = {
   states, health: {lastSuccessAt:1760000000,lastScanAt:1760000000,scanComplete:true,runtimeVerified:true,nativeSections:true,nativeVerified:true,

@@ -2,22 +2,21 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import http from "node:http";
 import { launchBrowser } from "./browser-client.mjs";
-import { fixtureLoadExpression } from "./browser-fixture.mjs";
+import { beforeBoardScript, fixtureLoadExpression } from "./browser-fixture.mjs";
 
 const deferred = () => {
   let resolve;
   const promise = new Promise(complete => { resolve = complete; });
   return { promise, resolve };
 };
-const html = (await fs.readFile(new URL("../index.html", import.meta.url), "utf8"))
-  .replace("<script>", `<script>
+const html = beforeBoardScript(await fs.readFile(new URL("../index.html", import.meta.url), "utf8"), `
     const originalInterval = window.setInterval;
     window.setInterval = (callback, milliseconds, ...argumentsList) => {
       if (milliseconds !== 4000) return originalInterval(callback, milliseconds, ...argumentsList);
       window.fixturePoll = () => callback(...argumentsList);
       return 0;
     };
-  </script><script>`);
+  `);
 assert(html.includes("window.fixturePoll"));
 const fixture = {
   fixtureRevision: 0, states: { unknown: "待判断", review: "待审阅", to_archive: "待归档" },
