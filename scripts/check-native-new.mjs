@@ -30,7 +30,7 @@ const evidence = process.env.BOARD_SSH_PREVIEW_EVIDENCE;
 const setupRequests = [];
 const setupTarget = { hostname: "studio.example.test", user: "builder", port: "22", directory: "/srv/project" };
 const setupSummary = "builder@studio.example.test:22 · /srv/project · csb-studio";
-let setupDeclined = false, previewCount = 0;
+let setupDeclined = false, previewCount = 0, chooseAlias = false, configChanged = false;
 let requireConsent = false;
 const declinedResult = () => ({ state: "declined", targetId: "isolated-target", summary: setupSummary,
   message: "该连接的一键远程新建已关闭。已有会话操作仍可使用。" });
@@ -47,11 +47,13 @@ function sshSetupResponse(body) {
     return declinedResult();
   }
   if (body.action === "apply" && body.previewId === `preview-${previewCount}`) {
+    if (configChanged) return { error: "SSH 配置已改变，请关闭后重新预览" };
     setupDeclined = false;
     return { state: "applied", message: "已交付 Codex 打开请求。请核对主机和目录，再发送第一句话。" };
   }
   if ((body.action === "preview" && !setupDeclined) ||
       (body.action === "restore" && setupDeclined && body.targetId === "isolated-target")) {
+    if (chooseAlias && !body.alias) return { state: "selectAlias", aliases: ["studio-a", "studio-b"] };
     return { state: "preview", previewId: `preview-${++previewCount}`, summary: setupSummary, canApply: true,
       changes: [
         { label: "新增 ~/.ssh/codex-session-board.conf",
@@ -220,33 +222,61 @@ try {
   fixture.health.sshAliasSetup = true;
   await evaluate("void load()");
   await openSshSettings(page);
-  await wait('sshSetup?.state==="form" && !sshSetupBusy');
+  await wait('sshSetup.result.state==="form" && !sshSetup.busy');
   await evaluate(`for (const [name,value] of Object.entries(${JSON.stringify(setupTarget)}))
     byId("ssh-setup-form").elements.namedItem(name).value=value`);
   await clickNode(page, "#ssh-setup-next");
-  await wait('sshSetup?.state==="preview" && !sshSetupBusy');
+  await wait('sshSetup.result.state==="preview" && !sshSetup.busy');
   check(setupRequests.at(-1), { action: "preview", target: setupTarget });
   check(await evaluate('byId("ssh-setup-next").disabled'), false);
   check(await evaluate('byId("ssh-setup-changes").children.length'), 3);
   await capture("02-authorization-preview");
   await clickNode(page, "#ssh-setup-decline");
-  await wait('sshSetup?.state==="declined" && !sshSetupBusy');
+  await wait('sshSetup.result.state==="declined" && !sshSetup.busy');
   check(setupRequests.at(-1), { action: "decline", previewId: "preview-1" });
   const reopened = await browser.page(address);
   await openSshSettings(reopened);
-  await until(() => reopened.evaluate('sshSetup?.saved?.[0]?.state==="declined" && !sshSetupBusy'), "拒绝状态未读回");
+  await until(() => reopened.evaluate('sshSetup.result.saved?.[0]?.state==="declined" && !sshSetup.busy'), "拒绝状态未读回");
   check(await reopened.evaluate('byId("ssh-setup-saved").hidden'), false);
   if (evidence) {
     const image = await reopened.command("Page.captureScreenshot", { format: "png" });
     await fs.writeFile(`${evidence}/02-declined.png`, Buffer.from(image.data, "base64"));
   }
   await clickNode(reopened, "#ssh-setup-saved button");
-  await until(() => reopened.evaluate('sshSetup?.state==="preview" && !sshSetupBusy'), "重新启用预览未读回");
+  await until(() => reopened.evaluate('sshSetup.result.state==="preview" && !sshSetup.busy'), "重新启用预览未读回");
   check(setupRequests.at(-1), { action: "restore", targetId: "isolated-target" });
-  check(await reopened.evaluate('sshSetup.previewId'), "preview-2");
+  check(await reopened.evaluate('sshSetup.result.previewId'), "preview-2");
   await clickNode(reopened, "#ssh-setup-next");
-  await until(() => reopened.evaluate('sshSetup?.state==="applied" && !sshSetupBusy'), "配置回执未读回");
+  await until(() => reopened.evaluate('sshSetup.result.state==="applied" && !sshSetup.busy'), "配置回执未读回");
   check(setupRequests.at(-1), { action: "apply", previewId: "preview-2" });
+  chooseAlias = true;
+  async function selectExistingAlias() {
+    await openSshSettings(reopened);
+    await until(() => reopened.evaluate('sshSetup.result.state==="form" && !sshSetup.busy'), "连接设置未完成读回");
+    await reopened.evaluate(`for (const [name,value] of Object.entries(${JSON.stringify(setupTarget)}))
+      byId("ssh-setup-form").elements.namedItem(name).value=value`);
+    await clickNode(reopened, "#ssh-setup-next");
+    await until(() => reopened.evaluate('!byId("ssh-setup-alias-choice").hidden && !byId("ssh-setup-alias").disabled'),
+      "未显示可以复用的 SSH 别名");
+    check(await reopened.evaluate('Array.from(byId("ssh-setup-alias").options, option => option.value)'), ["studio-a", "studio-b"]);
+    await reopened.evaluate('byId("ssh-setup-alias").value="studio-b"');
+    await clickNode(reopened, "#ssh-setup-next");
+    await until(() => reopened.evaluate('sshSetup.result.state==="preview" && !sshSetup.busy'), "选择别名后未生成预览");
+    check(setupRequests.at(-1), { action: "preview", target: setupTarget, alias: "studio-b" });
+  }
+  await selectExistingAlias();
+  const beforeClosingPreview = setupRequests.length;
+  await clickNode(reopened, "#ssh-setup-close");
+  await until(() => reopened.evaluate('!byId("ssh-setup").open && !byId("host-filter").disabled'), "取消预览后筛选仍被锁定");
+  check(setupRequests.length, beforeClosingPreview);
+  await selectExistingAlias();
+  const latestPreview = await reopened.evaluate('sshSetup.result.previewId');
+  configChanged = true;
+  await clickNode(reopened, "#ssh-setup-next");
+  await until(() => reopened.evaluate('byId("ssh-setup-notice").textContent.includes("SSH 配置已改变") && !sshSetup.busy'),
+    "配置变化后未显示重新预览提示");
+  check(setupRequests.at(-1), { action: "apply", previewId: latestPreview });
+  check(await reopened.evaluate('byId("ssh-setup").open'), true);
   check(writes.length, checkpoints);
   check(JSON.stringify(fixture.health.remoteRegistry), registration);
 } finally {
