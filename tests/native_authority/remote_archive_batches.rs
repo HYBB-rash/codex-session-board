@@ -4,6 +4,8 @@ use std::path::Path;
 
 #[path = "ten_card_archive.rs"]
 mod ten_cards;
+#[path = "remote_archive_window.rs"]
+mod window;
 
 struct BatchFixture {
     live: Option<Live>,
@@ -200,7 +202,8 @@ fn remote_batch_owner_persists_a_success_receipt_in_root_and_confirms_only_the_t
     fixture.assert_owners(true)?;
     assert_eq!(fixture.writes("mac"), 1);
     eprintln!("C1_TRACE receipt root=archived mac.session=archived other.session=active mac.native_writes=1");
-    Ok(())
+    drop(fixture);
+    window::after_tombstone_failure(directory.path(),false)
 }
 
 #[test]
@@ -232,7 +235,8 @@ fn remote_batch_owner_recovers_a_lost_receipt_once_and_preserves_same_uuid_on_ot
     fixture.assert_owners(true)?;
     assert_eq!(fixture.writes("mac"), 1);
     eprintln!("C1_TRACE check root=verified mac.session=archived other.session=active mac.native_writes=1");
-    Ok(())
+    drop(fixture);
+    window::after_tombstone_failure(directory.path(),true)
 }
 
 #[test]

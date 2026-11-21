@@ -42,7 +42,43 @@ fn archive_batch_recovers_lost_receipt_after_reopen_without_replay() -> Result<(
     assert_eq!(app.request("/api/archive", Some(&target))?["item"]["status"], "pending");
     assert!(app.store.contains(FIRST)?);
     drop(app);
-    assert_batch_recovery(&server, &id)
+    assert_batch_recovery(&server, &id)?;
+    let local = tempfile::tempdir_in(directory.path())?;
+    assert_local_restore_after_failed_mark(local.path())
+}
+
+fn assert_local_restore_after_failed_mark(directory: &std::path::Path) -> Result<()> {
+    let mut server = Server::new(directory)?;
+    server.config.native_sections = false;
+    server.config.runtime_poll_seconds = 1;
+    let app = Arc::new(App::new(server.config.clone())?);
+    app.discover(&[json!({"id":FIRST})], true)?;
+    app.store.set_state(FIRST, Some("to_archive"), "保留原备注", 0, Some(0))?;
+    {
+        let mut surface = server.surface.lock().unwrap();
+        surface.slots.insert(FIRST.into(), "review".into());
+        surface.archive_account = Some("original".into());
+    }
+    app.store.connection()?.execute_batch("CREATE TRIGGER failed_mark BEFORE UPDATE OF archived ON sessions
+        WHEN NEW.archived=1 BEGIN SELECT RAISE(ABORT,'target mark failed'); END;")?;
+    let batch = uuid::Uuid::new_v4().to_string();
+    let target = json!({"id":FIRST,"title":"本机","version":1,"inputVersion":0});
+    app.request("/api/archive-batches", Some(&json!({"id":batch,"items":[target]})))?;
+    assert_eq!(app.request("/api/archive", Some(&json!({"id":FIRST,"batchId":batch})))?["item"]["status"], "archived");
+    let mut stale = target;
+    stale["sectionVersion"] = json!("非原生模式没有分区版本");
+    assert!(app.request("/api/archive", Some(&stale)).unwrap_err().to_string().contains("已确认归档"));
+    server.restore_archived(FIRST);
+    codex_session_board::observer::start(&app)?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(8);
+    while app.store.state_revision(FIRST)?.1 == 1 && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(40));
+    }
+    app.shutdown()?;
+    assert_eq!(app.store.state_revision(FIRST)?.1, 2);
+    assert_eq!(app.store.note(FIRST)?, "保留原备注");
+    assert_eq!(server.surface.lock().unwrap().calls.iter().filter(|method| *method == "thread/archive").count(), 1);
+    Ok(())
 }
 
 fn assert_batch_recovery(server: &Server, id: &str) -> Result<()> {

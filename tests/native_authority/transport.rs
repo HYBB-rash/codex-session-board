@@ -199,6 +199,10 @@ pub(super) struct Server {
 }
 
 impl Server {
+    pub(super) fn restore_archived(&self, id: &str) {
+        assert!(self._engine.archived.lock().unwrap().remove(id));
+    }
+
     pub(super) fn pause_discovery_after_archive(&self) -> super::archive::DiscoveryPause {
         self._engine.pause_discovery_after_archive()
     }
