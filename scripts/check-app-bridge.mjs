@@ -81,7 +81,7 @@ try {
   await wait('document.documentElement.style.getPropertyValue("--host-inset-top")==="0px"');
   check(await evaluate('getComputedStyle(document.documentElement).colorScheme'), "dark");
   const routes = {
-    "/api/sessions": "board_snapshot", "/api/state": "board_update", "/api/open": "board_open",
+    "/api/state": "board_update", "/api/open": "board_open",
     "/api/refresh": "board_refresh", "/api/new": "board_new", "/api/new/reset": "board_new_reset",
     "/api/connect": "board_connect", "/api/archive": "board_archive", "/api/column-sort": "board_sort",
     "/api/archive-batches": "board_archive_batch_start",
@@ -90,6 +90,8 @@ try {
     "/api/ssh-setup": "board_ssh_setup",
     "/api/project/assign": "board_project_assign",
   };
+  check(await evaluate('boardRequest("/api/sessions")'), {ok:true,received:{}});
+  check(await page.evaluate("requests.at(-1).name"), "board_snapshot");
   for (const [route, name] of Object.entries(routes)) {
     const body = route === "/api/new" ? {
       projectId: 'target:["remote:fixture","targetServer","canonical"]',
@@ -106,7 +108,10 @@ try {
   check(await evaluate('boardRequest("/api/plugin-update",{})'), {ok:true,received:{}});
   check(await page.evaluate("requests.at(-1).name"), "board_plugin_update_start");
   const previous = await page.evaluate("requests.length");
-  check(await evaluate('boardRequest("toString").then(()=>false, error=>error.message)'), "未知看板操作");
+  for (const args of [
+    '"toString"', '"/api/info"', '"/api/native-calibration/reset",{}', '"board_view"',
+    '"/api/sessions",{}', '"/api/archive"', '"/api/preview-reply"', '"/api/no-such-operation",{}',
+  ]) check(await evaluate(`boardRequest(${args}).then(()=>false, error=>error.message)`), "未知看板操作");
   check(await page.evaluate("requests.length"), previous);
   check(await evaluate('boardRequest("/api/preview-reply",{id:"fixture"})'), {turnId:"two",html:"<p>本轮答复</p>",inProgress:false});
   check(await page.evaluate("(({name,arguments:body})=>({name,arguments:body}))(requests.at(-1))"),

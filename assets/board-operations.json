@@ -1,0 +1,20 @@
+[
+  {"action":"Snapshot","method":"GET","path":"/api/sessions","tool":"board_snapshot","title":"读取会话状态","readOnly":true},
+  {"action":"Update","method":"POST","path":"/api/state","tool":"board_update","title":"确认工作状态","readOnly":false},
+  {"action":"Sort","method":"POST","path":"/api/column-sort","tool":"board_sort","title":"设置栏目排序","readOnly":false},
+  {"action":"Archive","method":"POST","path":"/api/archive","tool":"board_archive","title":"归档待归档会话","readOnly":false},
+  {"action":"ArchiveBatches","method":"GET","path":"/api/archive-batches","tool":"board_archive_batches","title":"读取归档结果","readOnly":true},
+  {"action":"ArchiveBatchStart","method":"POST","path":"/api/archive-batches","tool":"board_archive_batch_start","title":"登记归档批次","readOnly":false},
+  {"action":"ArchiveBatchFinish","method":"POST","path":"/api/archive-batches/finish","tool":"board_archive_batch_finish","title":"结束本批归档提交","readOnly":false},
+  {"action":"ArchiveBatchCheck","method":"POST","path":"/api/archive-batches/check","tool":"board_archive_batch_check","title":"核对原生归档结果","readOnly":true},
+  {"action":"Open","method":"POST","path":"/api/open","tool":"board_open","title":"打开已有会话","readOnly":true},
+  {"action":"PreviewReply","method":"POST","path":"/api/preview-reply","tool":"board_preview_reply","title":"预览最近一条完整回复","readOnly":true},
+  {"action":"New","method":"POST","path":"/api/new","tool":"board_new","title":"打开新建会话页","readOnly":false},
+  {"action":"NewReset","method":"POST","path":"/api/new/reset","tool":"board_new_reset","title":"确认已核对新建结果","readOnly":false},
+  {"action":"ProjectAssign","method":"POST","path":"/api/project/assign","tool":"board_project_assign","title":"确认新会话项目归属","readOnly":false},
+  {"action":"Connect","method":"POST","path":"/api/connect","tool":"board_connect","title":"连接已登记的远程主机","readOnly":false},
+  {"action":"SshSetup","method":"POST","path":"/api/ssh-setup","tool":"board_ssh_setup","title":"设置远程新建连接","readOnly":false},
+  {"action":"Refresh","method":"POST","path":"/api/refresh","tool":"board_refresh","title":"重新发现","readOnly":false},
+  {"action":"PluginUpdateStatus","method":"GET","path":"/api/plugin-update","tool":"board_plugin_update_status","title":"读取插件更新状态","readOnly":true},
+  {"action":"PluginUpdateStart","method":"POST","path":"/api/plugin-update","tool":"board_plugin_update_start","title":"检查并安装本机插件候选版","readOnly":false}
+]

@@ -16,6 +16,18 @@ try {
     ["app-bridge.package-lock.json", "package-lock.json"],
     ["app-bridge-entry.mjs", "app-bridge-entry.mjs"],
   ]) await fs.copyFile(path.join(root, "assets", source), path.join(temporary, destination));
+  const operations = JSON.parse(await fs.readFile(path.join(root, "assets/board-operations.json"), "utf8"));
+  const routes = { GET: {}, POST: {} };
+  const tools = new Set(), actions = new Set();
+  for (const {action, method, path, tool} of operations) {
+    if (tools.has(tool) || actions.has(action) || Object.hasOwn(routes[method], path))
+      throw new Error(`重复的看板操作 ${action} ${method} ${path} ${tool}`);
+    tools.add(tool);
+    actions.add(action);
+    routes[method][path] = tool;
+  }
+  const previewTool = operations.find(operation => operation.action === "PreviewReply").tool;
+  await fs.writeFile(path.join(temporary, "bridge-routes.json"), JSON.stringify({routes, previewTool}));
   execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund",
     ...(process.argv.includes("--offline") ? ["--offline"] : [])], { cwd: temporary, stdio: "inherit" });
   execFileSync(process.execPath, [path.join(temporary, "node_modules/esbuild/bin/esbuild"),
