@@ -1249,18 +1249,6 @@ mod isolation_contract_tests {
         assert!(store.pending_titles(None).unwrap().is_empty());
         assert_eq!(session(&store)["state"], "completed");
     }
-
-    #[test]
-    fn discovery_batch_failure_does_not_leave_partial_inserts() {
-        let (_directory, store) = fixture(false);
-        let before = database_snapshot(&store);
-        assert!(
-            store
-                .discover(&[thread("new", 20), json!({"name": "缺少 ID"})])
-                .is_err(),
-        );
-        assert_eq!(database_snapshot(&store), before);
-    }
 }
 
 mod title_store_tests {

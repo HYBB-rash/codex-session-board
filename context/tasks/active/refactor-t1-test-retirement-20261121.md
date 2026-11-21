@@ -37,3 +37,11 @@
 移除 `example::remote_parity_lab::remote_runtime_tests::exposes_aba_moves_without_a_server_revision` 及原 AUTO-001 绑定。实验在两次观察之间移走卡片再移回，要求旧表单成功保存。[原生并发保证](../../../Docs/NATIVE-STATE.md) 和[原始实验](../../../Docs/REMOTE-PARITY-LAB.md) 均记录了缺少服务端修订号时无法识别中间移动。
 
 [MANUAL-002 与 UI-002](../../../acceptance/requirements.json) 保留版本和原生位置检查。保留 `test::native_authority::transport::external_move_rejects_an_unobserved_stale_save_and_fresh_save_succeeds`，通过 `/api/state` 验证读到不同原生位置时拒绝旧表单、零移列、备注不变，刷新后可保存。`lib::codex_session_board::formal::versions::stale_edits_reject_each_revision_without_persistent_side_effects` 继续检查状态或输入版本冲突后的数据。
+
+## 本地发现批次中的无 ID 记录
+
+移除 `test::board_contract::isolation_contract_tests::discovery_batch_failure_does_not_leave_partial_inserts`，清理 AUTO-004、MANUAL-001、TITLE-001、TITLE-003 四处绑定。用例直接给 `Store::discover` 一条有效新记录和一条缺 ID 记录，要求整库回到调用前的快照。
+
+查阅了引入提交 `eb2b580`、[冻结迁移包](../../../Docs/verification-baseline/) 中的 `acceptance/test_contract.py` 和 [DISCOVERY-001、DISCOVERY-002](../../../acceptance/requirements.json)。这些出处支持按 ID 发现、失败保留已有记录、单条历史读取失败后继续；未查到要求整批撤销新增记录的决定或故障记录。[本机 RPC 的 `append_threads`](../../../src/rpc.rs) 在向观察器返回列表之前就拒绝缺少字符串 ID 的记录。[Store 的事务](../../../src/store.rs) 仍在原处。
+
+保留 `test::observer_contract::history_list_failure_does_not_remove_or_reclassify_saved_sessions`，实际验证列表失败后原有人工状态保留且健康信息报告错误。`test::observer_contract::history_request_error_marks_only_that_session_and_continues_next_read` 验证同批后续会话仍可补读。两者均调用生产 `scan_history`。
