@@ -40,6 +40,7 @@
       "lib::codex_session_board::app::placement_tests::snapshot_places_local_and_remote_cards_from_work_evidence",
       "lib::codex_session_board::app::placement_tests::snapshot_respects_native_positions_and_remote_presence",
       "lib::codex_session_board::app::placement_tests::snapshot_preserves_legacy_remote_cache_in_each_mode",
+      "lib::codex_session_board::catalog::view_tests::four_column_board_keeps_a_confirmed_empty_archived_chat_in_the_live_catalog",
       "lib::codex_session_board::app::four_columns::tests::four_column_snapshot_preserves_legacy_cards_and_rejects_retired_writes",
       "lib::codex_session_board::app::four_columns::tests::four_column_remote_keeps_default_placement_without_replaying_old_backfill",
       "lib::codex_session_board::app::four_columns::tests::only_current_remote_rows_offer_navigation",

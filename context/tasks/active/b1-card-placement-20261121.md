@@ -34,3 +34,6 @@
 - `lib::codex_session_board::app::placement_tests::snapshot_places_local_and_remote_cards_from_work_evidence`
 - `lib::codex_session_board::app::placement_tests::snapshot_respects_native_positions_and_remote_presence`
 - `lib::codex_session_board::app::placement_tests::snapshot_preserves_legacy_remote_cache_in_each_mode`
+- `lib::codex_session_board::catalog::view_tests::four_column_board_keeps_a_confirmed_empty_archived_chat_in_the_live_catalog`
+
+已有 `lib::codex_session_board::app::four_columns::tests::only_current_remote_rows_offer_navigation` 随原投影删除而接到当前调用点，保留原有导航断言；导航资格规则由 B2 负责。

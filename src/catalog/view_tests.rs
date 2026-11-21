@@ -3,6 +3,49 @@ use anyhow::Result;
 use serde_json::{Value, json};
 
 #[test]
+fn four_column_board_keeps_a_confirmed_empty_archived_chat_in_the_live_catalog() -> Result<()> {
+    use crate::{app::App, config::Config, native_sections::Observation, store::remote::identity};
+    use std::sync::Arc;
+
+    let directory = tempfile::tempdir()?;
+    let config = Config {
+        data_dir: directory.path().join("root"), four_columns: true,
+        native_sections: true, sync_titles: false, ..Config::default()
+    };
+    let root = App::new(config.clone())?;
+    let remote = Arc::new(App::new(Config {
+        data_dir: directory.path().join("remote"), host_id: HOST.into(), ..config
+    })?);
+    remote.store.discover(&[thread(FIRST, false, true)])?;
+    remote.store.observe(FIRST, &json!({"confirmedEmpty":true}), None)?;
+    remote.store.cache_native(FIRST, &Observation { state: "unknown".into(), version: "chats".into() })?;
+    root.remotes.lock().unwrap().insert(HOST.into(), remote.clone());
+    let mut catalog = snapshot();
+    catalog.active.push(thread(SECOND, false, true));
+    catalog.validate(HOST)?;
+    install(&remote, catalog.clone(), true);
+    let active = root.request("/api/sessions", None)?;
+    let active = active["sessions"].as_array().unwrap();
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0]["id"], identity(HOST, SECOND));
+    assert_eq!(active[0].get("state"), Some(&Value::Null));
+
+    catalog.active.remove(0);
+    catalog.archived.push(thread(FIRST, true, true));
+    catalog.validate(HOST)?;
+    install(&remote, catalog, true);
+    let archived = root.request("/api/sessions", None)?;
+    let rows = archived["sessions"].as_array().unwrap();
+    let row = rows.iter().find(|row| row["id"] == identity(HOST, FIRST))
+        .expect("已归档的空会话仍应出现在根看板快照");
+    assert_eq!(row["presence"], "archived");
+    assert_eq!(row["archived"], true);
+    assert_eq!(row.get("state"), Some(&Value::Null));
+    assert_eq!(row["placementReason"], "原生侧栏默认区");
+    Ok(())
+}
+
+#[test]
 fn cached_snapshot_requires_live_reverification_after_restart() -> Result<()> {
     let (_directory, app) = app()?;
     let snapshot = snapshot();
