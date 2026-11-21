@@ -1060,7 +1060,6 @@
       "lib::codex_session_board::catalog::worker::continuity_tests::explicit_null_new_source_and_deleted_project_do_not_retain_old_assignment",
       "lib::codex_session_board::catalog::worker::continuity_tests::known_projectless_state_survives_missing_and_current_legacy_intent_still_wins",
       "lib::codex_session_board::catalog::worker::continuity_tests::missing_membership_preserves_confirmed_project_instead_of_new_cwd_guess",
-      "lib::codex_session_board::catalog::worker::continuity_tests::old_snapshot_without_account_identity_cannot_continue_membership",
       "lib::codex_session_board::catalog::worker::continuity_tests::unknown_or_missing_account_identity_never_continues_previous_membership",
       "lib::codex_session_board::catalog::worker::tests::cached_or_failed_sources_require_full_input_revalidation",
       "lib::codex_session_board::catalog::worker::tests::nested_cursor_errors_restart_from_the_beginning_with_bounded_retries",
