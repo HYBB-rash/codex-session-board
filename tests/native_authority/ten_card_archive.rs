@@ -8,6 +8,57 @@ struct TenCards {
     targets: Vec<Value>,
 }
 
+fn same_readback_time(actual: &Value, expected: &Value) -> bool {
+    match (actual.as_f64(), expected.as_f64()) {
+        (Some(actual), Some(expected)) => actual.is_finite() && expected.is_finite()
+            && actual > 0.0 && expected > 0.0
+            && actual.to_bits().abs_diff(expected.to_bits()) <= 1,
+        _ => actual.is_null() && expected.is_null(),
+    }
+}
+
+fn same_readback_record(mut actual: Value, expected: &Value) -> bool {
+    for field in ["checkedAt", "createdAt", "finishedAt"] {
+        match (actual.get(field), expected.get(field)) {
+            (None, None) => continue,
+            (Some(actual), Some(expected)) if same_readback_time(actual, expected) => {}
+            _ => return false,
+        }
+        actual[field] = expected[field].clone();
+    }
+    actual == *expected
+}
+
+fn assert_readback_time_contract() -> Result<()> {
+    let instant = 1_795_246_528.790_943_9_f64;
+    let expected = json!({"status":"verified","checkedAt":instant});
+    let decoded: Value = serde_json::from_str(&serde_json::to_string(&expected)?)?;
+    eprintln!("E3_TIME_TRACE stored={instant} decoded={} representable_steps={}",
+        decoded["checkedAt"], instant.to_bits().abs_diff(decoded["checkedAt"].as_f64().unwrap().to_bits()));
+    assert!(same_readback_record(decoded, &expected));
+    let adjacent = f64::from_bits(instant.to_bits() + 1);
+    assert!(same_readback_record(json!({"status":"verified","checkedAt":adjacent}), &expected));
+    for incorrect in [json!(f64::from_bits(instant.to_bits() + 2)), json!(instant + 1.0),
+        Value::Null, json!(0), json!(-instant)] {
+        assert!(!same_readback_record(json!({"status":"verified","checkedAt":incorrect}), &expected));
+    }
+    assert!(!same_readback_record(json!({"status":"pending","checkedAt":instant}), &expected));
+    assert!(!same_readback_record(json!({"status":"verified","checkedAt":instant}),
+        &json!({"status":"verified","checkedAt":null})));
+    assert!(!same_readback_record(json!({"status":"verified"}), &expected));
+    for status in ["pending", "awaiting"] {
+        let pending = json!({"status":status,"checkedAt":null});
+        assert!(same_readback_record(pending.clone(), &pending));
+        assert!(!same_readback_record(json!({"status":status,"checkedAt":instant}), &pending));
+    }
+    for status in ["archived", "verified", "newInput", "rejected"] {
+        let checked = json!({"status":status,"checkedAt":instant});
+        assert!(same_readback_record(checked.clone(), &checked));
+        assert!(!same_readback_record(json!({"status":status,"checkedAt":null}), &checked));
+    }
+    Ok(())
+}
+
 impl TenCards {
     fn new(directory: &Path) -> Result<Self> {
         let identifiers: Vec<_> = [FIRST.to_owned(), SECOND.to_owned()].into_iter()
@@ -125,9 +176,14 @@ impl TenCards {
             }
             item
         }).collect();
-        assert_eq!(batch["items"], json!(expected));
-        assert_eq!(batch["createdAt"], records["createdAt"]);
-        assert_eq!(batch["finishedAt"], records["finishedAt"]);
+        let actual = batch["items"].as_array().unwrap();
+        assert_eq!(actual.len(), expected.len());
+        for (actual, expected) in actual.iter().zip(&expected) {
+            assert!(same_readback_record(actual.clone(), expected),
+                "HTTP 详情与根库不同: actual={actual} expected={expected}");
+        }
+        let times = |value: &Value| json!({"createdAt":value["createdAt"],"finishedAt":value["finishedAt"]});
+        assert!(same_readback_record(times(batch), &times(records)));
         Ok(())
     }
 
@@ -250,6 +306,7 @@ impl TenCards {
 
 #[test]
 fn ten_card_batch_reopens_from_storage_and_checks_without_repeating_native_writes() -> Result<()> {
+    assert_readback_time_contract()?;
     let directory = tempfile::tempdir()?;
     if isolated(directory.path(),
         "ten_cards::ten_card_batch_reopens_from_storage_and_checks_without_repeating_native_writes")? {

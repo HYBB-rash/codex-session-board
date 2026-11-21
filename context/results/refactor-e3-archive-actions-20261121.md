@@ -34,7 +34,8 @@ test::native_authority::remote_isolation::archive_batches::ten_cards::ten_card_b
 
 两次停止并重开真实看板服务，沿用同一原生服务，执行两轮逐卡重放及重复核对。
 根库逐字段比较冻结目标、来源、原因、checkedAt、createdAt 和 finishedAt；
-HTTP 返回的逐项详情与根库完全对照。
+HTTP 返回的逐项详情与根库逐字段对照，非时间字段完全相同。
+时间字段只容许 JSON 浮点往返带来的一个相邻表示差，且必须同时为空或同时是正数有效时间。
 目标库比较每卡归档标记及备注，提交前即保存本机和 other 同 UUID 哨兵基线。
 这些旁观库始终不变，mac 仅原目标得到确认。
 重复提交不能改写任何批次字段或目标库内容。
@@ -54,6 +55,22 @@ T3 点击准备保留在另一分支 codex/refactor-e3-archive-actions-20261121 
 函数覆盖绑定改写通过，只读卡误入和监听积累旧范围都会失败。
 该检查点只验证源码 HTTP 与模拟批次响应，不签收真实打包资源或原生写入次数。
 页面作者可选择消费，不必复制其中临时 fixture 来替代本首件。
+
+## Fedora 时间读回修复
+
+集成者反馈其准确重基头 189757d 的整组结果为 47 项通过、十卡失败。
+失败只在 HTTP checkedAt=1795246528.790944 与数据库 1795246528.7909439 之间。
+原失败位于其 logs/e3-ten-189757d50cc88faca6fc97ab4e05cf268e32c016/difference.txt。
+本机用同一值序列化再解析，直接复现一个相邻 f64 表示差，约 0.24 微秒。
+没有修改生产序列化、依赖、持久格式或状态判断。
+
+修复只用于 HTTP 时间对照，最多接受一个正数有限浮点的相邻表示差。
+数据库的重开、重放和逐字段归属比较继续完全严格。
+确定性负对照拒绝两个表示差、一秒偏移、零、负时间、空值变化、缺字段和状态变化；
+pending/awaiting 仍要求空值，archived/verified/newInput/rejected 仍要求有效时间。
+十卡复验通过，11.07 秒，相关 Clippy 通过，日志为
+/private/tmp/e3-time-roundtrip-test.log 和 /private/tmp/e3-time-roundtrip-clippy.log。
+最终准确头及独立审阅回执仍以本文件前述 JSON 为准。
 
 没有操作日用 Codex，没有修改共享 STATE、任务注册或 journal。
 没有推进 main、推送或部署；任务归档及共享登记由协调者处理。
