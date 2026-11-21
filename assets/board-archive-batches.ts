@@ -12,7 +12,7 @@ interface Submission {
   id: string; index: number; total: number; current: string | null; submitted: Set<string>; sending: boolean;
 }
 export interface ArchiveRequests {
-  request<T>(path: string, body?: object): Promise<T>;
+  request(path: string, body?: object): Promise<unknown>;
   changed(): void;
   refresh(ids: Set<string>): void;
 }
@@ -60,7 +60,7 @@ export function archiveBatches(actions: ArchiveRequests) {
   async function request<T>(path: string, body?: object, timeout = 30000) {
     let timer: number | undefined;
     try {
-      return await Promise.race([actions.request<T>(path, body), new Promise<never>((_, reject) => {
+      return await Promise.race([actions.request(path, body) as Promise<T>, new Promise<never>((_, reject) => {
         timer = window.setTimeout(() => reject(new Error("归档请求超时")), timeout);
       })]);
     } finally { window.clearTimeout(timer); }

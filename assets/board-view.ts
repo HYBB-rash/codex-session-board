@@ -3,6 +3,7 @@ import BoardColumns from "./board-columns.vue";
 import { createCardDrag } from "./board-drag";
 import { createBoardLayout, type BoardElements } from "./board-layout";
 import { sortColumn, type SortPreference, type SortMenuProps } from "./board-sorting";
+import type { mountBoardArchive } from "./board-archive";
 import type { PreviewSession } from "./reply-preview";
 
 export interface BoardSession extends PreviewSession {
@@ -18,6 +19,8 @@ export interface BoardSession extends PreviewSession {
   placementReason?: string;
   remote?: boolean;
   archived?: boolean;
+  canArchive?: boolean;
+  archivePending?: boolean;
   presence?: string;
   catalogCurrent?: boolean;
   hostId?: string;
@@ -58,10 +61,7 @@ export interface BoardDependencies {
   saveSort: SortMenuProps["save"];
   date: (value: number) => string;
   project: (session: BoardSession) => ProjectTag;
-  actions: (session: BoardSession) => {
-    readOnly: boolean; canAdjust: boolean; pendingArchive: boolean;
-    archive: "archive" | "confirm" | null; canSubmit: boolean;
-  };
+  actions: ReturnType<typeof mountBoardArchive>["cardActions"];
   canAssign: (session: BoardSession) => boolean;
   preview: (session: BoardSession, focus?: boolean) => void;
   edit: (id: string, state?: string, session?: BoardSession) => void;

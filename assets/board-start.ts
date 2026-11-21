@@ -1,5 +1,5 @@
 import "./board-view";
-import "./board-archive-results";
+import { mountBoardArchive } from "./board-archive";
 import { mountBoardBrowse, type CatalogProject, type HostCatalog, type HostIdentity } from "./board-browse";
 import { mountBoardSessionReader } from "./board-session-reader";
 import { mountMoveFeedback } from "./board-move-feedback";
@@ -29,6 +29,7 @@ declare global {
     boardRequest?: (path: string, body?: object) => Promise<unknown>;
     createBoardRequest: typeof createBoardRequest;
     startBoard: typeof startBoard;
+    mountBoardArchive: typeof mountBoardArchive;
     mountBoardBrowse: typeof mountBoardBrowse;
     mountBoardSessionReader: typeof mountBoardSessionReader;
     mountMoveFeedback: typeof mountMoveFeedback;
@@ -70,6 +71,7 @@ function startBoard(load: () => Promise<void>, restore: () => Promise<void> | vo
 
 window.createBoardRequest = createBoardRequest;
 window.startBoard = startBoard;
+window.mountBoardArchive = mountBoardArchive;
 window.mountBoardBrowse = mountBoardBrowse;
 window.mountBoardSessionReader = mountBoardSessionReader;
 window.mountMoveFeedback = mountMoveFeedback;

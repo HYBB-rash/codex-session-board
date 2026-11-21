@@ -11,7 +11,7 @@ interface Actions extends ArchiveRequests {
   date(timestamp: number): string;
 }
 
-function mountArchiveResults(host: HTMLElement, actions: Actions) {
+export function mountArchiveResults(host: HTMLElement, actions: Actions) {
   const {state, canSubmit, status, toCheck, pending, read, check, restore, submit} = archiveBatches(actions);
   const board = shallowRef<Board>({ sessions: [] });
   const expanded = ref(false);
@@ -80,6 +80,3 @@ function mountArchiveResults(host: HTMLElement, actions: Actions) {
   return { restore, submit, get canSubmit() { return canSubmit.value; }, get pending() { return pending.value; },
     updateBoard(value: Board) { board.value = value; } };
 }
-
-declare global { interface Window { mountArchiveResults: typeof mountArchiveResults } }
-window.mountArchiveResults = mountArchiveResults;
