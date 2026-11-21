@@ -38,7 +38,7 @@ addEventListener("message",async event=>{
   if(event.source!==document.querySelector("iframe").contentWindow)return;
   const {method,id,params}=event.data;
   let result;
-  if(method==="ui/initialize")result={protocolVersion:params.protocolVersion,hostInfo:{name:"preview-check",version:"1"},hostCapabilities:{openLinks:{}},hostContext:{}};
+  if(method==="ui/initialize")result={protocolVersion:params.protocolVersion,hostInfo:{name:"preview-check",version:"1"},hostCapabilities:{openLinks:{}},hostContext:{theme:"dark"}};
   if(method==="ui/open-link"){window.lastLink=params.url;result={};}
   if(method==="tools/call" && params.name==="board_new"){
     window.creations.push(params.arguments);
@@ -54,6 +54,9 @@ addEventListener("message",async event=>{
   }
   if(result)event.source.postMessage({jsonrpc:"2.0",id,result},"*");
 });
+window.notifyTheme=theme=>document.querySelector("iframe").contentWindow.postMessage({
+  jsonrpc:"2.0",method:"ui/notifications/host-context-changed",params:{theme}
+},"*");
 </script><iframe sandbox="allow-scripts" src="/app"></iframe>`;
 const server = http.createServer(async (request,response) => {
   if (request.url === "/resource-policy-violation") {
@@ -157,6 +160,13 @@ async function exercise(surface) {
   })()`);
   await wait(`Boolean(document.querySelector(${JSON.stringify(card("local"))}))`);
   if (surface === "mcp") {
+    const scheme = 'getComputedStyle(document.documentElement).colorScheme';
+    const background = 'getComputedStyle(document.body).backgroundColor';
+    assert.equal(await evaluate(scheme),"dark");
+    const darkBackground = await evaluate(background);
+    await page.evaluate('notifyTheme("light")');
+    await wait(`${scheme} === "light"`);
+    assert.notEqual(await evaluate(background),darkBackground,"嵌入看板背景没有跟随宿主主题");
     assert.equal(await evaluate('document.querySelector("iframe,frame,link[rel~=manifest]") === null'),true);
     assert.equal(await evaluate(`(async () => {
       const image = document.querySelector(".dragon-scene img");

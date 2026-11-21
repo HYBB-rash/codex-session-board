@@ -17,6 +17,6 @@
 
 **离线资源和新建。** 握手检查 MIME、资源 URI、空网络域声明及 HTTP 模板标记清除。完整资源回放在临时浏览器里限制资源子页的网络加载，检查实际加载违规、嵌套页面、PWA manifest 和内嵌图片解码。选择本机后，点击可见的新建按钮，隔离宿主必须收到一次参数为 `{}` 的 `board_new`。D 的简化 iframe 独立验证带项目和操作 UUID 的新建分派。发布包重演复用既有 `verify_package_startup.py` 输出的 `.resource.html`。[包内回放](../../Docs/REPLY-PREVIEW.md)
 
-**宿主和分派。** 初始深色、切浅色、再切深色，以及只更新安全边距时保留深色，都从隔离 iframe 的计算样式读回。桥接逐项调用既有 `assets/board-operations.json`，从宿主实际收到的消息检出漏调用、重复或错工具。`test::board_io::archive_batch_tools_share_http_history` 另以真实 HTTP 和 stdio 回读归档，`test::native_authority::entrypoints::preview_tool_keeps_reply_out_of_model_content` 回读预览工具的实际专用回执。
+**宿主和分派。** 初始深色、切浅色、再切深色，以及只更新安全边距时保留深色，都从隔离 iframe 的计算样式读回。完整包内页面也从深色启动，收到浅色通知后必须改变实际背景，避免简化测试页面的样式掩盖产品问题。桥接逐项调用既有 `assets/board-operations.json`，从宿主实际收到的消息检出漏调用、重复或错工具。`test::board_io::archive_batch_tools_share_http_history` 另以真实 HTTP 和 stdio 回读归档，`test::native_authority::entrypoints::preview_tool_keeps_reply_out_of_model_content` 回读预览工具的实际专用回执。
 
 按原 ID、承接 ID、提交、包启动与浏览器结果归档的交接包存放在本轮共享输出目录。测试使用隔离宿主与浏览器。日用客户端和完整发布验收另有取证范围。
