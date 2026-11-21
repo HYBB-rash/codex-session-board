@@ -184,7 +184,8 @@ class PluginUpdateTests(unittest.TestCase):
                     self.assertIsInstance(json.load(reader), dict)
                 return result
             return observe
-        for _ in range(3):
+        for revision in ("a", "b", "c"):
+            self.revision = self.installed_revision = revision * 40
             shutil.rmtree(self.home, ignore_errors=True)
             shutil.rmtree(self.market, ignore_errors=True)
             with self.isolated(), contextlib.ExitStack() as readers:
@@ -196,13 +197,20 @@ class PluginUpdateTests(unittest.TestCase):
                 def observe(phase, **fields):
                     if phase == "reloading":
                         reader = readers.enter_context(current.open("rb"))
-                        installed.append((reader, reader.read()))
+                        contents = reader.read()
+                        receipt = json.loads(contents)
+                        self.assertEqual(receipt.get("revision"), self.revision)
+                        self.assertEqual(receipt["phase"], "awaiting_desktop_reload")
+                        self.assertTrue(receipt["installed"])
+                        self.assertFalse(receipt["desktop_loaded"])
+                        installed.append((reader, contents))
                 result = self.update(reload=False, progress=observe)
                 self.assertTrue(installed)
                 for reader, contents in [(first, initial), *installed]:
                     reader.seek(0)
                     self.assertEqual(reader.read(), contents)
             self.assertEqual(result["legacy_installation"], original)
+            self.assertTrue(result["reload_deferred"])
             self.assertEqual(json.loads(current.read_text()), result)
             self.assertEqual(self.pending_at_install["legacy_installation"], original)
             self.assertFalse(Path(original["config"]).exists())
