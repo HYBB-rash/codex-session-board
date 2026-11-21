@@ -600,6 +600,35 @@ fn native_resource_and_tools_expose_global_app_only_actions() {
 }
 
 #[test]
+fn archive_batch_tools_share_http_history() -> Result<()> {
+    let fixture = Fixture::new(false);
+    let started = fixture.launch();
+    let url = format!("{}/api/archive-batches", started["url"].as_str().unwrap());
+    let client = reqwest::blocking::Client::builder().no_proxy().build()?;
+    let list = || client.get(&url).send()?.error_for_status()?.json::<Value>();
+    assert_eq!(list()?, json!({"batches":[]}));
+    let target = json!({"id":SECOND,"title":"隔离会话","version":7,"inputVersion":2,"sectionVersion":"position"});
+    let replies = fixture.mcp_calls(&[
+        ("board_archive_batch_start", json!({"id":FIRST,"items":[target]})),
+        ("board_archive_batch_start", json!({"id":SECOND,"items":[]})),
+        ("board_archive_batches", json!({})),
+    ]);
+    let batch = &replies[0]["result"]["structuredContent"]["batch"];
+    assert_eq!(batch["id"], FIRST);
+    assert_eq!(batch["items"].as_array().unwrap().len(), 1);
+    for (key, value) in target.as_object().unwrap() {
+        assert_eq!(&batch["items"][0][key], value);
+    }
+    assert_eq!(batch["items"][0]["status"], "awaiting");
+    assert_eq!(replies[1]["result"]["isError"], true);
+    assert_eq!(replies[1]["result"]["content"][0]["text"], "归档批次为空");
+    let expected = json!({"batches":[batch]});
+    assert_eq!(replies[2]["result"]["structuredContent"], expected);
+    assert_eq!(list()?, expected);
+    Ok(())
+}
+
+#[test]
 fn real_stdio_mcp_handshake_and_resource_round_trip() {
     let fixture = Fixture::new(false);
     let mut child = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
