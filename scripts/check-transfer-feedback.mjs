@@ -264,7 +264,7 @@ try {
   const receiptNotice = await evaluate('byId("feedback").textContent');
   assert.match(receiptNotice, /状态已保存.*标题同步待重试/);
   assert.deepEqual(await evaluate(`data.sessions.find(row=>row.id===${JSON.stringify(otherId)})`), otherBeforeReceipt);
-  await check("A迟到回执不改变当前B主机同UUID卡片", `selectedHost === "host:other" && visibleSessions().length === 1 && visibleSessions()[0].id === ${JSON.stringify(otherId)} && visibleSessions()[0].state === "to_archive"`);
+  await check("A迟到回执不改变当前B主机同UUID卡片", `byId("host-filter").value === "host:other" && document.querySelectorAll(".card").length === 1 && document.querySelector("#column-to_archive .card")?.dataset.id === ${JSON.stringify(otherId)}`);
   await select("host-filter", "all");
   staleSnapshot.response.setHeader("Content-Type", "application/json");staleSnapshot.response.end(staleSnapshot.text);
   await evaluate('window.staleRead');
@@ -504,7 +504,7 @@ try {
 } catch (error) {
   await screenshot("failure");
   await fs.writeFile(path.join(output, "failure.json"), JSON.stringify({ error: error.message, cases, writes, mutations,
-    initialReducedMotion, state: await evaluate('({now:performance.now(),reducedMotion:matchMedia("(prefers-reduced-motion: reduce)").matches,glowAnimation:document.querySelector(".move-pending")?getComputedStyle(document.querySelector(".move-pending"),"::after").animationName:null,hidden:document.hidden,editorOpen:byId("editor").open,dragging:board.drag.source,saving,moving,sessions:data.sessions,feedbackText:byId("feedback").textContent,follow:[...document.querySelectorAll(".follow")].map(node=>node.textContent),selectedHost,selectedProject,feedback:byId("move-feedback").outerHTML,ids:[...document.querySelectorAll(".card")].map(card=>({id:card.dataset.id,draggable:card.draggable,rect:card.getBoundingClientRect().toJSON()}))})') }, null, 2));
+    initialReducedMotion, state: await evaluate('({now:performance.now(),reducedMotion:matchMedia("(prefers-reduced-motion: reduce)").matches,glowAnimation:document.querySelector(".move-pending")?getComputedStyle(document.querySelector(".move-pending"),"::after").animationName:null,hidden:document.hidden,editorOpen:byId("editor").open,dragging:board.drag.source,saving,moving,sessions:data.sessions,feedbackText:byId("feedback").textContent,follow:[...document.querySelectorAll(".follow")].map(node=>node.textContent),selectedHost:byId("host-filter").value,selectedProject:byId("project-filter").value,feedback:byId("move-feedback").outerHTML,ids:[...document.querySelectorAll(".card")].map(card=>({id:card.dataset.id,draggable:card.draggable,rect:card.getBoundingClientRect().toJSON()}))})') }, null, 2));
   throw error;
 } finally {
   for (const { response } of responses) response.destroy();
