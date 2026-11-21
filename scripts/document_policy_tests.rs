@@ -16,17 +16,7 @@ fn expected_paths(names: &[&str]) -> Vec<PathBuf> {
 }
 
 #[test]
-fn exact_root_document_names_are_allowed() -> Result<()> {
-    let directory = tempdir()?;
-    write_files(directory.path(), &["AGENTS.md", "README.md"])?;
-    assert!(violations(directory.path())?.is_empty());
-    assert!(check(directory.path())?);
-    Ok(())
-}
-
-#[test]
 fn all_specified_document_extensions_are_reported() -> Result<()> {
-    let directory = tempdir()?;
     let names = [
         "guide.md",
         "guide.markdown",
@@ -48,9 +38,13 @@ fn all_specified_document_extensions_are_reported() -> Result<()> {
         "guide.rtf",
         "guide.tex",
     ];
-    write_files(directory.path(), &names)?;
-    assert_eq!(violations(directory.path())?, expected_paths(&names));
-    assert!(!check(directory.path())?);
+    let special_names = ["LICENSE.md", "NOTICE.txt", "README.txt"];
+    for group in [names.as_slice(), &special_names] {
+        let directory = tempdir()?;
+        write_files(directory.path(), group)?;
+        assert_eq!(violations(directory.path())?, expected_paths(group));
+        assert!(!check(directory.path())?);
+    }
     Ok(())
 }
 
@@ -58,14 +52,16 @@ fn all_specified_document_extensions_are_reported() -> Result<()> {
 fn extensions_ignore_case_but_root_allowance_requires_exact_case() -> Result<()> {
     let directory = tempdir()?;
     write_files(directory.path(), &["AGENTS.md", "README.md"])?;
+    assert!(violations(directory.path())?.is_empty());
+    assert!(check(directory.path())?);
+    let mut uppercase = Vec::new();
     for extension in DOCUMENT_EXTENSIONS {
-        fs::write(
-            directory
-                .path()
-                .join(format!("guide.{}", extension.to_ascii_uppercase())),
-            [],
-        )?;
+        let name = PathBuf::from(format!("guide.{}", extension.to_ascii_uppercase()));
+        fs::write(directory.path().join(&name), [])?;
+        uppercase.push(name);
     }
+    uppercase.sort();
+    assert_eq!(violations(directory.path())?, uppercase);
     let variants = [
         "agents.md",
         "AGENTS.MD",
@@ -73,20 +69,12 @@ fn extensions_ignore_case_but_root_allowance_requires_exact_case() -> Result<()>
         "README.MD",
         "Readme.md",
     ];
-    let mut found = violations(directory.path())?;
     for name in variants {
         let sample = tempdir()?;
         write_files(sample.path(), &[name])?;
         let reported = violations(sample.path())?;
         assert_eq!(reported, [PathBuf::from(name)]);
-        found.extend(reported);
     }
-    assert_eq!(found.len(), DOCUMENT_EXTENSIONS.len() + variants.len());
-    for name in variants {
-        assert!(found.contains(&PathBuf::from(name)));
-    }
-    assert!(!found.contains(&PathBuf::from("AGENTS.md")));
-    assert!(!found.contains(&PathBuf::from("README.md")));
     Ok(())
 }
 
@@ -176,15 +164,6 @@ fn cargo_configuration_data_sources_scripts_and_binaries_are_not_documents() -> 
     write_files(directory.path(), &names)?;
     fs::write(directory.path().join("app.exe"), [0, 0xff, 1])?;
     assert!(check(directory.path())?);
-    Ok(())
-}
-
-#[test]
-fn license_and_notice_are_not_exempt_from_document_extensions() -> Result<()> {
-    let directory = tempdir()?;
-    let names = ["LICENSE.md", "NOTICE.txt", "README.txt"];
-    write_files(directory.path(), &names)?;
-    assert_eq!(violations(directory.path())?, expected_paths(&names));
     Ok(())
 }
 
