@@ -28,7 +28,7 @@ const requests = [];
 const blockedResources = [];
 let snapshot = fixture(), pending, current, held, openFails;
 const host = `<!doctype html><meta charset="utf-8">
-<style>body{margin:0}iframe{display:block;border:0;width:100vw;height:100vh}</style>
+<style>body{margin:0}iframe{position:fixed;top:48px;left:0;border:0;width:100vw;height:calc(100vh - 48px)}</style>
 <script>
 const readRoutes={board_snapshot:"/api/sessions",board_archive_batches:"/api/archive-batches",
   board_plugin_update_status:"/api/plugin-update"};
@@ -98,6 +98,7 @@ const server = http.createServer(async (request,response) => {
 await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
 let browser, cleanup, failure;
 const checks = [];
+const firstClicks = {};
 const address = `http://127.0.0.1:${server.address().port}`;
 const until = async (predicate, message) => {
   for (let attempt=0;attempt<150;attempt++) {
@@ -142,13 +143,22 @@ async function exercise(surface) {
   const page = await browser.page(address+(surface==="mcp" ? "/host" : "/"));
   const evaluate = surface==="mcp" ? await iframeEvaluator() : page.evaluate;
   const wait = expression => until(()=>evaluate(expression),expression);
+  const hostOffset = () => surface === "http" ? {x:0,y:0} : page.evaluate(`(() => {
+    const frame = document.querySelector("iframe"), bounds = frame.getBoundingClientRect();
+    return {x:bounds.left+frame.clientLeft,y:bounds.top+frame.clientTop};
+  })()`);
+  const pagePoint = async point => {
+    const offset = await hostOffset();
+    return {x:offset.x+point.x,y:offset.y+point.y};
+  };
   const resize = async (width,height) => {
-    await page.command("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:1,mobile:false});
+    const offset = await hostOffset();
+    await page.command("Emulation.setDeviceMetricsOverride",{width,height:height+offset.y,deviceScaleFactor:1,mobile:false});
     await wait(`innerWidth === ${width} && innerHeight === ${height}`);
   };
   const press = selector => evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
-  const mouse = (type, point, buttons) => page.command("Input.dispatchMouseEvent",{
-    type,...point,button:"left",buttons,clickCount:1,
+  const mouse = async (type, point, buttons) => page.command("Input.dispatchMouseEvent",{
+    type,...await pagePoint(point),button:buttons || type==="mouseReleased" ? "left" : "none",buttons,clickCount:1,
   });
   const click = async point => {
     await mouse("mousePressed",point,1);
@@ -209,8 +219,29 @@ async function exercise(surface) {
   await evaluate('byId("host-filter").value="all";byId("host-filter").dispatchEvent(new Event("change"))');
   await evaluate(`document.querySelector(${JSON.stringify(card("local"))}).scrollIntoView({block:"nearest"})`);
   const baseline = await evaluate(geometry);
-  await click(await evaluate(center(card("local"))));
-  await until(()=>pending,"本机请求未被延迟");
+  const selector = JSON.stringify(card("local"));
+  const point = await until(async () => {
+    const visible = await evaluate(`(() => {
+      const title = document.querySelector(${selector}), bounds = title.getBoundingClientRect();
+      const list = title.closest(".cards").getBoundingClientRect();
+      const left = Math.max(bounds.left,list.left,0), right = Math.min(bounds.right,list.right,innerWidth);
+      const top = Math.max(bounds.top,list.top,0), bottom = Math.min(bounds.bottom,list.bottom,innerHeight);
+      const x = (left+right)/2, y = (top+bottom)/2;
+      return right>left && bottom>top && title.contains(document.elementFromPoint(x,y)) && {x,y};
+    })()`);
+    if (!visible) return false;
+    await mouse("mouseMoved",visible,0);
+    return await evaluate(`document.querySelector(${selector}).matches(":hover")`) && visible;
+  },"物理指针未命中可见的本机卡标题");
+  await evaluate(`addEventListener("click",event=>{
+    window.previewClick={trusted:event.isTrusted,card:event.target.closest(".card")?.dataset.id,
+      title:Boolean(event.target.closest(".card-title")),x:event.clientX,y:event.clientY};
+  },{capture:true,once:true})`);
+  await click(point);
+  const hit = await until(()=>evaluate("window.previewClick || null"),`${surface} 在 ${JSON.stringify(point)} 派发首击后未收到点击事件`);
+  firstClicks[surface] = {page:await pagePoint(point),hit};
+  assert(hit.trusted && hit.card==="local" && hit.title,`${surface} 首击未命中本机卡标题 ${JSON.stringify(firstClicks[surface])}`);
+  await until(()=>pending,`${surface} 本机卡标题收到首击，未收到预览请求 ${JSON.stringify(hit)}`);
   assert.equal(await evaluate('byId("reply-scrim").hidden'),false);
   assert.deepEqual(await evaluate(geometry),baseline);
   await click(await evaluate(center(card(remote))));
@@ -254,7 +285,7 @@ async function exercise(surface) {
   await resize(768,431);
   const overlayBounds = `["reply-reader","reply-scrim"].map(id=>byId(id).getBoundingClientRect().toJSON())`;
   const beforeWheel = await evaluate(overlayBounds);
-  await page.command("Input.dispatchMouseEvent",{type:"mouseWheel",x:8,y:250,deltaX:0,deltaY:480});
+  await page.command("Input.dispatchMouseEvent",{type:"mouseWheel",...await pagePoint({x:8,y:250}),deltaX:0,deltaY:480});
   await wait("window.scrollY > 0");
   assert.deepEqual(await evaluate(overlayBounds),beforeWheel);
   assert.equal(beforeWheel[1].bottom,431);
@@ -356,6 +387,7 @@ async function exercise(surface) {
   });
   if (surface==="http") await checkTitleDrag(page, evaluate);
   if (surface === "mcp") assert.deepEqual(await page.evaluate("window.creations"),[{}]);
+  await page.command("Page.close");
   checks.push(surface);
 }
 async function checkTitleDrag(page, evaluate) {
@@ -388,5 +420,5 @@ try {
   if (browser) cleanup = await browser.close();
   await new Promise(resolve=>server.close(resolve));
 }
-console.log(JSON.stringify({passed:!failure,checks,embeddedResource:process.argv[3] || "fixture",cleanup}));
+console.log(JSON.stringify({passed:!failure,checks,firstClicks,embeddedResource:process.argv[3] || "fixture",cleanup}));
 if (failure) throw failure;
