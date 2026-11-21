@@ -32,6 +32,8 @@ mod target_drafts;
 mod ssh_setup;
 mod connection;
 mod four_columns;
+#[cfg(test)]
+mod placement_tests;
 pub use connection::preflight;
 pub(crate) use connection::ConnectionRequest;
 
