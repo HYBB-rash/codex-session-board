@@ -5,7 +5,7 @@ execution_mode: isolated_write
 allowed_write_set: context/tasks/active/board-refactor-five-rounds-20261121.md、对应的交接/结果/完成卡、协调者任务登记，以及本次会话的交付物
 base_commit: b859880165908a848a4982d2cfd9b722e9aeb912
 worktree_path: /home/herman/.codex/worktrees/board-refactor-coordination/notion-program
-coordinator: 本会话跟进作者与独立审阅，Herman 决定业务取舍和合入顺序
+coordinator: 本会话负责派工、独立审阅、合入排序、串行推送和远端主线验收，Herman 保留业务取舍
 
 业务规则有一个决定结果的地方。每项保留测试说明受益者、实际触发条件及预期行为。各作者拥有独立任务卡和测试 ID，按最新远端主线重基，独立审阅和验证准确提交。主线前进后复核受影响的实现、构建及测试。
 
@@ -20,7 +20,7 @@ coordinator: 本会话跟进作者与独立审阅，Herman 决定业务取舍和
 | T2 首批 | Linux · 01a1fc65-7a91-7440-a579-bc28c74a235c | 旧标题回执对照与故障注入，只领取这一对 |
 | D 接口登记 | Linux · 01a1fc68-930a-7cc1-b249-e1c7041b5535 | 同一归档路径的读写分派及预览、可见性检查 |
 | F 诊断与说明 | Linux · 01a1fc68-c750-7091-b1fa-266a0418fea4 | 旧配置与现役故障读回，使用说明另行交付 |
-| B2 操作资格 | 接 B1 | 用同一组卡对照单卡按钮、批量选择和执行时检查 |
+| B2 操作资格 | Linux · 01a1fc80-61f5-76e1-80a3-ec068a3fab21 | 用同一组卡对照单卡按钮、批量选择和执行时检查 |
 | C2 远程实例 | Mac · 01a1fc78-8a40-77e3-856a-4fd4127fec2b | 对照 C1 的 `f157541`，核对在线和缓存的字段、调用与净删改量 |
 | E2a、E2b、E2c | 接 A、B1、B2、E1 | 每次交付一个可运行的展示、编辑或拖动动作，同次删除旧路径 |
 | E3、筛选、排序、收尾 | E3 接 E2、C1；筛选与排序分开交 | 十卡中断恢复、筛选后归档范围、键盘排序及组件库取舍 |
@@ -30,7 +30,7 @@ coordinator: 本会话跟进作者与独立审阅，Herman 决定业务取舍和
 
 2026-11-21，T0 将 `565bfaa` 到 `b859880` 的完整 ID 差异输出到原工作簿同目录的 `测试ID差异首件-565bfaa-b859880.tsv`。逐行比对得到同名 952、新增 7、退出旧绑定 236。协调者核对了同一提交的 [双平台验证运行](https://github.com/HYBB-rash/codex-session-board/actions/runs/44864632437)，Linux 958 项、macOS 947 项，共有 946 项，合计 959 个不同的 ID。两份 automated 报告均为 `release_ready=false`。T1、T2 首批的七个 ID 在新基线可收集，定义沿用旧实现，已交给各自的作者。
 
-待 Herman 点名的首批分支均建立在 `b859880` 上。
+首批审阅分支均建立在 `b859880` 上。Herman 随后明确委托本会话完成合并，以最终主分支执行结果交付。协调者每次指定一位写入者，用远端 `main` 的实际 SHA 交接；其他分支在轮到时重基、复查并重新验证。
 
 | 分支与提交 | 证据 |
 |---|---|
@@ -38,5 +38,19 @@ coordinator: 本会话跟进作者与独立审阅，Herman 决定业务取舍和
 | `codex/refactor-t2-title-old-ack` · `c52d2fca02e6bdd6bee1e1108eb611f93bbafb20` | 删除 1 个重复测试入口，保留直接读回新任务版本的断言。两种故障分别失败，恢复均通过，89 项相关测试和独立审阅通过。T2 作者另领候选发布的三种来源拒绝场景。 |
 
 T0 抽查 15 条保留项，其中 4 条的场景措辞、断言或出处需纠正，已交作者复核。C1 的最终分支有 4 项新增测试，T0 的基线及后续分支认领分别计数。
+
+### 测试结清分工
+
+| 作者 | 本项独有的范围 |
+|---|---|
+| `python_scenarios` | 验收与交付、检查器、开发环境的部分精简项；T2 的 `example::project_check`、`test::git_hooks` 及 `acceptance.test_plugin_update` 组。 |
+| `rust_contracts` | 客户端连接、配置与服务、会话导航的部分精简项；T2 的 `lib::…::rpc` 及 `lib::…::service::migration` 组。 |
+| `rust_internals` | 远程会话组 18 项部分精简；T2 的 `catalog::worker::continuity_tests` 及 `remote::scans::restore_tests` 两项，和保留独立的远程注册用例。 |
+| T1 作者 | 五项移除及其承接证据。另外的独立分支核对标题同步的六项部分精简。 |
+| T2 首批作者 | 旧标题回执、三个候选来源错误，余下独立的 `board_contract` 及 `archive_flow` 行按规则小批裁决。 |
+| B1 作者 | 四列告警 29/30 秒边界、恢复与再次缺证，并保留人工列和备注。用户于 11 月 18 日批准包含 30 秒门槛的方案。 |
+| 其他业务作者 | A、B1、B2、C1、D、E1、E2、E3、筛选、排序分别接回改动范围内的测试，余项在最终主线逐行销账。 |
+
+首笔远端读回为 `b859880 → f157541`。C1 作者在 Mac 验证了准确头，协调者从该工作树取得同一提交后，在 Fedora 的专用干净 `main` 快进并普通推送。下一项由 T2 首批作者写入，B1 排在其后。
 
 结项依据是逐包交付和远端读回；条件项可凭调查结论关闭。目标环境缺证须记录，完整验收以 `python3 scripts/verify_acceptance.py` 的退出码、`release_ready` 和经审阅的证据判定。
