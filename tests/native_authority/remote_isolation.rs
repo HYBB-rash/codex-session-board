@@ -16,6 +16,9 @@ use remote_fixture::RemoteFixture;
 #[path = "remote_backfill.rs"]
 mod backfill;
 
+#[path = "remote_archive_batches.rs"]
+mod archive_batches;
+
 struct Gate(Arc<(Mutex<bool>, Condvar)>);
 
 impl Drop for Gate {
