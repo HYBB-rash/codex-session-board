@@ -9,7 +9,7 @@ export async function tenCardArchiveFixture(html, {outcomes = mixedOutcomes, rem
     id:`11111111-1111-4111-8111-${String(index + 1).padStart(12, "0")}`,
     title:`归档样本 ${String(index + 1).padStart(2, "0")}`, state:"to_archive", note:"",
     version:index + 1, inputVersion:20 + index, sectionVersion:`section-${index}`,
-    updatedAt:100 - index, cwd:"/fixture", canArchive:true, canOpen:true,
+    updatedAt:100 - index, cwd:"/fixture", readOnly:false, canArchive:true, canOpen:true,
   }));
   if (remote) {
     const subject = cards[3];
