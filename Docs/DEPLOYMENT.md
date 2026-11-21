@@ -7,7 +7,6 @@ Mac 的开发入口与迁移记录见 `Docs/MAC-DEVELOPMENT.md`。
 
 ```bash
 ./scripts/release candidate
-./scripts/release candidate --local
 ```
 
 发布入口从当前 GitHub 仓库读取身份，也可传 `--repository owner/repo`。
@@ -20,8 +19,10 @@ Mac 的开发入口与迁移记录见 `Docs/MAC-DEVELOPMENT.md`。
 已有分支按正常 Git 快进提交更新，远端读回确认 SHA 后才报告发布成功。
 重复发布相同包保持同一提交。
 
-提交并推送源码后执行统一入口。默认命令触发 `.github/workflows/plugin-candidate.yml`；
-`--local` 在本机补充对应平台，已有包会直接下载复用。两个入口使用相同保存规则。
+提交并推送源码后执行统一入口。默认命令触发 `.github/workflows/plugin-release.yml`。
+工作流只准备一次 Release，两个平台及最终发布都使用准备步骤返回的同一个数字 ID。
+手动补充平台前，使用 `--prepare-only` 获取 ID，再使用 `--local --release-id ID`。
+手动准备和发布工作流须串行执行。已有包会下载并校验后复用。
 版本标签必须绑定当前提交。同一版本的源码不匹配时停止，必须准备新版本。
 
 流程为：构建并验证 → 保存 GitHub Release 附件 → 双平台验证 → 发布候选渠道。

@@ -55,14 +55,37 @@ jobs:
         if: inputs.exercise_failure != true && steps.select.outputs.published != 'true'
       - uses: actions/upload-artifact@v4
         with:
-          name: release-source
+          name: release-source-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/source.json
             ${{ runner.temp }}/merge-evidence/
-  package:
-    name: Package (${{ matrix.target }})
+  prepare:
+    name: Prepare shared release
     needs: source
     if: needs.source.outputs.published != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.draft.outputs.release_id }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.source }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - id: draft
+        run: |
+          ./scripts/release candidate --prepare-only | tee "$RUNNER_TEMP/draft.json"
+          jq -er '"release_id=\(.release_id)"' "$RUNNER_TEMP/draft.json" >> "$GITHUB_OUTPUT"
+  package:
+    name: Package (${{ matrix.target }})
+    needs: [source, prepare]
     strategy:
       fail-fast: false
       matrix:
@@ -103,15 +126,17 @@ jobs:
           cargo fetch --locked
           cargo fetch --locked --manifest-path scripts/checker/Cargo.toml
       - run: cargo build --locked --offline --example dev_fixture
-      - run: TMPDIR=/tmp ./scripts/release candidate --local --save-only --target "${{ matrix.target }}" --fixture "$PWD/target/debug/examples/dev_fixture" --startup-report "$RUNNER_TEMP/startup/STARTUP.json"
+      - run: TMPDIR=/tmp ./scripts/release candidate --local --save-only --release-id "$RELEASE_ID" --target "${{ matrix.target }}" --fixture "$PWD/target/debug/examples/dev_fixture" --startup-report "$RUNNER_TEMP/startup/STARTUP.json"
+        env:
+          RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: release-startup-${{ matrix.target }}
+          name: release-startup-${{ matrix.target }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/startup/
   publish:
     name: Publish immutable plugins
-    needs: [source, package]
+    needs: [source, prepare, package]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -124,6 +149,7 @@ jobs:
       GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
       EXERCISE_FAILURE: ${{ inputs.exercise_failure || false }}
       EXERCISE_HOLD: ${{ inputs.exercise_hold_seconds || '0' }}
+      RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -138,11 +164,11 @@ jobs:
           test "$EXERCISE_FAILURE" != true
       - run: |
           gh auth setup-git
-          ./scripts/release candidate --finalize
+          ./scripts/release candidate --finalize --release-id "$RELEASE_ID"
   result:
     name: Record publication
     if: always()
-    needs: [source, package, publish]
+    needs: [source, prepare, package, publish]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -156,6 +182,7 @@ jobs:
       PUBLISHED: ${{ needs.publish.result }}
       ALREADY_PUBLISHED: ${{ needs.source.outputs.published }}
       SOURCE_RESULT: ${{ needs.source.result }}
+      PREPARE_RESULT: ${{ needs.prepare.result }}
       PACKAGE_RESULT: ${{ needs.package.result }}
       EXERCISE_FAILURE: ${{ inputs.exercise_failure || false }}
     steps:
@@ -174,10 +201,11 @@ jobs:
           test "$EXERCISE_FAILURE" != true || exercise=(--exercise)
           phase=publish
           test "$PACKAGE_RESULT" != failure || phase=package
+          test "$PREPARE_RESULT" != failure || phase=prepare
           test "$SOURCE_RESULT" != failure || phase=source
           ./scripts/release main record --source "$SOURCE" --state "$state" --phase "$phase" "${exercise[@]}" --output "$RUNNER_TEMP/RELEASE.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: release-result
+          name: release-result-${{ github.run_attempt }}
           path: ${{ runner.temp }}/RELEASE.json
