@@ -29,7 +29,11 @@ B1 `96ad327` 的根 `/api/sessions` 返回十张卡；B1 与接单基线的 `ind
 ## 测试归属
 
 - B2 与 T3 承接 `test::archive_flow::archive_mcp_resource_exposes_only_an_explicit_app_action` 中的按钮资格断言。MCP 可见性、破坏性标记及必填版本仍按工具契约核对。
+- B2 的承接 ID 为 `lib::codex_session_board::remote::instances::identity_gate_tests::card_actions::card_buttons_and_batch_submit_only_eligible_revisions`，绑定 `MANUAL-003`。Chrome 点击单卡与列按钮，Rust 读回批次名单、状态版本、输入版本和原生写入次数。
+- B2 扩展 `lib::codex_session_board::remote::instances::identity_gate_tests::managed_write_gate_requires_initialization_and_preserves_notes_after_home_change` 的来源变更拒绝，以及 `lib::codex_session_board::catalog::view_tests::catalog_metadata_preserves_notes_and_explicit_projectless_membership` 的发现前后资格对照。
 - `test::native_authority::remote_isolation::remote_online_disconnected_and_scanning_do_not_delay_local_http_mutations` 与 `test::native_authority::remote_isolation::backfill::remote_first_scan_backfills_legacy_rows_and_cold_maps_then_reconnects_without_old_phase_replay` 保留在线、断线和缓存的真实 HTTP 检查。
 - E3 承接十卡恢复，原有 `test::native_authority::archive::archive_batch_recovers_lost_receipt_after_reopen_without_replay` 覆盖两卡、重开及丢回执。筛选作者负责 `test::ui_layout::long_content_and_project_filters_preserve_browser_column_geometry` 的主机、项目和可见范围，及 `test::ui_layout::host_catalog_filters_preserve_cached_rows_and_isolated_native_drafts` 的目录筛选。
 
 依据为 `Docs/ARCHIVING.md`、五轮委托中的 B2 与 T3，以及 `Docs/REMOTE-SESSIONS.md` 中的缓存与来源边界。真实客户端验收由协调者另行安排。
+
+B1 进入远端后已在作者树重基并重跑首件。交付基线为 `3de9e0f00f5458eda255b59e81cc54e63818f071`，包含 B1 `dce3536b70459c2962fa225320ecb88a8cde7522`。完整分支、审阅与故障注入见[结果记录](../../results/b2-card-actions-20261121.md)。
