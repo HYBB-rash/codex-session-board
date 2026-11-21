@@ -140,11 +140,10 @@ mod tests {
     #[test]
     fn poisoned_registration_is_reported_and_existing_handles_are_joined() -> Result<()> {
         let group = Arc::new(WorkerGroup::default());
-        let finished = Arc::new(AtomicBool::new(false));
-        let completed = finished.clone();
+        let (release, wait) = mpsc::channel();
         group.spawn(move || {
-            completed.store(true, Ordering::SeqCst);
-            Ok(())
+            wait.recv_timeout(Duration::from_secs(2))?;
+            anyhow::bail!("existing worker finished")
         })?;
         let broken = group.clone();
         assert!(
@@ -157,8 +156,13 @@ mod tests {
         );
         assert!(group.spawn(|| Ok(())).is_err());
         group.close();
-        assert!(group.join().is_err());
-        assert!(finished.load(Ordering::SeqCst));
+        let (joined, result) = mpsc::channel();
+        let shutdown = thread::spawn(move || joined.send(group.join()).unwrap());
+        assert!(matches!(result.recv_timeout(Duration::from_millis(20)), Err(mpsc::RecvTimeoutError::Timeout)));
+        release.send(())?;
+        let error = result.recv_timeout(Duration::from_secs(2))?.unwrap_err();
+        assert!(error.to_string().contains("existing worker finished"));
+        shutdown.join().unwrap();
         Ok(())
     }
 

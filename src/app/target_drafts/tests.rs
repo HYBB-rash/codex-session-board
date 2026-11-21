@@ -117,6 +117,36 @@ fn canonical_target_request_uses_verified_rpc_and_only_opens_native_input() -> R
         assert!(!events.lines().any(|event| event == method), "{method}");
     }
     assert!(fixture.root.store.pending_drafts()?.is_empty());
+    assign_after_first_input(&fixture, &result["target"]["projectId"])
+}
+
+fn assign_after_first_input(fixture: &NativeFixture, project: &Value) -> Result<()> {
+    let thread = uuid::Uuid::new_v4().to_string();
+    let remote = fixture.root.remote_app("remote:test")?;
+    remote.catalog.lock().unwrap().snapshot.as_mut().unwrap().active.push(
+        json!({"id":thread,"ordinary":true,"cwd":"/project"}));
+    let mut replies = responses(&fixture.peer.peer()?.codex_home)?;
+    replies["thread/read"] = json!({"thread":{"id":thread,"cwd":"/project","ephemeral":false,
+        "attachedToThreadId":null,"projectId":null,"turns":[{"items":[{"type":"userMessage"}]}]}});
+    fixture.peer.update("results", replies.clone())?;
+    let request = json!({"id":crate::store::remote::identity("remote:test",&thread),
+        "projectId":format!("target:{}",json!(["remote:test","targetServer",project])),"confirmed":true});
+    let before = fixture.peer.events().len();
+    let error = fixture.root.request("/api/project/assign", Some(&request)).unwrap_err();
+    assert!(error.to_string().contains("尚未读回"), "{error:#}");
+    replies["thread/read"]["thread"]["projectId"] = project.clone();
+    fixture.peer.update("results", replies)?;
+    assert_eq!(fixture.root.request("/api/project/assign", Some(&request))?,
+        json!({"ok":true,"id":request["id"],"projectId":request["projectId"]}));
+    let events = fixture.peer.events();
+    let calls: Vec<Value> = events[before..].lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|call| !matches!(call["method"].as_str(), Some("initialize" | "initialized")))
+        .collect();
+    assert_eq!(calls.iter().map(|call| call["method"].as_str().unwrap()).collect::<Vec<_>>(),
+        ["account/read", "project/read", "thread/read", "thread/metadata/update", "thread/read",
+         "account/read", "project/read", "thread/read", "thread/read"]);
+    assert_eq!(calls[3]["params"], json!({"threadId":thread,"projectId":project}));
     Ok(())
 }
 

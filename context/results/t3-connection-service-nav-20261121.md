@@ -16,11 +16,11 @@ T0 登记的 22 个原 ID 中，4 项并入已有入口，9 项调整断言或�
 
 | 原测试 ID | 处理及场景 | 出处 |
 | --- | --- | --- |
-| `acceptance.test_native_new.NativeNewTests.test_native_navigation_and_assignment_do_not_create_or_send_input` | 保留浏览器交互，去掉扫描三份 Rust 源文件的字符串断言。`lib::codex_session_board::app::target_drafts::tests::canonical_target_request_uses_verified_rpc_and_only_opens_native_input` 在原生导航时观察到 `project/read`，未观察到创建会话、发送轮次或恢复会话。`lib::codex_session_board::app::project_assignment::tests::assignment_reads_writes_and_confirms_only_the_selected_uuid` 核对补登记的实际方法序列、UUID 和项目。 | `Docs/REMOTE-NATIVE-NEW.md:34`，`Docs/REMOTE-NATIVE-NEW.md:51` |
+| `acceptance.test_native_new.NativeNewTests.test_native_navigation_and_assignment_do_not_create_or_send_input` | 保留浏览器交互，去掉扫描三份 Rust 源文件的字符串断言。`lib::codex_session_board::app::target_drafts::tests::canonical_target_request_uses_verified_rpc_and_only_opens_native_input` 通过 `/api/new` 导航，观察到 `project/read`，未观察到创建、发送或恢复会话。首条输入后经 `/api/project/assign` 给所选 UUID 补登记，核对对端方法序列和写入参数；首次读回未确认，重试读到正确项目并成功，只写一次。`lib::codex_session_board::app::project_assignment::tests::assignment_reads_writes_and_confirms_only_the_selected_uuid` 独立验证首次就能读回时的成功分支。 | `Docs/REMOTE-NATIVE-NEW.md:34`，`Docs/REMOTE-NATIVE-NEW.md:51` |
 | `lib::codex_session_board::rpc::framing::tests::nonblocking_fixture_accept_waits_for_the_connection_and_has_a_deadline` | 移除夹具 `accept` 单测。`lib::codex_session_board::rpc::tests::stdio_handshake_filters_noise_and_reaps_child_on_drop` 在历史读取请求后延迟 20 ms 回包，仍收到列表；`lib::codex_session_board::rpc::tests::stdio_timeout_bounds_the_request_and_reader_shutdown` 让对端持续不回包，观察到 `TimedOut` 并及时退出。两个入口都实际经过 `deadline_io`。 | `Docs/REMOTE-PERFORMANCE.md:39`，`acceptance/requirements.json:167` |
 | `lib::codex_session_board::rpc::login::tests::shell_quote_preserves_metacharacters_quotes_newlines_and_unicode` | 修改。把每个输入通过实际登录包装器和 `sh` 执行，核对命令收到的原字节。保留引号、换行、Unicode、空值和 NUL 拒绝。 | `context/tasks/completed/remote-connection-identity-worker.md:14` |
 | `lib::codex_session_board::rpc::login::tests::wrapper_fails_closed_without_executable_login_shell_and_keeps_nonce_out_of_plain_command` | 改为 `lib::codex_session_board::rpc::login::tests::wrapper_requires_executable_login_shell_and_emits_the_requested_startup_marker`。无可执行登录 shell 时拒绝启动；两次传入不同标记，核对真实输出中的对应标记、合法 peer 及就绪回执。旧断言只比较两段命令文本有无差异。 | `Docs/REMOTE-SESSIONS.md:60`，`context/tasks/completed/remote-connection-identity-worker.md:14` |
-| `lib::codex_session_board::rpc::runtime::tests::clock_four_second_limit_and_half_rtt_uncertainty_remain_exact` | 修改。验收读回投影后的远程完成时间；四秒往返下按最早可能值投影为 100，超预算或墙钟跳变则拒绝。四秒是项目既有安全界，产品文档要求有界采样，未规定这个数值。 | `Docs/REMOTE-SESSIONS.md:94`，`context/tasks/completed/remote-connection-identity-worker.md:16` |
+| `lib::codex_session_board::rpc::runtime::tests::clock_four_second_limit_and_half_rtt_uncertainty_remain_exact` | 修改。四秒往返下，供健康字段 `clockUncertaintySeconds` 使用的不确定度为 2，远程完成时间按最早可能值投影为 100；超预算或墙钟跳变则拒绝。四秒是项目既有安全界，产品文档要求有界采样，未规定这个数值。 | `Docs/REMOTE-SESSIONS.md:94`，`context/tasks/completed/remote-connection-identity-worker.md:16`，`src/rpc/runtime.rs:142` |
 | `lib::codex_session_board::rpc::tests::request_errors_are_downcastable_and_connection_remains_usable` | 保留。服务端对读取返回结构化错误，调用方仍要能取得原方法和代码，随后同一连接可继续获取会话列表。项目明确要求具体错误留在 anyhow 链中。 | `Docs/RELIABILITY-IMPLEMENTATION-PLAN-20261114.md:26` |
 | `lib::codex_session_board::rpc::tests::sidebar_frames_wrap_caller_and_preserve_target_and_decode_content` | 保留。侧栏移动由调用者发起，对端收到目标会话，客户端读回成功。四字节小端长度、JSON、工具名和两个不同会话身份都跨越了客户端协议边界。 | `Docs/STATUS-SECTIONS.md:18`，`Docs/STATUS-SECTIONS.md:24`，`Docs/STATUS-SECTIONS.md:28` |
 | `lib::codex_session_board::rpc::tests::stdio_handshake_filters_noise_and_reaps_child_on_drop` | 修改。历史读取需要跨过启动杂讯、通知和无关 ID，接收延时时间在预算内的目标回复，并在退出时回收子进程；延迟场景承接原夹具测试。对任意文本噪声的容忍只作为本次握手的输入。 | `acceptance/requirements.json:262`，`Docs/REMOTE-SESSIONS.md:61` |
@@ -32,11 +32,11 @@ T0 登记的 22 个原 ID 中，4 项并入已有入口，9 项调整断言或�
 | `lib::codex_session_board::service::tests::data_lock_serializes_independent_open_descriptors` | 并入 `lib::codex_session_board::service::tests::live_inaccessible_process_cannot_be_launched_again`。同一数据目录被另一拥有者锁定且 HTTP 失联时拒绝另起服务；释放旧监听器和拥有者锁后，由新打开的描述符进入允许启动的状态。 | `Docs/PLUGIN-RUNTIME.md:19` |
 | `lib::codex_session_board::service::tests::proc_parser_handles_parentheses_and_zombies` | 保留。Linux 的 `/proc` 记录中，进程名含 `)` 仍要取得正确启动时间，僵尸返回已结束，坏记录报错。真正的 PID 复用检查无法稳定制造这三类内核输入。macOS 使用另外的进程身份入口。 | `acceptance/requirements.json:248`，`src/service.rs:102`，`src/service/macos.rs:9` |
 | `lib::codex_session_board::workers::tests::join_reports_panics_and_errors_after_joining_every_handle` | 保留。一个线程 panic、另一个返回错误、第三个延迟完成。退出后调用方获知两种失败，第三个也已退出，重复等待仍报告失败。现有断言只辨认两种诊断，没有锁定完整报错格式。 | `Docs/PLUGIN-RUNTIME.md:24`，实施提交 `0abab9f` |
-| `lib::codex_session_board::workers::tests::poisoned_registration_is_reported_and_existing_handles_are_joined` | 修改。登记锁损坏后不能再接任务，退出时既有线程必须完成，调用方收到失败。去除锁错误中文措辞匹配。 | `Docs/PLUGIN-RUNTIME.md:24`，实施提交 `0abab9f` |
+| `lib::codex_session_board::workers::tests::poisoned_registration_is_reported_and_existing_handles_are_joined` | 修改。登记锁损坏后不能再接任务。让已有 worker 等待释放，确认退出仍在等待；释放后在退出结果中读到该 worker 自己返回的错误，去除对锁错误措辞的匹配。 | `Docs/PLUGIN-RUNTIME.md:24`，实施提交 `0abab9f` |
 
 ## 回归证据
 
-临时故障均在本机隔离副本触发，逐项核对实际失败，再还原源码。七项证据为：
+临时故障均在本机隔离副本触发，逐项核对实际失败，再还原源码。
 
 | 注入情况 | 测试实际结果 |
 | --- | --- |
@@ -47,5 +47,8 @@ T0 登记的 22 个原 ID 中，4 项并入已有入口，9 项调整断言或�
 | 将历史读取超时报成断管 | 实际 `BrokenPipe`，要求 `TimedOut`。 |
 | 旧拥有者释放后仍拒绝启动 | 服务接管测试在释放后的第二次启动判断失败。 |
 | 无效配置先创建显式指定的数据目录 | 第一条 `poll_seconds=0` 即在目录副作用断言失败。 |
+| 给补登记路由换成只读草稿连接 | 路由在读取账号时被拒绝，实际入口测试报错。 |
+| 偏移取下界且把不确定度误报成零 | 投影仍为 100，不确定度单独报实得 0、应为 2。 |
+| 登记锁损坏时立即返回通用错误 | worker 尚未释放，退出就返回，阻塞检查失败。 |
 
-Fedora 隔离回归通过 37 项库测试、1 项远程实验及 1 项 Chromium 交互；修正配置夹具后又复跑 2 项库测试。原绑定和结果绑定的差集为 6 个 ID（4 次合并、2 次改名），每个承接入口均在原有的每条需求绑定内。macOS 运行及真实客户端验收由发布阶段另行验证。
+Fedora 隔离回归包括 37 项库测试、1 项远程实验及 1 项 Chromium 交互。原绑定和结果绑定的差集为 6 个 ID（4 次合并、2 次改名），每个承接入口均在原有的每条需求绑定内。原独立审阅在 `17a439a` 指出补登记入口、时钟误差和 worker 退出三处缺口，后三项注入专门验证这些修正。macOS 运行及真实客户端验收由发布阶段另行验证。
