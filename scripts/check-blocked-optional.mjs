@@ -54,8 +54,19 @@ try {
   const view = await snapshot();
   report.id = view.sessions.find(row => !row.remote && !row.readOnly)?.id;
   assert(/^[0-9a-f-]{36}$/.test(report.id || ""), "没有可写的隔离会话");
-  await evaluate(`window.optionalStatePosts=0;window.optionalFetch=window.fetch;
-    window.fetch=async function(url,options){if(String(url)==="/api/state")optionalStatePosts++;return optionalFetch.call(this,url,options)};`);
+  await evaluate(`window.optionalStatePosts=0;window.optionalReceipts=[];window.originalOptionalFetch=window.fetch;
+    window.optionalFetch=async function(url,options){
+      if(String(url)==="/api/sessions" && window.optionalPendingReceipt){
+        optionalPendingReceipt.beforeRefresh=data.sessions.find(row=>row.id===optionalPendingReceipt.request.id);
+        optionalReceipts.push(optionalPendingReceipt);window.optionalPendingReceipt=null;
+      }
+      const response=await originalOptionalFetch.call(this,url,options);
+      if(String(url)==="/api/state"){
+        optionalStatePosts++;
+        if(response.ok)window.optionalPendingReceipt={request:JSON.parse(options.body),receipt:await response.clone().json()};
+      }
+      return response;
+    };window.fetch=window.optionalFetch;`);
   await check("取消按钮不改状态或备注", async () => {
     const before = fields(await current());
     await open(); await input("不应保存的内容"); await click("#cancel"); await closed();
@@ -104,6 +115,14 @@ try {
     await open(); await input(" \t\n　"); await save();
     assert.equal((await current()).note, ""); assert.equal((await current()).manual, true);
   });
+  await check("两个空格在刷新前采用后端空备注回执", async () => {
+    await open(); await input("  "); await save();
+    const record = await evaluate("optionalReceipts.at(-1)");
+    assert.equal(record.request.note, "  ");
+    assert.equal(record.receipt.session.note, "");
+    assert.deepEqual(record.beforeRefresh, record.receipt.session);
+    assert.equal((await current()).note, "");
+  });
   await check("失败后清空重试且空草稿可重新打开", async () => {
     await open(); await input("旧草稿");
     await evaluate(`window.fetch=async function(url,options){if(String(url)==="/api/state"){
@@ -132,6 +151,9 @@ try {
     await evaluate("releaseOptionalSave()"); await closed();
   });
   report.final = fields(await current());
+  report.receipts = await evaluate("optionalReceipts");
+  for (const record of report.receipts) assert.deepEqual(record.beforeRefresh, record.receipt.session);
+  assert(report.receipts.some(record => !Object.hasOwn(record.request, "note")), "普通拖放必须省略备注");
   report.passed = true;
 } catch (error) {
   report.error = error.stack;

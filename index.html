@@ -1520,12 +1520,14 @@ async function load() {
 async function persist(session, state, note) {
   ++requestSerial;
   const result = await post("/api/state",{id:session.id,state,note,version:session.version,inputVersion:session.inputVersion,sectionVersion:session.sectionVersion});
-  data.sessions = data.sessions.map(row => row.id === session.id ? {
-    ...row,state:state || row.suggestion,note,manual:state !== null,
-    version:session.version+1,sectionVersion:Object.hasOwn(result,"sectionVersion") ? result.sectionVersion : row.sectionVersion,
-    placementReason:state === null ? row.placementReason : null,followUp:false,
-    titleSyncPending:result.titlePending,titleSyncError:result.titleError
-  } : row);
+  const confirmed = result.session;
+  const sameSession = row => row?.id === session.id && (row.hostId || "local") === (session.hostId || "local") &&
+    (row.threadId || row.id) === (session.threadId || session.id);
+  if (result.ok !== true || !sameSession(confirmed) || typeof confirmed.note !== "string" ||
+      !Number.isSafeInteger(confirmed.version) || !Number.isSafeInteger(confirmed.inputVersion) ||
+      !(confirmed.state === null || Object.hasOwn(data.states,confirmed.state)))
+    throw new Error("保存回执缺少有效卡片，请刷新核对。");
+  data.sessions = data.sessions.map(row => sameSession(row) ? confirmed : row);
   return result;
 }
 function syncNotice(result) {
@@ -1537,9 +1539,10 @@ async function moveCard(session, state) {
   const operation = startMove(session,state);
   let saved = false;
   try {
-    const result = await persist(session,state,session.note);
+    const result = await persist(session,state);
+    operation.state = result.session.state;
     saved = true;
-    announce(`已移到${data.states[state]}，状态已保存。` + syncNotice(result));
+    announce("状态已保存。" + syncNotice(result));
   } catch(error) {announce("未收到保存确认，请核对实际位置后再操作。" + error.message,true);}
   finally {finishMove(operation,saved);saving = false;render();await load();}
 }
@@ -1554,6 +1557,7 @@ byId("edit-form").onsubmit = async event => {
   let saved = false;
   try {
     const result = await persist(editing,state === "auto" ? null : state,byId("note").value);
+    operation.state = result.session.state;
     noteDraft(editing.id,null);
     saved = true;
     byId("editor").close(); announce("状态已保存。" + syncNotice(result));

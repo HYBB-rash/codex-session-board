@@ -46,19 +46,21 @@ const snapshot = { states: { unknown: "待判断", in_progress: "进行中", rev
     { id: "other-project", label: "另一项目", paths: ["/other"], remote: true, hostId: "other" },
   ] },
   sessions: [
-    { id: 'remote:["codex","fixture","thread"]', title: "远程长标题".repeat(12), state: "in_progress", remote: true, hostId: "fixture", hostLabel: "测试远端", projectId: "project" },
+    { id: 'remote:["codex","fixture","11111111-1111-4111-8111-111111111111"]', title: "远程长标题".repeat(12), state: "in_progress", remote: true, hostId: "fixture", hostLabel: "测试远端", projectId: "project" },
     { id: "local", title: "本机会话", state: "unknown", projectId: null },
-    { id: 'remote:["codex","other","archive-thread"]', title: "另一主机待归档会话", state: "to_archive", remote: true, hostId: "other", hostLabel: "另一主机", projectId: "other-project", canArchive: true },
+    { id: 'remote:["codex","other","11111111-1111-4111-8111-111111111111"]', title: "另一主机待归档会话", state: "to_archive", remote: true, hostId: "other", hostLabel: "另一主机", projectId: "other-project", canArchive: true },
   ].map(session => ({ note: "保留原备注", reason: "", version: 3, inputVersion: 5, sectionVersion: "native:source", canArchive: false, ...session })) };
 const writes = [], opens = [], mutations = [], responses = [], cases = [];
 let snapshotError = false, refreshError = false, automatic = false, holdSnapshot = false, heldSnapshot, pendingNew;
-const complete = async (status = 200, apply = status === 200, titlePending = false) => {
+const complete = async (status = 200, apply = status === 200, titlePending = false, receipt = value => value) => {
   for (let attempt = 0; attempt < 150 && !responses.length; attempt++) await delay(40);
   const { response, body } = responses.shift() || assert.fail("等待保存请求送达超时");
-  if (apply) Object.assign(snapshot.sessions.find(row => row.id === body.id),
-    { state: body.state, note: body.note, version: body.version + 1, sectionVersion: "native:" + body.state, titleSyncPending: titlePending });
+  const session = snapshot.sessions.find(row => row.id === body.id);
+  if (apply) Object.assign(session,
+    { state: body.state, note: (body.note ?? session.note).trim(), version: body.version + 1,
+      sectionVersion: "native:" + body.state, titleSyncPending: titlePending });
   response.writeHead(status, { "Content-Type": "application/json" });
-  response.end(JSON.stringify(status === 200 ? { ok: true, titleEnabled: true, titlePending, sectionVersion: "native:" + body.state } : { error: "版本冲突或连接未确认" }));
+  response.end(JSON.stringify(status === 200 ? receipt({ ok: true, titleEnabled: true, titlePending, session }) : { error: "版本冲突或连接未确认" }));
 };
 const server = http.createServer(async (request, response) => {
   if (request.url === "/") { response.setHeader("Content-Type", "text/html; charset=utf-8");response.end(html);return; }
@@ -191,7 +193,7 @@ try {
   await screenshot("short-wait");
   await evaluate('void moveCard(data.sessions[0],"to_archive");void load();byId("refresh").click()');
   assert.equal(writes.length, 1, "重复操作不能追加写入");
-  assert.deepEqual(writes[0], { id, state: "review", note: "保留原备注", version: 3, inputVersion: 5, sectionVersion: "native:source" });
+  assert.deepEqual(writes[0], { id, state: "review", version: 3, inputVersion: 5, sectionVersion: "native:source" });
   await select("host-filter", "host:other");
   await select("project-filter", "project:other-project");
   await check("等待中主机和项目筛选仍可使用", 'selectedHost === "host:other" && selectedProject === "project:other-project" && !byId("host-filter").disabled && !byId("project-filter").disabled && !document.querySelector(".move-pending") && visibleSessions().length === 1');
@@ -242,14 +244,21 @@ try {
   await check("超过可见两秒仍未确认时继续展示", 'performance.now() - moving.shownAt === 6500 && !byId("move-feedback").hidden && byId("move-feedback").classList.contains("waiting")');
   const staleSnapshot = heldSnapshot;
   heldSnapshot = undefined;holdSnapshot = true;
+  const otherBeforeReceipt = structuredClone(snapshot.sessions[2]);
+  await select("host-filter", "host:other");
   await complete(200, true, true);
   await settled();
+  const receiptNotice = await evaluate('byId("feedback").textContent');
+  assert.match(receiptNotice, /状态已保存.*标题同步待重试/);
+  assert.deepEqual(await evaluate(`data.sessions.find(row=>row.id===${JSON.stringify(otherId)})`), otherBeforeReceipt);
+  await check("A迟到回执不改变当前B主机同UUID卡片", `selectedHost === "host:other" && visibleSessions().length === 1 && visibleSessions()[0].id === ${JSON.stringify(otherId)} && visibleSessions()[0].state === "to_archive"`);
+  await select("host-filter", "all");
   staleSnapshot.response.setHeader("Content-Type", "application/json");staleSnapshot.response.end(staleSnapshot.text);
   await evaluate('window.staleRead');
   for (let attempt = 0; attempt < 100 && !heldSnapshot; attempt++) await delay(20);
   assert(heldSnapshot);
   await check("刷新尚未返回也立即使用回执的原生位置", 'data.sessions[0].sectionVersion === "native:review" && !saving');
-  await check("回执才触发完成且标题待同步独立", 'data.sessions[0].state === "review" && !document.querySelector(".move-pending") && byId("move-feedback").classList.contains("saved") && document.querySelector(".follow").textContent.includes("标题") && byId("feedback").textContent.includes("标题同步待重试")');
+  await check("回执才触发完成且标题待同步独立", 'data.sessions[0].state === "review" && !document.querySelector(".move-pending") && byId("move-feedback").classList.contains("saved") && document.querySelector(".follow").textContent.includes("标题")');
   await check("晚到的旧快照不能回滚成功结果", 'selectedHost === "all" && data.sessions[0].state === "review" && !saving && !moving && !document.querySelector(".move-origin")');
   await screenshot("saved");
   await check("成功态切到庆祝帧", 'getComputedStyle(byId("move-dragon")).animationName === "dragon-success" && getComputedStyle(byId("move-dragon")).top === "-144px"');
@@ -282,6 +291,23 @@ try {
   snapshotError = false;
   await evaluate('load()');
   await check("恢复读回实际位置而不重发", 'data.sessions[0].state === "unknown" && unconfirmedMoves.size === 0');
+  for (const malformed of ["missing", "wrong-host"]) {
+    const beforeUnknown = writes.length;
+    holdSnapshot = true;heldSnapshot = undefined;
+    await move("unknown");
+    await complete(200, true, false, result => {
+      if (malformed === "missing") delete result.session;
+      else result.session = {...result.session,hostId:"other"};
+      return result;
+    });
+    await settled();
+    for (let attempt = 0; attempt < 100 && !heldSnapshot; attempt++) await delay(20);
+    assert(heldSnapshot, "未知回执必须读取快照确认");
+    await check(`${malformed}回执保持待核对且不伪报成功`, 'unconfirmedMoves.size === 1 && byId("feedback").textContent.includes("未收到保存确认") && !byId("feedback").textContent.includes("已保存")');
+    heldSnapshot.response.setHeader("Content-Type", "application/json");heldSnapshot.response.end(heldSnapshot.text);
+    await until("unconfirmedMoves.size === 0");
+    assert.equal(writes.length, beforeUnknown + 1, "确认读取不能重发保存");
+  }
   const beforeNoop = writes.length;
   await drag(id, "#column-unknown .cards");
   await drag(id, "#health");
@@ -355,6 +381,20 @@ try {
   await advance(1);
   await check("成功画面前台累计两秒收起", 'byId("move-feedback").hidden && moveFeedback === null');
   await evaluate('delete document.hidden');
+  holdSnapshot = true;heldSnapshot = undefined;
+  await move("review");
+  await complete(200, true, false, result => {
+    Object.assign(result.session, {version:result.session.version+7,inputVersion:9,
+      state:"blocked",followUp:true,reason:"保存后出现新的原生状态和用户输入"});
+    return result;
+  });
+  await settled();
+  for (let attempt = 0; attempt < 100 && !heldSnapshot; attempt++) await delay(20);
+  assert(heldSnapshot);
+  assert.deepEqual(await evaluate("data.sessions[0]"), snapshot.sessions[0]);
+  await check("刷新前完整采用确认版本列及新输入提示", 'data.sessions[0].state === "blocked" && data.sessions[0].inputVersion === 9 && data.sessions[0].followUp === true && moving === null');
+  heldSnapshot.response.setHeader("Content-Type", "application/json");heldSnapshot.response.end(heldSnapshot.text);
+  await evaluate("load()");
   const beforeReadonly = writes.length;
   snapshot.sessions[0].readOnly = true;
   await evaluate('load()');
@@ -369,7 +409,7 @@ try {
   snapshot.sessions[0].state = "in_progress";snapshot.sessions[0].version++;snapshot.sessions[0].inputVersion++;
   await complete(409, false);await settled();
   await until('data.sessions[0].state === "in_progress"');
-  await check("新输入冲突保留较新的状态", 'data.sessions[0].inputVersion === 6 && data.sessions[0].state === "in_progress" && unconfirmedMoves.size === 0');
+  await check("新输入冲突保留较新的状态", 'data.sessions[0].inputVersion === 10 && data.sessions[0].state === "in_progress" && unconfirmedMoves.size === 0');
   await check("保存结束解除离开保护", '(() => {const event=new Event("beforeunload",{cancelable:true});window.dispatchEvent(event);return !event.defaultPrevented;})()');
   const beforeReload = writes.length;
   await page.command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/` });
@@ -392,7 +432,7 @@ try {
 } catch (error) {
   await screenshot("failure");
   await fs.writeFile(path.join(output, "failure.json"), JSON.stringify({ error: error.message, cases, writes, mutations,
-    initialReducedMotion, state: await evaluate('({now:performance.now(),reducedMotion:matchMedia("(prefers-reduced-motion: reduce)").matches,glowAnimation:document.querySelector(".move-pending")?getComputedStyle(document.querySelector(".move-pending"),"::after").animationName:null,hidden:document.hidden,editing,editorOpen:byId("editor").open,dragging,saving,moving,feedback:byId("move-feedback").outerHTML,ids:[...document.querySelectorAll(".card")].map(card=>({id:card.dataset.id,draggable:card.draggable,rect:card.getBoundingClientRect().toJSON()}))})') }, null, 2));
+    initialReducedMotion, state: await evaluate('({now:performance.now(),reducedMotion:matchMedia("(prefers-reduced-motion: reduce)").matches,glowAnimation:document.querySelector(".move-pending")?getComputedStyle(document.querySelector(".move-pending"),"::after").animationName:null,hidden:document.hidden,editing,editorOpen:byId("editor").open,dragging,saving,moving,sessions:data.sessions,feedbackText:byId("feedback").textContent,follow:[...document.querySelectorAll(".follow")].map(node=>node.textContent),selectedHost,selectedProject,feedback:byId("move-feedback").outerHTML,ids:[...document.querySelectorAll(".card")].map(card=>({id:card.dataset.id,draggable:card.draggable,rect:card.getBoundingClientRect().toJSON()}))})') }, null, 2));
   throw error;
 } finally {
   for (const { response } of responses) response.destroy();

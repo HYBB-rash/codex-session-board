@@ -2,7 +2,7 @@
 
 - owner: 本聊天作者
 - execution_mode: isolated_write
-- allowed_write_set: src/app.rs, src/app/remote.rs, index.html, tests/native_authority/entrypoints.rs, tests/remote_sessions/routes.rs, scripts/check-blocked-optional.mjs, scripts/check-transfer-feedback.mjs, scripts/check-light-ui.mjs, context/tasks/active/refactor-a-card-save-20261121.md, context/results/refactor-a-card-save-20261121.md
+- allowed_write_set: src/app.rs, src/app/remote.rs, index.html, tests/native_authority/entrypoints.rs, tests/native_authority/remote_isolation.rs, tests/remote_sessions/routes.rs, scripts/check-blocked-optional.mjs, scripts/check-transfer-feedback.mjs, scripts/check-light-ui.mjs, acceptance/README.md, context/tasks/active/refactor-a-card-save-20261121.md, context/results/refactor-a-card-save-20261121.md
 - base_commit: b859880165908a848a4982d2cfd9b722e9aeb912
 - worktree_path: /Users/hongyong/.codex/worktrees/51f3/codex-session-board
 - coordinator: Herman / source chat 01a1fc2d-af6f-7d50-9759-33835b51eaeb
@@ -32,6 +32,7 @@
 - test::native_authority::entrypoints::built_binary_distinguishes_omitted_and_empty_notes_over_http_and_mcp
 - test::native_authority::entrypoints::built_binary_preserves_native_position_guards_over_http_and_mcp
 - test::remote_sessions::routes::remote_routes_bypass_local_authority_and_preserve_host_project_identity
+- test::native_authority::remote_isolation::remote_online_disconnected_and_scanning_do_not_delay_local_http_mutations
 - scripts/check-blocked-optional.mjs 的保存、同列编辑、备注省略/清空/纯空白、取消及失败草稿场景。
 - scripts/check-transfer-feedback.mjs 的保存回执、未知结果读回和跨主机同 UUID 隔离场景。
 

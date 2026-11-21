@@ -37,6 +37,13 @@ node scripts/check-blocked-optional.mjs /path/outside/source/blocked-optional.js
 失败和延迟通过独立页面请求拦截注入。报告放在源码之外，结束时关闭独立浏览器。
 这份检查不代签真实 Codex 容器验收。
 
+保存接口 `/api/state` 和共享 MCP `board_update` 的成功回执含 `session`。
+该卡片直接来自后端快照的同一业务投影，包括实际备注、状态、版本、输入复核及原生位置。
+网页按完整会话及主机身份采用回执，不用请求字段推算保存结果。
+缺少有效卡片或身份不匹配的回执保持待核对，重新读取快照，不重放写入。
+`check-blocked-optional.mjs` 记录真实请求、回执及刷新前卡片；
+`check-transfer-feedback.mjs` 覆盖迟到、缺失、错主机回执和失败草稿。
+
 2026-11-18 用户批准卡片默认打开右侧回复预览。契约升级为
 `codex-session-board/acceptance-v3`，仅修改 NAV-001 并同步需求锁。
 31 个编号、其他 30 条及独立参考模型保持原样。

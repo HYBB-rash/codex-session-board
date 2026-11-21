@@ -35,7 +35,7 @@ const server = http.createServer(async (request,response) => {
         state:input.state,note:input.note,version:input.version+1,sectionVersion:"verified-review",placementReason:null
       });
       return response.writeHead(200,{"Content-Type":"application/json"})
-        .end('{"ok":true,"sectionVersion":"verified-review"}');
+        .end(JSON.stringify({ok:true,session:fixture.sessions.find(row=>row.id===input.id)}));
     }
     return response.writeHead(200,{"Content-Type":"application/json"}).end('{"ok":true}');
   }

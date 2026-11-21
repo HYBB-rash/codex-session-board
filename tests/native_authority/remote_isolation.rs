@@ -302,6 +302,23 @@ fn prepare_mode(server: &Server, live: &Live, client: &Client, mode: &str) -> Re
     })
 }
 
+fn confirm_remote_receipt(live: &Live, client: &Client, mode: &str) -> Result<()> {
+    let before = wait_remote(live, client, true, None)?;
+    if mode != "online" { return Ok(()); }
+    let identifier = identity("mac", FIRST);
+    let response: Value = live.post_path(client, "/api/state",
+        &update(row(&before, &identifier), "blocked", "offline-safe note"))?
+        .error_for_status()?.json()?;
+    let after = live.snapshot(client)?;
+    assert_eq!(&response["session"], row(&after, &identifier));
+    assert_eq!(response["session"]["id"], identifier);
+    assert_eq!(response["session"]["threadId"], FIRST);
+    assert_eq!(response["session"]["hostId"], "mac");
+    assert_eq!(response["session"]["remote"], true);
+    assert_eq!(row(&after, &identity("other", FIRST)), row(&before, &identity("other", FIRST)));
+    Ok(())
+}
+
 fn scenario(mode: &str) -> Result<Value> {
     let directory = tempfile::tempdir()?;
     let mut server = Server::new(directory.path())?;
@@ -312,7 +329,7 @@ fn scenario(mode: &str) -> Result<Value> {
         .timeout(Duration::from_secs(3))
         .build()?;
     live.ready(&client)?;
-    wait_remote(&live, &client, true, None)?;
+    confirm_remote_receipt(&live, &client, mode)?;
     remotes.assert_managed(&server.config)?;
     let gate = prepare_mode(&server, &live, &client, mode)?;
     server.surface.lock().unwrap().calls.clear();
