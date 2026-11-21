@@ -1,5 +1,40 @@
 # B2 · 卡片操作资格交付
 
+Fedora 作者交付基线为已合入的 A `911cfdf970cfa76d214151b675a9ba9f9f0ad68a`，B2 实现与测试复审头为 `0c300d4feddd80a444d9b5494850d514dc8a010d`。
+重放六个 B2 补丁后，把上一轮已审净改动直接应用到 A，独立 Git 索引和作者工作树的完整树对象均为 `afeddf0cf0d9fdfac7ef5c100d4409dfa56fbc92`。
+随后仅补强上游新合入的目录测试。首次 6/7 把在线占位卡误判为可写；修正后 7/7。上游退役的四列导航测试继续由根快照行为承接。
+
+## E2a 卡片展示交接
+
+根快照分别给出导航资格和修改资格。完整承接 ID 为 `lib::codex_session_board::catalog::view_tests::cached_snapshot_requires_live_reverification_after_restart`。
+
+| 同一张远程卡 | 可打开 `canOpen` | 只读 `readOnly` |
+| --- | --- | --- |
+| 重启，从缓存读到 | 否 | 是 |
+| 在线目录核实，主机库尚未发现会话 | 是 | 是 |
+| 主机库已发现这张会话 | 是 | 否 |
+| 随后断开 | 否 | 是 |
+
+卡片组件应以被点击卡片的完整复合 ID 打开，调整、拖动与归档使用该卡的 `cardActions`。跨卡操作须分别验证目标：保存 A 期间允许打开在线 B，A 的晚回执只更新 A。目录占位状态允许导航，禁止借用另一张卡的可写资格。`scripts/check-transfer-feedback.mjs` 已验证跨卡打开及同 UUID 晚回执；`scripts/check-card-actions.mjs` 已验证目录卡禁写。E2a 迁移后需在组件入口复验这两项组合。
+
+## T0 最后三项
+
+| 原 ID 及最终承接 ID | 实际行为和出处 | 故障证据 |
+| --- | --- | --- |
+| 保留独立，原 ID 自承接 `test::observer_contract::runtime_input_confirmation_requires_explicit_input_version` | 运行观察读取一条活跃会话及首个用户输入，用户经 `/api/state` 保存人工状态与备注。此时没有新输入提示，旧调用再次改为待归档却漏传 `inputVersion`。接口必须拒绝，状态、备注、人工标记、两个版本和新输入提示六项均保持。依据为 `MANUAL-001` 的人工决定、`MANUAL-002` 的旧保存保护，以及实际入口对缺少输入版本的拒绝。 | 在隔离副本只对 `followUp=false` 且已人工保存的卡自动补版本。原 ID 以 101 退出，响应中卡片已误入待归档。拟承接 ID `test::board_io::manual_save_cannot_bypass_input_conflict_by_omitting_version` 仍通过，它在第二条输入到达后检查漏版本、旧版本及有效版本。恢复后两个 ID 均通过，各自保留。 |
+| 保留包装器，原 ID 自承接 `test::ui_layout::light_ui_refresh_health_and_catalog_preserve_interaction` | 用户把未归列卡调到待审阅，保存被拒后可继续编辑。`Docs/LIGHT-UI.md`、`UI-003` 及四列交互说明提供出处。A 认领保存和重试，展示与焦点仍由 E2 复验。 | `check-light-ui.mjs` 注入 HTTP 409，实测弹窗保持、原备注仍在。重试传相同 ID 和三个版本信息，收到成功回执才进入待审阅。官方 UI 组通过。 |
+| 保留包装器，原 ID 自承接 `test::ui_layout::transfer_feedback_waits_for_receipts_and_preserves_interaction` | 拖动后等待服务器确认，期间可打开另一张卡。结果不明时只读回核对，真实回执决定落位、成功提示及新输入状态。出处为 `Docs/DRAGON-FEEDBACK.md` 的“展示与保存”及 A 委托。 | 真浏览器覆盖丢回执、缺卡、错主机及同主机错 ID。替换必需名称且维持总数、空报告、脚本非零均被正式门禁拒绝；增加无关成功场景仍通过。 |
+
+## Fedora 组合复验
+
+作者通过 117 项相关 Rust 测试，包含完整官方 UI 8 项、归档 10 项、原生权威 47 项，以及两个 B2 真实入口。全目标 Clippy、项目检查、上下文校验和源码包预检通过。B2 上另跑隔离编辑 11 个场景，A 两空格请求、回执、刷新前和读回的结果仍一致。
+
+独立复审在 `0c300d4` 通过 29 项定向。离线面板读回 Vue 预览后仅归档目标远端一次；挂起快照时，确认新输入后的页面卡片已与 22 字段回执完全相等。T3 的等价 `.bind()` 在两个入口均通过，只读卡混入实际 POST 和仅离线错发工具分别触发测试失败。原始记录含修复前失败、注入差异及恢复结果，见 [Fedora B2 证据目录](/home/herman/.codex/visualizations/2026/11/21/01a1fc80-61f5-76e1-80a3-ec068a3fab21/fedora-b2)。
+
+此头的 `cardActions` 仍使用远程卡的 `canOpen`、`archived` 和 `presence` 对后端 `readOnly` 作额外判断。修改远程只读规则还需核对两处。旧缓存及外部快照兼容边界另外验证。
+
+## 首轮业务交付
+
 `codex/b2-card-actions` 在 B1 的最终快照上判断卡片操作。调整、拖动、单卡按钮和批量名单现在读取 `index.html` 的 `cardActions`。归档与新输入确认进行期间，界面即时禁用相应控件。卡片展示仍使用 B1 的最终列，旧 `completed` 在日常模式进入待归档。
 
 根 `/api/sessions` 用一次索引查询标出已认领的归档；即使另一页面尚未收到批次列表，也能显示待核对。原有待核对卡仍可手动调整，重复归档由后端拒绝。在线远程目录只有元数据时，页面提供只读卡。主机库发现会话后恢复编辑。
