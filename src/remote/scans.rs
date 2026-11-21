@@ -278,10 +278,10 @@ mod tests {
                 return Ok(json!({"data":[]}));
             }
             assert_eq!(method, "thread/list");
-            if params["cursor"].is_null() && !self.0["expected"].is_null() {
-                return Ok(json!({"data":self.0.get("head").cloned().unwrap_or(json!([]))}));
-            }
             assert_eq!(params["cursor"], self.0["expected"]);
+            if self.0["disconnected"] == true {
+                return Err(std::io::Error::from(std::io::ErrorKind::ConnectionReset).into());
+            }
             if self.0["error"].is_object() {
                 return Err(rpc::RequestError {
                     method: method.into(),
@@ -289,8 +289,43 @@ mod tests {
                 }
                 .into());
             }
-            Ok(self.0.clone())
+            let head = self.0.get("head").cloned().unwrap_or(json!([]));
+            Ok(std::mem::replace(&mut self.0, json!({"data":head})))
         }
+    }
+
+    #[test]
+    fn failed_remote_page_keeps_its_cursor_while_another_host_completes() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let host = |name: &str| {
+            App::new(Config {
+                data_dir: directory.path().join(name),
+                host_id: name.into(),
+                sync_titles: false,
+                ..Config::default()
+            })
+        };
+        let scan = |app: &App, page| {
+            scan_runtime_page(app, &mut Page(page), &mut HashMap::new(), crate::model::now())
+        };
+        let first = host("mac")?;
+        let other = host("other")?;
+        let known = uuid::Uuid::new_v4().to_string();
+        let new = uuid::Uuid::new_v4().to_string();
+        let foreign = uuid::Uuid::new_v4().to_string();
+        scan(&first, json!({"data":[{"id":known}],"nextCursor":"continue"}))?;
+        assert!(scan(&first, json!({"expected":"continue","disconnected":true})).is_err());
+        scan(&other, json!({"data":[{"id":known}]}))?;
+        assert!(other.is_active(&known)?);
+        assert!(!first.is_active(&known)?);
+        let mixed = json!({"expected":"continue","data":[{"id":new},{"id":foreign,"hostId":"other"}]});
+        assert!(scan(&first, mixed).is_err());
+        assert!(!first.store.contains(&new)?);
+        assert!(!first.store.contains(&foreign)?);
+        assert!(first.store.contains(&known)?);
+        scan(&first, json!({"expected":"continue","data":[]}))?;
+        assert!(first.is_active(&known)?);
+        Ok(())
     }
 
     #[test]
