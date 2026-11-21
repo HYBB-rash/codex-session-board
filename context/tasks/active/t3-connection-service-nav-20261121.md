@@ -2,7 +2,7 @@
 
 - owner: rust-contracts
 - execution_mode: isolated_write
-- allowed_write_set: src/rpc.rs、src/rpc/login_tests.rs、src/rpc/runtime.rs、src/service/migration/tests/aliases.rs、src/workers.rs、src/app/target_drafts/tests.rs、acceptance/test_native_new.py、acceptance/bindings.json、本任务卡及唯一结果记录
+- allowed_write_set: src/rpc.rs、src/rpc/framing_tests.rs、src/rpc/login_tests.rs、src/rpc/runtime.rs、src/config.rs、src/service.rs、src/service/migration/tests/aliases.rs、src/workers.rs、src/app/target_drafts/tests.rs、acceptance/test_native_new.py、acceptance/bindings.json、本任务卡及唯一结果记录
 - base_commit: f15754129ac64a1dd02ec93abb00f9237bf0c9f8
 - worktree_path: /home/herman/.codex/worktrees/t3-connection-service-nav/notion-program
 - coordinator: board-refactor-five-rounds

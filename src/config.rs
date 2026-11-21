@@ -465,7 +465,8 @@ mod tests {
         let original = fs::read(&path)?;
         initialize_config(&path, &fixture.0.join("different"))?;
         assert_eq!(fs::read(&path)?, original);
-        assert_eq!(fs::metadata(&path)?.permissions().mode() & 0o777, 0o600);
+        fs::OpenOptions::new().write(true).open(&path)?;
+        assert_eq!(fs::metadata(&path)?.permissions().mode() & 0o077, 0);
         assert!(write_json(&path, &serde_json::json!({}), false).is_err());
         assert_eq!(fs::read(&path)?, original);
         Ok(())

@@ -1577,6 +1577,7 @@ mod tests {
 printf 'noise\n{"id":1,"result":{}}\n'
 read -r notification
 read -r request
+sleep 0.02
 printf '{"method":"notice"}\n{"id":999,"result":{}}\n{"id":2,"result":{"data":[]}}\n'
 while read -r request; do :; done"#;
         let mut reader = StdioReader::connect(&stdio_command(script), Duration::from_secs(1))?;
@@ -1622,7 +1623,7 @@ printf '{"id":2,"result":{"data":[]}}'"#;
     }
 
     #[test]
-    fn stdio_timeout_is_bounded_without_a_reader_thread() -> Result<()> {
+    fn stdio_timeout_bounds_the_request_and_reader_shutdown() -> Result<()> {
         let script = r#"read -r request
 printf '{"id":1,"result":{}}\n'
 read -r notification
@@ -1630,7 +1631,8 @@ read -r request
 while :; do :; done"#;
         let mut reader = StdioReader::connect(&stdio_command(script), Duration::from_millis(100))?;
         let started = Instant::now();
-        assert!(reader.call("thread/list", json!({})).is_err());
+        let error = reader.call("thread/list", json!({})).unwrap_err();
+        assert_eq!(error.downcast::<io::Error>()?.kind(), io::ErrorKind::TimedOut);
         drop(reader);
         assert!(started.elapsed() < Duration::from_millis(500));
         Ok(())

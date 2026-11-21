@@ -245,7 +245,9 @@ mod tests {
     #[test]
     fn clock_four_second_limit_and_half_rtt_uncertainty_remain_exact() -> Result<()> {
         let clock = Clock::bounds(100.0, 104.0, 4.0, 600.0)?;
-        assert_eq!(clock.uncertainty, 2.0);
+        let mut response = json!({"data":[{"completedAt":600.0}]});
+        clock.project(&mut response)?;
+        assert_eq!(response["data"][0]["completedAt"], 100.0);
         assert!(Clock::bounds(100.0, 104.000001, 4.000001, 600.0).is_err());
         assert!(Clock::bounds(100.0, 104.25, 4.0, 600.0).is_err());
         Ok(())

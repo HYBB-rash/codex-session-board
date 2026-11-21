@@ -2,6 +2,7 @@ use super::*;
 
 #[test]
 fn shell_quote_preserves_metacharacters_quotes_newlines_and_unicode() -> Result<()> {
+    let directory = tempfile::tempdir()?;
     for value in [
         "literal $HOME `id` $(id); | &",
         "a'b\"c\\d\n第二行",
@@ -10,7 +11,10 @@ fn shell_quote_preserves_metacharacters_quotes_newlines_and_unicode() -> Result<
     ] {
         let output = Command::new("sh")
             .arg("-c")
-            .arg(format!("printf %s {}", quote(value)?))
+            .arg(wrap(&format!("printf %s {}", quote(value)?))?)
+            .env("SHELL", "/bin/sh")
+            .env("HOME", directory.path())
+            .env("ENV", "/dev/null")
             .output()?;
         assert!(output.status.success());
         assert_eq!(output.stdout, value.as_bytes());
@@ -54,7 +58,7 @@ fn desktop_login_wrapper_shares_home_install_dir_and_literal_payload_for_proxy_a
 }
 
 #[test]
-fn wrapper_fails_closed_without_executable_login_shell_and_keeps_nonce_out_of_plain_command()
+fn wrapper_requires_executable_login_shell_and_emits_the_requested_startup_marker()
 -> Result<()> {
     assert!(
         !Command::new("sh")
@@ -73,6 +77,21 @@ fn wrapper_fails_closed_without_executable_login_shell_and_keeps_nonce_out_of_pl
             .success()
     );
     assert!(framed(":", "wrong-marker").is_err());
-    assert_ne!(framed(":", &"a".repeat(32))?, framed(":", &"b".repeat(32))?);
+    let directory = tempfile::tempdir()?;
+    for marker in ["a".repeat(32), "b".repeat(32)] {
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg(wrap(&framed("printf 'ready\\n'", &marker)?)?)
+            .env("SHELL", "/bin/sh")
+            .env("HOME", directory.path())
+            .env("ENV", "/dev/null")
+            .output()?;
+        assert!(output.status.success());
+        let reply = String::from_utf8(output.stdout)?;
+        let mut lines = reply.lines();
+        assert_eq!(lines.next(), Some(marker.as_str()));
+        serde_json::from_str::<Peer>(lines.next().context("missing peer")?)?.validate()?;
+        assert_eq!(lines.next(), Some("ready"));
+    }
     Ok(())
 }

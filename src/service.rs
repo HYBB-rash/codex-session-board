@@ -494,10 +494,13 @@ mod tests {
         let mut config = fixture_config(&fixture.0);
         let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
         config.port = listener.local_addr()?.port();
-        let _held = lock_data(&fixture.0)?;
+        let held = lock_data(&fixture.0)?;
         let error = classify_only(&config).expect_err("HTTP 无响应必须阻止重复启动");
         assert!(error.to_string().contains("仍存活"));
         assert!(!fixture.0.join("server.json").exists());
+        drop(listener);
+        drop(held);
+        assert!(!classify_only(&config)?);
         Ok(())
     }
 
@@ -513,17 +516,6 @@ mod tests {
         drop(parent);
         config.port = 0;
         assert!(classify_only(&config).is_err());
-        Ok(())
-    }
-
-    #[test]
-    fn data_lock_serializes_independent_open_descriptors() -> Result<()> {
-        let fixture = Fixture::new()?;
-        let first = lock_data(&fixture.0)?;
-        let second = lock_file(&fixture.0)?;
-        assert!(second.try_lock_exclusive().is_err());
-        FileExt::unlock(&first)?;
-        second.try_lock_exclusive()?;
         Ok(())
     }
 

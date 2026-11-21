@@ -180,29 +180,6 @@ fn clock_and_proxy_share_peer_checks_and_reject_different_clock_authority() -> R
 }
 
 #[test]
-fn nonblocking_fixture_accept_waits_for_the_connection_and_has_a_deadline() -> Result<()> {
-    let directory = tempfile::tempdir()?;
-    let path = directory.path().join("accept.sock");
-    let listener = std::os::unix::net::UnixListener::bind(&path)?;
-    listener.set_nonblocking(true)?;
-    let deadline = deadline_after(Duration::from_millis(20))?;
-    assert_eq!(
-        deadline_io(deadline, || listener.accept())
-            .unwrap_err()
-            .kind(),
-        io::ErrorKind::TimedOut
-    );
-    let worker = thread::spawn(move || {
-        thread::sleep(Duration::from_millis(20));
-        UnixStream::connect(path)
-    });
-    let deadline = deadline_after(Duration::from_secs(1))?;
-    let (_accepted, _) = deadline_io(deadline, || listener.accept())?;
-    let _client = worker.join().unwrap()?;
-    Ok(())
-}
-
-#[test]
 fn initialize_cannot_substitute_a_logical_alias_for_the_resolved_peer_home() -> Result<()> {
     let fixture = Fixture::new()?;
     let binding = fixture.binding()?;

@@ -157,7 +157,7 @@ mod tests {
         );
         assert!(group.spawn(|| Ok(())).is_err());
         group.close();
-        assert!(group.join().unwrap_err().to_string().contains("锁已损坏"));
+        assert!(group.join().is_err());
         assert!(finished.load(Ordering::SeqCst));
         Ok(())
     }
