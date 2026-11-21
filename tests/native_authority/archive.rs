@@ -226,9 +226,7 @@ fn engine_connection(
             let page = surface.lock().unwrap().runtime_page_reply.take();
             wait_for_release(page)?;
         }
-        socket.send(tungstenite::Message::Text(
-            response.to_string().into(),
-        ))?;
+        socket.send(tungstenite::Message::text(response.to_string()))?;
     }
     Ok(())
 }

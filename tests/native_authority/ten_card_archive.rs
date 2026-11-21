@@ -13,19 +13,21 @@ fn same_readback_time(actual: &Value, expected: &Value) -> bool {
         (Some(actual), Some(expected)) => actual.is_finite() && expected.is_finite()
             && actual > 0.0 && expected > 0.0
             && actual.to_bits().abs_diff(expected.to_bits()) <= 1,
-        _ => actual.is_null() && expected.is_null(),
+        _ => false,
     }
 }
 
 fn same_readback_record(mut actual: Value, expected: &Value) -> bool {
-    for field in ["checkedAt", "createdAt", "finishedAt"] {
-        match (actual.get(field), expected.get(field)) {
-            (None, None) => continue,
-            (Some(actual), Some(expected)) if same_readback_time(actual, expected) => {}
-            _ => return false,
-        }
-        actual[field] = expected[field].clone();
-    }
+    let (Some(time), Some(stored)) = (actual.get("checkedAt"), expected.get("checkedAt")) else {
+        return false;
+    };
+    let valid = match expected["status"].as_str() {
+        Some("pending" | "awaiting") => time.is_null() && stored.is_null(),
+        Some("archived" | "verified" | "newInput" | "rejected") => same_readback_time(time, stored),
+        _ => false,
+    };
+    if !valid { return false; }
+    actual["checkedAt"] = stored.clone();
     actual == *expected
 }
 
@@ -172,7 +174,7 @@ impl TenCards {
         let expected: Vec<_> = records["items"].as_array().unwrap().iter().map(|record| {
             let mut item: Value = serde_json::from_str(record["target"].as_str().unwrap()).unwrap();
             for field in ["status", "message", "checkedAt"] {
-                item[field] = record[field].clone();
+                item[field] = record.get(field).expect("根库记录缺少字段").clone();
             }
             item
         }).collect();
@@ -182,8 +184,10 @@ impl TenCards {
             assert!(same_readback_record(actual.clone(), expected),
                 "HTTP 详情与根库不同: actual={actual} expected={expected}");
         }
-        let times = |value: &Value| json!({"createdAt":value["createdAt"],"finishedAt":value["finishedAt"]});
-        assert!(same_readback_record(times(batch), &times(records)));
+        for field in ["createdAt", "finishedAt"] {
+            assert!(same_readback_time(&batch[field], &records[field]),
+                "已结束批次的 {field} 必须是相同的有效时间: HTTP={} 根库={}", batch[field], records[field]);
+        }
         Ok(())
     }
 
