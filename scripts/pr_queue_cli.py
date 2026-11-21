@@ -106,15 +106,3 @@ def main(queue):
                     raise ValueError("Selected queue belongs to another repository")
                 if arguments.pr and not any(item["number"] == arguments.pr for item in state["items"]):
                     raise ValueError("Selected queue does not contain the requested PR")
-                run(queue, state, directory, arguments)
-        print(json.dumps(state, ensure_ascii=False, indent=2))
-        result = state.get("handoff", {}).get("result")
-        if arguments.command == "closeout" and not state["closeout"]["complete"]:
-            return 2
-        return 2 if arguments.command != "status" and result not in {None, "ready", "merged", "waiting-ci"} else 0
-    except BlockingIOError:
-        print("Queue is busy; retry this same invocation")
-        return 75
-    except Exception as error:
-        print(str(error))
-        return 2
