@@ -291,13 +291,14 @@ try {
   snapshotError = false;
   await evaluate('load()');
   await check("恢复读回实际位置而不重发", 'data.sessions[0].state === "unknown" && unconfirmedMoves.size === 0');
-  for (const malformed of ["missing", "wrong-host"]) {
+  for (const malformed of ["missing", "wrong-host", "wrong-id"]) {
     const beforeUnknown = writes.length;
     holdSnapshot = true;heldSnapshot = undefined;
     await move("unknown");
     await complete(200, true, false, result => {
       if (malformed === "missing") delete result.session;
-      else result.session = {...result.session,hostId:"other"};
+      else if (malformed === "wrong-host") result.session = {...result.session,hostId:"other"};
+      else result.session = {...result.session,id:'remote:["codex","fixture","22222222-2222-4222-8222-222222222222"]'};
       return result;
     });
     await settled();

@@ -154,6 +154,41 @@ fn transfer_feedback_waits_for_receipts_and_preserves_interaction() {
         String::from_utf8_lossy(&result.stderr),
         diagnosis
     );
-    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(report["cases"], 64);
+    let summary: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    check_transfer_scenarios(output.path(), &summary["cases"]);
+}
+
+fn check_transfer_scenarios(output: &std::path::Path, reported_count: &serde_json::Value) {
+    #[derive(serde::Deserialize)]
+    struct TransferReport {
+        cases: Vec<String>,
+    }
+    let evidence = std::fs::read(output.join("transfer.json")).unwrap();
+    let completed: TransferReport = serde_json::from_slice(&evidence).unwrap();
+    assert!(!completed.cases.is_empty(), "等待反馈脚本没有执行场景");
+    assert_eq!(reported_count.as_u64().unwrap(), completed.cases.len() as u64);
+    for required in [
+        "临时落位不修改已确认记录",
+        "A迟到回执不改变当前B主机同UUID卡片",
+        "刷新尚未返回也立即使用回执的原生位置",
+        "晚到的旧快照不能回滚成功结果",
+        "冲突恢复已知位置并留下核对说明",
+        "丢回执加读取失败不伪造回滚",
+        "恢复读回实际位置而不重发",
+        "missing回执保持待核对且不伪报成功",
+        "wrong-host回执保持待核对且不伪报成功",
+        "wrong-id回执保持待核对且不伪报成功",
+        "空原因失败后保留空草稿",
+        "等待失败后的空草稿重开仍为空",
+        "刷新前完整采用确认版本列及新输入提示",
+        "未归列确认保留实际位置并显示可读完成提示",
+        "只读卡片保持只读",
+        "新输入冲突保留较新的状态",
+        "重载读真实位置且不重放操作",
+    ] {
+        assert!(
+            completed.cases.iter().any(|name| name == required),
+            "缺少已通过的场景「{required}」"
+        );
+    }
 }

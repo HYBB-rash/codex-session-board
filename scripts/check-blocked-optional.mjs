@@ -116,12 +116,21 @@ try {
     assert.equal((await current()).note, ""); assert.equal((await current()).manual, true);
   });
   await check("两个空格在刷新前采用后端空备注回执", async () => {
+    await drag("review");
+    await until(async () => (await current()).state === "review" && await evaluate("!saving"), "未进入待审阅");
+    await evaluate("load()");
+    const before = await current();
     await open(); await input("  "); await save();
     const record = await evaluate("optionalReceipts.at(-1)");
+    const readback = await current();
+    report.twoSpaceSave = { ...record, readback };
+    assert.equal(record.request.id, before.id);
+    assert.equal(record.request.sectionVersion, before.sectionVersion);
     assert.equal(record.request.note, "  ");
+    assert.equal(record.receipt.session.state, "blocked");
     assert.equal(record.receipt.session.note, "");
     assert.deepEqual(record.beforeRefresh, record.receipt.session);
-    assert.equal((await current()).note, "");
+    assert.deepEqual(readback, record.receipt.session);
   });
   await check("失败后清空重试且空草稿可重新打开", async () => {
     await open(); await input("旧草稿");
