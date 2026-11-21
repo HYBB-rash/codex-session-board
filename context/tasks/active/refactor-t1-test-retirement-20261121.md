@@ -25,3 +25,15 @@
 | 旧回执到达时已经有新状态，较新的队列项必须继续执行 | `test::board_io::title_ack_during_newer_manual_selection_leaves_new_job_for_retry` |
 
 这些场景覆盖读取时的正文、看板状态与回执之间的竞争。跨客户端在读后改名仍有研究记录中的窗口。历史实验中的 33 项是 2026-11-07 当时的运行数量。
+
+## 未校准的远端时钟
+
+移除 `example::remote_parity_lab::remote_runtime_tests::exposes_cross_host_clock_skew_in_wall_clock_baseline` 及原 AUTO-001 绑定。实验把远端开始时间 50 与本机观察起点 100 直接比较，要求刚开始的执行留在待判断。[实验风险表与时钟投影说明](../../../Docs/REMOTE-PARITY-LAB.md) 保留了这组数值所说明的限制。
+
+[AUTO-001](../../../acceptance/requirements.json) 要求真实开始或恢复后进入进行中。[远程接入维护约定](../../../Docs/REMOTE-SESSIONS.md) 要求有界校时，并拒绝异常采样。保留 `lib::codex_session_board::rpc::runtime::tests::remote_clock_uses_conservative_bounds_and_rejects_unbounded_samples`，实际检查原生轮次时间投影和无效采样。保留 `example::remote_parity_lab::remote_runtime_tests::calibrated_host_clock_reuses_existing_rules_without_a_second_state_machine`，验证同一个开始时间经校正后进入进行中。
+
+## 原生分区移走再移回
+
+移除 `example::remote_parity_lab::remote_runtime_tests::exposes_aba_moves_without_a_server_revision` 及原 AUTO-001 绑定。实验在两次观察之间移走卡片再移回，要求旧表单成功保存。[原生并发保证](../../../Docs/NATIVE-STATE.md) 和[原始实验](../../../Docs/REMOTE-PARITY-LAB.md) 均记录了缺少服务端修订号时无法识别中间移动。
+
+[MANUAL-002 与 UI-002](../../../acceptance/requirements.json) 保留版本和原生位置检查。保留 `test::native_authority::transport::external_move_rejects_an_unobserved_stale_save_and_fresh_save_succeeds`，通过 `/api/state` 验证读到不同原生位置时拒绝旧表单、零移列、备注不变，刷新后可保存。`lib::codex_session_board::formal::versions::stale_edits_reject_each_revision_without_persistent_side_effects` 继续检查状态或输入版本冲突后的数据。

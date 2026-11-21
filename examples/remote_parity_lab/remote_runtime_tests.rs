@@ -195,16 +195,6 @@ fn external_section_change_rejects_old_save_before_any_mutation() -> Result<()> 
 }
 
 #[test]
-fn exposes_cross_host_clock_skew_in_wall_clock_baseline() -> Result<()> {
-    let (_root, partition, mut surface) = fixture("mac")?;
-    let turn = json!({"id":"new-but-clock-behind","status":"inProgress","startedAt":50});
-    observe(&partition, &mut surface, &json!({"type":"active"}), &turn)?;
-    assert_eq!(partition.row(THREAD)?["state"], "unknown");
-    assert!(surface.writes.is_empty());
-    Ok(())
-}
-
-#[test]
 fn calibrated_host_clock_reuses_existing_rules_without_a_second_state_machine() -> Result<()> {
     let (_root, partition, mut surface) = fixture("mac")?;
     let turn = json!({"id":"new-but-clock-behind","status":"inProgress","startedAt":50});
@@ -220,18 +210,6 @@ fn calibrated_host_clock_reuses_existing_rules_without_a_second_state_machine() 
         },
     )?;
     assert_eq!(partition.row(THREAD)?["state"], "in_progress");
-    Ok(())
-}
-
-#[test]
-fn exposes_aba_moves_without_a_server_revision() -> Result<()> {
-    let (_root, partition, mut surface) = fixture("mac")?;
-    let old = partition.row(THREAD)?;
-    surface.section = "blocked-id".into();
-    surface.section = "unknown-id".into();
-    partition.save(&mut surface, THREAD, "review", "无法发现中间移动", &old)?;
-    assert_eq!(partition.row(THREAD)?["state"], "review");
-    assert_eq!(surface.writes.len(), 1);
     Ok(())
 }
 
