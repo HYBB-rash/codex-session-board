@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
+from urllib.parse import parse_qs, urlsplit
 
 from scripts import main_release as release
 from scripts import main_release_evidence as evidence
@@ -171,7 +172,16 @@ class MainReleaseTests(unittest.TestCase):
         self.assertIsNone(result["covered_by"])
         self.assertEqual(result["latest_attempt"]["state"], "success")
     def test_channel_manifest_reads_existing_candidate_branches(self):
+        expected = {target: {"source_commit": str(index)} for index, target in enumerate(release.TARGETS)}
+
+        def read_manifest(endpoint):
+            url = urlsplit(endpoint)
+            self.assertEqual(url.path, "contents/RELEASE.json")
+            [reference] = parse_qs(url.query)["ref"]
+            channel, target = reference.split("/", 1)
+            self.assertEqual(channel, "candidate")
+            return {"content": base64.b64encode(json.dumps(expected[target]).encode()).decode()}
+
         forge = Mock()
-        forge.api.return_value = {"content": base64.b64encode(b'{"source_commit":"fixed"}').decode()}
-        self.assertEqual(len(release.channels(forge)), 2)
-        self.assertTrue(all("candidate%2F" in call.args[0] for call in forge.api.call_args_list))
+        forge.api.side_effect = read_manifest
+        self.assertEqual(release.channels(forge), expected)

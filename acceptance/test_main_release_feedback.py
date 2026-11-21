@@ -11,12 +11,20 @@ class MainReleaseFeedbackTests(unittest.TestCase):
                     "html_url": "issue-url"}
         forge = Mock()
         forge.pages.return_value = [incident]
-        forge.api.return_value = incident
+        observed = dict(incident)
+
+        def read_existing(path, method="GET", **fields):
+            self.assertEqual((method, path), ("GET", "issues/19"))
+            return observed
+
+        forge.api.side_effect = read_existing
         with patch.object(feedback, "GitHub", return_value=forge), \
                 patch.object(feedback, "channels", return_value={"target": {"source_commit": "old"}}), \
                 patch.object(feedback, "ensure_label"):
             result = feedback.failure("owner/repo", source, 8, "run-url")
-        forge.api.assert_called_once_with("issues/19")
+            observed["body"] = "another source"
+            with self.assertRaises(ValueError):
+                feedback.failure("owner/repo", source, 8, "run-url")
         self.assertEqual(result["issue"], "issue-url")
         self.assertEqual(result["previous"]["target"]["source_commit"], "old")
         self.assertEqual(result["source"], source)

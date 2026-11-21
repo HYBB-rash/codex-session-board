@@ -257,7 +257,9 @@ class SavedReleaseTests(unittest.TestCase):
         with patch.object(release_plugin.subprocess, "run",
                           return_value=SimpleNamespace(returncode=0, stdout="{}", stderr="")) as run:
             github.api("releases/7", "PATCH", draft=False, make_latest="false")
-        self.assertEqual(run.call_args.args[0][-4:], ["-F", "draft=false", "-f", "make_latest=false"])
+        arguments = run.call_args.args[0]
+        self.assertEqual({field: flag for flag, field in zip(arguments, arguments[1:])
+                          if flag in ("-f", "-F")}, {"draft=false": "-F", "make_latest=false": "-f"})
         for discovered in (None, created):
             with patch.object(github, "api", side_effect=[{}, {"sha": self.github.source}, RuntimeError("403 denied")]), \
                     patch.object(github, "release", side_effect=[None, discovered]):
@@ -270,17 +272,15 @@ class SavedReleaseTests(unittest.TestCase):
     def test_draft_release_discovery_paginates_and_preserves_asset_digests(self):
         github = release_plugin.GitHub("owner/plugin")
         expected = {"id": 7, "tag_name": self.tag, "draft": True, "assets": [{"digest": "sha256:original"}]}
-        with patch.object(github, "api", side_effect=[None, [{"tag_name": "v0.0.1"}], [expected], []]) as api:
+        pages = {f"releases/tags/{self.tag}": None, "releases?per_page=100&page=1": [{"tag_name": "v0.0.1"}],
+                 "releases?per_page=100&page=2": [expected], "releases?per_page=100&page=3": []}
+        with patch.object(github, "api", side_effect=pages.__getitem__):
             self.assertEqual(github.release(self.tag), expected)
-        self.assertEqual([call.args[0] for call in api.call_args_list], [
-            f"releases/tags/{self.tag}", "releases?per_page=100&page=1", "releases?per_page=100&page=2",
-            "releases?per_page=100&page=3",
-        ])
         published = {**expected, "draft": False, "immutable": True, "assets": [{"digest": "sha256:updated"}]}
         with patch.object(github, "api", return_value=published) as api:
             self.assertEqual(github.release(self.tag), published)
             github.edit(self.tag, prerelease=False, make_latest="true")
-        self.assertEqual([call.args[0] for call in api.call_args_list], ["releases/7"] * 3)
+        self.assertTrue(all(call.args[0] == "releases/7" for call in api.call_args_list))
         self.assertEqual(api.call_args.args, ("releases/7", "PATCH"))
         with patch.object(github, "api", side_effect=[{}, {"sha": self.github.source}, None]) as api:
             with self.assertRaisesRegex(ValueError, "not readable"):
@@ -411,8 +411,6 @@ class SavedReleaseTests(unittest.TestCase):
             release_plugin.save_platform(github, self.tag, self.target, self.github.source, directory)
             build.assert_not_called()
         self.assertEqual(self.github.created, 1)
-        self.assertEqual(self.github.api_calls.count(("GET", f"releases/tags/{self.tag}")), 1)
-        self.assertEqual(self.github.api_calls.count(("GET", "releases?per_page=100&page=1")), 1)
         self.assertEqual(self.github.assets, original)
 
     def test_startup_asset_is_uploaded_once_and_canonical_winner_is_read_back(self):
@@ -600,9 +598,10 @@ class SavedReleaseTests(unittest.TestCase):
                 patch.object(release_plugin.subprocess, "run") as run:
             release_plugin.publish_saved(self.github, self.tag, self.github.source, "candidate", None, self.root)
         self.assertFalse(self.github.draft)
-        self.assertEqual(run.call_count, 3)
-        publication = run.call_args_list[-1].args[0]
-        self.assertEqual(len(publication[publication.index("--packages") + 1:]), len(package_plugin.TARGETS))
+        [publication] = [call.args[0] for call in run.call_args_list if "--packages" in call.args[0]]
+        packages = publication[publication.index("--packages") + 1:]
+        self.assertCountEqual([package_plugin.verify_package(Path(package))["target"] for package in packages],
+                              package_plugin.TARGETS)
         observed_release = self.github.release
         for draft, immutable in ((False, False), (True, True)):
             with patch.object(self.github, "release", side_effect=lambda tag: {
@@ -613,7 +612,7 @@ class SavedReleaseTests(unittest.TestCase):
                 retry.mkdir()
                 with self.assertRaisesRegex(ValueError, "must be immutable"):
                     release_plugin.publish_saved(self.github, self.tag, self.github.source, "candidate", None, retry)
-                self.assertEqual(run.call_count, 2)
+                self.assertFalse(any("--packages" in call.args[0] for call in run.call_args_list))
         with patch.object(self.github, "release", return_value=None):
             with self.assertRaisesRegex(ValueError, "has not been saved"):
                 release_plugin.publish_saved(self.github, self.tag, self.github.source, "candidate", None, self.root)

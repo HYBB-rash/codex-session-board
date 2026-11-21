@@ -96,9 +96,10 @@ class DeliveryTests(unittest.TestCase):
             pushes = [call.args[0] for call in run.call_args_list if call.args[0][:2] == ["git", "push"]]
             self.assertEqual(len(pushes), 1)
             self.assertIn("--atomic", pushes[0])
-            self.assertEqual(sum(":refs/heads/candidate/" in argument for argument in pushes[0]), 2)
             updated = references()
-            self.assertNotEqual(updated, previous)
+            self.assertEqual(dict(line.split()[::-1] for line in updated.splitlines()),
+                             {f"refs/heads/{entry['reference']}": entry["revision"] for entry in published})
+            self.assertTrue(all(entry["revision"] not in previous for entry in published))
             self.assertEqual(publish_plugin.publish_many(str(repository), packages, "candidate"), published)
             self.assertEqual(references(), updated)
             self.assertEqual({str(package): (package / "RELEASE.json").read_bytes() for package, _ in packages}, contents)
@@ -124,15 +125,20 @@ class DeliveryTests(unittest.TestCase):
 
     def test_bulk_cli_preserves_legacy_single_package_and_requires_both_records(self):
         second = self.platform_package("aarch64-apple-darwin", "0.2.93")
-        for arguments, expected in (
-            (["--package", str(self.package)], [(self.package.resolve(), None)]),
-            (["--packages", str(self.package), str(second)], [(self.package.resolve(), None), (second.resolve(), None)]),
-        ):
+        def publish(repository, packages, channel):
+            self.assertEqual((repository, channel), ("fixture", "candidate"))
+            return [{"target": package_plugin.verify_package(path)["target"]} for path, _ in packages]
+
+        first_result = {"target": self.manifest["target"]}
+        second_result = {"target": package_plugin.verify_package(second)["target"]}
+        for arguments, expected in ((["--package", str(self.package)], first_result),
+                                    (["--packages", str(self.package), str(second)],
+                                     {"publications": [first_result, second_result]})):
             with patch.object(sys, "argv", ["publish", "--repository", "fixture", *arguments]), \
-                    patch.object(publish_plugin, "publish_many", return_value=[{"published": True}]) as publish, \
-                    patch("builtins.print"):
+                    patch.object(publish_plugin, "publish_many", side_effect=publish), \
+                    patch("builtins.print") as output:
                 publish_plugin.main()
-                self.assertEqual(publish.call_args.args, ("fixture", expected, "candidate"))
+                self.assertEqual(json.loads(output.call_args.args[0]), expected)
         with patch.object(sys, "argv", ["publish", "--repository", "fixture", "--packages",
                                        str(self.package), str(second), "--evidence", "one.json"]), \
                 patch.object(publish_plugin, "publish_many") as publish, \
