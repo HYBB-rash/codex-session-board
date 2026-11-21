@@ -18,7 +18,7 @@ from scripts.verify_acceptance import (
 )
 
 
-class GateTests(unittest.TestCase):
+class GateFixture(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.root = Path(self.directory.name)
@@ -65,6 +65,8 @@ class GateTests(unittest.TestCase):
     def run_gate(self, scope="release", evidence=None):
         return verify(self.root, self.contract_path, self.bindings_path, scope, evidence)
 
+
+class GateTests(GateFixture):
     def test_platform_branches_select_real_tests_and_keep_common_checks(self):
         mapping = {"common": ["shared"], "linux": ["proc"], "darwin": ["rejection"]}
         for platform, expected in (("linux", ["shared", "proc"]),

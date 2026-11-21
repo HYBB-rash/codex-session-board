@@ -1969,6 +1969,7 @@
       "acceptance.test_main_release.MainReleaseTests.test_only_regular_context_records_share_the_previous_implementation",
       "acceptance.test_main_release.MainReleaseTests.test_publication_requires_both_platform_jobs_from_its_own_run",
       "acceptance.test_main_release.MainReleaseTests.test_release_records_both_platform_reports_for_the_pinned_source",
+      "acceptance.test_main_release.ReleaseCandidateEvidenceTests.test_publication_accepts_only_complete_matching_candidate_evidence",
       "acceptance.test_main_release.MainReleaseTests.test_dispatch_error_keeps_merge_complete_and_release_pending",
       "acceptance.test_main_release.MainReleaseTests.test_channel_status_requires_both_exact_sources_and_preserves_previous_release",
       "acceptance.test_main_release.MainReleaseTests.test_channel_manifest_reads_existing_candidate_branches",

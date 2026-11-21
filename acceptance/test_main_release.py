@@ -1,6 +1,11 @@
 import base64
 import json
+import os
 from pathlib import Path
+import platform
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -8,6 +13,73 @@ from urllib.parse import parse_qs, urlsplit
 
 from scripts import main_release as release
 from scripts import main_release_evidence as evidence
+from scripts import validate_candidate
+from acceptance.test_gate import GateFixture
+
+
+class ReleaseCandidateEvidenceTests(GateFixture):
+    def build_local_candidate(self, output):
+        scripts = self.root / "scripts"
+        scripts.mkdir()
+        shutil.copy(release.ROOT / "scripts/verify_acceptance.py", scripts)
+        (scripts / "check").write_text("#!/bin/sh\ntest -s source.txt\n")
+        (scripts / "check").chmod(0o700)
+        (self.root / "Cargo.toml").write_text(
+            '[package]\nname="release-fixture"\nversion="0.1.0"\nedition="2021"\n')
+        (self.root / "src").mkdir()
+        (self.root / "src/lib.rs").touch()
+        subprocess.run(["cargo", "generate-lockfile", "--offline"], cwd=self.root,
+                       check=True, capture_output=True, timeout=15)
+        source = {"commit": "fixture-commit", "tree": "fixture-tree",
+                  "fingerprint": validate_candidate.fingerprint(self.root, self.bindings["fingerprint_paths"]),
+                  "platform": sys.platform, "machine": platform.machine()}
+        with patch.object(validate_candidate, "ROOT", self.root), \
+                patch.object(validate_candidate, "identity", return_value=source), \
+                patch.object(validate_candidate, "git", return_value=""), \
+                patch.dict(os.environ, {"CARGO_TARGET_DIR": str(output.parent / "target")}), \
+                patch.object(sys, "argv", ["validate", "--output", str(output)]):
+            self.assertEqual(validate_candidate.main(), 0)
+        return source
+
+    def test_publication_accepts_only_complete_matching_candidate_evidence(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        artifact = Path(directory.name) / "candidate"
+        source = self.build_local_candidate(artifact)
+        record = json.loads((artifact / "VALIDATION.json").read_text())
+        native = (sys.platform, platform.machine())
+        label = next((key for key, target in evidence.PLATFORMS.items() if target == native), "fixture-native")
+        other = next(key for key in evidence.PLATFORMS if key != label)
+
+        def collect(platform_label=label, pinned=source, replacement=None):
+            def download(*arguments):
+                folder = Path(arguments[-1])
+                shutil.copytree(artifact, folder, dirs_exist_ok=True)
+                if replacement:
+                    name, content = replacement
+                    (folder / name).write_text(content)
+            with tempfile.TemporaryDirectory(dir=directory.name) as destination:
+                return evidence.platform_evidence(Mock(gh=download), 7, pinned, platform_label, 1, Path(destination))
+
+        with patch.dict(evidence.PLATFORMS, {label: native}):
+            received, report = collect()
+            self.assertEqual(received, label)
+            self.assertTrue(report["report"]["scope_passed"])
+            with self.assertRaisesRegex(ValueError, "pinned release source"):
+                collect(platform_label=other)
+            for field in ("commit", "fingerprint"):
+                with self.subTest(field=field), self.assertRaisesRegex(ValueError, "pinned release source"):
+                    collect(pinned={**source, field: "other-fixture"})
+            for scenario, file, content, message in (
+                ("automatic report changed", "automated.json", "{}", "Automatic acceptance evidence changed"),
+                ("step output changed", "step-1.log", "other output", "步骤日志或进程清理凭据"),
+                ("required step missing", "VALIDATION.json", json.dumps({**record, "steps": record["steps"][:-1]}),
+                 "步骤、执行计划或清理集合不完整"),
+                ("receipts belong to a different run", "VALIDATION.json",
+                 json.dumps({**record, "run_id": "different-fixture-run"}), "步骤日志或进程清理凭据"),
+            ):
+                with self.subTest(scenario=scenario), self.assertRaisesRegex(ValueError, message):
+                    collect(replacement=(file, content))
 
 
 class MainReleaseTests(unittest.TestCase):
