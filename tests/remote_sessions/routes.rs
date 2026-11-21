@@ -69,6 +69,8 @@ fn check_host(app: &App, host: &str) -> Result<()> {
     let saved = snapshot["sessions"].as_array().unwrap().iter()
         .find(|row| row["id"] == identifier).unwrap();
     assert_eq!(&response["session"], saved);
+    assert_eq!(saved["readOnly"], false);
+    assert_eq!(saved["canArchive"], false);
     assert_eq!(response["session"]["hostId"], host);
     assert_eq!(response["session"]["threadId"], THREAD);
     let opened = app.request("/api/open", Some(&json!({"id":identifier})))?;

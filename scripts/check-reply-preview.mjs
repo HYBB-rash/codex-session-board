@@ -12,12 +12,12 @@ const embedded = process.argv[3] ? await readFile(process.argv[3], "utf8") :
 const states = {in_progress:"进行中",review:"待审阅",blocked:"已阻塞",to_archive:"待归档"};
 const sharedTitle = "核对发布及隔离启动历史记录".repeat(6);
 const session = (id, state, title = sharedTitle, extra = {}) => ({
-  id,state,title,version:0,inputVersion:0,sectionVersion:"fixture",updatedAt:1760000000,...extra,
+  id,state,title,version:0,inputVersion:0,sectionVersion:"fixture",updatedAt:1760000000,readOnly:false,canArchive:true,...extra,
 });
 const fixture = () => ({
   states,health:{},fourColumns:true,projectCatalog:{loaded:true,items:[]},
   sessions:[session("local","review"),session("remote:mac:session","in_progress",sharedTitle,{remote:true,hostId:"mac",hostLabel:"MacBook"}),
-    session("empty","blocked","尚无回复"),session("offline","to_archive","读取失败",{canOpen:false}),
+    session("empty","blocked","尚无回复"),session("offline","to_archive","读取失败",{canOpen:false,readOnly:true,canArchive:false}),
     ...Array.from({length:20},(_,index)=>session(`review-${index}`,"review",`核对记录 ${index}`))],
 });
 const markdown = "<h1>隔离启动</h1><ul><li>Linux</li></ul><blockquote>检查报告</blockquote><pre><code>printf ok</code></pre>" +

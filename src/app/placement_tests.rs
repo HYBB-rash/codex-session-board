@@ -171,6 +171,8 @@ fn snapshot_preserves_legacy_remote_cache_in_each_mode() -> Result<()> {
         assert_card(&rows, &thread, true, Some(json!(if columns == 6 { "completed" } else { "to_archive" })));
         assert_eq!(rows[0]["note"], "历史备注");
         assert_eq!(rows[0]["version"], 2);
+        assert_eq!(rows[0]["readOnly"], columns != 6);
+        assert_eq!(rows[0]["canArchive"], false);
         assert_eq!(root.store.remote_session(rows[0]["id"].as_str().unwrap())?["state"], "completed");
     }
     Ok(())

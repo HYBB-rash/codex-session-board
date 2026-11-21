@@ -60,11 +60,12 @@ fn remote_discovery_paginates_and_isolates_failed_hosts_without_erasing_cached_d
     );
     let projects = app.store.remote_projects()?;
     assert_ne!(projects[0]["id"], projects[1]["id"]);
-    assert_eq!(
-        app.snapshot()?["health"]["remoteHosts"][0]["scanComplete"],
-        false
-    );
-    assert_eq!(app.snapshot()?["health"]["remoteHosts"][1]["count"], 1);
+    let snapshot = app.request("/api/sessions", None)?;
+    assert_eq!(snapshot["health"]["remoteHosts"][0]["scanComplete"], false);
+    assert_eq!(snapshot["health"]["remoteHosts"][1]["count"], 1);
+    let rows = snapshot["sessions"].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|row| row["readOnly"] == true && row["canArchive"] == false));
     Ok(())
 }
 

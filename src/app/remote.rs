@@ -115,24 +115,14 @@ impl App {
 
     pub(crate) fn annotate_connections(&self, sessions: &mut [Value]) {
         for session in sessions {
-            if self.config.legacy_mode {
-                session["canArchive"] = json!(false);
+            let remote = session["remote"] == true;
+            if remote && self.config.four_columns {
+                session["canOpen"] = json!(super::four_columns::can_open(session));
             }
-            if session["remote"] == true {
-                if self.config.four_columns {
-                    session["canOpen"] = json!(super::four_columns::can_open(session));
-                }
-                if session["readOnly"] == true {
-                    session["canArchive"] = json!(false);
-                }
-                continue;
-            }
-            if session["readOnly"] == true
-                || self.config.native_sections && !session["sectionVersion"].is_string()
-            {
-                session["readOnly"] = json!(true);
-                session["canArchive"] = json!(false);
-            }
+            let read_only = session["readOnly"] == true
+                || !remote && self.config.native_sections && !session["sectionVersion"].is_string();
+            session["readOnly"] = json!(read_only);
+            session["canArchive"] = json!(!self.config.legacy_mode && !read_only && session["canArchive"] != false);
         }
     }
 

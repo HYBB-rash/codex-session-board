@@ -495,11 +495,10 @@ function projectPresentation(session) {
     pending:pending || cached,info};
 }
 function cardActions(session) {
-  const readOnly = session.readOnly || session.remote &&
-    (session.canOpen === false || session.archived || session.presence === "cachedUnknown");
+  const readOnly = session.readOnly !== false;
   const canAdjust = !readOnly && !saving && !creating && moving?.id !== session.id;
   const pendingArchive = session.archivePending || archivePending.has(session.id);
-  const archive = session.state === "to_archive" && !readOnly && session.canArchive !== false && !pendingArchive
+  const archive = session.state === "to_archive" && session.canArchive === true && !pendingArchive
     ? session.followUp ? "confirm" : "archive" : null;
   const canSubmit = canAdjust && archive !== null && !archiveChecking;
   return {readOnly,canAdjust,pendingArchive,archive,canSubmit,inBatch:canSubmit && archive === "archive"};

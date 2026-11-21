@@ -49,6 +49,10 @@ try {
   assert.deepEqual(await page.evaluate('["Local","Online","Archived","Catalog","Follow","Pending"].map(buttons)'), [
     [true,true,"归档"],[true,true,"归档"],[false,false,null],[false,false,null],[true,true,"确认待归档"],[true,true,null],
   ]);
+  await page.evaluate(`window.onlineRow = data.sessions.find(row => row.title === "Online");
+    window.previousCanOpen = onlineRow.canOpen; onlineRow.canOpen = false; render()`);
+  assert.deepEqual(await page.evaluate('buttons("Online")'), [true,true,"归档"], "导航不可用不能覆盖服务端的写入资格");
+  await page.evaluate("onlineRow.canOpen = previousCanOpen; render()");
   const missing = await page.evaluate(`(() => {
     const {id,version,inputVersion} = data.sessions.find(row => row.title === "Catalog");
     return post("/api/state",{id,version,inputVersion,state:"review"}).then(() => "",error => error.message);

@@ -23,14 +23,14 @@ const fixture = {
   ]},sessions:[
     {id:"local",projectId:"local",remote:false},
     {id:"active",hostId:"a",projectId:"server",presence:"active",catalogCurrent:true,archived:false},
-    {id:"archived",hostId:"a",projectId:"server",presence:"archived",catalogCurrent:true,archived:true},
-    {id:"old",hostId:"a",projectId:"server",presence:"cachedUnknown",catalogCurrent:false,archived:false},
-    {id:"last-active",hostId:"a",projectId:"server",presence:"cachedUnknown",catalogCurrent:true,archived:false},
-    {id:"last-archive",hostId:"a",projectId:"server",presence:"cachedUnknown",catalogCurrent:true,archived:true},
+    {id:"archived",hostId:"a",projectId:"server",presence:"archived",catalogCurrent:true,archived:true,readOnly:true,canArchive:false},
+    {id:"old",hostId:"a",projectId:"server",presence:"cachedUnknown",catalogCurrent:false,archived:false,readOnly:true,canArchive:false},
+    {id:"last-active",hostId:"a",projectId:"server",presence:"cachedUnknown",catalogCurrent:true,archived:false,readOnly:true,canArchive:false},
+    {id:"last-archive",hostId:"a",projectId:"server",presence:"cachedUnknown",catalogCurrent:true,archived:true,readOnly:true,canArchive:false},
     {id:"legacy",hostId:"a",projectId:"client"},
-    {id:"other",hostId:"b",projectId:"other",presence:"cachedUnknown",catalogCurrent:true,archived:false},
+    {id:"other",hostId:"b",projectId:"other",presence:"cachedUnknown",catalogCurrent:true,archived:false,readOnly:true,canArchive:false},
   ].map(row => ({remote:true,title:"关键词 "+row.id,cwd:"/target",hostLabel:row.hostId,state:"to_archive",
-    note:"",version:1,inputVersion:1,canArchive:true,...row})),
+    note:"",version:1,inputVersion:1,readOnly:false,canArchive:true,...row})),
 };
 const writes = [];
 const archive = archiveFixture();
@@ -95,7 +95,6 @@ try {
   check(await evaluate('hostHealth({value:"host:a",hostId:"a",hostLabel:"a"}).status'),"主机目录尚未读取完整");
   check(await evaluate('hostHealth({value:"host:a",hostId:"a",hostLabel:"a"}).ready'),false);
   await evaluate('data.health.remoteConnections[0].catalog.complete=true;render()');
-  await evaluate('data.sessions=data.sessions.map(row=>row.archived || row.presence==="cachedUnknown" ? {...row,readOnly:true} : row);render()');
   check(await evaluate('hostHealth({value:"host:a",hostId:"a",hostLabel:"a"}).status'),"主机目录已读取完整");
   check(await evaluate('hostHealth({value:"host:a",hostId:"a",hostLabel:"a"}).ready'),true);
   await evaluate('data.health.remoteConnections[0].catalog.cached=true;render()');

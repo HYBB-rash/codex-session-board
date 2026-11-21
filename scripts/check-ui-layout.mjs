@@ -20,7 +20,7 @@ const fixture = {
   sessions: ["unknown", "review", "to_archive"].map((state, index) => ({
     id: `layout-${index}`, title: "基线标题", state, projectId: index ? "second" : "first",
     cwd: "/projects/example", note: "", updatedAt: 1760000000, source: "codex",
-    version: 1, inputVersion: 1, sectionVersion: "fixture", canArchive: false,
+    version: 1, inputVersion: 1, sectionVersion: "fixture", readOnly: false, canArchive: false,
   })),
 };
 let writes = 0;

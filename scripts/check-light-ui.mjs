@@ -175,7 +175,7 @@ try {
   },{
     ...fixture.sessions[0],id:"offline",title:"离线示例",remote:true,hostId:"remote-air",
     hostLabel:"离线主机",state:null,placementReason:"上次确认位于自定义分区",
-    canOpen:false,presence:"cachedUnknown",catalogCurrent:true
+    canOpen:false,readOnly:true,canArchive:false,presence:"cachedUnknown",catalogCurrent:true
   });
   await refresh();
   check(await evaluate('[...byId("board").children].map(column=>column.dataset.state)'),

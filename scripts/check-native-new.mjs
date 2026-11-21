@@ -20,7 +20,7 @@ const fixture = {
   sessions: [{ id: identifier, threadId: "actual-uuid", title: "刚创建的会话",
     remote: true, hostId: "remote:a", hostLabel: "Mac", cwd: "/remote/project",
     state: "review", note: "", ordinary: true, catalogCurrent: true, presence: "active",
-    archived: false, projectId: null, version: 0, inputVersion: 1 }],
+    archived: false, projectId: null, version: 0, inputVersion: 1, readOnly: false, canArchive: true }],
 };
 const writes = [];
 let failAssignment = true, failNavigation = false, browser, cleanup, cases = 0;

@@ -50,7 +50,7 @@ const snapshot = { states: { unknown: "待判断", in_progress: "进行中", rev
     { id: 'remote:["codex","fixture","11111111-1111-4111-8111-111111111111"]', title: "远程长标题".repeat(12), state: "in_progress", remote: true, hostId: "fixture", hostLabel: "测试远端", projectId: "project" },
     { id: "local", title: "本机会话", state: "unknown", projectId: null },
     { id: 'remote:["codex","other","11111111-1111-4111-8111-111111111111"]', title: "另一主机待归档会话", state: "to_archive", remote: true, hostId: "other", hostLabel: "另一主机", projectId: "other-project", canArchive: true },
-  ].map(session => ({ note: "保留原备注", reason: "", version: 3, inputVersion: 5, sectionVersion: "native:source", canArchive: false, ...session })) };
+  ].map(session => ({ note: "保留原备注", reason: "", version: 3, inputVersion: 5, sectionVersion: "native:source", readOnly: false, canArchive: false, ...session })) };
 const writes = [], opens = [], mutations = [], responses = [], cases = [];
 let snapshotError = false, refreshError = false, automatic = false, holdSnapshot = false, heldSnapshot, pendingNew;
 let archiveCheck;
