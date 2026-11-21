@@ -69,22 +69,4 @@ mod tests {
         assert_eq!(app.store.sessions()?[0]["state"], "unknown");
         Ok(())
     }
-
-    #[test]
-    fn only_current_remote_rows_offer_navigation() -> Result<()> {
-        let directory = tempfile::tempdir()?;
-        let app = App::new(Config {
-            data_dir: directory.path().into(), four_columns: true, ..Config::default()
-        })?;
-        let mut rows = vec![
-            json!({"state":"review","remote":true,"presence":"cachedUnknown","catalogCurrent":true}),
-            json!({"state":"unknown","remote":true,"presence":"active","catalogCurrent":true}),
-        ];
-        app.annotate_connections(&mut rows);
-        crate::store::placement::project(&mut rows, false, true);
-        assert_eq!(rows[0]["canOpen"], false);
-        assert_eq!(rows[1]["canOpen"], true);
-        assert_eq!(rows[1]["state"], Value::Null);
-        Ok(())
-    }
 }

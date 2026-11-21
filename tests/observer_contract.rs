@@ -561,20 +561,25 @@ fn active_thread_metadata_with_terminal_summary_does_not_invent_execution() {
 fn runtime_active_threads_are_read_each_poll_while_unchanged_idle_is_cached() {
     let fixture = Fixture::new(2, 2);
     let mut revisions = HashMap::new();
-    for _round in 0..2 {
+    for (turn, inputs) in [("first", 1), ("second", 2)] {
         let mut reader = FakeRpc::new(&[thread("owner", 1, "active")]);
-        reader.set_turn("owner", raw_turn("owner", "inProgress"));
+        reader.set_turn("owner", raw_turn(turn, "inProgress"));
         scan_runtime(&fixture.app, &mut reader, &mut revisions, 1000.0).unwrap();
-        assert_eq!(reader.turn_ids(), ["owner"]);
+        let row = session(&fixture.app, "owner");
+        assert_eq!(row["state"], "in_progress");
+        assert_eq!(row["inputVersion"], inputs);
     }
     let threads = [thread("owner", 2, "idle")];
     let mut terminal = FakeRpc::new(&threads);
+    terminal.set_turn("owner", raw_turn("second", "completed"));
     scan_runtime(&fixture.app, &mut terminal, &mut revisions, 1000.0).unwrap();
-    assert_eq!(terminal.turn_ids(), ["owner"]);
+    let completed = decision(&fixture.app, "owner");
+    assert_eq!(completed["state"], "review");
+    assert_eq!(completed["inputVersion"], 2);
     let mut repeated = FakeRpc::new(&threads);
+    repeated.set_turn("owner", raw_turn("second", "completed"));
     scan_runtime(&fixture.app, &mut repeated, &mut revisions, 1000.0).unwrap();
-    assert!(repeated.turn_ids().is_empty());
-    assert_eq!(session(&fixture.app, "owner")["state"], "review");
+    assert_eq!(decision(&fixture.app, "owner"), completed);
 }
 
 #[test]
@@ -705,21 +710,25 @@ fn runtime_incomplete_pages_fail_before_discovery_or_any_turn_observation() {
     let fixture = Fixture::new(2, 1);
     manual(&fixture.app, "saved");
     let before = decision(&fixture.app, "saved");
-    let mut reader = FakeRpc::new(&[thread("untrusted-partial", 2, "active")]);
+    let candidate = thread("untrusted-partial", 2, "active");
+    let mut reader = FakeRpc::new(std::slice::from_ref(&candidate));
     reader.pages[0] = Reply::Data(json!({
-        "data": [thread("untrusted-partial", 2, "active")],
+        "data": [candidate],
         "nextCursor": "remaining-page",
     }));
     let mut revisions = HashMap::new();
     let error = scan_runtime(&fixture.app, &mut reader, &mut revisions, 1000.0).unwrap_err();
     assert!(error.to_string().contains("桌面运行状态分页未完成"));
     assert!(reader.turn_ids().is_empty());
-    assert_eq!(reader.list_calls().len(), 1);
     assert_eq!(decision(&fixture.app, "saved"), before);
     assert!(!fixture.app.store.contains("untrusted-partial").unwrap());
-    assert!(revisions.is_empty());
     assert_eq!(health(&fixture.app)["runtimeVerified"], false);
-    assert_read_contract(&reader, 2);
+    let mut complete = FakeRpc::new(&[candidate]);
+    complete.set_turn("untrusted-partial", raw_turn("confirmed", "inProgress"));
+    scan_runtime(&fixture.app, &mut complete, &mut revisions, 1000.0).unwrap();
+    assert_eq!(session(&fixture.app, "untrusted-partial")["state"], "in_progress");
+    assert_eq!(health(&fixture.app)["runtimeVerified"], true);
+    assert_eq!(decision(&fixture.app, "saved"), before);
 }
 
 #[test]

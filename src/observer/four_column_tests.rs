@@ -83,19 +83,27 @@ fn a_terminal_event_older_than_the_manual_choice_keeps_the_card() -> Result<()> 
 fn empty_requires_complete_response_and_an_inactive_verified_backend() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let app = app(&directory, true)?;
-    for (revision, status, response) in [
-        (1,"idle",json!({"data":null})),
-        (2,"idle",json!({"data":[],"nextCursor":"more"})),
-        (3,"active",json!({"data":[],"nextCursor":null})),
-        (4,"idle",json!({"data":[],"nextCursor":null})),
+    for (revision, status, response, visible) in [
+        (1,"idle",json!({"data":null}),true),
+        (2,"idle",json!({"data":[],"nextCursor":"more"}),true),
+        (3,"active",json!({"data":[],"nextCursor":null}),true),
+        (4,"idle",json!({"data":[],"nextCursor":null}),false),
     ] {
         observe(&app, revision, status, response)?;
-        assert_eq!(app.store.sessions()?[0]["confirmedEmpty"], revision == 4);
+        let snapshot = app.snapshot()?;
+        let cards = snapshot["sessions"].as_array().unwrap();
+        assert_eq!(cards.len(), usize::from(visible));
+        if visible {
+            assert_eq!(cards[0]["id"], "session");
+            assert_eq!(cards[0].get("state"), Some(&Value::Null));
+        }
     }
-    let legacy_directory = tempfile::tempdir()?;
-    let legacy = self::app(&legacy_directory, false)?;
-    observe(&legacy, 1, "idle", json!({"data":[],"nextCursor":null}))?;
-    assert!(legacy.store.sessions()?[0].get("confirmedEmpty").is_none());
+    let five_directory = tempfile::tempdir()?;
+    let five = self::app(&five_directory, false)?;
+    observe(&five, 1, "idle", json!({"data":[],"nextCursor":null}))?;
+    let snapshot = five.snapshot()?;
+    assert_eq!(snapshot["sessions"][0]["id"], "session");
+    assert_eq!(snapshot["sessions"][0]["state"], "unknown");
     Ok(())
 }
 

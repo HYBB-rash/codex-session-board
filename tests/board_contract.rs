@@ -442,19 +442,17 @@ mod store_tests {
     #[test]
     fn invalid_state_and_oversized_note_leave_all_tables_unchanged() {
         let (_directory, store) = fixture(true);
+        let maximum = "备🌲".repeat(1000);
         for (state, note) in [
             (Some("invented"), "备注".to_string()),
-            (Some("review"), "字".repeat(2001)),
+            (Some("review"), format!("{maximum}字")),
         ] {
             let before = database_snapshot(&store);
             assert!(store.set_state("sample", state, &note, 0, None).is_err());
             assert_eq!(database_snapshot(&store), before);
         }
-        select(&store, Some("review"), &"字".repeat(2000));
-        assert_eq!(
-            session(&store)["note"].as_str().unwrap().chars().count(),
-            2000
-        );
+        select(&store, Some("review"), &maximum);
+        assert_eq!(session(&store)["note"], maximum);
     }
 
     #[test]

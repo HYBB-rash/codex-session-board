@@ -47,28 +47,45 @@ fn four_column_board_keeps_a_confirmed_empty_archived_chat_in_the_live_catalog()
 
 #[test]
 fn cached_snapshot_requires_live_reverification_after_restart() -> Result<()> {
-    let (_directory, app) = app()?;
+    use crate::{app::App, config::Config, store::remote::identity};
+    use std::sync::Arc;
+
+    let directory = tempfile::tempdir()?;
+    let config = Config {
+        data_dir: directory.path().join("root"), four_columns: true, sync_titles: false,
+        ..Config::default()
+    };
+    let root = App::new(config.clone())?;
+    let remote_config = Config { data_dir: directory.path().join("remote"), host_id: HOST.into(), ..config };
     let snapshot = snapshot();
     snapshot.validate(HOST)?;
-    app.store.save_catalog_value(
+    App::new(remote_config.clone())?.store.save_catalog_value(
         "catalog_snapshot_v1",
         Some(&serde_json::to_value(snapshot)?),
     )?;
-    let reopened = crate::app::App::new(app.config.clone())?;
-    let view = view::read(&reopened, &[])?;
-    assert_eq!(view.rows.len(), 1);
-    assert_eq!(view.rows[0]["presence"], "cachedUnknown");
-    assert_eq!(view.rows[0]["catalogCurrent"], true);
-    assert_eq!(view.rows[0]["readOnly"], true);
-    assert_eq!(view.health["complete"], false);
-    assert_eq!(view.health["cached"], true);
-    install(&app, super::test_support::snapshot(), true);
-    app.deactivate()?;
-    let disabled = view::read(&app, &[])?;
-    assert_eq!(disabled.rows[0]["presence"], "cachedUnknown");
-    assert_eq!(disabled.rows[0]["readOnly"], true);
-    assert_eq!(disabled.health["complete"], false);
-    Ok(())
+    let remote = Arc::new(App::new(remote_config)?);
+    root.remotes.lock().unwrap().insert(HOST.into(), remote.clone());
+    let check = |live: bool| -> Result<()> {
+        let board = root.request("/api/sessions", None)?;
+        let rows = board["sessions"].as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert_eq!(row["id"], identity(HOST, FIRST));
+        assert_eq!(row.get("state"), Some(&Value::Null));
+        assert_eq!(row["presence"], if live { "active" } else { "cachedUnknown" });
+        assert_eq!(row["catalogCurrent"], true);
+        assert_eq!(row["canOpen"], live);
+        assert_eq!(row["readOnly"], !live);
+        let catalog = &board["health"]["remoteConnections"][0]["catalog"];
+        assert_eq!(catalog["complete"], live);
+        assert_eq!(catalog["cached"], !live);
+        Ok(())
+    };
+    check(false)?;
+    install(&remote, super::test_support::snapshot(), true);
+    check(true)?;
+    remote.deactivate()?;
+    check(false)
 }
 
 #[test]

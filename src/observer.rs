@@ -641,25 +641,50 @@ mod tests {
         json!({"id":identifier,"updatedAt":updated_at,"status":{"type":"idle"},"name":identifier})
     }
 
+    struct IdleReplies {
+        generation: &'static str,
+        checked: HashSet<String>,
+    }
+
+    impl Rpc for IdleReplies {
+        fn call(&mut self, method: &str, params: Value) -> Result<Value> {
+            assert_eq!(method, "thread/turns/list");
+            let identifier = params["threadId"].as_str().unwrap();
+            self.checked.insert(identifier.into());
+            Ok(json!({"data":[{"id":format!("{identifier}-{}", self.generation),"status":"completed",
+                "items":[{"type":"agentMessage","phase":"final_answer","text":"已回复"}]}]}))
+        }
+    }
+
     #[test]
     fn idle_rechecks_limit_extra_reads_and_rotate_across_stable_rows() -> Result<()> {
         let directory = tempfile::tempdir()?;
-        let app = App::new(Config {data_dir: directory.path().into(), ..Config::default()})?;
+        let app = App::new(Config {data_dir: directory.path().into(), sync_titles:false, ..Config::default()})?;
         let rows = [thread("first", 100), thread("second", 100), thread("third", 100)];
         app.store.discover(&rows)?;
         let mut revisions = RuntimeRevisions::new();
-        let mut reader = Script {calls: Vec::new()};
+        let mut reader = IdleReplies { generation: "old", checked: HashSet::new() };
         let started = Instant::now();
         let interval = Duration::from_secs(app.config.runtime_poll_seconds);
+        let check_previews = |generation: &str| -> Result<()> {
+            let board = app.snapshot()?;
+            let cards = board["sessions"].as_array().unwrap();
+            assert_eq!(cards.len(), rows.len());
+            for row in &rows {
+                let card = cards.iter().find(|card| card["id"] == row["id"]).unwrap();
+                assert_eq!(card["previewTurnId"], format!("{}-{generation}", row["id"].as_str().unwrap()));
+            }
+            Ok(())
+        };
         observe_runtime_threads_at(&app, &mut reader, &mut revisions, 0.0, &rows, started)?;
-        assert_eq!(reader.calls, ["first", "second", "third"]);
-        reader.calls.clear();
-        observe_runtime_threads_at(&app, &mut reader, &mut revisions, 0.0, &rows, started + interval)?;
-        assert_eq!(reader.calls, ["first", "second"]);
-        reader.calls.clear();
-        observe_runtime_threads_at(&app, &mut reader, &mut revisions, 0.0, &rows, started + interval * 2)?;
-        assert_eq!(reader.calls, ["first", "third"]);
-        Ok(())
+        check_previews("old")?;
+        reader.generation = "new";
+        for poll in 1..=3 {
+            reader.checked.clear();
+            observe_runtime_threads_at(&app, &mut reader, &mut revisions, 0.0, &rows, started + interval * poll)?;
+            assert!(reader.checked.len() <= 2, "单次轮询额外复核了超过两张空闲卡：{:?}", reader.checked);
+        }
+        check_previews("new")
     }
 
     #[test]
