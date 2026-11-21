@@ -4,6 +4,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+import { buildReplyPreview } from "./build-reply-preview.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const check = process.argv.includes("--check");
@@ -43,7 +44,8 @@ try {
     } else await fs.writeFile(path.join(root, "assets", file), generated);
     report[file] = { bytes: generated.length, sha256: createHash("sha256").update(generated).digest("hex") };
   }
-  console.log(JSON.stringify({ check, files: report }));
+  const preview = await buildReplyPreview(root, temporary, check);
+  console.log(JSON.stringify({ check, files: report, preview }));
 } finally {
   await fs.rm(temporary, { recursive: true, force: true });
 }
