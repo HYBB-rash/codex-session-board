@@ -4,6 +4,7 @@ import http from "node:http";
 import {createInterface} from "node:readline";
 import {launchBrowser} from "./browser-client.mjs";
 import {until} from "./browser-actions.mjs";
+import {checkPackagedEditor} from "./check-editor-drafts.mjs";
 
 const [target,follow] = process.argv.slice(2);
 const replies = new Map(), input = createInterface({input:process.stdin});
@@ -84,6 +85,23 @@ try {
       calls.map(call => [call.name,call.result.isError && call.result.content]));
     throw error;
   }
+  if (process.argv[4] === "--editor") {
+    releaseRefresh();
+    const read = async () => (await rpc("tools/call",{name:"board_snapshot",arguments:{}})).structuredContent;
+    const report = await checkPackagedEditor({evaluate,command:(method,params) => browser.command(method,params,sessionId)},read);
+    assert.deepEqual(calls.filter(call => call.name === "board_update").map(call => call.arguments.note),report.submitted);
+    console.error(JSON.stringify({surface:"MCP",...report}));
+  } else await checkArchivePanel(evaluate);
+} finally {
+  releaseWrite();
+  releaseRefresh();
+  if (browser) await browser.close();
+  await new Promise(resolve => server.close(resolve));
+  input.close();
+  process.stdin.destroy();
+}
+
+async function checkArchivePanel(evaluate) {
   await evaluate(`byId("host-filter").value="all";byId("host-filter").dispatchEvent(new Event("change"));
     window.buttonFor=id=>document.querySelector('.card[data-id="'+CSS.escape(id)+'"] [data-action=archive]')`);
   const button = id => `buttonFor(${JSON.stringify(id)})`;
@@ -127,11 +145,4 @@ try {
   assert.equal(confirmed.id, follow);
   assert.deepEqual(await evaluate(`data.sessions.find(row => row.id === ${JSON.stringify(follow)})`), confirmed);
   assert.equal(calls.filter(call => call.name === "board_archive").length, 1);
-} finally {
-  releaseWrite();
-  releaseRefresh();
-  if (browser) await browser.close();
-  await new Promise(resolve => server.close(resolve));
-  input.close();
-  process.stdin.destroy();
 }

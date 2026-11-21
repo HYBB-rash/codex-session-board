@@ -1,5 +1,8 @@
+<script lang="ts">
+const transientNotes = new Map<string, string>();
+</script>
 <script setup lang="ts">
-import { nextTick, ref, shallowRef } from "vue";
+import { nextTick, onBeforeUnmount, ref, shallowRef } from "vue";
 import type { EditorPorts, EditorSession } from "./board-editor";
 import EditFields from "./board-edit-fields";
 
@@ -19,17 +22,22 @@ function draftKey(card: EditorSession) {
 }
 
 function writeDraft(card: EditorSession, value: string | null) {
+  const key = draftKey(card);
+  if (value === null) transientNotes.delete(key);
+  else transientNotes.set(key, value);
   try {
-    if (value === null) sessionStorage.removeItem(draftKey(card));
-    else sessionStorage.setItem(draftKey(card), value);
+    if (value === null) sessionStorage.removeItem(key);
+    else sessionStorage.setItem(key, value);
     if (!card.remote || card.id.startsWith("remote:")) sessionStorage.removeItem("failed-note:" + card.id);
     return true;
   } catch { return false; }
 }
 
 function readDraft(card: EditorSession) {
+  const key = draftKey(card);
+  if (transientNotes.has(key)) return transientNotes.get(key)!;
   try {
-    const stored = sessionStorage.getItem(draftKey(card));
+    const stored = sessionStorage.getItem(key);
     if (stored !== null || card.remote && !card.id.startsWith("remote:")) return stored;
     const legacy = sessionStorage.getItem("failed-note:" + card.id);
     if (legacy !== null) writeDraft(card, legacy);
@@ -58,10 +66,16 @@ function changeNote(value: string) {
 function cancel() {
   if (busy.value || !session.value) return;
   writeDraft(session.value, retained);
+  dismiss();
+}
+
+function dismiss() {
   dialog.value!.close();
+  closed();
 }
 
 function closed() {
+  if (dialog.value?.open) return;
   const card = session.value;
   session.value = undefined;
   if (card) ports.closed(card);
@@ -74,9 +88,11 @@ async function save() {
   notice.value = "";
   try {
     await ports.save(card, state.value === "auto" ? null : state.value, note.value);
+    if (session.value !== card) return;
     writeDraft(card, null);
-    dialog.value!.close();
+    dismiss();
   } catch (error) {
+    if (session.value !== card) return;
     failed.value = true;
     retained = note.value;
     const stored = writeDraft(card, note.value);
@@ -90,6 +106,7 @@ async function refresh() {
   busy.value = true;
   try {
     const latest = await ports.refresh(card);
+    if (session.value !== card) return;
     session.value = latest;
     state.value = latest.state || "";
     failed.value = false;
@@ -99,6 +116,7 @@ async function refresh() {
 }
 
 defineExpose({ open });
+onBeforeUnmount(() => { session.value = undefined; });
 </script>
 <template>
   <dialog ref="dialog" id="editor" aria-labelledby="editor-heading" @cancel.prevent="cancel" @close="closed">

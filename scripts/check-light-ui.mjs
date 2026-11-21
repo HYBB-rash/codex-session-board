@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import http from "node:http";
 import { launchBrowser } from "./browser-client.mjs";
+import { checkEditorDrafts } from "./check-editor-drafts.mjs";
 
 const html = await fs.readFile(new URL("../index.html",import.meta.url),"utf8");
 const fixture = {
@@ -43,7 +44,7 @@ const server = http.createServer(async (request,response) => {
   response.end(request.url === "/" ? html : JSON.stringify(fixture));
 });
 await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
-let browser, cases = 0, baselineCases, cleanup, refreshPerformance;
+let browser, cases = 0, baselineCases, cleanup, refreshPerformance, editor;
 const check = (actual,expected,message) => {assert.deepEqual(actual,expected,message);cases++;};
 try {
   browser = await launchBrowser();
@@ -216,8 +217,9 @@ try {
   check(await evaluate('byId("reply-open").disabled'),true);
   await evaluate('byId("reply-close").click();openSession("offline")');
   check(writes.length,3);
+  editor = await checkEditorDrafts(browser,html);
 } finally {
   if (browser) cleanup = await browser.close();
   await new Promise(resolve => server.close(resolve));
 }
-console.log(JSON.stringify({cases:baselineCases,fourColumnCases:cases-baselineCases,writes,refreshPerformance,cleanup}));
+console.log(JSON.stringify({cases:baselineCases,fourColumnCases:cases-baselineCases,writes,refreshPerformance,editor,cleanup}));
