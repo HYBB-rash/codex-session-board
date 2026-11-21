@@ -4,7 +4,7 @@
 - execution_mode: isolated_write
 - allowed_write_set: src/app.rs, src/app/remote.rs, index.html, tests/native_authority/entrypoints.rs, tests/native_authority/remote_isolation.rs, tests/remote_sessions/routes.rs, scripts/check-blocked-optional.mjs, scripts/check-transfer-feedback.mjs, scripts/check-light-ui.mjs, acceptance/README.md, context/tasks/active/refactor-a-card-save-20261121.md, context/results/refactor-a-card-save-20261121.md
 - base_commit: b859880165908a848a4982d2cfd9b722e9aeb912
-- rebased_base_commit: 808a0f518b06c052cb3bc98654b8b48506b84936
+- rebased_base_commit: 3de9e0f00f5458eda255b59e81cc54e63818f071
 - worktree_path: /Users/hongyong/.codex/worktrees/51f3/codex-session-board
 - coordinator: Herman / source chat 01a1fc2d-af6f-7d50-9759-33835b51eaeb
 - branch: codex/refactor-a-card-save
@@ -48,8 +48,9 @@
 
 ## 交付
 
-实现及审阅修复提交已 rebase 为 `4b4d4834039dd1798b15631d955eed995e4872e9`。
-最新基线包含上游 C1/T2，145 项相关 Rust 测试、11 项真实备注场景、69 项回执场景、102 项页面断言和 49 项桥接断言通过。
+实现及审阅修复提交已 rebase 为 `58bee839592994c344de173ba3431008aab0115f`。
+最新基线包含 B1 `dce3536b`、C1、T2 和 C2，155 项相关 Rust 测试、11 项真实备注场景、69 项回执场景、102 项页面断言和 49 项桥接断言通过。
+保存回执沿用 B1 合流后的最终归列投影，独立复评无新增业务冲突或阻塞项。
 独立审阅发现的未归列完成提示 P2 已复现、修复并续审，无剩余阻塞项。
 本任务 fixture 已停止，`cleanup_confirmed=true`。
 详见 `context/results/refactor-a-card-save-20261121.md`。
