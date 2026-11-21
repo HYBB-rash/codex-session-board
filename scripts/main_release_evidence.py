@@ -8,7 +8,7 @@ import subprocess
 import tomllib
 
 from scripts.release_plugin import GitHub
-from scripts.validate_candidate import ROOT, acceptance_outcome, git, identity
+from scripts.validate_candidate import ROOT, acceptance_outcome, commands_for, git, identity
 from scripts.validation_report import verify_complete
 
 
@@ -90,10 +90,12 @@ def platform_evidence(forge, run, source, label, attempt, directory):
         raise ValueError(f"Automatic acceptance evidence changed for {label}")
     report = json.loads(automatic.read_text())
     commands = [step["arguments"] for step in record["steps"]]
-    if (len(commands) != 3 or commands[:2] != [
-            ["./scripts/check"], ["cargo", "clippy", "--all-targets", "--locked", "--offline", "--", "-D", "warnings"]]
-            or commands[2][:-1] != ["python3", "scripts/verify_acceptance.py", "--scope", "automated", "--report"]
-            or Path(commands[2][-1]).name != "automated.json"
+    expected_commands = commands_for("candidate", Path("."))
+    pending = [item["id"] for item in report["requirements"] if item["status"] == "pending"]
+    if (len(commands) != 3 or commands[:2] != expected_commands[:2]
+            or commands[2][:-1] != expected_commands[2][:-1]
+            or Path(commands[2][-1]).name != expected_commands[2][-1]
+            or record["pending"] != pending or record["acceptance_status"] != "not_performed"
             or not acceptance_outcome(report, record["steps"][-1]["returncode"])
             or report["build_sha256"] != source["fingerprint"]
             or record["release_ready"] is not report["release_ready"]):
