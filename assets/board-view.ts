@@ -1,5 +1,6 @@
 import { h, render } from "vue";
 import BoardColumns from "./board-columns.vue";
+import { createCardDrag } from "./board-drag";
 import type { PreviewSession } from "./reply-preview";
 
 export interface BoardSession extends PreviewSession {
@@ -54,15 +55,19 @@ export interface BoardDependencies {
   };
   canAssign: (session: BoardSession) => boolean;
   preview: (session: BoardSession, focus?: boolean) => void;
-  edit: (id: string) => void;
+  edit: (id: string, state?: string, session?: BoardSession) => void;
   assign: (session: BoardSession) => void;
   archive: (session: BoardSession) => void;
   archiveAll: (sessions: BoardSession[]) => void;
-  cardDrag: (session: BoardSession, event: DragEvent) => void;
-  columnDrag: (state: string, event: DragEvent) => void;
+  editorOpen: () => boolean;
+  announce: (message: string) => void;
+  move: (session: BoardSession, state: string) => void;
 }
 
+export type BoardControls = BoardDependencies & { drag: ReturnType<typeof createCardDrag> };
+
 export interface BoardHandle {
+  drag: ReturnType<typeof createCardDrag>;
   update: (model: BoardModel) => void;
 }
 
@@ -72,9 +77,11 @@ declare global {
   }
 }
 
-window.mountBoard = (host, unplaced, dependencies) => ({
-  update: model => {
-    render(h(BoardColumns, { model, dependencies }), host);
-    render(h(BoardColumns, { model, dependencies, unplaced: true }), unplaced);
-  },
-});
+window.mountBoard = (host, unplaced, dependencies) => {
+  const drag = createCardDrag(host.parentElement!, dependencies);
+  const controls = { ...dependencies, drag };
+  return { drag, update: model => {
+    render(h(BoardColumns, { model, dependencies: controls }), host);
+    render(h(BoardColumns, { model, dependencies: controls, unplaced: true }), unplaced);
+  } };
+};

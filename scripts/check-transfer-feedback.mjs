@@ -109,7 +109,7 @@ const check = async (name, expression) => {
   assert(await evaluate(expression), name);cases.push(name);
 };
 const select = (id, value) => evaluate(`byId(${JSON.stringify(id)}).value=${JSON.stringify(value)};byId(${JSON.stringify(id)}).dispatchEvent(new Event("change"))`);
-const drag = async (id, selector) => {
+const drag = async (id, selector, beforeDrop) => {
   const point = selector => evaluate(`(() => {
     const node = document.querySelector(${JSON.stringify(selector)});node.scrollIntoView({block:"center",inline:"nearest"});
     const rect = node.getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+Math.min(30,rect.height/2)};
@@ -124,6 +124,7 @@ const drag = async (id, selector) => {
     await page.command("Input.dispatchMouseEvent", { type: "mouseMoved", x: source.x + 30, y: source.y + 15, buttons: 1, button: "left" });
     const { data } = await intercepted;
     assert(data.items.some(item => item.data === id), "必须捕获真实卡片拖拽");
+    if (beforeDrop) await beforeDrop();
     for (const type of ["dragEnter", "dragOver", "drop"]) await page.command("Input.dispatchDragEvent", { type, ...target, data });
     await page.command("Input.dispatchMouseEvent", { type: "mouseReleased", ...target, button: "left", clickCount: 1 });
   } finally { await page.command("Input.setInterceptDrags", { enabled: false }); }
@@ -158,7 +159,7 @@ try {
   await until('creating');
   await check("新建等待中禁用拖动归档排序与筛选", 'byId("new-session").disabled && byId("host-filter").disabled && document.querySelector("[data-archive-all]").disabled && [...document.querySelectorAll(".card")].every(card=>!card.draggable) && [...document.querySelectorAll(".column-sort")].every(button=>button.disabled)');
   await evaluate('(() => {const card=document.querySelector(".card"), event=new Event("dragstart",{cancelable:true});card.dispatchEvent(event);window.creationBlockedDrag=event.defaultPrevented;void moveCard(data.sessions[0],"review");void archiveSessions([data.sessions[2]],document.querySelector("[data-archive-all]"));void confirmArchiveInputs(data.sessions[2],document.querySelector("[data-archive-all]"));void changeColumnSort("to_archive",document.querySelector("#column-to_archive .column-sort"));byId("draft-restart").onclick();openEditor(data.sessions[0].id,"blocked");byId("edit-form").requestSubmit();})()');
-  await check("新建先开始时各写入口也保持互斥", 'creating && !saving && !dragging && window.creationBlockedDrag && !byId("editor").open');
+  await check("新建先开始时各写入口也保持互斥", 'creating && !saving && !document.querySelector(".drag-source") && window.creationBlockedDrag && !byId("editor").open');
   for (let attempt = 0; attempt < 150 && !pendingNew; attempt++) await delay(40);
   assert.equal(writes.length, 0);assert.equal(mutations.length, 1);
   assert.equal(mutations[0].path, "/api/new");assert.equal(mutations[0].body.projectId, "project");
@@ -203,7 +204,7 @@ try {
   await check("等待中禁用归档排序新建和再次拖动", 'byId("new-session").disabled && document.querySelector("[data-archive-all]").disabled && document.querySelector(".card .card-actions button:last-child").disabled && [...document.querySelectorAll(".column-sort")].every(button=>button.disabled) && [...document.querySelectorAll(".card")].every(card=>!card.draggable)');
   await evaluate('byId("new-session").onclick()');
   await check("等待中直接调用新建也不打开对话框", '!byId("new-target").open && !creating && saving');
-  await advance(401);await until('performance.now() > suppressOpenUntil');
+  await advance(401);
   await evaluate('(() => {const card=document.querySelector(".card"), event=new Event("dragstart",{cancelable:true});card.dispatchEvent(event);window.blockedDrag=event.defaultPrevented;void archiveSessions(visibleSessions(),document.querySelector("[data-archive-all]"));void changeColumnSort("to_archive",document.querySelector("#column-to_archive .column-sort"));void confirmArchiveInputs(visibleSessions()[0],document.querySelector("[data-archive-all]"));void moveCard(visibleSessions()[0],"review");void openSession(moving.id);})()');
   await check("等待中直接调用也不能重复写入", 'window.blockedDrag && saving && moving.id === data.sessions[0].id && !opening');
   assert.equal(writes.length, 1);assert.deepEqual(mutations, expectedMutations);assert.deepEqual(opens, []);
@@ -422,11 +423,21 @@ try {
   snapshot.sessions[0].readOnly = false;
   await evaluate('load()');
   assert.equal(await evaluate('data.sessions[0].readOnly'), false, "必须读回服务器解除只读");
-  automatic = false;await move("unknown");
-  snapshot.sessions[0].state = "in_progress";snapshot.sessions[0].version++;snapshot.sessions[0].inputVersion++;
+  automatic = false;
+  const beforeDrag = {...snapshot.sessions[0]};
+  await evaluate('byId("unplaced").open=true');
+  await drag(id,"#column-review .cards",async () => {
+    Object.assign(snapshot.sessions[0],{state:"in_progress",version:beforeDrag.version+1,inputVersion:beforeDrag.inputVersion+1});
+    await evaluate("load()");
+  });
+  assert.deepEqual(writes.at(-1),{id,state:"review",version:beforeDrag.version,
+    inputVersion:beforeDrag.inputVersion,sectionVersion:beforeDrag.sectionVersion});
   await complete(409, false);await settled();
   await until('data.sessions[0].state === "in_progress"');
-  await check("新输入冲突保留较新的状态", 'data.sessions[0].inputVersion === 10 && data.sessions[0].state === "in_progress" && unconfirmedMoves.size === 0');
+  await check("新输入冲突保留较新的状态", `data.sessions[0].inputVersion === 10 && data.sessions[0].state === "in_progress" &&
+    data.sessions[0].note === ${JSON.stringify(beforeDrag.note)} && unconfirmedMoves.size === 0 &&
+    !document.querySelector(".move-pending,.move-origin,.drop-target,.drag-source") &&
+    [...document.querySelectorAll(".column")].every(node=>Number(node.querySelector(".column-count").textContent)===node.querySelectorAll(".card").length)`);
   await check("保存结束解除离开保护", '(() => {const event=new Event("beforeunload",{cancelable:true});window.dispatchEvent(event);return !event.defaultPrevented;})()');
   const beforeReload = writes.length;
   await page.command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/` });
@@ -449,7 +460,7 @@ try {
 } catch (error) {
   await screenshot("failure");
   await fs.writeFile(path.join(output, "failure.json"), JSON.stringify({ error: error.message, cases, writes, mutations,
-    initialReducedMotion, state: await evaluate('({now:performance.now(),reducedMotion:matchMedia("(prefers-reduced-motion: reduce)").matches,glowAnimation:document.querySelector(".move-pending")?getComputedStyle(document.querySelector(".move-pending"),"::after").animationName:null,hidden:document.hidden,editorOpen:byId("editor").open,dragging,saving,moving,sessions:data.sessions,feedbackText:byId("feedback").textContent,follow:[...document.querySelectorAll(".follow")].map(node=>node.textContent),selectedHost,selectedProject,feedback:byId("move-feedback").outerHTML,ids:[...document.querySelectorAll(".card")].map(card=>({id:card.dataset.id,draggable:card.draggable,rect:card.getBoundingClientRect().toJSON()}))})') }, null, 2));
+    initialReducedMotion, state: await evaluate('({now:performance.now(),reducedMotion:matchMedia("(prefers-reduced-motion: reduce)").matches,glowAnimation:document.querySelector(".move-pending")?getComputedStyle(document.querySelector(".move-pending"),"::after").animationName:null,hidden:document.hidden,editorOpen:byId("editor").open,dragging:board.drag.source,saving,moving,sessions:data.sessions,feedbackText:byId("feedback").textContent,follow:[...document.querySelectorAll(".follow")].map(node=>node.textContent),selectedHost,selectedProject,feedback:byId("move-feedback").outerHTML,ids:[...document.querySelectorAll(".card")].map(card=>({id:card.dataset.id,draggable:card.draggable,rect:card.getBoundingClientRect().toJSON()}))})') }, null, 2));
   throw error;
 } finally {
   for (const { response } of responses) response.destroy();

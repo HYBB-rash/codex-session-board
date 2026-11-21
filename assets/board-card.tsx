@@ -1,13 +1,13 @@
 import { defineComponent } from "vue";
 import type { PropType } from "vue";
-import type { BoardDependencies, BoardModel, BoardSession } from "./board-view";
+import type { BoardControls, BoardModel, BoardSession } from "./board-view";
 import { CardNote, CardProject } from "./board-details";
 
 export default defineComponent({
   props: {
     session: { type: Object as PropType<BoardSession>, required: true },
     model: { type: Object as PropType<BoardModel>, required: true },
-    dependencies: { type: Object as PropType<BoardDependencies>, required: true },
+    dependencies: { type: Object as PropType<BoardControls>, required: true },
   },
   setup(props) {
     return () => {
@@ -16,10 +16,11 @@ export default defineComponent({
       const locked = model.saving || model.creating || pending;
       const actions = dependencies.actions(session);
       const adjustTitle = (session.state === null ? "归列：" : "调整状态或备注：") + session.title;
-      return <article class={["card", { "move-pending": pending, offline: session.canOpen === false }]}
+      return <article class={["card", { "move-pending": pending, offline: session.canOpen === false,
+        "drag-source": dependencies.drag.source?.id === session.id }]}
         data-id={session.id} aria-label={session.title} aria-busy={pending ? "true" : undefined}
-        draggable={actions.canAdjust} onDragstart={event => dependencies.cardDrag(session, event)}
-        onDragend={event => dependencies.cardDrag(session, event)}
+        draggable={actions.canAdjust} onDragstart={event => dependencies.drag.start(session, event)}
+        onDrag={dependencies.drag.track} onDragend={dependencies.drag.end}
         onClick={event => {
           const control = (event.target as Element).closest("button,a,input,select,textarea,details");
           if (!pending && !(control && (event.currentTarget as HTMLElement).contains(control))) dependencies.preview(session);

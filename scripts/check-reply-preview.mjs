@@ -272,14 +272,16 @@ async function exercise(surface) {
     busy:byId("reply-body").getAttribute("aria-busy"),
     selected:document.querySelector(".card-title[aria-expanded=true]").closest(".card").dataset.id})`;
   const preserved = await evaluate(readingState), beforeRefresh = requests.length;
-  for (const operation of ["dragging={}", "saving=true", "creating=true",
-    `moving={id:${JSON.stringify(remote)}}`, "suppressOpenUntil=performance.now()+100000"]) {
+  const dragEvent = type => `document.querySelector(".card").dispatchEvent(new DragEvent("${type}",{bubbles:true,dataTransfer:new DataTransfer()}))`;
+  for (const operation of [dragEvent("dragstart"), dragEvent("dragend"), "saving=true", "creating=true",
+    `moving={id:${JSON.stringify(remote)}}`]) {
     await evaluate(operation);
     await press("#reply-refresh");
     await evaluate("new Promise(resolve=>requestAnimationFrame(resolve))");
     assert.equal(requests.length,beforeRefresh,`${surface} ${operation} 期间重读了回复`);
     assert.deepEqual(await evaluate(readingState),preserved);
-    await evaluate("dragging=null;saving=false;creating=false;moving=null;suppressOpenUntil=0");
+    await evaluate("saving=false;creating=false;moving=null");
+    if (operation === dragEvent("dragend")) await delay(410);
   }
   await evaluate('saving=true;moving={id:"another-card"}');
   await press("#reply-refresh");

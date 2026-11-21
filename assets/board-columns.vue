@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { BoardDependencies, BoardModel } from "./board-view";
+import type { BoardControls, BoardModel } from "./board-view";
 import SessionCard from "./board-card";
 
-defineProps<{ model: BoardModel; dependencies: BoardDependencies; unplaced?: boolean }>();
+defineProps<{ model: BoardModel; dependencies: BoardControls; unplaced?: boolean }>();
 </script>
 
 <template>
@@ -15,11 +15,12 @@ defineProps<{ model: BoardModel; dependencies: BoardDependencies; unplaced?: boo
   </template>
   <template v-else>
     <section v-for="column in model.columns" :id="'column-' + column.state" :key="column.state"
-    :class="['column', column.state]" :data-state="column.state" :aria-label="column.label"
+    :class="['column', column.state, { 'drag-active': dependencies.drag.source,
+      'drop-target': dependencies.drag.target === column.state }]" :data-state="column.state" :aria-label="column.label"
     :data-mode="model.legacyMode ? 'legacy' : 'native'"
-    @dragover="dependencies.columnDrag(column.state, $event)"
-    @dragleave="dependencies.columnDrag(column.state, $event)"
-    @drop="dependencies.columnDrag(column.state, $event)">
+    @dragover="dependencies.drag.over(column.state, $event)"
+    @dragleave="dependencies.drag.leave(column.state, $event)"
+    @drop="dependencies.drag.drop(column.state, $event)">
     <div class="column-heading">
       <h2>{{ column.label }}</h2>
       <span class="column-count" :aria-label="column.sessions.some(session => session.id === model.moving?.id)

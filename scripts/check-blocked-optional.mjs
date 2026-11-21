@@ -168,7 +168,7 @@ try {
 } catch (error) {
   report.error = error.stack;
   if (page) {
-    report.page = await evaluate('({dragging:dragging?.id,html:document.querySelector(".board")?.outerHTML,notice:document.querySelector("#notice").textContent})');
+    report.page = await evaluate('({dragging:document.querySelector(".drag-source")?.dataset.id,html:document.querySelector(".board")?.outerHTML,notice:document.querySelector("#notice").textContent})');
   }
   process.exitCode = 1;
 } finally {
