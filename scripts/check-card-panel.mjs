@@ -6,7 +6,7 @@ import {launchBrowser} from "./browser-client.mjs";
 import {until} from "./browser-actions.mjs";
 import {checkPackagedEditor} from "./check-editor-drafts.mjs";
 
-const [target,follow] = process.argv.slice(2);
+const [target,follow,boardUrl] = process.argv.slice(2);
 const replies = new Map(), input = createInterface({input:process.stdin});
 let nextId = 0;
 input.on("line",line => {
@@ -91,6 +91,11 @@ try {
     const report = await checkPackagedEditor({evaluate,command:outer.command},read);
     assert.deepEqual(calls.filter(call => call.name === "board_update").map(call => call.arguments.note),report.submitted);
     console.error(JSON.stringify({surface:"MCP",...report}));
+  } else if (target === "--preview") {
+    await checkMarkdownPreview(evaluate, follow);
+    assert.deepEqual(calls.filter(call => call.name === "board_preview_reply").map(call => call.arguments), [{id:follow}]);
+    const page = await browser.page(boardUrl);
+    await checkMarkdownPreview(page.evaluate, follow);
   } else await checkArchivePanel(evaluate);
 } finally {
   releaseWrite();
@@ -99,6 +104,35 @@ try {
   await new Promise(resolve => server.close(resolve));
   input.close();
   process.stdin.destroy();
+}
+
+async function checkMarkdownPreview(evaluate, id) {
+  const selector = JSON.stringify(`.card[data-id="${id}"] .card-title`);
+  await until(() => evaluate(`Boolean(document.querySelector(${selector}))`), "预览卡片未出现");
+  await evaluate(`document.querySelector(${selector}).click()`);
+  await until(() => evaluate(`!document.getElementById("reply-reader").hidden &&
+    document.getElementById("reply-body").getAttribute("aria-busy") === "false" &&
+    Boolean(document.getElementById("reply-text").innerText)`), "回复正文未显示");
+  const preview = await evaluate(`(() => {
+    const body = document.getElementById("reply-text");
+    const texts = selector => [...body.querySelectorAll(selector)].map(node => node.innerText.trim());
+    return {headings:texts("h1"), items:texts("ul li"), quotes:texts("blockquote"), code:texts("pre code"),
+      columns:texts("table th"), cells:texts("table td"), text:body.innerText,
+      links:[...body.querySelectorAll("a[href]")].map(link => [link.innerText, link.href]),
+      activeElements:[...body.querySelectorAll("script, img")].map(node => node.localName)};
+  })()`);
+  assert.deepEqual(preview.headings, ["核对记录"]);
+  assert.deepEqual(preview.items, ["Linux", "macOS"]);
+  assert.deepEqual(preview.quotes, ["保留报告"]);
+  assert.deepEqual(preview.code, ["printf 'ok'"]);
+  assert.deepEqual(preview.columns, ["平台", "结果"]);
+  assert.deepEqual(preview.cells, ["ARM", "通过"]);
+  assert.deepEqual(preview.links, [["报告","https://example.com/report"], ["索引","http://example.com/index"]]);
+  assert.deepEqual(preview.activeElements, []);
+  for (const label of ["<script>sample</script>", "禁用", "账号链接", "图示"]) {
+    assert(preview.text.includes(label), `正文缺少 ${label}`);
+  }
+  assert.doesNotMatch(preview.text, /file:\/\/|reader@example\.invalid|preview-image\.png/);
 }
 
 async function checkArchivePanel(evaluate) {

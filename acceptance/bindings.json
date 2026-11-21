@@ -1076,7 +1076,7 @@
     ],
     "NAV-001": {
       "common": [
-        "lib::codex_session_board::app::preview::tests::preview_markdown_formats_text_without_loading_untrusted_content",
+        "test::native_authority::entrypoints::preview_tool_keeps_reply_out_of_model_content",
         "lib::codex_session_board::app::drafts::tests::project_confirmation_handles_implicit_membership_but_rejects_ambiguous_or_foreign_hosts",
         "lib::codex_session_board::app::drafts::tests::native_remote_new_previews_persistent_changes_and_rejects_stale_consent",
         "lib::codex_session_board::app::drafts::tests::approved_native_navigation_rechecks_alias_and_account_before_handoff",

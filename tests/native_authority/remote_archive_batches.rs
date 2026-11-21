@@ -164,15 +164,7 @@ fn offline_panel_confirms_new_input_and_archives_only_the_ready_host() -> Result
         native.latest_turn = Some(json!({"id":"turn","status":"completed","items":[
             {"id":"input","type":"userMessage"},{"type":"agentMessage","phase":"final_answer","text":"归档前核对"}]}));
     }
-    use std::process::{Command, Stdio};
-    let mut mcp = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
-        .args(["mcp","--config"]).arg(directory.path().join("config.json"))
-        .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()?;
-    let output = Command::new("node").arg("scripts/check-card-panel.mjs").args([&fixture.target, SECOND])
-        .stdin(mcp.stdout.take().unwrap()).stdout(mcp.stdin.take().unwrap()).output();
-    assert!(mcp.wait()?.success());
-    let output = output?;
-    anyhow::ensure!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    live.check_panel(&[&fixture.target, SECOND])?;
     assert_eq!(fixture.writes("mac"), 1);
     assert_eq!(fixture.writes("other"), 0);
     assert!(!fixture.server.surface.lock().unwrap().calls.iter().any(|method| method == "thread/archive"));

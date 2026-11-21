@@ -26,21 +26,6 @@ fn metadata(status: &str) -> Value {
     json!({"thread":{"id":"thread","status":{"type":status}}})
 }
 
-#[test]
-fn preview_markdown_formats_text_without_loading_untrusted_content() {
-    let sample = "# 核对记录\n\n- Linux\n- macOS\n\n> 保留报告\n\n```sh\nprintf 'ok'\n```\n\n\
-        | 平台 | 结果 |\n| --- | --- |\n| ARM | 通过 |\n\n[报告](https://example.com/report)\n\n\
-        <script>sample</script>\n\n[禁用](file:///tmp/example) ![图示](https://example.com/image.png)";
-    let rendered = render_markdown(sample);
-    for expected in ["<h1>", "<ul>", "<li>", "<blockquote>", "<pre><code", "<table>",
-        "href=\"https://example.com/report\"", "&lt;script&gt;sample&lt;/script&gt;", "禁用</a> 图示"] {
-        assert!(rendered.contains(expected), "缺少 {expected}: {rendered}");
-    }
-    for excluded in ["<script>", "<img", "file://", "image.png"] {
-        assert!(!rendered.contains(excluded), "意外出现 {excluded}: {rendered}");
-    }
-}
-
 fn page(turn: &str, status: &str, phase: &str) -> Value {
     json!({"data":[{"id":turn,"status":status,"items":[
         {"type":"agentMessage","phase":"commentary","text":"progress"},

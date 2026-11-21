@@ -133,6 +133,19 @@ impl Live {
         anyhow::ensure!(result.status.success(), "MCP process failed");
         Ok(serde_json::from_slice::<Value>(&result.stdout)?["result"].clone())
     }
+
+    pub(super) fn check_panel(&self, arguments: &[&str]) -> Result<()> {
+        let mut mcp = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
+            .args(["mcp", "--config"]).arg(&self.path)
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()?;
+        let output = Command::new("node").arg("scripts/check-card-panel.mjs").args(arguments)
+            .stdin(mcp.stdout.take().unwrap()).stdout(mcp.stdin.take().unwrap()).output();
+        let status = mcp.wait()?;
+        let output = output?;
+        anyhow::ensure!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        anyhow::ensure!(status.success(), "MCP process failed: {status}");
+        Ok(())
+    }
 }
 
 impl Drop for Live {
@@ -230,11 +243,18 @@ fn preview_tool_keeps_reply_out_of_model_content() -> Result<()> {
     let mut server = Server::new(directory.path())?;
     server.config.desktop_socket = directory.path().join("engine.sock");
     let _engine = Engine::new(&server.config.desktop_socket, std::sync::Arc::clone(&server.surface))?;
+    let image_probe = std::net::TcpListener::bind(("127.0.0.1", 0))?;
+    let markdown = format!("# 核对记录\n\n- Linux\n- macOS\n\n> 保留报告\n\n```sh\nprintf 'ok'\n```\n\n\
+        | 平台 | 结果 |\n| --- | --- |\n| ARM | 通过 |\n\n\
+        [报告](https://example.com/report) [索引](http://example.com/index)\n\n\
+        <script>sample</script>\n\n[禁用](file:///tmp/example) \
+        [账号链接](https://reader@example.invalid/private) ![图示](http://{}/preview-image.png)",
+        image_probe.local_addr()?);
     {
         let mut native = server.surface.lock().unwrap();
         native.preview_revision = Some(json!({"id":"preview","status":"completed"}));
         native.latest_turn = Some(json!({"id":"preview","status":"completed","items":[
-            {"id":"answer","type":"agentMessage","phase":"final_answer","text":"隔离回复正文"}]}));
+            {"id":"answer","type":"agentMessage","phase":"final_answer","text":markdown}]}));
     }
     drop(server.app()?);
     let live = Live::new(&mut server.config, directory.path())?;
@@ -243,8 +263,14 @@ fn preview_tool_keeps_reply_out_of_model_content() -> Result<()> {
     let body = json!({"id":FIRST});
     let reply: Value = live.post_path(&client, "/api/preview-reply", &body)?.error_for_status()?.json()?;
     assert_eq!(reply["turnId"], "preview");
-    assert!(reply["html"].as_str().unwrap().contains("隔离回复正文"));
     assert_eq!(live.mcp("board_preview_reply", body)?, json!({"content":[],"_meta":{"previewReply":reply}}));
+    live.check_panel(&["--preview", FIRST, &live.url])?;
+    image_probe.set_nonblocking(true)?;
+    match image_probe.accept() {
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => (),
+        Err(error) => return Err(error.into()),
+        Ok(_) => anyhow::bail!("回复预览访问了图片地址"),
+    }
     Ok(())
 }
 
