@@ -99,6 +99,7 @@ await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
 let browser, cleanup, failure;
 const checks = [];
 const firstClicks = {};
+const gutterClicks = {http:[],mcp:[]};
 const address = `http://127.0.0.1:${server.address().port}`;
 const until = async (predicate, message) => {
   for (let attempt=0;attempt<150;attempt++) {
@@ -171,10 +172,41 @@ async function exercisePage(surface, page) {
     await mouse("mousePressed",point,1);
     await mouse("mouseReleased",point,0);
   };
-  const gutter = () => evaluate(`(() => {
-    const {right,top,height}=byId("reply-reader").getBoundingClientRect();
-    return {x:Math.floor(right)+4,y:Math.floor(top+height/2)};
-  })()`);
+  const dismissFromGutter = async () => {
+    await wait('!byId("reply-reader").hidden && !byId("reply-scrim").hidden');
+    const startTrace = `window.gutterEvents = []; window.gutterMove = null; window.gutterTrace = new AbortController();
+      for (const type of ["mousemove","pointerdown","pointerup","click"]) window.addEventListener(type,event=>{
+        const hit = {type,target:event.target.tagName,id:event.target.id,card:event.target.closest(".card")?.dataset.id,
+          blank:event.target === document.querySelector("main"),trusted:event.isTrusted,x:event.clientX,y:event.clientY};
+        if (type === "mousemove") window.gutterMove = hit;
+        else window.gutterEvents.push(hit);
+      },{capture:true,signal:window.gutterTrace.signal})`;
+    const endTrace = "window.gutterTrace.abort(); window.gutterEvents";
+    await evaluate(startTrace);
+    if (surface === "mcp") await page.evaluate(startTrace);
+    const point = await until(async () => {
+      const blank = await evaluate(`(() => {
+        const reader = byId("reply-reader").getBoundingClientRect();
+        const left = Math.max(reader.right, byId("board-viewport").getBoundingClientRect().right);
+        const right = document.documentElement.clientWidth;
+        const x = Math.floor((left + right) / 2), y = Math.floor((reader.top + reader.bottom) / 2);
+        return x > left && x < right && document.elementFromPoint(x,y) === document.querySelector("main") && {x,y};
+      })()`);
+      if (!blank) return false;
+      await mouse("mouseMoved",blank,0);
+      const hit = await evaluate("window.gutterMove");
+      return hit?.trusted && hit.blank && hit.x===blank.x && hit.y===blank.y && blank;
+    },`${surface} 物理指针未命中阅读栏右侧的页面空白`);
+    await click(point);
+    const events = await evaluate(endTrace);
+    const hostEvents = surface === "mcp" ? await page.evaluate(endTrace) : [];
+    const receipt = {point,page:await pagePoint(point),events,hostEvents};
+    gutterClicks[surface].push(receipt);
+    const detail = JSON.stringify(receipt);
+    assert.deepEqual(events.filter(event => event.blank && event.trusted && event.x===point.x && event.y===point.y)
+      .map(event => event.type), ["pointerdown","pointerup","click"], `${surface} 空白未收到完整物理点击 ${detail}`);
+    await until(()=>evaluate(overlayClosed),`${surface} 页面空白收到点击后预览未收起 ${detail}`);
+  };
   await wait(`Boolean(document.querySelector(${JSON.stringify(card("local"))}))`);
   if (surface === "mcp") {
     const scheme = 'getComputedStyle(document.documentElement).colorScheme';
@@ -377,16 +409,14 @@ async function exercisePage(surface, page) {
   await wait('byId("editor").open && !byId("reply-scrim").hidden');
   assert.equal(requests.length,beforeAdjust);
   await evaluate('byId("editor").close()');
-  await click(await gutter());
-  await wait(overlayClosed);
+  await dismissFromGutter();
   await resize(768,900);
   const horizontal = await evaluate('byId("board-viewport").scrollLeft=10000;byId("board-viewport").scrollLeft');
   assert(horizontal>0);
   const narrow = await evaluate(geometry);
   await press(card(remote));
   assert.deepEqual(await evaluate(geometry),narrow);
-  await click(await gutter());
-  await wait(overlayClosed);
+  await dismissFromGutter();
   assert.deepEqual(await evaluate(geometry),narrow);
   await checkCardDisplay(evaluate, snapshot, wait, async selector => {
     await evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:"center",inline:"nearest",behavior:"instant"})`);
@@ -426,5 +456,5 @@ try {
   if (browser) cleanup = await browser.close();
   await new Promise(resolve=>server.close(resolve));
 }
-console.log(JSON.stringify({passed:!failure,checks,firstClicks,embeddedResource:process.argv[3] || "fixture",cleanup}));
+console.log(JSON.stringify({passed:!failure,checks,firstClicks,gutterClicks,embeddedResource:process.argv[3] || "fixture",cleanup}));
 if (failure) throw failure;
