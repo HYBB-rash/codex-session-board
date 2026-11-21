@@ -51,11 +51,18 @@ class MainReleaseFeedbackTests(unittest.TestCase):
                  "labels": [{"name": "release-blocker"}, {"name": "merge-gate-gap"}]}
         forge = Mock()
         forge.pages.return_value = [issue]
-        with patch.object(feedback, "GitHub", return_value=forge), \
-                patch.object(feedback, "git", side_effect=["", "Unrelated change", "src/main.rs"]), \
-                patch.object(feedback, "comment_once"):
-            self.assertEqual(feedback.recovered("owner/repo", "newer", 8), [])
-            forge.api.assert_not_called()
+        for message, path in [
+            ("Unrelated change", "src/main.rs"),
+            ("Release-Fix: #20", "acceptance/test_release.py"),
+            ("Release-Fix: #19", "src/main.rs"),
+        ]:
+            with self.subTest(message=message, path=path), \
+                    patch.object(feedback, "GitHub", return_value=forge), \
+                    patch.object(feedback, "git", side_effect=["", message, path]), \
+                    patch.object(feedback, "comment_once") as comment:
+                self.assertEqual(feedback.recovered("owner/repo", "newer", 8), [])
+                comment.assert_not_called()
+                forge.api.assert_not_called()
         with patch.object(feedback, "GitHub", return_value=forge), \
                 patch.object(feedback, "git", side_effect=["", "Release-Fix: #19", "acceptance/test_release.py"]), \
                 patch.object(feedback, "comment_once"):

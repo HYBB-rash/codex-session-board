@@ -64,6 +64,9 @@ class MainReleaseTests(unittest.TestCase):
             forge.api.side_effect = [run, {"jobs": changed}]
             with self.assertRaisesRegex(ValueError, "did not succeed"):
                 evidence.validation_attempts(forge, 7)
+        forge.api.side_effect = [{**run, "path": ".github/workflows/other.yml"}, {"jobs": jobs}]
+        with self.assertRaisesRegex(ValueError, "publication workflow"):
+            evidence.validation_attempts(forge, 7)
 
     def test_release_records_both_platform_reports_for_the_pinned_source(self):
         source = {"commit": "source"}
