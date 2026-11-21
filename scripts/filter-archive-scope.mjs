@@ -35,6 +35,9 @@ export async function checkFilterArchiveScope(evaluate, writes) {
     await select("host-filter", "host:" + row.hostId);
     await select("project-filter", "project:" + row.projectId);
     assert.deepEqual(await cards(), [row.id]);
+    const scope = `${hostLabel} · ${row.hostId} · 目标项目 · 活动`;
+    assert.equal(await evaluate('document.querySelector("#filter-scope").textContent'), scope);
+    assert((await evaluate('document.querySelector("#column-to_archive [data-archive-all]").title')).startsWith(scope));
     const start = writes.length;
     await evaluate('document.querySelector("#column-to_archive [data-archive-all]").click()');
     await until(() => writes.slice(start).some(write => write.path === "/api/archive-batches/finish"),
