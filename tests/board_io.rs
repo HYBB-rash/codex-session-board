@@ -835,14 +835,13 @@ fn real_http_persistence_security_and_launcher_reuse() {
 #[test]
 fn real_http_pwa_manifest_and_assets_are_local_and_uncached() {
     let fixture = Fixture::new(false);
+    fixture.populate();
     let running = fixture.launch();
     let origin = running["url"].as_str().unwrap();
     let client = client();
     let html = client.get(origin).send().unwrap().text().unwrap();
-    assert!(html.contains("id=\"move-dragon\" src=\"data:image/webp;base64,"));
-    assert!(html.contains("<link rel=\"manifest\" href=\"/manifest.webmanifest\">"));
-    assert!(html.contains("<script src=\"/assets/pwa.js\" defer></script>"));
     assert!(!html.contains("__CSRF_TOKEN__"));
+    check_pwa_page(&fixture, origin);
     let response = client
         .get(format!("{origin}/manifest.webmanifest"))
         .send()
@@ -873,8 +872,32 @@ fn real_http_pwa_manifest_and_assets_are_local_and_uncached() {
     }
 }
 
+fn check_pwa_page(fixture: &Fixture, origin: &str) {
+    let mut browser = Command::new("node")
+        .args(["scripts/check-pwa-page.mjs", origin])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut transitions = Vec::new();
+    for line in BufReader::new(browser.stdout.take().unwrap()).lines() {
+        let transition = line.unwrap();
+        match transition.as_str() {
+            "stop" => drop(fixture.server.lock().unwrap().take()),
+            "start" => assert_eq!(fixture.launch()["url"], origin),
+            _ => panic!("未知 PWA fixture 操作：{transition}"),
+        }
+        transitions.push(transition);
+    }
+    let output = browser.wait_with_output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(transitions, ["stop", "start"]);
+}
+
 fn check_pwa_icons(client: &reqwest::blocking::Client, manifest: &Value, origin: &str) {
-    for icon in manifest["icons"].as_array().unwrap() {
+    let icons = manifest["icons"].as_array().unwrap();
+    assert!(!icons.is_empty());
+    for icon in icons {
         let url = url::Url::parse(origin)
             .unwrap()
             .join(icon["src"].as_str().unwrap())
