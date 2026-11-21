@@ -162,7 +162,8 @@ async function checkArchivePanel(evaluate) {
   await until(() => calls.some(call => call.name === "board_archive"), "未收到归档工具调用");
   assert.equal(await evaluate('document.querySelector("[data-archive-all]").disabled && !document.querySelector(".card[draggable=true],.card [data-action=adjust]:enabled,.card [data-action=archive]:enabled")'), true);
   releaseWrite();
-  await until(() => calls.some(call => call.name === "board_archive_batch_finish") && evaluate('!saving && !archiveChecking'), "未读回列归档");
+  await until(() => calls.some(call => call.name === "board_archive_batch_finish") &&
+    evaluate('byId("archive-summary-text").textContent.includes("本批提交已结束")'), "未读回列归档");
   const submitted = calls.filter(call => call.name === "board_archive_batch_start");
   assert.equal(submitted.length, 1);
   const {id:batchId,items} = submitted[0].arguments;

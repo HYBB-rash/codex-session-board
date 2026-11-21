@@ -175,7 +175,7 @@ try {
   const reloaded = page.event("Page.loadEventFired");
   await page.command("Page.reload");
   await reloaded;
-  await wait('typeof data !== "undefined" && data.sessions.length === 8');
+  await wait('typeof data !== "undefined" && data.projectCatalog?.items.some(project=>project.id==="server" && project.canCreate)');
   nativePending = false;
   await evaluate('createSession("server")');
   check(targetWrites()[1].body.operationId,originalOperation);

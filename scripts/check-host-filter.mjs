@@ -110,24 +110,30 @@ try {
   await evaluate('byId("filter-toggle").click()');
   await select("project-filter","project:a1");
   archive.controls.loseReply = true;
+  fixture.sessions.push({...fixture.sessions.find(row=>row.id==="a1"),id:"a1-read-only",readOnly:true,canArchive:false});
+  await refresh();
   await evaluate('document.querySelector("[data-archive-all]").click()');
-  await wait("!saving");
-  const batchId = writes.find(row=>row.path === "/api/archive-batches").body.id;
-  check(writes.filter(row=>row.path === "/api/archive").map(row=>row.body),[{id:"a1",version:1,inputVersion:2,sectionVersion:"fixture",batchId}]);
+  await wait('byId("archive-summary-text").textContent.includes("本批提交已结束")');
+  const batch = writes.find(row=>row.path === "/api/archive-batches").body;
+  const revision = {id:"a1",version:1,inputVersion:2,sectionVersion:"fixture"};
+  check({selected:batch.items,submitted:writes.filter(row=>row.path === "/api/archive").map(row=>row.body)},
+    {selected:[{...revision,title:"共同关键词 a1"}],submitted:[{...revision,batchId:batch.id}]});
   check(await evaluate('byId("archive-summary-text").textContent.includes("已确认归档 0 / 1 条")'),true);
   check(await evaluate('document.querySelector(".card[data-id=a1]").textContent.includes("归档结果待核对")'),true);
   check(await evaluate('document.querySelector("[data-archive-all]").disabled'),true);
-  await evaluate('void byId("archive-results-toggle").onclick()');
+  await evaluate('byId("archive-results-toggle").click()');
   await wait('byId("archive-result-list").textContent.includes("待核对")');
   const reopened = await browser.page(`http://127.0.0.1:${server.address().port}/`);
-  const readReopened = () => reopened.evaluate('typeof byId === "function" && byId("archive-summary-text").textContent.includes("1 条待核对") && !archiveChecking');
+  const readReopened = () => reopened.evaluate('document.querySelector("#archive-summary-text")?.textContent.includes("1 条待核对") && document.querySelector("#archive-summary-actions button")?.disabled === false');
   for (let attempt = 0; attempt < 100 && !await readReopened(); attempt++)
     await new Promise(resolve => setTimeout(resolve,25));
   check(await readReopened(),true);
   archive.controls.verify = true;
-  await evaluate('byId("archive-summary-actions").querySelector("button").onclick()');
+  await evaluate('byId("archive-summary-actions").querySelector("button").click()');
+  await wait('byId("archive-summary-text").textContent.includes("已确认归档 1 / 1 条")');
   check(await evaluate('byId("archive-summary-text").textContent.includes("已确认归档 1 / 1 条")'),true);
   check(writes.filter(row=>row.path === "/api/archive").length,1);
+  fixture.sessions = fixture.sessions.filter(row=>row.id!=="a1-read-only");
   archive.controls.loseReply = false;
   await select("project-filter","default");
   await evaluate('document.querySelector(".card [data-action=archive]").click()');

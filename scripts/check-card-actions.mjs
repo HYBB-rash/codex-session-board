@@ -60,12 +60,12 @@ try {
   assert.match(missing, /当前不可修改/);
   await page.command("Fetch.continueRequest", {requestId:pendingRead.requestId});
   await page.command("Fetch.disable");
-  await wait('archivePending.size === 1 && !archiveChecking');
+  await wait('byId("archive-summary-text").textContent.includes("1 条待核对") && byId("archive-summary-actions").querySelector("button:enabled")');
   await page.evaluate('card("Online").querySelector("[data-action=adjust]").click()');
   assert.equal(await page.evaluate('byId("editor").open'), true);
   await page.evaluate('byId("cancel").click()');
   await checkSubmitting("archive", 'document.querySelector("[data-archive-all]").click()');
-  await wait('!saving && !archiveChecking && card("Online")?.textContent.includes("归档结果待核对")');
+  await wait('card("Online")?.textContent.includes("归档结果待核对") && card("Online").querySelector("[data-action=adjust]:enabled") && byId("archive-summary-actions").querySelector("button:enabled")');
   assert.deepEqual(await page.evaluate('buttons("Online")'), [true,true,null]);
   const retry = await page.evaluate(`(() => {
     const {id,version,inputVersion,sectionVersion} = data.sessions.find(row => row.title === "Online");
