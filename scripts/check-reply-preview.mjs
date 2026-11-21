@@ -141,6 +141,13 @@ async function iframeEvaluator() {
 async function exercise(surface) {
   snapshot = fixture(); current = prior; held = true; openFails = false; requests.length = 0;
   const page = await browser.page(address+(surface==="mcp" ? "/host" : "/"));
+  try {
+    await exercisePage(surface,page);
+  } finally {
+    await page.command("Page.close");
+  }
+}
+async function exercisePage(surface, page) {
   const evaluate = surface==="mcp" ? await iframeEvaluator() : page.evaluate;
   const wait = expression => until(()=>evaluate(expression),expression);
   const hostOffset = () => surface === "http" ? {x:0,y:0} : page.evaluate(`(() => {
@@ -387,7 +394,6 @@ async function exercise(surface) {
   });
   if (surface==="http") await checkTitleDrag(page, evaluate);
   if (surface === "mcp") assert.deepEqual(await page.evaluate("window.creations"),[{}]);
-  await page.command("Page.close");
   checks.push(surface);
 }
 async function checkTitleDrag(page, evaluate) {
