@@ -61,7 +61,7 @@ try {
   const refresh = async () => {
     const expected = JSON.stringify(fixture);
     await evaluate("load()");
-    await wait(`snapshotError === null && JSON.stringify(data) === ${JSON.stringify(expected)}`);
+    await wait(`refresh.error === null && JSON.stringify(data) === ${JSON.stringify(expected)}`);
   };
   await wait('typeof data !== "undefined" && data.sessions.length === 4');
   await evaluate('window.scrollbarStyle=document.createElement("style");document.head.append(scrollbarStyle)');

@@ -81,7 +81,7 @@ try {
   try {
     await until(() => evaluate('document.querySelector(".card") !== null'), "未读到卡片");
   } catch (error) {
-    console.error(await evaluate('({ready:document.readyState,bridge:typeof boardRequest,load:typeof load,feedback:document.querySelector("#feedback")?.textContent,error:typeof snapshotError==="string"?snapshotError:null})'),
+    console.error(await evaluate('({ready:document.readyState,bridge:typeof boardRequest,load:typeof load,feedback:document.querySelector("#feedback")?.textContent,error:typeof refresh==="object"?refresh.error:null})'),
       calls.map(call => [call.name,call.result.isError && call.result.content]));
     throw error;
   }

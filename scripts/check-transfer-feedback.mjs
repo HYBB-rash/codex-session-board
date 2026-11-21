@@ -227,7 +227,7 @@ try {
   await select("host-filter", "all");
   refreshError = true;
   await evaluate('byId("refresh").click()');
-  await until('snapshotError === "刷新断线"');
+  await until('refresh.error === "刷新断线"');
   await check("刷新失败保留健康摘要和保存等待", 'Boolean(byId("health-summary")) && byId("health-summary").textContent.includes("断开") && saving && Boolean(document.querySelector(".move-pending"))');
   refreshError = false;
   await advanceTo(1499);

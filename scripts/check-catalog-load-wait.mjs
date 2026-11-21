@@ -77,7 +77,7 @@ try {
   await page.evaluate(`(() => {
     const originalFetch = fetch;
     window.fetch = (url, options = {}) => originalFetch(url, {
-      ...options, headers: { ...options.headers, "X-Fixture-Serial": String(requestSerial) }
+      ...options, headers: { ...options.headers, "X-Fixture-Serial": String(refresh.generation) }
     });
   })()`);
   fixture.fixtureRevision = 1;
@@ -86,7 +86,7 @@ try {
   await page.evaluate("window.fixtureAttempted = false");
   const expression = fixtureLoadExpression(fixture.fixtureRevision, "pending");
   await page.command("Runtime.evaluate", { expression: `window.fixtureAttempt = (async () => {
-    const pending = load(), serial = requestSerial;
+    const pending = load(), serial = refresh.generation;
     pending.then(() => fetch("/fixture/settled", {
       method: "POST", body: JSON.stringify({ serial })
     }));
@@ -105,7 +105,7 @@ try {
   assert.equal(gates[0].serial, settledSerial);
   assert(gates[1].serial > settledSerial);
   const checkpoint = await page.evaluate(`({
-    attempted: fixtureAttempted, revision: data.fixtureRevision, serial: requestSerial,
+    attempted: fixtureAttempted, revision: data.fixtureRevision, serial: refresh.generation,
     connected: data.health.remoteConnections[0].connected
   })`);
   events.push({ event: "superseded-load-settled", settledSerial, ...checkpoint });
@@ -124,7 +124,7 @@ try {
 } catch (error) {
   failure = error;
   if (page) events.push({ event: "failure-state", state: await page.evaluate(
-    "({revision:data.fixtureRevision,serial:requestSerial,error:snapshotError,attempted:fixtureAttempted,locked:filtersLocked(),visibility:document.visibilityState})"
+    "({revision:data.fixtureRevision,serial:refresh.generation,error:refresh.error,attempted:fixtureAttempted,locked:filtersLocked(),visibility:document.visibilityState})"
   ) });
 } finally {
   controlled = false;

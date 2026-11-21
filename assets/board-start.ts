@@ -1,10 +1,11 @@
 import "./board-view";
-import "./board-editor";
 import "./board-archive-results";
 import { mountBoardBrowse, type CatalogProject, type HostCatalog, type HostIdentity } from "./board-browse";
 import { mountBoardSessionReader } from "./board-session-reader";
 import { mountMoveFeedback } from "./board-move-feedback";
 import { mountBoardEdits } from "./board-edits";
+import { mountBoardRefresh } from "./board-refresh";
+import { createColumnSortSave, type SortPreference } from "./board-sorting";
 import type { BoardSession } from "./board-view";
 
 export interface BoardSnapshot {
@@ -20,26 +21,20 @@ export interface BoardSnapshot {
   projectCatalog: { loaded: boolean; items: CatalogProject[]; error?: string; remoteHosts?: HostIdentity[] };
   legacyMode?: boolean;
   pendingDrafts?: { project: string; requestId: string }[];
-}
-
-interface SnapshotPorts {
-  current(): number;
-  locked(): boolean;
-  request(path: "/api/sessions"): Promise<BoardSnapshot>;
-  received(snapshot: BoardSnapshot): void;
-  failed(message: string): void;
+  columnSorts?: Record<string, SortPreference>;
 }
 
 declare global {
   interface Window {
     boardRequest?: (path: string, body?: object) => Promise<unknown>;
     createBoardRequest: typeof createBoardRequest;
-    readBoardSnapshot: typeof readBoardSnapshot;
     startBoard: typeof startBoard;
     mountBoardBrowse: typeof mountBoardBrowse;
     mountBoardSessionReader: typeof mountBoardSessionReader;
     mountMoveFeedback: typeof mountMoveFeedback;
     mountBoardEdits: typeof mountBoardEdits;
+    mountBoardRefresh: typeof mountBoardRefresh;
+    createColumnSortSave: typeof createColumnSortSave;
   }
 }
 
@@ -68,24 +63,16 @@ async function developmentToken(): Promise<string> {
   return requestToken;
 }
 
-async function readBoardSnapshot(serial: number, ports: SnapshotPorts): Promise<void> {
-  try {
-    const snapshot = await ports.request("/api/sessions");
-    if (serial === ports.current() && !ports.locked()) ports.received(snapshot);
-  } catch (error) {
-    if (serial === ports.current()) ports.failed(error instanceof Error ? error.message : String(error));
-  }
-}
-
 function startBoard(load: () => Promise<void>, restore: () => Promise<void> | void) {
   void load().then(restore);
   window.setInterval(load, 4000);
 }
 
 window.createBoardRequest = createBoardRequest;
-window.readBoardSnapshot = readBoardSnapshot;
 window.startBoard = startBoard;
 window.mountBoardBrowse = mountBoardBrowse;
 window.mountBoardSessionReader = mountBoardSessionReader;
 window.mountMoveFeedback = mountMoveFeedback;
 window.mountBoardEdits = mountBoardEdits;
+window.mountBoardRefresh = mountBoardRefresh;
+window.createColumnSortSave = createColumnSortSave;

@@ -239,10 +239,10 @@ try {
   await refresh();
   check(await evaluate('document.querySelector("[data-id=a1] .project-tag summary").textContent.includes("待确认")'),false);
   rejectReads = true;await evaluate("load()");
-  await wait('snapshotError === "fixture transport failure"');
+  await wait('refresh.error === "fixture transport failure"');
   check(await evaluate('byId("health-summary").textContent.startsWith("看板连接暂时断开")'),true);
   rejectReads = false;await refresh();
-  check(await evaluate("snapshotError"),null);
+  check(await evaluate("refresh.error"),null);
   await select("host-filter","host:empty");
   check(await evaluate('document.querySelector(".empty-column").textContent.includes("尚未读取")'),true);
   fixture.health.remoteRegistry.find(host=>host.hostId === "empty").enabled = true;

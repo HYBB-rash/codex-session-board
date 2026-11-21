@@ -15,6 +15,7 @@ const snapshot = {
     row("unplaced-old", 1, null), row("unplaced-new", 2, null)],
 };
 const writes = [];
+let wrongColumn = false;
 const server = http.createServer(async (request, response) => {
   if (request.url === "/") return response.writeHead(200, { "Content-Type": "text/html;charset=utf-8" }).end(html);
   if (request.url === "/api/column-sort") {
@@ -25,8 +26,9 @@ const server = http.createServer(async (request, response) => {
     const prior = snapshot.columnSorts[change.state];
     if (prior.version !== change.version) return response.writeHead(409).end(JSON.stringify({ error: "排序版本冲突" }));
     const preference = { field: change.field, direction: change.direction, version: prior.version + 1 };
+    if (wrongColumn) return response.end(JSON.stringify({ ok: true, state: "to_archive", preference }));
     snapshot.columnSorts[change.state] = preference;
-    return response.end(JSON.stringify({ preference }));
+    return response.end(JSON.stringify({ ok: true, state: change.state, preference }));
   }
   response.end(JSON.stringify(request.url === "/api/sessions" ? snapshot : {}));
 });
@@ -123,6 +125,16 @@ try {
   snapshot.states = { review: "待审阅", to_archive: "待归档" };
   await loadFixture(page, snapshot);
   assert.equal(await evaluate('document.activeElement === trigger'), true);
+  wrongColumn = true;
+  const before = writes.length;
+  await clickNode(page, "#column-review .column-sort");
+  await press("End", 35);
+  await press("Enter", 13);
+  await wait('!trigger.disabled && byId("feedback").textContent.includes("排序回执无法确认")');
+  await loadFixture(page, snapshot);
+  assert.deepEqual(writes.slice(before), [{ state: "review", field: "updated_at", direction: "asc", version: 6 }]);
+  assert.equal(await evaluate("trigger.value"), "desc");
+  assert.equal(await evaluate('document.querySelector("#column-to_archive .column-sort").value'), "asc");
 } finally {
   try { if (browser) await browser.close(); }
   finally { await new Promise(resolve => server.close(resolve)); }
