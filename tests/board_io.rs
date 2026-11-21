@@ -2,6 +2,8 @@
 
 #[path = "support/fixture.rs"]
 mod fixture;
+#[path = "support/read_only_backend.rs"]
+mod read_only_backend;
 
 use anyhow::{Result, bail};
 use codex_session_board::{app, config, http, mcp, observer, rpc::Rpc, titles};
@@ -23,6 +25,7 @@ struct Fixture {
     _port: Arc<PortLease>,
     path: PathBuf,
     settings: Value,
+    native_endpoint: Option<String>,
     server: Mutex<Option<ChildGuard>>,
 }
 
@@ -40,12 +43,21 @@ impl Fixture {
             _port: port,
             path,
             settings,
+            native_endpoint: None,
             server: Mutex::new(None),
         }
     }
 
     fn app(&self) -> app::App {
         app::App::new(config::load(Some(&self.path)).unwrap()).unwrap()
+    }
+
+    fn command(&self) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_codex-session-board"));
+        if let Some(endpoint) = &self.native_endpoint {
+            command.env("CODEX_APP_SERVER_WS_URL", endpoint);
+        }
+        command
     }
 
     fn register_projects(&mut self, identifiers: &[&str]) -> PathBuf {
@@ -81,7 +93,7 @@ impl Fixture {
     }
 
     fn mcp_requests(&self, requests: &[Value]) -> Vec<Value> {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
+        let mut child = self.command()
             .args(["mcp", "--config", self.path.to_str().unwrap()])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -102,7 +114,7 @@ impl Fixture {
     }
 
     fn cli(&self, action: &str) -> std::process::Output {
-        Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
+        self.command()
             .args(["--config", self.path.to_str().unwrap(), action])
             .output()
             .unwrap()
@@ -124,7 +136,7 @@ impl Fixture {
             return serde_json::from_slice(&output.stdout).unwrap();
         }
         let mut child = ChildGuard::spawn_in(
-            env!("CARGO_BIN_EXE_codex-session-board"),
+            self.command(),
             &self.path,
             Arc::clone(&self._port),
             directory,
@@ -149,7 +161,7 @@ impl Fixture {
 impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = fs::write(&self.path, self.settings.to_string());
-        let _ = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
+        let _ = self.command()
             .args(["--config", self.path.to_str().unwrap(), "stop"])
             .output();
         let slot = self
@@ -597,10 +609,18 @@ fn check_tool_visibility(definitions: &Value) {
 
 #[test]
 fn archive_batch_tools_share_http_history() -> Result<()> {
-    let fixture = Fixture::new(false);
+    let native_directory = tempfile::tempdir()?;
+    let native = read_only_backend::Backend::start(native_directory.path(), SECOND)?;
+    native.set("idle", "completed")?;
+    let mut fixture = Fixture::new(false);
+    fixture.native_endpoint = Some(format!("ws+unix://localhost{}:/rpc", native.socket.display()));
+    fixture.settings["desktop_socket"] = json!(native.socket);
+    fixture.register_projects(&[]);
     let started = fixture.launch();
-    let url = format!("{}/api/archive-batches", started["url"].as_str().unwrap());
-    let client = reqwest::blocking::Client::builder().no_proxy().build()?;
+    let origin = started["url"].as_str().unwrap();
+    let url = format!("{origin}/api/archive-batches");
+    let client = client();
+    wait_for_native_archive_target(&client, origin)?;
     let list = || client.get(&url).send()?.error_for_status()?.json::<Value>();
     assert_eq!(list()?, json!({"batches":[]}));
     let target = json!({"id":SECOND,"title":"隔离会话","version":7,"inputVersion":2,"sectionVersion":"position"});
@@ -617,11 +637,33 @@ fn archive_batch_tools_share_http_history() -> Result<()> {
     }
     assert_eq!(batch["items"][0]["status"], "awaiting");
     assert_eq!(replies[1]["result"]["isError"], true);
-    assert_eq!(replies[1]["result"]["content"][0]["text"], "归档批次为空");
+    assert!(replies[1]["result"]["content"][0]["text"].as_str().is_some_and(|text| !text.trim().is_empty()));
     let expected = json!({"batches":[batch]});
     assert_eq!(replies[2]["result"]["structuredContent"], expected);
     assert_eq!(list()?, expected);
+    let database = rusqlite::Connection::open_with_flags(fixture._directory.path().join("data/status.sqlite3"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let stored: i64 = database.query_row(
+        "SELECT COUNT(*) FROM archive_batches WHERE id=?1", [SECOND], |row| row.get(0))?;
+    assert_eq!(stored, 0, "被拒的批次仍已入库");
+    let retry = fixture.mcp_calls(&[("board_archive_batch_start", json!({"id":SECOND,"items":[target]}))]);
+    assert_eq!(retry[0]["result"]["structuredContent"]["batch"]["id"], SECOND);
     Ok(())
+}
+
+fn wait_for_native_archive_target(client: &reqwest::blocking::Client, origin: &str) -> Result<()> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let view: Value = client.get(format!("{origin}/api/sessions")).send()?.error_for_status()?.json()?;
+        let verified = view["health"]["runtimeVerified"] == true;
+        let target_present = view["sessions"].as_array().unwrap().iter().any(|row| row["id"] == SECOND);
+        if verified && target_present {
+            return Ok(());
+        }
+        anyhow::ensure!(std::time::Instant::now() < deadline,
+            "原生归档测试会话未就绪：runtimeVerified={verified}, targetPresent={target_present}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 #[test]

@@ -162,17 +162,17 @@ impl ChildGuard {
         config: &Path,
         port: Arc<PortLease>,
     ) -> Result<Self> {
-        Self::spawn_in(executable, config, port, &std::env::current_dir()?)
+        Self::spawn_in(Command::new(executable), config, port, &std::env::current_dir()?)
     }
 
     pub fn spawn_in(
-        executable: impl AsRef<OsStr>,
+        mut command: Command,
         config: &Path,
         port: Arc<PortLease>,
         directory: &Path,
     ) -> Result<Self> {
         let stderr = tempfile::tempfile()?;
-        let child = Command::new(executable)
+        let child = command
             .current_dir(directory)
             .arg("--config")
             .arg(config)
