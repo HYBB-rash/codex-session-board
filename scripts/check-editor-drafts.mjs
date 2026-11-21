@@ -19,7 +19,9 @@ export async function checkPackagedEditor(page, readSnapshot) {
     const row = (await readSnapshot()).sessions.find(row => row.id === card.id);
     assert.equal(row.note,note.trim());
     assert.equal(row.state,card.state);
-    assert.deepEqual(await page.evaluate(`data.sessions.find(row=>row.id===${JSON.stringify(card.id)})`),row);
+    const shown = await page.evaluate(`data.sessions.find(row=>row.id===${JSON.stringify(card.id)})`);
+    for (const field of ["id","state","note","version","inputVersion","sectionVersion","followUp"])
+      assert.deepEqual(shown[field],row[field],field);
     receipts.push({id:row.id,state:row.state,note:row.note,version:row.version,inputVersion:row.inputVersion});
   }
   return {submitted,receipts};
@@ -34,6 +36,7 @@ export async function checkEditorDrafts(browser, html) {
     health:{scanComplete:true,runtimeVerified:true,nativeVerified:true},projectCatalog:{loaded:true,items:[]}};
   const posts = [];
   let mode = "conflict";
+  let resume;
   const server = http.createServer(async (request,response) => {
     if (request.url === "/") return response.writeHead(200,{"content-type":"text/html;charset=utf-8"}).end(html);
     const send = (status,result) => response.writeHead(status,{"content-type":"application/json"}).end(JSON.stringify(result));
@@ -43,13 +46,15 @@ export async function checkEditorDrafts(browser, html) {
     for await (const chunk of request) text += chunk;
     const input = JSON.parse(text);
     posts.push(input);
-    if (mode === "stale") return send(200,{ok:true,session:{...local,version:input.version-1,note:"旧回执"}});
+    if (mode === "stale" || mode === "unchanged")
+      return send(200,{ok:true,session:{...local,version:input.version-(mode === "stale" ? 1 : 0),note:"旧回执"}});
     if (mode === "another") return send(200,{ok:true,session:{...remote,id:local.id,note:"另一主机回执"}});
     if (mode === "conflict") {
-      Object.assign(local,{state:"to_archive",version:5,inputVersion:8,sectionVersion:"new-input",followUp:true});
+      Object.assign(local,{state:"to_archive",note:"另一窗口的新备注",version:local.version+1,inputVersion:local.inputVersion+1,sectionVersion:"new-input",followUp:true});
       return send(409,{error:"有新的输入，请重新核对"});
     }
-    Object.assign(local,{state:"blocked",note:input.note.trim(),version:6,sectionVersion:"saved",followUp:false});
+    if (mode === "held") await new Promise(resolve => {resume=resolve;});
+    Object.assign(local,{state:"blocked",note:input.note.trim(),version:local.version+1,sectionVersion:"saved",followUp:false});
     return send(200,{ok:true,session:local});
   });
   await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
@@ -89,7 +94,7 @@ export async function checkEditorDrafts(browser, html) {
     await notice("已读取当前状态");
     assert.equal(await field("state"),"to_archive");assert.equal(await field("note"),"  本机草稿  ");
     assert.equal(posts.length,1);
-    for (const [fault,message] of [["stale","旧保存回执"],["another","缺少有效卡片"]]) {
+    for (const [fault,message] of [["stale","旧保存回执"],["unchanged","旧保存回执"],["another","缺少有效卡片"]]) {
       mode = fault;await save();await notice(message);
       assert.equal(await field("note"),"  本机草稿  ");
       assert.equal(await evaluate('document.getElementById("editor").open'),true);
@@ -97,10 +102,29 @@ export async function checkEditorDrafts(browser, html) {
     mode = "success";await save();
     await wait('document.activeElement?.dataset.action === "adjust" && !document.getElementById("editor").open',"成功后焦点未回到卡片");
     assert.deepEqual(posts.map(item=>[item.id,item.version,item.inputVersion,item.sectionVersion]),
-      [["same",4,7,"first"],...Array.from({length:3},()=>["same",5,8,"new-input"])]);
+      [["same",4,7,"first"],...Array.from({length:4},()=>["same",5,8,"new-input"])]);
     await open(local);assert.equal(await field("state"),"blocked");assert.equal(await field("note"),"本机草稿");
     assert.equal(await evaluate('document.getElementById("notice").textContent'),"");await close();
     await select("host-filter","host:mac");await open(remote);assert.equal(await field("note"),"");await close();
-    return {reload:true,hostIsolation:true,blank:true,conflictReadback:true,staleAndWrongHost:true,focus:true};
-  } finally { await new Promise(resolve => server.close(resolve)); }
+    await select("host-filter","local");await open(local);await select("state","review");
+    mode = "conflict";await save();await notice("新的输入");
+    await evaluate('[...document.querySelectorAll("#edit-form button")].find(button=>button.textContent==="重新核对").click()');
+    await notice("已读取当前状态和备注");assert.equal(await field("note"),"另一窗口的新备注");
+    mode = "held";await save();await until(()=>Boolean(resume),"未收到重试请求");
+    const count = posts.length;
+    for (let press=0;press<3;press++) {
+      for (const type of ["keyDown","keyUp"])
+        await page.command("Input.dispatchKeyEvent",{type,key:"Escape",code:"Escape",windowsVirtualKeyCode:27});
+      await evaluate('document.getElementById("edit-form").requestSubmit()');
+    }
+    assert.equal(await evaluate('document.getElementById("editor").open'),true);
+    resume();await wait('!document.getElementById("editor").open',"重试未完成");
+    assert.equal(posts.length,count);assert.equal(local.note,"另一窗口的新备注");
+    await open(local);assert.equal(await evaluate('document.getElementById("notice").textContent'),"");
+    await evaluate('Object.defineProperty(window,"sessionStorage",{get(){throw new DOMException("blocked","SecurityError")}});void 0');
+    await inputText(page,"#note","");mode = "conflict";await save();await notice("仍在编辑框中");await close();
+    await open(local);assert.equal(await field("note"),"");await notice("已恢复");await close();
+    return {reload:true,hostIsolation:true,blank:true,conflictReadback:true,staleAndWrongHost:true,
+      focus:true,untouchedNote:true,repeatedEscape:true,storageUnavailable:true};
+  } finally { resume?.();await new Promise(resolve => server.close(resolve)); }
 }

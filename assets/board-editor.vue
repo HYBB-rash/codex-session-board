@@ -17,6 +17,7 @@ const notice = ref("");
 const busy = ref(false);
 const failed = ref(false);
 let retained: string | null = null;
+let noteEdited = false;
 
 function draftKey(card: EditorSession) {
   return "card-note:" + JSON.stringify([card.hostId || "local", card.threadId || card.id]);
@@ -51,6 +52,7 @@ function open(card: EditorSession, options: Record<string, string>, target?: str
   session.value = card;
   states.value = options;
   retained = readDraft(card);
+  noteEdited = retained !== null;
   note.value = retained ?? card.note;
   state.value = target || card.state || "";
   failed.value = false;
@@ -60,6 +62,7 @@ function open(card: EditorSession, options: Record<string, string>, target?: str
 }
 
 function changeNote(value: string) {
+  noteEdited = true;
   note.value = value;
   if (session.value) writeDraft(session.value, value);
 }
@@ -71,12 +74,14 @@ function cancel() {
 }
 
 function dismiss() {
+  busy.value = false;
   dialog.value!.close();
   closed();
 }
 
 function closed() {
   if (dialog.value?.open) return;
+  if (busy.value && session.value) { dialog.value?.showModal();return; }
   const card = session.value;
   session.value = undefined;
   if (card) ports.closed(card);
@@ -95,9 +100,11 @@ async function save() {
   } catch (error) {
     if (session.value !== card) return;
     failed.value = true;
-    retained = note.value;
-    const stored = writeDraft(card, note.value);
-    notice.value = String((error as Error).message) + (stored ? " 备注草稿已保留，请重新核对后保存。" : " 备注仍在编辑框中，请保留后重新核对。");
+    notice.value = (error as Error).message;
+    if (noteEdited) {
+      retained = note.value;
+      notice.value += writeDraft(card, note.value) ? " 备注草稿已保留，请重新核对后保存。" : " 备注仍在编辑框中，请保留后重新核对。";
+    } else notice.value += " 请重新核对当前状态和备注。";
   } finally { busy.value = false; }
 }
 
@@ -110,8 +117,9 @@ async function refresh() {
     if (session.value !== card) return;
     session.value = latest;
     state.value = latest.state || "";
+    if (!noteEdited) note.value = latest.note;
     failed.value = false;
-    notice.value = "已读取当前状态，备注草稿已保留。请核对后保存。";
+    notice.value = noteEdited ? "已读取当前状态，备注草稿已保留。请核对后保存。" : "已读取当前状态和备注，请核对后保存。";
   } catch (error) { notice.value = (error as Error).message; }
   finally { busy.value = false; }
 }
@@ -120,7 +128,8 @@ defineExpose({ open });
 onBeforeUnmount(() => { session.value = undefined; });
 </script>
 <template>
-  <dialog ref="dialog" id="editor" aria-labelledby="editor-heading" @cancel.prevent="cancel" @close="closed">
+  <dialog ref="dialog" id="editor" aria-labelledby="editor-heading" :closedby="busy ? 'none' : 'closerequest'"
+    @keydown.esc="busy && $event.preventDefault()" @cancel.prevent="cancel" @close="closed">
     <form ref="form" id="edit-form" @submit.prevent="save">
       <h2 id="editor-heading">调整工作状态</h2>
       <div id="dialog-title" class="dialog-title">{{ session?.title }}{{ session?.remote ? " · " + session.hostLabel : "" }}</div>
