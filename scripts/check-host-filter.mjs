@@ -5,6 +5,7 @@ import { launchBrowser } from "./browser-client.mjs";
 import { archiveFixture } from "./archive-browser-fixture.mjs";
 import { filterSnapshot, checkFilterArchiveScope } from "./filter-archive-scope.mjs";
 import { checkPackagedFilterFrame } from "./filter-package-frame.mjs";
+import { loadFixture } from "./browser-fixture.mjs";
 
 const html = await fs.readFile(process.argv[3] || new URL("../index.html",import.meta.url),"utf8");
 const resource = process.argv[4] && await fs.readFile(process.argv[4],"utf8");
@@ -56,11 +57,7 @@ try {
     }
     assert.fail("页面状态未就绪："+expression);
   };
-  const refresh = async () => {
-    const expected = JSON.stringify(fixture);
-    await evaluate("load()");
-    await wait(`snapshotError === null && JSON.stringify(data) === ${JSON.stringify(expected)}`);
-  };
+  const refresh = () => loadFixture(page,fixture);
   const select = (id,value) => evaluate(`byId(${JSON.stringify(id)}).value=${JSON.stringify(value)};byId(${JSON.stringify(id)}).dispatchEvent(new Event("change"))`);
   const ids = () => evaluate("visibleSessions().map(row=>row.id)");
   await wait('typeof data !== "undefined" && data.sessions.length === 5');
@@ -158,6 +155,7 @@ try {
   check(await evaluate('byId("new-host").disabled'),false);
   check(await evaluate('byId("new-project").value'),"");
   Object.assign(fixture,structuredClone(baseline));
+  for (const restored of fixture.sessions.filter(row=>row.id==="a1" || row.id==="a-default")) restored.version++;
   await evaluate('byId("new-target-form").requestSubmit()');
   await wait('!creating && !byId("new-target").open && data.projectCatalog.items.length === 4');
   check(writes.at(-1).body,{});

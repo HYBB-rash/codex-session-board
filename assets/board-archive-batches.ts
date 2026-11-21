@@ -3,6 +3,7 @@ import { computed, reactive } from "vue";
 export interface ArchiveTarget {
   id: string; title: string; version: number; inputVersion: number; sectionVersion: string | null;
 }
+export type ArchiveRevision = Pick<ArchiveTarget, "id" | "version" | "inputVersion" | "sectionVersion">;
 interface Item extends ArchiveTarget {
   status: "awaiting" | "pending" | "archived" | "verified" | "newInput" | "rejected";
   message?: string | null;
@@ -13,7 +14,7 @@ interface Submission {
 }
 export interface ArchiveRequests {
   request<T>(path: string, body?: object): Promise<T>;
-  changed(confirmed?: ArchiveTarget[]): void;
+  changed(): void;
 }
 
 function batchId() {
@@ -40,10 +41,11 @@ export function archiveBatches(actions: ArchiveRequests) {
   const pending = computed(() => new Set(state.batches.flatMap(batch => batch.items
     .filter(item => ["pending", "submitting"].includes(status(item, batch))).map(item => item.id))));
   const find = (id: string) => state.batches.find(batch => batch.id === id);
-  function newConfirmations(batch: Batch) {
-    const confirmed = (item: Item) => item.status === "archived" || item.status === "verified";
-    const known = new Set(find(batch.id)?.items.filter(confirmed).map(item => item.id));
-    return batch.items.filter(item => confirmed(item) && !known.has(item.id));
+  const revision = (card: ArchiveRevision) => JSON.stringify([card.id, card.version, card.inputVersion, card.sectionVersion ?? null]);
+  const confirmed = computed(() => new Set(state.batches.flatMap(batch => batch.items
+    .filter(item => item.status === "archived" || item.status === "verified").map(revision))));
+  function visible<T extends ArchiveRevision & {archived?: boolean}>(sessions: T[]) {
+    return confirmed.value.size ? sessions.filter(card => card.archived || !confirmed.value.has(revision(card))) : sessions;
   }
   function receive(batch: Batch) {
     ++readVersion;
@@ -57,10 +59,9 @@ export function archiveBatches(actions: ArchiveRequests) {
         return item;
       }) };
     }
-    const confirmed = newConfirmations(batch);
     state.batches = [batch, ...state.batches.filter(record => record.id !== batch.id)]
       .sort((first, second) => second.createdAt - first.createdAt);
-    actions.changed(confirmed);
+    actions.changed();
   }
   async function request<T>(path: string, body?: object, timeout = 30000) {
     let timer: number | undefined;
@@ -76,11 +77,10 @@ export function archiveBatches(actions: ArchiveRequests) {
       const {batches} = await request<{batches: Batch[]}>("/api/archive-batches", undefined, 8000);
       if (version !== readVersion) return;
       if (!Array.isArray(batches)) throw new Error("归档记录格式不正确");
-      const confirmed = batches.flatMap(newConfirmations);
       state.batches = batches;
       state.loaded = true;
       state.readError = false;
-      actions.changed(confirmed);
+      actions.changed();
     } catch {
       if (version !== readVersion) return;
       state.readError = true;
@@ -145,5 +145,5 @@ export function archiveBatches(actions: ArchiveRequests) {
     await read();
     if (!state.run) await check(toCheck.value);
   }
-  return {state, canSubmit, status, toCheck, pending, read, check, restore, submit};
+  return {state, canSubmit, status, toCheck, pending, visible, read, check, restore, submit};
 }
