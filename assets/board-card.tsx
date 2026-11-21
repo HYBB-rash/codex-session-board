@@ -55,7 +55,7 @@ export default defineComponent({
             {actions.archive && <button type="button" class="row-action"
               data-action="archive" disabled={!actions.canSubmit}
               title={actions.archive === "confirm" ? "请先打开会话核对输入；确认仅保存待归档状态，不执行归档" : "直接归档此 Codex 会话"}
-              onClick={event => dependencies.archive(session, event.currentTarget as HTMLButtonElement)}>
+              onClick={() => dependencies.archive(session)}>
               {actions.archive === "confirm" ? "确认待归档" : "归档"}</button>}
           </div>
         </div>

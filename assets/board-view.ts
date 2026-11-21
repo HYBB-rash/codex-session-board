@@ -56,8 +56,8 @@ export interface BoardDependencies {
   preview: (session: BoardSession, focus?: boolean) => void;
   edit: (id: string) => void;
   assign: (session: BoardSession) => void;
-  archive: (session: BoardSession, button: HTMLButtonElement) => void;
-  archiveAll: (sessions: BoardSession[], button: HTMLButtonElement) => void;
+  archive: (session: BoardSession) => void;
+  archiveAll: (sessions: BoardSession[]) => void;
   cardDrag: (session: BoardSession, event: DragEvent) => void;
   columnDrag: (state: string, event: DragEvent) => void;
 }
