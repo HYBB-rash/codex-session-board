@@ -1,6 +1,7 @@
 import { h, render } from "vue";
 import BoardColumns from "./board-columns.vue";
 import { createCardDrag } from "./board-drag";
+import { sortColumn, type SortPreference, type SortMenuProps } from "./board-sorting";
 import type { PreviewSession } from "./reply-preview";
 
 export interface BoardSession extends PreviewSession {
@@ -34,7 +35,7 @@ export interface ProjectTag {
 
 export interface BoardModel {
   states: Record<string, string>;
-  columns: { state: string; label: string; sessions: BoardSession[]; unread: boolean; archiveCount: number }[];
+  columns: { state: string; label: string; sessions: BoardSession[]; preference: SortPreference; unread: boolean; archiveCount: number }[];
   scope: string;
   unplaced: BoardSession[];
   legacyMode: boolean;
@@ -47,6 +48,8 @@ export interface BoardModel {
 }
 
 export interface BoardDependencies {
+  canSort: SortMenuProps["canChange"];
+  saveSort: SortMenuProps["save"];
   date: (value: number) => string;
   project: (session: BoardSession) => ProjectTag;
   actions: (session: BoardSession) => {
@@ -68,6 +71,7 @@ export interface BoardDependencies {
 export type BoardControls = BoardDependencies & { drag: ReturnType<typeof createCardDrag> };
 
 export interface BoardHandle {
+  sortColumn: typeof sortColumn;
   drag: ReturnType<typeof createCardDrag>;
   update: (model: BoardModel) => void;
 }
@@ -81,8 +85,11 @@ declare global {
 window.mountBoard = (host, unplaced, dependencies) => {
   const drag = createCardDrag(host, dependencies);
   const controls = { ...dependencies, drag };
-  return { drag, update: model => {
+  return { drag, sortColumn, update: model => {
+    const focusedSort = host.querySelector<HTMLButtonElement>(".column-sort:focus");
     render(h(BoardColumns, { model, dependencies: controls }), host);
     render(h(BoardColumns, { model, dependencies: controls, unplaced: true }), unplaced);
+    if (focusedSort?.isConnected && document.activeElement === document.body)
+      focusedSort.focus({ preventScroll: true });
   } };
 };

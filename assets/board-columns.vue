@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BoardControls, BoardModel } from "./board-view";
 import SessionCard from "./board-card";
+import ColumnSort from "./board-column-sort.vue";
 
 defineProps<{ model: BoardModel; dependencies: BoardControls; unplaced?: boolean }>();
 </script>
@@ -29,7 +30,8 @@ defineProps<{ model: BoardModel; dependencies: BoardControls; unplaced?: boolean
         {{ column.sessions.some(session => session.id === model.moving?.id)
           ? `${column.sessions.length - 1} + 1` : String(column.sessions.length) }}
       </span>
-      <span class="sort-slot" style="display:contents"></span>
+      <ColumnSort :state="column.state" :label="column.label" :preference="column.preference"
+        :disabled="model.saving || model.creating" :can-change="dependencies.canSort" :save="dependencies.saveSort" />
       <button v-if="column.state === 'to_archive' && !model.legacyMode" type="button"
         class="row-action" data-archive-all=""
         :disabled="!column.archiveCount" :title="model.scope + '；只归档本列可归档的会话'"
