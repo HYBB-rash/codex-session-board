@@ -221,13 +221,3 @@ def main():
     parser.add_argument("--candidate", required=True)
     parser.add_argument("--base", required=True)
     parser.add_argument("--reference", default="refs/heads/main")
-    parser.add_argument("--run", required=True, type=int)
-    parser.add_argument("--repository", required=True)
-    parser.add_argument("--output", required=True, type=Path)
-    arguments = parser.parse_args()
-    promote(arguments.candidate, arguments.base, arguments.run, arguments.repository,
-            arguments.output, arguments.reference)
-
-
-if __name__ == "__main__":
-    main()
