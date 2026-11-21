@@ -130,15 +130,7 @@ impl Fixture {
             directory,
         )
         .unwrap();
-        let mut line = String::new();
-        BufReader::new(child.child.stdout.take().unwrap())
-            .read_line(&mut line)
-            .unwrap();
-        let value: Value = serde_json::from_str(line.trim()).unwrap_or_else(|_| {
-            let mut error = String::new();
-            let _ = std::io::Read::read_to_string(child.child.stderr.as_mut().unwrap(), &mut error);
-            panic!("{error}");
-        });
+        let value = child.startup_receipt().unwrap();
         *slot = Some(child);
         value
     }
@@ -1018,11 +1010,7 @@ fn service_update_rejects_old_build_but_can_verify_and_stop_its_process() {
     };
     let mut child =
         ChildGuard::spawn(&executable, &fixture.path, Arc::clone(&fixture._port)).unwrap();
-    let mut line = String::new();
-    BufReader::new(child.child.stdout.take().unwrap())
-        .read_line(&mut line)
-        .unwrap();
-    assert!(serde_json::from_str::<Value>(line.trim()).is_ok(), "{line}");
+    child.startup_receipt().unwrap();
     install_test_binary(&executable, &replacement, true);
     fs::rename(&replacement, &executable).unwrap();
     let duplicate = invoke("serve");

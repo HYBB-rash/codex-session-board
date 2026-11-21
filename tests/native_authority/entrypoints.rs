@@ -7,8 +7,9 @@ use super::{
 mod fixture;
 
 use fixture::{ChildGuard, PortLease};
+use anyhow::Context;
 use serde_json::Value;
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -49,15 +50,8 @@ impl Live {
         let path = directory.join("config.json");
         std::fs::write(&path, serde_json::to_vec(&*config)?)?;
         let mut child = ChildGuard::spawn(env!("CARGO_BIN_EXE_codex-session-board"), &path, port)?;
-        let stdout = child
-            .child
-            .stdout
-            .take()
-            .ok_or_else(|| anyhow::anyhow!("看板没有输出"))?;
-        let mut line = String::new();
-        BufReader::new(stdout).read_line(&mut line)?;
-        let started: Value = serde_json::from_str(line.trim())?;
-        anyhow::ensure!(started["started"] == true, "{line}");
+        let started = child.startup_receipt()?;
+        anyhow::ensure!(started["started"] == true, "{started}");
         let url = format!("http://127.0.0.1:{}", config.port);
         let csrf = csrf(&url)?;
         Ok(Self {
@@ -123,6 +117,7 @@ impl Live {
             .args(["mcp", "--config", self.path.to_str().unwrap()])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()?;
         writeln!(
             child.stdin.take().unwrap(),
@@ -130,8 +125,10 @@ impl Live {
             json!({"id":1,"method":"tools/call","params":{"name":name,"arguments":body}})
         )?;
         let result = child.wait_with_output()?;
-        anyhow::ensure!(result.status.success(), "MCP process failed");
-        Ok(serde_json::from_slice::<Value>(&result.stdout)?["result"].clone())
+        let receipt = || format!("stdio tools/call {name}：{}，stdout={} 字节，stderr：{}",
+            result.status, result.stdout.len(), String::from_utf8_lossy(&result.stderr));
+        anyhow::ensure!(result.status.success(), "{}", receipt());
+        Ok(serde_json::from_slice::<Value>(&result.stdout).with_context(receipt)?["result"].clone())
     }
 
     pub(super) fn check_panel(&self, arguments: &[&str]) -> Result<()> {
@@ -261,7 +258,8 @@ fn preview_tool_keeps_reply_out_of_model_content() -> Result<()> {
     let client = reqwest::blocking::Client::builder().no_proxy().timeout(Duration::from_secs(5)).build()?;
     live.ready(&client)?;
     let body = json!({"id":FIRST});
-    let reply: Value = live.post_path(&client, "/api/preview-reply", &body)?.error_for_status()?.json()?;
+    let reply: Value = live.post_path(&client, "/api/preview-reply", &body)?.error_for_status()?.json()
+        .context("解码 HTTP /api/preview-reply 回执")?;
     assert_eq!(reply["turnId"], "preview");
     assert_eq!(live.mcp("board_preview_reply", body)?, json!({"content":[],"_meta":{"previewReply":reply}}));
     live.check_panel(&["--preview", FIRST, &live.url])?;

@@ -1,13 +1,14 @@
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use std::ffi::OsStr;
 use std::fs::{self, DirBuilder, File, OpenOptions};
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Read};
 use std::net::TcpListener;
 use std::ops::RangeInclusive;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, FileExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdout, Command, Stdio};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 pub struct PortLease {
     pub port: u16,
@@ -99,10 +100,63 @@ fn sysctl_port(name: &str) -> Result<u16> {
 
 pub struct ChildGuard {
     pub child: Child,
-    _port: Arc<PortLease>,
+    port: Arc<PortLease>,
+    stderr: File,
+}
+
+fn read_startup(mut stdout: ChildStdout, bytes: &mut Vec<u8>) -> Result<serde_json::Value> {
+    rustix::io::ioctl_fionbio(&stdout, true)?;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut buffer = [0; 4096];
+    loop {
+        ensure!(Instant::now() < deadline, "serve 首条启动回执超时（30 秒）");
+        match stdout.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(count) => {
+                let chunk = &buffer[..count];
+                let end = chunk.iter().position(|&byte| byte == b'\n');
+                let used = end.map_or(count, |index| index + 1);
+                ensure!(bytes.len() + used <= 1024 * 1024, "serve 启动回执超过 1 MiB");
+                bytes.extend_from_slice(&chunk[..used]);
+                if end.is_some() {
+                    break;
+                }
+            }
+            Err(error) if error.kind() == ErrorKind::WouldBlock => std::thread::sleep(Duration::from_millis(5)),
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error).context("读取 serve 启动回执"),
+        }
+    }
+    ensure!(!bytes.is_empty(), "serve 启动回执为空");
+    serde_json::from_slice(bytes).context("serve 启动回执 JSON 无效")
 }
 
 impl ChildGuard {
+    pub fn startup_receipt(&mut self) -> Result<serde_json::Value> {
+        let stdout = self.child.stdout.take().context("serve 缺少启动回执管道")?;
+        let mut bytes = Vec::new();
+        let error = match read_startup(stdout, &mut bytes) {
+            Ok(receipt) => return Ok(receipt),
+            Err(error) => error,
+        };
+        let deadline = Instant::now() + Duration::from_millis(250);
+        let status = loop {
+            if let Some(status) = self.child.try_wait()? {
+                break status.to_string();
+            }
+            if Instant::now() >= deadline {
+                break "子进程仍在运行".into();
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        let length = self.stderr.metadata()?.len();
+        let offset = length.saturating_sub(4096);
+        let mut tail = vec![0; (length - offset) as usize];
+        self.stderr.read_exact_at(&mut tail, offset)?;
+        Err(error).context(format!("serve 启动：port={}，pid={}，{status}，stdout={} 字节，stderr 末尾：{}",
+            self.port.port, self.child.id(), bytes.len(), String::from_utf8_lossy(&tail)))
+    }
+
     pub fn spawn(
         executable: impl AsRef<OsStr>,
         config: &Path,
@@ -117,15 +171,16 @@ impl ChildGuard {
         port: Arc<PortLease>,
         directory: &Path,
     ) -> Result<Self> {
+        let stderr = tempfile::tempfile()?;
         let child = Command::new(executable)
             .current_dir(directory)
             .arg("--config")
             .arg(config)
             .arg("serve")
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(stderr.try_clone()?)
             .spawn()?;
-        Ok(Self { child, _port: port })
+        Ok(Self { child, port, stderr })
     }
 }
 

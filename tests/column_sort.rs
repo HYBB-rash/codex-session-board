@@ -91,14 +91,7 @@ fn start_fixture(path: &Path) -> Result<(Value, ChildGuard)> {
         .to_string(),
     )?;
     let mut child = ChildGuard::spawn(env!("CARGO_BIN_EXE_codex-session-board"), path, port)?;
-    let stdout = child
-        .child
-        .stdout
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("看板没有输出"))?;
-    let mut line = String::new();
-    std::io::BufRead::read_line(&mut std::io::BufReader::new(stdout), &mut line)?;
-    Ok((serde_json::from_str(line.trim())?, child))
+    Ok((child.startup_receipt()?, child))
 }
 
 fn mcp_sort_roundtrip(path: &Path, change: &Value) -> Result<()> {
