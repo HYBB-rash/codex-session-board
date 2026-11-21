@@ -184,7 +184,7 @@ class PluginUpdateTests(unittest.TestCase):
                     self.assertIsInstance(json.load(reader), dict)
                 return result
             return observe
-        for revision in ("a", "b", "c"):
+        for revision in ("a", "a", "a", "b"):
             self.revision = self.installed_revision = revision * 40
             shutil.rmtree(self.home, ignore_errors=True)
             shutil.rmtree(self.market, ignore_errors=True)
@@ -203,6 +203,7 @@ class PluginUpdateTests(unittest.TestCase):
                         self.assertEqual(receipt["phase"], "awaiting_desktop_reload")
                         self.assertTrue(receipt["installed"])
                         self.assertFalse(receipt["desktop_loaded"])
+                        self.assertFalse(receipt.get("reload_deferred"))
                         installed.append((reader, contents))
                 result = self.update(reload=False, progress=observe)
                 self.assertTrue(installed)
