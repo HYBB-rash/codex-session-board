@@ -2,8 +2,8 @@
 
 owner: E3 浏览器验收作者
 execution_mode: isolated_write
-allowed_write_set: scripts/check-ten-card-archive.mjs、scripts/ten-card-archive-fixture.mjs、tests/ui_layout.rs 和 acceptance/bindings.json 的测试入口、本卡
-base_commit: 161e98342249d5830cff1f849fd453188d4f2e93
+allowed_write_set: scripts/check-ten-card-archive.mjs、scripts/ten-card-archive-fixture.mjs、scripts/ten-card-archive-restore.mjs、tests/ui_layout.rs 和 acceptance/bindings.json 的测试入口、本卡
+base_commit: bf952640416de65ed33e363842fd981ef53dd303
 worktree_path: /home/herman/.codex/worktrees/e3-ten-card-browser/notion-program
 coordinator: 五轮重构总协调
 
@@ -16,3 +16,5 @@ coordinator: 五轮重构总协调
 重开后实际点击新输入卡的“打开会话”和“确认待归档”，后者只保存当前输入版本。核对成功时立即记录卡片的可用动作，再点击一张“尚无提交记录”的卡。夹具扣住这张卡单独建批的响应，原十卡批次的归档 HTTP 次数可独立核算。
 
 `161e983` 和 `b1ced225daf74b520975eb091cfa8f57595a5e8a` 均重现同一处不一致：核对后明细已将第七项计入五张已确认卡，卡片仍有可点击的“归档”。JSON 的 `verified.cards` 和 `failure` 保留了出错项。
+
+`delayedRestore` 另外记录两次独立的十卡操作。两次都在第二次归档请求处关闭原标签，让新页面先收到会话列表，再扣住批次读回。分别点击单卡、批量按钮。`b1ced22` 两次都把仍待核对的原卡编入新批并再次发送归档。`bf95264` 在等待期间没有写请求，读回后实际点击分别选中一张、八张可写卡。第七项核实后的按钮问题在该产品提交上仍可复现。

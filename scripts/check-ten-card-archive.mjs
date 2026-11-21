@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import { launchBrowser } from "./browser-client.mjs";
 import { clickNode, until } from "./browser-actions.mjs";
 import { tenCardArchiveFixture } from "./ten-card-archive-fixture.mjs";
+import { checkDelayedRestore, closeTab } from "./ten-card-archive-restore.mjs";
 
 const html = await fs.readFile(process.argv[2] || new URL("../index.html", import.meta.url));
 const fixture = await tenCardArchiveFixture(html);
@@ -93,10 +94,7 @@ async function run() {
     assert(live.summary.includes(text), live.summary);
   report.inFlight = live;
   report.phases = {beforeClose:recordCounts()};
-  const {targetInfo} = await page.command("Target.getTargetInfo");
-  assert.equal((await browser.command("Target.closeTarget", {targetId:targetInfo.targetId})).success, true);
-  await until(async () => !(await browser.command("Target.getTargets")).targetInfos
-    .some(target => target.targetId === targetInfo.targetId), "原标签页未关闭");
+  await closeTab(browser,page);
   fixture.release();
   await closeBrowser();
   const beforeOpen = recordCounts();
@@ -166,7 +164,7 @@ async function run() {
   Object.assign(report, {verified, batchId:beforeClose.id, persistedAtClose:beforeClose.items, submitted,
     archiveHttpCounts:Object.fromEntries(beforeClose.items.map(item => [item.id,submitted.filter(id => id === item.id).length]))});
   const awaiting = beforeClose.items.find(item => item.status === "awaiting");
-  fixture.holdNextBatchFor(awaiting.id);
+  fixture.holdNextBatchFor([awaiting.id]);
   await clickNode(page,cardButton(awaiting.id));
   await until(() => count("POST","/api/archive-batches") === 2, "点击尚无提交记录的卡片未另建批次");
   assert.deepEqual(fixture.errors,[]);
@@ -178,8 +176,13 @@ async function run() {
   report.passed = true;
 }
 try { await run(); }
-catch (error) { report.passed = false; report.failure = error.message; throw error; }
-finally {
-  try { await closeBrowser(); } finally { await fixture.close(); }
-  console.log(JSON.stringify(report));
+catch (error) { report.passed = false; report.failure = error.message; }
+finally { try { await closeBrowser(); } finally { await fixture.close(); } }
+report.delayedRestore = [];
+for (const control of ["单卡","批量"]) report.delayedRestore.push(await checkDelayedRestore(html,control));
+report.passed = report.passed && report.delayedRestore.every(probe => probe.passed);
+console.log(JSON.stringify(report));
+if (!report.passed) {
+  console.error([report.failure,...report.delayedRestore.map(probe => probe.failure)].filter(Boolean).join("\n"));
+  process.exitCode = 1;
 }

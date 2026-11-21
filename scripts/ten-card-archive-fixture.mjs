@@ -2,19 +2,18 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { once } from "node:events";
 
-export async function tenCardArchiveFixture(html) {
+export async function tenCardArchiveFixture(html, outcomes = ["archived","archived","archived","archived","newInput","rejected","pending"]) {
   const cards = Array.from({length:10}, (_, index) => ({
     id:`11111111-1111-4111-8111-${String(index + 1).padStart(12, "0")}`,
     title:`归档样本 ${String(index + 1).padStart(2, "0")}`, state:"to_archive", note:"",
     version:index + 1, inputVersion:20 + index, sectionVersion:`section-${index}`,
     updatedAt:100 - index, cwd:"/fixture", canArchive:true, canOpen:true,
   }));
-  const outcomes = ["archived","archived","archived","archived","newInput","rejected","pending"];
   const messages = {newInput:"有新输入，本次未提交原生归档", rejected:"当前状态不允许归档"};
   const ledger = [], errors = [];
   const blocked = Promise.withResolvers();
   const nextBatchResponse = Promise.withResolvers();
-  let batch, nextTarget, canVerify = false;
+  let batch, nextTargets, delayedHistory, prematureBatch, canVerify = false;
 
   function handle(method, url, body) {
     if (method === "GET" && url === "/api/sessions") {
@@ -22,17 +21,26 @@ export async function tenCardArchiveFixture(html) {
       return {states:{review:"待审阅",to_archive:"待归档"}, health:{},
         projectCatalog:{loaded:true,items:[],remoteHosts:[]}, sessions};
     }
-    if (method === "GET" && url === "/api/archive-batches") return {batches:batch ? [batch] : []};
+    if (method === "GET" && url === "/api/archive-batches") {
+      const snapshot = {batches:batch ? [structuredClone(batch)] : []};
+      return delayedHistory ? delayedHistory.promise.then(() => snapshot) : snapshot;
+    }
     if (method === "GET" && url === "/api/plugin-update") return {};
     assert.equal(method, "POST", `未识别的请求 ${method} ${url}`);
     if (url === "/api/archive-batches") {
       assert.match(body.id, /^[0-9a-f-]{36}$/);
       const expected = cards.map(({id,title,version,inputVersion,sectionVersion}) =>
         ({id,title,version,inputVersion,sectionVersion}));
-      if (nextTarget) {
+      if (delayedHistory) {
+        prematureBatch = {id:body.id,createdAt:1760000001,finishedAt:null,
+          items:body.items.map(item => ({...item,status:"awaiting",message:null}))};
+        return {batch:prematureBatch};
+      }
+      if (nextTargets) {
         assert.notEqual(body.id,batch.id, "另行归档不得复用原批次");
-        assert.deepEqual(body.items,expected.filter(card => card.id === nextTarget));
-        nextTarget = undefined;
+        const byId = (first,second) => first.id.localeCompare(second.id);
+        assert.deepEqual([...body.items].sort(byId),expected.filter(card => nextTargets.includes(card.id)).sort(byId));
+        nextTargets = undefined;
         return nextBatchResponse.promise;
       }
       assert.equal(batch, undefined, "意外创建第二个批次");
@@ -63,6 +71,12 @@ export async function tenCardArchiveFixture(html) {
       return {batch};
     }
     assert.equal(url, "/api/archive", `意外请求 ${url}`);
+    if (prematureBatch && body.batchId === prematureBatch.id) {
+      const target = prematureBatch.items.find(item => item.id === body.id);
+      assert(target);
+      if (status(target.id) === "pending") return nextBatchResponse.promise.then(() => ({item:target}));
+      return {item:{...target,status:"archived"}};
+    }
     const index = batch.items.findIndex(item => item.id === body.id);
     assert(index >= 0);
     const item = batch.items[index];
@@ -87,6 +101,7 @@ export async function tenCardArchiveFixture(html) {
         response.writeHead(200, {"Content-Type":"text/html; charset=utf-8"}).end(html);
         return;
       }
+      if (method === "GET" && url === "/test-click-observed") { response.writeHead(204).end(); return; }
       if (!url.startsWith("/api/")) { response.writeHead(404).end(); return; }
       let text = "";
       for await (const chunk of request) text += chunk;
@@ -105,9 +120,12 @@ export async function tenCardArchiveFixture(html) {
   await once(server, "listening");
   return {url:`http://127.0.0.1:${server.address().port}/`, ledger, errors,
     batch:() => structuredClone(batch), allowVerification:() => { canVerify = true; },
-    holdNextBatchFor(id) { nextTarget = id; },
+    holdNextBatchFor(ids) { nextTargets = ids; },
+    holdHistory() { delayedHistory = Promise.withResolvers(); },
+    releaseHistory() { delayedHistory?.resolve(); delayedHistory = undefined; },
     release:() => blocked.resolve(), async close() {
       blocked.resolve();
+      delayedHistory?.resolve();
       nextBatchResponse.resolve({});
       const closed = once(server, "close");
       server.close();
