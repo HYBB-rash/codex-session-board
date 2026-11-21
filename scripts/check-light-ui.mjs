@@ -64,6 +64,33 @@ try {
     await wait(`refresh.error === null && JSON.stringify(data) === ${JSON.stringify(expected)}`);
   };
   await wait('typeof data !== "undefined" && data.sessions.length === 4');
+  const archiveStatus = () => evaluate(`{
+    const panel = byId("archive-status");
+    ({hidden:panel.hidden,error:panel.classList.contains("error"),text:panel.textContent,title:panel.title});
+  }`);
+  check((await archiveStatus()).hidden,true);
+  fixture.health.autoArchiveSeconds = 1800;
+  await refresh();
+  const configured = await archiveStatus();
+  check(configured.hidden,false);
+  check(configured.error,false);
+  check(configured.text.includes("每 30 分钟"),true);
+  check(configured.text.includes("不受当前筛选影响"),true);
+  fixture.health.autoArchiveLastRun = {at:0,archived:["short"],deferred:[{id:"long",reason:"会话有新输入"}]};
+  fixture.health.autoArchiveError = "fixture schedule failed";
+  await refresh();
+  const deferred = await archiveStatus();
+  check(deferred.error,true);
+  check(deferred.text.includes("上次"),true);
+  check(deferred.text.includes("归档 1 条"),true);
+  check(deferred.text.includes("延后 1 条"),true);
+  check(deferred.text.includes("本轮未完成"),true);
+  check(deferred.title.includes("long") && deferred.title.includes("会话有新输入"),true);
+  delete fixture.health.autoArchiveSeconds;
+  delete fixture.health.autoArchiveLastRun;
+  delete fixture.health.autoArchiveError;
+  await refresh();
+  check((await archiveStatus()).hidden,true);
   await evaluate('window.scrollbarStyle=document.createElement("style");document.head.append(scrollbarStyle)');
   for (const scrollbarSize of [0,16,32]) {
     await evaluate(`scrollbarStyle.textContent=${JSON.stringify(scrollbarSize ?

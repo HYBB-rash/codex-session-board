@@ -3,11 +3,18 @@ import type { ArchiveRequests, ArchiveTarget } from "./board-archive-batches";
 import type { BoardSnapshot } from "./board-start";
 import type { BoardSession } from "./board-view";
 
+export interface AutoArchiveHealth {
+  autoArchiveSeconds?: number;
+  autoArchiveNextAt?: number;
+  autoArchiveLastRun?: { at: number; archived: string[]; deferred: { id: string; reason: string }[] } | null;
+  autoArchiveError?: string | null;
+}
+
 interface ArchivePorts {
   request: ArchiveRequests["request"];
   snapshot(): BoardSnapshot;
   open(id: string): void;
-  date(timestamp: number): string;
+  date(timestamp?: number): string;
   persist(session: BoardSession, state: "to_archive", note: string): Promise<unknown>;
   busy(): boolean;
   movingId(): string | undefined;
@@ -20,7 +27,7 @@ interface ArchivePorts {
   load(): Promise<void>;
 }
 
-export function mountBoardArchive(host: HTMLElement, ports: ArchivePorts) {
+export function mountBoardArchive(host: HTMLElement, status: HTMLElement, ports: ArchivePorts) {
   const { snapshot, render, load, announce } = ports;
   const results = mountArchiveResults(host, {
     request: ports.request, open: ports.open, date: ports.date, changed: render,
@@ -81,8 +88,25 @@ export function mountBoardArchive(host: HTMLElement, ports: ArchivePorts) {
     }
   }
 
+  function updateStatus() {
+    const { autoArchiveSeconds, autoArchiveNextAt, autoArchiveLastRun, autoArchiveError } = snapshot().health;
+    status.hidden = !autoArchiveSeconds;
+    if (!autoArchiveSeconds) return;
+    const deferred = autoArchiveLastRun?.deferred ?? [];
+    status.className = "health" + (autoArchiveError || deferred.length ? " error" : "");
+    let text = `本机每 ${autoArchiveSeconds / 60} 分钟自动归档待归档 · 下次 ${ports.date(autoArchiveNextAt)}`;
+    if (autoArchiveLastRun) {
+      const { at, archived } = autoArchiveLastRun;
+      text += ` · 上次 ${ports.date(at)}：归档 ${archived.length} 条，延后 ${deferred.length} 条`;
+    }
+    text += " · 不受当前筛选影响";
+    if (autoArchiveError) text += " · 本轮未完成，请查看连接详情";
+    status.textContent = text;
+    status.title = deferred.map(item => `${item.id}：${item.reason}`).join("\n");
+  }
+
   return {
-    cardActions, confirmInputs, submit,
+    cardActions, confirmInputs, submit, updateStatus,
     submitCard: (session: BoardSession) => cardActions(session).archive === "confirm"
       ? confirmInputs(session) : submit([session]),
     count: (sessions: BoardSession[]) => sessions.filter(eligible).length,

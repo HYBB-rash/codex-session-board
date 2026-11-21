@@ -1,5 +1,5 @@
 import "./board-view";
-import { mountBoardArchive } from "./board-archive";
+import { mountBoardArchive, type AutoArchiveHealth } from "./board-archive";
 import { mountBoardBrowse, type CatalogProject, type HostCatalog, type HostIdentity } from "./board-browse";
 import { mountBoardSessionReader } from "./board-session-reader";
 import { mountMoveFeedback } from "./board-move-feedback";
@@ -11,7 +11,7 @@ import type { BoardSession } from "./board-view";
 export interface BoardSnapshot {
   states: Record<string, string>;
   sessions: BoardSession[];
-  health: {
+  health: AutoArchiveHealth & {
     sshAliasSetup?: boolean;
     remoteError?: string;
     remoteConnections?: (HostIdentity & { catalog?: HostCatalog })[];
