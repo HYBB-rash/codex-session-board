@@ -163,16 +163,18 @@ async function run() {
   assert.deepEqual(fixture.errors, []);
   Object.assign(report, {verified, batchId:beforeClose.id, persistedAtClose:beforeClose.items, submitted,
     archiveHttpCounts:Object.fromEntries(beforeClose.items.map(item => [item.id,submitted.filter(id => id === item.id).length]))});
-  const awaiting = beforeClose.items.find(item => item.status === "awaiting");
-  fixture.holdNextBatchFor([awaiting.id]);
-  await clickNode(page,cardButton(awaiting.id));
-  await until(() => count("POST","/api/archive-batches") === 2, "点击尚无提交记录的卡片未另建批次");
-  assert.deepEqual(fixture.errors,[]);
+  const eligible = beforeClose.items.filter(item => ["awaiting","newInput","rejected"].includes(item.status));
+  fixture.holdNextBatchFor(eligible.map(item => item.id));
+  await clickNode(page,archiveButton);
+  await until(() => count("POST","/api/archive-batches") === 2, "核实后点击批量归档未另建批次");
   report.nextBatchRequest = fixture.ledger.filter(entry => entry.method === "POST" && entry.url === "/api/archive-batches").at(-1).body;
   assert.equal(submitCount(),7);
   const confirmedCard = beforeClose.items.find(item => item.status === "pending");
+  assert(!report.nextBatchRequest.items.some(item => item.id === confirmedCard.id),
+    `核实已归档的卡片仍被选入新批次：${confirmedCard.title} (${confirmedCard.id})`);
   assert(!verified.cards[confirmedCard.id] || verified.cards[confirmedCard.id].disabled,
     `核实已归档的卡片仍可发起归档：${confirmedCard.title} (${confirmedCard.id})`);
+  assert.deepEqual(fixture.errors,[]);
   report.passed = true;
 }
 try { await run(); }
