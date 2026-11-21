@@ -33,10 +33,10 @@ class GitHub:
         self.repository = repository
         self.release_ids = {}
 
-    def gh(self, *arguments, check=True):
+    def gh(self, *arguments, check=True, timeout=None):
         return subprocess.run(
             ["gh", *arguments, "--repo", self.repository], check=check,
-            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout,
         )
 
     def api(self, path, method="GET", **fields):
@@ -52,6 +52,13 @@ class GitHub:
                 return None
             raise RuntimeError(result.stderr)
         return json.loads(result.stdout or "null")
+
+    def pages(self, path):
+        separator = "&" if "?" in path else "?"
+        page = 1
+        while entries := self.api(f"{path}{separator}per_page=100&page={page}"):
+            yield from entries
+            page += 1
 
     def remember_release(self, tag, release):
         identifier = release.get("id") if isinstance(release, dict) else None

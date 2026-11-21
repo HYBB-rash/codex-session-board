@@ -10,7 +10,6 @@ import tomllib
 from scripts.release_plugin import GitHub
 from scripts.validate_candidate import ROOT, acceptance_outcome, git, identity
 from scripts.validation_report import verify_complete
-from scripts.integration_plan import changed, context_path, modes
 
 
 PLATFORMS = {"linux-x86_64": ("linux", "x86_64"), "macos-arm64": ("darwin", "arm64")}
@@ -23,14 +22,18 @@ def implementation(main):
         if not parents:
             return source
         parent = parents[0]
-        paths = changed(parent, source)
-        if not paths or any(not context_path(path) for path in paths):
+        paths = git("diff", "--name-only", "--no-renames", "-z", parent, source).split("\0")[:-1]
+        if not paths or any(not path.startswith("context/") or Path(path).suffix not in (".md", ".yaml", ".json")
+                            for path in paths):
             return source
-        before, after = modes(parent, paths), modes(source, paths)
-        if any(before.get(path, after.get(path)) != "100644"
-               or after.get(path, before.get(path)) != "100644" for path in paths):
+        if any(entry and not entry.startswith("100644 ") for reference in (parent, source)
+               for entry in git("ls-tree", "-rz", reference, "--", *paths).split("\0")):
             return source
         source = parent
+
+
+def ancestor(source, tip):
+    return subprocess.run(["git", "merge-base", "--is-ancestor", source, tip], cwd=ROOT).returncode == 0
 
 
 def select(repository, source=None):
@@ -42,7 +45,7 @@ def select(repository, source=None):
     if main != observed:
         raise ValueError("Pinned main source is unavailable after fetching")
     if source is None:
-        source = git("log", "--first-parent", "--diff-merges=first-parent", "-n", "1", "--format=%H",
+        source = git("log", "--first-parent", "--diff-merges=first-parent", "--no-patch", "-n", "1", "--format=%H",
                      "-G^version[[:space:]]*=", main, "--", "Cargo.toml")
     if not re.fullmatch(r"[0-9a-f]{40}", source):
         raise ValueError("Release validation requires a full main commit SHA")
@@ -50,18 +53,6 @@ def select(repository, source=None):
     version = tomllib.loads(git("show", f"{source}:Cargo.toml"))["package"]["version"]
     return {"main": main, "source": source, "version": version, "tag": f"v{version}",
             "selected_at": datetime.now(timezone.utc).isoformat()}
-
-
-def require_version(repository, base):
-    from scripts.release_plugin import GitHub
-    previous = tomllib.loads(git("show", f"{base}:Cargo.toml"))["package"]["version"]
-    version = tomllib.loads(git("show", "HEAD:Cargo.toml"))["package"]["version"]
-    if tuple(map(int, version.split("."))) <= tuple(map(int, previous.split("."))):
-        raise ValueError("Freeze a fresh release version before validating a changed implementation")
-    forge = GitHub(repository)
-    if forge.api(f"git/ref/tags/v{version}") is not None:
-        if forge.api(f"commits/v{version}")["sha"] != git("rev-parse", "HEAD"):
-            raise ValueError("This release version already belongs to different immutable source")
 
 
 def validation_attempts(forge, run_id):
