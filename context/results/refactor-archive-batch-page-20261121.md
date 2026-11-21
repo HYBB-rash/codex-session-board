@@ -11,8 +11,10 @@
 | 两次手动核对 | 首次仍待确认，第二次读回后共有 5 项已归档，累计仍为 7 个归档 HTTP 请求 |
 | 首读比会话列表返回得晚 | 单卡和批量按钮都不能发起写入。首读失败可重新读取，未提交卡随后恢复可操作 |
 
-独立审阅曾复现重开时原待核对卡被第二批再次提交。另一处故障发生在手动核实成功后：若目标主机的本地归档标记仍未写入，新快照还会列出原卡。控制器现在将每次快照与持久批次中已确认的准确修订对照。只有主机、会话、状态版本、输入版本、原生位置版本相符的活动卡才会移出。已归档的历史行、同 UUID 的另一主机以及合法重新出现的新修订均能显示。
+独立审阅复现了两个重复提交窗口。重开时，页面现在等批次首读结束才允许提交。收到核对结果时，页面按完整会话 ID 暂停受影响卡片的归档，并让旧的在途快照失效。若下一次读回失败，其他主机的同 UUID 卡仍可操作。读回成功后，页面直接采用根快照。
+
+旧批次退出最近二十批后，根库仍能识别已确认的原修订；这项判断由 `src/store/archive_batches.rs` 的 `archive_receipts` 供快照和写入共用。`test::ui_layout::ten_card_archive_recovers_after_closing_the_submitting_page` 保护重开页面的人。第七次归档发出后关闭页面，核对期间旧 GET 晚到、新 GET 返回 503，再点一键归档只能选到五张。临时移除请求序号保护时选到六张。目标库存储写入失败后的旧修订、其他主机、历史记录和原生恢复见 [根库读回回归](archive-confirmed-window-20261121.md)。
 
 `test::ui_layout::long_content_and_project_filters_preserve_browser_column_geometry` 现在点击真实的筛选后一键归档按钮，检查批次选中的卡和每条请求的三个版本字段。等价地改写按钮函数后通过。故意累积旧监听会发送上一个主机的卡，放宽批量资格会夹入同一项目的只读卡，两种故障都触发请求名单断言。`test::archive_flow::archive_mcp_resource_exposes_only_an_explicit_app_action` 保留工具的可见性、写入属性和必要参数，逐字匹配按钮 JavaScript 的断言由上述真实操作承接。
 
-浏览器记录的请求数只说明页面行为，原生归档写入次数由 C1 和 E3 的原生夹具另行核对。
+原生十卡夹具逐卡记录 `thread/archive` 调用。两次重开、核对及重放后，十项累计写入次数依次为 `1、1、1、1、0、0、1、0、0、0`。后端用例为 `ten_card_batch_reopens_from_storage_and_checks_without_repeating_native_writes`。

@@ -11,4 +11,4 @@ coordinator: 五轮重构总协调
 
 认领 `test::ui_layout::long_content_and_project_filters_preserve_browser_column_geometry` 中丢回执、重开与手动核对的浏览器场景，以及 `test::archive_flow::archive_mcp_resource_exposes_only_an_explicit_app_action` 内与归档按钮绑定方式有关的断言。十卡浏览器验收与原生写入回归由独立作者分别取证。交付时接入 E2、B2 和 C1 已合入的主线，沿用同一份资源构建。
 
-组合作者树为 `/home/herman/.codex/worktrees/refactor-archive-vue-integration/notion-program`。在 E2c 的 `7d3cdcb` 上接入同一套 Vue 运行时、卡片资格和拖动状态，原分支 `6d6f259` 保留 B2 组合证据。
+组合作者树为 `/home/herman/.codex/worktrees/refactor-archive-vue-integration/notion-program`。原分支 `6d6f259` 保留 B2 组合证据。最终重放基线 `71c36f313bce2c7f8ff1ef801017ee87c8ab072c` 已包含 Vue 卡片、编辑、拖动、筛选、排序、预览选择和原生十卡夹具。组合实现与浏览器和后端回归对应 `a816660d36850c6a17bf72087b051f2421a61de1`。
