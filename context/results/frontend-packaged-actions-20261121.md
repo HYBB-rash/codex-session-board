@@ -23,3 +23,14 @@ Linux 插件包来自 `b794c8a076760e7d5ea6936a118a168b57f7fa95`，包内二进�
 保留真实 GET 的清单字段、资源同源性、内容类型、`no-store`、脚本 `nosniff` 和令牌占位符断言。浏览器解析首页后检查安装清单、安装脚本和实际可解码的内嵌图片，取代要求标签属性按某一顺序排列的三个断言。检查非空图标清单，防止没有安装图标时空循环通过。
 
 同一测试先打开有会话的隔离 Rust 服务，再停止该进程。浏览器重访首页，已登记的 Service Worker 返回 503 及本机重新连接入口，离线访问会话 API 失败，Cache Storage 中没有首页和会话接口响应。恢复隔离服务后，点击“重新连接”回到看板。主机与写入校验继续由同文件的 `real_http_pwa_assets_preserve_host_and_mutation_checks` 负责。
+
+## T0 · 官方远程新建入口
+
+原 ID 为 `acceptance.test_native_new.NativeNewTests.test_official_entry_has_no_client_rewriting_tools_or_capability_gate`。
+使用原装 Codex 的用户从插件点选登记的 SSH 别名和项目目录，支持的入口是 `board_new` 或 HTTP `/api/new`。`Docs/REMOTE-NATIVE-NEW.md` 规定插件不得修改、复制或重签名客户端。导航仅交给已配置的启动器，历史请求恢复另有测试。
+
+- 源码保护改名为 `acceptance.test_native_new.NativeNewTests.test_official_entry_keeps_retired_client_patch_tools_out_of_source`。保留对八个已撤下改写工具及原生导航模块 `app.asar` 引用的检查。这九个定点检查能发现已知旧实现回归，无法证明任意实现对整个操作系统零写入。
+- 官方 URL 与两条退役 URL 的源码字符串检查交给 `app::drafts::tests::native_remote_new_only_navigates_to_the_registered_ssh_alias_and_directory`。隔离启动器记录所有实参，仅接受一个实际导航 URL，逐项核对 `codex` scheme、`settings` 主机、路径、别名、目录、启用与激活参数，并读回登记文件原文。规范远程项目入口由 `app::target_drafts::tests::canonical_target_request_uses_verified_rpc_and_only_opens_native_input` 核对同一协议。
+- 能力门槛交给 `config::tests::obsolete_native_capability_does_not_require_a_client_patch_or_existing_file`。它加载指向不存在文件的旧配置，核对读取成功且序列化后忽略旧字段。原绑定同步指向这些承接者。
+
+这些测试采用临时目录、启动器和合成账户资料。观察范围是插件源码、实际导航参数和隔离登记文件；没有运行退役改写器，也未操作日用客户端或真实账户。

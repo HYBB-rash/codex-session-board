@@ -103,6 +103,7 @@ fn canonical_target_request_uses_verified_rpc_and_only_opens_native_input() -> R
     assert_eq!(result["target"]["cwd"], "/project");
     let url = url::Url::parse(result["url"].as_str().context("url")?)?;
     let query: HashMap<_,_> = url.query_pairs().into_owned().collect();
+    assert_eq!(url.scheme(), "codex");
     assert_eq!(url.host_str(), Some("settings"));
     assert_eq!(url.path(), "/connections/ssh/add");
     assert_eq!(query.len(), 4);
