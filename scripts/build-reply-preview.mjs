@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 
 export async function buildReplyPreview(root, temporary, check) {
   for (const file of await fs.readdir(path.join(root, "assets"))) {
-    if (/^reply-.*\.(ts|tsx|vue|json)$/.test(file))
+    if (/^(reply-|board-).*\.(ts|tsx|vue|json)$/.test(file))
       await fs.copyFile(path.join(root, "assets", file), path.join(temporary, file));
   }
   const require = createRequire(path.join(temporary, "package.json"));
