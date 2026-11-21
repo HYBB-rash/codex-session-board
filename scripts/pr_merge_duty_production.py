@@ -7,6 +7,7 @@ from scripts import pr_merge_duty_discovery as discovery
 from scripts import pr_merge_duty_queue as queues
 from scripts import pr_queue_gates as gates
 from scripts import pr_queue_handoff as handoff
+from scripts import pr_queue_registry as registry
 from scripts import pr_task_github as forge
 from scripts.pr_merge_duty_delivery import dispatch
 from scripts.pr_task_state import now, save
@@ -60,6 +61,8 @@ def follow(duty, config, checker, directory, path, data, claim, main):
     queue = queues.locate(registry_project, claim, directory)
     state = queues.read_queue(queue, claim) if queue else None
     if state:
+        if config.get("registry_project"):
+            registry.register(queue, state, project=registry_project)
         claim["queue"] = str(queue)
     old_item = state["items"][0] if state else None
     save(path, data)
@@ -85,6 +88,9 @@ def follow(duty, config, checker, directory, path, data, claim, main):
             save(receipt, json.loads(original.read_text()))
     save(path, data)
     review = discovery.review_state(directory, claim, author_id, config.get("coordinator_thread"))
+    if review["result"] in {"review-passed", "review-failed"} and review["request"] is None:
+        claim.setdefault("review_task", review["reviewer"])
+        save(path, data)
     report = {"review": review, "author_evidence": bool(author and author.get("delivery_head") == head)}
     if review["result"] == "review-failed":
         previous = claim["heads"][head].get("feedback")

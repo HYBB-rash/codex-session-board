@@ -2223,6 +2223,7 @@
       "acceptance.test_pr_duty_claims.PRDutyClaimTests.test_recombination_reuses_queue_identity_and_preserves_old_candidate",
       "acceptance.test_pr_duty_claims.PRDutyClaimTests.test_recovery_reuses_only_the_expected_mechanical_merge",
       "acceptance.test_pr_duty_claims.PRDutyClaimTests.test_follow_retains_exact_ci_run_without_using_stale_author_evidence",
+      "acceptance.test_pr_duty_claims.PRDutyClaimTests.test_recovered_queue_stays_registered_when_the_pr_closed_between_rounds",
       "acceptance.test_pr_task_github.PRTaskGithubTests.test_revalidated_same_head_feedback_resolves_only_its_exact_original_body",
       "acceptance.test_pr_task_lifecycle.PRTaskLifecycleTests.test_terminal_only_tick_does_not_start_a_repair_for_an_open_pr",
       "acceptance.test_promotion.PromotionTests.test_context_promotion_requires_exact_exclusive_evidence_and_never_rebuilds_packages",

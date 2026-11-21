@@ -14,8 +14,10 @@ def register(directory, state, *, project=None):
         for item in state["items"]:
             path = folder / f"{digest([state['repository'].lower(), item['number']])}.json"
             record = json.loads(path.read_text()) if path.exists() else {"directories": []}
-            record["directories"] = sorted(set(record["directories"]) | {str(directory.resolve())})
-            save(path, record)
+            entry = str(directory.resolve())
+            if entry not in record["directories"]:
+                record["directories"] = sorted(set(record["directories"]) | {entry})
+                save(path, record)
 
 
 def locate(repository, number, project=None):

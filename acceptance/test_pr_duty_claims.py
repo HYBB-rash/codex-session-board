@@ -286,3 +286,23 @@ class PRDutyClaimTests(unittest.TestCase):
         self.assertFalse(result["author_evidence"])
         _, loaded = discovery.load_claims(self.directory, REPOSITORY)
         self.assertEqual(loaded["claims"]["31"]["heads"][REPAIR]["ci_runs"]["107"], run)
+        self.assertEqual(loaded["claims"]["31"]["review_task"], "independent")
+
+    def test_recovered_queue_stays_registered_when_the_pr_closed_between_rounds(self):
+        self.round([pull(31)])
+        path, data = discovery.load_claims(self.directory, REPOSITORY)
+        claim = data["claims"]["31"]
+        registry_project = self.directory / "registry"
+        self.config["registry_project"] = str(registry_project)
+        queue = self.directory / "queue-pr-31"
+        queue.mkdir()
+        saved_queue = {"repository": REPOSITORY, "feedback_mode": "github",
+                       "items": [{"number": 31, "status": "submitted"}]}
+        save(queue / "queue.json", saved_queue)
+        remote = {**pull(31), "state": "closed", "merged": False, "merge_commit_sha": None}
+        index = registry_project / "index"
+        with patch.object(discovery.forge, "api", return_value=remote), \
+                patch.object(duty.registry, "registry", return_value=index):
+            result = duty.follow(None, self.config, self.directory, self.directory, path, data, claim, MAIN)
+            self.assertEqual(duty.registry.locate(REPOSITORY, 31, registry_project), queue)
+        self.assertEqual(result["result"], "closed-without-merge")
