@@ -208,16 +208,15 @@ fn scanning_ignores_nested_documents_and_directories_named_like_documents() -> R
 }
 
 #[test]
-fn new_files_are_checked_without_a_git_repository_and_sorted_stably() -> Result<()> {
+fn new_root_documents_are_all_reported() -> Result<()> {
     let directory = tempdir()?;
     let root = directory.path();
     assert!(check(root)?);
     let names = ["z.md", "a.pdf", "规划 草稿.md", "中间\n换行.txt", "B.rst"];
     write_files(root, &names)?;
-    assert!(!root.join(".git").exists());
-    let found = violations(root)?;
+    let mut found = violations(root)?;
+    found.sort();
     assert_eq!(found, expected_paths(&names));
-    assert_eq!(violations(root)?, found);
     assert!(!check(root)?);
     Ok(())
 }

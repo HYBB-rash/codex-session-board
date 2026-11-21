@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
 import socket
+import subprocess
 from pathlib import Path
 import tempfile
 import sys
@@ -190,7 +191,9 @@ class DevEnvironmentTests(unittest.TestCase):
                 self.assertIsNotNone(child.pid)
             finally:
                 reap([child])
-            self.assertEqual(child.guard.returncode, -9)
+            running = subprocess.check_output(["/bin/ps", "-axo", "pgid=,stat="], text=True)
+            self.assertFalse(any(group == str(child.guard.pid) and not status.startswith("Z")
+                                 for group, status in (line.split() for line in running.splitlines())))
 
     def test_foreign_identity_is_rejected_before_reading_sessions(self):
         from scripts.dev_environment.runtime import probe

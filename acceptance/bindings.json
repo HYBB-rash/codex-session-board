@@ -1808,7 +1808,7 @@
       "example::project_check::document_policy::tests::exact_root_document_names_are_allowed",
       "example::project_check::document_policy::tests::extensions_ignore_case_but_root_allowance_requires_exact_case",
       "example::project_check::document_policy::tests::license_and_notice_are_not_exempt_from_document_extensions",
-      "example::project_check::document_policy::tests::new_files_are_checked_without_a_git_repository_and_sorted_stably",
+      "example::project_check::document_policy::tests::new_root_documents_are_all_reported",
       "example::project_check::document_policy::tests::non_utf8_document_filenames_keep_their_original_bytes",
       "example::project_check::document_policy::tests::program_input_txt_exceptions_support_named_variants_and_case",
       "example::project_check::document_policy::tests::reports_name_and_docs_destination_without_changing_contents",
