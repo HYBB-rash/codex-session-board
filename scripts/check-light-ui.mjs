@@ -123,7 +123,7 @@ try {
   await evaluate(`${card("long")}.querySelector('[data-action="preview"]').click()`);
   check(writes,[]);
   await evaluate('byId("reply-open").click()');
-  await wait('!opening');
+  await wait('!sessionReader.opening');
   check(writes.map(write=>[write.path,write.body.id]),[["/api/open","long"]]);
   await evaluate(`${card("long")}.querySelector('[data-action="adjust"]').focus()`);
   fixture.sessions = fixture.sessions.filter(row=>row.id !== "long");

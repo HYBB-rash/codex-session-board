@@ -1,8 +1,5 @@
 import { createApp } from "vue";
-import "./board-view";
-import "./board-editor";
 import ReplyPreview from "./reply-preview.vue";
-import "./board-archive-results";
 
 export interface PreviewSession {
   id: string;
@@ -27,11 +24,6 @@ export interface PreviewHandle {
   update: (sessions: PreviewSession[], failed: boolean) => void;
 }
 
-declare global {
-  interface Window {
-    mountReplyPreview: (host: HTMLElement, dependencies: PreviewDependencies) => PreviewHandle;
-  }
+export function mountReplyPreview(host: HTMLElement, dependencies: PreviewDependencies): PreviewHandle {
+  return createApp(ReplyPreview, { dependencies }).mount(host) as unknown as PreviewHandle;
 }
-
-window.mountReplyPreview = (host, dependencies) =>
-  createApp(ReplyPreview, { dependencies }).mount(host) as unknown as PreviewHandle;

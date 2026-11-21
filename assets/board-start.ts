@@ -1,5 +1,8 @@
-import "./reply-preview";
+import "./board-view";
+import "./board-editor";
+import "./board-archive-results";
 import { mountBoardBrowse, type CatalogProject, type HostCatalog, type HostIdentity } from "./board-browse";
+import { mountBoardSessionReader } from "./board-session-reader";
 import type { BoardSession } from "./board-view";
 
 export interface BoardSnapshot {
@@ -32,6 +35,7 @@ declare global {
     readBoardSnapshot: typeof readBoardSnapshot;
     startBoard: typeof startBoard;
     mountBoardBrowse: typeof mountBoardBrowse;
+    mountBoardSessionReader: typeof mountBoardSessionReader;
   }
 }
 
@@ -78,3 +82,4 @@ window.createBoardRequest = createBoardRequest;
 window.readBoardSnapshot = readBoardSnapshot;
 window.startBoard = startBoard;
 window.mountBoardBrowse = mountBoardBrowse;
+window.mountBoardSessionReader = mountBoardSessionReader;

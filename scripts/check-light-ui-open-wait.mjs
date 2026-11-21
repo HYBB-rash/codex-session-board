@@ -50,7 +50,7 @@ function installFixture() {
     }
     send(text) {
       const message = JSON.parse(text);
-      if (message.method === "Runtime.evaluate" && ["!saving", "!opening"].includes(message.params.expression))
+      if (message.method === "Runtime.evaluate" && ["!saving", "!sessionReader.opening"].includes(message.params.expression))
         this.waits.set(message.id, { expression: message.params.expression, dispatchedPhase: phase });
       return super.send(text);
     }

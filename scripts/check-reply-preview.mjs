@@ -406,11 +406,11 @@ async function exercisePage(surface, page) {
   await wait('byId("reply-text").textContent === "本轮已完成"');
   openFails = true;
   await press("#reply-open");
-  await wait('byId("feedback").textContent === "无法打开原会话" && !opening');
+  await wait('byId("feedback").textContent === "无法打开原会话" && !sessionReader.opening');
   assert(await evaluate('!byId("reply-reader").hidden && byId("reply-text").textContent === "本轮已完成"'));
   openFails = false;
   await press("#reply-open");
-  await wait('byId("reply-reader").hidden && !opening');
+  await wait('byId("reply-reader").hidden && !sessionReader.opening');
   assert.deepEqual(requests.filter(([path])=>path!=="/api/preview-reply"),[["/api/open",remote],["/api/open",remote]]);
   const position = await evaluate('const list=byId("column-review").querySelector(".cards");list.scrollTop=90;list.scrollTop');
   assert(position>0);

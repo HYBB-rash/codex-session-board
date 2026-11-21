@@ -217,10 +217,10 @@ try {
   await check("等待中直接调用新建也不打开对话框", '!byId("new-target").open && !creating && saving');
   await advance(401);
   await evaluate('(() => {const card=document.querySelector(".card"), event=new DragEvent("dragstart",{cancelable:true,dataTransfer:new DataTransfer()});card.dispatchEvent(event);window.blockedDrag=event.defaultPrevented;void archiveSessions(visibleSessions(),document.querySelector("[data-archive-all]"));document.querySelector("#column-to_archive .column-sort").click();document.querySelector("#sort-to_archive .sort-option[data-direction=desc]").click();void confirmArchiveInputs(visibleSessions()[0],document.querySelector("[data-archive-all]"));void moveCard(visibleSessions()[0],"review");void openSession(moving.id);})()');
-  await check("等待中直接调用也不能重复写入", 'window.blockedDrag && saving && moving.id === data.sessions[0].id && !opening');
+  await check("等待中直接调用也不能重复写入", 'window.blockedDrag && saving && moving.id === data.sessions[0].id && !sessionReader.opening');
   assert.equal(writes.length, 1);assert.deepEqual(mutations, expectedMutations);assert.deepEqual(opens, []);
   await evaluate('document.querySelector(".card-title").click();byId("reply-open").click()');
-  await until('!opening');
+  await until('!sessionReader.opening');
   assert.deepEqual(opens, [otherId]);cases.push("等待中允许打开另一主机的会话");
   await select("host-filter", "host:fixture");
   await evaluate('byId("search").value="";byId("search").dispatchEvent(new Event("input"))');
