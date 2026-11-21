@@ -55,7 +55,6 @@ async function open(session: PreviewSession, focus = false) {
     busy: true, ready: false, status: "正在读取回复…", action: "", error: false });
   reading.value = current;
   align();
-  props.dependencies.changed();
   await nextTick();
   if (reading.value !== current) return;
   if (body.value) body.value.scrollTop = 0;
@@ -85,7 +84,6 @@ function close(restoreFocus = false) {
   const restore = restoreFocus || reader.value?.contains(document.activeElement) ||
     document.activeElement === document.body;
   reading.value = undefined;
-  props.dependencies.changed();
   if (!restore) return;
   const title = [...document.querySelectorAll<HTMLButtonElement>(".card-title")].find(node =>
     node.closest<HTMLElement>(".card")?.dataset.id === current.session.id);

@@ -1,4 +1,4 @@
-import { defineComponent } from "vue";
+import { computed, defineComponent } from "vue";
 import type { PropType } from "vue";
 import type { BoardControls, BoardModel, BoardSession } from "./board-view";
 import { CardNote, CardProject } from "./board-details";
@@ -10,6 +10,7 @@ export default defineComponent({
     dependencies: { type: Object as PropType<BoardControls>, required: true },
   },
   setup(props) {
+    const previewExpanded = computed(() => props.model.selectedId === props.session.id);
     return () => {
       const { session, model, dependencies } = props;
       const pending = model.moving?.id === session.id;
@@ -27,7 +28,7 @@ export default defineComponent({
         }}>
         <button class="title card-title" type="button" data-action="preview" disabled={pending}
           title={"预览回复：" + session.title} aria-controls="reply-reader"
-          aria-expanded={model.selectedId === session.id}
+          aria-expanded={previewExpanded.value}
           onClick={event => dependencies.preview(session, event.detail === 0)}>{session.title}</button>
         <CardProject project={dependencies.project(session)} />
         {session.state === null && session.placementReason && <div class="placement-reason">{session.placementReason}</div>}

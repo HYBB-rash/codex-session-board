@@ -17,7 +17,6 @@ export interface PreviewDependencies {
   read: (id: string) => Promise<unknown>;
   openSession: (id: string) => Promise<boolean | undefined>;
   openLink: (url: string) => void;
-  changed: () => void;
   canDismiss: () => boolean;
   canRead: (id: string) => boolean;
 }

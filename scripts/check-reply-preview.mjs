@@ -262,6 +262,13 @@ async function exercisePage(surface, page) {
   await evaluate('byId("host-filter").value="all";byId("host-filter").dispatchEvent(new Event("change"))');
   await evaluate(`document.querySelector(${JSON.stringify(card("local"))}).scrollIntoView({block:"nearest"})`);
   const baseline = await evaluate(geometry);
+  const expanded = () => evaluate('Array.from(document.querySelectorAll(".card-title[aria-expanded=true]"),title=>title.closest(".card").dataset.id)');
+  await evaluate(`window.titleWrites = [];
+    window.titleObserver = new MutationObserver(records => {
+      for (const {target} of records) if (target.matches(".card-title"))
+        titleWrites.push(target.closest(".card").dataset.id);
+    });
+    titleObserver.observe(byId("board"),{subtree:true,attributes:true,attributeFilter:["aria-expanded"]})`);
   const selector = JSON.stringify(card("local"));
   const point = await until(async () => {
     const visible = await evaluate(`(() => {
@@ -286,9 +293,13 @@ async function exercisePage(surface, page) {
   assert(hit.trusted && hit.card==="local" && hit.title,`${surface} 首击未命中本机卡标题 ${JSON.stringify(firstClicks[surface])}`);
   await until(()=>pending,`${surface} 本机卡标题收到首击，未收到预览请求 ${JSON.stringify(hit)}`);
   assert.equal(await evaluate('byId("reply-scrim").hidden'),false);
+  assert.deepEqual(await expanded(),["local"]);
+  assert.deepEqual(await evaluate("titleWrites.splice(0)"),["local"]);
   assert.deepEqual(await evaluate(geometry),baseline);
   await click(await evaluate(center(card(remote))));
   await wait('byId("reply-status").textContent === "上一条完整回复 · 当前轮次进行中"');
+  assert.deepEqual(await expanded(),[remote]);
+  assert.deepEqual(await evaluate("titleWrites.splice(0).sort()"),["local",remote].sort());
   assert.deepEqual(await evaluate(geometry),baseline);
   release();
   await wait("window.settledLocalReads === 1");
@@ -340,6 +351,7 @@ async function exercisePage(surface, page) {
   current = {turnId:"new",html:"<p>本轮已完成</p>",inProgress:false};
   await evaluate("load()");
   await wait('byId("reply-refresh").textContent === "查看新答复"');
+  assert.deepEqual(await expanded(),[remote]);
   assert(await evaluate('byId("reply-text").innerHTML.includes("隔离启动")'));
   assert.equal(await evaluate('byId("reply-body").scrollTop'),scroll);
   const readingState = `({html:byId("reply-text").innerHTML,scroll:byId("reply-body").scrollTop,
@@ -363,8 +375,11 @@ async function exercisePage(surface, page) {
   assert.equal(requests.length,beforeRefresh+1);
   await evaluate("saving=false;moving=null");
   await evaluate('byId("host-filter").focus({preventScroll:true})');
+  await evaluate("titleWrites.length=0");
   await page.command("Input.dispatchKeyEvent",{type:"keyDown",key:"Escape",code:"Escape",windowsVirtualKeyCode:27});
   await wait(`${overlayClosed} && document.activeElement.matches(${JSON.stringify(card(remote))})`);
+  assert.deepEqual(await expanded(),[]);
+  assert.deepEqual(await evaluate("titleObserver.disconnect();titleWrites"),[remote]);
   await press(card("local"));
   await until(()=>pending,"预览请求未被延迟");
   const blankHeading = "#column-review .column-heading h2";
@@ -386,6 +401,7 @@ async function exercisePage(surface, page) {
   await evaluate("load()");
   await press("#reply-close");
   await wait(`${overlayClosed} && document.activeElement === byId("host-filter")`);
+  assert.deepEqual(await expanded(),[]);
   await press(card(remote));
   await wait('byId("reply-text").textContent === "本轮已完成"');
   openFails = true;
