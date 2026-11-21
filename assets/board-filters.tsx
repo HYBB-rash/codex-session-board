@@ -120,7 +120,8 @@ function mountBoardFilters(container: HTMLElement, scope: HTMLElement, sources: 
 
   function select(field: "host" | "project" | "history", event: Event) {
     const menu = event.currentTarget as HTMLSelectElement;
-    if (sources.locked() || menu.disabled) {
+    if (sources.locked() || (field === "history" && state.host === "local") ||
+        (field === "project" && view.projectUnavailable)) {
       menu.value = state[field];
       return;
     }

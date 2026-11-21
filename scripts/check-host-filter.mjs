@@ -62,7 +62,7 @@ try {
   const select = (id,value) => evaluate(`byId(${JSON.stringify(id)}).value=${JSON.stringify(value)};byId(${JSON.stringify(id)}).dispatchEvent(new Event("change"))`);
   const ids = () => evaluate("visibleSessions().map(row=>row.id)");
   await wait('typeof data !== "undefined" && data.sessions.length === 5');
-  check(await evaluate('[selectedHost,byId("host-filter").value]'),["local","local"]);
+  check(await evaluate('[byId("host-filter").value,byId("filter-scope").textContent]'),["local","本机 · 全部项目"]);
   check(await ids(),["local"]);
   check(await evaluate('byId("project-filter").disabled'),false);
   check(await evaluate('byId("host-filter").options.length'),5);
@@ -79,7 +79,7 @@ try {
   await evaluate('byId("filter-toggle").click();byId("search").value="共同关键词";byId("search").dispatchEvent(new Event("input"))');
   check(await ids(),["a1","a-default","a-issue"]);
   await select("host-filter","host:b");
-  check(await evaluate("selectedProject"),"all");
+  check(await evaluate('byId("project-filter").value'),"all");
   check(await ids(),["b1"]);
   check(await evaluate('document.querySelector("[data-archive-all]").disabled'),true);
   check(writes,[]);
@@ -93,7 +93,7 @@ try {
   await evaluate('byId("new-session").click()');
   check(await evaluate('Array.from(byId("new-project").options).map(option=>option.value)'),["a1","a2"]);
   await select("host-filter","local");
-  check(await evaluate("selectedHost"),"host:a");
+  check(await evaluate('byId("host-filter").value'),"host:a");
   pendingNew = true;
   await evaluate('byId("new-target-form").requestSubmit()');
   await wait("creating");
@@ -102,7 +102,7 @@ try {
   check(writes.at(-1).body.projectId,"a1");
   check(Object.hasOwn(writes.at(-1).body,"requestId"),false);
   await select("host-filter","host:b");
-  check(await evaluate("selectedHost"),"host:a");
+  check(await evaluate('byId("host-filter").value'),"host:a");
   pendingNew = false;releaseNew();
   await wait("!creating && !byId('host-filter').disabled");
   await evaluate('byId("filter-toggle").click()');
@@ -137,14 +137,14 @@ try {
   fixture.projectCatalog.items = fixture.projectCatalog.items.filter(item=>item.id !== "a1");
   fixture.health.remoteError = "temporary";
   await refresh();
-  check(await evaluate("selectedProject"),"project:a1");
+  check(await evaluate('byId("project-filter").value'),"project:a1");
   fixture.health.remoteError = null;fixture.health.remoteProjectWarning = true;
   await refresh();
-  check(await evaluate("[selectedHost,selectedProject]"),["host:a","all"]);
+  check(await evaluate('[byId("host-filter").value,byId("project-filter").value]'),["host:a","all"]);
   fixture.sessions = [];fixture.projectCatalog.items = [];fixture.health.remoteRegistry = [];
   await refresh();
   await evaluate("render()");
-  check(await evaluate("[selectedHost,byId('host-filter').selectedOptions[0].textContent.match(/已移除/g).length]"),["host:a",1]);
+  check(await evaluate("[byId('host-filter').value,byId('host-filter').selectedOptions[0].textContent.match(/已移除/g).length]"),["host:a",1]);
   await select("host-filter","all");
   await evaluate('byId("new-session").click()');
   check(await evaluate('byId("new-host").disabled'),false);
@@ -164,7 +164,7 @@ try {
   const draft = writes.at(-1).body;
   check(draft,{projectId:"a1",requestId:legacyRequest});
   await select("host-filter","host:b");
-  check(await evaluate("selectedHost"),"host:a");
+  check(await evaluate('byId("host-filter").value'),"host:a");
   pendingReply = false;
   fixture.projectCatalog.items = [];
   await evaluate('data.projectCatalog.items=[];byId("draft-retry").click()');

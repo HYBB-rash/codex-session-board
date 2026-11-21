@@ -206,7 +206,7 @@ try {
   check(writes.slice(1),Array.from({length:2},()=>({
     path:"/api/state",body:{id:"unplaced",state:"review",note:"保留备注",version:7,inputVersion:9,sectionVersion:"unsectioned"}
   })));
-  await evaluate(`byId("search").value="离线示例";byId("host-filter").value="all";
+  await evaluate(`byId("search").value="离线示例";byId("search").dispatchEvent(new Event("input"));byId("host-filter").value="all";
     byId("host-filter").dispatchEvent(new Event("change"));`);
   check(await evaluate('byId("unplaced-summary").textContent'),"未归列会话 1");
   check(await evaluate(`${card("offline")}.classList.contains("offline")`),true);

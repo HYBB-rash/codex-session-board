@@ -136,12 +136,13 @@ try {
   check(writes.filter(row=>row.path === "/api/refresh").length,0);
   check(await evaluate('hostHealth({value:"host:b",hostId:"b",hostLabel:"b",enabled:false}).status.includes("缓存时间")'),true);
   check(await evaluate('hostHealth({value:"host:b",hostId:"b",hostLabel:"b",enabled:false}).diagnostics.some(([,message])=>message.includes("b-only-error"))'),true);
-  await evaluate('data.health.remoteConnections[1].catalog.error="b-only-error";selectedProject="project:missing";projectOptionsKey="";render()');
-  check(await evaluate("selectedProject"),"project:missing");
+  await select("project-filter","project:other");
+  await evaluate('data.projectCatalog.items=data.projectCatalog.items.filter(item=>item.id!=="other");render()');
+  check(await evaluate('byId("project-filter").value'),"project:other");
   await select("host-filter","host:a");
-  await wait("selectedHost === 'host:a'");
-  await evaluate('selectedProject="project:missing";projectOptionsKey="";render()');
-  check(await evaluate("selectedProject"),"all");
+  await select("project-filter","project:empty");
+  await evaluate('data.projectCatalog.items=data.projectCatalog.items.filter(item=>item.id!=="empty");render()');
+  check(await evaluate('byId("project-filter").value'),"all");
   await select("history-filter","all");
   await evaluate('document.querySelector("[data-archive-all]").click()');
   await wait("!saving");
@@ -150,7 +151,7 @@ try {
   await evaluate('byId("filter-toggle").click();byId("search").value="关键词";byId("search").dispatchEvent(new Event("input"))');
   check(await ids(),["archived","last-archive"]);
   await select("host-filter","local");
-  check(await evaluate("[selectedHistory,byId('history-filter').disabled]"),["active",true]);
+  check(await evaluate("[byId('history-filter').value,byId('history-filter').disabled]"),["active",true]);
   check(await ids(),["local"]);
   check(writes.some(row=>row.path === "/api/connect"),false);
   fixture.projectCatalog.items.find(project=>project.id==="server").createError="项目正在删除，不能新建会话。";

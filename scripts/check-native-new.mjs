@@ -110,8 +110,8 @@ try {
     await fs.writeFile(`${evidence}/${name}.png`, Buffer.from(image.data, "base64"));
   };
   await wait('typeof data !== "undefined" && data.sessions.length === 1');
-  await evaluate(`byId("host-filter").value="host:remote:a";byId("host-filter").dispatchEvent(new Event("change"));
-    byId("project-filter").value=${JSON.stringify("project:" + project)};
+  await evaluate('byId("host-filter").value="host:remote:a";byId("host-filter").dispatchEvent(new Event("change"))');
+  await evaluate(`byId("project-filter").value=${JSON.stringify("project:" + project)};
     byId("project-filter").dispatchEvent(new Event("change"))`);
   check(await evaluate('canCreateProject(data.projectCatalog.items[0])'), true);
   await clickNode(page, "#new-session");

@@ -209,9 +209,9 @@ try {
   assert.deepEqual(writes[0], { id, state: "review", version: 3, inputVersion: 5, sectionVersion: "native:source" });
   await select("host-filter", "host:other");
   await select("project-filter", "project:other-project");
-  await check("等待中主机和项目筛选仍可使用", 'selectedHost === "host:other" && selectedProject === "project:other-project" && !byId("host-filter").disabled && !byId("project-filter").disabled && !document.querySelector(".move-pending,.move-origin") && visibleSessions().length === 1');
+  await check("等待中主机和项目筛选仍可使用", 'byId("host-filter").value === "host:other" && byId("project-filter").value === "project:other-project" && !byId("host-filter").disabled && !byId("project-filter").disabled && !document.querySelector(".move-pending,.move-origin") && document.querySelectorAll(".card").length === 1');
   await evaluate('byId("filter-toggle").click();byId("search").value="另一主机";byId("search").dispatchEvent(new Event("input"))');
-  await check("等待中搜索保持所选主机范围", 'filterMode === "search" && !byId("search").disabled && !document.querySelector(".move-pending,.move-origin") && document.querySelectorAll(".card").length === 1 && visibleSessions()[0].hostId === "other"');
+  await check("等待中搜索保持所选主机范围", '!byId("search").hidden && !byId("search").disabled && !document.querySelector(".move-pending,.move-origin") && document.querySelectorAll(".card").length === 1 && document.querySelector(".card").dataset.id === ' + JSON.stringify(snapshot.sessions.find(session=>session.hostId==="other").id));
   await check("等待中禁用归档排序新建和再次拖动", 'byId("new-session").disabled && document.querySelector("[data-archive-all]").disabled && document.querySelector(".card .card-actions button:last-child").disabled && [...document.querySelectorAll(".column-sort")].every(button=>button.disabled) && [...document.querySelectorAll(".card")].every(card=>!card.draggable)');
   await evaluate('byId("new-session").onclick()');
   await check("等待中直接调用新建也不打开对话框", '!byId("new-target").open && !creating && saving');
@@ -224,7 +224,7 @@ try {
   assert.deepEqual(opens, [otherId]);cases.push("等待中允许打开另一主机的会话");
   await select("host-filter", "host:fixture");
   await evaluate('byId("search").value="";byId("search").dispatchEvent(new Event("input"))');
-  await check("返回来源主机保留临时落位和来源占位", 'selectedHost === "host:fixture" && data.sessions[0].state === "in_progress" && document.querySelector(".move-pending") && document.querySelector("#column-in_progress .move-origin")');
+  await check("返回来源主机保留临时落位和来源占位", 'byId("host-filter").value === "host:fixture" && data.sessions[0].state === "in_progress" && document.querySelector(".move-pending") && document.querySelector("#column-in_progress .move-origin")');
   await select("host-filter", "all");
   refreshError = true;
   await evaluate('byId("refresh").click()');
@@ -272,7 +272,7 @@ try {
   assert(heldSnapshot);
   await check("刷新尚未返回也立即使用回执的原生位置", 'data.sessions[0].sectionVersion === "native:review" && !saving');
   await check("回执才触发完成且标题待同步独立", 'data.sessions[0].state === "review" && !document.querySelector(".move-pending") && byId("move-feedback").classList.contains("saved") && document.querySelector(".follow").textContent.includes("标题")');
-  await check("晚到的旧快照不能回滚成功结果", 'selectedHost === "all" && data.sessions[0].state === "review" && !saving && !moving && !document.querySelector(".move-origin")');
+  await check("晚到的旧快照不能回滚成功结果", 'byId("host-filter").value === "all" && data.sessions[0].state === "review" && !saving && !moving && !document.querySelector(".move-origin")');
   await screenshot("saved");
   await check("成功态切到庆祝帧", 'getComputedStyle(byId("move-dragon")).animationName === "dragon-success" && getComputedStyle(byId("move-dragon")).top === "-144px"');
   await animationFrames("success-animation", [0, 300, 600, 900, 1500, 1999]);

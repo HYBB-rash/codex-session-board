@@ -121,7 +121,7 @@ try {
     fixture.legacyMode = legacy;
     fixture.states = legacy ? { ...states, completed: "已完成" } : states;
     await resize(1474);
-    await evaluate(`data=${JSON.stringify(fixture)};selectedHost="local";selectedProject="all";filterMode="project";projectOptionsKey="";render()`);
+    await evaluate(`data=${JSON.stringify(fixture)};render()`);
     const baseline = await measure(`${legacy ? "six" : "five"}-short`);
     assert.match(await evaluate('byId("health-summary").textContent'),/连接正常/);
     for (const [field,message] of [["scanComplete","尚未读取完整"],["runtimeVerified","尚未连接"],["nativeVerified","尚未确认"]]) {
@@ -141,7 +141,7 @@ try {
     await toggleDetails();
     assert.equal(await evaluate('document.querySelector(".project-tag").open'),false,"键盘无法收起详情");
     assert.equal(writes,0,"浏览详情触发了业务写入");
-    await evaluate('data.sessions.push({...data.sessions[0],id:"remote-missing-project",remote:true,hostId:"long",hostLabel:"测试远程主机",projectId:"missing"});selectedHost="all";render()');
+    await evaluate('data.sessions.push({...data.sessions[0],id:"remote-missing-project",remote:true,hostId:"long",hostLabel:"测试远程主机",projectId:"missing"});byId("host-filter").value="all";byId("host-filter").dispatchEvent(new Event("change"))');
     assert.match(await evaluate('document.querySelector(\'[data-id="remote-missing-project"] .project-tag summary\').textContent'),
       /项目待确认 · 测试远程主机/,"全部主机视图丢失了归属待确认会话的主机");
     const long = structuredClone(fixture);
@@ -149,7 +149,7 @@ try {
     long.sessions[1].cwd = "/projects/" + "very-long-path/".repeat(50);
     long.sessions[1].note = "很长的备注".repeat(100);
     long.projectCatalog.items[1].label = "长项目标签".repeat(80);
-    await evaluate(`data=${JSON.stringify(long)};selectedHost="local";projectOptionsKey="";render();document.querySelector('[data-id="layout-1"] .project-tag').open=true`);
+    await evaluate(`data=${JSON.stringify(long)};byId("host-filter").value="local";byId("host-filter").dispatchEvent(new Event("change"));document.querySelector('[data-id="layout-1"] .project-tag').open=true`);
     const expanded = await measure(`${legacy ? "six" : "five"}-long`);
     assert(Math.abs(baseline.columns[0] - expanded.columns[0]) < 1, "长内容改变列宽");
     assert.equal(expanded.scroll, baseline.scroll, "长内容扩大看板");
@@ -179,7 +179,7 @@ try {
       "横向滚动无法到达最后一列");
     }
     await resize(1474);
-    await evaluate(`data=${JSON.stringify(fixture)};projectOptionsKey="";render();byId("board-viewport").scrollLeft=0`);
+    await evaluate(`data=${JSON.stringify(fixture)};render();byId("board-viewport").scrollLeft=0`);
     await evaluate('document.querySelectorAll(".cards").forEach(node=>node.scrollTop=0);document.querySelectorAll(".project-tag").forEach(node=>node.open=false);new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
     const image = await command("Page.captureScreenshot", { format: "png" }, sessionId);
     await fs.writeFile(path.join(output, `${legacy ? "six" : "five"}-${theme}-columns.png`), Buffer.from(image.data, "base64"));
