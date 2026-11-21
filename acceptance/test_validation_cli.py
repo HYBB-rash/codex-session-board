@@ -69,6 +69,27 @@ class ValidationCliTests(unittest.TestCase):
             self.assertIn("git", record["first_failure"]["message"])
             self.assertTrue(record["cleanup_confirmed"])
 
+    def test_candidate_reports_an_unstartable_command_as_the_first_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            root = self.committed_source(parent)
+            (root / "scripts/check").write_text(f"#!{parent / 'missing-interpreter'}\n")
+            subprocess.run(["git", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null",
+                            "commit", "--quiet", "-am", "simulate missing interpreter"], cwd=root, check=True)
+            output = parent / "result"
+            result = self.invoke("--scope", "candidate", "--output", output, root=root)
+            self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+            record = json.loads((output / "VALIDATION.json").read_text())
+            first = record["first_failure"]["message"]
+            self.assertIn("step-1", first)
+            self.assertIn("FileNotFoundError", first)
+            self.assertIn("./scripts/check", first)
+            self.assertTrue(record["cleanup_confirmed"])
+            self.assertFalse(record["scope_passed"])
+            lease = json.loads((output / "step-1.lease.json").read_text())
+            self.assertIsNone(lease["command_pid"])
+            self.assertIsNone(lease["command_returncode"])
+
     def test_preflight_and_report_reader_verify_actual_source_package_and_cleanup(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = self.committed_source(Path(temporary))
