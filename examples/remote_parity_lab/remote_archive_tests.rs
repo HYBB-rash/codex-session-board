@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-fn ready() -> Result<(tempfile::TempDir, Partition, Surface, Value)> {
+pub(super) fn ready() -> Result<(tempfile::TempDir, Partition, Surface, Value)> {
     let (root, partition, mut surface) = fixture("mac")?;
     partition
         .store

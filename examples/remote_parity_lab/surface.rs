@@ -8,6 +8,7 @@ pub const THREAD: &str = "11111111-1111-4111-8111-111111111111";
 #[derive(Clone, Debug, PartialEq)]
 pub struct Surface {
     pub host: String,
+    pub connection_host: String,
     pub title: String,
     pub section: String,
     pub status: Value,
@@ -23,6 +24,7 @@ impl Surface {
     pub fn new(host: &str) -> Self {
         Self {
             host: host.into(),
+            connection_host: host.into(),
             title: "完整标题".into(),
             section: "unknown-id".into(),
             status: json!({"type":"idle"}),
@@ -96,7 +98,7 @@ impl Rpc for Surface {
 
 impl HostRpc for Surface {
     fn host(&self) -> &str {
-        &self.host
+        &self.connection_host
     }
 
     fn execution_authority(&self) -> bool {

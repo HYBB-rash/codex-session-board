@@ -5,9 +5,9 @@
 - base_commit: `f15754129ac64a1dd02ec93abb00f9237bf0c9f8`
 - worktree_path: `/home/herman/.codex/worktrees/refactor-t3-title-behavior/notion-program`
 - coordinator: 五轮总协调，Herman 指定合入顺序
-- allowed_write_set: 本卡、`examples/remote_parity_lab/remote_title_tests.rs`、`tests/board_io.rs`、`tests/board_contract.rs`、`src/app.rs` 的测试模块、`acceptance/bindings.json` 对本批的绑定。
+- allowed_write_set: 本卡、`examples/remote_parity_lab/{remote_title_tests,remote_archive_tests,surface}.rs` 的测试和夹具、`tests/board_io.rs`、`tests/board_contract.rs`、`src/app.rs` 的测试模块、`acceptance/bindings.json` 对本批的绑定。
 
-分支 `codex/refactor-t3-title-behavior`。T0 工作簿「标题同步作者／随业务替换断言」第 901 至 906 行共六个原 ID。T2 首批修改的是 `test::board_io::old_ack_cannot_delete_newer_title_job` 和 `test::board_contract::title_store_tests::old_ack_and_old_failure_cannot_delete_or_damage_a_newer_job`，这两条均由 T2 维护。
+分支 `codex/refactor-t3-title-behavior`。T0 的 `b859880` 版工作簿「标题同步作者／随业务替换断言」第 901 至 906 行共六个原 ID。T2 首批修改的是 `test::board_io::old_ack_cannot_delete_newer_title_job` 和 `test::board_contract::title_store_tests::old_ack_and_old_failure_cannot_delete_or_damage_a_newer_job`，这两条均由 T2 维护。
 
 ## 六项处置
 
@@ -21,3 +21,5 @@
 | `lib::codex_session_board::app::tests::busy_title_sync_does_not_wait_for_background_batch` | 改写原 ID。调度速度可变，取消固定 150 毫秒断言。 | TITLE-003。后台持有标题锁期间，前台状态保存就能返回，备注已保存，当前版本仍在补偿队列。测试先取得前台回执再释锁，超时仅用于结束阻塞测试。 |
 
 需求见[冻结契约](../../../acceptance/requirements.json)和[远程接入说明](../../../Docs/REMOTE-SESSIONS.md)。[实验报告](../../../Docs/REMOTE-PARITY-LAB.md)记录标题、主机隔离及输入识别的历史来源。各项实测和独立审阅回执保存在源码外 `~/.local/state/codex-session-board/t3-title-20261121/`。
+
+首轮独审发现三处没有区分正确与错误实现的断言。主机实验现在对每种可执行操作仅切换连接报告的身份，先核对错主机零写，再用相同数据从正确主机写成一次。丢回执重开后必须实际读取目标会话。元数据改名和非空批次遗漏旧会话分两轮发现，各自读回。五个独立业务故障对照覆盖旧回执误清队列、原生正文截断、恢复时重复改名、元数据误增输入版本及前台保存被后台锁阻塞。

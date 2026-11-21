@@ -169,6 +169,7 @@ impl Drop for Fixture {
 
 struct Native {
     name: String,
+    reads: usize,
     writes: Vec<Value>,
     fail: bool,
     lose_ack: bool,
@@ -180,6 +181,7 @@ impl Native {
     fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
+            reads: 0,
             writes: vec![],
             fail: false,
             lose_ack: false,
@@ -197,6 +199,7 @@ impl Rpc for Native {
         match method {
             "thread/read" => {
                 assert_eq!(params, json!({"threadId":FIRST,"includeTurns":false}));
+                self.reads += 1;
                 if let Some(callback) = self.callback.take() {
                     callback();
                 }
@@ -284,7 +287,9 @@ fn title_failure_persists_and_lost_ack_is_reconciled() {
     assert_eq!(app.store.pending_titles(Some(FIRST)).unwrap().len(), 1);
     assert_eq!(app.store.note(FIRST).unwrap(), "备注");
     native.lose_ack = false;
+    let reads = native.reads;
     titles::sync(&app.store, &mut native, FIRST).unwrap();
+    assert!(native.reads > reads, "重开后须读回目标会话的原生标题");
     assert_eq!(native.writes.len(), 1);
     assert!(app.store.pending_titles(None).unwrap().is_empty());
 }
