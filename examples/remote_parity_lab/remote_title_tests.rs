@@ -1,7 +1,7 @@
 use super::{
     engine::Partition,
     remote_archive_tests::ready,
-    surface::{Surface, THREAD, fixture},
+    surface::{Surface, THREAD},
 };
 use anyhow::Result;
 use serde_json::Value;
