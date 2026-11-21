@@ -56,14 +56,14 @@ class CandidateGateTests(unittest.TestCase):
             self.assertEqual(candidate.main(), 1 if changed or dirty or mismatch or failed else 0)
         return json.loads((output / "VALIDATION.json").read_text())
 
-    def test_candidate_requires_unchanged_commit_even_when_fingerprint_matches(self):
-        self.assertFalse(self.run_candidate(changed=True)["passed"])
-
-    def test_candidate_rejects_new_uncommitted_changes(self):
-        self.assertFalse(self.run_candidate(dirty=True)["passed"])
-
     def test_candidate_rejects_a_report_for_different_source(self):
-        self.assertFalse(self.run_candidate(mismatch=True)["passed"])
+        for scenario, options in (
+            ("uncommitted changes", {"dirty": True}),
+            ("only the commit changed", {"changed": True}),
+            ("report fingerprint mismatch", {"mismatch": True}),
+        ):
+            with self.subTest(scenario=scenario):
+                self.assertFalse(self.run_candidate(**options)["passed"])
 
     def test_candidate_records_identity_and_report_hash_after_all_checks(self):
         report = self.run_candidate()
