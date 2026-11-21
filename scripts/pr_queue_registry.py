@@ -8,8 +8,9 @@ def registry(project=ROOT):
     return Path(git(project, "rev-parse", "--path-format=absolute", "--git-common-dir")) / "pr-queues"
 
 
-def register(directory, state, *, project=ROOT):
-    with locked(registry(project)) as folder:
+def register(directory, state, *, project=None):
+    index = registry() if project is None else registry(project)
+    with locked(index) as folder:
         for item in state["items"]:
             path = folder / f"{digest([state['repository'].lower(), item['number']])}.json"
             record = json.loads(path.read_text()) if path.exists() else {"directories": []}
