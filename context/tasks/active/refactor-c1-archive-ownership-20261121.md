@@ -30,6 +30,7 @@ coordinator: Herman / 01a1fc2d-af6f-7d50-9759-33835b51eaeb
 - test::native_authority::remote_isolation::archive_batches::remote_batch_owner_recovers_a_lost_receipt_once_and_preserves_same_uuid_on_other_hosts
 - test::native_authority::remote_isolation::archive_batches::remote_batch_owner_persists_new_input_refusal_without_a_native_write
 - test::native_authority::remote_isolation::archive_batches::remote_batch_owner_keeps_pending_when_the_bound_source_changes
+- test::native_authority::remote_isolation::archive_batches::remote_batch_owner_persists_a_success_receipt_in_root_and_confirms_only_the_target
 
 最终提交要求：每步至多 13 文件、400 行，审阅暂存快照并执行
 ./scripts/check --pre-commit，使用 agent-git commit。最终准确头执行 ./scripts/check、
@@ -44,3 +45,11 @@ remote_isolation::archive_batches:: -- --nocapture --test-threads=1。
 查看归档结果的用户依赖丢回执后的 pending 跨重开保存，核对只读且只更新原目标。
 准备归档的用户依赖原生新输入拒绝成为固定结果，重开和核对不重新发送写入。
 切换账号的用户依赖来源不符时保持 pending，恢复原账号后才确认。
+正常收到回执的用户依赖根库固定 archived 结果，只确认原目标主机库，重开不重放。
+
+首件作为独立本地提交 1ae672f 保存。实际操作已集中到 HostArchive，
+构造时分别传入 root_batches 和 target_host。提交使用目标主机连接读取来源，
+根库 claim 后调用一次已有归档实现；核对只用 CatalogReader，
+目标主机库 confirm_archive 与根库 record_archive_result 在真实调用处分别表达。
+改动后的首轮相关测试 16 项 native_authority 归档及 11 项 archive_flow 通过，
+相关 lib/test Clippy 通过。正常回执用例及最终提交验证继续执行。

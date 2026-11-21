@@ -117,6 +117,27 @@ fn isolated(directory: &Path, test: &str) -> Result<bool> {
 }
 
 #[test]
+fn remote_batch_owner_persists_a_success_receipt_in_root_and_confirms_only_the_target() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    if isolated(directory.path(),
+        "remote_batch_owner_persists_a_success_receipt_in_root_and_confirms_only_the_target")? {
+        return Ok(());
+    }
+    let mut fixture = BatchFixture::new(directory.path())?;
+    fixture.assert_owners(false)?;
+    assert_eq!(fixture.post("/api/archive")?["item"]["status"], "archived");
+    assert_eq!(fixture.status()?, "archived");
+    fixture.assert_owners(true)?;
+    fixture.reopen(directory.path())?;
+    assert_eq!(fixture.post("/api/archive")?["item"]["status"], "archived");
+    assert_eq!(fixture.check()?, "archived");
+    fixture.assert_owners(true)?;
+    assert_eq!(fixture.writes("mac"), 1);
+    eprintln!("C1_TRACE receipt root=archived mac.session=archived other.session=active mac.native_writes=1");
+    Ok(())
+}
+
+#[test]
 fn remote_batch_owner_recovers_a_lost_receipt_once_and_preserves_same_uuid_on_other_hosts() -> Result<()> {
     let directory = tempfile::tempdir()?;
     if isolated(directory.path(),
