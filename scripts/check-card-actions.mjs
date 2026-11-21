@@ -55,7 +55,7 @@ try {
   await page.evaluate("onlineRow.canOpen = previousCanOpen; render()");
   const missing = await page.evaluate(`(() => {
     const {id,version,inputVersion} = data.sessions.find(row => row.title === "Catalog");
-    return post("/api/state",{id,version,inputVersion,state:"review"}).then(() => "",error => error.message);
+    return request("/api/state",{id,version,inputVersion,state:"review"}).then(() => "",error => error.message);
   })()`);
   assert.match(missing, /当前不可修改/);
   await page.command("Fetch.continueRequest", {requestId:pendingRead.requestId});
@@ -69,7 +69,7 @@ try {
   assert.deepEqual(await page.evaluate('buttons("Online")'), [true,true,null]);
   const retry = await page.evaluate(`(() => {
     const {id,version,inputVersion,sectionVersion} = data.sessions.find(row => row.title === "Online");
-    return post("/api/archive",{id,version,inputVersion,sectionVersion}).then(() => "",error => error.message);
+    return request("/api/archive",{id,version,inputVersion,sectionVersion}).then(() => "",error => error.message);
   })()`);
   assert.match(retry, /请先在归档结果中核对/);
   await checkSubmitting("state", 'card("Follow").querySelector("[data-action=archive]").click()');

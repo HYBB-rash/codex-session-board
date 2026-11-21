@@ -187,7 +187,7 @@ try {
       if (owned.version !== original.version) {
         const incoming = page.event("Fetch.requestPaused");
         incoming.catch(() => {});
-        const restored = evaluate(`post("/api/state",${JSON.stringify({
+        const restored = evaluate(`request("/api/state",${JSON.stringify({
           id: original.id, state: original.manual ? original.state : null, note: original.note,
           version: owned.version, inputVersion: owned.inputVersion, sectionVersion: owned.sectionVersion,
         })})`);
