@@ -21,4 +21,4 @@
 - 已确认的写入会递增状态版本。同版本、较低版本、错主机或错会话的成功回执不能结束操作或清掉草稿。慢保存时连续三次 Escape 后仍只发一笔写入。
 - 临时包试跑发现两次独立快照的 `seenAt` 会随轮询推进。用源回执和后续读回比较身份、状态、备注、新输入及版本字段。
 
-Linux 隔离证据位于 `/home/herman/Documents/Codex/2026-11-21/wo/work/e2b-card-editor/`。最终交付回执单独关联准确提交、原始日志和独立审阅。部署、macOS 运行以及日用 Codex 宿主不在本机夹具证明范围内。
+最终以远端主线 `f06bc4ee75277f007caa88cd61cf7ade63e09a98` 为基线。Linux 隔离证据位于 `/home/herman/Documents/Codex/2026-11-21/wo/work/e2b-card-editor/`。最终交付回执单独关联准确提交、原始日志和独立审阅。部署、macOS 运行以及日用 Codex 宿主不在本机夹具证明范围内。
