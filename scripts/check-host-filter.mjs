@@ -251,7 +251,7 @@ try {
   await refresh();
   check(await evaluate('hostOptions().some(host=>host.hostId==="cached-only")'),true);
   await evaluate('byId("new-target-cancel").click()');
-  console.log(JSON.stringify({cases}));
+  console.log(JSON.stringify({cases, archivedIds:writes.filter(row=>row.path === "/api/archive").map(row=>row.body.id)}));
 } finally {
   releaseNew?.();
   if (browser) await browser.close();
