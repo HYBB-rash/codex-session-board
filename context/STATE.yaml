@@ -8,6 +8,7 @@
     "summary": "PR #28 已合并。单击灰色空白收起右侧阅读栏并保留看板位置。v0.4.12 的 Linux 和 macOS 不可变候选包已验证并发布，绑定冻结源码 cefc8a6。真实环境验收待安排。"
   },
   "active_tasks": [
+    "context/tasks/active/board-refactor-five-rounds-20261121.md",
     "context/tasks/active/remote-performance-20261113.md",
     "context/tasks/active/host-project-filter-20261113.md",
     "context/tasks/active/blocked-optional-20261113.md",
