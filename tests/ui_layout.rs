@@ -168,7 +168,7 @@ fn light_ui_refresh_health_and_catalog_preserve_interaction() {
         String::from_utf8_lossy(&interaction.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&interaction.stdout).unwrap();
-    assert_eq!(report["refreshPerformance"]["retained"], 1500);
+    assert_eq!(report["refreshPerformance"]["rows"], 1500);
     assert_eq!(report["writes"][1]["body"]["id"], "unplaced");
     assert_eq!(report["cleanup"]["groupEmpty"], true);
     assert_eq!(report["cleanup"]["profileRemoved"], true);

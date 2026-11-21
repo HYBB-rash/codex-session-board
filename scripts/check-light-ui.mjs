@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import http from "node:http";
+import { clickNode } from "./browser-actions.mjs";
 import { launchBrowser } from "./browser-client.mjs";
 import { checkEditorDrafts } from "./check-editor-drafts.mjs";
 
@@ -154,16 +155,35 @@ try {
   }
   fixture.health = structuredClone(healthBaseline);
   await refresh();
+  const ordinarySessions = fixture.sessions;
+  fixture.sessions = Array.from({length:1500},(_,index)=>({...ordinarySessions[0],id:"performance-"+index,note:"",state:"review"}));
+  const fullRenderMs = await evaluate(`(() => {
+    data.sessions=${JSON.stringify(fixture.sessions)};
+    const initial=performance.now();render();return performance.now()-initial;
+  })()`);
+  const reading = '.card[data-id="performance-0"] .project-tag summary';
+  await clickNode(page, reading);
   refreshPerformance = await evaluate(`(() => {
-    data.sessions=Array.from({length:1500},(_,index)=>({...data.sessions[0],id:"performance-"+index,note:"",state:"review"}));
-    const initial=performance.now();render();const fullRenderMs=performance.now()-initial;
-    const original=[...document.querySelectorAll(".card")],unchangedRenderMs=[];
+    const cards=()=>byId("board").querySelectorAll(".card");
+    const original=new Map(Array.from(cards(),card=>[card.dataset.id,card]));
+    if(original.size!==data.sessions.length || !data.sessions.every(session=>original.has(session.id)))
+      throw Error("初始看板缺少会话或包含重复卡片");
+    const summary=document.querySelector(${JSON.stringify(reading)}),details=summary.closest("details");
+    const readingCard=summary.closest(".card"),unchangedRenderMs=[];
     for(let cycle=0;cycle<8;cycle++){
       data=structuredClone(data);const start=performance.now();render();unchangedRenderMs.push(performance.now()-start);
+      const current=cards();
+      if(current.length!==original.size) throw Error("刷新后卡片数量有变");
+      for(const card of current) {
+        if(original.get(card.dataset.id)!==card || !card.checkVisibility({visibilityProperty:true,opacityProperty:true}))
+          throw Error("第"+(cycle+1)+"次刷新更换或隐藏了会话节点："+card.dataset.id);
+      }
+      if(document.activeElement!==summary || !details.open || !readingCard.contains(details) || !details.contains(summary))
+        throw Error("第"+(cycle+1)+"次刷新打断了正在阅读的项目详情");
     }
-    return {rows:original.length,retained:original.filter(card=>card.isConnected).length,fullRenderMs,unchangedRenderMs};
+    return {rows:original.size,fullRenderMs:${fullRenderMs},unchangedRenderMs};
   })()`);
-  check(refreshPerformance.retained,1500);
+  fixture.sessions = ordinarySessions;
   check(requests.filter(request=>request.method === "POST").map(request=>request.path),["/api/preview-reply","/api/open"]);
   baselineCases = cases;
   fixture.fourColumns = true;
