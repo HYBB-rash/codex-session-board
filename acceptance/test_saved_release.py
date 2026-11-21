@@ -681,47 +681,6 @@ class SavedReleaseTests(unittest.TestCase):
             release_plugin.publish_saved(self.github, self.tag, self.github.source, "stable", evidence, self.root)
         self.assertEqual(self.github.edits, [])
 
-    def test_rehearsal_release_verifies_both_packages_without_publishing_channels(self):
-        for target in release_plugin.TARGETS:
-            self.save_existing(target)
-        tag = "rehearsal-" + self.github.source
-        reference = "refs/heads/codex/rehearsal-main-fixture"
-
-        def checkout(source, directory):
-            (directory / "scripts").mkdir(parents=True)
-
-        with patch.object(release_plugin, "source_checkout", side_effect=checkout), \
-                patch.object(release_plugin, "release_tag", return_value=tag), \
-                patch.object(release_plugin, "versions", return_value="0.2.93"), \
-                patch.object(release_plugin.subprocess, "run") as run:
-            result = release_plugin.publish_saved(
-                self.github, tag, self.github.source, "candidate", None, self.root, reference)
-        self.assertEqual(result["channel"], None)
-        self.assertEqual(result["tag"], tag)
-        self.assertFalse(self.github.draft)
-        self.assertEqual(run.call_count, len(release_plugin.TARGETS))
-        self.assertTrue(all(call.args[0][1] == "-c" for call in run.call_args_list))
-        self.assertEqual(self.github.edits, [
-            {"draft": False, "prerelease": True, "make_latest": "false"},
-        ])
-
-    def test_rehearsal_release_rejects_channel_promotion_and_wrong_source_tag(self):
-        tag = "rehearsal-" + self.github.source
-        reference = "refs/heads/codex/rehearsal-main-fixture"
-        with patch.object(release_plugin, "release_tag", return_value=tag), \
-                patch.object(release_plugin.subprocess, "run") as run:
-            for selected_tag, channel, selected_reference in (
-                (tag, "stable", reference),
-                ("rehearsal-" + "b" * 40, "candidate", reference),
-                (tag, "candidate", "refs/heads/main"),
-            ):
-                with self.subTest(tag=selected_tag, channel=channel):
-                    with self.assertRaises(ValueError):
-                        release_plugin.publish_saved(self.github, selected_tag, self.github.source,
-                                                     channel, None, self.root, selected_reference)
-            run.assert_not_called()
-        self.assertEqual(self.github.edits, [])
-
     def test_archive_links_and_checksum_tampering_are_rejected(self):
         output = io.BytesIO()
         with tarfile.open(fileobj=output, mode="w:gz") as contents:

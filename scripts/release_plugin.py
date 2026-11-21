@@ -1,7 +1,6 @@
 import argparse
 import hashlib
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -12,20 +11,11 @@ from urllib.parse import quote
 
 from package_plugin import ROOT, TARGETS, build, command, verify_package, versions
 from publish_plugin import authorize
-from validate_context import require_remote_target, require_target
 from verify_package_startup import CHECKS
 
 
-def release_tag(source, reference="refs/heads/main"):
-    branch = os.environ.get("GITHUB_REF_NAME") or command(["git", "branch", "--show-current"])
-    if reference == "refs/heads/main":
-        require_target(reference, "", branch)
-        return f"v{versions(ROOT)}"
-    configuration = json.loads(command(["git", "show", f"{source}:context/integration-target.json"]))
-    git_command = lambda *arguments: command(["git", *arguments])
-    require_target(reference, configuration["base"], branch, source, git_command=git_command)
-    require_remote_target(reference, (configuration["base"], source), git_command=git_command)
-    return f"rehearsal-{source}"
+def release_tag():
+    return f"v{versions(ROOT)}"
 
 
 class GitHub:
@@ -224,7 +214,7 @@ def read_package(github, tag, target, source, directory):
         raise ValueError("GitHub asset digest is missing or does not match downloaded bytes")
     package = directory / "package"
     manifest = unpack(archive, package)
-    version = versions(ROOT) if tag == f"rehearsal-{source}" else tag[1:]
+    version = tag[1:]
     if (manifest["source_commit"], manifest["version"], manifest["target"]) != (source, version, target):
         raise ValueError("Saved package belongs to different source, version or platform")
     return package
@@ -313,12 +303,7 @@ def require_main_ancestor(github, source):
         raise ValueError("Candidate publication requires a source contained in main")
 
 
-def publish_saved(github, tag, source, channel, evidence, directory, reference="refs/heads/main"):
-    rehearsal = reference != "refs/heads/main"
-    if rehearsal and (channel != "candidate" or tag != release_tag(source, reference)):
-        raise ValueError("Rehearsal releases require the exact source tag and candidate validation")
-    if not rehearsal and tag.startswith("rehearsal-"):
-        raise ValueError("Rehearsal releases cannot update delivery channels")
+def publish_saved(github, tag, source, channel, evidence, directory):
     if channel == "stable" and evidence is None:
         raise ValueError("Stable promotion requires reviewed evidence for both platforms")
     release = github.release(tag)
@@ -331,7 +316,7 @@ def publish_saved(github, tag, source, channel, evidence, directory, reference="
         if channel == "stable" or not release["draft"]:
             raise ValueError("Release is missing required platform packages or checksums")
         return {"status": "incomplete", "tag": tag, "message": "Draft retained; waiting for both platforms"}
-    if channel == "candidate" and not rehearsal:
+    if channel == "candidate":
         require_main_ancestor(github, source)
     checkout = directory / "source"
     source_checkout(source, checkout)
@@ -378,9 +363,6 @@ def publish_saved(github, tag, source, channel, evidence, directory, reference="
     if (not isinstance(published, dict) or published.get("immutable") is not True
             or published.get("draft") is not False):
         raise ValueError("Release must be immutable and published before updating channels")
-    if rehearsal:
-        return {"status": "published", "channel": None, "reference": reference,
-                "tag": tag, "source": source}
     arguments = [sys.executable, str(checkout / "scripts/publish_plugin.py"),
                  "--repository", f"https://github.com/{github.repository}.git", "--channel", channel]
     arguments.extend(["--packages", *(str(package) for package, _ in packages)])
@@ -406,7 +388,6 @@ def main():
     parser.add_argument("--local", action="store_true")
     parser.add_argument("--evidence", type=Path)
     parser.add_argument("--repository")
-    parser.add_argument("--reference", default="refs/heads/main")
     parser.add_argument("--target", choices=sorted(TARGETS))
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--prepare-only", action="store_true")
@@ -431,18 +412,14 @@ def main():
     repository = arguments.repository or json.loads(command(["gh", "repo", "view", "--json", "nameWithOwner"]))["nameWithOwner"]
     github = GitHub(repository)
     source = command(["git", "rev-parse", "HEAD"])
-    tag = release_tag(source, arguments.reference)
-    if arguments.reference != "refs/heads/main" and (
-            arguments.channel != "candidate" or not (arguments.prepare_only or use_saved_release)):
-        parser.error("Rehearsal publication requires an explicit preparation, local or finalize mode")
+    tag = release_tag()
     if command(["git", "status", "--porcelain", "--untracked-files=all"]):
         raise ValueError("Release requires a clean committed source tree")
     evidence = arguments.evidence.resolve() if arguments.evidence else None
     if arguments.channel == "stable" and evidence is None:
         parser.error("stable requires --evidence")
     if arguments.prepare_only:
-        if arguments.reference == "refs/heads/main":
-            require_main_ancestor(github, source)
+        require_main_ancestor(github, source)
         release = github.ensure_draft(tag, source)
         print(json.dumps({"status": "prepared", "tag": tag, "source": source, "release_id": release["id"]}))
         return 0
@@ -467,7 +444,7 @@ def main():
                     return 0
         elif github.release(tag) is None:
             raise ValueError("No saved candidate exists for this version")
-        result = publish_saved(github, tag, source, arguments.channel, evidence, directory, arguments.reference)
+        result = publish_saved(github, tag, source, arguments.channel, evidence, directory)
         if use_saved_release:
             result["release_id"] = arguments.release_id
         print(json.dumps(result))

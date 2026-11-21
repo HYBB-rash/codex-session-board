@@ -22,7 +22,7 @@ def digest(path):
 def source_digests(root):
     paths = [
         "scripts/package_scenarios.py", "scripts/verify_package_startup.py",
-        "scripts/pr_connection_probe.py", "scripts/release_scenarios.py",
+        "scripts/package_connection_probe.py", "scripts/release_scenarios.py",
         "examples/dev_fixture.rs", "Cargo.lock",
         *(path.relative_to(root).as_posix() for path in sorted((root / "examples/dev_fixture").glob("*.rs"))),
     ]

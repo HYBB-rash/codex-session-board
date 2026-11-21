@@ -190,7 +190,7 @@ class DeliveryTests(unittest.TestCase):
 
     def test_source_preflight_detects_an_omitted_extensionless_entry(self):
         import package_migration
-        for entry in ("scripts/validate", "scripts/integrate"):
+        for entry in ("scripts/validate", "scripts/release"):
             patterns = tuple(pattern for pattern in package_migration.PATTERNS if pattern != entry)
             with self.subTest(entry=entry), patch.object(package_migration, "PATTERNS", patterns):
                 with self.assertRaisesRegex(ValueError, "missing implementation files"):
