@@ -14,3 +14,5 @@ coordinator: 五轮重构总协调；由 Fedora 合入会话串行推进 main
 原实现退出 3，但 `first_failure.message` 仅显示进程组失去归属，`FileNotFoundError` 只出现在子进程日志。新实现把启动异常写入受控子进程的状态，守护进程存活到正常清理后才退出。候选报告给出 `step-1`、`./scripts/check` 和 `FileNotFoundError`；会话没有命令 PID 或退出码，清理回执则可独立核对。开发环境的既有启动、超时、进程中断和进程组回收仍经原有入口。
 
 Linux 上先用同一新回归观察旧实现失败，再运行 `acceptance.test_validation_cli`、`acceptance.test_validation_process` 和 `acceptance.test_dev_environment`，共 20 项通过。实际命令、结果和独立审阅另存于协调工作目录 `work/launch-failure/`。
+
+主线 `735b368` 的双平台运行 `44877481904` 中，此回归继承了外层候选的 `CARGO_TARGET_DIR`。缓存归属检查在准备期间拒绝了临时源码，尚未到达故障注入的命令。在 Fedora 用已归属于外层源码的缓存复现相同错误。临时源码现在单独使用临时目录内的 `target`，原有缓存归属检查及故障断言都继续执行。

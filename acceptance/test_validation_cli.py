@@ -77,7 +77,10 @@ class ValidationCliTests(unittest.TestCase):
             subprocess.run(["git", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null",
                             "commit", "--quiet", "-am", "simulate missing interpreter"], cwd=root, check=True)
             output = parent / "result"
-            result = self.invoke("--scope", "candidate", "--output", output, root=root)
+            environment = dict(os.environ, CSB_VALIDATION_PYTHON=sys.executable,
+                               CARGO_TARGET_DIR=str(parent / "target"))
+            result = self.invoke("--scope", "candidate", "--output", output, root=root,
+                                 environment=environment)
             self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
             record = json.loads((output / "VALIDATION.json").read_text())
             first = record["first_failure"]["message"]
