@@ -2216,6 +2216,7 @@
       "acceptance.test_pr_duty_claims.PRDutyClaimTests.test_review_reservation_is_idempotent_and_new_head_keeps_old_receipt",
       "acceptance.test_pr_duty_claims.PRDutyClaimTests.test_legacy_review_route_uses_latest_recorded_session_and_waits_for_unknown_dispatch",
       "acceptance.test_pr_duty_claims.PRDutyClaimTests.test_first_claim_rechecks_the_label_before_it_writes",
+      "acceptance.test_pr_duty_claims.PRDutyClaimTests.test_upgrade_preserves_imported_reviewer_before_replacing_legacy_result",
       "acceptance.test_pr_duty_claims.PRDutyClaimTests.test_completed_pr_remains_visible_while_the_existing_receipt_is_unconfirmed",
       "acceptance.test_pr_duty_claims.PRDutyClaimTests.test_author_binding_only_accepts_route_updates_for_the_original_session",
       "acceptance.test_pr_duty_claims.PRDutyClaimTests.test_frozen_claim_scope_rejects_same_commit_on_a_different_branch",

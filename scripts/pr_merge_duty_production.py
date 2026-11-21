@@ -57,6 +57,7 @@ def follow(duty, config, checker, directory, path, data, claim, main):
     repository, number = claim["repository"], claim["pr"]
     pull = forge.api(f"repos/{repository}/pulls/{number}")
     observed = discovery.refresh_claim(claim, pull)
+    discovery.remember_legacy_review(directory, claim, config.get("coordinator_thread"))
     registry_project = Path(config.get("registry_project", checker))
     queue = queues.locate(registry_project, claim, directory)
     state = queues.read_queue(queue, claim) if queue else None

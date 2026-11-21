@@ -136,10 +136,34 @@ def review_route(claim, coordinator):
     return {"action": "resume", "task": reviewer} if reviewer else {"action": "create"}
 
 
+def remember_legacy_review(directory, claim, coordinator):
+    author = (claim.get("author") or {}).get("thread_id")
+    if not author or review_route(claim, coordinator)["action"] != "create":
+        return
+    review = claim.get("last_result", {}).get("review") or {}
+    reviewer = review.get("reviewer")
+    if (review.get("result") in {"review-passed", "review-failed"} and review.get("request") is None
+            and reviewer and reviewer not in {author, coordinator}):
+        claim["review_task"] = reviewer
+        return
+    for head, item in reversed(claim["heads"].items()):
+        if head == claim["head"] or item.get("review"):
+            continue
+        path = review_path(directory, claim["pr"], head)
+        if path.is_file():
+            receipt = json.loads(path.read_text())
+            reviewer = receipt.get("reviewer")
+            if (receipt.get("head") == head and isinstance(receipt.get("passed"), bool)
+                    and reviewer and reviewer not in {author, coordinator}):
+                claim["review_task"] = reviewer
+                return
+
+
 def review_command(directory, path, data, arguments, coordinator):
     claim = data["claims"].get(str(arguments.pr))
     if not claim or arguments.head not in claim["heads"]:
         raise ValueError("Review command must identify a recorded full PR head")
+    remember_legacy_review(directory, claim, coordinator)
     head = claim["heads"][arguments.head]
     if arguments.command in {"reserve-review", "begin-review"}:
         pull = forge.api(f"repos/{claim['repository']}/pulls/{claim['pr']}")

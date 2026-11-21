@@ -163,6 +163,22 @@ class PRDutyClaimTests(unittest.TestCase):
         self.assertEqual(result["result"], "infrastructure-blocked")
         self.assertFalse((self.directory / "claims.json").exists())
 
+    def test_upgrade_preserves_imported_reviewer_before_replacing_legacy_result(self):
+        for retained_result in (True, False):
+            with self.subTest(retained_result=retained_result):
+                row = pull(31, head=REPAIR)
+                claim = {**discovery.describe(row), "repository": REPOSITORY, "heads": {HEAD: {}, REPAIR: {}},
+                         "author": {"thread_id": "author"}}
+                receipt = {"head": HEAD, "passed": True, "reviewer": "independent"}
+                if retained_result:
+                    claim["last_result"] = {"review": {"result": "review-passed", "reviewer": "independent"}}
+                else:
+                    save(discovery.review_path(self.directory, 31, HEAD), receipt)
+                discovery.remember_legacy_review(self.directory, claim, "coordinator")
+                claim["last_result"] = {"result": "review-required"}
+                self.assertEqual(discovery.review_route(claim, "coordinator"),
+                                 {"action": "resume", "task": "independent"})
+
     def test_completed_pr_remains_visible_while_the_existing_receipt_is_unconfirmed(self):
         for state in ("sent", "delivery_unknown", "rejected"):
             entry = {"status": "merged", "pr": 31, "last_result": {"delivery": {"author": {"state": state}}}}
