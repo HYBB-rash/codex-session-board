@@ -161,14 +161,13 @@ def updated_config(contents, settings):
         groups.append("plugins")
     try:
         entry = current.setdefault("marketplaces", {}).setdefault(MARKET, {})
-        for key in set(entry) - settings.keys():
-            del entry[key]
-        entry.update(settings)
-        if enable:
-            current.setdefault("plugins", {}).setdefault(PLUGIN_ID, {})["enabled"] = True
-        serialized = current.as_string()
-        if config_values(tomlkit.parse(serialized).unwrap()) == config_values(expected):
-            return serialized, expected
+        if set(entry) <= settings.keys():
+            entry.update(settings)
+            if enable:
+                current.setdefault("plugins", {}).setdefault(PLUGIN_ID, {})["enabled"] = True
+            serialized = current.as_string()
+            if config_values(tomlkit.parse(serialized).unwrap()) == config_values(expected):
+                return serialized, expected
     except (KeyError, tomlkit.exceptions.ParseError):
         pass
     current = tomlkit.parse(text)

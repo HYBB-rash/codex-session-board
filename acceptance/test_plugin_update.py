@@ -1,6 +1,7 @@
 import contextlib
 import errno
 import io
+from itertools import permutations
 import json
 import math
 import os
@@ -737,8 +738,8 @@ class PluginUpdateTests(unittest.TestCase):
             self.update(reload=False)
         config = self.home / "config.toml"
         market = f"marketplaces.{update_plugin.MARKET}"
-        config.write_text(f'{market}.source = "mock-repository"\n{market}.sparse_paths = []\n'
-                          f'{market}.source_type = "git"\n{market}.ref = "{self.revision}"\n'
+        config.write_text(f'{market}.source_type = "git"\n{market}.source = "mock-repository"\n'
+                          f'{market}.sparse_paths = []\n{market}.ref = "{self.revision}"\n'
                           f'plugins."{update_plugin.PLUGIN_ID}".enabled = true\n'
                           '[custom_metrics]\nthreshold = nan\n')
         original = self.installation_snapshot()
@@ -761,6 +762,21 @@ class PluginUpdateTests(unittest.TestCase):
         self.assertTrue(update_plugin.plugin_enabled(document))
         self.assertEqual(update_plugin.market_settings(document),
                          {"source": "mock-repository", "source_type": "git", "ref": self.revision})
+        self.assertFalse((self.state / "pending.json").exists())
+
+    def test_every_dotted_market_key_order_accepts_sparse_path_removal(self):
+        market = f"marketplaces.{update_plugin.MARKET}"
+        settings = {"source_type": "git", "source": "mock-repository", "ref": self.revision}
+        for order in permutations(('source_type = "git"', 'source = "mock-repository"',
+                                   "sparse_paths = []", 'ref = "previous"')):
+            with self.subTest(order=order):
+                rows = [f"{market}.{key}" for key in order]
+                rows.insert(2, f'plugins."{update_plugin.PLUGIN_ID}".enabled = false')
+                updated, expected = update_plugin.updated_config(("\n".join(rows) + "\n").encode(), settings)
+                config = tomllib.loads(updated)
+                self.assertEqual(config, expected)
+                self.assertEqual(config["marketplaces"][update_plugin.MARKET], settings)
+                self.assertFalse(config["plugins"][update_plugin.PLUGIN_ID]["enabled"])
 
     def test_linked_config_is_staged_beside_target_and_preserves_bom(self):
         config = self.home / "config.toml"
