@@ -4,8 +4,10 @@ import http from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 import { launchBrowser } from "./browser-client.mjs";
 
-const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+const html = await readFile(process.argv[4] || new URL("../index.html", import.meta.url), "utf8");
 const bridge = await readFile(new URL("../assets/app-bridge.js", import.meta.url), "utf8");
+const embedded = process.argv[3] ? await readFile(process.argv[3], "utf8") :
+  html.replace("<script>",()=>`<script>${bridge.replaceAll("</script","<\\/script")}</script><script>`);
 const states = {in_progress:"进行中",review:"待审阅",blocked:"已阻塞",to_archive:"待归档"};
 const sharedTitle = "核对发布及隔离启动历史记录".repeat(6);
 const session = (id, state, title = sharedTitle, extra = {}) => ({
@@ -50,8 +52,7 @@ addEventListener("message",async event=>{
 const server = http.createServer(async (request,response) => {
   if (request.url === "/" || request.url === "/host" || request.url === "/app") {
     return response.writeHead(200,{"Content-Type":"text/html; charset=utf-8"}).end(
-      request.url === "/host" ? host : request.url === "/app" ?
-        html.replace("<script>",()=>`<script>${bridge.replaceAll("</script","<\\/script")}</script><script>`) : html);
+      request.url === "/host" ? host : request.url === "/app" ? embedded : html);
   }
   response.setHeader("Content-Type","application/json");
   if (request.url === "/api/sessions") return response.end(JSON.stringify(snapshot));
@@ -78,7 +79,7 @@ const server = http.createServer(async (request,response) => {
   response.end(JSON.stringify(reply));
 });
 await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
-let browser, cleanup;
+let browser, cleanup, failure;
 const checks = [];
 const address = `http://127.0.0.1:${server.address().port}`;
 const until = async (predicate, message) => {
@@ -209,6 +210,7 @@ async function exercise(surface) {
   current = {turnId:"new",html:"<p>本轮已完成</p>",inProgress:false};
   await evaluate("load()");
   await wait('byId("reply-refresh").textContent === "查看新答复"');
+  assert(await evaluate('byId("reply-text").innerHTML.includes("隔离启动")'));
   assert.equal(await evaluate('byId("reply-body").scrollTop'),scroll);
   await press("#reply-refresh");
   await wait('byId("reply-text").textContent === "本轮已完成"');
@@ -231,6 +233,11 @@ async function exercise(surface) {
   await wait('byId("reply-status").textContent === "还没有完整回复" && !byId("reply-open").disabled');
   await press(card("offline"));
   await wait('byId("reply-status").classList.contains("error") && byId("reply-open").disabled');
+  await evaluate('byId("reply-close").focus({preventScroll:true})');
+  snapshot.sessions = snapshot.sessions.filter(row => row.id !== "offline");
+  await evaluate("load()");
+  await press("#reply-close");
+  await wait(`${overlayClosed} && document.activeElement === byId("host-filter")`);
   await press(card(remote));
   await wait('byId("reply-text").textContent === "本轮已完成"');
   openFails = true;
@@ -294,9 +301,12 @@ try {
   browser = await launchBrowser();
   await exercise("http");
   await exercise("mcp");
+} catch (error) {
+  failure = error;
 } finally {
   pending?.end();
   if (browser) cleanup = await browser.close();
   await new Promise(resolve=>server.close(resolve));
 }
-console.log(JSON.stringify({passed:true,checks,cleanup}));
+console.log(JSON.stringify({passed:!failure,checks,embeddedResource:process.argv[3] || "fixture",cleanup}));
+if (failure) throw failure;

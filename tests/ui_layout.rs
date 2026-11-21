@@ -56,7 +56,14 @@ fn mcp_bridge_preserves_routes_results_and_host_theme() {
 
 #[test]
 fn reply_preview_preserves_scroll_focus_and_rejects_late_bodies() {
-    let result = Command::new("node").arg("scripts/check-reply-preview.mjs").output().unwrap();
+    let build = Command::new("node").args(["scripts/build-app-bridge.mjs", "--check", "--offline"]).output().unwrap();
+    assert!(build.status.success(), "预览类型或离线产物不一致：\n{}\n{}",
+        String::from_utf8_lossy(&build.stdout),String::from_utf8_lossy(&build.stderr));
+    let output = tempfile::tempdir().unwrap();
+    let resource = output.path().join("mcp-resource.html");
+    std::fs::write(&resource, codex_session_board::mcp::resource()["text"].as_str().unwrap()).unwrap();
+    let result = Command::new("node").arg("scripts/check-reply-preview.mjs")
+        .arg(output.path()).arg(resource).output().unwrap();
     assert!(result.status.success(), "答复预览失败：\n{}\n{}",
         String::from_utf8_lossy(&result.stdout),String::from_utf8_lossy(&result.stderr));
     let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();

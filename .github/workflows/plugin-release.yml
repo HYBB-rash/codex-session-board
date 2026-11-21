@@ -114,6 +114,7 @@ jobs:
           cargo fetch --locked
           cargo fetch --locked --manifest-path scripts/checker/Cargo.toml
       - run: ./scripts/install-git-hooks
+      - run: node scripts/build-app-bridge.mjs --check
       - run: TMPDIR=/tmp ./scripts/validate --scope candidate --output "$RUNNER_TEMP/validation"
       - uses: actions/upload-artifact@v4
         if: always()

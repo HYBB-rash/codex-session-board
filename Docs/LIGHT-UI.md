@@ -41,6 +41,8 @@
 ## 离线桥接构建
 
 可读入口为 `assets/app-bridge-entry.mjs`。
+Vue 回复预览复用这一构建入口，源码、生成区和验证方式见
+[回复预览的 Vue 入口](REPLY-PREVIEW.md)。
 `assets/app-bridge.package.json` 与 `assets/app-bridge.package-lock.json`
 固定原有 SDK 2.0.4 和 esbuild 0.28.2，保留依赖来源与完整性校验。
 锁文件的每个包占一行，避免压缩为单行或引入与改动无关的格式差异。
