@@ -6,16 +6,17 @@ import { clickNode, until } from "./browser-actions.mjs";
 
 const html = await fs.readFile(new URL("../index.html", import.meta.url), "utf8");
 const project = "target:" + JSON.stringify(["remote:a", "targetServer", "canonical"]);
+const otherProject = "target:" + JSON.stringify(["remote:b", "targetServer", "canonical"]);
 const identifier = "remote:" + JSON.stringify(["codex", "remote:a", "actual-uuid"]);
 const fixture = {
   states: { unknown: "待判断", review: "待审阅", to_archive: "待归档" },
-  health: { remoteRegistry: [{ hostId: "remote:a", hostLabel: "Mac", enabled: true }],
-    remoteConnections: [{ hostId: "remote:a", connected: true, catalog: { cached: false } }] },
+  health: { remoteRegistry: ["remote:a", "remote:b"].map(hostId => ({ hostId, hostLabel: "Mac", enabled: true })),
+    remoteConnections: ["remote:a", "remote:b"].map(hostId => ({ hostId, connected: true, catalog: { cached: false } })) },
   projectCatalog: { loaded: true, items: [
     { id: project, nativeId: "canonical", hostId: "remote:a", hostLabel: "Mac",
       origin: "targetServer", remote: true, label: "项目", paths: ["/remote/project"], canCreate: true },
-    { id: "foreign", hostId: "remote:b", hostLabel: "Other", origin: "targetServer",
-      remote: true, label: "别的主机", paths: ["/remote/project"], canCreate: true },
+    { id: otherProject, nativeId: "canonical", hostId: "remote:b", hostLabel: "Mac", origin: "targetServer",
+      remote: true, label: "项目", paths: ["/remote/project"], canCreate: true },
   ] },
   sessions: [{ id: identifier, threadId: "actual-uuid", title: "刚创建的会话",
     remote: true, hostId: "remote:a", hostLabel: "Mac", cwd: "/remote/project",
@@ -23,6 +24,7 @@ const fixture = {
     archived: false, projectId: null, version: 0, inputVersion: 1, readOnly: false, canArchive: true }],
 };
 const writes = [];
+const consentPreviews = [];
 let failAssignment = true, failNavigation = false, browser, cleanup, cases = 0;
 const evidence = process.env.BOARD_SSH_PREVIEW_EVIDENCE;
 const setupRequests = [];
@@ -78,10 +80,12 @@ const server = http.createServer(async (request, response) => {
   }
   if (request.method === "POST") {
     const payload = JSON.parse(body);
-    if (request.url === "/api/new" && requireConsent && !payload.consent)
+    if (request.url === "/api/new" && requireConsent && !payload.consent) {
+      consentPreviews.push(payload);
       return response.writeHead(200, { "Content-Type": "application/json" })
         .end(JSON.stringify({ consent: { token: "approved-connection", summary: "Mac · /remote/project",
           changes: ["开启该连接的自动连接"] } }));
+    }
     writes.push({ path: request.url, body: payload });
     if (request.url === "/api/new" && failNavigation)
       return response.writeHead(200, { "Content-Type": "application/json" })
@@ -110,6 +114,17 @@ try {
     await fs.writeFile(`${evidence}/${name}.png`, Buffer.from(image.data, "base64"));
   };
   await wait('typeof data !== "undefined" && data.sessions.length === 1');
+  await evaluate('byId("host-filter").value="all";byId("host-filter").dispatchEvent(new Event("change"))');
+  await clickNode(page, "#new-session");
+  check(await evaluate('Array.from(byId("new-host").options).map(option=>option.textContent)'), ["本机","Mac · remote:a","Mac · remote:b"]);
+  for (const [host, expected] of [["remote:a", project], ["remote:b", otherProject]]) {
+    await evaluate(`byId("new-host").value=${JSON.stringify("host:" + host)};
+      byId("new-host").dispatchEvent(new Event("change"))`);
+    check(await evaluate('Array.from(byId("new-project").options).map(option=>option.value)'), [expected]);
+  }
+  await clickNode(page, "#new-target-cancel");
+  await wait('!byId("new-target").open && !byId("host-filter").disabled');
+  check(writes, []);
   await evaluate('byId("host-filter").value="host:remote:a";byId("host-filter").dispatchEvent(new Event("change"))');
   await evaluate(`byId("project-filter").value=${JSON.stringify("project:" + project)};
     byId("project-filter").dispatchEvent(new Event("change"))`);
@@ -129,6 +144,10 @@ try {
   check(await evaluate('byId("assignment-thread").textContent.includes("actual-uuid")'), true);
   check(await evaluate('Array.from(byId("assignment-project").options).map(option=>option.value)'), [project]);
   check(await evaluate('byId("host-filter").disabled'), true);
+  await clickNode(page, "#assignment-cancel");
+  await wait('!byId("project-assignment").open && !byId("host-filter").disabled');
+  check(writes.length, 1);
+  await clickNode(page, "[data-action=assign-project]");
   await evaluate('byId("assignment-form").requestSubmit()');
   await until(() => writes.length === 2, "补登记请求尚未到达");
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -180,7 +199,9 @@ try {
   await evaluate('byId("native-consent").dispatchEvent(new Event("close"))');
   await evaluate('byId("native-consent-form").requestSubmit()');
   await wait('!creating && !byId("native-consent").open');
-  check(writes.at(-1).body.consent, "approved-connection");
+  check(consentPreviews.length, 2);
+  check(consentPreviews[0], consentPreviews[1]);
+  check(writes.at(-1).body, { ...consentPreviews[0], consent: "approved-connection" });
   requireConsent = false;
 
   const registration = JSON.stringify(fixture.health.remoteRegistry);

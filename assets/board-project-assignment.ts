@@ -42,7 +42,6 @@ export function mountProjectAssignment(elements: AssignmentElements, ports: Assi
   function open(session: BoardSession) {
     if (ports.locked() || !canAssign(session)) return;
     selected = session;
-    dialog.dataset.id = session.id;
     thread.textContent = `${session.title}\n${session.threadId}\n${session.cwd}`;
     project.replaceChildren(...projectsFor(session).map(item => new Option(ports.projectLabel(item), item.id)));
     error.textContent = "";

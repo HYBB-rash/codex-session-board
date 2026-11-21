@@ -23,7 +23,10 @@ fn main() -> Result<()> {
         "history" => history(root),
         "open" => {
             let target = arguments.get(3).context("缺少导航目标")?;
-            ensure!(target.starts_with("codex://threads/"), "只接受测试导航");
+            ensure!(
+                target.starts_with("codex://threads/") || target == "codex://new?projectId=dev",
+                "只接受测试导航"
+            );
             let mut file = std::fs::OpenOptions::new().create(true).append(true)
                 .open(root.join("navigation.jsonl"))?;
             writeln!(file, "{}", json!({"target":target}))?;

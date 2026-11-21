@@ -61,7 +61,7 @@ export function mountBoardNewSession(elements: NewSessionElements, ports: NewSes
   const draftRequests = new Map<string, string>();
   const nativeOperations = new Map<string, string>();
   let recovering: DraftRequest | undefined;
-  let consent: (DraftInput & { token: string }) | undefined;
+  let consent: { projectId: string | null; operationId?: string; requestId?: string; token: string } | undefined;
 
   function canCreateProject(project?: CatalogProject) {
     if (!project || project.canCreate === false || project.pendingDeletion === true) return false;
@@ -117,7 +117,7 @@ export function mountBoardNewSession(elements: NewSessionElements, ports: NewSes
       const result = await ports.request("/api/new", body) as NewSessionResult;
       if (result.consent) {
         const { token, summary, changes } = result.consent;
-        consent = { ...body, token };
+        consent = { projectId, operationId: body.operationId, requestId: body.requestId, token };
         elements.consentTarget.textContent = summary;
         elements.consentChanges.replaceChildren(...changes.map(change => {
           const item = document.createElement("li");
@@ -162,9 +162,10 @@ export function mountBoardNewSession(elements: NewSessionElements, ports: NewSes
 
   elements.consentForm.onsubmit = event => {
     event.preventDefault();
+    if (!consentDialog.open || !consent) return;
     const accepted = consent;
     consentDialog.close();
-    if (accepted) void create(accepted.projectId ?? null, accepted.operationId, accepted.token, accepted.requestId);
+    void create(accepted.projectId, accepted.operationId, accepted.token, accepted.requestId);
   };
   elements.consentCancel.onclick = () => consentDialog.close();
   consentDialog.addEventListener("close", () => {
@@ -175,13 +176,13 @@ export function mountBoardNewSession(elements: NewSessionElements, ports: NewSes
   elements.recoveryLater.onclick = () => recoveryDialog.close();
   recoveryDialog.addEventListener("close", loadAfterClose);
   elements.recoveryRetry.onclick = () => {
-    if (!recovering) return;
+    if (!recovering || !recoveryDialog.open) return;
     recoveryDialog.close();
     const { projectId, operationId, requestId } = recovering;
     void create(projectId, operationId, undefined, requestId);
   };
   recoveryRestart.onclick = async () => {
-    if (ports.saving() || ports.creating() || !recovering) return;
+    if (ports.saving() || ports.creating() || !recovering || !recoveryDialog.open) return;
     const { projectId, operationId, requestId } = recovering;
     recoveryRestart.disabled = true;
     ports.setCreating(true);
