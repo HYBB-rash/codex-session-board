@@ -45,3 +45,15 @@
 查阅了引入提交 `eb2b580`、[冻结迁移包](../../../Docs/verification-baseline/) 中的 `acceptance/test_contract.py` 和 [DISCOVERY-001、DISCOVERY-002](../../../acceptance/requirements.json)。这些出处支持按 ID 发现、失败保留已有记录、单条历史读取失败后继续；未查到要求整批撤销新增记录的决定或故障记录。[本机 RPC 的 `append_threads`](../../../src/rpc.rs) 在向观察器返回列表之前就拒绝缺少字符串 ID 的记录。[Store 的事务](../../../src/store.rs) 仍在原处。
 
 保留 `test::observer_contract::history_list_failure_does_not_remove_or_reclassify_saved_sessions`，实际验证列表失败后原有人工状态保留且健康信息报告错误。`test::observer_contract::history_request_error_marks_only_that_session_and_continues_next_read` 验证同批后续会话仍可补读。两者均调用生产 `scan_history`。
+
+## 文档检查器的根目录
+
+移除 `example::project_check::document_policy::tests::invalid_roots_return_errors_instead_of_success` 及原 GATE-001 绑定。用例直接向内部函数传入不存在的路径、普通文件。[常规入口](../../../scripts/project_check.rs) 从 Git 取得仓库根目录，[暂存入口](../../../scripts/staged_check.rs) 扫描自己导出的目录。查阅引入提交 `39169af` 及[文档检查规范](../../../Docs/CHECKS.md)，未找到把这两个值作为文档扫描根目录的受支持调用或历史事故。
+
+保留 `example::project_check::document_policy::tests::new_files_are_checked_without_a_git_repository_and_sorted_stably`，验证扫描实际目录时能发现新文档；`example::project_check::document_policy::tests::reports_name_and_docs_destination_without_changing_contents` 验证报告违规、给出移动目的地并保留文件。检查器继续向上传播读取错误。[GATE-001](../../../acceptance/requirements.json) 的验收失败保护仍由 `acceptance.test_gate.GateTests.test_skipped_checks_and_nonzero_adapter_exit_cannot_pass` 等用例验证。
+
+## 交付核对
+
+五项均在删除前实跑通过。三个限制反例可在基线提交检出后，以 `cargo test --locked --offline --example remote_parity_lab exposes_` 重放。原研究记录保留当时的实测结论。五项退役只涉及这五个完整 ID 及它们的 11 条绑定关系。
+
+最终提交在 Linux 上执行 `./scripts/check`、`sh scripts/verify_context.sh`、关联测试及 Rust/Python 全量收集核对。平台绑定差异按 Linux 和 macOS 分别核对。源码外证据目录为 `~/.local/state/codex-session-board/t1-retirement-20261121/`，最终核对记录使用所验提交号命名。分支交协调者登记，合入顺序由 Herman 安排。

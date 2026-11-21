@@ -242,15 +242,6 @@ fn reports_name_and_docs_destination_without_changing_contents() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn invalid_roots_return_errors_instead_of_success() -> Result<()> {
-    let directory = tempdir()?;
-    assert!(check(&directory.path().join("missing")).is_err());
-    fs::write(directory.path().join("file"), b"not a directory")?;
-    assert!(check(&directory.path().join("file")).is_err());
-    Ok(())
-}
-
 #[cfg(unix)]
 #[test]
 fn document_file_links_are_reported_but_directory_links_are_ignored() -> Result<()> {
