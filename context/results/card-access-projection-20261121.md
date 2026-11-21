@@ -21,3 +21,9 @@ Fedora 实现头已通过官方 UI 全组 8 项、HTTP 资格 4 项、旧缓存�
 E2a 可直接消费 `cardActions`；保持被点击卡片的复合 ID，跨卡导航仍读目标卡的 `canOpen`。T0 已按 B2 实际合入头登记保留的观察测试。E2a Fedora 作者也已在其交接文件中确认采用同一 B2 主线。
 
 两次原失败、真实 HTTP/MCP 测试、外部扫描、兼容旧记录及四联回执见 [Fedora 只读资格证据目录](/home/herman/.codex/visualizations/2026/11/21/01a1fc80-61f5-76e1-80a3-ec068a3fab21/card-access)。
+
+## E2c 合入位置
+
+队列预留基线为 `b615d4d09851402378aa024c630fe2e371635b25`，权限分支的三个提交重放至 `8d9d7afc9af6b0472417037600d275e202739f45`。Vue 编辑按钮、起拖和放下均读取 `cardActions().canAdjust`；是否可导航由目标卡的 `canOpen` 决定。放下时仍提交起拖时的输入版本，拖入阻塞列时把同一份快照交给编辑器。`range-diff` 的源码差别仅为测试脚本上下文。
+
+本轮复验使用同一源码构建的安装包、独立 Chromium 和原生依赖 fixture，分别经过真实 HTTP 与 stdio MCP 面板。在鼠标按下后注入用户输入，核对普通跨列拒绝、阻塞编辑草稿、原状态及备注、取消后的焦点。缓存兼容、独立卡片权限、浏览器全组及源码检查的结果见 [E2c 组合证据](/home/herman/.codex/visualizations/2026/11/21/01a1fc80-61f5-76e1-80a3-ec068a3fab21/card-access-e2c)。
