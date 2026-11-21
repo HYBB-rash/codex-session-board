@@ -3,7 +3,7 @@
 - owner: E2c Fedora 作者
 - execution_mode: isolated_write
 - coordinator: Herman / 01a1fc2d-af6f-7d50-9759-33835b51eaeb
-- base_commit: e63375e26f9e8fcebde41514af6181afddd5f4bb
+- base_commit: 5bcdba2d71c08f8585cbd2c5d57dca187720bf76
 - worktree_path: /home/herman/.codex/worktrees/e2c-vue-card-moves/notion-program
 - branch: codex/e2c-vue-card-moves
 - allowed_write_set: Vue 卡片与列的拖动事件与视觉反馈、旧拖动监听清理、浏览器拖动场景和本项记录。
