@@ -28,3 +28,11 @@ Herman 已授权总控依次委派、独立验收并快进推送 `main`。各实
 | 7 | 安装、重连和插件更新 | 迁移 PWA 与更新界面，核对源码包和离线校验。验证服务停止和恢复、重新读取令牌、隔离更新失败和待重载反馈。 |
 
 依次在前项通过后的最新主线建立工作树。实现者自主决定切面内部结构，行为变化或真实环境写入须由 Herman 决定。总控核对候选差异、检查和实际操作，快进后普通推送并读回远端；远端前进时重新对齐并验收。候选与目标环境证据按 [验收契约](../../../acceptance/README.md) 判定。
+
+## 结果
+
+看板已使用统一的 Vue 3 和 TypeScript 入口。隔离浏览器验证了 Vite 热更新，以及停止 Vite 后实际 Rust HTTP 与 MCP 资源加载同一离线前端、保存并读回。隔离服务和浏览器已停止。开发入口见 [Mac 隔离开发](../../../Docs/MAC-DEVELOPMENT.md#日常开发)。
+
+源码 `70ac74e0bbe9ddcf91c74d01fa858a92c7a25e76` 通过仓库检查、全目标 Clippy 和 Linux 的 937 项自动测试。31 条需求中 17 条通过，14 条缺目标环境证据，`release_ready=false`。完整报告为 `/tmp/vue-final-validation.VguJpqnE/candidate-rerun/VALIDATION.json`。
+
+首轮整体验收发现归档回归脚本仍调用旧 `post`。修正该脚本和现场冒烟脚本的调用后，原用例与全套自动验收均已复跑。原始失败报告保留在 `/tmp/vue-final-validation.VguJpqnE/candidate/automated.json`。现场冒烟的恢复流程以及 macOS、日用 Codex、真实远程和系统级 PWA 安装仍待验证。
