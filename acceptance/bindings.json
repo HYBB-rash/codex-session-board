@@ -1126,7 +1126,7 @@
     "APP-001": [
       "test::board_io::mcp_bridge_uses_http_versions_and_reports_pending_title_without_rollback",
       "test::board_io::mcp_new_session_forwards_optional_project_to_http",
-      "test::board_io::native_resource_and_tools_expose_global_app_only_actions",
+      "test::ui_layout::reply_preview_preserves_scroll_focus_and_rejects_late_bodies",
       "test::board_io::real_stdio_mcp_handshake_and_resource_round_trip",
       "test::board_io::saved_state_reports_pending_title_without_rollback"
     ],
@@ -1186,7 +1186,7 @@
       "test::archive_flow::archive_unknown_running_and_malformed_native_results_do_not_confirm_success",
       "test::archive_flow::transport::archive_endpoint_uses_the_isolated_desktop_writer_and_hides_only_after_success",
       "test::board_io::mcp_bridge_uses_http_versions_and_reports_pending_title_without_rollback",
-      "test::board_io::native_resource_and_tools_expose_global_app_only_actions",
+      "test::ui_layout::reply_preview_preserves_scroll_focus_and_rejects_late_bodies",
       "test::board_io::real_stdio_mcp_handshake_and_resource_round_trip",
       "test::board_io::saved_state_reports_pending_title_without_rollback",
       "test::archive_flow::archive_recovers_incomplete_summary_inputs_only_after_explicit_reconfirmation"

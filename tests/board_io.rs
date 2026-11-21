@@ -74,6 +74,13 @@ impl Fixture {
     }
 
     fn mcp_calls(&self, requests: &[(&str, Value)]) -> Vec<Value> {
+        let messages: Vec<_> = requests.iter().enumerate().map(|(position, (name, arguments))| {
+            json!({"id":position + 1,"method":"tools/call","params":{"name":name,"arguments":arguments}})
+        }).collect();
+        self.mcp_requests(&messages)
+    }
+
+    fn mcp_requests(&self, requests: &[Value]) -> Vec<Value> {
         let mut child = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
             .args(["mcp", "--config", self.path.to_str().unwrap()])
             .stdin(Stdio::piped())
@@ -81,14 +88,8 @@ impl Fixture {
             .spawn()
             .unwrap();
         let mut input = child.stdin.take().unwrap();
-        for (position, (name, arguments)) in requests.iter().enumerate() {
-            writeln!(
-                input,
-                "{}",
-                json!({"id":position + 1,"method":"tools/call",
-                    "params":{"name":name,"arguments":arguments}})
-            )
-            .unwrap();
+        for request in requests {
+            writeln!(input, "{request}").unwrap();
         }
         drop(input);
         let output = child.wait_with_output().unwrap();
@@ -573,8 +574,10 @@ fn navigation_is_canonical_and_encodes_host_as_one_value() {
 }
 
 fn check_tool_visibility(definitions: &Value) {
-    let view = &definitions["tools"][0];
-    assert_eq!(view["name"], "board_view");
+    let tools = definitions["tools"].as_array().unwrap();
+    let mut views = tools.iter().filter(|tool| tool["name"] == "board_view");
+    let view = views.next().unwrap();
+    assert!(views.next().is_none());
     assert_eq!(view["_meta"]["ui"]["visibility"], json!(["app","model"]));
     assert_eq!(view["_meta"]["ui"]["resourceUri"], mcp::RESOURCE);
     assert_eq!(
@@ -587,39 +590,10 @@ fn check_tool_visibility(definitions: &Value) {
             .unwrap()
             .starts_with("data:image/svg+xml;base64,")
     );
-    for tool in definitions["tools"].as_array().unwrap().iter().skip(1) {
+    for tool in tools.iter().filter(|tool| tool["name"] != "board_view") {
         assert_eq!(tool["_meta"]["ui"]["visibility"], json!(["app"]));
     }
-    let fixture = Fixture::new(false);
-    let calls = fixture.mcp_calls(&[
-        ("board_view", json!({})), ("/api/info", json!({})),
-        ("/api/native-calibration/reset", json!({})), ("board_missing", json!({})),
-    ]);
-    assert_eq!(calls[0]["result"]["structuredContent"], json!({"ready":true}));
-    for reply in &calls[1..] {
-        assert_eq!(reply["result"]["isError"], true);
-        assert_eq!(reply["result"]["content"][0]["text"], "未知看板工具");
-    }
-}
-
-#[test]
-fn native_resource_and_tools_expose_global_app_only_actions() {
-    let definitions = mcp::tools();
-    check_tool_visibility(&definitions);
-    let resource = mcp::resource();
-    let html = resource["text"].as_str().unwrap();
-    assert_eq!(resource["mimeType"], mcp::MIME);
-    assert!(html.contains("id=\"move-dragon\" src=\"data:image/webp;base64,"));
-    assert!(html.contains("window.boardRequest"));
-    assert!(html.contains("\"/api/new\":\"board_new\""));
-    assert!(html.contains("id=\"new-session\""));
-    let create = definitions["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|tool| tool["name"] == "board_new")
-        .unwrap();
-    assert_eq!(create["_meta"]["ui"]["visibility"], json!(["app"]));
+    let create = tools.iter().find(|tool| tool["name"] == "board_new").unwrap();
     assert_eq!(create["annotations"]["readOnlyHint"], false);
     assert_eq!(
         create["inputSchema"]["properties"]["projectId"],
@@ -627,10 +601,6 @@ fn native_resource_and_tools_expose_global_app_only_actions() {
     );
     assert_eq!(create["inputSchema"]["required"], json!([]));
     assert_eq!(create["inputSchema"]["properties"]["operationId"]["format"], "uuid");
-    assert!(!html.contains("<iframe") && !html.contains("https://cdn"));
-    assert!(!html.contains("__CSRF_TOKEN__"));
-    assert!(!html.contains("manifest.webmanifest"));
-    assert!(!html.contains("/assets/pwa.js"));
 }
 
 #[test]
@@ -665,36 +635,37 @@ fn archive_batch_tools_share_http_history() -> Result<()> {
 #[test]
 fn real_stdio_mcp_handshake_and_resource_round_trip() {
     let fixture = Fixture::new(false);
-    let mut child = Command::new(env!("CARGO_BIN_EXE_codex-session-board"))
-        .args(["mcp", "--config", fixture.path.to_str().unwrap()])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let requests = [
+    let mut requests = vec![
         json!({"id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}),
         json!({"method":"notifications/initialized"}),
         json!({"id":2,"method":"tools/list"}),
         json!({"id":3,"method":"resources/read","params":{"uri":mcp::RESOURCE}}),
     ];
-    let mut input = child.stdin.take().unwrap();
-    for request in requests {
-        writeln!(input, "{request}").unwrap();
+    for name in ["board_view", "/api/info", "/api/native-calibration/reset", "board_missing"] {
+        requests.push(json!({"id":requests.len(),"method":"tools/call","params":{"name":name,"arguments":{}}}));
     }
-    drop(input);
-    let output = child.wait_with_output().unwrap();
-    assert!(output.status.success());
-    let lines: Vec<Value> = String::from_utf8(output.stdout)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    assert_eq!(lines.len(), 3);
+    let lines = fixture.mcp_requests(&requests);
+    assert_eq!(
+        lines.iter().map(|reply| &reply["id"]).collect::<Vec<_>>(),
+        requests.iter().filter_map(|request| request.get("id")).collect::<Vec<_>>()
+    );
     assert_eq!(
         lines[0]["result"]["serverInfo"]["name"],
         "codex-session-board"
     );
-    assert_eq!(lines[2]["result"]["contents"][0]["mimeType"], mcp::MIME);
+    check_tool_visibility(&lines[1]["result"]);
+    let resource = &lines[2]["result"]["contents"][0];
+    assert_eq!(resource["uri"], mcp::RESOURCE);
+    assert_eq!(resource["mimeType"], mcp::MIME);
+    for domain in ["connectDomains", "resourceDomains", "frameDomains"] {
+        assert_eq!(resource["_meta"]["ui"]["csp"][domain], json!([]));
+    }
+    assert!(!resource["text"].as_str().unwrap().contains("__CSRF_TOKEN__"));
+    assert_eq!(lines[3]["result"]["structuredContent"], json!({"ready":true}));
+    for reply in &lines[4..] {
+        assert_eq!(reply["result"]["isError"], true);
+        assert_eq!(reply["result"]["content"][0]["text"], "未知看板工具");
+    }
 }
 
 #[test]

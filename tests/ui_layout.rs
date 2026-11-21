@@ -49,7 +49,9 @@ fn mcp_bridge_preserves_routes_results_and_host_theme() {
         String::from_utf8_lossy(&result.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(report["cases"], 57);
+    assert_eq!(report["themes"], serde_json::json!({
+        "initial":"dark", "light":"light", "dark":"dark", "afterInsets":"dark"
+    }));
     assert_eq!(report["cleanup"]["groupEmpty"], true);
     assert_eq!(report["cleanup"]["profileRemoved"], true);
 }
@@ -63,11 +65,13 @@ fn reply_preview_preserves_scroll_focus_and_rejects_late_bodies() {
     let resource = output.path().join("mcp-resource.html");
     std::fs::write(&resource, codex_session_board::mcp::resource()["text"].as_str().unwrap()).unwrap();
     let result = Command::new("node").arg("scripts/check-reply-preview.mjs")
-        .arg(output.path()).arg(resource).output().unwrap();
+        .arg(output.path()).arg(&resource).output().unwrap();
     assert!(result.status.success(), "答复预览失败：\n{}\n{}",
         String::from_utf8_lossy(&result.stdout),String::from_utf8_lossy(&result.stderr));
     let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
     assert_eq!(report["passed"], true);
+    assert_eq!(report["checks"], serde_json::json!(["http","mcp"]));
+    assert_eq!(report["embeddedResource"].as_str(), resource.to_str());
     assert_eq!(report["cleanup"]["profileRemoved"], true);
 }
 

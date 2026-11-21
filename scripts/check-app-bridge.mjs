@@ -40,8 +40,9 @@ const server = http.createServer((request, response) => {
   response.end(request.url === "/host" ? host : request.url === "/app" ? app : "");
 });
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-let browser, cases = 0, cleanup;
-const check = (actual, expected) => { assert.deepEqual(actual, expected); cases++; };
+let browser, cleanup;
+const themes = {};
+const check = assert.deepEqual;
 try {
   browser = await launchBrowser();
   const address = `http://127.0.0.1:${server.address().port}`;
@@ -70,17 +71,22 @@ try {
   };
   await wait('typeof window.boardRequest === "function"');
   check(await evaluate('boardRequest("/api/sessions")'), { ok: true, received: {} });
-  check(await evaluate('getComputedStyle(document.documentElement).colorScheme'), "dark");
+  check(await page.evaluate("requests.at(-1).name"), "board_snapshot");
+  const colorScheme = () => evaluate('getComputedStyle(document.documentElement).colorScheme');
+  themes.initial = await colorScheme();
+  check(themes.initial, "dark");
   check(await evaluate('document.documentElement.style.getPropertyValue("--host-inset-top")'), "12px");
   for (const theme of ["light", "dark"]) {
     await page.evaluate(`notify({theme:${JSON.stringify(theme)}})`);
     await wait(`getComputedStyle(document.documentElement).colorScheme===${JSON.stringify(theme)}`);
+    themes[theme] = await colorScheme();
     check(await evaluate('getComputedStyle(document.body).backgroundColor'),
       theme === "light" ? "rgb(255, 255, 255)" : "rgb(28, 29, 32)");
   }
   await page.evaluate('notify({safeAreaInsets:{top:0,right:0,bottom:0,left:0}})');
   await wait('document.documentElement.style.getPropertyValue("--host-inset-top")==="0px"');
-  check(await evaluate('getComputedStyle(document.documentElement).colorScheme'), "dark");
+  themes.afterInsets = await colorScheme();
+  check(themes.afterInsets, "dark");
   const routes = {
     "/api/state": "board_update", "/api/open": "board_open",
     "/api/refresh": "board_refresh", "/api/new": "board_new", "/api/new/reset": "board_new_reset",
@@ -91,8 +97,6 @@ try {
     "/api/ssh-setup": "board_ssh_setup",
     "/api/project/assign": "board_project_assign",
   };
-  check(await evaluate('boardRequest("/api/sessions")'), {ok:true,received:{}});
-  check(await page.evaluate("requests.at(-1).name"), "board_snapshot");
   for (const [route, name] of Object.entries(routes)) {
     const body = route === "/api/new" ? {
       projectId: 'target:["remote:fixture","targetServer","canonical"]',
@@ -117,12 +121,12 @@ try {
   check(await evaluate('boardRequest("/api/preview-reply",{id:"fixture"})'), {turnId:"two",html:"<p>本轮答复</p>",inProgress:false});
   check(await page.evaluate("(({name,arguments:body})=>({name,arguments:body}))(requests.at(-1))"),
     {name:"board_preview_reply",arguments:{id:"fixture"}});
-  const actualTools = [];
+  const firstRegisteredCall = await page.evaluate("requests.length");
   for (const {method, path} of operations) {
     const args = method === "POST" ? ",{}" : "";
     await evaluate(`boardRequest(${JSON.stringify(path)}${args})`);
-    actualTools.push(await page.evaluate("requests.at(-1).name"));
   }
+  const actualTools = await page.evaluate(`requests.slice(${firstRegisteredCall}).map(call=>call.name)`);
   check(actualTools, operations.map(operation => operation.tool));
   for (const [mode, expected] of [["text", { ok: true }], ["error", "fixture-denied"], ["empty", "看板返回了空结果"]]) {
     await page.evaluate(`mode=${JSON.stringify(mode)}`);
@@ -135,4 +139,4 @@ try {
   if (browser) cleanup = await browser.close();
   await new Promise(resolve => server.close(resolve));
 }
-console.log(JSON.stringify({ cases, network, cleanup }));
+console.log(JSON.stringify({ themes, network, cleanup }));

@@ -25,6 +25,7 @@ const markdown = "<h1>隔离启动</h1><ul><li>Linux</li></ul><blockquote>检查
   "<p>&lt;script&gt;示例&lt;/script&gt;</p>" + "<p>核对详情</p>".repeat(80);
 const prior = {turnId:"old",inProgress:true,html:markdown};
 const requests = [];
+const blockedResources = [];
 let snapshot = fixture(), pending, current, held, openFails;
 const host = `<!doctype html><meta charset="utf-8">
 <style>body{margin:0}iframe{display:block;border:0;width:100vw;height:100vh}</style>
@@ -32,13 +33,17 @@ const host = `<!doctype html><meta charset="utf-8">
 const readRoutes={board_snapshot:"/api/sessions",board_archive_batches:"/api/archive-batches",
   board_plugin_update_status:"/api/plugin-update"};
 const postRoutes={board_preview_reply:"/api/preview-reply",board_open:"/api/open"};
+window.creations=[];
 addEventListener("message",async event=>{
   if(event.source!==document.querySelector("iframe").contentWindow)return;
   const {method,id,params}=event.data;
   let result;
   if(method==="ui/initialize")result={protocolVersion:params.protocolVersion,hostInfo:{name:"preview-check",version:"1"},hostCapabilities:{openLinks:{}},hostContext:{}};
   if(method==="ui/open-link"){window.lastLink=params.url;result={};}
-  if(method==="tools/call"){
+  if(method==="tools/call" && params.name==="board_new"){
+    window.creations.push(params.arguments);
+    result={content:[],structuredContent:{ok:true}};
+  }else if(method==="tools/call"){
     const readPath=readRoutes[params.name];
     const response=readPath ? await fetch(readPath) : await fetch(postRoutes[params.name],{
       method:"POST",body:JSON.stringify(params.arguments)
@@ -51,7 +56,15 @@ addEventListener("message",async event=>{
 });
 </script><iframe sandbox="allow-scripts" src="/app"></iframe>`;
 const server = http.createServer(async (request,response) => {
+  if (request.url === "/resource-policy-violation") {
+    let report = "";
+    for await (const chunk of request) report += chunk;
+    blockedResources.push(JSON.parse(report)["csp-report"]);
+    return response.writeHead(204).end();
+  }
   if (request.url === "/" || request.url === "/host" || request.url === "/app") {
+    if (request.url === "/app") response.setHeader("Content-Security-Policy",
+      "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' data:; style-src 'unsafe-inline' data:; img-src data:; font-src data:; report-uri /resource-policy-violation");
     return response.writeHead(200,{"Content-Type":"text/html; charset=utf-8"}).end(
       request.url === "/host" ? host : request.url === "/app" ? embedded : html);
   }
@@ -143,6 +156,22 @@ async function exercise(surface) {
     return {x:Math.floor(right)+4,y:Math.floor(top+height/2)};
   })()`);
   await wait(`Boolean(document.querySelector(${JSON.stringify(card("local"))}))`);
+  if (surface === "mcp") {
+    assert.equal(await evaluate('document.querySelector("iframe,frame,link[rel~=manifest]") === null'),true);
+    assert.equal(await evaluate(`(async () => {
+      const image = document.querySelector(".dragon-scene img");
+      await image.decode();
+      return image.currentSrc.startsWith("data:image/") && image.naturalWidth > 0;
+    })()`),true);
+    await evaluate('byId("host-filter").value="local";byId("host-filter").dispatchEvent(new Event("change"))');
+    const position = await evaluate(`(() => {
+      const button = [...document.querySelectorAll("button")].find(node => node.textContent.includes("新建会话"));
+      const box = button.getBoundingClientRect();
+      return {x:box.left+box.width/2,y:box.top+box.height/2};
+    })()`);
+    await click(position);
+    await until(()=>page.evaluate("window.creations.length > 0"),"点击新建后宿主没有收到 board_new");
+  }
   await evaluate(`(() => {
     window.settledLocalReads = 0;
     const local = (path, body) => path === "/api/preview-reply" && body?.id === "local";
@@ -313,6 +342,7 @@ async function exercise(surface) {
     await click(await evaluate(center(selector)));
   });
   if (surface==="http") await checkTitleDrag(page, evaluate);
+  if (surface === "mcp") assert.deepEqual(await page.evaluate("window.creations"),[{}]);
   checks.push(surface);
 }
 async function checkTitleDrag(page, evaluate) {
@@ -337,6 +367,7 @@ try {
   browser = await launchBrowser();
   await exercise("http");
   await exercise("mcp");
+  assert.deepEqual(blockedResources,[],"嵌入看板请求了包外资源");
 } catch (error) {
   failure = error;
 } finally {
