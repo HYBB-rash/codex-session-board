@@ -8,6 +8,8 @@ import uuid
 from acceptance.pr_task_fixtures import BASE, HEAD, pull, review, task
 from scripts import pr_merge_duty as duty
 from scripts import pr_merge_duty_delivery as delivery
+from scripts import pr_merge_duty_queue as queue_recovery
+from scripts import pr_queue_registry as registry
 from scripts import pr_task_lifecycle
 from scripts.pr_task_state import digest, persist, save
 
@@ -70,6 +72,47 @@ class PRMergeDutyTests(unittest.TestCase):
                 self.assertEqual(duty.advance(self.config, self.directory, self.directory,
                                               self.assignment, observation), observation)
         queue.assert_not_called()
+
+    def test_production_runtime_and_registry_can_be_separate_git_roots(self):
+        registry = self.directory / "registry"
+        registry.mkdir()
+        config = self.directory / "duty.json"
+        data = {"mode": "production-duty", "repository": duty.PRODUCTION,
+                "checker": str(self.candidate), "checker_head": BASE, "registry_project": str(registry),
+                "state": str(self.directory / "state")}
+        save(config, data)
+        with mock.patch.object(duty, "ROOT", self.candidate), \
+                mock.patch.object(duty, "git", side_effect=[BASE, "", str(registry)]), \
+                mock.patch.object(duty, "verify_origin") as verify_origin:
+            configuration, checker, _ = duty.configuration(config, "tick")
+        self.assertEqual(checker, self.candidate)
+        self.assertEqual(configuration["registry_project"], str(registry))
+        verify_origin.assert_called_once_with(registry, duty.PRODUCTION)
+        save(config, {**data, "registry_project": "registry"})
+        with mock.patch.object(duty, "ROOT", self.candidate), \
+                mock.patch.object(duty, "git", side_effect=[BASE, ""]), \
+                self.assertRaisesRegex(ValueError, "absolute persistent registry"):
+            duty.configuration(config, "tick")
+
+    def test_duty_recovers_queue_initialized_before_registry_write(self):
+        registry_project = self.directory / "persistent"
+        runtime = self.directory / "runtime"
+        runtime.mkdir()
+        queue = runtime / "queue-pr-7"
+        queue.mkdir()
+        state = {"repository": self.repository, "items": [{"number": 7, "status": "submitted"}]}
+        claim = {"pr": 7, "repository": self.repository, "queue": None}
+        save(queue / "queue.json", state)
+        registry_dir = registry_project / ".git" / "pr-queues"
+        with mock.patch.object(registry, "registry", return_value=registry_dir) as index, \
+                mock.patch.object(duty, "queue_command", return_value=state) as command, \
+                mock.patch.object(duty, "verify_queue"):
+            self.assertEqual(queue_recovery.locate(registry_project, claim, runtime), queue)
+            config = {**self.config, "registry_project": str(registry_project)}
+            duty.advance(config, self.candidate, runtime, self.assignment, {"result": "waiting-review"}, queue)
+            self.assertEqual(registry.locate(self.repository, 7, registry_project), queue)
+        self.assertIn(mock.call(registry_project), index.call_args_list)
+        command.assert_called_once_with(self.candidate, "status", queue)
 
     def test_published_draft_reports_pending_ci_without_admitting_source(self):
         checker = {"commit": BASE}

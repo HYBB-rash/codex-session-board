@@ -86,6 +86,7 @@ class PRDutyClaimTests(unittest.TestCase):
             args.command = "begin-review"
             started = discovery.review_command(self.directory, path, data, args, "coordinator")
             self.assertEqual(started["result"], "dispatch-review")
+            self.assertEqual(started["dispatch"], {"action": "create"})
             self.assertEqual(discovery.review_command(self.directory, path, data, args, "coordinator")["result"],
                              "waiting-review")
         args.command = "record-review"
@@ -101,8 +102,56 @@ class PRDutyClaimTests(unittest.TestCase):
         self.assertIsNone(discovery.refresh_claim(claim, pull(31, head=REPAIR)))
         self.assertEqual(discovery.review_state(self.directory, claim, "author")["result"], "review-required")
         self.assertEqual(claim["heads"][HEAD]["review"]["task"], "reviewer")
+        args.head, args.command = REPAIR, "reserve-review"
+        with patch.object(discovery.forge, "api", return_value=pull(31, head=REPAIR)):
+            reservation = discovery.review_command(self.directory, path, data, args, "coordinator")
+            self.assertEqual(reservation["dispatch"], {"action": "resume", "task": "reviewer"})
+            self.assertNotEqual(reservation["request_id"], first["request_id"])
+            args.command = "begin-review"
+            started = discovery.review_command(self.directory, path, data, args, "coordinator")
+            self.assertEqual(started["dispatch"], reservation["dispatch"])
+        args.command = "record-review"
+        with self.assertRaisesRegex(ValueError, "dedicated reviewer"):
+            discovery.review_command(self.directory, path, data, args, "coordinator")
+        args.review_task = "reviewer"
+        discovery.review_command(self.directory, path, data, args, "coordinator")
+        save(discovery.review_path(self.directory, 31, REPAIR),
+             {"head": HEAD, "passed": True, "reviewer": "reviewer"})
+        self.assertEqual(discovery.review_state(self.directory, claim, "author")["result"], "waiting-review")
+        save(discovery.review_path(self.directory, 31, REPAIR),
+             {"head": REPAIR, "passed": True, "reviewer": "reviewer"})
+        self.assertEqual(discovery.review_state(self.directory, claim, "author")["result"], "review-passed")
         self.assertEqual(discovery.refresh_claim(claim, pull(31, branch="other"))["result"], "needs-user")
         self.assertEqual(claim["source_branch"], "codex/author")
+
+    def test_legacy_review_route_uses_latest_recorded_session_and_waits_for_unknown_dispatch(self):
+        path, data = discovery.load_claims(self.directory, REPOSITORY)
+        claim = discovery.claim_one(path, data, [discovery.describe(pull(31))])
+        intermediate = "d" * 40
+        claim["author"] = {"thread_id": "author"}
+        claim["heads"][HEAD]["review"] = {"dispatch_started_at": "first-start"}
+        discovery.refresh_claim(claim, pull(31, head=intermediate))
+        claim["heads"][intermediate]["review"] = {"dispatch_started_at": "previous-start"}
+        discovery.refresh_claim(claim, pull(31, head=REPAIR))
+        args = SimpleNamespace(command="reserve-review", pr=31, head=REPAIR)
+        with patch.object(discovery.forge, "api", return_value=pull(31, head=REPAIR)):
+            waiting = discovery.review_command(self.directory, path, data, args, "coordinator")
+            self.assertEqual(waiting["result"], "waiting-review")
+            self.assertEqual(waiting["dispatch"], {"action": "recover", "head": intermediate})
+            self.assertNotIn("review", claim["heads"][REPAIR])
+            prior = SimpleNamespace(command="record-review", pr=31, head=intermediate, review_task="latest")
+            discovery.review_command(self.directory, path, data, prior, "coordinator")
+            waiting = discovery.review_command(self.directory, path, data, args, "coordinator")
+            self.assertEqual(waiting["dispatch"], {"action": "recover", "head": HEAD})
+            prior.head, prior.review_task = HEAD, "first"
+            discovery.review_command(self.directory, path, data, prior, "coordinator")
+            save(discovery.review_path(self.directory, 31, REPAIR),
+                 {"head": REPAIR, "passed": True, "reviewer": "first"})
+            self.assertEqual(discovery.review_state(self.directory, claim, "author")["result"], "review-required")
+            reserved = discovery.review_command(self.directory, path, data, args, "coordinator")
+        self.assertEqual(reserved["dispatch"], {"action": "resume", "task": "latest"})
+        another = discovery.claim_one(path, data, [discovery.describe(pull(32))])
+        self.assertEqual(discovery.review_route(another, "coordinator"), {"action": "create"})
 
     def test_first_claim_rechecks_the_label_before_it_writes(self):
         def api(endpoint):
@@ -113,6 +162,28 @@ class PRDutyClaimTests(unittest.TestCase):
             result = duty.run(None, self.config, self.directory, self.directory, SimpleNamespace(command="tick"))
         self.assertEqual(result["result"], "infrastructure-blocked")
         self.assertFalse((self.directory / "claims.json").exists())
+
+    def test_upgrade_preserves_imported_reviewer_before_replacing_legacy_result(self):
+        for source in ("result", "receipt", "newer-dispatch"):
+            with self.subTest(source=source):
+                row = pull(31, head=REPAIR)
+                claim = {**discovery.describe(row), "repository": REPOSITORY, "heads": {HEAD: {}, REPAIR: {}},
+                         "author": {"thread_id": "author"}}
+                receipt = {"head": HEAD, "passed": True, "reviewer": "independent"}
+                path = discovery.review_path(self.directory, 31, HEAD)
+                expected = "independent"
+                if source == "result":
+                    claim["last_result"] = {"review": {"result": "review-passed", "reviewer": "independent",
+                                                      "review": str(path)}}
+                else:
+                    save(path, receipt)
+                if source == "newer-dispatch":
+                    expected = "recent-reviewer"
+                    claim["heads"][REPAIR]["review"] = {"task": expected}
+                discovery.remember_legacy_review(self.directory, claim, "coordinator")
+                claim["last_result"] = {"result": "review-required"}
+                self.assertEqual(discovery.review_route(claim, "coordinator"),
+                                 {"action": "resume", "task": expected})
 
     def test_completed_pr_remains_visible_while_the_existing_receipt_is_unconfirmed(self):
         for state in ("sent", "delivery_unknown", "rejected"):
@@ -224,12 +295,36 @@ class PRDutyClaimTests(unittest.TestCase):
              {"head": REPAIR, "passed": True, "reviewer": "independent"})
         author = {"route": {"thread_id": "author"}, "delivery_head": HEAD}
         run = {"run": 107, "attempt": 1, "head": REPAIR, "status": "in_progress"}
+        registry_project = self.directory / "registry"
+        self.config["registry_project"] = str(registry_project)
         with patch.object(discovery.forge, "api", return_value=pull(31, head=REPAIR)), \
-                patch.object(queues, "locate", return_value=None), \
-                patch.object(duty.authors, "delivery", return_value=author), \
+                patch.object(queues, "locate", return_value=None) as locate, \
+                patch.object(duty.authors, "delivery", return_value=author) as delivery, \
                 patch.object(duty.gates, "workflow", return_value=run):
             result = duty.follow(None, self.config, self.directory, self.directory, path, data, claim, MAIN)
+        locate.assert_called_once_with(registry_project, claim, self.directory)
+        delivery.assert_called_once_with(self.config, registry_project, claim, None)
         self.assertEqual(result["result"], "waiting-ci")
         self.assertFalse(result["author_evidence"])
         _, loaded = discovery.load_claims(self.directory, REPOSITORY)
         self.assertEqual(loaded["claims"]["31"]["heads"][REPAIR]["ci_runs"]["107"], run)
+        self.assertEqual(loaded["claims"]["31"]["review_task"], "independent")
+
+    def test_recovered_queue_stays_registered_when_the_pr_closed_between_rounds(self):
+        self.round([pull(31)])
+        path, data = discovery.load_claims(self.directory, REPOSITORY)
+        claim = data["claims"]["31"]
+        registry_project = self.directory / "registry"
+        self.config["registry_project"] = str(registry_project)
+        queue = self.directory / "queue-pr-31"
+        queue.mkdir()
+        saved_queue = {"repository": REPOSITORY, "feedback_mode": "github",
+                       "items": [{"number": 31, "status": "submitted"}]}
+        save(queue / "queue.json", saved_queue)
+        remote = {**pull(31), "state": "closed", "merged": False, "merge_commit_sha": None}
+        index = registry_project / "index"
+        with patch.object(discovery.forge, "api", return_value=remote), \
+                patch.object(duty.registry, "registry", return_value=index):
+            result = duty.follow(None, self.config, self.directory, self.directory, path, data, claim, MAIN)
+            self.assertEqual(duty.registry.locate(REPOSITORY, 31, registry_project), queue)
+        self.assertEqual(result["result"], "closed-without-merge")

@@ -7,6 +7,7 @@ from scripts import pr_merge_duty_discovery as discovery
 from scripts import pr_merge_duty_queue as queues
 from scripts import pr_queue_gates as gates
 from scripts import pr_queue_handoff as handoff
+from scripts import pr_queue_registry as registry
 from scripts import pr_task_github as forge
 from scripts.pr_merge_duty_delivery import dispatch
 from scripts.pr_task_state import now, save
@@ -56,9 +57,13 @@ def follow(duty, config, checker, directory, path, data, claim, main):
     repository, number = claim["repository"], claim["pr"]
     pull = forge.api(f"repos/{repository}/pulls/{number}")
     observed = discovery.refresh_claim(claim, pull)
-    queue = queues.locate(checker, claim)
+    discovery.remember_legacy_review(directory, claim, config.get("coordinator_thread"))
+    registry_project = Path(config.get("registry_project", checker))
+    queue = queues.locate(registry_project, claim, directory)
     state = queues.read_queue(queue, claim) if queue else None
     if state:
+        if config.get("registry_project"):
+            registry.register(queue, state, project=registry_project)
         claim["queue"] = str(queue)
     old_item = state["items"][0] if state else None
     save(path, data)
@@ -68,14 +73,14 @@ def follow(duty, config, checker, directory, path, data, claim, main):
         result = terminal(duty, config, directory, claim, main, queue, state, observed)
         if result["result"] == "merged":
             try:
-                author = bind_author(claim, authors.delivery(config, checker, claim, old_item))
+                author = bind_author(claim, authors.delivery(config, registry_project, claim, old_item))
                 result["delivery"] = author_result(config, directory, claim, author, result)
             except (ValueError, OSError, KeyError) as error:
                 result["delivery"] = {"author": {"state": "pending", "detail": str(error)}}
         return result
 
     head = claim["head"]
-    author = bind_author(claim, authors.delivery(config, checker, claim, old_item))
+    author = bind_author(claim, authors.delivery(config, registry_project, claim, old_item))
     author_id = author["route"]["thread_id"] if author else None
     receipt = discovery.review_path(directory, number, head)
     if old_item and old_item["head"] == head and not receipt.exists():
@@ -84,6 +89,9 @@ def follow(duty, config, checker, directory, path, data, claim, main):
             save(receipt, json.loads(original.read_text()))
     save(path, data)
     review = discovery.review_state(directory, claim, author_id, config.get("coordinator_thread"))
+    if review["result"] in {"review-passed", "review-failed"} and review["request"] is None:
+        claim.setdefault("review_task", review["reviewer"])
+        save(path, data)
     report = {"review": review, "author_evidence": bool(author and author.get("delivery_head") == head)}
     if review["result"] == "review-failed":
         previous = claim["heads"][head].get("feedback")

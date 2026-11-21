@@ -8,7 +8,7 @@ from scripts.pr_task_state import digest, git, now, save
 from scripts.validate_candidate import identity
 
 
-def locate(checker, claim):
+def locate(checker, claim, directory=None):
     repository, number = claim["repository"], claim["pr"]
     index = registry.registry(checker) / f"{digest([repository.lower(), number])}.json"
     if index.exists():
@@ -18,6 +18,10 @@ def locate(checker, claim):
         if not (path / "queue.json").is_file():
             raise ValueError("The claimed PR's original queue is missing")
         return path
+    if directory is not None:
+        path = directory / f"queue-pr-{number}"
+        if (path / "queue.json").is_file():
+            return path
     return None
 
 
