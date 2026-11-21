@@ -710,7 +710,7 @@ fn runtime_incomplete_pages_fail_before_discovery_or_any_turn_observation() {
     let fixture = Fixture::new(2, 1);
     manual(&fixture.app, "saved");
     let before = decision(&fixture.app, "saved");
-    let candidate = thread("untrusted-partial", 2, "active");
+    let candidate = thread("untrusted-partial", 2, "idle");
     let mut reader = FakeRpc::new(std::slice::from_ref(&candidate));
     reader.pages[0] = Reply::Data(json!({
         "data": [candidate],
@@ -724,9 +724,9 @@ fn runtime_incomplete_pages_fail_before_discovery_or_any_turn_observation() {
     assert!(!fixture.app.store.contains("untrusted-partial").unwrap());
     assert_eq!(health(&fixture.app)["runtimeVerified"], false);
     let mut complete = FakeRpc::new(&[candidate]);
-    complete.set_turn("untrusted-partial", raw_turn("confirmed", "inProgress"));
+    complete.set_turn("untrusted-partial", raw_turn("confirmed", "completed"));
     scan_runtime(&fixture.app, &mut complete, &mut revisions, 1000.0).unwrap();
-    assert_eq!(session(&fixture.app, "untrusted-partial")["state"], "in_progress");
+    assert_eq!(session(&fixture.app, "untrusted-partial")["state"], "review");
     assert_eq!(health(&fixture.app)["runtimeVerified"], true);
     assert_eq!(decision(&fixture.app, "saved"), before);
 }

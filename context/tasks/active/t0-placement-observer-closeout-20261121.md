@@ -9,6 +9,8 @@
 
 首件以 Linux `work/t0-b859880/ledger.json` 的六个完整 ID 为起点，对照当前主线、B1 快照与 T3 告警。检查哪条测试实际覆盖界面、观察来源、读取预算或零副作用，找出缺少的反例。B1 与 T3 已交付的开发分支独立保留，本包交总协调串行合入。
 
+首次主线复验基线为 `0a47d49411e7cbfcdae9b6f84a950122a9388de9`，已包含 B1、T3 和 T0 清单。六项处置与承接关系见[结果记录](../../results/t0-placement-observer-closeout-20261121.md)。
+
 - `lib::codex_session_board::app::four_columns::tests::only_current_remote_rows_offer_navigation`
 - `lib::codex_session_board::observer::four_column_tests::empty_requires_complete_response_and_an_inactive_verified_backend`
 - `lib::codex_session_board::observer::tests::idle_rechecks_limit_extra_reads_and_rotate_across_stable_rows`
