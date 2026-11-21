@@ -1,19 +1,19 @@
 import assert from "node:assert/strict";
 import http from "node:http";
-import { inputText, until } from "./browser-actions.mjs";
+import { clickNode, inputText, until } from "./browser-actions.mjs";
 
 export async function checkPackagedEditor(page, readSnapshot) {
   const submitted = ["  编辑器实测  ",""];
   const card = (await readSnapshot()).sessions.find(row => !row.remote && !row.readOnly && row.state);
   assert(card);
-  const selector = `[...document.querySelectorAll(".card")].find(row=>row.dataset.id===${JSON.stringify(card.id)})?.querySelector("[data-action=adjust]")`;
+  const selector = `.card[data-id=${JSON.stringify(card.id)}] [data-action=adjust]`;
   const receipts = [];
   for (const note of submitted) {
-    await until(() => page.evaluate(`Boolean(${selector})`),"包内卡片未出现");
-    await page.evaluate(`${selector}.click()`);
+    await until(() => page.evaluate(`Boolean(document.querySelector(${JSON.stringify(selector)}))`),"包内卡片未出现");
+    await clickNode(page,selector);
     await until(() => page.evaluate('document.activeElement.id==="note"'),"包内编辑器未取得焦点");
     await inputText(page,"#note",note);
-    await page.evaluate('document.getElementById("save").click()');
+    await clickNode(page,"#save");
     await until(() => page.evaluate('!document.getElementById("editor").open && document.activeElement.dataset.action==="adjust"'),
       "包内保存未完成");
     const row = (await readSnapshot()).sessions.find(row => row.id === card.id);

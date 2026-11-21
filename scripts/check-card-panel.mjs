@@ -30,7 +30,7 @@ const {resources} = await rpc("resources/list",{});
 const {contents:[panel]} = await rpc("resources/read",{uri:resources[0].uri});
 assert.deepEqual(panel._meta.ui.csp.connectDomains, []);
 const relay = "/"+randomUUID();
-const host = `<!doctype html><script>
+const host = `<!doctype html><style>html,body,iframe{margin:0;border:0;width:100%;height:100%}</style><script>
 addEventListener("message",async event=>{
   if(event.source!==document.querySelector("iframe")?.contentWindow)return;
   const {method,params,id}=event.data;
@@ -68,7 +68,7 @@ let browser;
 try {
   browser = await launchBrowser();
   const url = `http://127.0.0.1:${server.address().port}`;
-  await browser.page(url);
+  const outer = await browser.page(url);
   let frame;
   await until(async () => Boolean(frame = (await browser.command("Target.getTargets")).targetInfos
     .find(item => item.type === "iframe" && item.url === url+"/panel")), "离线面板未载入");
@@ -88,7 +88,7 @@ try {
   if (process.argv[4] === "--editor") {
     releaseRefresh();
     const read = async () => (await rpc("tools/call",{name:"board_snapshot",arguments:{}})).structuredContent;
-    const report = await checkPackagedEditor({evaluate,command:(method,params) => browser.command(method,params,sessionId)},read);
+    const report = await checkPackagedEditor({evaluate,command:outer.command},read);
     assert.deepEqual(calls.filter(call => call.name === "board_update").map(call => call.arguments.note),report.submitted);
     console.error(JSON.stringify({surface:"MCP",...report}));
   } else await checkArchivePanel(evaluate);

@@ -8,6 +8,7 @@ import EditFields from "./board-edit-fields";
 
 const { ports } = defineProps<{ ports: EditorPorts }>();
 const dialog = ref<HTMLDialogElement>();
+const form = ref<HTMLFormElement>();
 const session = shallowRef<EditorSession>();
 const states = shallowRef<Record<string, string>>({});
 const state = ref("");
@@ -120,7 +121,7 @@ onBeforeUnmount(() => { session.value = undefined; });
 </script>
 <template>
   <dialog ref="dialog" id="editor" aria-labelledby="editor-heading" @cancel.prevent="cancel" @close="closed">
-    <form id="edit-form" @submit.prevent="save">
+    <form ref="form" id="edit-form" @submit.prevent="save">
       <h2 id="editor-heading">调整工作状态</h2>
       <div id="dialog-title" class="dialog-title">{{ session?.title }}{{ session?.remote ? " · " + session.hostLabel : "" }}</div>
       <EditFields :states="states" :state="state" :unplaced="session?.state === null" :note="note" :busy="busy"
@@ -130,7 +131,7 @@ onBeforeUnmount(() => { session.value = undefined; });
       <div class="dialog-actions">
         <button v-if="failed" type="button" :disabled="busy" @click="refresh">重新核对</button>
         <button id="cancel" type="button" :disabled="busy" @click="cancel">取消</button>
-        <button id="save" type="submit" class="primary" :disabled="busy">保存状态</button>
+        <button id="save" type="submit" class="primary" :disabled="busy" @click.prevent="form?.reportValidity() && save()">保存状态</button>
       </div>
     </form>
   </dialog>
