@@ -1,6 +1,6 @@
 # 卡片写入资格由根快照给出
 
-`codex/card-access-projection` 基于 `f140da291d5588eed6a36c0fccbf8517cc7e37e8`，已包含 B2 主线 `bc89a5f3af94e0b2d1c7be24abb65c946cf35aec`。实现提交 `ecb01fc096c6767c9535e58b8fd9d64a91867596`。
+`codex/card-access-projection` 承接已合入的 B2 `bc89a5f3af94e0b2d1c7be24abb65c946cf35aec`。首轮独审与四联回执绑定实现 `ecb01fc096c6767c9535e58b8fd9d64a91867596`。接入远程归档门禁 `2766f8d` 后，独审在 `e02825b` 重跑连接资格及离线面板。接入远程保存门禁 `73da0c3031f3f78846b89ad4263303e7f8bb6e11` 后，`git range-diff` 核实三个补丁逐笔相同；各轮项目检查和定向结果分别保留在证据目录。
 
 网页 `/api/sessions`、MCP `board_snapshot` 和 A 的保存回执经过同一份根快照投影。原实现对普通可写本机卡省略 `readOnly` 和 `canArchive`，冻结六列的远程兼容记录也省略 `readOnly`。现在 `App::annotate_connections` 将这些旧数据的既有含义转换为两个明确的布尔字段。`canOpen` 继续只负责导航。
 
