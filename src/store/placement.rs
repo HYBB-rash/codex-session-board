@@ -1,37 +1,24 @@
 use super::suggestion;
 use serde_json::{Value, json};
 
-pub(super) struct WorkState<'a> {
-    pub state: &'a str,
-    pub source: &'static str,
-    pub suggestion: &'a str,
-    pub reason: &'a str,
+pub(super) fn work_state<'a>(
+    record: &'a Value,
+    native: bool,
+    history: impl FnOnce() -> &'a str,
+) -> (&'a str, &'static str) {
+    if native {
+        (record["native_state"].as_str().unwrap_or("unknown"), "codex")
+    } else if let Some(state) = record["selected_state"].as_str() {
+        (state, "manual")
+    } else if let Some(state) = record["automatic_state"].as_str() {
+        (state, "runtime")
+    } else {
+        (history(), "history")
+    }
 }
 
-impl<'a> WorkState<'a> {
-    pub fn read(record: &'a Value, native: bool, history_suggestions: bool) -> Self {
-        let (history, reason) = if history_suggestions {
-            suggestion(record)
-        } else {
-            ("unknown", "尚无可确认的工作状态。")
-        };
-        let suggestion = record["automatic_state"].as_str().unwrap_or(history);
-        let (state, source) = if native {
-            (record["native_state"].as_str().unwrap_or("unknown"), "codex")
-        } else if let Some(state) = record["selected_state"].as_str() {
-            (state, "manual")
-        } else if let Some(state) = record["automatic_state"].as_str() {
-            (state, "runtime")
-        } else {
-            (history, "history")
-        };
-        let reason = if native {
-            "状态来自 Codex 原生分区。"
-        } else {
-            record["automatic_reason"].as_str().unwrap_or(reason)
-        };
-        Self { state, source, suggestion, reason }
-    }
+pub(super) fn history(record: &Value, enabled: bool) -> (&'static str, &'static str) {
+    if enabled { suggestion(record) } else { ("unknown", "尚无可确认的工作状态。") }
 }
 
 pub(super) fn confirmed_empty(record: &Value, turn: &Value) -> bool {

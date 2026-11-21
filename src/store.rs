@@ -98,7 +98,8 @@ fn suggestion(row: &Value) -> (&'static str, &'static str) {
 }
 
 fn effective(row: &Value, native: bool, history_suggestions: bool) -> String {
-    placement::WorkState::read(row, native, history_suggestions).state.to_owned()
+    let (state, _) = placement::work_state(row, native, || placement::history(row, history_suggestions).0);
+    state.to_owned()
 }
 
 fn get_row(database: &Connection, identifier: &str) -> Result<Value> {
@@ -748,13 +749,16 @@ impl Store {
         let native = self.native_sections;
         let job = job.filter(|job| !self.four_columns || job["state"] != "unknown");
         let turn = turn_of(row);
-        let work = placement::WorkState::read(row, native, !self.four_columns);
+        let (history, reason) = placement::history(row, !self.four_columns);
+        let (state, source) = placement::work_state(row, native, || history);
         let selected = row["selected_state"].is_string();
         let mut value = json!({
             "id":row["id"], "title":row["title"], "cwd":row["cwd"], "updatedAt":row["updated_at"],
-            "seenAt":row["seen_at"], "observedAt":row["observed_at"], "state":work.state, "manual":selected,
+            "seenAt":row["seen_at"], "observedAt":row["observed_at"], "state":state, "manual":selected,
             "sectionVersion":if native {row["native_section"].clone()} else {Value::Null},
-            "suggestion":work.suggestion, "reason":work.reason, "source":work.source,
+            "suggestion":row["automatic_state"].as_str().unwrap_or(history),
+            "reason":if native {"状态来自 Codex 原生分区。"}else{row["automatic_reason"].as_str().unwrap_or(reason)},
+            "source":source,
             "note":row["note"], "followUp":row["needs_review"]==1, "observationError":row["observation_error"],
             "titleSyncPending":job.is_some(), "titleSyncError":job.map(|job| &job["error"]),
             "turnStatus":turn["status"], "version":row["version"], "inputVersion":row["input_revision"]
