@@ -119,8 +119,9 @@ fn long_content_and_project_filters_preserve_browser_column_geometry() {
         String::from_utf8_lossy(&result.stdout),
         String::from_utf8_lossy(&result.stderr)
     );
-    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(report["cases"], 48);
+    let measurements = std::fs::read(output.path().join("measurements.json")).unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&measurements).unwrap();
+    assert_layout_coverage(report["measurements"].as_array().unwrap());
     let filters = Command::new("node")
         .arg("scripts/check-host-filter.mjs")
         .output()
@@ -133,6 +134,25 @@ fn long_content_and_project_filters_preserve_browser_column_geometry() {
     );
     let report: serde_json::Value = serde_json::from_slice(&filters.stdout).unwrap();
     assert_eq!(report["archivedIds"], serde_json::json!(["a1", "a-default"]));
+}
+
+fn assert_layout_coverage(samples: &[serde_json::Value]) {
+    for theme in ["light", "dark"] {
+        for columns in [5, 6] {
+            let require = |scenario: &str, width: u32| {
+                assert!(samples.iter().any(|sample| {
+                    sample["theme"] == theme && sample["window"] == width && sample["scenario"] == scenario
+                        && sample["columns"].as_array().is_some_and(|sizes| sizes.len() == columns)
+                }), "缺少布局实测：{theme}，{columns} 列，{width}px，{scenario}");
+            };
+            for scenario in ["short", "long", "project:first", "project:second", "all", "empty-search", "long-host"] {
+                require(scenario, 1474);
+            }
+            for width in [801, 800, 600, 390, 320] {
+                require("narrow", width);
+            }
+        }
+    }
 }
 
 #[test]
