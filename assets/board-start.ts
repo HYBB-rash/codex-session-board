@@ -7,6 +7,7 @@ import { mountBoardEdits } from "./board-edits";
 import { mountBoardRefresh } from "./board-refresh";
 import { mountProjectAssignment } from "./board-project-assignment";
 import { mountBoardNewSession } from "./board-new-session";
+import { mountBoardNewTarget } from "./board-new-target";
 import { createColumnSortSave, type SortPreference } from "./board-sorting";
 import type { BoardSession } from "./board-view";
 
@@ -39,6 +40,7 @@ declare global {
     mountBoardRefresh: typeof mountBoardRefresh;
     mountProjectAssignment: typeof mountProjectAssignment;
     mountBoardNewSession: typeof mountBoardNewSession;
+    mountBoardNewTarget: typeof mountBoardNewTarget;
     createColumnSortSave: typeof createColumnSortSave;
   }
 }
@@ -83,4 +85,5 @@ window.mountBoardEdits = mountBoardEdits;
 window.mountBoardRefresh = mountBoardRefresh;
 window.mountProjectAssignment = mountProjectAssignment;
 window.mountBoardNewSession = mountBoardNewSession;
+window.mountBoardNewTarget = mountBoardNewTarget;
 window.createColumnSortSave = createColumnSortSave;
