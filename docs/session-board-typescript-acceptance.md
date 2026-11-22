@@ -2,6 +2,27 @@
 
 上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本通过本机和远程原生移卡检查点。macOS arm64 的目标 Codex 构建在加载看板之前拒绝了经过修改的启动归档，因此发布条件未满足。
 
+## 0.3.24 候选
+
+由 `694c335` 构建。默认副本安装仍可用，Linux 包另含显式的 Fedora 原地模式。两个平台共 76 项门槛自动检查通过。31 项冻结需求中 18 项通过、13 项仍需本候选现场证据。Fedora 和 macOS 各有 3 条随包交付现场断言。原地安装回执单列。`releaseReady` 为 `false`。[逐项门槛](../state/acceptance/release-gate-0.3.24.json) · [现场证据索引](../state/acceptance/live-0.3.24.json)
+
+| 场景 | 现场观察 |
+| --- | --- |
+| 安装、退出与原图标 | Fedora 44 KDE 隔离客体用真实 RPM 安装 `26.1111.71704`，SELinux enforcing。从 RPM 的原 `.desktop` 启动原 `/opt/codex-desktop/ChatGPT`，启动参数及窗口 class 与安装前一致，原生本机 App Server 连接初始化。看板加载 `0.3.24`，回环网页监听 `18768`。重复安装返回 `unchanged`。客体断网且未登录 Codex，已登录原窗口侧栏、本机和远端移卡仍需实测。[启动前对照](../state/acceptance/in-place-rpm/results/original-launch-verified-baseline.txt) · [原图标及连接](../state/acceptance/in-place-rpm/results/original-launch-final-024-patched.txt) · [运行时](../state/acceptance/in-place-rpm/results/enhancer-024-lifecycle.txt) |
+| 安装失败、中断与竞争 | 原客户端运行时拒绝安装和卸载，安装前后 `/run/user/1000/codex-desktop/` 的两个监听 socket 路径一致。归档复制遇到操作系统文件大小限制后，原件指纹和元数据一致，系统安装目录已清理。首次记录落盘后杀掉安装器，重试成功。首次记录残留和 `umask 077` 下的安装也可重试。RPM 事务锁被占用时拒绝安装，回执缺失时拒绝卸载并保留备份。[运行中保护](../state/acceptance/in-place-rpm/results/enhancer-024-guard.txt) · [中断恢复](../state/acceptance/in-place-rpm/results/enhancer-024-recover.txt) · [竞争与回执缺失](../state/acceptance/in-place-rpm/results/enhancer-024-rename.txt) |
+| 更新、回退与双模式隔离 | 旧副本包被原地协议拒绝，活动指针字节保持一致。从原图标读回更新演练版本 `0.3.24-rehearsal.1`，回退后读回 `0.3.24`，客户端补丁文件保持一致。原地模式存在时，可用默认命令新建并卸载独立副本，副本归档恢复为原件，系统原地归档和启动元数据保持一致。[更新和回退](../state/acceptance/in-place-rpm/results/enhancer-024-update.txt) · [副本共存](../state/acceptance/in-place-rpm/results/enhancer-024-lifecycle.txt) |
+| 已登录副本及公共入口 | 已安装副本更新并重启，复用原有本机和 MacBook Pro 连接。普通侧栏启动能看到双端专用卡。HTTP、成品 CLI 与 MCP stdio 读回相同的双端卡片及版本，预览同轮最终回复，保存数据保持一致。本候选从原生插件详情点击打开后未观察到 MCP App webview，重试时窗口未在限时内恢复连接。隔离插件和配置已复原，原生 MCP App 拖放仍沿用 `0.3.23` 的回执。[原生连接](../state/acceptance/fedora-signed-native-0.3.24.txt) · [侧栏](../state/acceptance/fedora-enhancer-rail-0.3.24.json) · [公共入口](../state/acceptance/fedora-entrypoints-0.3.24.json) · [当前原生 App 尝试](../state/acceptance/fedora-native-mcp-run-0.3.24.txt) |
+| Fedora PWA 系统安装 | 隔离 Chrome 中通过看板与原生确认框安装。Chrome 生成的 `.desktop` 通过系统校验。通过该启动项首次打开和关闭后重开，两次均获得独立窗口和 Service Worker，读回同一 `0.3.24` 实例。看板配置、记录、归档账本及标题启用记录校验一致。[安装和重开](../state/acceptance/fedora-pwa-installed-0.3.24.json) |
+| Loader 保留且构建变化 | 修改客体构建标签模拟混合替换。检查器报告 `incompatible`，原进程从原图标启动并初始化本机连接，Loader 给出版本和停用原因，看板运行日志无新条目。复原构建标签后状态恢复。真实登录、远程离线和短暂失败在原地模式待补。[停用及恢复](../state/acceptance/in-place-rpm/results/enhancer-024-lifecycle.txt) · [原进程日志](../state/acceptance/in-place-rpm/results/original-gtk-launch-final-024-incompatible.log) |
+| RPM 覆盖入口及通知 | 桌面在线时执行真实 RPM 事务切换至 `26.1111.21308`，独立用户服务识别覆盖并发送通知。图形用户退出且 D-Bus 消失后同版本重装，下一次登录发出通知。用本地重打包 RPM 验证升级改名为 `.vite/build/rpm-lab-renamed.js` 后仍能识别覆盖，卸载后原图标能启动改名构建。该改名来自隔离夹具。[异构建替换](../state/acceptance/in-place-rpm/results/enhancer-024-lifecycle.txt) · [重装及重新登录](../state/acceptance/in-place-rpm/results/enhancer-024-late-notification.txt) · [改名升级](../state/acceptance/in-place-rpm/results/enhancer-024-rename.txt) |
+| 卸载及数据 | 普通卸载恢复原件，覆盖后卸载保留 RPM 当前版本。归档、启动器、桌面入口的 SHA-256 和元数据一致，`rpm -V` 通过，升级监听为非活动状态。私有测试记录默认保留，安装存在时拒绝清理，卸载后可由普通用户清理。实际登录、项目、远程连接和已启用自动化的原地生命周期留待专用账号复验。[普通恢复](../state/acceptance/in-place-rpm/results/enhancer-024-recover.txt) · [替换及私有数据](../state/acceptance/in-place-rpm/results/enhancer-024-lifecycle.txt) |
+| 双平台归档 | Fedora 解包通过 100 项随包测试。MacBook Pro 解包通过 96 项，跳过 4 项 Linux 专用测试。两端随包公共入口、冻结模型和门槛测试通过。macOS `26.1111.21308` 副本预检仍因框架内嵌 ASAR 摘要停止，原地模式也在写入前拒绝。Mac 原应用签名校验通过，启动归档指纹一致。[Fedora 解包](../state/acceptance/fedora-archive-0.3.24.log) · [MacBook Pro 预检](../state/acceptance/packages/macos-0.3.24-preflight.txt) |
+
+原地复验使用无网卡的 Fedora Live KVM 客体、独立数据盘和本地 RPM。脚本覆盖运行中保护、故障恢复、升级、回退、卸载和通知。Fedora 日用应用的启动归档校验与 RPM 记录一致。已登录的原生双端移卡使用前一版副本，见[原生检查点](session-board-native-checkpoint.md)。[客体复验说明](../state/acceptance/in-place-rpm/lab-notes.md) · [现场脚本](../state/acceptance/in-place-rpm/fixtures/verify-enhancer-024.sh)
+
+- [Fedora x86_64 归档](../state/acceptance/packages/session-board-0.3.24-linux-x86_64.tar.gz) · [SHA-256](../state/acceptance/packages/session-board-0.3.24-linux-x86_64.tar.gz.sha256)
+- [macOS arm64 归档](../state/acceptance/packages/session-board-0.3.24-macos-arm64.tar.gz) · [SHA-256](../state/acceptance/packages/session-board-0.3.24-macos-arm64.tar.gz.sha256)
+
 ## 0.3.23 候选
 
 双平台归档由提交 `c247e10` 构建。31 项冻结需求中 18 项通过、13 项待验，76 项门槛自动检查通过。Fedora 有 35 条逐项现场断言，macOS 有 3 条打包断言。现场证据按候选版本、归档及运行文件指纹绑定，`0.3.22` 的现场回执保留在原候选。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.23.json) · [现场证据索引](../state/acceptance/live-0.3.23.json)
@@ -19,7 +40,7 @@
 | 迁移 | 从成品 CLI 重放合成本机、远端 SQLite 和已提交 WAL，再从回环看板读回离线只读卡、恢复后的同一 ID 及归档核对时间。回退后重开服务，导入记录不再展示，源文件校验保持一致。[迁移回执](../state/acceptance/fedora-migration-0.3.23.json) |
 | 双平台解包 | Fedora 通过 91 项随包测试。MacBook Pro 通过 89 项，跳过 2 项 Linux 专用测试。两端各通过 10 项公共入口、10 项冻结模型和 18 项门槛测试。macOS 的 `26.1111.21308` 仍在复制前因框架内嵌 ASAR 摘要拒绝安装。继续测试的官方归档因下载中断，未获得新增的完整兼容结论。[Fedora 解包](../state/acceptance/fedora-archive-0.3.23.log) · [MacBook Pro 预检](../state/acceptance/packages/macos-0.3.23-preflight.txt) · [官方归档复查](../state/acceptance/packages/macos-official-followup-20261123.txt) |
 
-Fedora 仍缺旧六状态的全列互移、批准后实际恢复执行、临时请求错误自动重试期间的状态、标题写入器繁忙时的并发保存预算，以及账号最左侧图标直达原生 MCP App。PWA 通过可安装性和 Service Worker 预检，系统安装及独立窗口待验。此前用 SQLite 写锁测试 `0.3.22` 时，标题同步超时并保留待重试项，锁也使并发保存所需的原生会话读取超时。[PWA 预检](../state/acceptance/fedora-pwa-installability-0.3.23.json) · [SQLite 写锁回执](../state/acceptance/fedora-title-budget-0.3.22-78ba4c09f.jsonl)
+Fedora 仍缺旧六状态的全列互移、批准后实际恢复执行、临时请求错误自动重试期间的状态、标题写入器繁忙时的并发保存预算，以及账号最左侧图标直达原生 MCP App。PWA 后续通过系统安装和独立窗口复验。此前用 SQLite 写锁测试 `0.3.22` 时，标题同步超时并保留待重试项，锁也使并发保存所需的原生会话读取超时。[PWA 系统安装](../state/acceptance/fedora-pwa-installed-0.3.23.json) · [SQLite 写锁回执](../state/acceptance/fedora-title-budget-0.3.22-78ba4c09f.jsonl)
 
 - [Fedora x86_64 归档](../state/acceptance/packages/session-board-0.3.23-linux-x86_64.tar.gz) · [SHA-256](../state/acceptance/packages/session-board-0.3.23-linux-x86_64.tar.gz.sha256)
 - [macOS arm64 归档](../state/acceptance/packages/session-board-0.3.23-macos-arm64.tar.gz) · [SHA-256](../state/acceptance/packages/session-board-0.3.23-macos-arm64.tar.gz.sha256)
