@@ -264,6 +264,18 @@
             "file": "src/installer/releases.test.ts",
             "test": "activation and rollback retain data and the previous immutable release"
         },
+        "install-first-retry": {
+            "file": "src/installer/install.test.ts",
+            "test": "a failed first install restores the original archive and can be retried"
+        },
+        "install-upgrade-retry": {
+            "file": "src/installer/install.test.ts",
+            "test": "a failed loader upgrade restores the prior patched archive, link and receipt"
+        },
+        "native-draft-concurrency": {
+            "file": "src/extensions/session-board/project-assignment.test.ts",
+            "test": "overlapping requests share one native draft open and can resume after registration"
+        },
         "release-rejection": {
             "file": "src/installer/releases.test.ts",
             "test": "platform mismatch and symlink entries are rejected"
@@ -495,6 +507,8 @@
                 "launcher-configured-paths",
                 "release-paths",
                 "release-rollback",
+                "install-first-retry",
+                "install-upgrade-retry",
                 "cli-instance"
             ]
         },
@@ -578,7 +592,11 @@
             "evidence": ["release-gate"]
         }
     },
-    "operation_evidence": ["operation-routing", "project-assignment-receipt"],
+    "operation_evidence": [
+        "operation-routing",
+        "project-assignment-receipt",
+        "native-draft-concurrency"
+    ],
     "operations": {
         "Snapshot": "Fedora 已分别读取活动、归档、远程项目；补同 ID 冲突与真实重连后的缓存边界。",
         "Update": "0.3.7 已从 MCP App 写入并在另外两端读回；补各版本冲突和远端回执丢失。",
@@ -590,7 +608,7 @@
         "ArchiveBatchCheck": "隔离夹具已验证仅核对已提交项；补真实回执丢失、迟到。",
         "Open": "已从归档定位原会话及主机；补同名跨主机和无新轮次的对照。",
         "PreviewReply": "已确认原生两端完整回复；补迟到回执越过卡片或宿主切换的拒绝。",
-        "New": "Fedora 0.3.7 已打开本机默认及远程指定项目的空白输入页，远程从首条输入和归属读回。补本机指定项目。",
+        "New": "Fedora 0.3.7 已打开本机默认及远程指定项目的空白输入页，远程从首条输入和归属读回。夹具验证并发重试只打开一次，登记后仍可用同一操作 ID 打开输入页。补本机指定项目。",
         "NewReset": "核对丢失回执和用户确认后重置旧新建请求。",
         "ProjectAssign": "远程专用项目归属已实际写回，丢回执、主机错配和重复确认已用夹具验证。补桌面表单交互。",
         "Connect": "验证在 Codex 管理的连接界面完成重连，后续操作仍使用同一窗口的 authority。",

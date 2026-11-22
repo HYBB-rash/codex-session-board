@@ -104,7 +104,7 @@
         ],
         "DATA-001": [
             ["launcher-deployment-paths", "launcher-configured-paths"],
-            ["release-paths", "release-rollback"]
+            ["release-paths", "release-rollback", "install-first-retry", "install-upgrade-retry"]
         ],
         "DATA-002": [
             ["migration-wal", "migration-projection", "migration-offline", "legacy-change-history"],

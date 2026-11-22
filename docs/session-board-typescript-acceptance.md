@@ -4,7 +4,7 @@
 
 ## 0.3.18 候选
 
-双平台归档由提交 `93e6c2e` 构建。31 项冻结需求中 18 项通过、13 项待验，71 项门槛自动检查通过，Fedora 通过 28 条现场断言。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.18.json) · [现场证据索引](../state/acceptance/live-0.3.18.json)
+双平台归档由提交 `93e6c2e` 构建。31 项冻结需求中 18 项通过、13 项待验，71 项门槛自动检查通过，Fedora 通过 30 条现场断言。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.18.json) · [现场证据索引](../state/acceptance/live-0.3.18.json)
 
 | 项目 | 结果 |
 | --- | --- |
@@ -13,7 +13,7 @@
 | Fedora 最近回复与导航 | 本机和远端专用卡临时改为同一个原生标题后，仍各自读回对应的完整助手回复，并按主机和 ID 选中原生会话。操作前后的会话集合、最新轮次及卡片版本一致，随后恢复原标题。轮次真实执行期间，从 Enhancer 点击卡片后看到「上一条完整回复 · 当前轮次进行中」，正文与上一轮一致，关闭时保持原路由。迟到回复、无完整回复和读取失败提示通过独立浏览器夹具验证，已登录宿主现场待验。[同名跳转](../state/acceptance/fedora-nav-same-title-0.3.18-1795371315275.json) · [执行中预览](../state/acceptance/fedora-title-001-live-0.3.18-1795371731691.json) · [预览夹具](../state/acceptance/browser-preview-cases-0.3.18.json) |
 | Fedora 公共入口与 PWA | HTTP、CLI、MCP 读回两端专用卡的同一状态、版本和备注。HTTP 和 MCP 的回复一致，预览前后卡片版本一致。MCP 列出 18 个共享操作及看板入口。隔离 Chrome 的 Service Worker 获得控制，浏览器报告无可安装性错误。系统安装、独立窗口和最左侧快捷入口待验。[公共入口](../state/acceptance/fedora-entrypoints-0.3.18.json) · [浏览器回执](../state/acceptance/fedora-pwa-installability-0.3.18.json) |
 | Fedora 原生 MCP App | 从隔离 Codex 的已安装插件详情打开随包 App，实际 iframe 内容摘要匹配。远端专用卡跨列后，原生连接、App 刷新及备用网页均读回目标分区和原备注，反向拖回也一致。同列、拖出松手均未保存。缩窄视口后右缘自动横滚 296 像素并到达最右列。隔离市场与配置已恢复，账号最左侧快捷入口待验。[拖放回执](../state/acceptance/fedora-mcp-gestures-live-0.3.18-1795371540856.json) · [安装及恢复](../state/acceptance/fedora-native-mcp-install-0.3.18.jsonl) |
-| Fedora 分页与诊断 | 本机 2 页、远端 3 页均读到终止游标，12 个活跃卡片 ID 去重后与原生集合一致。现场只出现 `vscode` 和 `openai`，多来源及重复游标由自动测试覆盖。临时限制为一页时，远端诊断显示未完成，9 张缓存卡只读。恢复配置后扫描完整。[分页回执](../state/acceptance/fedora-discovery-0.3.18.json) · [诊断回执](../state/acceptance/fedora-health-0.3.18.json) |
+| Fedora 分页与诊断 | 候选每页设为 1 条时，完整读回本机 2 张和远端 10 张，卡片 ID 集合与独立原生分页一致，原配置已恢复。现场只出现 `vscode` 和 `openai`，多来源及重复游标由自动测试覆盖。将总页数限制为一页时，远端诊断显示暂时无法更新，9 张缓存卡只读，两张专用卡的状态、备注及版本一致。恢复配置后扫描完整。[候选分页](../state/acceptance/fedora-product-paging-0.3.18.json) · [诊断回执](../state/acceptance/fedora-health-0.3.18.json) |
 | Fedora 三种状态模式 | 四、五、六状态模式的看板列、顶部跳转和编辑选项名称、标识及顺序一致。六状态模式中「待归档」在「已完成」之前。本机和远端缺少原生「待判断」与「已完成」分区，涉及这两列的真实移卡待验。[状态回执](../state/acceptance/fedora-state-001-0.3.18-1795370543907.json) |
 | Fedora 原生标题与真实轮次 | 两端专用卡手动移入「进行中」后，同次保存返回前读回新标题。表情、其他标签、正文状态词及长正文保留。本机专用轮次的原生开始、完成通知带同一轮次 ID，观察器自动读回「进行中」和「待审阅」原生分区及对应标题，备注保留。结束时恢复专用卡原标题和原分区。改名请求未落地便失败的情况已由隔离持久化夹具验证重启重试。[手动保存](../state/acceptance/fedora-title-001-live-0.3.18-1795370502136.json) · [自动状态和标题](../state/acceptance/fedora-title-001-live-0.3.18-1795370859190.json) · [重试测试](../state/acceptance/title-retry-0.3.17.log) |
 | Fedora 中断与澄清 | 点击原生「停止」后，独立读回同一轮次已中断，看板自动移入「已阻塞」并显示原因。另一轮普通答复包含说明和澄清问题，正常结束后自动回到「待审阅」。两次均核对原生分区并保留人工备注，验收后恢复专用卡原位置和原标题。[中断回执](../state/acceptance/fedora-interrupt-0.3.18-a9667f2d.jsonl) · [澄清回执](../state/acceptance/fedora-title-001-live-0.3.18-1795371360189.json) |
