@@ -70,6 +70,38 @@
             "file": "src/extensions/session-board/discovery.test.ts",
             "test": "an old final reply suggests review without issuing a move or changing the current state"
         },
+        "runtime-real-stages": {
+            "file": "src/extensions/session-board/title-sync.test.ts",
+            "test": "automatic pause, resume and completion follow native evidence and preserve the manual note"
+        },
+        "runtime-pending-move": {
+            "file": "src/extensions/session-board/title-sync.test.ts",
+            "test": "a durable pending phase is recovered after restart without repeating an applied move"
+        },
+        "runtime-passive-input": {
+            "file": "src/extensions/session-board/title-sync.test.ts",
+            "test": "passive history and queued text cannot start or finish a turn"
+        },
+        "runtime-manual-selection": {
+            "file": "src/extensions/session-board/title-sync.test.ts",
+            "test": "manual placement survives same-turn output and restart until the stage changes"
+        },
+        "runtime-confirmed-errors": {
+            "file": "src/extensions/session-board/title-sync.test.ts",
+            "test": "only confirmed failures and interruptions move a running turn to blocked"
+        },
+        "service-build-identity": {
+            "file": "src/compat/service-identity.test.ts",
+            "test": "CLI reuses the selected build and rejects a same-version update until the host restarts"
+        },
+        "service-config-identity": {
+            "file": "src/compat/service-identity.test.ts",
+            "test": "CLI refuses a changed board configuration or port and can still stop the former service"
+        },
+        "service-directory-identity": {
+            "file": "src/compat/service-identity.test.ts",
+            "test": "CLI rejects a copied receipt across data directories and public info omits its identity"
+        },
         "service-live-owner": {
             "file": "src/compat/entrypoints.test.ts",
             "test": "an unreachable live host keeps its state directory and cannot be replaced"
@@ -189,33 +221,37 @@
         },
         "AUTO-001": {
             "status": "partial",
-            "implementation": ["src/extensions/session-board/activity.ts"],
-            "evidence": ["fedora-desktop"],
-            "remaining": "已观察远程真实开始；补本机和批准后的实际恢复，区分批准与恢复。"
-        },
-        "AUTO-002": {
-            "status": "pending",
-            "implementation": ["src/extensions/session-board/activity.ts"],
-            "remaining": "核验等待批准、工具输入、失败、中断及自动重试的状态和原因，并核对人工备注。"
-        },
-        "AUTO-003": {
-            "status": "partial",
-            "implementation": ["src/extensions/session-board/activity.ts"],
-            "evidence": ["fedora-desktop"],
-            "remaining": "已观察远程正常完成；补本机和只讨论与澄清的最终回复。"
-        },
-        "AUTO-004": {
-            "status": "pending",
-            "implementation": ["src/extensions/session-board/activity.ts"],
-            "remaining": "为仅打开、仅补读历史、输入尚未执行、轮次 ID 变更及正文声称完成补断言。"
-        },
-        "AUTO-005": {
-            "status": "pending",
             "implementation": [
                 "src/extensions/session-board/activity.ts",
                 "src/extensions/session-board/board-service.ts"
             ],
-            "remaining": "用对照轨迹验证重复观察和重启保留人工状态，新执行阶段解除人工覆盖。"
+            "evidence": ["fedora-desktop", "runtime-real-stages"],
+            "remaining": "夹具已区分批准和恢复。补本机及批准后实际恢复的现场凭证。"
+        },
+        "AUTO-002": {
+            "status": "partial",
+            "implementation": ["src/extensions/session-board/activity.ts"],
+            "evidence": ["runtime-real-stages", "runtime-confirmed-errors"],
+            "remaining": "在真实宿主核对审批、交互输入、系统错误和中断以及备注保留。"
+        },
+        "AUTO-003": {
+            "status": "partial",
+            "implementation": ["src/extensions/session-board/activity.ts"],
+            "evidence": ["fedora-desktop", "runtime-real-stages"],
+            "remaining": "在真实宿主补本机完成及只讨论与澄清的最终答复。"
+        },
+        "AUTO-004": {
+            "status": "fixture",
+            "implementation": ["src/extensions/session-board/activity.ts"],
+            "evidence": ["runtime-passive-input", "history-review-suggestion"]
+        },
+        "AUTO-005": {
+            "status": "fixture",
+            "implementation": [
+                "src/extensions/session-board/activity.ts",
+                "src/extensions/session-board/board-service.ts"
+            ],
+            "evidence": ["runtime-manual-selection", "runtime-real-stages", "runtime-pending-move"]
         },
         "AUTO-006": {
             "status": "fixture",
@@ -386,19 +422,22 @@
             ]
         },
         "SERVICE-001": {
-            "status": "partial",
+            "status": "fixture",
             "implementation": [
                 "src/compat/receipt.ts",
                 "src/compat/client.ts",
+                "src/compat/service-identity.ts",
                 "src/runtime/board-broker.ts"
             ],
             "evidence": [
                 "cli-instance",
+                "service-build-identity",
+                "service-config-identity",
+                "service-directory-identity",
                 "service-live-owner",
                 "service-drain",
                 "service-replacement"
-            ],
-            "remaining": "活进程暂不可访问与停止竞争已通过测试，补代码和配置变更后的复用验收。"
+            ]
         },
         "BOUNDARY-001": {
             "status": "partial",

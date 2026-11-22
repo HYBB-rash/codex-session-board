@@ -9,23 +9,34 @@
                 "all_abstract_state_edges_match_the_typescript_service"
             ]
         ],
-        "AUTO-001": [["runtime_evidence_table_with_native_identity"], []],
+        "AUTO-001": [
+            ["runtime_evidence_table_with_native_identity", "runtime-real-stages"],
+            ["runtime-real-stages"]
+        ],
         "AUTO-002": [
-            ["runtime_evidence_table_with_native_identity"],
-            ["all_abstract_state_edges_match_the_typescript_service"],
-            []
+            ["runtime_evidence_table_with_native_identity", "runtime-confirmed-errors"],
+            ["runtime-real-stages", "runtime-confirmed-errors"],
+            ["runtime-confirmed-errors"]
         ],
         "AUTO-003": [
-            ["runtime_evidence_table_with_native_identity"],
-            ["runtime_evidence_table_with_native_identity"]
+            ["runtime_evidence_table_with_native_identity", "runtime-real-stages"],
+            ["runtime_evidence_table_with_native_identity", "runtime-real-stages"]
         ],
-        "AUTO-004": [["model_view_and_restart_do_not_write"], []],
+        "AUTO-004": [
+            [
+                "model_view_and_restart_do_not_write",
+                "history-review-suggestion",
+                "runtime-passive-input"
+            ],
+            ["runtime-passive-input"]
+        ],
         "AUTO-005": [
             [
                 "all_abstract_state_edges_match_the_typescript_service",
-                "model_view_and_restart_do_not_write"
+                "model_view_and_restart_do_not_write",
+                "runtime-manual-selection"
             ],
-            ["all_abstract_state_edges_match_the_typescript_service"]
+            ["runtime-manual-selection", "runtime-real-stages", "runtime-pending-move"]
         ],
         "AUTO-006": [
             ["history-rotation", "discovery-reconnect"],
@@ -79,7 +90,11 @@
             ["migration-wal", "migration-projection", "migration-offline"],
             ["migration-retry"]
         ],
-        "SERVICE-001": [[], ["service-live-owner"], ["service-drain", "service-replacement"]],
+        "SERVICE-001": [
+            ["service-build-identity", "service-config-identity", "service-directory-identity"],
+            ["service-live-owner"],
+            ["service-drain", "service-replacement"]
+        ],
         "BOUNDARY-001": [[], [], ["disabled-titles-preserve-save"]],
         "SECURITY-001": [
             ["http-security", "loopback-token-rejects-untrusted-writes"],
