@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { entryIncludes, openArchive, patchEntry, readEntry, sha256File } from "./asar.js";
@@ -217,9 +218,21 @@ export function readState(): InstallState | null {
 
 export function writeState(state: InstallState): void {
     fs.mkdirSync(paths.stateDir, { recursive: true });
-    const next = `${paths.installState}.next`;
-    fs.writeFileSync(next, `${JSON.stringify(state, null, 2)}\n`);
-    fs.renameSync(next, paths.installState);
+    writeAtomic(paths.installState, `${JSON.stringify(state, null, 2)}\n`, 0o600);
+}
+
+function writeAtomic(file: string, value: string | Buffer, mode: number): void {
+    const next = `${file}.${randomUUID()}.next`;
+    try {
+        fs.writeFileSync(next, value, {
+            flag: "wx",
+            mode,
+            flush: true,
+        });
+        fs.renameSync(next, file);
+    } catch (error) {
+        recover(error, [() => fs.rmSync(next, { force: true })]);
+    }
 }
 
 function backupBaseline(archivePath: string, version: string, currentHash: string): string {
@@ -241,15 +254,39 @@ function backupBaseline(archivePath: string, version: string, currentHash: strin
     return versioned;
 }
 
-function writeLink(copy: Detection): void {
+function writeLink(file: string): void {
     const link = {
         home: paths.root,
         runtime: paths.runtimeMain,
         patchVersion: PATCH_VERSION,
     };
-    const file = linkFile(locateApp(copy.appDir).resourcesDir);
-    assertIsolatedPath(file);
-    fs.writeFileSync(file, `${JSON.stringify(link, null, 2)}\n`, { mode: 0o600 });
+    writeAtomic(file, `${JSON.stringify(link, null, 2)}\n`, 0o600);
+}
+
+function readLink(file: string): { bytes: Buffer; mode: number } | null {
+    const status = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (!status) return null;
+    if (!status.isFile()) throw new Error(`Enhancer loader link is not a file: ${file}`);
+    return { bytes: fs.readFileSync(file), mode: status.mode & 0o777 };
+}
+
+function recover(error: unknown, steps: ReadonlyArray<() => void>): never {
+    const failures: unknown[] = [];
+    for (const step of steps) {
+        try {
+            step();
+        } catch (failure) {
+            failures.push(failure);
+        }
+    }
+    if (failures.length > 0) {
+        throw new AggregateError(
+            [error, ...failures],
+            `${String(error)}; recovery failed: ${failures.map(String).join("; ")}`,
+            { cause: error },
+        );
+    }
+    throw error;
 }
 
 function prepareCopy(): { source: Detection; copy: Detection } {
@@ -306,19 +343,30 @@ interface PatchOutcome {
     backupPath: string;
 }
 
-function patchStartupEntry(copy: Detection, currentHash: string): PatchOutcome {
-    const { archivePath, main: entry } = copy.archive;
-    if (entryIncludes(archivePath, entry, Buffer.from(SENTINEL))) {
+function assertUnpatched(copy: Detection): void {
+    if (entryIncludes(copy.archive.archivePath, copy.archive.main, Buffer.from(SENTINEL))) {
         throw new Error(
             "startup entry already contains the loader but the archive is not the recorded patch; uninstall first",
         );
     }
+}
+
+function backupCopy(copy: Detection, currentHash: string): string {
+    const { archivePath } = copy.archive;
     const backupPath = backupBaseline(archivePath, copy.codexVersion, currentHash);
-    const originalSha256 = sha256File(backupPath);
-    if (originalSha256 !== currentHash) {
+    if (sha256File(backupPath) !== currentHash) {
         throw new Error("backup does not match the archive that will be patched");
     }
     backupMacMetadata(copy, backupPath);
+    return backupPath;
+}
+
+function patchStartupEntry(
+    copy: Detection,
+    backupPath: string,
+    originalSha256: string,
+): PatchOutcome {
+    const { archivePath, main: entry } = copy.archive;
     const stub = Buffer.from(loaderStub());
     const patched = patchEntry(archivePath, entry, (current) => {
         if (current.includes(Buffer.from(SENTINEL))) return current;
@@ -397,30 +445,42 @@ export function install(): InstallResult {
         activateRelease(paths.root);
     }
     const archivePath = copy.archive.archivePath;
-    let currentHash = sha256File(archivePath);
+    const currentHash = sha256File(archivePath);
     const existing = readState();
-    if (isUpToDate(existing, currentHash)) {
-        if (existing.patchVersion === PATCH_VERSION) {
-            return { action: "unchanged", state: existing, source, copy };
-        }
-        if (sha256File(existing.backup.archive) !== existing.files.archive.originalSha256) {
-            throw new Error("stored archive backup no longer matches its checksum");
-        }
-        copyFile(existing.backup.archive, archivePath);
-        restoreMacMetadata(copy.appDir, existing.backup.archive);
-        currentHash = existing.files.archive.originalSha256;
+    const previous = isUpToDate(existing, currentHash) ? existing : null;
+    if (previous?.patchVersion === PATCH_VERSION) {
+        return { action: "unchanged", state: previous, source, copy };
     }
-    const patched = patchStartupEntry(copy, currentHash);
+    if (!previous) assertUnpatched(copy);
+    const file = linkFile(locateApp(copy.appDir).resourcesDir);
+    assertIsolatedPath(file, source.appDir);
+    const previousLink = readLink(file);
+    const originalSha256 = previous?.files.archive.originalSha256 ?? currentHash;
+    if (previous && sha256File(previous.backup.archive) !== originalSha256) {
+        throw new Error("stored archive backup no longer matches its checksum");
+    }
+    const rollbackArchive = backupCopy(copy, currentHash);
+    const backupPath = previous?.backup.archive ?? rollbackArchive;
     try {
-        writeLink(copy);
+        if (previous) {
+            copyFile(backupPath, archivePath);
+            restoreMacMetadata(copy.appDir, backupPath);
+            assertUnpatched(copy);
+        }
+        const patched = patchStartupEntry(copy, backupPath, originalSha256);
+        writeLink(file);
         signPatchedCopy(copy);
+        const state = buildState(source, copy, patched, archivePath);
+        writeState(state);
+        return { action: patched.changed ? "patched" : "already-patched", state, source, copy };
     } catch (error) {
-        copyFile(patched.backupPath, archivePath);
-        fs.rmSync(linkFile(locateApp(copy.appDir).resourcesDir), { force: true });
-        restoreMacMetadata(copy.appDir, patched.backupPath);
-        throw error;
+        recover(error, [
+            () => copyFile(rollbackArchive, archivePath),
+            () => {
+                if (previousLink) writeAtomic(file, previousLink.bytes, previousLink.mode);
+                else fs.rmSync(file, { force: true });
+            },
+            () => restoreMacMetadata(copy.appDir, rollbackArchive),
+        ]);
     }
-    const state = buildState(source, copy, patched, archivePath);
-    writeState(state);
-    return { action: patched.changed ? "patched" : "already-patched", state, source, copy };
 }
