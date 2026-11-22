@@ -21,23 +21,43 @@ function signature(turn: Turn | undefined): string {
     return JSON.stringify(turn ? [turn.id, turn.status] : null);
 }
 
+function verifiedTurn({ data, nextCursor }: { data: Turn[]; nextCursor: string | null }) {
+    const [turn] = data;
+    if (data.length > 1 || (!turn && nextCursor !== null)) throw new Error("轮次分页无效");
+    if (!turn) return;
+    if (typeof turn.id !== "string" || !turn.id || turn.id.length > 128 || /\p{Cc}/u.test(turn.id))
+        throw new Error("轮次 ID 无效");
+    if (!["completed", "inProgress", "interrupted", "failed"].includes(turn.status))
+        throw new Error("未知轮次状态");
+    return turn;
+}
+
+async function threadRunning(
+    desktop: DesktopConnection,
+    connection: HostConnection,
+    id: ThreadId,
+): Promise<boolean> {
+    const { status } = await desktop.read(connection, id, false);
+    if (status.type === "active") return true;
+    if (status.type === "idle" || status.type === "notLoaded") return false;
+    throw new Error("无法核对当前轮次状态");
+}
+
 export async function previewReply(
     desktop: DesktopConnection,
     connection: HostConnection,
     id: ThreadId,
 ) {
     for (let attempt = 0; attempt < 2; attempt++) {
-        const before = await desktop.read(connection, id, false);
+        const running = await threadRunning(desktop, connection, id);
         let page = await desktop.turns(connection, id, "summary");
-        const latest = page.data[0];
+        const latest = verifiedTurn(page);
         const cursors = new Set<string>();
         let answer: { turnId: string; html: string } | null = null;
-        for (;;) {
-            if (page.data.length > 1 || (!page.data.length && page.nextCursor))
-                throw new Error("轮次分页无效");
-            const turn = page.data[0];
+        let turn = latest;
+        while (turn) {
             const text = finalAnswer(turn);
-            if (turn && text) {
+            if (text) {
                 answer = { turnId: turn.id, html: markdown.render(text) };
                 break;
             }
@@ -45,14 +65,12 @@ export async function previewReply(
             if (cursors.has(page.nextCursor)) throw new Error("历史轮次游标重复");
             cursors.add(page.nextCursor);
             page = await desktop.turns(connection, id, "summary", page.nextCursor);
+            turn = verifiedTurn(page);
         }
-        const check = await desktop.turns(connection, id, "notLoaded");
-        const after = await desktop.read(connection, id, false);
-        if (
-            signature(latest) === signature(check.data[0]) &&
-            before.status.type === after.status.type
-        ) {
-            const inProgress = after.status.type === "active" || latest?.status === "inProgress";
+        const check = verifiedTurn(await desktop.turns(connection, id, "notLoaded"));
+        const after = await threadRunning(desktop, connection, id);
+        if (signature(latest) === signature(check) && running === after) {
+            const inProgress = after || latest?.status === "inProgress";
             return { turnId: answer?.turnId ?? null, html: answer?.html ?? null, inProgress };
         }
     }
