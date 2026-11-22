@@ -9,6 +9,7 @@ import { type OwnedSidebarItem, SidebarRegistry } from "./registry.js";
 
 const requireFromHere = createRequire(__filename);
 const runtimeDirectory = __dirname;
+const preloadPath = path.join(runtimeDirectory, "preload.js");
 const logPath = path.join(logs, "runtime.jsonl");
 const shotDirectory = path.join(logs, "screenshots");
 
@@ -26,8 +27,29 @@ interface ElectronModule {
     BrowserWindow: typeof import("electron").BrowserWindow;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+interface PackageMetadata {
+    version: unknown;
+}
+
+interface OwlApp {
+    runtimeName?: unknown;
+}
+
+interface RawExtension {
+    id?: unknown;
+    setup?: unknown;
+}
+
+interface RendererProof {
+    stage?: unknown;
+}
+
+function isFields<T extends object>(value: unknown): value is T {
     return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return isFields<Record<string, unknown>>(value);
 }
 
 function log(event: string, detail: object = {}): void {
@@ -42,31 +64,28 @@ function readJson(filePath: string): unknown {
     return JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown;
 }
 
-function requiredString(value: unknown, key: string, filePath: string): string {
-    if (!isRecord(value) || typeof value[key] !== "string") {
-        throw new Error(`${key} is missing in ${filePath}`);
-    }
-    return value[key];
+function requiredString(value: unknown, name: string, filePath: string): string {
+    if (typeof value !== "string") throw new Error(`${name} is missing in ${filePath}`);
+    return value;
 }
 
-function optionalString(value: unknown, key: string): string | null {
-    if (!isRecord(value)) return null;
-    const item = value[key];
-    return typeof item === "string" ? item : null;
+function optionalString(value: unknown): string | null {
+    return typeof value === "string" ? value : null;
 }
 
 function readAppInfo(): RuntimeInfo {
     const resources = process.resourcesPath;
     const metadataPath = path.join(resources, "linux-package-metadata.json");
     const owlPath = path.join(resources, "owl-electron-app.json");
-    const metadata = readJson(metadataPath);
-    const owl = readJson(owlPath);
+    const metadataJson = readJson(metadataPath);
+    const metadata = isFields<PackageMetadata>(metadataJson) ? metadataJson : null;
+    const owlJson = readJson(owlPath);
+    const owl = isFields<OwlApp>(owlJson) ? owlJson : null;
     const chromium = fs.readFileSync(path.join(resources, "..", "version"), "utf8").trim();
-    const electronVersion = process.versions["electron"] ?? null;
+    const electronVersion = process.versions.electron ?? null;
     return {
-        codexVersion: requiredString(metadata, "version", metadataPath),
-        runtimeType:
-            optionalString(owl, "runtimeName") || (electronVersion ? "electron" : "unknown"),
+        codexVersion: requiredString(metadata?.version, "version", metadataPath),
+        runtimeType: optionalString(owl?.runtimeName) || (electronVersion ? "electron" : "unknown"),
         chromiumVersion: chromium,
         electronVersion,
     };
@@ -74,12 +93,11 @@ function readAppInfo(): RuntimeInfo {
 
 function loadExtension(file: string): ExtensionModule {
     const loaded: unknown = requireFromHere(file);
-    if (!isRecord(loaded)) throw new Error(`extension is not an object: ${file}`);
+    if (!isFields<RawExtension>(loaded)) throw new Error(`extension is not an object: ${file}`);
     const extension: ExtensionModule = {};
-    const id = loaded["id"];
-    if (typeof id === "string") extension.id = id;
-    const setup = loaded["setup"];
-    if (typeof setup === "function") extension.setup = setup as (api: ExtensionApi) => void;
+    if (typeof loaded.id === "string") extension.id = loaded.id;
+    if (typeof loaded.setup === "function")
+        extension.setup = loaded.setup as (api: ExtensionApi) => void;
     return extension;
 }
 
@@ -138,8 +156,133 @@ function loadElectron(): ElectronModule {
 function uiPayload(registry: SidebarRegistry): { items: OwnedSidebarItem[]; autoOpen: boolean } {
     return {
         items: registry.list(),
-        autoOpen: process.env["CODEX_ENHANCER_AUTO_OPEN"] === "1",
+        autoOpen: process.env.CODEX_ENHANCER_AUTO_OPEN === "1",
     };
+}
+
+function broadcast(registry: SidebarRegistry, appContents: Set<WebContents>): void {
+    const payload = uiPayload(registry);
+    for (const contents of appContents) {
+        if (contents.isDestroyed() || !contents.getURL().startsWith("app://")) {
+            appContents.delete(contents);
+            continue;
+        }
+        contents.send("codex-enhancer:ui-items", payload);
+    }
+}
+
+function registerPreload(ses: Session, reason: string): void {
+    if (typeof ses.registerPreloadScript === "function") {
+        ses.registerPreloadScript({ type: "frame", filePath: preloadPath, id: "codex-enhancer" });
+        log("preload-registered", { reason, via: "registerPreloadScript" });
+        return;
+    }
+    const current = typeof ses.getPreloads === "function" ? ses.getPreloads() : [];
+    if (!current.includes(preloadPath) && typeof ses.setPreloads === "function") {
+        ses.setPreloads([preloadPath, ...current]);
+        log("preload-registered", { reason, via: "setPreloads" });
+    }
+}
+
+function installPreload(
+    ses: Session | null | undefined,
+    reason: string,
+    registered: WeakSet<Session>,
+): void {
+    if (!ses || registered.has(ses)) return;
+    try {
+        registerPreload(ses, reason);
+        registered.add(ses);
+    } catch (error) {
+        log("preload-register-failed", {
+            reason,
+            error: error instanceof Error ? error.stack : String(error),
+        });
+    }
+}
+
+function rememberContents(
+    contents: WebContents,
+    appContents: Set<WebContents>,
+    publish: () => void,
+): void {
+    if (contents.isDestroyed() || !contents.getURL().startsWith("app://")) return;
+    appContents.add(contents);
+    publish();
+}
+
+function watchContents(app: App, appContents: Set<WebContents>, publish: () => void): void {
+    app.on("web-contents-created", (_event, contents) => {
+        contents.on("did-finish-load", () => {
+            log("did-finish-load", { id: contents.id, url: contents.getURL() });
+            rememberContents(contents, appContents, publish);
+        });
+        contents.on("did-navigate", () => rememberContents(contents, appContents, publish));
+        contents.on("destroyed", () => appContents.delete(contents));
+    });
+}
+
+function rejectionDetail(event: IpcMainEvent): Record<string, unknown> {
+    const frame = event.senderFrame;
+    const parent =
+        frame == null ? "missing-frame" : frame.parent === null ? "null" : typeof frame.parent;
+    return { url: frame?.url ?? null, parent };
+}
+
+function trustedSender(event: IpcMainEvent): boolean {
+    if (trustedAppFrame(event.senderFrame)) return true;
+    log("ipc-rejected", rejectionDetail(event));
+    return false;
+}
+
+function screenshotName(stage: unknown): string | null {
+    switch (stage) {
+        case "sidebar-mounted":
+            return "sidebar-mounted.png";
+        case "page-rendered":
+            return "session-board.png";
+        case "shell-observed":
+            return "shell-observed.png";
+        case "page-closed":
+            return "page-closed.png";
+        default:
+            return null;
+    }
+}
+
+function captureProof(
+    event: IpcMainEvent,
+    payload: unknown,
+    BrowserWindow: ElectronModule["BrowserWindow"],
+): void {
+    if (!trustedSender(event)) return;
+    const detail = isFields<RendererProof>(payload) ? payload : { payload: String(payload) };
+    log("renderer-proof", detail);
+    const stage = isFields<RendererProof>(payload) ? payload.stage : undefined;
+    const contents = event.sender;
+    const bounds =
+        contents.getOwnerBrowserWindow?.()?.getBounds() ||
+        BrowserWindow.fromWebContents(contents)?.getBounds();
+    if (bounds == null || bounds.width < 480) return;
+    const fileName = screenshotName(stage);
+    if (fileName == null) return;
+    capture(contents, fileName).catch((error: unknown) => {
+        log("screenshot-failed", { error: String(error) });
+    });
+}
+
+function registerIpc(
+    ipcMain: IpcMain,
+    registry: SidebarRegistry,
+    BrowserWindow: ElectronModule["BrowserWindow"],
+): void {
+    ipcMain.handle("codex-enhancer:ui-items", (event) => {
+        if (!trustedSender(event)) throw new Error("enhancer IPC rejected");
+        return uiPayload(registry);
+    });
+    ipcMain.on("codex-enhancer:proof", (event, payload: unknown) => {
+        captureProof(event, payload, BrowserWindow);
+    });
 }
 
 function start(): void {
@@ -148,117 +291,15 @@ function start(): void {
     const info = readAppInfo();
     const registry = new SidebarRegistry();
     const appContents = new Set<WebContents>();
-
-    function publish(): void {
-        const payload = uiPayload(registry);
-        for (const contents of appContents) {
-            if (contents.isDestroyed() || !contents.getURL().startsWith("app://")) {
-                appContents.delete(contents);
-                continue;
-            }
-            contents.send("codex-enhancer:ui-items", payload);
-        }
-    }
-
+    const publish = (): void => broadcast(registry, appContents);
     const extensions = loadExtensions(registry, publish);
     log("main-loaded", { ...info, extensions, items: registry.list().map((item) => item.id) });
-
     const registered = new WeakSet<Session>();
-    const preloadPath = path.join(runtimeDirectory, "preload.js");
-
-    function installPreload(ses: Session | null | undefined, reason: string): void {
-        if (!ses || registered.has(ses)) return;
-        const register = (): void => {
-            if (typeof ses.registerPreloadScript === "function") {
-                ses.registerPreloadScript({
-                    type: "frame",
-                    filePath: preloadPath,
-                    id: "codex-enhancer",
-                });
-                log("preload-registered", { reason, via: "registerPreloadScript" });
-                return;
-            }
-            const current = typeof ses.getPreloads === "function" ? ses.getPreloads() : [];
-            if (!current.includes(preloadPath) && typeof ses.setPreloads === "function") {
-                ses.setPreloads([preloadPath, ...current]);
-                log("preload-registered", { reason, via: "setPreloads" });
-            }
-        };
-        try {
-            register();
-            registered.add(ses);
-        } catch (error) {
-            log("preload-register-failed", {
-                reason,
-                error: error instanceof Error ? error.stack : String(error),
-            });
-        }
-    }
-
-    function remember(contents: WebContents): void {
-        if (contents.isDestroyed() || !contents.getURL().startsWith("app://")) return;
-        appContents.add(contents);
-        publish();
-    }
-
-    function trusted(event: IpcMainEvent): boolean {
-        const frame = event.senderFrame;
-        const accepted = trustedAppFrame(frame);
-        if (!accepted) {
-            log("ipc-rejected", {
-                url: frame?.url ?? null,
-                parent:
-                    frame == null
-                        ? "missing-frame"
-                        : frame.parent === null
-                          ? "null"
-                          : typeof frame.parent,
-            });
-        }
-        return accepted;
-    }
-
-    app.on("session-created", (ses) => installPreload(ses, "session-created"));
-    app.on("web-contents-created", (_event, contents) => {
-        contents.on("did-finish-load", () => {
-            log("did-finish-load", { id: contents.id, url: contents.getURL() });
-            remember(contents);
-        });
-        contents.on("did-navigate", () => remember(contents));
-        contents.on("destroyed", () => appContents.delete(contents));
-    });
-
-    ipcMain.handle("codex-enhancer:ui-items", (event) => {
-        if (!trusted(event)) throw new Error("enhancer IPC rejected");
-        return uiPayload(registry);
-    });
-    ipcMain.on("codex-enhancer:proof", (event, payload: unknown) => {
-        if (!trusted(event)) return;
-        const detail = isRecord(payload) ? payload : { payload: String(payload) };
-        log("renderer-proof", detail);
-        const stage = isRecord(payload) ? payload["stage"] : undefined;
-        const contents = event.sender;
-        const bounds =
-            contents.getOwnerBrowserWindow?.()?.getBounds() ||
-            BrowserWindow.fromWebContents(contents)?.getBounds();
-        if (bounds == null || bounds.width < 480) return;
-        const fileName =
-            stage === "sidebar-mounted"
-                ? "sidebar-mounted.png"
-                : stage === "page-rendered"
-                  ? "session-board.png"
-                  : stage === "shell-observed"
-                    ? "shell-observed.png"
-                    : stage === "page-closed"
-                      ? "page-closed.png"
-                      : null;
-        if (fileName == null) return;
-        capture(contents, fileName).catch((error: unknown) => {
-            log("screenshot-failed", { error: String(error) });
-        });
-    });
-
-    const installExisting = (): void => installPreload(session.defaultSession, "default-session");
+    app.on("session-created", (ses) => installPreload(ses, "session-created", registered));
+    watchContents(app, appContents, publish);
+    registerIpc(ipcMain, registry, BrowserWindow);
+    const installExisting = (): void =>
+        installPreload(session.defaultSession, "default-session", registered);
     if (app.isReady()) installExisting();
     else app.whenReady().then(installExisting);
 }
