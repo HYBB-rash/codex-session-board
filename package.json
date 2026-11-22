@@ -13,13 +13,14 @@
         "uninstall": "npm run build --silent && node dist/bin/codex-enhancer.js uninstall",
         "status": "npm run build --silent && node dist/bin/codex-enhancer.js status",
         "launch": "npm run build --silent && node dist/bin/codex-enhancer.js launch",
-        "lint": "biome check --error-on-warnings .",
+        "lint": "biome check --error-on-warnings . && node scripts/check-comments.mjs",
         "format": "biome check --write .",
         "test": "npm run build --silent && node --test dist/installer/asar.test.js dist/installer/paths.test.js dist/runtime/registry.test.js"
     },
     "devDependencies": {
         "@biomejs/biome": "^2.6.8",
         "@types/node": "^26.6.6",
+        "oxc-parser": "^0.159.0",
         "typescript": "^7.0.2"
     }
 }

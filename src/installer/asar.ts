@@ -41,7 +41,6 @@ export interface PatchResult {
     bytes: Buffer;
 }
 
-// Electron 写出的头只在顶层确认为目录。读取单个路径时再确认它是文件。
 function isHeader(value: unknown): value is AsarDirectoryNode {
     if (typeof value !== "object" || value === null || !("files" in value)) return false;
     const files = value.files;
