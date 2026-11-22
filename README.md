@@ -9,9 +9,9 @@ Fedora 44 x86_64 已验证 Codex `26.1111.71704` 的安装、更新和回退。m
 在 Linux 候选包所在目录校验归档，再进入解压目录运行 Node.js 22 或更新版本。
 
 ```bash
-sha256sum -c session-board-0.3.9-linux-x86_64.tar.gz.sha256
-tar -xzf session-board-0.3.9-linux-x86_64.tar.gz
-cd session-board-0.3.9-linux-x86_64
+sha256sum -c session-board-0.3.10-linux-x86_64.tar.gz.sha256
+tar -xzf session-board-0.3.10-linux-x86_64.tar.gz
+cd session-board-0.3.10-linux-x86_64
 node dist/bin/codex-enhancer.js detect
 node dist/bin/codex-enhancer.js install
 node dist/bin/codex-enhancer.js launch
@@ -48,6 +48,8 @@ MCP 配置见 [.mcp.json](.mcp.json)。从另一目录调用时可以指定 `--s
 
 在 `state/session-board/config.json` 设置 `mode`（`four`、`five` 或 `legacy`）、`syncTitles`、`autoArchiveSeconds`、`remoteAutoArchiveSeconds`。归档间隔用正整数秒，`null` 表示关闭。初始为四列和未归列区，标题同步及定时归档关闭。
 
+`pageSize` 和 `maxPages` 默认均为 100，达到分页上限时会报告扫描未完成。`historyPerPoll` 默认为 20，控制每轮每台主机的历史补读数量。
+
 ```bash
 node dist/bin/codex-session-board.js migrate --source-config /path/to/legacy-config.json
 node dist/bin/codex-session-board.js migrate --rollback MIGRATION_ID
@@ -63,8 +65,8 @@ npm test
 npm run lint
 python3 acceptance/verify-typescript.py --model-only
 node acceptance/check-candidate.mjs --open
-bash scripts/package.sh 0.3.9 state/acceptance/packages linux-x86_64
-bash scripts/package.sh 0.3.9 state/acceptance/packages macos-arm64
+bash scripts/package.sh 0.3.10 state/acceptance/packages linux-x86_64
+bash scripts/package.sh 0.3.10 state/acceptance/packages macos-arm64
 ```
 
 查看 [Fedora 原生移卡检查点](docs/session-board-native-checkpoint.md)、[冻结模型对照](acceptance/typescript-model.md)、[逐项验收清单](acceptance/candidate-map.json)和[统一发布门槛](acceptance/release-gate.md)。

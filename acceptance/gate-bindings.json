@@ -27,7 +27,11 @@
             ],
             ["all_abstract_state_edges_match_the_typescript_service"]
         ],
-        "AUTO-006": [[], [], []],
+        "AUTO-006": [
+            ["history-rotation", "discovery-reconnect"],
+            ["history-rotation", "history-review-suggestion"],
+            ["retired-connection", "history-rotation"]
+        ],
         "MANUAL-001": [
             [],
             ["all_abstract_state_edges_match_the_typescript_service"],
@@ -55,8 +59,11 @@
         ],
         "TITLE-004": [["title-concurrency"], ["title-restart"], ["title-fair-retry"]],
         "TITLE-005": [["title-epoch"], ["title-epoch"], ["title-restart"]],
-        "DISCOVERY-001": [[], [], []],
-        "DISCOVERY-002": [[], []],
+        "DISCOVERY-001": [["discovery-coverage"], ["discovery-coverage"], ["discovery-limit"]],
+        "DISCOVERY-002": [
+            ["offline-cache", "discovery-limit", "discovery-reconnect"],
+            ["history-rotation"]
+        ],
         "NAV-001": [[], [], [], []],
         "APP-001": [[], [], []],
         "UI-001": [[], [], []],
@@ -72,7 +79,7 @@
             ["migration-wal", "migration-projection", "migration-offline"],
             ["migration-retry"]
         ],
-        "SERVICE-001": [[], [], []],
+        "SERVICE-001": [[], ["service-live-owner"], ["service-drain", "service-replacement"]],
         "BOUNDARY-001": [[], [], ["disabled-titles-preserve-save"]],
         "SECURITY-001": [
             ["http-security", "loopback-token-rejects-untrusted-writes"],

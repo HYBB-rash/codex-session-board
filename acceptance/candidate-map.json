@@ -50,6 +50,38 @@
             "file": "src/extensions/session-board/desktop-connection.test.ts",
             "test": "a disconnected catalog host retires pending reads and prior connection epochs"
         },
+        "discovery-coverage": {
+            "file": "src/extensions/session-board/discovery.test.ts",
+            "test": "discovery pages interactive sources across all providers and keeps the newest duplicate"
+        },
+        "discovery-limit": {
+            "file": "src/extensions/session-board/discovery.test.ts",
+            "test": "an incomplete discovery retains partial discoveries and leaves missing cards read-only"
+        },
+        "discovery-reconnect": {
+            "file": "src/extensions/session-board/discovery.test.ts",
+            "test": "remote cache survives removal, a failed scan, reconnect, and a confirmed archive"
+        },
+        "history-rotation": {
+            "file": "src/extensions/session-board/discovery.test.ts",
+            "test": "historical read failures rotate and old interrupted turns do not change native placement"
+        },
+        "history-review-suggestion": {
+            "file": "src/extensions/session-board/discovery.test.ts",
+            "test": "an old final reply suggests review without issuing a move or changing the current state"
+        },
+        "service-live-owner": {
+            "file": "src/compat/entrypoints.test.ts",
+            "test": "an unreachable live host keeps its state directory and cannot be replaced"
+        },
+        "service-drain": {
+            "file": "src/compat/entrypoints.test.ts",
+            "test": "CLI stop waits for the verified service to drain before reporting success"
+        },
+        "service-replacement": {
+            "file": "src/compat/entrypoints.test.ts",
+            "test": "a client bound to a stopped instance cannot close its replacement"
+        },
         "title-deadline": {
             "file": "src/extensions/session-board/desktop-connection.test.ts",
             "test": "a bounded native call ignores a reply received after its deadline"
@@ -186,12 +218,13 @@
             "remaining": "用对照轨迹验证重复观察和重启保留人工状态，新执行阶段解除人工覆盖。"
         },
         "AUTO-006": {
-            "status": "pending",
+            "status": "fixture",
             "implementation": [
                 "src/extensions/session-board/activity.ts",
-                "src/extensions/session-board/desktop-connection.ts"
+                "src/extensions/session-board/desktop-connection.ts",
+                "src/extensions/session-board/board-service.ts"
             ],
-            "remaining": "验证首次接入、旧轮次补读、notLoaded/interrupted 与断联的全部断言。"
+            "evidence": ["history-rotation", "history-review-suggestion", "retired-connection"]
         },
         "MANUAL-001": {
             "status": "partial",
@@ -269,17 +302,21 @@
                 "src/extensions/session-board/desktop-connection.ts",
                 "src/extensions/session-board/board-service.ts"
             ],
-            "evidence": ["native-move"],
-            "remaining": "核对完整多页、来源及模型提供方覆盖，稳定 ID 去重和达到上限提示。"
+            "evidence": ["native-move", "discovery-coverage", "discovery-limit"],
+            "remaining": "分页协议、去重和上限已通过夹具，补两平台对多种来源及提供方的实测。"
         },
         "DISCOVERY-002": {
-            "status": "partial",
+            "status": "fixture",
             "implementation": [
                 "src/extensions/session-board/board-service.ts",
                 "src/compat/cache.ts"
             ],
-            "evidence": ["offline-cache"],
-            "remaining": "兼容入口能读限制后的缓存；仍需验证当前发现及逐条补读失败时的数据保留和读取公平性。"
+            "evidence": [
+                "offline-cache",
+                "discovery-limit",
+                "discovery-reconnect",
+                "history-rotation"
+            ]
         },
         "NAV-001": {
             "status": "partial",
@@ -355,8 +392,13 @@
                 "src/compat/client.ts",
                 "src/runtime/board-broker.ts"
             ],
-            "evidence": ["cli-instance"],
-            "remaining": "验证桌面 authority 启停、应用更新/配置/端口变更、活跃但暂不可访问和旧实例停止竞争。"
+            "evidence": [
+                "cli-instance",
+                "service-live-owner",
+                "service-drain",
+                "service-replacement"
+            ],
+            "remaining": "活进程暂不可访问与停止竞争已通过测试，补代码和配置变更后的复用验收。"
         },
         "BOUNDARY-001": {
             "status": "partial",
