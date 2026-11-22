@@ -2,6 +2,21 @@
 
 上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本通过本机和远程原生移卡检查点。macOS arm64 的目标 Codex 构建在加载看板之前拒绝了经过修改的启动归档，因此发布条件未满足。
 
+## 0.3.19 候选
+
+双平台归档由提交 `8ee8b3b` 构建。31 项冻结需求中 18 项通过、13 项待验，73 项门槛自动检查通过。此版 Fedora 现场断言通过 8 条。`0.3.18` 的 30 条现场断言仍绑定原候选。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.19.json) · [现场证据索引](../state/acceptance/live-0.3.19.json)
+
+| 项目 | 结果 |
+| --- | --- |
+| 远端新建 | 0.3.18 对同一个仍在等待导航的新建操作发出了两次原生打开请求。0.3.19 合并同账号、同操作 ID 和同项目的同时请求。重复请求只打开一次，新建登记完成后可用原操作 ID 继续打开输入页。项目或主机不匹配会拒绝。已用安装版相同的 `BoardService` 请求入口复验。[新建回归](../src/extensions/session-board/project-assignment.test.ts) |
+| 安装失败恢复 | 首次安装或升级 Loader 时，注入安装回执写入失败，客户端副本分别恢复原始归档或上一版归档、链接和回执。恢复后可以重试。Fedora 和 MacBook Pro 的合成夹具都通过。进程被强制终止或断电的恢复尚未验证。[安装回归](../src/installer/install.test.ts) · [MacBook Pro 回执](../state/acceptance/packages/macos-0.3.19-preflight.txt) |
+| Fedora 原生标题重试 | 仅在隔离本机数据库中拒绝专用卡的目标标题。原生分区先保存，旧标题、备注和已保存版本保持有效，Enhancer 显示标题同步待重试。重启隔离副本仍有同一待办。撤除约束后，观察器自动写入并独立读回原生标题，待办清除。测试后恢复专用卡原分区和标题，两份配置与系统归档校验一致。[原生标题重试](../state/acceptance/fedora-title-retry-0.3.19-e9bb5acb2.jsonl) |
+| Fedora 安装生命周期 | 另起回环网络隔离的 Fedora 副本，从已安装备用网页点击更新，重启依次读回 `0.3.18 → 0.3.19 → 0.3.18`。卸载恢复原始归档，持久夹具和系统归档校验一致。已登录隔离副本也加载了 `0.3.19`。[网页更新和回退](../state/acceptance/fedora-installed-0.3.19.txt) · [已登录副本](../state/acceptance/fedora-signed-start-0.3.19.txt) |
+| Fedora 已有连接分页 | 在运行中的候选设每页 1 条，本机读回 2 张，远端读回 10 张。两端读到终止游标，ID 集合与独立原生分页一致，原配置和集合随后恢复。现场数据只覆盖 `vscode` 和 `openai`。[分页回执](../state/acceptance/fedora-product-paging-0.3.19.json) |
+| 双平台解包 | Fedora 通过 80 项随包 Node 测试，MacBook Pro 通过 78 项并跳过 2 项 Linux 专用测试。两端各通过 10 项公共入口、10 项冻结模型和 18 项门槛测试。Mac 的门槛夹具需使用规范路径形式的 `TMPDIR`。Mac Codex `26.1111.21308` 仍在复制前因 ASAR 完整性预检退出。[Fedora 随包复验](../state/acceptance/fedora-archive-0.3.19.log) · [MacBook Pro 复验](../state/acceptance/packages/macos-0.3.19-preflight.txt) |
+
+在解包目录用 `INSTALL.md` 的命令直接运行随包测试。源码的 `npm test` 会重新构建并写入工作区版本，重新构建后的目录不再匹配原发行清单。Fedora 复验使用了另一份未重新构建的解包目录。Vue 类型检查在安装构建依赖的目录运行。[原始归档测试](../state/acceptance/fedora-archive-0.3.19.log) · [Vue 类型检查](../state/acceptance/fedora-types-0.3.19.log)
+
 ## 0.3.18 候选
 
 双平台归档由提交 `93e6c2e` 构建。31 项冻结需求中 18 项通过、13 项待验，71 项门槛自动检查通过，Fedora 通过 30 条现场断言。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.18.json) · [现场证据索引](../state/acceptance/live-0.3.18.json)
