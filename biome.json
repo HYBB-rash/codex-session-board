@@ -41,6 +41,10 @@
                 },
                 "useLiteralKeys": "error"
             },
+            "style": {
+                "noNonNullAssertion": "error",
+                "useImportType": "error"
+            },
             "suspicious": {
                 "noExplicitAny": "error"
             }
