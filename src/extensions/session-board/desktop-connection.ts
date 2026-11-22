@@ -195,13 +195,18 @@ export class DesktopConnection {
         pending.reject(new Error(message));
     }
 
-    private request(connection: HostConnection, method: string, params: object): Promise<unknown> {
+    private request(
+        connection: HostConnection,
+        method: string,
+        params: object,
+        timeoutMs = 15000,
+    ): Promise<unknown> {
         this.assertCurrent(connection);
         const id = crypto.randomUUID();
         return new Promise((resolve, reject) => {
             const timeout = window.setTimeout(
                 () => this.fail(id, `Codex ${method} 请求超时`),
-                15000,
+                timeoutMs,
             );
             this.pending.set(id, { connection, timeout, resolve, reject });
             void this.transport
@@ -262,8 +267,13 @@ export class DesktopConnection {
         });
     }
 
-    async rename(connection: HostConnection, threadId: ThreadId, name: string): Promise<void> {
-        await this.request(connection, "thread/name/set", { threadId, name });
+    async rename(
+        connection: HostConnection,
+        threadId: ThreadId,
+        name: string,
+        timeoutMs?: number,
+    ): Promise<void> {
+        await this.request(connection, "thread/name/set", { threadId, name }, timeoutMs);
     }
 
     async assignProject(
@@ -288,11 +298,14 @@ export class DesktopConnection {
         connection: HostConnection,
         threadId: ThreadId,
         includeTurns: boolean,
+        timeoutMs?: number,
     ): Promise<Thread> {
-        const reply = (await this.request(connection, "thread/read", {
-            threadId,
-            includeTurns,
-        })) as {
+        const reply = (await this.request(
+            connection,
+            "thread/read",
+            { threadId, includeTurns },
+            timeoutMs,
+        )) as {
             thread?: Thread;
         } | null;
         if (reply?.thread?.id !== threadId) throw new Error("Codex 回执会话不一致");

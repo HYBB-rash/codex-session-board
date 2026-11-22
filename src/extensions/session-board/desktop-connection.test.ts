@@ -70,3 +70,29 @@ test("a disconnected catalog host retires pending reads and prior connection epo
         Reflect.set(globalThis, "window", original);
     }
 });
+
+test("a bounded native call ignores a reply received after its deadline", async () => {
+    const original = Reflect.get(globalThis, "window");
+    Reflect.set(globalThis, "window", globalThis);
+    let lateReply: string | undefined;
+    const desktop = new DesktopConnection({
+        bootstrap: () => ({ catalogHostIds: [localHostId] }),
+        async send(frame) {
+            lateReply = (frame as { request: { id: string } }).request.id;
+        },
+        async sidebar() {},
+    });
+    try {
+        desktop.knownHosts();
+        const connection = desktop.capture(localHostId);
+        await assert.rejects(desktop.read(connection, thread, false, 10), /请求超时/);
+        desktop.receive({
+            type: "mcp-response",
+            hostId: localHostId,
+            message: { id: lateReply, error: { message: "late" } },
+        });
+        desktop.assertCurrent(connection);
+    } finally {
+        Reflect.set(globalThis, "window", original);
+    }
+});

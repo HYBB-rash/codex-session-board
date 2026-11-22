@@ -27,17 +27,39 @@ function version(): string {
 
 function checkSections(value: unknown) {
     const data = object<"health" | "states" | "offline">(value);
-    const health = object<"nativeVerified">(data?.health);
+    const health = object<"nativeVerified" | "sectionBindings" | "nativeError">(data?.health);
     const states = object(data?.states);
     if (!states || data?.offline === true || health?.nativeVerified !== true) {
-        throw new Error("当前 Codex 窗口尚未确认本机原生分区");
+        throw new Error(
+            typeof health?.nativeError === "string"
+                ? health.nativeError
+                : "当前 Codex 窗口尚未确认本机原生分区",
+        );
     }
+    const bindings = Array.isArray(health.sectionBindings) ? health.sectionBindings : [];
+    const sectionIds = new Set<string>();
+    const ids = Object.entries(states).map(([state, label], index) => {
+        const binding = object<"state" | "label" | "sectionId">(bindings[index]);
+        if (
+            binding?.state !== state ||
+            binding.label !== label ||
+            typeof binding.sectionId !== "string" ||
+            !binding.sectionId.trim() ||
+            sectionIds.has(binding.sectionId)
+        ) {
+            throw new Error("当前 Codex 窗口返回的本机原生分区绑定无效");
+        }
+        sectionIds.add(binding.sectionId);
+        return { state, label, sectionId: binding.sectionId };
+    });
+    if (!ids.length || ids.length !== bindings.length)
+        throw new Error("当前 Codex 窗口返回的本机原生分区数无效");
     return {
         app: "codex-session-board",
         version: version(),
         hostId: "local",
         nativeCatalogVerified: true,
-        bindings: Object.entries(states).map(([state, label]) => ({ state, label })),
+        bindings: ids,
     };
 }
 

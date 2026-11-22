@@ -25,6 +25,7 @@ import {
     type BoardState,
     placement,
     presentState,
+    sectionBindings,
     sectionFor,
     visibleStates,
 } from "./placement.js";
@@ -106,6 +107,7 @@ interface Card {
 }
 
 const emptyRecord: CardRecord = { note: "", version: 0, inputVersion: 0 };
+const titleRpcBudgetMs = 3000;
 const emptyHost = (): HostSnapshot => ({
     active: new Map(),
     archived: new Map(),
@@ -124,6 +126,12 @@ function projectKey(hostId: HostId, id: string): string {
 
 function changedInput(current: CardRecord, input: string | null): boolean {
     return input !== null && input !== current.inputKey;
+}
+
+function remainingTitleTime(deadline: number): number {
+    const remaining = deadline - performance.now();
+    if (remaining < 1) throw new Error("Codex 标题同步超时");
+    return Math.floor(remaining);
 }
 
 function isNewPhase(
@@ -496,6 +504,11 @@ export class BoardService {
     private health(hostId: HostId, host: HostSnapshot | undefined) {
         const connected = host !== undefined && this.isLive(host);
         const run = this.archiveRuns.get(hostId);
+        const bindings =
+            connected && this.context ? sectionBindings(this.context, hostId, this.mode) : [];
+        const missingSections = Object.entries(visibleStates(this.mode))
+            .filter(([state]) => !bindings.some((binding) => binding.state === state))
+            .map(([, label]) => label);
         return {
             lastScanAt: Date.now() / 1000,
             lastSuccessAt: host?.lastRead,
@@ -503,9 +516,12 @@ export class BoardService {
             connected,
             scanComplete: connected && host?.lastRead !== undefined,
             nativeSections: true,
-            nativeVerified: this.context?.sections.length !== 0,
+            nativeVerified: connected && missingSections.length === 0,
+            sectionBindings: bindings,
             nativeError:
-                this.context?.sections.length === 0 ? "Codex 侧栏尚未配置状态列" : undefined,
+                connected && missingSections.length
+                    ? `Codex 侧栏缺少可确认的状态分区：${missingSections.join("、")}`
+                    : undefined,
             runtimeVerified: connected && host?.runtimeVerified === true,
             runtimeError: host?.runtimeError,
             autoArchiveSeconds: this.archiveInterval(hostId),
@@ -688,6 +704,39 @@ export class BoardService {
         this.hosts.get(hostId)?.active.set(thread.id, thread);
     }
 
+    private async syncTitle(
+        connection: HostConnection,
+        threadId: ThreadId,
+        record: CardRecord,
+        state: BoardState | null,
+    ): Promise<void> {
+        const id = cardId({ hostId: connection.hostId, threadId });
+        const deadline = performance.now() + titleRpcBudgetMs;
+        const before = await this.desktop.read(
+            connection,
+            threadId,
+            false,
+            remainingTitleTime(deadline),
+        );
+        if (this.records[id] !== record) return;
+        const current = before.name || before.preview.split("\n")[0] || threadId;
+        const title = projectedTitle(current, state);
+        let after = before;
+        if (title !== current) {
+            await this.freshContext();
+            if (this.records[id] !== record) return;
+            await this.desktop.rename(connection, threadId, title, remainingTitleTime(deadline));
+            after = await this.desktop.read(
+                connection,
+                threadId,
+                false,
+                remainingTitleTime(deadline),
+            );
+            if (after.name !== title) throw new Error("Codex 尚未读回更新后的标题");
+        }
+        if (this.records[id] === record) this.publishThread(connection.hostId, after);
+    }
+
     private async retryTitle(connection: HostConnection, threadId: ThreadId): Promise<void> {
         if (!this.settings.syncTitles || !this.canWrite(threadId)) return;
         const id = cardId({ hostId: connection.hostId, threadId });
@@ -696,16 +745,7 @@ export class BoardService {
         const context = await this.freshContext();
         let failure: string | undefined;
         try {
-            const before = await this.desktop.read(connection, threadId, false);
-            const current = before.name || before.preview.split("\n")[0] || threadId;
-            if (this.records[id] !== record) return;
-            const title = projectedTitle(current, record.title.state);
-            if (title !== current) await this.desktop.rename(connection, threadId, title);
-            const after = await this.desktop.read(connection, threadId, false);
-            if (after.name !== title && before.name !== title)
-                throw new Error("Codex 尚未读回更新后的标题");
-            if (this.records[id] !== record) return;
-            this.publishThread(connection.hostId, after);
+            await this.syncTitle(connection, threadId, record, record.title.state);
         } catch (error) {
             failure = errorText(error);
         }

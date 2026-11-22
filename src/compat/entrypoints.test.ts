@@ -24,9 +24,10 @@ const state = {
     sectionVersion: "live",
 };
 const projectCatalog = { loaded: true, items: [] };
+const reviewBinding = { state: "review", label: "待审阅", sectionId: "test-native-section" };
 const example = {
     states: { review: "待审阅" },
-    health: { nativeVerified: true },
+    health: { nativeVerified: true, sectionBindings: [reviewBinding] },
     projectCatalog,
     sessions: [{ id: "thread", title: "A session", canOpen: true }],
 };
@@ -268,7 +269,8 @@ test("CLI mcp negotiates stdio, reads its packaged app and reports rejected save
 });
 
 test("CLI reuses the authorized instance and stop only closes its compatibility service", async (test) => {
-    const { directory, url } = await fixture(test, async () => example);
+    let value = example;
+    const { directory, url } = await fixture(test, async () => value);
     const binary = join(assetsDirectory, "..", "bin", "codex-session-board.js");
     const run = (action: string) =>
         exec(process.execPath, [binary, "--state-dir", directory, action]);
@@ -279,7 +281,11 @@ test("CLI reuses the authorized instance and stop only closes its compatibility 
         config: null,
     });
     assert.deepEqual(JSON.parse((await run("scan")).stdout), example);
-    assert.equal(JSON.parse((await run("check-sections")).stdout).nativeCatalogVerified, true);
+    const checked = JSON.parse((await run("check-sections")).stdout);
+    assert.equal(checked.nativeCatalogVerified, true);
+    assert.deepEqual(checked.bindings, [reviewBinding]);
+    value = { ...example, health: { nativeVerified: true, sectionBindings: [] } };
+    await assert.rejects(run("check-sections"), /本机原生分区绑定无效/);
     const running = readReceipt(directory);
     assert.ok(running);
     const wrongInstance = await post(

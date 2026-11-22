@@ -23,9 +23,30 @@ export function visibleStates(mode: BoardMode): Record<string, string> {
     );
 }
 
-export function sectionFor(context: SidebarContext, state: BoardState): LogicalSectionId | null {
+function matchingSection(context: SidebarContext, state: BoardState) {
     const matches = context.sections.filter(({ name }) => name === labels[state]);
-    return matches.length === 1 ? (matches[0]?.id ?? null) : null;
+    return matches.length === 1 ? matches[0] : undefined;
+}
+
+export function sectionFor(context: SidebarContext, state: BoardState): LogicalSectionId | null {
+    return matchingSection(context, state)?.id ?? null;
+}
+
+export function sectionBindings(context: SidebarContext, host: HostId, mode: BoardMode) {
+    const states = Object.keys(visibleStates(mode)) as BoardState[];
+    const candidates = states.map((state) => ({
+        state,
+        label: labels[state],
+        sectionId: matchingSection(context, state)?.hostSectionIds?.[host],
+    }));
+    const duplicates = new Set(
+        candidates
+            .map(({ sectionId }) => sectionId)
+            .filter((id, index, ids) => id && ids.indexOf(id) !== index),
+    );
+    return candidates.flatMap(({ state, label, sectionId }) =>
+        sectionId && !duplicates.has(sectionId) ? [{ state, label, sectionId }] : [],
+    );
 }
 
 export interface Placement {
