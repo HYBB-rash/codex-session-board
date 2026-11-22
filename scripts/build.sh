@@ -23,14 +23,4 @@ if (preload.includes("./host.js") || host.includes("registry_js_1") || host.incl
 }
 fs.writeFileSync("dist/runtime/preload.js", `"use strict";\n${registry}\n${host}\n${preload}`);
 EOF
-mkdir -p "$root/bin" "$root/installer" "$root/runtime"
-cp "$root/dist/bin/codex-enhancer.js" "$root/bin/codex-enhancer.js"
-cp "$root/dist/installer/"*.js "$root/installer/"
-cp "$root/dist/runtime/"*.js "$root/runtime/"
-for extension in "$root/dist/extensions"/*; do
-  name="$(basename "$extension")"
-  mkdir -p "$root/extensions/$name"
-  cp "$extension/extension.js" "$root/extensions/$name/extension.js"
-done
-chmod +x "$root/bin/codex-enhancer.js"
-rm -rf "$root/dist"
+chmod +x "$root/dist/bin/codex-enhancer.js"

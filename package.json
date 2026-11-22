@@ -4,16 +4,16 @@
   "private": true,
   "description": "Proof of concept that loads an external runtime into a test copy of Codex Desktop and mounts an extension page in the official window.",
   "bin": {
-    "codex-enhancer": "./bin/codex-enhancer.js"
+    "codex-enhancer": "./dist/bin/codex-enhancer.js"
   },
   "scripts": {
     "build": "bash scripts/build.sh",
-    "detect": "npm run build --silent && node bin/codex-enhancer.js detect",
-    "install": "npm run build --silent && node bin/codex-enhancer.js install",
-    "uninstall": "npm run build --silent && node bin/codex-enhancer.js uninstall",
-    "status": "npm run build --silent && node bin/codex-enhancer.js status",
-    "launch": "npm run build --silent && node bin/codex-enhancer.js launch",
-    "test": "npm run build --silent && node --test installer/asar.test.js runtime/registry.test.js"
+    "detect": "npm run build --silent && node dist/bin/codex-enhancer.js detect",
+    "install": "npm run build --silent && node dist/bin/codex-enhancer.js install",
+    "uninstall": "npm run build --silent && node dist/bin/codex-enhancer.js uninstall",
+    "status": "npm run build --silent && node dist/bin/codex-enhancer.js status",
+    "launch": "npm run build --silent && node dist/bin/codex-enhancer.js launch",
+    "test": "npm run build --silent && node --test dist/installer/asar.test.js dist/installer/paths.test.js dist/runtime/registry.test.js"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

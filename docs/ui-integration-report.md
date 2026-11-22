@@ -127,7 +127,7 @@ IPC 要求 `senderFrame === sender.mainFrame`，路径只接受 `/index.html`、
 顶层 `codex-sandbox:` 可视化页被拒绝。  
 缺 `parent` 的帧按单测拒绝。  
 路径还没有收成 `/index.html`。  
-沙箱 Preload 不能加载旁边的文件，所以 `runtime/preload.js` 在构建时已经包含宿主。
+沙箱 Preload 不能加载旁边的文件，所以 `dist/runtime/preload.js` 在构建时已经包含宿主。
 
 ```javascript
 export default {

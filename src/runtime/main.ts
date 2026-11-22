@@ -1,16 +1,16 @@
 import { createRequire } from "node:module";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { App, IpcMain, IpcMainEvent, Session, WebContents } from "electron";
+import { logs, outputDir } from "../installer/paths.js";
 import type { ExtensionApi, ExtensionModule, SidebarItemInput } from "./api.js";
 import { trustedAppFrame } from "./ipc-guard.js";
 import { SidebarRegistry, type OwnedSidebarItem } from "./registry.js";
-import type { App, IpcMain, IpcMainEvent, Session, WebContents } from "electron";
 
 const requireFromHere = createRequire(__filename);
 const runtimeDirectory = __dirname;
-const home = path.resolve(runtimeDirectory, "..");
-const logPath = path.join(home, "logs", "runtime.jsonl");
-const shotDirectory = path.join(home, "logs", "screenshots");
+const logPath = path.join(logs, "runtime.jsonl");
+const shotDirectory = path.join(logs, "screenshots");
 
 interface RuntimeInfo {
   codexVersion: string;
@@ -80,7 +80,7 @@ function loadExtension(file: string): ExtensionModule {
 }
 
 function loadExtensions(registry: SidebarRegistry, publish: () => void): string[] {
-  const directory = path.join(home, "extensions");
+  const directory = path.join(outputDir, "extensions");
   const ids: string[] = [];
   if (!fs.existsSync(directory)) return ids;
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {

@@ -94,7 +94,7 @@ Owl 是否在别的版本把同一检查编进 Linux，这次不能外推。
 Loader 失败时只打印错误，后面的官方程序仍会执行。  
 Runtime 在主进程注册额外 preload，并用固定频道和页面通信。  
 扩展目录目前只有 `hello-world`，它提供按钮文字。  
-以后可以继续往 `extensions/` 增加本地扩展，而不把扩展代码打进 `app.asar`。
+以后可以继续往 `src/extensions/` 增加本地扩展，而不把扩展代码打进 `app.asar`。
 
 参考实现的公开设计来自 Codex++。  
 legacy 1.x 把外部 Runtime 和 `session.registerPreloadScript` 作为追加 preload 的做法，和这次验证成功的路径一致。  

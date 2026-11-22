@@ -1,7 +1,8 @@
 import * as path from "node:path";
 
-export const root = path.resolve(__dirname, "..");
-export const runtimeMain = path.join(root, "runtime", "main.js");
+export const outputDir = path.resolve(__dirname, "..");
+export const root = path.resolve(outputDir, "..");
+export const runtimeMain = path.join(outputDir, "runtime", "main.js");
 export const stateDir = path.join(root, "state");
 export const testApp = path.join(root, "state", "test-app");
 export const backupDir = path.join(root, "state", "backups");

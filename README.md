@@ -10,12 +10,12 @@
 
 ```bash
 ./scripts/install.sh
-node bin/codex-enhancer.js status
+node dist/bin/codex-enhancer.js status
 ./scripts/launch.sh
 ./scripts/uninstall.sh
 ```
 
-`install` 用 reflink 复制 `/opt/codex-desktop` 到 `state/test-app`，备份原始 `app.asar`，再给启动入口加上 Loader。Loader 只在测试副本里，通过 `.codex-enhancer-link.json` 指向本仓库的 `runtime/main.js`。
+`install` 用 reflink 复制 `/opt/codex-desktop` 到 `state/test-app`，备份原始 `app.asar`，再给启动入口加上 Loader。Loader 只在测试副本里，通过 `.codex-enhancer-link.json` 指向本仓库的 `dist/runtime/main.js`。
 
 `launch` 使用单独的应用 ID `codex-enh-poc`、`state/user-data` 和 `state/codex-home`。它不会把 `--user-data-dir` 指到 `~/.config/Codex`。窗口关掉之后，再执行卸载。安装和卸载发现测试副本仍在运行时会停止并报出进程号。
 
@@ -38,13 +38,14 @@ Codex Enhancer UI integration successful.
 
 ## 布局
 
-源码是 TypeScript，在 `src/`。`npm run build` 把它编译成 CommonJS。`scripts/` 里的脚本会先编译，再执行 `bin/codex-enhancer.js`。Electron 加载编译结果 `runtime/main.js`、`runtime/preload.js` 和 `extensions/*/extension.js`。沙箱里的 Preload 不能加载旁边的文件，所以 `preload.js` 在构建时已经包含宿主。
+源码是 TypeScript，在 `src/`。`npm run build` 把它编译成 CommonJS，全部放在 `dist/`。`scripts/` 里的脚本会先编译，再执行 `dist/bin/codex-enhancer.js`。Electron 加载 `dist/runtime/main.js`、`dist/runtime/preload.js` 和 `dist/extensions/*/extension.js`。沙箱里的 Preload 不能加载旁边的文件，所以 `preload.js` 在构建时已经包含宿主。
 
 ```text
 src/bin/codex-enhancer.ts
 src/installer/      detect, asar patch, install, restore, status
 src/runtime/        main.ts, preload.ts, host.ts, registry.ts
 src/extensions/     hello-world, session-board
+dist/               编译后的 CommonJS
 scripts/            build.sh, install.sh, launch.sh, uninstall.sh
 state/              test copy, backup, install.json; not part of source
 logs/               runtime log and captured window images
