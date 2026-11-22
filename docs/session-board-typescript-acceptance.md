@@ -2,6 +2,21 @@
 
 上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本通过本机和远程原生移卡检查点。macOS arm64 的目标 Codex 构建在加载看板之前拒绝了经过修改的启动归档，因此发布条件未满足。
 
+## 0.3.21 候选
+
+双平台归档由提交 `cc7ed74` 构建。31 项冻结需求中 18 项通过、13 项待验，73 项门槛自动检查通过。Fedora 现场 12 条断言通过，macOS 现场通过 3 条归档断言。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.21.json) · [现场证据索引](../state/acceptance/live-0.3.21.json)
+
+| 项目 | 结果 |
+| --- | --- |
+| 定时归档配置 | 缩短周期会按新周期重新计算截止时间，停用及切换到旧六状态模式会清除截止时间。各宿主独立调度，恢复后使用下一周期边界。两台空宿主的隔离夹具复现了 `0.3.20` 的旧截止时间问题，`0.3.21` 通过全部 7 项检查。[原版复现](../state/acceptance/fedora-timer-configuration-0.3.20.json) · [修复后复验](../state/acceptance/fedora-timer-configuration-0.3.21.json) |
+| Fedora 关页定时归档 | 关闭 Enhancer 看板后，仅允许归档本机专用卡。独立原生列表先读回归档结果，随后从看板接口核对该轮归档记录和原备注。停用后清除下一次截止时间，验收后取消归档，并恢复专用卡、写入限制及配置原字节。[后台定时归档回执](../state/acceptance/fedora-archive-batch-0.3.21-1795376234815.jsonl) |
+| Fedora 原生操作 | 本机与远端专用卡同次保存返回前均独立读回原生新标题。筛选后的本机专用卡经看板归档，关闭重开仍读回结果。原生 MCP App 对远端专用卡进行跨列、刷新和反向拖放，备用网页与原生分区读回一致。备注保留，专用卡的原位置和标题已恢复。[标题读回](../state/acceptance/fedora-title-001-live-0.3.21-1795375974388.json) · [归档回执](../state/acceptance/fedora-archive-batch-0.3.21-1795375983506.jsonl) · [原生 MCP App](../state/acceptance/fedora-mcp-gestures-live-0.3.21-1795376077076.json) |
+| Fedora 安装生命周期 | 从已安装备用网页点击更新，重启读回 `0.3.21`，回退并重启后读回 `0.3.20`。卸载后试验副本启动归档与系统归档一致，专用备注夹具校验通过。已登录隔离副本也独立加载 `0.3.21`，HTTP、CLI 和 MCP 读回同一份双端数据及原生回复。[网页更新及回退](../state/acceptance/fedora-installed-0.3.21.txt) · [公共入口回执](../state/acceptance/fedora-entrypoints-0.3.21.json) |
+| 双平台解包 | Fedora 通过 85 项随包测试，MacBook Pro 通过 83 项并跳过 2 项 Linux 专用测试。两端各通过 10 项公共入口、10 项冻结模型和 18 项门槛测试，运行文件与随包清单保持一致。macOS Codex `26.1111.21308` 仍在复制前因框架内嵌 ASAR 摘要拒绝安装。[Fedora 解包结果](../state/acceptance/fedora-archive-0.3.21.log) · [MacBook Pro 测试与预检](../state/acceptance/packages/macos-0.3.21-preflight.txt) |
+
+- [Fedora x86_64 归档](../state/acceptance/packages/session-board-0.3.21-linux-x86_64.tar.gz) · [SHA-256](../state/acceptance/packages/session-board-0.3.21-linux-x86_64.tar.gz.sha256)
+- [macOS arm64 归档](../state/acceptance/packages/session-board-0.3.21-macos-arm64.tar.gz) · [SHA-256](../state/acceptance/packages/session-board-0.3.21-macos-arm64.tar.gz.sha256)
+
 ## 0.3.20 候选
 
 双平台归档由提交 `3a808ce` 构建。31 项冻结需求中 18 项通过、13 项待验，73 项门槛自动检查通过。Fedora 现场 15 条断言通过，macOS 现场通过 3 条归档断言。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.20.json) · [现场证据索引](../state/acceptance/live-0.3.20.json)
