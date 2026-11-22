@@ -4,7 +4,7 @@
 
 ## 0.3.19 候选
 
-双平台归档由提交 `8ee8b3b` 构建。31 项冻结需求中 18 项通过、13 项待验，73 项门槛自动检查通过。此版 Fedora 现场断言通过 8 条。`0.3.18` 的 30 条现场断言仍绑定原候选。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.19.json) · [现场证据索引](../state/acceptance/live-0.3.19.json)
+双平台归档由提交 `8ee8b3b` 构建。31 项冻结需求中 18 项通过、13 项待验，73 项门槛自动检查通过。此版 Fedora 现场断言通过 13 条。`0.3.18` 的 30 条现场断言仍绑定原候选。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.19.json) · [现场证据索引](../state/acceptance/live-0.3.19.json)
 
 | 项目 | 结果 |
 | --- | --- |
@@ -13,6 +13,8 @@
 | Fedora 原生标题重试 | 仅在隔离本机数据库中拒绝专用卡的目标标题。原生分区先保存，旧标题、备注和已保存版本保持有效，Enhancer 显示标题同步待重试。重启隔离副本仍有同一待办。撤除约束后，观察器自动写入并独立读回原生标题，待办清除。测试后恢复专用卡原分区和标题，两份配置与系统归档校验一致。[原生标题重试](../state/acceptance/fedora-title-retry-0.3.19-e9bb5acb2.jsonl) |
 | Fedora 安装生命周期 | 另起回环网络隔离的 Fedora 副本，从已安装备用网页点击更新，重启依次读回 `0.3.18 → 0.3.19 → 0.3.18`。卸载恢复原始归档，持久夹具和系统归档校验一致。已登录隔离副本也加载了 `0.3.19`。[网页更新和回退](../state/acceptance/fedora-installed-0.3.19.txt) · [已登录副本](../state/acceptance/fedora-signed-start-0.3.19.txt) |
 | Fedora 已有连接分页 | 在运行中的候选设每页 1 条，本机读回 2 张，远端读回 10 张。两端读到终止游标，ID 集合与独立原生分页一致，原配置和集合随后恢复。现场数据只覆盖 `vscode` 和 `openai`。[分页回执](../state/acceptance/fedora-product-paging-0.3.19.json) |
+| Fedora 状态诊断和同名导航 | 限制总页数后，真实界面报告远端列表未完成、自动状态尚未连接，专用卡版本及备注保留。两端专用卡使用相同标题时，预览各自的回复并打开正确主机和会话。操作期间无新输入或轮次，原生会话集合及卡片版本一致，结束时恢复原标题。[诊断回执](../state/acceptance/fedora-health-0.3.19.json) · [同名导航](../state/acceptance/fedora-nav-same-title-0.3.19-1795373499457.json) |
+| Fedora 立即改名 | 本机与远端专用卡同次保存返回前均读回新标题。最新原生标题的正文、长文本、表情和其他标签保留，只有开头的状态前缀更新。随后恢复原位置和原标题。[标题回执](../state/acceptance/fedora-title-001-live-0.3.19-1795373526786.json) |
 | 双平台解包 | Fedora 通过 80 项随包 Node 测试，MacBook Pro 通过 78 项并跳过 2 项 Linux 专用测试。两端各通过 10 项公共入口、10 项冻结模型和 18 项门槛测试。Mac 的门槛夹具需使用规范路径形式的 `TMPDIR`。Mac Codex `26.1111.21308` 仍在复制前因 ASAR 完整性预检退出。[Fedora 随包复验](../state/acceptance/fedora-archive-0.3.19.log) · [MacBook Pro 复验](../state/acceptance/packages/macos-0.3.19-preflight.txt) |
 
 在解包目录用 `INSTALL.md` 的命令直接运行随包测试。源码的 `npm test` 会重新构建并写入工作区版本，重新构建后的目录不再匹配原发行清单。Fedora 复验使用了另一份未重新构建的解包目录。Vue 类型检查在安装构建依赖的目录运行。[原始归档测试](../state/acceptance/fedora-archive-0.3.19.log) · [Vue 类型检查](../state/acceptance/fedora-types-0.3.19.log)
