@@ -13,7 +13,11 @@ FROZEN = {
 }
 PLATFORMS = {"linux-x86_64": ("linux", "x86_64"), "macos-arm64": ("darwin", "arm64")}
 SOURCE_DIRECTORIES = {"acceptance", "scripts", "src", "ui"}
-SOURCE_FILES = {"README.md", "package.json", "package-lock.json", "tsconfig.json", "biome.json"}
+PLUGIN_MANIFEST = ".codex-plugin/plugin.json"
+SOURCE_FILES = {
+    "README.md", "package.json", "package-lock.json", "tsconfig.json", "biome.json",
+    PLUGIN_MANIFEST, ".mcp.json",
+}
 VERSION_FILE = "board-assets/version.txt"
 RUNTIME_REQUIRED = {"bin/codex-enhancer.js", "runtime/main.js", "runtime/preload.js"}
 
@@ -49,6 +53,15 @@ def stream_sha256(stream):
 def sha256(path):
     with path.open("rb") as stream:
         return stream_sha256(stream)
+
+
+def plugin_identity(raw):
+    manifest = parse(raw)
+    need(isinstance(manifest, dict), "插件清单必须是 JSON 对象")
+    version = manifest.pop("version", None)
+    need(isinstance(version, str), "插件清单缺少版本")
+    normalized = json.dumps(manifest, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest(), version
 
 
 def sha_format(value):
@@ -122,7 +135,10 @@ def tree_files(root, names, include):
                 continue
             need(not path.is_symlink(), f"指纹路径包含符号链接 {relative}")
             if path.is_file():
-                files[relative] = sha256(path)
+                files[relative] = (
+                    plugin_identity(path.read_bytes())[0] if relative == PLUGIN_MANIFEST
+                    else sha256(path)
+                )
             else:
                 need(path.is_dir(), f"指纹路径包含非常规文件 {relative}")
     return files
@@ -142,6 +158,7 @@ def open_archive(handle):
         roots = set()
         manifest = None
         version = None
+        plugin_version = None
         for member in archive:
             name = relative_file(member.name)
             need(name not in members, f"归档路径重复 {name}")
@@ -155,13 +172,15 @@ def open_archive(handle):
             with archive.extractfile(member) as stream:
                 if relative == "release.json":
                     manifest = parse(stream.read())
+                elif relative == PLUGIN_MANIFEST:
+                    files[relative], plugin_version = plugin_identity(stream.read())
                 elif relative == f"dist/{VERSION_FILE}":
                     version = stream.read()
                     files[relative] = hashlib.sha256(version).hexdigest()
                 else:
                     files[relative] = stream_sha256(stream)
         need(len(roots) == 1 and manifest is not None, "发行归档缺少唯一根目录或 release.json")
-        return manifest, files, version
+        return manifest, files, version, plugin_version
 
 
 def archive_identity(path, platform, source, runtime):
@@ -169,7 +188,7 @@ def archive_identity(path, platform, source, runtime):
     with path.open("rb") as handle:
         compressed = stream_sha256(handle)
         handle.seek(0)
-        manifest, files, packaged_version = open_archive(handle)
+        manifest, files, packaged_version, plugin_version = open_archive(handle)
     need(manifest["schema"] == 1 and manifest["platform"] == platform, f"归档平台范围不符 {platform}")
     version = manifest["version"]
     need(
@@ -192,6 +211,8 @@ def archive_identity(path, platform, source, runtime):
         f"归档运行代码与本次自动测试产物不同 {platform}",
     )
     need(packaged_version == f"{version}\n".encode("utf-8"), "归档运行版本与发行清单不符")
+    if PLUGIN_MANIFEST in source:
+        need(plugin_version == version, "归档插件版本与发行清单不符")
     return {
         "version": version,
         "archiveSha256": compressed,

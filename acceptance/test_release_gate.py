@@ -8,7 +8,10 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from release_gate import PLATFORMS, archive_arguments, evaluate, tap_results
-from release_identity import CONTRACT, FROZEN, BASELINE, archive_identity, sha256, stream_sha256
+from release_identity import (
+    BASELINE, CONTRACT, FROZEN, PLUGIN_MANIFEST, archive_identity, plugin_identity, sha256,
+    stream_sha256,
+)
 
 
 class ReleaseGateTests(unittest.TestCase):
@@ -177,7 +180,10 @@ class ArchiveVerificationTests(unittest.TestCase):
         self.runtime = {"runtime/main.js": b"candidate", "board-assets/version.txt": b"0.3.8\n"}
 
     def digests(self, entries):
-        return {name: stream_sha256(io.BytesIO(data)) for name, data in entries.items()}
+        return {
+            name: plugin_identity(data)[0] if name == PLUGIN_MANIFEST else stream_sha256(io.BytesIO(data))
+            for name, data in entries.items()
+        }
 
     def archive(self, files=None, extra=None):
         manifest = {
@@ -216,6 +222,23 @@ class ArchiveVerificationTests(unittest.TestCase):
             self.identify()
         self.archive(extra={"candidate/../outside": b"invalid"})
         with self.assertRaisesRegex(ValueError, "越界"):
+            self.identify()
+
+    def test_packaged_plugin_version_and_mcp_entry_are_bound(self):
+        self.source[PLUGIN_MANIFEST] = b'{"version":"0.3.7","name":"fixture"}'
+        self.source[".mcp.json"] = b'{"mcpServers":{}}'
+        plugin = f"candidate/{PLUGIN_MANIFEST}"
+        self.archive(extra={plugin: b'{"version":"0.3.8","name":"fixture"}'})
+        self.assertEqual(self.identify()["version"], "0.3.8")
+        self.archive(extra={plugin: b'{"version":"0.3.7","name":"fixture"}'})
+        with self.assertRaisesRegex(ValueError, "插件版本"):
+            self.identify()
+        self.archive(extra={plugin: b'{"version":"0.3.8","name":"other"}'})
+        with self.assertRaisesRegex(ValueError, "归档源码"):
+            self.identify()
+        self.archive(extra={plugin: b'{"version":"0.3.8","name":"fixture"}',
+                            "candidate/.mcp.json": b'{"mcpServers":{"other":{}}}'})
+        with self.assertRaisesRegex(ValueError, "归档源码"):
             self.identify()
 
 
