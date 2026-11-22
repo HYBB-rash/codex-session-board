@@ -10,6 +10,7 @@ import {
     Archive,
     type ArchiveItem,
     ArchivePreconditionError,
+    ArchiveReadUnavailable,
     type ArchiveTarget,
     type BoardLedger,
     emptyLedger,
@@ -18,6 +19,7 @@ import {
 } from "./archive.js";
 import {
     cardId,
+    cardThread,
     type DesktopConnection,
     type HostConnection,
     type HostId,
@@ -1495,24 +1497,28 @@ export class BoardService {
 
     private async archived(id: string): Promise<boolean> {
         const owner = this.requiredContext();
-        const known = [...this.hosts].find(([hostId, host]) =>
-            [...host.active.values(), ...host.archived.values()].some(
-                (thread) => cardId({ hostId, threadId: thread.id }) === id,
-            ),
-        );
-        if (!known) return false;
-        const [hostId, host] = known;
-        const connection = this.desktop.capture(hostId);
+        const { hostId, threadId } = cardThread(id);
         const archived = new Map<ThreadId, Thread>();
-        await this.readPages(connection, true, archived);
+        let connection: HostConnection;
+        try {
+            connection = this.desktop.capture(hostId);
+            await this.readPages(connection, true, archived);
+        } catch (error) {
+            throw new ArchiveReadUnavailable(errorText(error));
+        }
         await this.freshContext(owner);
-        this.desktop.assertCurrent(connection);
-        const result = [...archived.values()].find(
-            (thread) => cardId({ hostId, threadId: thread.id }) === id,
-        );
-        if (result) host.currentActive.delete(result.id);
-        this.mergeArchives(host, archived);
-        return result !== undefined;
+        try {
+            this.desktop.assertCurrent(connection);
+        } catch (error) {
+            throw new ArchiveReadUnavailable(errorText(error));
+        }
+        const verified = archived.has(threadId);
+        const host = this.hosts.get(hostId);
+        if (host) {
+            if (verified) host.currentActive.delete(threadId);
+            this.mergeArchives(host, archived);
+        }
+        return verified;
     }
 
     private autoArchive(context: SidebarContext): void {

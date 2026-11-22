@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
     Archive,
     ArchivePreconditionError,
+    ArchiveReadUnavailable,
     type ArchiveTarget,
     type BoardLedger,
     emptyLedger,
@@ -13,6 +14,7 @@ function harness(
     respond: () => Promise<void> = async () => {
         throw new Error("归档回执丢失");
     },
+    check: (id: string) => void = () => {},
 ) {
     let ledger: BoardLedger = emptyLedger();
     let scope = "account-a";
@@ -30,6 +32,7 @@ function harness(
             verify,
             async isArchived(id) {
                 checked.push(id);
+                check(id);
                 return archived.has(id);
             },
             async archive({ id }) {
@@ -85,6 +88,65 @@ test("reopening an incomplete archive batch checks submitted items and never res
     assert.equal((await reopened.submit(batchId, first)).status, "verified");
     await assert.rejects(reopened.submit(batchId, untouched), /已有归档记录/);
     assert.equal(fixture.writes(), 1);
+});
+
+test("a disconnected archive host leaves its receipt pending and does not block a healthy host", async (testContext) => {
+    let time = 1000;
+    testContext.mock.method(Date, "now", () => time);
+    const host = "remote-ssh-discovered:archive-fixture";
+    const local = item("00000000-0000-4000-8000-000000000031");
+    const remote = item(JSON.stringify([host, local.id]));
+    let connected = true;
+    const fixture = harness(undefined, undefined, (id) => {
+        if (!connected && id === remote.id)
+            throw new ArchiveReadUnavailable(`Codex 连接已断开 (${host})`);
+    });
+    const batchId = crypto.randomUUID();
+    const initial = fixture.create();
+    await initial.start(batchId, [remote, local]);
+    const pending = await initial.submit(batchId, remote);
+    await initial.submit(batchId, local);
+    await initial.finish(batchId);
+
+    connected = false;
+    fixture.archived.add(local.id);
+    time = 2000;
+    const checked = await fixture.create().check(batchId);
+    assert.deepEqual(checked.items[0], pending);
+    assert.equal(checked.items[1]?.status, "verified");
+    assert.equal(checked.items[1]?.checkedAt, 2);
+    assert.deepEqual(fixture.checked.slice(-2), [remote.id, local.id]);
+
+    connected = true;
+    fixture.archived.add(remote.id);
+    time = 3000;
+    const recovered = await fixture.create().check(batchId);
+    assert.equal(recovered.items[0]?.status, "verified");
+    assert.equal(recovered.items[0]?.checkedAt, 3);
+    assert.deepEqual(recovered.items[1], checked.items[1]);
+    assert.equal(fixture.writes(), 2);
+});
+
+test("a native archive check still stops on an account authority failure", async () => {
+    const failure = new Error("Codex 账号已变更");
+    let authorized = true;
+    const fixture = harness(undefined, undefined, () => {
+        if (!authorized) throw failure;
+    });
+    const batchId = crypto.randomUUID();
+    const archive = fixture.create();
+    const first = item("pending-first");
+    const second = item("pending-second");
+    await archive.start(batchId, [first, second]);
+    await archive.submit(batchId, first);
+    await archive.submit(batchId, second);
+    authorized = false;
+    await assert.rejects(fixture.create().check(batchId), (error) => error === failure);
+    assert.equal(fixture.checked.length, 3);
+    assert.deepEqual(
+        archive.batches()[0]?.items.map(({ status }) => status),
+        ["pending", "pending"],
+    );
 });
 
 test("a second archive precondition failure remains distinct from a possible application", async () => {

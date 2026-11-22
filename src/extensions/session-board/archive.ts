@@ -52,6 +52,8 @@ interface ArchivePorts {
 export class ArchivePreconditionError extends Error {}
 export class NewInputError extends ArchivePreconditionError {}
 
+export class ArchiveReadUnavailable extends Error {}
+
 export function emptyLedger(): BoardLedger {
     return { batches: [], columnSorts: {} };
 }
@@ -191,10 +193,18 @@ export class Archive {
         const scope = this.ports.scope();
         for (const item of this.requireBatch(id).items) {
             if (item.status !== "pending" || this.submitted.has(item.id)) continue;
-            const archived = await this.ports.isArchived(item.id);
+            let archived: boolean;
+            try {
+                archived = await this.ports.isArchived(item.id);
+            } catch (error) {
+                this.requireScope(scope);
+                if (error instanceof ArchiveReadUnavailable) continue;
+                throw error;
+            }
             this.requireScope(scope);
             if (archived) await this.set(id, item, "pending", "verified");
         }
+        this.requireScope(scope);
         return this.requireBatch(id);
     }
 

@@ -13,6 +13,7 @@ export type LogicalSectionId = string & { readonly [logicalBrand]: true };
 export type HostSectionId = string & { readonly [replicaBrand]: true };
 export const localHostId = "local" as HostId;
 const interactiveSources = ["cli", "vscode", "appServer"];
+const threadIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export interface ThreadRef {
     hostId: HostId;
@@ -113,9 +114,24 @@ export function cardId(ref: ThreadRef): string {
     return ref.hostId === "local" ? ref.threadId : JSON.stringify([ref.hostId, ref.threadId]);
 }
 
+export function cardThread(id: string): ThreadRef {
+    if (threadIdPattern.test(id)) return { hostId: localHostId, threadId: id as ThreadId };
+    if (!id.startsWith("[")) throw new Error("看板会话 ID 无效");
+    const pair: unknown = JSON.parse(id);
+    if (Array.isArray(pair) && pair.length === 2) {
+        const [host, thread] = pair;
+        const target = typeof host === "string" ? hostId(host) : null;
+        if (target && typeof thread === "string" && threadIdPattern.test(thread)) {
+            const reference = { hostId: target, threadId: thread as ThreadId };
+            if (cardId(reference) === id) return reference;
+        }
+    }
+    throw new Error("看板会话 ID 无效");
+}
+
 export function interactiveThread(thread: Thread): boolean {
-    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-    if (thread.ephemeral || typeof thread.id !== "string" || !uuid.test(thread.id)) return false;
+    if (thread.ephemeral || typeof thread.id !== "string" || !threadIdPattern.test(thread.id))
+        return false;
     return (
         thread.source === undefined ||
         (typeof thread.source === "string" && interactiveSources.includes(thread.source))

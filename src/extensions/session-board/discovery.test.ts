@@ -340,6 +340,53 @@ test("a previously registered unscoped archive batch keeps its pending and unsen
     assert.deepEqual(statuses(), ["archived"]);
 });
 
+test("a reopened batch reconciles uncached submitted cards on connected hosts independently", async (testContext) => {
+    const { native, service, ledgers, desktop } = fixture(testContext);
+    const { writes, sectionVersion } = archiveFixture(native);
+    const remote = JSON.stringify([remoteName, first]);
+    const account = '["account","user"]';
+    const id = crypto.randomUUID();
+    const target = { title: "archive fixture", version: 0, inputVersion: 0, sectionVersion };
+    ledgers.set(account, {
+        ...emptyLedger(),
+        batches: [
+            {
+                id,
+                createdAt: 1,
+                finishedAt: 2,
+                items: [
+                    { ...target, id: remote, status: "pending" },
+                    { ...target, id: first, status: "pending" },
+                    { ...target, id: second, status: "awaiting" },
+                ],
+            },
+        ],
+    });
+    let archiveVisible = false;
+    const reads: string[] = [];
+    native.list = (host, { archived }) => {
+        if (archived) reads.push(host);
+        return { data: archived && archiveVisible ? [row(first)] : [], nextCursor: null };
+    };
+
+    await service.refresh();
+    assert.equal(service.snapshot().sessions.length, 0);
+    reads.length = 0;
+    archiveVisible = true;
+    await service.request("/api/archive-batches/check", { id });
+    const statuses = () => ledgers.get(account)?.batches[0]?.items.map(({ status }) => status);
+    assert.deepEqual(reads, [localHostId]);
+    assert.deepEqual(statuses(), ["pending", "verified", "awaiting"]);
+
+    native.hosts.push(remoteName);
+    desktop.knownHosts();
+    reads.length = 0;
+    await service.request("/api/archive-batches/check", { id });
+    assert.deepEqual(reads, [remoteName]);
+    assert.deepEqual(statuses(), ["verified", "verified", "awaiting"]);
+    assert.deepEqual(writes, []);
+});
+
 test("archive deadlines follow the current host settings and configured time boundaries", async (testContext) => {
     const { native, service, settings } = fixture(testContext);
     native.hosts = [localHostId, remoteName];
