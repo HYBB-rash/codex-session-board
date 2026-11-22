@@ -54,6 +54,30 @@
             "file": "src/extensions/session-board/desktop-connection.test.ts",
             "test": "a bounded native call ignores a reply received after its deadline"
         },
+        "title-manual-projection": {
+            "file": "src/extensions/session-board/title-sync.test.ts",
+            "test": "manual saves sync the latest full title and strip only leading state prefixes"
+        },
+        "title-epoch": {
+            "file": "src/extensions/session-board/title-sync.test.ts",
+            "test": "enabling and reopening do not rename historical activity; new automatic states sync"
+        },
+        "title-concurrency": {
+            "file": "src/extensions/session-board/title-sync.test.ts",
+            "test": "foreground save supersedes a running title job without waiting for its reply"
+        },
+        "title-restart": {
+            "file": "src/extensions/session-board/title-sync.test.ts",
+            "test": "restart reconciles a lost rename receipt without repeating an applied write"
+        },
+        "title-fair-retry": {
+            "file": "src/extensions/session-board/title-sync.test.ts",
+            "test": "a frequently failing title retries behind other pending cards"
+        },
+        "title-shared-budget": {
+            "file": "src/extensions/session-board/title-sync.test.ts",
+            "test": "a hanging native context respects the shared three-second title budget"
+        },
         "section-replicas": {
             "file": "src/extensions/session-board/placement.test.ts",
             "test": "section preflight only accepts unique replicas on the queried host"
@@ -199,13 +223,18 @@
                 "src/extensions/session-board/activity.ts",
                 "src/extensions/session-board/board-service.ts"
             ],
-            "evidence": ["fedora-signed-package", "fedora-desktop"],
-            "remaining": "Fedora 安装版两端人工移卡已同步标题；补最新长标题与自动阶段的完整对照。"
+            "evidence": [
+                "fedora-signed-package",
+                "fedora-desktop",
+                "title-manual-projection",
+                "title-epoch"
+            ],
+            "remaining": "自动已验证完整标题和新自动状态立即写入。补当前发行包的两端实测。"
         },
         "TITLE-002": {
-            "status": "pending",
+            "status": "fixture",
             "implementation": ["src/extensions/session-board/activity.ts"],
-            "remaining": "补开头多重前缀、正文状态字样及目标已一致时零次写入的断言。"
+            "evidence": ["title-manual-projection"]
         },
         "TITLE-003": {
             "status": "partial",
@@ -213,21 +242,26 @@
                 "src/extensions/session-board/board-service.ts",
                 "src/extensions/session-board/records.ts"
             ],
-            "evidence": ["migration-projection", "title-deadline"],
-            "remaining": "补完整标题作业故障注入，核验重启后重试、每轮三秒总预算和前台保存延迟。"
+            "evidence": [
+                "title-restart",
+                "title-deadline",
+                "title-concurrency",
+                "title-shared-budget"
+            ],
+            "remaining": "已注入丢回执、挂起及并发保存，重开复查结果。补双平台真实宿主验证。"
         },
         "TITLE-004": {
-            "status": "pending",
+            "status": "fixture",
             "implementation": ["src/extensions/session-board/board-service.ts"],
-            "remaining": "注入迟到回执、已成功但回执丢失、不断失败项，检查并发状态与重试公平性。"
+            "evidence": ["title-concurrency", "title-restart", "title-fair-retry"]
         },
         "TITLE-005": {
-            "status": "pending",
+            "status": "fixture",
             "implementation": [
                 "src/extensions/session-board/board-service.ts",
                 "src/extensions/session-board/records.ts"
             ],
-            "remaining": "验证历史补读无批量改名、启用边界重启后保持以及待重试工作继续。"
+            "evidence": ["title-epoch", "title-restart"]
         },
         "DISCOVERY-001": {
             "status": "partial",

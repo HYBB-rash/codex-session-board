@@ -38,15 +38,23 @@
             ["mcp-real-revisions", "manual-follow-up-recovery"],
             ["manual-follow-up-recovery"]
         ],
-        "TITLE-001": [[], [], ["title_prefix_replacement_and_idempotence"]],
+        "TITLE-001": [
+            ["title-manual-projection", "title-epoch"],
+            ["title-manual-projection"],
+            ["title_prefix_replacement_and_idempotence", "title-manual-projection"]
+        ],
         "TITLE-002": [
             ["title_prefix_replacement_and_idempotence"],
             ["title_prefix_replacement_and_idempotence"],
-            []
+            ["title-manual-projection"]
         ],
-        "TITLE-003": [[], [], []],
-        "TITLE-004": [[], [], []],
-        "TITLE-005": [[], [], []],
+        "TITLE-003": [
+            ["title-restart", "title-shared-budget"],
+            ["title-restart"],
+            ["title-concurrency", "title-shared-budget", "title-deadline"]
+        ],
+        "TITLE-004": [["title-concurrency"], ["title-restart"], ["title-fair-retry"]],
+        "TITLE-005": [["title-epoch"], ["title-epoch"], ["title-restart"]],
         "DISCOVERY-001": [[], [], []],
         "DISCOVERY-002": [[], []],
         "NAV-001": [[], [], [], []],
