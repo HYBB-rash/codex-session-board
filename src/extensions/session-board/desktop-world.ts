@@ -66,8 +66,22 @@ interface ComposerModule {
             codexAppMode: "codex";
             freshDraft: true;
             prefillComposerMode: "local";
+            prefillRemoteExecutionHostId?: string;
         },
     ): unknown;
+}
+
+interface HostMessageModule {
+    O1?: {
+        dispatchHostMessage(message: {
+            type: "remote-workspace-root-requested";
+            mode: "add";
+            hostId: string;
+            host: string;
+            initialPath: string;
+            setActive: true;
+        }): void;
+    };
 }
 
 interface Hook {
@@ -154,7 +168,55 @@ function composerProject(
             (projects.length === 1 ? projects[0] : undefined);
         if (project) return { projectId: project.id, projectKind: "remote" as const };
     }
-    throw new Error("Codex 尚未登记该主机上的项目目录，请在原生远程连接或项目设置中核对");
+    return undefined;
+}
+
+function registerRemoteProject(
+    command: Extract<DesktopCommand, { kind: "new" }>,
+    modules: DesktopModules,
+): string {
+    const initialPath = command.roots[0];
+    if (command.hostId === "local" || command.roots.length !== 1 || !initialPath)
+        throw new Error("Codex 尚未登记此项目，请在原生项目设置中核对目录");
+    const host: HostMessageModule = exported(modules, [
+        "dispatchHostMessage(e){",
+        "deliverOrBufferMessage",
+        "mcp-request-delivery",
+    ]);
+    if (!host.O1) throw new Error("Codex 原生项目登记入口不可用");
+    host.O1.dispatchHostMessage({
+        type: "remote-workspace-root-requested",
+        mode: "add",
+        hostId: command.hostId,
+        host: command.hostId,
+        initialPath,
+        setActive: true,
+    });
+    return "registration";
+}
+
+async function openComposer(
+    command: Extract<DesktopCommand, { kind: "new" }>,
+    modules: DesktopModules,
+    scope: DesktopScope,
+) {
+    const activeProject = composerProject(command, modules, scope);
+    if (activeProject === undefined) return registerRemoteProject(command, modules);
+    const composer: ComposerModule = exported(modules, [
+        "startNewConversation:",
+        "defaultCloudEnvironment",
+        "default_new_chats_to_work",
+    ]);
+    const start = composer.startNewConversation;
+    if (!start) throw new Error("当前 Codex 版本未提供原生输入页入口");
+    await start(scope, {
+        activeProject,
+        codexAppMode: "codex",
+        freshDraft: true,
+        prefillComposerMode: "local",
+        ...(command.hostId === "local" ? {} : { prefillRemoteExecutionHostId: command.hostId }),
+    });
+    return "composer";
 }
 
 async function navigate(
@@ -185,22 +247,7 @@ async function navigate(
         }
         return null;
     }
-    const composer: ComposerModule = exported(modules, [
-        "startNewConversation:",
-        "defaultCloudEnvironment",
-        "default_new_chats_to_work",
-    ]);
-    const start = composer.startNewConversation;
-    if (!start) {
-        throw new Error("当前 Codex 版本未提供原生输入页入口");
-    }
-    await start(scope, {
-        activeProject: composerProject(command, modules, scope),
-        codexAppMode: "codex",
-        freshDraft: true,
-        prefillComposerMode: "local",
-    });
-    return null;
+    return openComposer(command, modules, scope);
 }
 
 async function loadedModules(): Promise<DesktopModules> {
@@ -281,6 +328,8 @@ export function desktopWorldSource(command: DesktopCommand): string {
         appScope,
         desktopRouter,
         composerProject,
+        registerRemoteProject,
+        openComposer,
         navigate,
         loadedModules,
         exported,
