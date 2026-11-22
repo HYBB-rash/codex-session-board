@@ -23,7 +23,7 @@
 
 Fedora 安装版从实际网页看板点击「更新」。交付候选已通过 `0.3.4 → 0.3.5 → 0.3.4`，更新和回退均在重启后读回对应版本。隔离数据夹具的 SHA-256 保持一致，卸载恢复了副本的原始启动归档。原始记录位于 `state/acceptance/fedora-installed-0.3.5.txt`。
 
-MacBook Pro 上的 macOS arm64 和 Codex `26.1111.21308` 已单独取证。实际安装检查发现 `Codex Framework` 内嵌 ASAR 完整性字典摘要。隔离副本的签名检查通过后，桌面启动仍因完整性摘要拒绝。安装器现在会在复制之前报告该条件。Mac 上实测归档校验、解压、版本选中和回退，尚未运行看板。记录位于 `state/delivery/macos-actual-host.txt` 和 `state/delivery/macos-isolated-launch-and-restore.txt`。
+MacBook Pro 上的 macOS arm64 和 Codex `26.1111.21308` 已单独取证。实际安装检查发现 `Codex Framework` 内嵌 ASAR 完整性字典摘要。隔离副本的签名检查通过后，桌面启动仍因完整性摘要拒绝。`0.3.5` 在真机复验时通过压缩归档校验，安装器在复制前以退出码 `1` 报告该条件，系统归档 SHA-256 前后一致。证据位于 `state/acceptance/packages/macos-0.3.5-preflight.txt`。早期版本已在 Mac 上验证解压、版本选中和回退，桌面运行仍待验。
 
 ## 自动对照与验收门槛
 
