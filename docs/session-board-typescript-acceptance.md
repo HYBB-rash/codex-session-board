@@ -2,9 +2,25 @@
 
 上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本通过本机和远程原生移卡检查点。macOS arm64 的目标 Codex 构建在加载看板之前拒绝了经过修改的启动归档，因此发布条件未满足。
 
+## 0.3.20 候选
+
+双平台归档由提交 `3a808ce` 构建。31 项冻结需求中 18 项通过、13 项待验，73 项门槛自动检查通过。Fedora 现场 15 条断言通过，macOS 现场通过 3 条归档断言。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.20.json) · [现场证据索引](../state/acceptance/live-0.3.20.json)
+
+| 项目 | 结果 |
+| --- | --- |
+| 归档批次 | 重放登记要求目标顺序、会话 ID、标题和三个版本一致。已经登记的旧分区版本仍可重放。批次结束后仍在预检的卡片保持未提交，已经提交的卡片可以继续收取原生回执。[归档回归](../src/extensions/session-board/archive.test.ts) · [旧版批次回归](../src/extensions/session-board/discovery.test.ts) |
+| Fedora 原生归档 | 从已登录 Enhancer 将筛选后的单张本机专用卡批量归档，独立原生列表读回已归档，备注保留，关页重开后结果仍在。先前结束的专用批次保留未提交状态，冲突登记和继续提交均被拒，独立原生列表仍读回活动卡。验收后从宿主取消归档，原分区、标题、备注和输入版本读回一致。[原生归档回执](../state/acceptance/fedora-archive-batch-0.3.20-1795375127265.jsonl) |
+| Fedora 原生 MCP App | 从已安装插件详情打开 App，核对 iframe 内容摘要。远端专用卡跨列后，原生分区、App 刷新及备用网页均读回目标位置和原备注。反向拖放恢复原标题和分区。同列和拖出松手均无保存，缩窄视口后边缘横滚 296 像素。重启隔离副本时本机和远端连接分别恢复。账号最左侧图标待验。[手势回执](../state/acceptance/fedora-mcp-gestures-live-0.3.20-1795375210040.json) · [重启回执](../state/acceptance/fedora-native-relaunch-connections-0.3.20.json) · [隔离配置恢复](../state/acceptance/fedora-native-mcp-window-restored-0.3.20.json) |
+| Fedora 表单与拖放 | 阻塞表单允许留空和取消，三个陈旧版本分别被拒。标题和目录筛选保留空目标列，支持键盘编辑和保存。拖动或编辑期间暂停刷新，列内滚动保留。标题同列拖动、拖出看板及边缘横滚期间无额外保存、预览或原生跳转。[阻塞表单](../state/acceptance/fedora-ui-002-0.3.20-1795374838478.jsonl) · [筛选与键盘](../state/acceptance/fedora-ui-003-0.3.20-1795374851867.jsonl) · [标题拖动](../state/acceptance/fedora-ui-gestures-0.3.20-1795374873378.jsonl) |
+| Fedora 安装生命周期 | 从已安装备用网页点「更新」，两次重启分别读回 `0.3.20` 和回退后的 `0.3.19`。卸载恢复临时副本的启动归档，专用备注夹具及系统归档通过校验。已登录隔离副本也加载了 `0.3.20`。[网页更新及回退](../state/acceptance/fedora-installed-0.3.20.txt) · [已登录副本](../state/acceptance/fedora-signed-start-0.3.20.txt) |
+| 双平台解包 | 直接运行 `npm test` 后，发行清单和运行文件指纹仍一致。Fedora 通过 84 项。MacBook Pro 通过 82 项，跳过 2 项 Linux 专用测试。两端各通过 10 项公共入口、10 项冻结模型和 18 项门槛测试。macOS Codex `26.1111.21308` 的 Framework 内嵌 ASAR 摘要，安装在复制前停止。[Fedora 随包复验](../state/acceptance/fedora-archive-0.3.20.log) · [MacBook Pro 测试与预检](../state/acceptance/packages/macos-0.3.20-preflight.txt) |
+
+- [Fedora x86_64 归档](../state/acceptance/packages/session-board-0.3.20-linux-x86_64.tar.gz) · [SHA-256](../state/acceptance/packages/session-board-0.3.20-linux-x86_64.tar.gz.sha256)
+- [macOS arm64 归档](../state/acceptance/packages/session-board-0.3.20-macos-arm64.tar.gz) · [SHA-256](../state/acceptance/packages/session-board-0.3.20-macos-arm64.tar.gz.sha256)
+
 ## 0.3.19 候选
 
-双平台归档由提交 `8ee8b3b` 构建。31 项冻结需求中 18 项通过、13 项待验，73 项门槛自动检查通过。此版 Fedora 现场断言通过 13 条。`0.3.18` 的 30 条现场断言仍绑定原候选。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.19.json) · [现场证据索引](../state/acceptance/live-0.3.19.json)
+双平台归档由提交 `8ee8b3b` 构建。31 项冻结需求中 18 项通过、13 项待验，73 项门槛自动检查通过。此版 Fedora 现场断言通过 19 条。`0.3.18` 的 30 条现场断言仍绑定原候选。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.19.json) · [现场证据索引](../state/acceptance/live-0.3.19.json)
 
 | 项目 | 结果 |
 | --- | --- |
@@ -15,6 +31,7 @@
 | Fedora 已有连接分页 | 在运行中的候选设每页 1 条，本机读回 2 张，远端读回 10 张。两端读到终止游标，ID 集合与独立原生分页一致，原配置和集合随后恢复。现场数据只覆盖 `vscode` 和 `openai`。[分页回执](../state/acceptance/fedora-product-paging-0.3.19.json) |
 | Fedora 状态诊断和同名导航 | 限制总页数后，真实界面报告远端列表未完成、自动状态尚未连接，专用卡版本及备注保留。两端专用卡使用相同标题时，预览各自的回复并打开正确主机和会话。操作期间无新输入或轮次，原生会话集合及卡片版本一致，结束时恢复原标题。[诊断回执](../state/acceptance/fedora-health-0.3.19.json) · [同名导航](../state/acceptance/fedora-nav-same-title-0.3.19-1795373499457.json) |
 | Fedora 立即改名 | 本机与远端专用卡同次保存返回前均读回新标题。最新原生标题的正文、长文本、表情和其他标签保留，只有开头的状态前缀更新。随后恢复原位置和原标题。[标题回执](../state/acceptance/fedora-title-001-live-0.3.19-1795373526786.json) |
+| Fedora 原生 MCP App | 从已安装插件详情打开 App。远端专用卡跨列后，独立原生连接、App 刷新及备用网页读回目标分区和原备注，反向拖回也一致。同列和拖出松手无保存。缩窄视口后横滚 296 像素并到达最右列。重启隔离副本后，本机和远程连接均重新建立，两张专用卡仍保留原分区与备注。账号最左侧快捷入口待验。[拖放回执](../state/acceptance/fedora-mcp-gestures-live-0.3.19-1795374230143.json) · [重启读回](../state/acceptance/fedora-native-mcp-restart-0.3.19.json) · [隔离配置恢复](../state/acceptance/fedora-native-mcp-window-restored-0.3.19.json) |
 | 双平台解包 | Fedora 通过 80 项随包 Node 测试，MacBook Pro 通过 78 项并跳过 2 项 Linux 专用测试。两端各通过 10 项公共入口、10 项冻结模型和 18 项门槛测试。Mac 的门槛夹具需使用规范路径形式的 `TMPDIR`。Mac Codex `26.1111.21308` 仍在复制前因 ASAR 完整性预检退出。[Fedora 随包复验](../state/acceptance/fedora-archive-0.3.19.log) · [MacBook Pro 复验](../state/acceptance/packages/macos-0.3.19-preflight.txt) |
 
 在解包目录用 `INSTALL.md` 的命令直接运行随包测试。源码的 `npm test` 会重新构建并写入工作区版本，重新构建后的目录不再匹配原发行清单。Fedora 复验使用了另一份未重新构建的解包目录。Vue 类型检查在安装构建依赖的目录运行。[原始归档测试](../state/acceptance/fedora-archive-0.3.19.log) · [Vue 类型检查](../state/acceptance/fedora-types-0.3.19.log)
