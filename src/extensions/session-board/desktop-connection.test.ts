@@ -96,3 +96,38 @@ test("a bounded native call ignores a reply received after its deadline", async 
         Reflect.set(globalThis, "window", original);
     }
 });
+
+test("native discovery and title calls use the existing connection with specific methods", async (context) => {
+    const original = Reflect.get(globalThis, "window");
+    Reflect.set(globalThis, "window", globalThis);
+    context.after(() => Reflect.set(globalThis, "window", original));
+    const methods: string[] = [];
+    const desktop = new DesktopConnection({
+        bootstrap: () => ({ catalogHostIds: [localHostId] }),
+        async send(packet) {
+            const { hostId, request } = packet as {
+                hostId: string;
+                request: { id: string; method: string; params: { threadId?: string } };
+            };
+            methods.push(request.method);
+            assert.equal(hostId, localHostId);
+            const result =
+                request.method === "thread/read"
+                    ? { thread: { id: thread } }
+                    : { data: [], nextCursor: null };
+            desktop.receive({ type: "mcp-response", hostId, message: { id: request.id, result } });
+        },
+        async sidebar() {
+            assert.fail("原生发现与改名不需要打开侧栏");
+        },
+    });
+    desktop.knownHosts();
+    const connection = desktop.capture(localHostId);
+    await desktop.list(connection, false, null, 100);
+    await desktop.projects(connection, null);
+    await desktop.turns(connection, thread, "summary");
+    assert.deepEqual(methods.splice(0), ["thread/list", "project/list", "thread/turns/list"]);
+    await desktop.read(connection, thread, false);
+    await desktop.rename(connection, thread, "name");
+    assert.deepEqual(methods, ["thread/read", "thread/name/set"]);
+});

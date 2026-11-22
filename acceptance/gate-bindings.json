@@ -75,17 +75,25 @@
             ["offline-cache", "discovery-limit", "discovery-reconnect"],
             ["history-rotation"]
         ],
-        "NAV-001": [[], [], [], []],
+        "NAV-001": [
+            ["preview-previous-complete", "preview-confirm-latest"],
+            ["preview-previous-complete", "preview-errors"],
+            ["navigation-exact-thread", "preview-previous-complete"],
+            []
+        ],
         "APP-001": [[], [], []],
         "UI-001": [[], [], []],
         "UI-002": [[], [], [], []],
         "UI-003": [[], [], []],
         "MCP-001": [
             ["mcp-stdio", "operation-routing", "mcp-inline-app-resources"],
-            [],
+            ["mcp-inline-app-resources"],
             ["mcp-real-revisions"]
         ],
-        "DATA-001": [[], ["release-paths", "release-rollback"]],
+        "DATA-001": [
+            ["launcher-deployment-paths", "launcher-configured-paths"],
+            ["release-paths", "release-rollback"]
+        ],
         "DATA-002": [
             ["migration-wal", "migration-projection", "migration-offline"],
             ["migration-retry"]
@@ -95,10 +103,19 @@
             ["service-live-owner"],
             ["service-drain", "service-replacement"]
         ],
-        "BOUNDARY-001": [[], [], ["disabled-titles-preserve-save"]],
+        "BOUNDARY-001": [
+            [
+                "all_abstract_state_edges_match_the_typescript_service",
+                "navigation-exact-thread",
+                "preview-previous-complete",
+                "disabled-titles-preserve-save"
+            ],
+            ["native-method-scope"],
+            ["disabled-titles-preserve-save"]
+        ],
         "SECURITY-001": [
             ["http-security", "loopback-token-rejects-untrusted-writes"],
-            [],
+            ["navigation-exact-thread"],
             ["launcher-passes-arguments-directly"]
         ],
         "HEALTH-001": [[], []],

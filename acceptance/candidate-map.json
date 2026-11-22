@@ -50,6 +50,10 @@
             "file": "src/extensions/session-board/desktop-connection.test.ts",
             "test": "a disconnected catalog host retires pending reads and prior connection epochs"
         },
+        "native-method-scope": {
+            "file": "src/extensions/session-board/desktop-connection.test.ts",
+            "test": "native discovery and title calls use the existing connection with specific methods"
+        },
         "discovery-coverage": {
             "file": "src/extensions/session-board/discovery.test.ts",
             "test": "discovery pages interactive sources across all providers and keeps the newest duplicate"
@@ -61,6 +65,30 @@
         "discovery-reconnect": {
             "file": "src/extensions/session-board/discovery.test.ts",
             "test": "remote cache survives removal, a failed scan, reconnect, and a confirmed archive"
+        },
+        "navigation-exact-thread": {
+            "file": "src/extensions/session-board/discovery.test.ts",
+            "test": "opening rejects invalid, undiscovered and mismatched threads and uses the verified host"
+        },
+        "preview-previous-complete": {
+            "file": "src/extensions/session-board/preview.test.ts",
+            "test": "preview reads the previous complete answer from the verified remote while a turn runs"
+        },
+        "preview-confirm-latest": {
+            "file": "src/extensions/session-board/preview.test.ts",
+            "test": "preview discards an obsolete response and retries after the current turn changes"
+        },
+        "preview-errors": {
+            "file": "src/extensions/session-board/preview.test.ts",
+            "test": "preview distinguishes an empty history from malformed pages and runtime read failures"
+        },
+        "launcher-deployment-paths": {
+            "file": "src/installer/launch.test.ts",
+            "test": "relocated installations use their own Codex profile and desktop socket"
+        },
+        "launcher-configured-paths": {
+            "file": "src/installer/launch.test.ts",
+            "test": "the installer and launcher resolve configured source, command and socket paths"
         },
         "history-rotation": {
             "file": "src/extensions/session-board/discovery.test.ts",
@@ -361,7 +389,13 @@
                 "ui/reply-preview.ts",
                 "ui/board-card.tsx"
             ],
-            "evidence": ["operation-routing"],
+            "evidence": [
+                "operation-routing",
+                "navigation-exact-thread",
+                "preview-previous-complete",
+                "preview-confirm-latest",
+                "preview-errors"
+            ],
             "remaining": "真实验证同名跨主机跳转、旧预览回执丢弃、阅读上一完整回复的提示，以及拖动和内部按钮互不触发。"
         },
         "APP-001": {
@@ -396,20 +430,25 @@
             "remaining": "真实验证标题/项目搜索、空列接收拖放、表单键盘操作、暂停重绘和列内滚动位置。"
         },
         "MCP-001": {
-            "status": "partial",
+            "status": "fixture",
             "implementation": [".mcp.json", "src/compat/mcp.ts", "ui/standalone.vite.config.ts"],
-            "evidence": ["mcp-stdio", "operation-routing", "native-mcp-and-remote-new"],
-            "remaining": "从随包清单启动原生 MCP App 和跨入口保存已实测。补 MCP App 内的真实版本冲突交互。"
+            "evidence": ["mcp-stdio", "operation-routing", "native-mcp-and-remote-new"]
         },
         "DATA-001": {
-            "status": "partial",
+            "status": "fixture",
             "implementation": [
                 "src/installer/paths.ts",
+                "src/installer/launch.ts",
                 "src/compat/cli-config.ts",
                 "src/installer/releases.ts"
             ],
-            "evidence": ["release-paths", "release-rollback", "cli-instance"],
-            "remaining": "验证两个独立用户目录下的配置优先级及相应发布包安装更新；旧命令/socket 已由宿主 authority 替换。"
+            "evidence": [
+                "launcher-deployment-paths",
+                "launcher-configured-paths",
+                "release-paths",
+                "release-rollback",
+                "cli-instance"
+            ]
         },
         "DATA-002": {
             "status": "fixture",
@@ -440,24 +479,30 @@
             ]
         },
         "BOUNDARY-001": {
-            "status": "partial",
+            "status": "fixture",
             "implementation": [
                 "src/extensions/session-board/board-service.ts",
+                "src/extensions/session-board/desktop-connection.ts",
                 "src/extensions/session-board/desktop-world.ts",
                 "src/compat/operations.ts"
             ],
-            "evidence": ["native-move", "ipc-frame", "offline-cache"],
-            "remaining": "验证被动读取、跳转和状态标记不会发送或归档；独立旧客户端 allowlist 由窗口现有连接上的有限操作替代，须核验新边界。"
+            "evidence": [
+                "native-method-scope",
+                "navigation-exact-thread",
+                "preview-previous-complete",
+                "native-move",
+                "ipc-frame",
+                "offline-cache"
+            ]
         },
         "SECURITY-001": {
-            "status": "partial",
+            "status": "fixture",
             "implementation": [
                 "src/compat/server.ts",
                 "src/runtime/ipc-guard.ts",
                 "src/extensions/session-board/board-service.ts"
             ],
-            "evidence": ["http-security", "ipc-frame"],
-            "remaining": "在当前宿主验证格式无效、未发现会话或别的账号/主机的打开和写入请求，以及原生导航边界。"
+            "evidence": ["http-security", "ipc-frame", "navigation-exact-thread"]
         },
         "HEALTH-001": {
             "status": "partial",

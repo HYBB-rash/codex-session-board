@@ -82,6 +82,15 @@ interface Page<T> {
     nextCursor: string | null;
 }
 
+type PageMethod = "thread/list" | "thread/turns/list" | "project/list";
+type NativeMethod =
+    | PageMethod
+    | "thread/read"
+    | "thread/name/set"
+    | "thread/metadata/update"
+    | "thread/archive"
+    | "thread/unarchive";
+
 export interface HostProject {
     id: string;
     name: string;
@@ -208,7 +217,7 @@ export class DesktopConnection {
 
     private request(
         connection: HostConnection,
-        method: string,
+        method: NativeMethod,
         params: object,
         timeoutMs = 15000,
     ): Promise<unknown> {
@@ -232,7 +241,7 @@ export class DesktopConnection {
 
     private async page<T>(
         connection: HostConnection,
-        method: string,
+        method: PageMethod,
         params: object,
         timeoutMs?: number,
     ): Promise<Page<T>> {
