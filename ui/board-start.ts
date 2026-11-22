@@ -208,6 +208,7 @@ const boardPage = {
     archive.unmount();
     edits.unmount();
     board.unmount();
+    filters.unmount();
   },
 };
 

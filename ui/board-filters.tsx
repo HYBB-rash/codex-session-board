@@ -82,10 +82,10 @@ export function mountBoardFilters(container: HTMLElement, scope: HTMLElement, so
     view.projects = projects;
     const history = histories.find(option => option.value === state.history)!;
     const projectScope = state.search ? "全部项目 · 搜索" : allHosts ? "全部会话" : project.label;
-    view.scope = `${view.hostLabel} · ${projectScope}${local ? "" : " · " + history.label}`;
+    view.scope = `${view.hostLabel} · ${projectScope} · ${history.label}`;
     const sessions = sources.hostSessions(state.host).filter(session => {
-      if (state.history === "cached") return session.remote && session.presence === "cachedUnknown";
-      if (session.remote && session.presence === "cachedUnknown" && !session.catalogCurrent) return false;
+      if (state.history === "cached") return session.presence === "cachedUnknown";
+      if (session.presence === "cachedUnknown" && !session.catalogCurrent) return false;
       return state.history === "all" || Boolean(session.archived) === (state.history === "archived");
     });
     view.total = sessions.length;
@@ -106,7 +106,7 @@ export function mountBoardFilters(container: HTMLElement, scope: HTMLElement, so
 
   function select(field: "host" | "project" | "history", event: Event) {
     const menu = event.currentTarget as HTMLSelectElement;
-    if (sources.locked() || (field === "history" && state.host === "local") ||
+    if (sources.locked() ||
         (field === "project" && view.projectUnavailable)) {
       menu.value = state[field];
       return;
@@ -128,7 +128,7 @@ export function mountBoardFilters(container: HTMLElement, scope: HTMLElement, so
   const options = (items: FilterOption[]) => items.map(item =>
     <option key={item.value} value={item.value} title={item.path} data-host-id={item.hostId}>{item.label}</option>);
   const projectNodes = computed(() => options(view.projects));
-  createApp({setup:() => () => <>
+  const app = createApp({setup:() => () => <>
     <label class="filter-field">主机<select id="host-filter" aria-label="选择主机" value={state.host}
       disabled={view.locked} onChange={event => select("host",event)}>{options(view.hosts)}</select></label>
     <div class="filter-field"><span>项目</span>
@@ -137,7 +137,7 @@ export function mountBoardFilters(container: HTMLElement, scope: HTMLElement, so
         onChange={event => select("project",event)}>{projectNodes.value}</select>
     </div>
     <label class="filter-field">会话<select id="history-filter" aria-label="选择会话范围" value={state.history}
-      disabled={view.locked || state.host === "local"} onChange={event => select("history",event)}>{options(histories)}</select></label>
+      disabled={view.locked} onChange={event => select("history",event)}>{options(histories)}</select></label>
     <input id="search" type="search" placeholder={`搜索${view.hostLabel}上的会话…`} aria-label="搜索会话、项目名称或路径"
       ref={node => {searchInput = node as HTMLInputElement;}} value={state.query} hidden={!state.search} disabled={view.locked}
       onInput={event => {state.query = (event.currentTarget as HTMLInputElement).value; sources.changed();}}/>
@@ -145,6 +145,7 @@ export function mountBoardFilters(container: HTMLElement, scope: HTMLElement, so
       disabled={view.locked} onClick={toggle}>{state.search ? "选择项目" : "搜索会话"}</button>
     <span id="count" class="count">{`显示 ${view.visible.length} / 当前主机范围共 ${view.total} 条`}</span>
     <Teleport to={scope}>{view.scope}</Teleport>
-  </>}).mount(container);
-  return {state, view, update, updateLock:() => {view.locked = sources.locked();}};
+  </>});
+  app.mount(container);
+  return {state, view, update, unmount: () => app.unmount(), updateLock:() => {view.locked = sources.locked();}};
 }
