@@ -10,11 +10,17 @@
 | --- | --- |
 | 换号后的界面 | 从归档解出的页面在隔离 Chrome 中通过五项换号回归。两个模拟账号使用同一卡片 ID。当前账号内轮询保留编辑框和草稿，换号关闭编辑框、清除回复预览并重新读取归档。迟到的旧账号预览和归档回执保持隐藏，切到空账号也能清理。切回原账号只恢复带账号标记的草稿。旧草稿原数据保留。换号前后使用同一个 PWA 安装按钮节点。[新版回归](../state/acceptance/browser-account-switch-0.3.16.json) · [0.3.15 复现](../state/acceptance/browser-account-switch-baseline-0.3.15.json) · [PWA 按钮复验](../state/acceptance/fedora-account-browser-0.3.16.json) |
 | Fedora 已登录副本 | 升级至 `0.3.16` 后，从原窗口现有连接读回本机和 MacBook Pro 专用卡。看板快照和两张卡的账号标记一致。旧式无账号分区版本的保存被拒，远程专用卡的状态、备注和版本保持一致。[宿主回执](../state/acceptance/fedora-scope-0.3.16.json) |
-| Fedora 公共入口 | 同一已登录副本通过 HTTP、随包 CLI 和 MCP 读回两张专用卡的同一状态、备注和版本。HTTP 和 MCP 返回相同最近回复。预览前后持久状态一致。MCP 列出 18 个共享操作和一个应用入口。[入口复验](../state/acceptance/fedora-entrypoints-0.3.16.json) |
+| Fedora 公共入口 | 同一已登录副本通过 HTTP、随包 CLI 和 MCP 读回两张专用卡的同一状态、备注和版本。HTTP 和 MCP 返回相同最近回复。预览前后持久状态一致。MCP 列出 18 个共享操作和一个应用入口。`check-sections` 读回四个本机原生分区。[入口复验](../state/acceptance/fedora-entrypoints-0.3.16.json) · [分区预检](../state/acceptance/fedora-check-sections-0.3.16.json) |
 | Fedora 安装与回退 | 从已安装网页看板点击更新，重启依次读回 `0.3.15 → 0.3.16 → 0.3.15`。卸载恢复测试副本启动归档，持久数据夹具通过 SHA-256 校验。[安装回执](../state/acceptance/fedora-installed-0.3.16.txt) |
 | PWA 可安装性 | 隔离 Chrome 加载已登录副本提供的网页，Service Worker 获得控制，浏览器未报告可安装性错误。系统安装及独立窗口启动仍待验。[浏览器回执](../state/acceptance/fedora-pwa-installability-0.3.16.json) |
-| MCP App 夹具 | 隔离 Chrome 加载随包 MCP 资源，可信手势覆盖标题起拖、同列、拖出、右缘横滚和跨列。模拟桥接收到跨列和恢复两次预期写入，备注保留。原生入口另需现场凭证。[MCP 夹具回执](../state/acceptance/fedora-mcp-gestures-fixture-0.3.16-1795367754707.json) |
+| Fedora 原生 MCP App | 从隔离 Codex 的插件详情打开实际原生 App，随包和已加载资源签名相符。装载专用卡白名单后，可信拖动完成跨列、刷新读回和反向恢复。备用网页和本机原生连接分别核对，备注保留。普通同列或拖出松手均无预览、跳转或保存。缩窄看板后，右缘自动横滚 296 像素并到达最右列。临时白名单已恢复并重启读回。最左侧置顶快捷方式仍待验。[原生回执](../state/acceptance/fedora-mcp-gestures-live-0.3.16-1795368997421.json) · [配置恢复](../state/acceptance/fedora-native-mcp-preconfigured-0.3.16.jsonl) · [夹具回执](../state/acceptance/fedora-mcp-gestures-fixture-0.3.16-1795367754707.json) |
+| Fedora 阻塞表单 | Enhancer 中可信拖放验证跨列和同列表单、取消、留空、纯空白、填写及清空。第二入口先保存后，旧表单被拒且空草稿保留。错误输入和位置版本也被拒。目标主机读回原分区，备注和临时白名单恢复。[表单回执](../state/acceptance/fedora-ui-002-0.3.16-1795369070438.jsonl) |
+| Fedora 筛选与键盘 | 标题及工作目录搜索保留目标列，可信拖动可落到筛选后的空列。状态下拉框响应方向键，Esc 取消，Enter 保存。跨过一次轮询时，拖动和编辑状态的看板节点均未变动。保存时筛选锁定，确认后解锁。手动与周期刷新均保留滚动位置和当前卡片节点。[交互回执](../state/acceptance/fedora-ui-003-0.3.16-1795369102668.jsonl) |
+| Fedora 连接诊断 | 临时将扫描限制为一页。远端未完整发现的 9 张卡显示为只读，详情报告分页上限和自动状态未连接。两端专用卡的状态、备注及版本保留。恢复隔离配置后，远端重新完成扫描。[连接诊断回执](../state/acceptance/fedora-health-0.3.16.json) |
 | 双平台干净解包 | Fedora 通过 75 项随包 Node 测试、10 项公共入口测试及 18 项门槛测试。MacBook Pro 通过 73 项随包 Node 测试，跳过 2 项 Linux 专用测试，通过 10 项公共入口测试。两端各通过 10 项冻结模型检查。Mac Codex `26.1111.21308` 的完整性预检在复制前停止，系统归档的 SHA-256 前后一致。[Fedora 测试记录](../state/acceptance/fedora-clean-0.3.16.log) · [MacBook Pro 测试和预检](../state/acceptance/packages/macos-0.3.16-preflight.txt) |
+| 独立 Vue 类型检查 | `vue-tsc` 启动时找不到 TypeScript 7 的 `typescript/lib/tsc` 导出。单独运行 `tsc` 无法解析三个 Vue 单文件组件。随包构建及浏览器回归通过。[类型检查输出](../state/acceptance/frontend-typecheck-0.3.16.log) |
+
+换号回归使用隔离 Chrome 和本地模拟 API。运行 `node state/acceptance/browser-account-switch.mjs <解包目录>/dist/board-assets` 可核对随包页面并记录页面 JavaScript 的 SHA-256。[换号复验脚本](../state/acceptance/browser-account-switch.mjs)
 
 ## 0.3.15 候选
 
