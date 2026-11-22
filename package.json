@@ -1,8 +1,8 @@
 {
   "name": "codex-enhancer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Proof of concept that loads an external runtime into a test copy of Codex Desktop.",
+  "description": "Proof of concept that loads an external runtime into a test copy of Codex Desktop and mounts an extension page in the official window.",
   "bin": {
     "codex-enhancer": "./bin/codex-enhancer.js"
   },
@@ -13,7 +13,7 @@
     "uninstall": "npm run build --silent && node bin/codex-enhancer.js uninstall",
     "status": "npm run build --silent && node bin/codex-enhancer.js status",
     "launch": "npm run build --silent && node bin/codex-enhancer.js launch",
-    "test": "npm run build --silent && node --test installer/asar.test.js"
+    "test": "npm run build --silent && node --test installer/asar.test.js runtime/registry.test.js"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

@@ -1,8 +1,10 @@
 import { createRequire } from "node:module";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { ExtensionApi, ExtensionContribution, ExtensionModule } from "./api.js";
-import type { App, BrowserWindow, IpcMain, Session, WebContents } from "electron";
+import type { ExtensionApi, ExtensionModule, SidebarItemInput } from "./api.js";
+import { trustedAppFrame } from "./ipc-guard.js";
+import { SidebarRegistry, type OwnedSidebarItem } from "./registry.js";
+import type { App, IpcMain, IpcMainEvent, Session, WebContents } from "electron";
 
 const requireFromHere = createRequire(__filename);
 const runtimeDirectory = __dirname;
@@ -77,28 +79,35 @@ function loadExtension(file: string): ExtensionModule {
   return { id, setup };
 }
 
-function loadExtensions(): Array<{ id: string; contribution: ExtensionContribution }> {
+function loadExtensions(registry: SidebarRegistry, publish: () => void): string[] {
   const directory = path.join(home, "extensions");
-  const loaded: Array<{ id: string; contribution: ExtensionContribution }> = [];
-  if (!fs.existsSync(directory)) return loaded;
+  const ids: string[] = [];
+  if (!fs.existsSync(directory)) return ids;
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const file = path.join(directory, entry.name, "extension.js");
     if (!fs.existsSync(file)) continue;
     const extension = loadExtension(file);
-    const contribution: ExtensionContribution = {};
+    const extensionId = extension.id || entry.name;
     if (typeof extension.setup === "function") {
       const api: ExtensionApi = {
         log,
-        contribute(value) {
-          Object.assign(contribution, value);
+        ui: {
+          registerSidebarItem(item: SidebarItemInput) {
+            const remove = registry.register(extensionId, item);
+            publish();
+            return () => {
+              remove();
+              publish();
+            };
+          },
         },
       };
       extension.setup(api);
     }
-    loaded.push({ id: extension.id || entry.name, contribution });
+    ids.push(extensionId);
   }
-  return loaded;
+  return ids;
 }
 
 async function capture(contents: WebContents, fileName: string): Promise<void> {
@@ -116,13 +125,33 @@ function loadElectron(): ElectronModule {
   return loaded as unknown as ElectronModule;
 }
 
+function uiPayload(registry: SidebarRegistry): { items: OwnedSidebarItem[]; autoOpen: boolean } {
+  return {
+    items: registry.list(),
+    autoOpen: process.env.CODEX_ENHANCER_AUTO_OPEN === "1",
+  };
+}
+
 function start(): void {
   log("loader-entered", { pid: process.pid, execPath: process.execPath });
   const { app, session, ipcMain, BrowserWindow } = loadElectron();
   const info = readAppInfo();
-  const extensions = loadExtensions();
-  const buttonLabel = extensions.find((item) => item.contribution.buttonLabel)?.contribution.buttonLabel || "Enhancer";
-  log("main-loaded", { ...info, extensions: extensions.map((item) => item.id), buttonLabel });
+  const registry = new SidebarRegistry();
+  const appContents = new Set<WebContents>();
+
+  function publish(): void {
+    const payload = uiPayload(registry);
+    for (const contents of appContents) {
+      if (contents.isDestroyed() || !contents.getURL().startsWith("app://")) {
+        appContents.delete(contents);
+        continue;
+      }
+      contents.send("codex-enhancer:ui-items", payload);
+    }
+  }
+
+  const extensions = loadExtensions(registry, publish);
+  log("main-loaded", { ...info, extensions, items: registry.list().map((item) => item.id) });
 
   const registered = new WeakSet<Session>();
   const preloadPath = path.join(runtimeDirectory, "preload.js");
@@ -149,97 +178,64 @@ function start(): void {
     }
   }
 
+  function remember(contents: WebContents): void {
+    if (contents.isDestroyed() || !contents.getURL().startsWith("app://")) return;
+    appContents.add(contents);
+    publish();
+  }
+
+  function trusted(event: IpcMainEvent): boolean {
+    const frame = event.senderFrame;
+    const accepted = trustedAppFrame(frame);
+    if (!accepted) {
+      log("ipc-rejected", {
+        url: frame?.url ?? null,
+        parent: frame == null ? "missing-frame" : frame.parent === null ? "null" : typeof frame.parent,
+      });
+    }
+    return accepted;
+  }
+
   app.on("session-created", (ses) => installPreload(ses, "session-created"));
   app.on("web-contents-created", (_event, contents) => {
     contents.on("did-finish-load", () => {
       log("did-finish-load", { id: contents.id, url: contents.getURL() });
+      remember(contents);
     });
+    contents.on("did-navigate", () => remember(contents));
+    contents.on("destroyed", () => appContents.delete(contents));
   });
 
-  let opened = false;
-  let pageWindow: BrowserWindow | null = null;
-
-  function pagePayload(): RuntimeInfo & { buttonLabel: string; extensions: string[] } {
-    return {
-      ...info,
-      buttonLabel,
-      extensions: extensions.map((item) => item.id),
-    };
-  }
-
-  ipcMain.handle("codex-enhancer:info", () => pagePayload());
+  ipcMain.handle("codex-enhancer:ui-items", (event) => {
+    if (!trusted(event)) throw new Error("enhancer IPC rejected");
+    return uiPayload(registry);
+  });
   ipcMain.on("codex-enhancer:proof", (event, payload: unknown) => {
+    if (!trusted(event)) return;
     const detail = isRecord(payload) ? payload : { payload: String(payload) };
     log("renderer-proof", detail);
-    if (detail.stage === "button-mounted") {
-      const contents = event.sender;
-      const bounds = contents.getOwnerBrowserWindow?.()?.getBounds() || BrowserWindow.fromWebContents(contents)?.getBounds();
-      if (bounds && bounds.width >= 480) {
-        capture(contents, `official-${contents.id}.png`).catch((error: unknown) => {
-          log("screenshot-failed", { error: String(error) });
-        });
-      }
-      if (process.env.CODEX_ENHANCER_AUTO_OPEN === "1" && !opened) {
-        opened = true;
-        contents.send("codex-enhancer:auto-open");
-      }
-    }
-    if (detail.stage === "page-rendered") {
-      capture(event.sender, "custom-page.png").catch((error: unknown) => {
-        log("screenshot-failed", { error: String(error) });
-      });
-    }
-  });
-  ipcMain.on("codex-enhancer:close-page", (event) => {
-    BrowserWindow.fromWebContents(event.sender)?.close();
-  });
-  ipcMain.handle("codex-enhancer:open-page", async () => {
-    if (pageWindow && !pageWindow.isDestroyed()) {
-      pageWindow.focus();
-      return { ok: true, reused: true };
-    }
-    pageWindow = new BrowserWindow({
-      width: 560,
-      height: 360,
-      show: true,
-      title: "Codex Enhancer",
-      autoHideMenuBar: true,
-      webPreferences: {
-        preload: path.join(runtimeDirectory, "renderer.js"),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
+    const stage = detail.stage;
+    const contents = event.sender;
+    const bounds = contents.getOwnerBrowserWindow?.()?.getBounds() || BrowserWindow.fromWebContents(contents)?.getBounds();
+    if (bounds == null || bounds.width < 480) return;
+    const fileName = stage === "sidebar-mounted"
+      ? "sidebar-mounted.png"
+      : stage === "page-rendered"
+        ? "session-board.png"
+        : stage === "shell-observed"
+          ? "shell-observed.png"
+          : stage === "page-closed"
+            ? "page-closed.png"
+            : null;
+    if (fileName == null) return;
+    capture(contents, fileName).catch((error: unknown) => {
+      log("screenshot-failed", { error: String(error) });
     });
-    pageWindow.on("closed", () => {
-      pageWindow = null;
-    });
-    await pageWindow.loadFile(path.join(runtimeDirectory, "page.html"));
-    log("page-opened", pagePayload());
-    return { ok: true };
   });
 
   const installExisting = (): void => installPreload(session.defaultSession, "default-session");
-  const captureSettled = (): void => {
-    setTimeout(() => {
-      for (const win of BrowserWindow.getAllWindows()) {
-        const contents = win.webContents;
-        if (contents.isDestroyed() || !contents.getURL().startsWith("app://")) continue;
-        capture(contents, "official-settled.png").catch((error: unknown) => {
-          log("screenshot-failed", { error: String(error) });
-        });
-      }
-    }, 8000);
-  };
-  if (app.isReady()) {
-    installExisting();
-    captureSettled();
-  } else {
-    app.whenReady().then(() => {
-      installExisting();
-      captureSettled();
-    });
-  }
+  if (app.isReady()) installExisting();
+  else app.whenReady().then(installExisting);
 }
 
 try {

@@ -9,3 +9,4 @@ export const installState = path.join(root, "state", "install.json");
 export const logs = path.join(root, "logs");
 export const userData = path.join(root, "state", "user-data");
 export const codexHome = path.join(root, "state", "codex-home");
+export const xdgConfig = path.join(root, "state", "xdg-config");

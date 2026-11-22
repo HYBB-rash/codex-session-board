@@ -16,13 +16,18 @@ declare module "electron" {
     toPNG(): Buffer;
   }
 
+  interface WebFrameMain {
+    url: string;
+    parent: WebFrameMain | null;
+  }
+
   interface WebContents {
     id: number;
     capturePage(): Promise<NativeImage>;
     getURL(): string;
     isDestroyed(): boolean;
     send(channel: string, ...args: unknown[]): void;
-    on(event: "did-finish-load", listener: () => void): this;
+    on(event: "did-finish-load" | "did-navigate" | "destroyed", listener: () => void): this;
     getOwnerBrowserWindow?: () => BrowserWindow | null;
   }
 
@@ -58,6 +63,7 @@ declare module "electron" {
 
   interface IpcMainEvent {
     sender: WebContents;
+    senderFrame: WebFrameMain | null;
   }
 
   interface IpcMain {
@@ -68,7 +74,7 @@ declare module "electron" {
   interface IpcRenderer {
     send(channel: string, ...args: unknown[]): void;
     invoke(channel: string, ...args: unknown[]): Promise<unknown>;
-    on(channel: string, listener: (...args: unknown[]) => void): void;
+    on(channel: string, listener: (event: unknown, ...args: unknown[]) => void): void;
   }
 
   interface App {
