@@ -58,25 +58,33 @@ function readJson(filePath: string): unknown {
     return JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+interface PackageMetadata {
+    version: unknown;
+    codexBuildFlavor?: unknown;
+}
+
+interface OwlApp {
+    runtimeName?: unknown;
+    runtimeArchiveSha?: unknown;
+}
+
+interface PackageManifest {
+    main?: unknown;
+    name?: unknown;
+    version?: unknown;
+}
+
+function isFields<T extends object>(value: unknown): value is T {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function field(value: unknown, key: string): unknown {
-    if (!isRecord(value) || !(key in value)) return undefined;
-    return value[key];
+function requiredString(value: unknown, name: string, filePath: string): string {
+    if (typeof value !== "string") throw new Error(`${name} is missing in ${filePath}`);
+    return value;
 }
 
-function requiredString(value: unknown, key: string, filePath: string): string {
-    const item = field(value, key);
-    if (typeof item !== "string") throw new Error(`${key} is missing in ${filePath}`);
-    return item;
-}
-
-function optionalString(value: unknown, key: string): string | null {
-    const item = field(value, key);
-    if (typeof item !== "string") return null;
-    return item;
+function optionalString(value: unknown): string | null {
+    return typeof value === "string" ? value : null;
 }
 
 function commandOutput(command: string, args: string[]): string | null {
@@ -152,13 +160,12 @@ export function findStartupArchive(appDir: string): StartupArchive {
         const archive = openArchive(archivePath);
         try {
             if (!lookup(archive.header, "package.json")) continue;
-            const manifest: unknown = JSON.parse(
-                readEntry(archive, "package.json").toString("utf8"),
-            );
-            const main = field(manifest, "main");
+            const parsed: unknown = JSON.parse(readEntry(archive, "package.json").toString("utf8"));
+            const manifest = isFields<PackageManifest>(parsed) ? parsed : null;
+            const main = manifest?.main;
             if (typeof main !== "string" || !lookup(archive.header, main)) continue;
-            const packageName = field(manifest, "name");
-            const packageVersion = field(manifest, "version");
+            const packageName = manifest?.name;
+            const packageVersion = manifest?.version;
             matches.push({
                 archivePath,
                 relativeArchive: path.posix.join("resources", name),
@@ -192,18 +199,20 @@ export function detect(appDir: string = findSystemApp().appDir): Detection {
     if (!fs.existsSync(metadataPath) || !fs.existsSync(owlPath) || !fs.existsSync(versionPath)) {
         throw new Error(`Codex metadata is incomplete in ${located.appDir}`);
     }
-    const metadata = readJson(metadataPath);
-    const owl = readJson(owlPath);
+    const metadataJson = readJson(metadataPath);
+    const metadata = isFields<PackageMetadata>(metadataJson) ? metadataJson : null;
+    const owlJson = readJson(owlPath);
+    const owl = isFields<OwlApp>(owlJson) ? owlJson : null;
     const startup = findStartupArchive(located.appDir);
     return {
         appDir: located.appDir,
         startScript: located.startScript,
         binary: located.binary,
-        codexVersion: requiredString(metadata, "version", metadataPath),
-        buildFlavor: optionalString(metadata, "codexBuildFlavor"),
+        codexVersion: requiredString(metadata?.version, "version", metadataPath),
+        buildFlavor: optionalString(metadata?.codexBuildFlavor),
         chromiumVersion: readText(versionPath),
-        runtimeType: optionalString(owl, "runtimeName"),
-        runtimeArchiveSha: optionalString(owl, "runtimeArchiveSha"),
+        runtimeType: optionalString(owl?.runtimeName),
+        runtimeArchiveSha: optionalString(owl?.runtimeArchiveSha),
         rpm: commandOutput("rpm", ["-q", "codex-desktop"]),
         fuses: readFuses(located.binary),
         archive: startup,

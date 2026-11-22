@@ -22,52 +22,68 @@ export interface UiState {
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isFields<T extends object>(value: unknown): value is T {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function requiredString(value: Record<string, unknown>, key: string): string {
-    const item = value[key];
-    if (typeof item !== "string" || item.length === 0) {
-        throw new Error(`sidebar item ${key} must be a non-empty string`);
+function requiredString(value: unknown, label: string): string {
+    if (typeof value !== "string" || value.length === 0) {
+        throw new Error(`sidebar item ${label} must be a non-empty string`);
     }
-    return item;
+    return value;
+}
+
+interface RawSidebarPage {
+    title: unknown;
+    body: unknown;
+}
+
+interface RawSidebarItem {
+    id: unknown;
+    title: unknown;
+    route: unknown;
+    icon?: unknown;
+    page: unknown;
+}
+
+interface RawUiState {
+    items: unknown;
+    autoOpen?: unknown;
 }
 
 export function sidebarItem(value: unknown): SidebarItemRegistration {
-    if (!isRecord(value)) throw new Error("sidebar item must be an object");
-    const id = requiredString(value, "id");
+    if (!isFields<RawSidebarItem>(value)) throw new Error("sidebar item must be an object");
+    const id = requiredString(value.id, "id");
     if (!ID_PATTERN.test(id)) throw new Error(`sidebar item id is invalid: ${id}`);
-    const title = requiredString(value, "title");
-    const route = requiredString(value, "route");
+    const title = requiredString(value.title, "title");
+    const route = requiredString(value.route, "route");
     if (!route.startsWith("/") || route.startsWith("//") || /\s/.test(route)) {
         throw new Error(`sidebar item route is invalid: ${route}`);
     }
-    const icon = value["icon"];
-    if (icon !== undefined && typeof icon !== "string") {
+    if (value.icon !== undefined && typeof value.icon !== "string") {
         throw new Error("sidebar item icon must be a string");
     }
-    const page = value["page"];
-    if (!isRecord(page)) throw new Error("sidebar item page must be an object");
+    if (!isFields<RawSidebarPage>(value.page))
+        throw new Error("sidebar item page must be an object");
     return {
         id,
         title,
         route,
-        icon: typeof icon === "string" ? icon : null,
+        icon: typeof value.icon === "string" ? value.icon : null,
         page: {
-            title: requiredString(page, "title"),
-            body: requiredString(page, "body"),
+            title: requiredString(value.page.title, "title"),
+            body: requiredString(value.page.body, "body"),
         },
     };
 }
 
 export function parseUiPayload(value: unknown): UiState {
-    if (!isRecord(value)) throw new Error("ui state is incomplete");
-    const items = value["items"];
-    if (!Array.isArray(items)) throw new Error("ui state is incomplete");
+    if (!isFields<RawUiState>(value) || !Array.isArray(value.items)) {
+        throw new Error("ui state is incomplete");
+    }
     return {
-        items: items.map((item) => sidebarItem(item)),
-        autoOpen: value["autoOpen"] === true,
+        items: value.items.map((item) => sidebarItem(item)),
+        autoOpen: value.autoOpen === true,
     };
 }
 
