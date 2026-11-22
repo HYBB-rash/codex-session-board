@@ -30,12 +30,13 @@ import {
     visibleStates,
 } from "./placement.js";
 import { previewReply } from "./preview.js";
-import type { CardRecord, RecordWrite } from "./records.js";
+import type { CardRecord, RecordWrite, TitleResolution } from "./records.js";
 import { type BoardSettings, defaults } from "./settings.js";
 
 interface BoardPorts {
     load(account: string): Promise<Record<string, CardRecord>>;
     save(update: RecordWrite): Promise<void>;
+    settleTitle(resolution: TitleResolution): Promise<boolean>;
     loadLedger(account: string): Promise<BoardLedger>;
     writeLedger(account: string, ledger: BoardLedger): Promise<void>;
     settings(account: string): Promise<BoardSettings>;
@@ -108,6 +109,7 @@ interface Card {
 
 const emptyRecord: CardRecord = { note: "", version: 0, inputVersion: 0 };
 const titleRpcBudgetMs = 3000;
+const titleRetryDelayMs = 30000;
 const emptyHost = (): HostSnapshot => ({
     active: new Map(),
     archived: new Map(),
@@ -157,7 +159,8 @@ export class BoardService {
     private settings: BoardSettings = defaults;
     private readonly observationSince = Date.now() / 1000;
     private readonly runtimeDirty = new Map<HostId, Set<ThreadId>>();
-    private readonly nextTitleAttempt = new Map<string, number>();
+    private readonly titleInFlight = new Set<string>();
+    private readonly nextTitleAttempt = new Map<string, { version: number; at: number }>();
     private readonly changed = new Map<string, number>();
     private changes = 0;
     private ledger: BoardLedger = emptyLedger();
@@ -355,6 +358,7 @@ export class BoardService {
             return;
         }
         this.editing.add(id);
+        let queuedTitle = false;
         try {
             const latest = (await this.desktop.turns(connection, thread.id, "summary")).data[0];
             const current = this.records[id] ?? emptyRecord;
@@ -380,9 +384,11 @@ export class BoardService {
             if (freshPhase)
                 await this.applyPhase(connection, thread, context, phase.state, phase.reason, next);
             await this.commitRecord(context, id, current.version, next);
+            queuedTitle = next.title !== undefined && next.title !== current.title;
         } finally {
             this.editing.delete(id);
         }
+        if (queuedTitle) void this.retryTitle(connection, thread.id);
     }
 
     private async applyPhase(
@@ -407,22 +413,24 @@ export class BoardService {
     }
 
     private async retryHostTitle(connection: HostConnection, host: HostSnapshot): Promise<void> {
-        const pending = [...host.active.values()].find((thread) => {
+        if (!this.settings.syncTitles) return;
+        const now = Date.now();
+        let oldest: { threadId: ThreadId; at: number } | undefined;
+        for (const thread of host.active.values()) {
             const id = cardId({ hostId: connection.hostId, threadId: thread.id });
-            return (
-                this.records[id]?.title &&
-                !this.editing.has(id) &&
-                Date.now() >= (this.nextTitleAttempt.get(id) ?? 0)
-            );
-        });
-        if (!pending) return;
-        const id = cardId({ hostId: connection.hostId, threadId: pending.id });
-        this.editing.add(id);
-        try {
-            await this.retryTitle(connection, pending.id);
-        } finally {
-            this.editing.delete(id);
+            const record = this.records[id];
+            if (
+                !record?.title ||
+                !this.canWrite(thread.id) ||
+                this.editing.has(id) ||
+                this.titleInFlight.has(this.titleKey(id))
+            )
+                continue;
+            const retry = this.nextTitleAttempt.get(id);
+            const at = retry?.version === record.version ? retry.at : 0;
+            if (at <= now && (!oldest || at < oldest.at)) oldest = { threadId: thread.id, at };
         }
+        if (oldest) await this.retryTitle(connection, oldest.threadId);
     }
 
     private isLive(host: HostSnapshot): boolean {
@@ -610,14 +618,35 @@ export class BoardService {
         return context;
     }
 
-    async update(edit: Edit): Promise<{ ok: true; session: Card }> {
+    async update(edit: Edit) {
         if (this.editing.has(edit.id)) throw new Error("该卡片正在保存");
         this.editing.add(edit.id);
+        let saved: Awaited<ReturnType<BoardService["updateCard"]>>;
         try {
-            return await this.updateCard(edit);
+            saved = await this.updateCard(edit);
         } finally {
             this.editing.delete(edit.id);
         }
+        const { connection, account, settled, titleEnabled } = saved;
+        if (
+            settled.titleSyncPending &&
+            accountKey(this.requiredContext()) === account &&
+            this.records[edit.id]?.version === settled.version
+        )
+            await this.retryTitle(connection, settled.threadId);
+        const context = this.requiredContext();
+        const current =
+            accountKey(context) === account && this.records[edit.id]?.version === settled.version
+                ? this.hosts.get(settled.hostId)?.active.get(settled.threadId)
+                : undefined;
+        const session = current ? this.card(settled.hostId, current, context, true) : settled;
+        return {
+            ok: true as const,
+            session,
+            titleEnabled,
+            titlePending: session.titleSyncPending,
+            titleError: session.titleSyncError,
+        };
     }
 
     private async resolveEdit(edit: Edit) {
@@ -674,15 +703,11 @@ export class BoardService {
         await this.commitRecord(context, card.id, current.version, record);
         this.context = nextContext;
         this.publishThread(card.hostId, after);
-        if (record.title) await this.retryTitle(connection, card.threadId);
-        const updated = this.hosts.get(card.hostId)?.active.get(card.threadId) ?? after;
-        const session = this.card(card.hostId, updated, this.requiredContext(), true);
         return {
-            ok: true as const,
-            session,
+            connection,
+            account: accountKey(context),
+            settled: this.card(card.hostId, after, nextContext, true),
             titleEnabled: this.settings.syncTitles,
-            titlePending: session.titleSyncPending,
-            titleError: session.titleSyncError,
         };
     }
 
@@ -707,59 +732,114 @@ export class BoardService {
     private async syncTitle(
         connection: HostConnection,
         threadId: ThreadId,
+        id: string,
         record: CardRecord,
         state: BoardState | null,
-    ): Promise<void> {
-        const id = cardId({ hostId: connection.hostId, threadId });
-        const deadline = performance.now() + titleRpcBudgetMs;
+        deadline: number,
+    ): Promise<Thread | undefined> {
+        await this.freshContext();
         const before = await this.desktop.read(
             connection,
             threadId,
             false,
             remainingTitleTime(deadline),
         );
-        if (this.records[id] !== record) return;
+        if (this.records[id] !== record || this.editing.has(id)) return;
         const current = before.name || before.preview.split("\n")[0] || threadId;
         const title = projectedTitle(current, state);
-        let after = before;
-        if (title !== current) {
-            await this.freshContext();
-            if (this.records[id] !== record) return;
-            await this.desktop.rename(connection, threadId, title, remainingTitleTime(deadline));
-            after = await this.desktop.read(
-                connection,
-                threadId,
-                false,
-                remainingTitleTime(deadline),
-            );
-            if (after.name !== title) throw new Error("Codex 尚未读回更新后的标题");
-        }
-        if (this.records[id] === record) this.publishThread(connection.hostId, after);
+        if (title === current) return before;
+        const context = await this.freshContext();
+        if (this.records[id] !== record || this.editing.has(id) || !this.settings.syncTitles)
+            return;
+        const position = placement(context, connection.hostId, before);
+        if (!position.managed || presentState(context, position, this.mode) !== state)
+            return before;
+        await this.desktop.rename(connection, threadId, title, remainingTitleTime(deadline));
+        const after = await this.desktop.read(
+            connection,
+            threadId,
+            false,
+            remainingTitleTime(deadline),
+        );
+        await this.freshContext();
+        if (after.name !== title) throw new Error("Codex 尚未读回更新后的标题");
+        return after;
+    }
+
+    private titleKey(id: string): string {
+        return JSON.stringify([accountKey(this.requiredContext()), id]);
     }
 
     private async retryTitle(connection: HostConnection, threadId: ThreadId): Promise<void> {
         if (!this.settings.syncTitles || !this.canWrite(threadId)) return;
         const id = cardId({ hostId: connection.hostId, threadId });
         const record = this.records[id];
-        if (!record?.title) return;
-        const context = await this.freshContext();
+        const key = this.titleKey(id);
+        if (!record?.title || this.titleInFlight.has(key) || this.editing.has(id)) return;
+        this.titleInFlight.add(key);
+        try {
+            await this.resolveTitle(connection, threadId, id, record, record.title);
+        } catch (error) {
+            this.ports.proof("board-title-settlement-failed", {
+                hostId: connection.hostId,
+                threadId,
+                error: errorText(error),
+            });
+        } finally {
+            this.titleInFlight.delete(key);
+        }
+    }
+
+    private async resolveTitle(
+        connection: HostConnection,
+        threadId: ThreadId,
+        id: string,
+        record: CardRecord,
+        title: NonNullable<CardRecord["title"]>,
+    ): Promise<void> {
+        const account = accountKey(this.requiredContext());
+        const deadline = performance.now() + titleRpcBudgetMs;
+        let timer: number | undefined;
+        let updated: Thread | undefined;
         let failure: string | undefined;
         try {
-            await this.syncTitle(connection, threadId, record, record.title.state);
+            const timeout = new Promise<never>((_, reject) => {
+                timer = window.setTimeout(
+                    () => reject(new Error("Codex 标题同步超时")),
+                    titleRpcBudgetMs,
+                );
+            });
+            updated = await Promise.race([
+                this.syncTitle(connection, threadId, id, record, title.state, deadline),
+                timeout,
+            ]);
+            if (!updated) return;
+            this.desktop.assertCurrent(connection);
         } catch (error) {
             failure = errorText(error);
+        } finally {
+            window.clearTimeout(timer);
         }
         if (this.records[id] !== record) return;
-        if (failure) this.nextTitleAttempt.set(id, Date.now() + 30000);
+        if (failure)
+            this.nextTitleAttempt.set(id, {
+                version: record.version,
+                at: Date.now() + titleRetryDelayMs,
+            });
         else this.nextTitleAttempt.delete(id);
-        const { title, ...rest } = record;
-        if (failure && title.error === failure) return;
-        const next = {
-            ...rest,
-            version: record.version + 1,
-            ...(failure ? { title: { ...title, error: failure } } : {}),
-        };
-        await this.commitRecord(context, id, record.version, next);
+        if (failure === undefined || failure !== title.error) {
+            const changed = await this.ports.settleTitle({
+                account,
+                id,
+                expected: record.version,
+                ...(failure === undefined ? {} : { failure }),
+            });
+            if (!changed || this.records[id] !== record) return;
+            const { title: _pending, ...rest } = record;
+            this.records[id] = failure ? { ...rest, title: { ...title, error: failure } } : rest;
+        }
+        if (updated && !failure && !this.editing.has(id))
+            this.publishThread(connection.hostId, updated);
     }
 
     private async moveCard(

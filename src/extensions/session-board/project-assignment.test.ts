@@ -89,6 +89,7 @@ function assignmentFixture() {
     const service = new BoardService(desktop, {
         load: async () => ({}),
         save: async () => assert.fail("Assignment must not change card records"),
+        settleTitle: async () => assert.fail("Assignment must not change titles"),
         loadLedger: async () => emptyLedger(),
         writeLedger: async () => assert.fail("Assignment must not change archive data"),
         settings: async () => defaults,

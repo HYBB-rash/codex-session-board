@@ -8,6 +8,7 @@ import {
     BoardLedgers,
     BoardRecords,
     type RecordWrite,
+    type TitleResolution,
 } from "../extensions/session-board/records.js";
 import { logs, outputDir, stateDir } from "../installer/paths.js";
 import { runningVersion } from "../installer/releases.js";
@@ -336,6 +337,14 @@ function registerBoardStorage(ipcMain: IpcMain): void {
         const config = path.join(directory, "config.json");
         return legacy.settings(account, fs.existsSync(config) ? readJson(config) : undefined);
     });
+    registerBoardRecords(ipcMain, boardRecords, legacy);
+}
+
+function registerBoardRecords(
+    ipcMain: IpcMain,
+    boardRecords: BoardRecords,
+    legacy: LegacyBoardRuntime,
+): void {
     ipcMain.handle("codex-enhancer:board-records", (event, value) => {
         if (!boardFrame(event)) throw new Error("enhancer IPC rejected");
         if (typeof value === "string")
@@ -352,6 +361,19 @@ function registerBoardStorage(ipcMain: IpcMain): void {
         }
         boardRecords.write(value, legacy.forAccount(value.account)?.board.cards);
         return null;
+    });
+    ipcMain.handle("codex-enhancer:board-title-result", (event, value) => {
+        if (
+            !boardFrame(event) ||
+            !isFields<TitleResolution>(value) ||
+            typeof value.account !== "string" ||
+            typeof value.id !== "string" ||
+            !Number.isSafeInteger(value.expected) ||
+            (value.failure !== undefined && typeof value.failure !== "string")
+        ) {
+            throw new Error("Invalid board title result");
+        }
+        return boardRecords.settleTitle(value, legacy.forAccount(value.account)?.board.cards);
     });
 }
 

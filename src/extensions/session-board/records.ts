@@ -20,11 +20,18 @@ export interface CardRecord {
     title?: { state: BoardState | null; error?: string };
 }
 
-export interface RecordWrite {
+interface RecordRevision {
     account: string;
     id: string;
     expected: number;
+}
+
+export interface RecordWrite extends RecordRevision {
     record: CardRecord;
+}
+
+export interface TitleResolution extends RecordRevision {
+    failure?: string;
 }
 
 function readRecord<T>(file: string): Record<string, T> {
@@ -107,10 +114,26 @@ export class BoardRecords {
         return { ...imported, ...(Object.hasOwn(accounts, key) ? accounts[key] : undefined) };
     }
 
-    write(
-        { account, id, expected, record }: RecordWrite,
-        imported: Record<string, CardRecord> = {},
-    ): void {
+    write(update: RecordWrite, imported: Record<string, CardRecord> = {}): void {
+        if (!this.change(update, imported, () => update.record))
+            throw new Error("卡片已更新，请刷新后重试");
+    }
+
+    settleTitle(update: TitleResolution, imported: Record<string, CardRecord> = {}): boolean {
+        return this.change(update, imported, (current) => {
+            if (!current?.title) return;
+            const { title, ...record } = current;
+            return update.failure
+                ? { ...record, title: { ...title, error: update.failure } }
+                : record;
+        });
+    }
+
+    private change(
+        { account, id, expected }: RecordRevision,
+        imported: Record<string, CardRecord>,
+        apply: (current: CardRecord | undefined) => CardRecord | undefined,
+    ): boolean {
         const accounts = this.read();
         const rows = Object.hasOwn(accounts, account) ? (accounts[account] ?? {}) : {};
         const current = Object.hasOwn(rows, id)
@@ -118,8 +141,11 @@ export class BoardRecords {
             : Object.hasOwn(imported, id)
               ? imported[id]
               : undefined;
-        if ((current?.version ?? 0) !== expected) throw new Error("卡片已更新，请刷新后重试");
+        if ((current?.version ?? 0) !== expected) return false;
+        const record = apply(current);
+        if (!record) return false;
         atomicWrite(this.file, { ...accounts, [account]: { ...rows, [id]: record } });
+        return true;
     }
 }
 
