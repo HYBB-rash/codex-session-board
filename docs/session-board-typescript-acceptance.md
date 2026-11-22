@@ -2,6 +2,19 @@
 
 上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本通过本机和远程原生移卡检查点。macOS arm64 的目标 Codex 构建在加载看板之前拒绝了经过修改的启动归档，因此发布条件未满足。
 
+## 0.3.10 候选
+
+双平台归档、校验文件及解包清单位于 `state/acceptance/packages/`。候选由提交 `446e10b` 构建。
+
+| 项目 | 结果 |
+| --- | --- |
+| Fedora 分页与缓存 | 在隔离配置将远端扫描限制为每页 1 条、最多 1 页。10 张活动卡继续显示，其中 1 张为本次记录，9 张为只读缓存。缓存卡的原生打开请求被拒绝，未被标作已归档。恢复配置后 10 张卡都重新确认，专用卡备注保留。见 `state/acceptance/fedora-discovery-0.3.10-limit.json` 和 `state/acceptance/fedora-discovery-0.3.10-restored.json`。 |
+| 历史和重连 | 夹具验证旧中断轮次保留人工选择、历史读取失败后轮换到其他卡、连接世代变更拒绝旧回执、恢复后重新获得操作权限。真实 MacBook 连接的重启可能触及用户共用的远端服务，实测保持现有远端连接。当前实测的来源正例只有 `vscode`，提供方正例只有 `openai`。 |
+| Fedora 兼容服务 | `serve` 复用了现有实例。新版 CLI `stop` 校验实例后返回成功，HTTP 端点停止，隔离 Codex 进程仍运行。重启隔离副本后端点恢复，读回 `0.3.10`。见 `state/acceptance/fedora-service-stop-0.3.10.txt`。 |
+| Fedora 安装生命周期 | 从实际已安装看板点击更新，重启依次读回 `0.3.9 → 0.3.10 → 0.3.9`。卸载恢复副本启动归档，数据夹具哈希一致。见 `state/acceptance/fedora-installed-0.3.10.txt`。 |
+| 双平台干净解包 | Fedora 通过 53 项随包 Node 测试、6 项公共入口测试、18 项门槛测试。MacBook Pro 通过 51 项随包 Node 测试，跳过 2 项 Linux 专用测试。两端各通过 10 项冻结模型检查。Mac 系统构建的内嵌 ASAR 摘要仍阻止安装。 |
+| 统一发布门槛 | 31 项需求中 11 项通过，20 项待验。新通过 `AUTO-006` 和 `DISCOVERY-002`。`releaseReady` 为 `false`。见 `state/acceptance/release-gate-0.3.10.json`。 |
+
 ## 0.3.9 候选
 
 双平台归档、校验文件及解包清单位于 `state/acceptance/packages/`。候选由提交 `6bac065` 构建。
