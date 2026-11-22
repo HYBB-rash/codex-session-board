@@ -12,6 +12,9 @@
             "!package-lock.json",
             "!!**/dist",
             "!!**/node_modules",
+            "!!ui",
+            "!acceptance/contract.lock.json",
+            "!acceptance/requirements.json",
             "!!**/state",
             "!!**/logs"
         ]

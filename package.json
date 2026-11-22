@@ -15,12 +15,21 @@
         "launch": "npm run build --silent && node dist/bin/codex-enhancer.js launch",
         "lint": "biome check --error-on-warnings . && node scripts/check-comments.mjs",
         "format": "biome check --write .",
-        "test": "npm run build --silent && node --test dist/installer/asar.test.js dist/installer/paths.test.js dist/runtime/registry.test.js"
+        "test": "npm run build --silent && node --test dist/compat/*.test.js dist/extensions/session-board/*.test.js dist/installer/*.test.js dist/migration/*.test.js dist/runtime/*.test.js"
     },
     "devDependencies": {
         "@biomejs/biome": "^2.6.8",
+        "@modelcontextprotocol/ext-apps": "^2.0.4",
+        "@types/markdown-it": "^14.1.2",
         "@types/node": "^26.6.6",
+        "@vitejs/plugin-vue": "^6.0.11",
+        "@vitejs/plugin-vue-jsx": "^5.1.6",
+        "esbuild": "^0.28.2",
+        "markdown-it": "^14.1.0",
         "oxc-parser": "^0.159.0",
-        "typescript": "^7.0.2"
+        "typescript": "^7.0.2",
+        "vite": "^7.3.8",
+        "vue": "^3.5.46",
+        "vue-tsc": "^3.3.14"
     }
 }
