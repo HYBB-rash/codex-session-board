@@ -1,0 +1,16 @@
+{
+    "name": "codex-session-board-enhancer",
+    "version": "0.2.0",
+    "description": "通过当前 Enhancer 窗口查看和管理 Codex 会话",
+    "mcpServers": "./.mcp.json",
+    "interface": {
+        "displayName": "会话看板",
+        "shortDescription": "整理本机和远程 Codex 会话",
+        "developerName": "Local",
+        "category": "Productivity",
+        "capabilities": ["Interactive", "Read", "Write"],
+        "brandColor": "#328CFF",
+        "composerIcon": "./dist/board-assets/board.svg",
+        "logo": "./dist/board-assets/board.svg"
+    }
+}
