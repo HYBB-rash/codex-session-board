@@ -1,61 +1,70 @@
-# Codex Enhancer POC
+# Codex Enhancer 会话看板
 
-这个目录验证一件事：在不改 `/opt/codex-desktop` 的前提下，让官方 Codex Desktop 的测试副本加载仓库外面的 Runtime，并在官方窗口的导航里打开自己的页面。
+从 Enhancer 副本的 Codex 侧栏打开会话看板。看板通过当前窗口读取本机和已连接的远程会话，状态列对应 Codex 原生侧栏分区。看板和宿主运行时使用 TypeScript，页面复用上游 Vue 3 组件。
 
-当前机器上的目标是 Fedora 44 的 `codex-desktop`，版本 `26.1111.71704`，运行时类型是 Owl。安装器会自己读取本机位置、版本和 `app.asar` 里的 `package.json` `main`，不把入口文件名写死。
+## 安装和打开
 
-## 使用
+Fedora 44 x86_64 已验证 Codex `26.1111.71704` 的安装、更新和回退。macOS arm64 包可在目标主机解压、核对和切换版本，MacBook Pro 上的 Codex `26.1111.21308` 会拒绝启动入口修改，安装器会提前报告。
 
-安装、查看和卸载：
+在 Linux 候选包所在目录校验归档，再进入解压目录运行 Node.js 22 或更新版本。
 
 ```bash
-./scripts/install.sh
+sha256sum -c session-board-0.3.3-linux-x86_64.tar.gz.sha256
+tar -xzf session-board-0.3.3-linux-x86_64.tar.gz
+cd session-board-0.3.3-linux-x86_64
+node dist/bin/codex-enhancer.js detect
+node dist/bin/codex-enhancer.js install
+node dist/bin/codex-enhancer.js launch
+```
+
+安装器把客户端复制到本目录的 `state/`，只给副本的启动入口加 Loader。登录后，从侧栏打开「会话看板」。通过 Codex 的远程连接设置连接主机。状态列使用同名的原生侧栏分区，缺少分区时先在原生侧栏登记。远程项目尚未在该桌面登记目录时，「新建会话」会打开 Codex 的项目登记对话框，由用户确认后打开输入页。
+
+## 更新和回退
+
+先核对候选归档的 `.sha256`，将解压后的 `release.json` 和 `dist/` 放入安装目录的 `state/update-candidate/`。在已安装看板里点击「更新」，完全退出并重新启动 Enhancer 副本，再打开看板核对版本。也可以从安装目录执行这些命令。
+
+```bash
+node dist/bin/codex-enhancer.js update /path/to/extracted-candidate
+node dist/bin/codex-enhancer.js rollback
 node dist/bin/codex-enhancer.js status
-./scripts/launch.sh
-./scripts/uninstall.sh
 ```
 
-`install` 用 reflink 复制 `/opt/codex-desktop` 到 `state/test-app`，备份原始 `app.asar`，再给启动入口加上 Loader。Loader 只在测试副本里，通过 `.codex-enhancer-link.json` 指向本仓库的 `dist/runtime/main.js`。
+更新和回退切换已校验的运行时目录，配置和记录保存在安装目录的 `state/session-board/`。退出副本后，执行 `node dist/bin/codex-enhancer.js uninstall` 恢复副本的原始启动归档。
 
-`launch` 使用单独的应用 ID `codex-enh-poc`、`state/user-data` 和 `state/codex-home`。它不会把 `--user-data-dir` 指到 `~/.config/Codex`。窗口关掉之后，再执行卸载。安装和卸载发现测试副本仍在运行时会停止并报出进程号。
+## 网页、PWA 和 CLI
 
-登录后的官方导航出现时，Session Board 入口挂在原有侧边栏里。点击后页面画在当前窗口的内容区，Back 会把它去掉。当前测试配置停在登录页，这一页没有导航轨，入口不会提前画出来。调查和这次运行的证据在 `docs/ui-integration-report.md`。
-
-验证时可以在入口出现后自动打开页面：
+Enhancer 副本运行时，网页看板在 `http://127.0.0.1:18767/`。可以从浏览器的应用安装入口安装。网页、MCP 和 CLI 的会话操作由运行中的 Codex 窗口执行。连接断开时，缓存只用于展示。
 
 ```bash
-CODEX_ENHANCER_AUTO_OPEN=1 ./scripts/launch.sh
+node dist/bin/codex-session-board.js serve
+node dist/bin/codex-session-board.js scan
+node dist/bin/codex-session-board.js check-sections
+node dist/bin/codex-session-board.js mcp
 ```
 
-页面应显示：
+MCP 配置见 [.mcp.json](.mcp.json)。从另一目录调用时可以指定 `--state-dir`，或把 `CODEX_ENHANCER_STATE_DIR` 指向 Enhancer 的 `state/`。`stop` 核对实例后关闭网页服务。重新启动 Enhancer 副本可恢复服务。
 
-```text
-Session Board
-Codex Enhancer UI integration successful.
+## 设置与迁移
+
+在 `state/session-board/config.json` 设置 `mode`（`four`、`five` 或 `legacy`）、`syncTitles`、`autoArchiveSeconds`、`remoteAutoArchiveSeconds`。归档间隔用正整数秒，`null` 表示关闭。初始为四列和未归列区，标题同步及定时归档关闭。
+
+```bash
+node dist/bin/codex-session-board.js migrate --source-config /path/to/legacy-config.json
+node dist/bin/codex-session-board.js migrate --rollback MIGRATION_ID
 ```
 
-`status` 在这些情况下报告 `patch-stale`：测试副本的归档哈希变了，Loader 标记不在了，副本里的版本或入口变了。它同时比较系统安装版本和安装时记录的版本。把更新后的副本重新执行 `install`，会备份新的归档并重新打上 Loader，不会用旧备份覆盖新文件。
+迁移对旧主库及主机分库建立私有 SQLite 快照。以迁移回执中的 `id` 回退，回退前会验证快照完整性。要把旧记录映射到新看板，在 `state/session-board/legacy-binding.json` 写入同一 Codex 身份对应的 `accountId`、`userId`，以及 `hosts` 对象，将旧主机 ID 映射到新窗口确认的主机 ID。重启后读入。未绑定分库留在快照中，已有新记录和显式设置优先。
 
-## 布局
+## 构建和复验
 
-源码是 TypeScript，在 `src/`。`npm run build` 把它编译成 CommonJS，全部放在 `dist/`。`scripts/` 里的脚本会先编译，再执行 `dist/bin/codex-enhancer.js`。Electron 加载 `dist/runtime/main.js`、`dist/runtime/preload.js` 和 `dist/extensions/*/extension.js`。沙箱里的 Preload 不能加载旁边的文件，所以 `preload.js` 在构建时已经包含宿主。
-
-```text
-src/bin/codex-enhancer.ts
-src/installer/      detect, asar patch, install, restore, status
-src/runtime/        main.ts, preload.ts, host.ts, registry.ts
-src/extensions/     hello-world, session-board
-dist/               编译后的 CommonJS
-scripts/            build.sh, install.sh, launch.sh, uninstall.sh
-state/              test copy, backup, install.json; not part of source
-logs/               runtime log and captured window images
-docs/verification-report.md
+```bash
+npm ci
+npm test
+npm run lint
+python3 acceptance/verify-typescript.py --model-only
+node acceptance/check-candidate.mjs --open
+bash scripts/package.sh 0.3.3 state/acceptance/packages linux-x86_64
+bash scripts/package.sh 0.3.3 state/acceptance/packages macos-arm64
 ```
 
-`npm test` 先编译，再检查归档读写，不启动 Codex。
-
-## 边界
-
-安装器拒绝修改它探测到的系统安装目录。测试只改 `state/test-app`。
-
-这次没有关闭 Electron fuse，也没有关闭 Chromium sandbox。`EnableEmbeddedAsarIntegrityValidation` 在这个 Linux 二进制上是打开的，但修改归档后程序仍然启动。报告里把这件事和尚未验证的部分分开写。
+查看 [Fedora 原生移卡检查点](docs/session-board-native-checkpoint.md)、[冻结模型对照](acceptance/typescript-model.md)及[逐项验收清单](acceptance/candidate-map.json)。
