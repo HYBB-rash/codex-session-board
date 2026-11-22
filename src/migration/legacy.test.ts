@@ -404,7 +404,8 @@ test("runtime overlays explicitly bound records, preferences and batches without
         assert.ok(
             updatedLedger.pendingDrafts?.some(
                 ({ project }) =>
-                    project === `target:${JSON.stringify([installedOffline, "default"])}`,
+                    project ===
+                    `target:${JSON.stringify([installedOffline, "targetServer", "default"])}`,
             ),
         );
         rollbackLegacyMigration(destination, imported.receipt.id);
