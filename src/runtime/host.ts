@@ -34,6 +34,126 @@ interface Mount {
     kind: "row" | "rail";
 }
 
+function visibleLabel(element: Element): string {
+    const copy = element.cloneNode(true);
+    if (!isHtmlElement(copy)) return "";
+    for (const hidden of copy.querySelectorAll(".sr-only, [aria-hidden='true']")) hidden.remove();
+    return copy.textContent?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+function chooseMount(): Mount | null {
+    const labeled = [...document.querySelectorAll(DESTINATION)].find((element) => {
+        return (
+            element.closest(RAIL) == null &&
+            element.parentElement != null &&
+            visibleLabel(element).length > 0
+        );
+    });
+    if (labeled?.parentElement)
+        return { parent: labeled.parentElement, sample: labeled, kind: "row" };
+    const rail = document.querySelector(RAIL);
+    if (isHtmlElement(rail)) {
+        return { parent: rail, sample: rail.querySelector(DESTINATION), kind: "rail" };
+    }
+    return null;
+}
+
+function dashboardIcon(): SVGElement {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("width", "16");
+    svg.setAttribute("height", "16");
+    svg.setAttribute("aria-hidden", "true");
+    for (const box of [
+        { x: "1", y: "1", width: "6", height: "6" },
+        { x: "9", y: "1", width: "6", height: "14" },
+        { x: "1", y: "9", width: "6", height: "6" },
+    ]) {
+        const shape = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        shape.setAttribute("x", box.x);
+        shape.setAttribute("y", box.y);
+        shape.setAttribute("width", box.width);
+        shape.setAttribute("height", box.height);
+        shape.setAttribute("rx", "1");
+        shape.setAttribute("fill", "none");
+        shape.setAttribute("stroke", "currentColor");
+        shape.setAttribute("stroke-width", "1.4");
+        svg.append(shape);
+    }
+    return svg;
+}
+
+function opaqueColor(start: Element | null): string {
+    let current = start;
+    while (isHtmlElement(current)) {
+        const color = getComputedStyle(current).backgroundColor;
+        const match = /rgba?\(([^)]+)\)/.exec(color);
+        const captured = match?.[1];
+        if (captured != null) {
+            const parts = captured.split(",").map((part) => Number(part.trim()));
+            const alpha = parts.length === 4 ? parts[3] : 1;
+            if (alpha != null && alpha > 0.9) return color;
+        }
+        current = current.parentElement;
+    }
+    return "Canvas";
+}
+
+function contentBox(): DOMRect | null {
+    const workspace = document.querySelector(WORKSPACE);
+    if (!isHtmlElement(workspace)) return null;
+    const bounds = workspace.getBoundingClientRect();
+    let left = bounds.left;
+    for (const selector of [RAIL, PAGE_SIDEBAR, SIDEBAR_SCROLL]) {
+        const element = document.querySelector(selector);
+        if (!isHtmlElement(element)) continue;
+        const rect = element.getBoundingClientRect();
+        if (rect.width < 8 || rect.height < 40) continue;
+        if (rect.width > bounds.width * 0.7) continue;
+        if (rect.right <= bounds.left + 1 || rect.left >= bounds.right - 1) continue;
+        if (rect.left > bounds.left + bounds.width * 0.75) continue;
+        left = Math.max(left, rect.right);
+    }
+    const width = bounds.right - left;
+    if (width < 80 || bounds.height < 80) return null;
+    return new DOMRect(left, bounds.top, width, bounds.height);
+}
+
+function place(element: HTMLElement): void {
+    const box = contentBox();
+    const workspace = document.querySelector(WORKSPACE);
+    element.style.position = "fixed";
+    element.style.zIndex = "30";
+    element.style.boxSizing = "border-box";
+    element.style.overflow = "auto";
+    if (isHtmlElement(workspace)) {
+        const style = getComputedStyle(workspace);
+        element.style.background = opaqueColor(workspace);
+        element.style.color = style.color;
+        element.style.font = style.font;
+    }
+    if (box == null) {
+        element.style.inset = "48px";
+        return;
+    }
+    element.style.inset = "auto";
+    element.style.left = `${box.x}px`;
+    element.style.top = `${box.y}px`;
+    element.style.width = `${box.width}px`;
+    element.style.height = `${box.height}px`;
+}
+
+function nativeButtonClass(): string {
+    const workspace = document.querySelector(WORKSPACE);
+    if (!isHtmlElement(workspace)) return "";
+    for (const button of workspace.querySelectorAll("button")) {
+        if (button.hasAttribute(ITEM) || button.closest(`[${PAGE}]`) != null) continue;
+        if ((button.textContent?.trim().length ?? 0) === 0) continue;
+        return button.className;
+    }
+    return "";
+}
+
 export function startUiHost(options: UiHostOptions): UiHost {
     let items: SidebarItemRegistration[] = [];
     let autoOpen = false;
@@ -57,56 +177,6 @@ export function startUiHost(options: UiHostOptions): UiHost {
             mounted: document.querySelectorAll(`[${ITEM}]`).length,
             activeId,
         };
-    }
-
-    function visibleLabel(element: Element): string {
-        const copy = element.cloneNode(true);
-        if (!isHtmlElement(copy)) return "";
-        for (const hidden of copy.querySelectorAll(".sr-only, [aria-hidden='true']"))
-            hidden.remove();
-        return copy.textContent?.replace(/\s+/g, " ").trim() ?? "";
-    }
-
-    function chooseMount(): Mount | null {
-        const labeled = [...document.querySelectorAll(DESTINATION)].find((element) => {
-            return (
-                element.closest(RAIL) == null &&
-                element.parentElement != null &&
-                visibleLabel(element).length > 0
-            );
-        });
-        if (labeled?.parentElement)
-            return { parent: labeled.parentElement, sample: labeled, kind: "row" };
-        const rail = document.querySelector(RAIL);
-        if (isHtmlElement(rail)) {
-            return { parent: rail, sample: rail.querySelector(DESTINATION), kind: "rail" };
-        }
-        return null;
-    }
-
-    function dashboardIcon(): SVGElement {
-        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        svg.setAttribute("viewBox", "0 0 16 16");
-        svg.setAttribute("width", "16");
-        svg.setAttribute("height", "16");
-        svg.setAttribute("aria-hidden", "true");
-        for (const box of [
-            { x: "1", y: "1", width: "6", height: "6" },
-            { x: "9", y: "1", width: "6", height: "14" },
-            { x: "1", y: "9", width: "6", height: "6" },
-        ]) {
-            const shape = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-            shape.setAttribute("x", box.x);
-            shape.setAttribute("y", box.y);
-            shape.setAttribute("width", box.width);
-            shape.setAttribute("height", box.height);
-            shape.setAttribute("rx", "1");
-            shape.setAttribute("fill", "none");
-            shape.setAttribute("stroke", "currentColor");
-            shape.setAttribute("stroke-width", "1.4");
-            svg.append(shape);
-        }
-        return svg;
     }
 
     function ensureItem(item: SidebarItemRegistration, mount: Mount): void {
@@ -139,77 +209,6 @@ export function startUiHost(options: UiHostOptions): UiHost {
         const anchor = [...mount.parent.querySelectorAll(DESTINATION)].at(-1);
         if (anchor != null) anchor.after(button);
         else mount.parent.append(button);
-    }
-
-    function opaqueColor(start: Element | null): string {
-        let current = start;
-        while (isHtmlElement(current)) {
-            const color = getComputedStyle(current).backgroundColor;
-            const match = /rgba?\(([^)]+)\)/.exec(color);
-            const captured = match?.[1];
-            if (captured != null) {
-                const parts = captured.split(",").map((part) => Number(part.trim()));
-                const alpha = parts.length === 4 ? parts[3] : 1;
-                if (alpha != null && alpha > 0.9) return color;
-            }
-            current = current.parentElement;
-        }
-        return "Canvas";
-    }
-
-    function contentBox(): DOMRect | null {
-        const workspace = document.querySelector(WORKSPACE);
-        if (!isHtmlElement(workspace)) return null;
-        const bounds = workspace.getBoundingClientRect();
-        let left = bounds.left;
-        for (const selector of [RAIL, PAGE_SIDEBAR, SIDEBAR_SCROLL]) {
-            const element = document.querySelector(selector);
-            if (!isHtmlElement(element)) continue;
-            const rect = element.getBoundingClientRect();
-            if (rect.width < 8 || rect.height < 40) continue;
-            if (rect.width > bounds.width * 0.7) continue;
-            if (rect.right <= bounds.left + 1 || rect.left >= bounds.right - 1) continue;
-            if (rect.left > bounds.left + bounds.width * 0.75) continue;
-            left = Math.max(left, rect.right);
-        }
-        const width = bounds.right - left;
-        if (width < 80 || bounds.height < 80) return null;
-        return new DOMRect(left, bounds.top, width, bounds.height);
-    }
-
-    function place(element: HTMLElement): void {
-        const box = contentBox();
-        const workspace = document.querySelector(WORKSPACE);
-        element.style.position = "fixed";
-        element.style.zIndex = "30";
-        element.style.boxSizing = "border-box";
-        element.style.overflow = "auto";
-        if (isHtmlElement(workspace)) {
-            const style = getComputedStyle(workspace);
-            element.style.background = opaqueColor(workspace);
-            element.style.color = style.color;
-            element.style.font = style.font;
-        }
-        if (box == null) {
-            element.style.inset = "48px";
-            return;
-        }
-        element.style.inset = "auto";
-        element.style.left = `${box.x}px`;
-        element.style.top = `${box.y}px`;
-        element.style.width = `${box.width}px`;
-        element.style.height = `${box.height}px`;
-    }
-
-    function nativeButtonClass(): string {
-        const workspace = document.querySelector(WORKSPACE);
-        if (!isHtmlElement(workspace)) return "";
-        for (const button of workspace.querySelectorAll("button")) {
-            if (button.hasAttribute(ITEM) || button.closest(`[${PAGE}]`) != null) continue;
-            if ((button.textContent?.trim().length ?? 0) === 0) continue;
-            return button.className;
-        }
-        return "";
     }
 
     function openPage(item: SidebarItemRegistration): void {
