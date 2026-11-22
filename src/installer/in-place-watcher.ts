@@ -32,6 +32,7 @@ export function systemWatcherFiles(commands: {
     const service = [
         "[Unit]",
         "Description=Check the Codex Enhancer in-place installation",
+        "StartLimitIntervalSec=0",
         "",
         "[Service]",
         "Type=oneshot",

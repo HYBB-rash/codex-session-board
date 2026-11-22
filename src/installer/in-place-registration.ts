@@ -100,47 +100,74 @@ export function configureWatcher(enabled: boolean): void {
     }
 }
 
+const systemctlOptions = {
+    encoding: "utf8" as const,
+    env: { PATH: "/usr/bin:/bin", LC_ALL: "C" },
+    timeout: 7000,
+};
+
+function userManager(entry: { uid?: unknown; user?: unknown }): {
+    user: string;
+    call: (...args: string[]) => void;
+} | null {
+    const { uid, user } = entry ?? {};
+    if (
+        typeof uid !== "number" ||
+        !Number.isSafeInteger(uid) ||
+        uid < 1 ||
+        typeof user !== "string" ||
+        !/^[\w.-]+$/.test(user)
+    )
+        return null;
+    const runtime = `/run/user/${uid}`;
+    const bus = path.join(runtime, "bus");
+    const info = fs.lstatSync(bus, { throwIfNoEntry: false });
+    if (!info?.isSocket() || info.uid !== uid) return null;
+    const environment = [`XDG_RUNTIME_DIR=${runtime}`, `DBUS_SESSION_BUS_ADDRESS=unix:path=${bus}`];
+    return {
+        user,
+        call: (...args) => {
+            execFileSync(
+                "/usr/bin/runuser",
+                [
+                    "-u",
+                    user,
+                    "--",
+                    "/usr/bin/env",
+                    ...environment,
+                    "/usr/bin/systemctl",
+                    "--user",
+                    ...args,
+                ],
+                { ...systemctlOptions, stdio: ["ignore", "pipe", "pipe"] },
+            );
+        },
+    };
+}
+
 export function reloadUserWatchers(enabled: boolean): string[] {
     const units = [...watcher.keys()].map((file) => path.basename(file));
     const pathUnit = units.find((unit) => unit.endsWith(".path"));
     if (!pathUnit) throw new Error("缺少路径检查单元");
-    const options = {
-        encoding: "utf8" as const,
-        env: { PATH: "/usr/bin:/bin", LC_ALL: "C" },
-        timeout: 7000,
-        stdio: ["ignore", "pipe", "pipe"] as const,
-    };
     try {
         const result: unknown = JSON.parse(
             execFileSync("/usr/bin/loginctl", ["list-users", "--json=short"], {
-                ...options,
-                stdio: [...options.stdio],
+                ...systemctlOptions,
+                stdio: ["ignore", "pipe", "pipe"],
             }),
         );
         if (!Array.isArray(result)) throw new Error("loginctl 未返回用户列表");
         return result.flatMap((entry: { uid?: unknown; user?: unknown }) => {
-            if (
-                !entry ||
-                !Number.isSafeInteger(entry.uid) ||
-                entry.uid === 0 ||
-                typeof entry.user !== "string" ||
-                !/^[\w.-]+$/.test(entry.user)
-            )
-                return [];
-            const bus = `--machine=${entry.user}@.host`;
-            const systemctl = (...command: string[]) =>
-                execFileSync("/usr/bin/systemctl", ["--user", bus, ...command], {
-                    ...options,
-                    stdio: [...options.stdio],
-                });
+            const manager = userManager(entry);
+            if (!manager) return [];
             try {
-                if (!enabled) systemctl("stop", ...units);
-                systemctl("daemon-reload");
-                if (enabled) systemctl("start", pathUnit);
+                if (!enabled) manager.call("stop", ...units);
+                manager.call("daemon-reload");
+                if (enabled) manager.call("start", pathUnit);
                 return [];
             } catch {
                 return [
-                    `用户 ${entry.user} 的升级检查器未即时${enabled ? "启动" : "停止"}，下次登录将读取当前登记`,
+                    `用户 ${manager.user} 的升级检查器未即时${enabled ? "启动" : "停止"}，下次登录将读取当前登记`,
                 ];
             }
         });
