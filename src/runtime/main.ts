@@ -399,6 +399,7 @@ function registerBoardRecords(
 }
 
 function start(): void {
+    if (inPlaceRuntime) process.env.CODEX_ENHANCER_STATE_DIR = stateDir;
     log("loader-entered", { pid: process.pid, execPath: process.execPath });
     const { app, session, ipcMain, BrowserWindow } = loadElectron();
     const info = readAppInfo(app);

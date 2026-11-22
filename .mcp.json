@@ -3,7 +3,7 @@
         "session_board": {
             "command": "node",
             "args": ["./dist/bin/codex-session-board.js", "mcp"],
-            "env_vars": ["CODEX_ENHANCER_STATE_DIR"],
+            "env_vars": ["CODEX_ENHANCER_STATE_DIR", "XDG_STATE_HOME"],
             "cwd": "."
         }
     }
