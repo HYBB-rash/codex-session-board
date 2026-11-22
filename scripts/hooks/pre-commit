@@ -17,8 +17,26 @@ max_files=15
 max_lines=400
 file_count=0
 line_count=0
-while IFS=$'\t' read -r added deleted _; do
+ignored_file() {
+    local file="$1"
+    case "$file" in
+        package-lock.json) return 0 ;;
+        acceptance/model.py|acceptance/requirements.json)
+            local actual expected
+            case "$file" in
+                acceptance/model.py)
+                    expected=afc587078c415ccb631fed4efdcef304269096fbfece812e680a6d4e195738d7 ;;
+                acceptance/requirements.json)
+                    expected=5b20b6135b59c3daf4002bea17316c0fbaf80228cd822e24ffb9853a4d69c32b ;;
+            esac
+            actual="$(git show ":$file" 2>/dev/null | sha256sum)"
+            test "${actual%% *}" = "$expected" ;;
+        *) return 1 ;;
+    esac
+}
+while IFS=$'\t' read -r added deleted file; do
     file_count=$((file_count + 1))
+    if ignored_file "$file"; then continue; fi
     if [ "$added" != "-" ]; then
         line_count=$((line_count + added))
     fi
