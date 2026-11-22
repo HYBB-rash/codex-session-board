@@ -2,6 +2,19 @@
 
 上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本通过本机和远程原生移卡检查点。macOS arm64 的目标 Codex 构建在加载看板之前拒绝了经过修改的启动归档，因此发布条件未满足。
 
+## 0.3.9 候选
+
+双平台归档、校验文件及解包清单位于 `state/acceptance/packages/`。候选由提交 `6bac065` 构建。
+
+| 项目 | 结果 |
+| --- | --- |
+| Fedora 安装生命周期 | 从已安装看板点击更新，重启依次读回 `0.3.8 → 0.3.9 → 0.3.8`。卸载恢复副本的原始启动归档，数据夹具哈希保持一致。见 `state/acceptance/fedora-installed-0.3.9.txt`。 |
+| Fedora 原生标题 | 在远程专用卡设置多个开头状态前缀，再从 `0.3.9` 保存。当前窗口的远端连接独立读回结果。只有开头前缀替换成 `[待审阅]`，长标题、正文标签和备注均保留，卡片版本只加一。见 `state/acceptance/fedora-title-0.3.9-native.json` 和 `state/acceptance/fedora-title-0.3.9-save.json`。 |
+| 标题故障夹具 | 挂起的宿主上下文按三秒预算返回。前台保存可在旧标题任务等待回执时完成。重开后读回远端已经写入的标题，持续失败项让其他待同步卡先尝试。首次启用时间在重开后保持，补读此前的完成轮次没有触发改名。 |
+| Fedora 最左侧 MCP 图标 | `26.1111.71704` 已发现随包原生全局入口。当前登录方式会将置顶写入同一 ChatGPT 账号设置。已验证插件详情入口，最左侧置顶和点击需使用独立账号验收，或获准修改该账号的侧栏设置。 |
+| 双平台干净解包 | Fedora 通过 45 项随包 Node 测试、6 项公共入口测试和 18 项门槛测试。MacBook Pro 通过 43 项随包 Node 测试，跳过 2 项 Linux 专用测试。两端各通过 10 项冻结模型检查。Mac 的系统 Codex 仍在安装预检被拒绝。见 `state/acceptance/fedora-clean-0.3.9.log` 和 `state/acceptance/packages/macos-0.3.9-preflight.txt`。 |
+| 统一发布门槛 | 31 项需求中 9 项通过，22 项待验。`DELIVERY-001` 通过的是双平台发行归档检查，真实 Mac 桌面运行仍待验。`releaseReady` 为 `false`。见 `state/acceptance/release-gate-0.3.9.json`。 |
+
 ## 0.3.8 候选
 
 双平台归档、SHA-256 校验文件及解包清单位于 `state/acceptance/packages/`。当前候选由提交 `f1b2099` 构建。
