@@ -4,7 +4,7 @@
 
 ## 0.3.23 候选
 
-双平台归档由提交 `c247e10` 构建。31 项冻结需求中 18 项通过、13 项待验，76 项门槛自动检查通过。现场证据按候选版本、归档及运行文件指纹绑定，`0.3.22` 的现场回执保留在原候选。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.23.json) · [现场证据索引](../state/acceptance/live-0.3.23.json)
+双平台归档由提交 `c247e10` 构建。31 项冻结需求中 18 项通过、13 项待验，76 项门槛自动检查通过。Fedora 有 14 条逐项现场断言，macOS 有 3 条打包断言。现场证据按候选版本、归档及运行文件指纹绑定，`0.3.22` 的现场回执保留在原候选。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.23.json) · [现场证据索引](../state/acceptance/live-0.3.23.json)
 
 | 项目 | 结果 |
 | --- | --- |
@@ -12,6 +12,8 @@
 | Fedora 原生归档 | 已登录隔离窗口先原生归档本机专用卡。在隔离账本中准备两条待核对记录，模拟首条远端不可用。重启后看板保留离线项的待核对状态，并从本机原生列表确认第二项。核对结果已落盘，专用卡和隔离配置随后恢复。实际筛选归档和关页定时归档也通过。[重启核对](../state/acceptance/fedora-archive-reopened-0.3.23.json) · [筛选归档](../state/acceptance/fedora-archive-batch-0.3.23-1795381011169.jsonl) · [关页定时归档](../state/acceptance/fedora-archive-batch-0.3.23-1795381017802.jsonl) |
 | Fedora 发现 | 断网夹具由 Fedora 随包原生 App Server 建索引。随包看板读回三个交互来源及两个提供方标签，排除子代理历史。提供方覆盖基于播种的历史元数据。已登录副本另验证本机和远端分页集合、分页上限及界面诊断。[发现来源回执](../state/acceptance/fedora-discovery-sources-0.3.23.json) · [双端分页](../state/acceptance/fedora-product-paging-0.3.23.json) · [界面诊断](../state/acceptance/fedora-health-0.3.23.json) |
 | Fedora 安装与入口 | 从隔离副本的已安装网页点击更新，重启读回 `0.3.23`，回退后启动读回 `0.3.22`，卸载恢复启动归档并保留测试数据。已登录副本另验证侧栏入口与双端卡片，HTTP、CLI 与 MCP 读回相同的专用数据。[更新及回退](../state/acceptance/packages/fedora-installed-web-update-0.3.23.txt) · [Enhancer 入口](../state/acceptance/fedora-enhancer-rail-0.3.23.json) · [公共入口](../state/acceptance/fedora-entrypoints-0.3.23.json) |
+| Fedora 拖放复验 | 从已安装插件详情打开原生 MCP App，资源摘要与成品一致。同列及拖出后松手均无写入。边缘横滚及 Enhancer 阻塞表单复验遇到 DevTools 超时，远端专用卡及本机专用卡均已核对恢复。[原生 MCP 回执](../state/acceptance/fedora-mcp-gestures-live-0.3.23-1795381458026.json) · [阻塞表单回执](../state/acceptance/fedora-ui-002-0.3.23-1795381374579.jsonl) |
+| Fedora 标题与状态 | 双端专用卡手动保存后，在同次响应返回前读回原生完整标题及当前状态前缀。四、五及旧六状态的列、导航和表单顺序通过。两台原生宿主仍缺待判断与已完成分区。自动轮次复验没有启动原生执行，已清除专用卡测试草稿并读回原标题、分区和备注。[双端标题](../state/acceptance/fedora-title-001-live-0.3.23-1795381802632.json) · [状态顺序](../state/acceptance/fedora-state-001-0.3.23-1795381869379.json) · [专用卡恢复](../state/acceptance/fedora-auto-fixture-cleanup-0.3.23.json) |
 | 迁移 | 从成品 CLI 重放合成本机、远端 SQLite 和已提交 WAL，再从回环看板读回离线只读卡、恢复后的同一 ID 及归档核对时间。回退后重开服务，导入记录不再展示，源文件校验保持一致。[迁移回执](../state/acceptance/fedora-migration-0.3.23.json) |
 | 双平台解包 | Fedora 通过 91 项随包测试。MacBook Pro 通过 89 项，跳过 2 项 Linux 专用测试。两端各通过 10 项公共入口、10 项冻结模型和 18 项门槛测试。macOS 的 `26.1111.21308` 仍在复制前因框架内嵌 ASAR 摘要拒绝安装。继续测试的官方归档因下载中断，未获得新增的完整兼容结论。[Fedora 解包](../state/acceptance/fedora-archive-0.3.23.log) · [MacBook Pro 预检](../state/acceptance/packages/macos-0.3.23-preflight.txt) · [官方归档复查](../state/acceptance/packages/macos-official-followup-20261123.txt) |
 
