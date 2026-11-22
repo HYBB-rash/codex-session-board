@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
+import { homedir } from "node:os";
 import * as path from "node:path";
 import { listAsarFiles, lookup, openArchive, readEntry } from "./asar.js";
 
@@ -34,10 +35,12 @@ export interface SystemApp {
     appDir: string;
     startScript: string;
     binary: string;
+    resourcesDir: string;
 }
 
 export interface Detection {
     appDir: string;
+    platform: "linux" | "darwin";
     startScript: string;
     binary: string;
     codexVersion: string;
@@ -106,6 +109,10 @@ function resolveLauncher(launcherPath: string): string {
 }
 
 export function findSystemApp(): SystemApp {
+    const selected = process.env.CODEX_ENHANCER_SOURCE;
+    if (selected) return locateApp(fs.realpathSync(selected));
+    if (process.platform === "darwin") return findMacApp();
+    if (process.platform !== "linux") throw new Error("unsupported Codex Desktop platform");
     const candidates: string[] = [];
     if (fs.existsSync("/usr/bin/codex-desktop")) candidates.push("/usr/bin/codex-desktop");
     if (fs.existsSync("/opt/codex-desktop/start.sh"))
@@ -113,10 +120,49 @@ export function findSystemApp(): SystemApp {
     const launcher = candidates[0];
     if (launcher === undefined) throw new Error("Codex Desktop launcher was not found");
     const startScript = resolveLauncher(launcher);
-    const appDir = path.dirname(startScript);
-    const binary = path.join(appDir, "ChatGPT");
-    if (!fs.existsSync(binary)) throw new Error(`ChatGPT binary is missing in ${appDir}`);
-    return { appDir, startScript, binary };
+    return locateApp(fs.realpathSync(path.dirname(startScript)));
+}
+
+function findMacApp(): SystemApp {
+    const products = ["Codex.app", "ChatGPT.app"];
+    const locations = ["/Applications", path.join(homedir(), "Applications")];
+    for (const location of locations) {
+        for (const product of products) {
+            const directory = path.join(location, product);
+            if (fs.existsSync(path.join(directory, "Contents", "Resources", "app.asar"))) {
+                return locateApp(fs.realpathSync(directory));
+            }
+        }
+    }
+    throw new Error("Codex Desktop application was not found in Applications");
+}
+
+function plistString(info: string, key: string): string {
+    return execFileSync("/usr/bin/plutil", ["-extract", key, "raw", "-o", "-", info], {
+        encoding: "utf8",
+    }).trim();
+}
+
+export function locateApp(appDir: string): SystemApp {
+    if (process.platform === "darwin" || appDir.endsWith(".app")) {
+        const contents = path.join(appDir, "Contents");
+        const name = plistString(path.join(contents, "Info.plist"), "CFBundleExecutable");
+        if (!name || name !== path.basename(name) || name === "..")
+            throw new Error("invalid app bundle executable");
+        const binary = path.join(contents, "MacOS", name);
+        return {
+            appDir,
+            startScript: binary,
+            binary,
+            resourcesDir: path.join(contents, "Resources"),
+        };
+    }
+    return {
+        appDir,
+        startScript: path.join(appDir, "start.sh"),
+        binary: path.join(appDir, "ChatGPT"),
+        resourcesDir: path.join(appDir, "resources"),
+    };
 }
 
 export function readFuses(binaryPath: string): FuseInfo | null {
@@ -151,8 +197,10 @@ export function readFuses(binaryPath: string): FuseInfo | null {
     return null;
 }
 
-export function findStartupArchive(appDir: string): StartupArchive {
-    const resourcesDir = path.join(appDir, "resources");
+export function findStartupArchive(
+    appDir: string,
+    resourcesDir = locateApp(appDir).resourcesDir,
+): StartupArchive {
     const names = listAsarFiles(resourcesDir);
     const matches: StartupArchive[] = [];
     for (const name of names) {
@@ -168,7 +216,7 @@ export function findStartupArchive(appDir: string): StartupArchive {
             const packageVersion = manifest?.version;
             matches.push({
                 archivePath,
-                relativeArchive: path.posix.join("resources", name),
+                relativeArchive: path.relative(appDir, archivePath),
                 main,
                 packageName: typeof packageName === "string" ? packageName : null,
                 packageVersion: typeof packageVersion === "string" ? packageVersion : null,
@@ -185,14 +233,8 @@ export function findStartupArchive(appDir: string): StartupArchive {
 }
 
 export function detect(appDir: string = findSystemApp().appDir): Detection {
-    const located: SystemApp =
-        appDir === findSystemApp().appDir
-            ? findSystemApp()
-            : {
-                  appDir,
-                  startScript: path.join(appDir, "start.sh"),
-                  binary: path.join(appDir, "ChatGPT"),
-              };
+    const located = locateApp(appDir);
+    if (process.platform === "darwin" || appDir.endsWith(".app")) return detectMac(located);
     const metadataPath = path.join(located.appDir, "resources", "linux-package-metadata.json");
     const owlPath = path.join(located.appDir, "resources", "owl-electron-app.json");
     const versionPath = path.join(located.appDir, "version");
@@ -206,6 +248,7 @@ export function detect(appDir: string = findSystemApp().appDir): Detection {
     const startup = findStartupArchive(located.appDir);
     return {
         appDir: located.appDir,
+        platform: "linux",
         startScript: located.startScript,
         binary: located.binary,
         codexVersion: requiredString(metadata?.version, "version", metadataPath),
@@ -216,6 +259,29 @@ export function detect(appDir: string = findSystemApp().appDir): Detection {
         rpm: commandOutput("rpm", ["-q", "codex-desktop"]),
         fuses: readFuses(located.binary),
         archive: startup,
+    };
+}
+
+function detectMac(located: SystemApp): Detection {
+    const archive = findStartupArchive(located.appDir, located.resourcesDir);
+    const owl = path.join(located.resourcesDir, "owl-electron-app.json");
+    const metadata = fs.existsSync(owl) ? (readJson(owl) as OwlApp) : null;
+    return {
+        appDir: located.appDir,
+        platform: "darwin",
+        startScript: located.startScript,
+        binary: located.binary,
+        codexVersion: plistString(
+            path.join(located.appDir, "Contents", "Info.plist"),
+            "CFBundleShortVersionString",
+        ),
+        buildFlavor: null,
+        chromiumVersion: "unknown",
+        runtimeType: optionalString(metadata?.runtimeName) ?? "electron",
+        runtimeArchiveSha: optionalString(metadata?.runtimeArchiveSha),
+        rpm: null,
+        fuses: readFuses(located.binary),
+        archive,
     };
 }
 

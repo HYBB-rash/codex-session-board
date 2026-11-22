@@ -168,6 +168,25 @@ export function sha256File(filePath: string): string {
     return hash.digest("hex");
 }
 
+export function sha256ArchiveHeader(filePath: string): string {
+    const file = fs.openSync(filePath, "r");
+    try {
+        const { dataStart } = readHeaderFromFd(file);
+        const prefix = Buffer.alloc(16);
+        fs.readSync(file, prefix, 0, prefix.length, 0);
+        const json = Buffer.alloc(prefix.readUInt32LE(12));
+        if (
+            16 + json.length > dataStart ||
+            fs.readSync(file, json, 0, json.length, 16) !== json.length
+        ) {
+            throw new Error("asar header string was truncated");
+        }
+        return crypto.createHash("sha256").update(json).digest("hex");
+    } finally {
+        fs.closeSync(file);
+    }
+}
+
 export function createArchive(filePath: string, files: readonly ArchiveFile[]): void {
     let data = Buffer.alloc(0);
     const root: AsarDirectoryNode = { files: {} };
