@@ -48,7 +48,10 @@
             ["all_abstract_state_edges_match_the_typescript_service"],
             ["disabled-titles-preserve-save", "manual-change-history", "automatic-change-history"]
         ],
-        "MANUAL-002": [["mcp-real-revisions", "stale-account-edit"], ["mcp-real-revisions"]],
+        "MANUAL-002": [
+            ["mcp-real-revisions", "stale-account-edit", "stale-account-card"],
+            ["mcp-real-revisions"]
+        ],
         "MANUAL-003": [
             ["mcp-real-revisions", "manual-follow-up-recovery"],
             ["manual-follow-up-recovery"]

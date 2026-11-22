@@ -51,6 +51,10 @@
             "file": "src/extensions/session-board/archive.test.ts",
             "test": "reopening an incomplete archive batch checks submitted items and never resends them"
         },
+        "legacy-archive-section-version": {
+            "file": "src/extensions/session-board/discovery.test.ts",
+            "test": "a previously registered unscoped archive batch keeps its pending and unsent semantics"
+        },
         "retired-connection": {
             "file": "src/extensions/session-board/desktop-connection.test.ts",
             "test": "a disconnected catalog host retires pending reads and prior connection epochs"
@@ -78,6 +82,10 @@
         "stale-account-edit": {
             "file": "src/extensions/session-board/discovery.test.ts",
             "test": "an in-flight same-column edit cannot persist after the active Codex account switches"
+        },
+        "stale-account-card": {
+            "file": "src/extensions/session-board/discovery.test.ts",
+            "test": "a stale card cannot save or register an archive after a switch to identical native revisions"
         },
         "preview-previous-complete": {
             "file": "src/extensions/session-board/preview.test.ts",
@@ -632,7 +640,13 @@
         },
         "enhancer-entry": {
             "status": "partial",
-            "evidence": ["native-move", "fedora-desktop", "archive-receipt", "ipc-frame"],
+            "evidence": [
+                "native-move",
+                "fedora-desktop",
+                "archive-receipt",
+                "legacy-archive-section-version",
+                "ipc-frame"
+            ],
             "remaining": "已确认关页期间观察器和定时归档；补已安装候选的订阅去重、标题失败重试。"
         },
         "pwa-install": {
