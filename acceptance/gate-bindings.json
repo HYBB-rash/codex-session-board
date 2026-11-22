@@ -1,0 +1,63 @@
+{
+    "schemaVersion": 1,
+    "baseline": "2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc",
+    "assertions": {
+        "STATE-001": [
+            ["state_names_and_display_order"],
+            [
+                "state_names_and_display_order",
+                "all_abstract_state_edges_match_the_typescript_service"
+            ]
+        ],
+        "AUTO-001": [["runtime_evidence_table_with_native_identity"], []],
+        "AUTO-002": [
+            ["runtime_evidence_table_with_native_identity"],
+            ["all_abstract_state_edges_match_the_typescript_service"],
+            []
+        ],
+        "AUTO-003": [
+            ["runtime_evidence_table_with_native_identity"],
+            ["runtime_evidence_table_with_native_identity"]
+        ],
+        "AUTO-004": [["model_view_and_restart_do_not_write"], []],
+        "AUTO-005": [
+            [
+                "all_abstract_state_edges_match_the_typescript_service",
+                "model_view_and_restart_do_not_write"
+            ],
+            ["all_abstract_state_edges_match_the_typescript_service"]
+        ],
+        "AUTO-006": [[], [], []],
+        "MANUAL-001": [[], ["all_abstract_state_edges_match_the_typescript_service"], []],
+        "MANUAL-002": [[], []],
+        "MANUAL-003": [[], []],
+        "TITLE-001": [[], [], ["title_prefix_replacement_and_idempotence"]],
+        "TITLE-002": [
+            ["title_prefix_replacement_and_idempotence"],
+            ["title_prefix_replacement_and_idempotence"],
+            []
+        ],
+        "TITLE-003": [[], [], []],
+        "TITLE-004": [[], [], []],
+        "TITLE-005": [[], [], []],
+        "DISCOVERY-001": [[], [], []],
+        "DISCOVERY-002": [[], []],
+        "NAV-001": [[], [], [], []],
+        "APP-001": [[], [], []],
+        "UI-001": [[], [], []],
+        "UI-002": [[], [], [], []],
+        "UI-003": [[], [], []],
+        "MCP-001": [["mcp-stdio"], [], []],
+        "DATA-001": [[], ["release-paths", "release-rollback"]],
+        "DATA-002": [
+            ["migration-wal", "migration-projection", "migration-offline"],
+            ["migration-retry"]
+        ],
+        "SERVICE-001": [[], [], []],
+        "BOUNDARY-001": [[], [], []],
+        "SECURITY-001": [["http-security"], [], []],
+        "HEALTH-001": [[], []],
+        "DELIVERY-001": [[], [], []],
+        "GATE-001": [[], [], []]
+    }
+}
