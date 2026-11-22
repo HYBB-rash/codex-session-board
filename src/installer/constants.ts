@@ -1,5 +1,5 @@
 export const SENTINEL = "CODEX_ENHANCER_LOADER_V1";
-export const PATCH_VERSION = "0.2.0";
+export const PATCH_VERSION = "0.3.0";
 export const LINK_NAME = ".codex-enhancer-link.json";
 export const APP_ID = "codex-enh-poc";
 

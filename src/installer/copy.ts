@@ -62,11 +62,11 @@ export function ensureTestCopy(source: Detection): void {
 }
 
 function linuxCopyPids(): string[] {
-    const needle = Buffer.from(`${paths.testApp}/`);
     return fs.readdirSync("/proc").filter((entry) => {
         if (!/^\d+$/.test(entry) || entry === String(process.pid)) return false;
         try {
-            return fs.readFileSync(`/proc/${entry}/cmdline`).includes(needle);
+            const args = fs.readFileSync(`/proc/${entry}/cmdline`, "utf8").split("\0");
+            return args.some((argument) => argument.startsWith(`${paths.testApp}/`));
         } catch {
             return false;
         }

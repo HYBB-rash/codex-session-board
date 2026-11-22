@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    statSync,
+    writeFileSync,
+} from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -58,7 +66,7 @@ const argumentsByAction: Record<string, object> = {
 };
 
 function isolated(test: TestContext) {
-    const directory = mkdtempSync(join(tmpdir(), "enhancer-compat-"));
+    const directory = mkdtempSync(join(realpathSync(tmpdir()), "enhancer-compat-"));
     test.after(() => rmSync(directory, { force: true, recursive: true }));
     return directory;
 }
