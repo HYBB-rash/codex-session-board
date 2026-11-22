@@ -949,11 +949,22 @@ export class BoardService {
         )
             throw new Error("项目归属已变更，请刷新后重试");
         await this.freshContext();
-        if (before.projectId !== project.id)
-            await this.desktop.assignProject(connection, card.threadId, project.id);
-        const actual = await this.desktop.read(connection, card.threadId, false);
+        let failure: unknown;
+        if (before.projectId !== project.id) {
+            try {
+                await this.desktop.assignProject(connection, card.threadId, project.id);
+            } catch (error) {
+                failure = error;
+            }
+        }
+        const actual =
+            before.projectId === project.id
+                ? before
+                : await this.desktop.read(connection, card.threadId, false);
         await this.freshContext();
-        if (actual.projectId !== project.id) throw new Error("Codex 尚未确认项目归属");
+        this.desktop.assertCurrent(connection);
+        if (actual.projectId !== project.id || actual.cwd !== card.cwd)
+            throw new Error(failure ? errorText(failure) : "Codex 尚未确认项目归属");
         this.publishThread(hostId, actual);
         return { ok: true };
     }

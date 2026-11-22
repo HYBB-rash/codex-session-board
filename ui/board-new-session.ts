@@ -135,7 +135,10 @@ export function mountBoardNewSession(elements: NewSessionElements, ports: NewSes
         recover(draft, result.error ?? "");
         return;
       }
-      if (result.registration) return;
+      if (result.registration) {
+        announce("请在 Codex 确认目标目录。登记后若未进入输入页，回到看板重新打开同一项目。");
+        return;
+      }
       if (projectId !== null) {
         if (body.operationId) clearNativeOperation(projectId);
         draftRequests.delete(projectId);

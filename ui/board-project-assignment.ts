@@ -35,7 +35,7 @@ export function mountProjectAssignment(elements: AssignmentElements, ports: Assi
   }
 
   function canAssign(session: BoardSession) {
-    return !!(session.remote && session.catalogCurrent && session.ordinary && !session.archived &&
+    return !!(session.remote && session.catalogCurrent && session.ordinary && !session.archived && !session.readOnly &&
       session.canOpen !== false && !session.projectId && projectsFor(session).length);
   }
 
