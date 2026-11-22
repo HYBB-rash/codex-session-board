@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import {
     cpSync,
     existsSync,
+    lstatSync,
     mkdirSync,
     mkdtempSync,
     readFileSync,
@@ -19,6 +20,36 @@ import {
     requireReleaseVersion,
     versionManifest,
 } from "./release-manifest.js";
+
+const acceptanceFiles = [
+    "README.md",
+    "package.json",
+    "package-lock.json",
+    "tsconfig.json",
+    "biome.json",
+    "acceptance",
+    "src",
+    "ui",
+    "scripts",
+    "docs/session-board-native-checkpoint.md",
+    "docs/session-board-typescript-acceptance.md",
+];
+
+function packageAcceptance(directory: string): void {
+    for (const file of acceptanceFiles) {
+        cpSync(path.join(root, file), path.join(directory, file), {
+            recursive: true,
+            filter: (source) => {
+                const name = path.basename(source);
+                return (
+                    !["node_modules", "__pycache__"].includes(name) &&
+                    !name.startsWith(".") &&
+                    !lstatSync(source).isSymbolicLink()
+                );
+            },
+        });
+    }
+}
 
 function packagePlugin(directory: string, version: string): void {
     const manifest = ".codex-plugin/plugin.json";
@@ -42,13 +73,11 @@ export function packageRelease(
     const directory = path.join(work, name);
     try {
         mkdirSync(directory);
-        cpSync(outputDir, path.join(directory, "dist"), {
-            recursive: true,
-            filter: (source) => !source.endsWith(".test.js"),
-        });
+        cpSync(outputDir, path.join(directory, "dist"), { recursive: true });
         const versionFile = path.join(directory, "dist", "board-assets", "version.txt");
         if (existsSync(versionFile)) writeFileSync(versionFile, `${version}\n`);
         packagePlugin(directory, version);
+        packageAcceptance(directory);
         const installGuide = path.join(root, "scripts", "package-install.md");
         if (existsSync(installGuide)) cpSync(installGuide, path.join(directory, "INSTALL.md"));
         const manifest = versionManifest(path.join(directory, "dist"), version, platform);

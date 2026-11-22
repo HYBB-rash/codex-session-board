@@ -21,3 +21,13 @@ node dist/bin/codex-enhancer.js uninstall
 ```
 
 退出副本后再卸载。看板配置和运行数据在 `state/session-board/`。
+
+在解压目录复跑随包测试和冻结契约时，无需安装构建依赖。模型对照需要 Python 3。
+
+```bash
+node --test dist/compat/*.test.js dist/extensions/session-board/*.test.js dist/installer/*.test.js dist/migration/*.test.js dist/runtime/*.test.js
+python3 -B acceptance/verify-typescript.py --model-only
+node acceptance/check-candidate.mjs --open
+```
+
+逐项清单列出仍需真实宿主取证的验收。
