@@ -1,0 +1,42 @@
+#!/usr/bin/bash
+set -euo pipefail
+
+script="${BASH_SOURCE[0]}"
+while [ -L "$script" ]; do
+    dir="$(CDPATH= cd -- "$(dirname -- "$script")" && pwd)"
+    target="$(readlink -- "$script")"
+    case "$target" in
+        /*) script="$target" ;;
+        *) script="$dir/$target" ;;
+    esac
+done
+root="$(CDPATH= cd -- "$(dirname -- "$script")/../.." && pwd)"
+cd "$root"
+
+max_files=15
+max_lines=400
+file_count=0
+line_count=0
+while IFS=$'\t' read -r added deleted _; do
+    file_count=$((file_count + 1))
+    if [ "$added" != "-" ]; then
+        line_count=$((line_count + added))
+    fi
+    if [ "$deleted" != "-" ]; then
+        line_count=$((line_count + deleted))
+    fi
+done < <(git diff --cached --numstat)
+
+failed=0
+if [ "$file_count" -gt "$max_files" ] || [ "$line_count" -gt "$max_lines" ]; then
+    printf '提交被拒绝：暂存了 %s 个文件，新增和删除一共 %s 行，上限是 %s 个文件、%s 行。\n' \
+        "$file_count" "$line_count" "$max_files" "$max_lines" >&2
+    failed=1
+fi
+
+if ! npm run lint --silent; then
+    printf '提交被拒绝：format 或 lint 没有通过。\n' >&2
+    failed=1
+fi
+
+exit "$failed"
