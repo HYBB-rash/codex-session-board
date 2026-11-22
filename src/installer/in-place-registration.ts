@@ -5,7 +5,7 @@ import { IN_PLACE_APP, IN_PLACE_ARCHIVE, IN_PLACE_ROOT } from "./constants.js";
 import { presentFile, syncDirectory } from "./in-place-archive.js";
 import { assertSystemPath } from "./in-place-target.js";
 import { systemWatcherFiles, systemWatcherLinks } from "./in-place-watcher.js";
-import { releaseManifestName, verifyRelease } from "./release-manifest.js";
+import { releaseManifestName, verifyInPlaceRelease } from "./release-manifest.js";
 
 const control = path.join(IN_PLACE_ROOT, "control");
 const stagedControl = path.join(IN_PLACE_ROOT, ".control-stage");
@@ -26,7 +26,7 @@ export function assertSystemRegistrationClear(): void {
 export function installControl(packageRoot: string): void {
     if (fs.existsSync(control)) {
         assertSystemPath(control, true);
-        verifyRelease(control);
+        verifyInPlaceRelease(control);
         return;
     }
     fs.rmSync(stagedControl, { recursive: true, force: true });
@@ -38,7 +38,7 @@ export function installControl(packageRoot: string): void {
         path.join(packageRoot, releaseManifestName),
         path.join(stagedControl, releaseManifestName),
     );
-    verifyRelease(stagedControl);
+    verifyInPlaceRelease(stagedControl);
     for (const item of fs.readdirSync(stagedControl, { recursive: true, withFileTypes: true })) {
         const file = path.join(item.parentPath, item.name);
         fs.chownSync(file, 0, 0);

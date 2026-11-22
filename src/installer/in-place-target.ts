@@ -11,6 +11,7 @@ const compatibleBuild = {
     entry: ".vite/build/early-bootstrap.js",
     archiveSha256: "20c53634196da5d0a84b7cc5c8113a7370aa4ec0b78fffeb6cda3c03f138301e",
     binarySha256: "48db1e43e1692275688084bd9b13ba68fbd2dde9710ca139a574f39ef6f0c80d",
+    backendSha256: "cbb37386e174dbaea5f34a84944270fd7a1850f4451ed74f580a27ea0367d905",
 } as const;
 
 export interface FileProof {
@@ -133,10 +134,23 @@ function assertRpmFile(file: string, rpm: RpmFile, sha256: string): void {
         throw new Error(`文件与 RPM 记录不同：${file}`);
 }
 
-export function assertCompatibleExecutable(binary: string): void {
+export function assertCompatibleExecutables(binary: string): void {
+    const backend = path.join(path.dirname(binary), "resources/codex");
     assertSystemPath(binary, false);
+    assertSystemPath(backend, false);
     if (sha256File(binary) !== compatibleBuild.binarySha256)
         throw new Error("Codex 可执行文件与经过验收的构建不同");
+    if (sha256File(backend) !== compatibleBuild.backendSha256)
+        throw new Error("Codex App Server 与经过验收的构建不同");
+}
+
+export function readInPlaceBuildVersion(): string {
+    const metadata = path.join(IN_PLACE_APP, "resources/linux-package-metadata.json");
+    assertSystemPath(metadata, false);
+    const { version } = JSON.parse(fs.readFileSync(metadata, "utf8")) as { version?: unknown };
+    if (typeof version !== "string" || !/^[\w.-]+$/.test(version))
+        throw new Error("无法读取 Codex 的当前构建版本");
+    return version;
 }
 
 export function assertOriginalRpmRecorded(
@@ -200,14 +214,19 @@ export function requireCompatibleRpm(app = IN_PLACE_APP): {
     const archive = fileProof(build.archive.archivePath);
     const owner = rpmFile(build.archive.archivePath);
     const binaryOwner = rpmFile(build.binary);
+    const backend = path.join(app, "resources/codex");
+    const backendOwner = rpmFile(backend);
     if (
         archive.sha256 !== compatibleBuild.archiveSha256 ||
         binaryOwner.sha256 !== compatibleBuild.binarySha256 ||
-        owner.package !== binaryOwner.package
+        backendOwner.sha256 !== compatibleBuild.backendSha256 ||
+        owner.package !== binaryOwner.package ||
+        owner.package !== backendOwner.package
     ) {
         throw new Error("Codex RPM 的构建指纹尚未通过原地安装兼容性验证");
     }
     assertRpmFile(build.archive.archivePath, owner, archive.sha256);
     assertRpmFile(build.binary, binaryOwner, sha256File(build.binary));
+    assertRpmFile(backend, backendOwner, sha256File(backend));
     return { build, package: owner.package, archive };
 }

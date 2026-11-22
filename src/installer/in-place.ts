@@ -13,7 +13,7 @@ import {
     syncDirectory,
     writeInstallationReceipt,
 } from "./in-place-archive.js";
-import { notifyInPlace } from "./in-place-bootstrap.js";
+import { notifyInPlace, readRuntimeFile } from "./in-place-bootstrap.js";
 import {
     type InPlaceInstallation,
     inPlaceReleaseStore,
@@ -29,17 +29,19 @@ import {
     reloadUserWatchers,
 } from "./in-place-registration.js";
 import {
-    assertCompatibleExecutable,
+    assertCompatibleExecutables,
     assertOriginalRpmRecorded,
     assertSystemPath,
     inspectStockArchive,
+    readInPlaceBuildVersion,
     requireCompatibleRpm,
 } from "./in-place-target.js";
 import { checkInPlaceUpgrade, type InPlaceWatchStatus } from "./in-place-watcher.js";
-import { verifyRelease } from "./release-manifest.js";
+import { verifyInPlaceRelease } from "./release-manifest.js";
 import { activateRelease, activeRelease, rollbackRelease } from "./releases.js";
 
 const rpmLock = "/usr/lib/sysimage/rpm/.rpm.lock";
+const receiptStage = /^\.receipt-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 
 function refreshWatchers(enabled: boolean): void {
     for (const warning of reloadUserWatchers(enabled)) console.error(warning);
@@ -72,6 +74,7 @@ function withRpmLock<T>(change: () => T): T {
     if (process.getuid?.() !== 0) throw new Error("原地安装修改系统文件，需要管理员权限");
     assertSystemPath(rpmLock, false);
     const fd = fs.openSync(rpmLock, fs.constants.O_RDWR | fs.constants.O_NOFOLLOW);
+    const previousMask = process.umask(0o022);
     try {
         try {
             execFileSync("/usr/bin/flock", ["--fcntl", "-x", "-n", "-E", "75", "3"], {
@@ -85,6 +88,7 @@ function withRpmLock<T>(change: () => T): T {
         assertStopped();
         return change();
     } finally {
+        process.umask(previousMask);
         fs.closeSync(fd);
     }
 }
@@ -108,7 +112,7 @@ function cleanInstallation(installation: InPlaceInstallation): void {
     for (const name of ["state", "control", ".control-stage"])
         fs.rmSync(path.join(IN_PLACE_ROOT, name), { recursive: true, force: true });
     for (const name of fs.readdirSync(IN_PLACE_ROOT)) {
-        if (/^\.receipt-[a-f0-9-]{36}$/.test(name)) fs.unlinkSync(path.join(IN_PLACE_ROOT, name));
+        if (receiptStage.test(name)) fs.unlinkSync(path.join(IN_PLACE_ROOT, name));
     }
     fs.unlinkSync(transaction.receipt);
     syncDirectory(IN_PLACE_ROOT);
@@ -130,13 +134,25 @@ function resetPreparation(installation: InPlaceInstallation): void {
     }
 }
 
+function unregisteredReceiptStages(): string[] {
+    assertSystemRegistrationClear();
+    if (!fs.lstatSync(IN_PLACE_ROOT, { throwIfNoEntry: false })) return [];
+    assertSystemPath(IN_PLACE_ROOT, true);
+    return fs.readdirSync(IN_PLACE_ROOT).map((name) => {
+        if (!receiptStage.test(name)) throw new Error("原地安装记录缺失，已保留恢复材料");
+        const staging = path.join(IN_PLACE_ROOT, name);
+        assertSystemPath(staging, false);
+        return staging;
+    });
+}
+
 function prepareInstaller(): InPlaceInstallation {
     const compatible = requireCompatibleRpm();
-    assertSystemRegistrationClear();
+    const remnants = unregisteredReceiptStages();
     fs.mkdirSync(IN_PLACE_ROOT, { mode: 0o755, recursive: true });
-    assertSystemPath(IN_PLACE_ROOT, true);
-    if (fs.readdirSync(IN_PLACE_ROOT).length !== 0)
-        throw new Error("原地安装目录有未知文件，已保留恢复材料");
+    fs.chmodSync(IN_PLACE_ROOT, 0o755);
+    for (const file of remnants) fs.unlinkSync(file);
+    syncDirectory(path.dirname(IN_PLACE_ROOT));
     const installation = newInstallation({
         package: compatible.package,
         version: compatible.build.codexVersion,
@@ -152,7 +168,7 @@ export function installInPlace(packageRoot: string): {
     version: string;
 } {
     return withRpmLock(() => {
-        const manifest = verifyRelease(packageRoot);
+        const manifest = verifyInPlaceRelease(packageRoot);
         const prior = readInPlaceInstallation();
         let installation = prior ?? prepareInstaller();
         const transaction = inPlaceTransaction(installation);
@@ -204,7 +220,15 @@ export function installInPlace(packageRoot: string): {
 export function uninstallInPlace(): { action: "restored" | "kept-rpm" | "not-installed" } {
     return withRpmLock(() => {
         const installation = readInPlaceInstallation();
-        if (!installation) return { action: "not-installed" };
+        if (!installation) {
+            const remnants = unregisteredReceiptStages();
+            if (fs.existsSync(IN_PLACE_ROOT)) {
+                for (const file of remnants) fs.unlinkSync(file);
+                fs.rmdirSync(IN_PLACE_ROOT);
+                syncDirectory(path.dirname(IN_PLACE_ROOT));
+            }
+            return { action: "not-installed" };
+        }
         const transaction = inPlaceTransaction(installation);
         if (installation.phase === "preparing") {
             resetPreparation(installation);
@@ -221,7 +245,7 @@ export function uninstallInPlace(): { action: "restored" | "kept-rpm" | "not-ins
                 installation.package,
                 installation.original,
             );
-            assertCompatibleExecutable(path.join(IN_PLACE_APP, "ChatGPT"));
+            assertCompatibleExecutables(path.join(IN_PLACE_APP, "ChatGPT"));
         }
         writeInstallationReceipt(transaction.receipt, { ...installation, phase: "removing" });
         if (position === "patched") restoreArchive(transaction, installation, assertStopped);
@@ -244,41 +268,37 @@ export function adjustInPlaceRelease(candidate?: string): string {
     });
 }
 
+function patchedStatus(installation: InPlaceInstallation): InPlaceWatchStatus {
+    const version = readInPlaceBuildVersion();
+    try {
+        if (version !== installation.version)
+            throw new Error(`构建与已登记的 ${installation.version} 不同`);
+        assertCompatibleExecutables(path.join(IN_PLACE_APP, "ChatGPT"));
+        readRuntimeFile();
+        return { kind: "ready" };
+    } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        return {
+            kind: "incompatible",
+            fingerprint: createHash("sha256").update(`${version}\n${detail}`).digest("hex"),
+            message: `Codex ${version} 的会话看板已停用。${detail}。请安装兼容版看板或卸载原地安装。`,
+        };
+    }
+}
+
 export function inPlaceStatus(): InPlaceWatchStatus {
     try {
         const installation = readInPlaceInstallation();
-        if (!installation) return { kind: "not-installed" };
+        if (!installation) {
+            if (unregisteredReceiptStages().length)
+                throw new Error("首次原地安装在写入记录时中断，请重试安装或卸载");
+            return { kind: "not-installed" };
+        }
         const archive = inPlaceTransaction(installation);
         if (installation.phase !== "installed")
             throw new Error(`原地安装事务尚未完成，阶段 ${installation.phase}`);
-        if (archivePosition(archive, installation) === "patched") {
-            const metadata = JSON.parse(
-                fs.readFileSync(
-                    path.join(IN_PLACE_APP, "resources/linux-package-metadata.json"),
-                    "utf8",
-                ),
-            ) as { version?: unknown };
-            if (metadata.version === installation.version) {
-                try {
-                    assertCompatibleExecutable(path.join(IN_PLACE_APP, "ChatGPT"));
-                    return { kind: "ready" };
-                } catch (error) {
-                    const detail = error instanceof Error ? error.message : String(error);
-                    return {
-                        kind: "incompatible",
-                        fingerprint: createHash("sha256")
-                            .update(`${installation.version}\n${detail}`)
-                            .digest("hex"),
-                        message: `Codex ${installation.version} 已停用会话看板。${detail}。请安装兼容版看板或检查安装状态。`,
-                    };
-                }
-            }
-            return {
-                kind: "incompatible",
-                fingerprint: createHash("sha256").update(String(metadata.version)).digest("hex"),
-                message: `Codex ${String(metadata.version)} 与已登记的 ${installation.version} 不同。请安装兼容版看板或卸载。`,
-            };
-        }
+        if (archivePosition(archive, installation) === "patched")
+            return patchedStatus(installation);
         const observed = inspectStockArchive();
         if (observed.kind === "stock") {
             return {
@@ -299,8 +319,33 @@ export function inPlaceStatus(): InPlaceWatchStatus {
     }
 }
 
+export function purgeInPlaceData(): boolean {
+    if (process.getuid?.() === 0) throw new Error("请用运行 Codex 的普通用户清理看板数据");
+    if (inPlaceStatus().kind !== "not-installed") throw new Error("请先完成会话看板的原地卸载");
+    const directory = inPlaceUserDirectory();
+    const info = fs.lstatSync(directory, { throwIfNoEntry: false });
+    if (!info) return false;
+    if (!info.isDirectory() || info.uid !== process.getuid?.())
+        throw new Error("当前用户的看板数据路径无法核对");
+    fs.rmSync(directory, { recursive: true });
+    return true;
+}
+
+function statusAfterRpm(): InPlaceWatchStatus {
+    assertSystemPath(rpmLock, false);
+    const fd = fs.openSync(rpmLock, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    try {
+        execFileSync("/usr/bin/flock", ["--fcntl", "-s", "-w", "25", "3"], {
+            stdio: ["ignore", "ignore", "pipe", fd],
+        });
+        return inPlaceStatus();
+    } finally {
+        fs.closeSync(fd);
+    }
+}
+
 export function runInPlaceCheck() {
-    return checkInPlaceUpgrade(inPlaceUserDirectory(), inPlaceStatus, ({ message }) =>
+    return checkInPlaceUpgrade(inPlaceUserDirectory(), statusAfterRpm, ({ message }) =>
         notifyInPlace(message),
     );
 }

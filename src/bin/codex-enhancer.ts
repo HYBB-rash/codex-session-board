@@ -21,10 +21,13 @@ function fail(error: unknown): void {
 async function runInPlace(): Promise<void> {
     const installer = await import("../installer/in-place.js");
     const candidate = process.argv[4];
-    if (process.argv.length > (command === "update" ? 5 : 4))
-        throw new Error("原地安装命令参数无效");
+    const standalone = command === "in-place-check" || command === "purge-in-place-data";
+    const expectedLength = standalone ? 3 : command === "update" ? 5 : 4;
+    if (process.argv.length !== expectedLength) throw new Error("原地安装命令参数无效");
     if (command === "in-place-check")
         console.log(JSON.stringify(await installer.runInPlaceCheck()));
+    else if (command === "purge-in-place-data")
+        console.log(JSON.stringify({ removed: installer.purgeInPlaceData() }));
     else if (command === "install")
         console.log(JSON.stringify(installer.installInPlace(dirname(outputDir))));
     else if (command === "uninstall") console.log(JSON.stringify(installer.uninstallInPlace()));
@@ -39,6 +42,7 @@ async function runInPlace(): Promise<void> {
 
 if (
     command === "in-place-check" ||
+    command === "purge-in-place-data" ||
     (["install", "uninstall", "status", "update", "rollback"].includes(command ?? "") &&
         process.argv[3] === "--in-place")
 ) {
@@ -111,7 +115,7 @@ if (
     }
 } else {
     console.log(
-        "Usage: codex-enhancer detect|install [--in-place]|uninstall [--in-place]|status [--in-place]|launch|update [--in-place] <directory>|rollback [--in-place]|package <version> <output> [platform]",
+        "Usage: codex-enhancer detect|install [--in-place]|uninstall [--in-place]|purge-in-place-data|status [--in-place]|launch|update [--in-place] <directory>|rollback [--in-place]|package <version> <output> [platform]",
     );
     process.exitCode = command ? 1 : 0;
 }

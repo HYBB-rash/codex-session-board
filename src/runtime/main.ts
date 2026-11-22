@@ -66,10 +66,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function log(event: string, detail: object = {}): void {
-    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.mkdirSync(path.dirname(logPath), { recursive: true, mode: 0o700 });
     fs.appendFileSync(
         logPath,
         `${JSON.stringify({ at: new Date().toISOString(), event, ...detail })}\n`,
+        { mode: 0o600 },
     );
 }
 

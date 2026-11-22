@@ -1,9 +1,11 @@
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { sha256ArchiveHeader } from "./asar.js";
-import { LINK_NAME } from "./constants.js";
+import { entryIncludes, sha256ArchiveHeader, sha256File } from "./asar.js";
+import { IN_PLACE_APP, IN_PLACE_ARCHIVE, LINK_NAME, SENTINEL } from "./constants.js";
 import { type Detection, findSystemApp } from "./detect.js";
+import { inPlaceTransaction, readInPlaceInstallation } from "./in-place-receipt.js";
+import { assertSystemPath } from "./in-place-target.js";
 import * as paths from "./paths.js";
 
 export function copyFile(source: string, destination: string): void {
@@ -38,6 +40,32 @@ export function assertIsolatedPath(item: string, source?: string): void {
     }
 }
 
+function useStockArchive(source: Detection, candidate: string): void {
+    const archive = path.join(candidate, source.archive.relativeArchive);
+    if (!entryIncludes(archive, source.archive.main, Buffer.from(SENTINEL))) return;
+    if (
+        source.platform !== "linux" ||
+        source.appDir !== IN_PLACE_APP ||
+        source.archive.relativeArchive !== IN_PLACE_ARCHIVE
+    )
+        throw new Error("首次创建副本需要原始归档或已登记的 Fedora 原地安装");
+    const receipt = readInPlaceInstallation();
+    if (
+        receipt?.phase !== "installed" ||
+        receipt.entry !== source.archive.main ||
+        receipt.version !== source.codexVersion ||
+        sha256File(archive) !== receipt.patched.sha256
+    )
+        throw new Error("原地补丁与安装记录不符，无法初始化副本");
+    const { backup } = inPlaceTransaction(receipt);
+    assertSystemPath(backup, false);
+    const original = `${archive}.stock`;
+    fs.copyFileSync(backup, original, fs.constants.COPYFILE_EXCL | fs.constants.COPYFILE_FICLONE);
+    if (sha256File(original) !== receipt.original.sha256)
+        throw new Error("原地安装备份与原件指纹不符，无法初始化副本");
+    fs.renameSync(original, archive);
+}
+
 export function ensureTestCopy(source: Detection): void {
     assertIsolatedPath(paths.testApp, source.appDir);
     if (fs.existsSync(paths.testApp)) {
@@ -55,6 +83,7 @@ export function ensureTestCopy(source: Detection): void {
                 stdio: "inherit",
             });
         }
+        useStockArchive(source, candidate);
         fs.renameSync(candidate, paths.testApp);
     } finally {
         fs.rmSync(staging, { recursive: true, force: true });

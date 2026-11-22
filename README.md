@@ -1,10 +1,10 @@
 # Codex Enhancer 会话看板
 
-从 Enhancer 副本的 Codex 侧栏打开会话看板。看板通过当前窗口读取本机和已连接的远程会话，状态列对应 Codex 原生侧栏分区。看板和宿主运行时使用 TypeScript，页面复用上游 Vue 3 组件。
+从 Codex 的 Enhancer 侧栏打开会话看板。看板通过当前窗口读取本机和已连接的远程会话，状态列对应 Codex 原生侧栏分区。默认安装独立副本。Fedora 提供显式选择的原地安装候选。
 
 ## 安装和打开
 
-Fedora 44 x86_64 已验证 Codex `26.1111.71704` 的安装、更新和回退。macOS arm64 候选包已在 MacBook Pro 解压并校验。该机的 Codex `26.1111.21308` 未通过安装预检，桌面运行、更新和回退待验证。
+Fedora 44 x86_64 已验证 Codex `26.1111.71704` 的副本安装、更新和回退。macOS arm64 候选包已在 MacBook Pro 解压并校验。该机的 Codex `26.1111.21308` 在写入前因框架内嵌 ASAR 摘要被拒绝。macOS 副本桌面运行、更新和回退待验，原地模式尚未开放。
 
 在 Linux 候选包所在目录校验归档，再进入解压目录运行 Node.js 22 或更新版本。
 
@@ -32,6 +32,29 @@ node dist/bin/codex-enhancer.js status
 ```
 
 更新和回退切换已校验的运行时目录，配置和记录保存在安装目录的 `state/session-board/`。退出副本后，执行 `node dist/bin/codex-enhancer.js uninstall` 恢复副本的原始启动归档。
+
+## Fedora 原地安装候选
+
+原地模式要求 Fedora x86_64、由 RPM 管理的 `/opt/codex-desktop`、通过预检的 Codex `26.1111.71704`，以及 `/usr/bin/node` 22 或更新版本。安装器还使用 Fedora 的 `rpm`、`flock`、`getfattr` 及桌面用户服务。选择带原地安装协议的 Linux 候选，校验 `.sha256` 后解压。退出原 Codex 的所有进程，再在解压目录执行。
+
+```bash
+sudo /usr/bin/node dist/bin/codex-enhancer.js install --in-place
+/usr/bin/node dist/bin/codex-enhancer.js status --in-place
+```
+
+从原 Codex 图标启动，沿用该窗口已有的登录、项目和远程连接。系统归档备份、看板运行时和当前版本指针保存在 `/var/lib/codex-enhancer/`，归系统管理员所有。每个用户的看板数据保存在 `$XDG_STATE_HOME/codex-enhancer/in-place/`，缺省为 `~/.local/state/codex-enhancer/in-place/`。原地网页使用 `http://127.0.0.1:18768/`，公共 CLI 和 MCP 可用 `--state-dir` 指向原地数据目录。原地模式在隔离 Fedora 中验证启动，实际登录后沿用既有连接的端到端验收仍待补齐。现场覆盖见[验收记录](docs/session-board-typescript-acceptance.md)。
+
+退出原 Codex 后，在解压目录更新、回退或卸载。校验新版归档后，将 `update` 参数指向新版解压目录。
+
+```bash
+sudo /usr/bin/node dist/bin/codex-enhancer.js update --in-place /path/to/extracted-candidate
+sudo /usr/bin/node dist/bin/codex-enhancer.js rollback --in-place
+sudo /usr/bin/node dist/bin/codex-enhancer.js uninstall --in-place
+```
+
+客户端构建不兼容时，原地 Loader 会停用看板。RPM 覆盖 Loader 后，独立用户服务在登录或检测到应用目录变化时复查，并提示安装兼容版或清理旧登记。卸载时校验备份与当前归档，按实际 RPM 状态恢复原件或保留升级后的文件。遇到未知改动时保留恢复材料并报告冲突。
+
+卸载默认保留每个用户的看板私有数据。要删除当前用户的备注、设置和本地缓存，先完成系统卸载，再以该普通用户运行 `/usr/bin/node dist/bin/codex-enhancer.js purge-in-place-data`。此前在 Codex 原生会话上完成的操作保留。
 
 ## 网页、PWA 和 CLI
 

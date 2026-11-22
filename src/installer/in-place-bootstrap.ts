@@ -10,9 +10,13 @@ import {
     inPlaceUserDirectory,
     readInPlaceInstallation,
 } from "./in-place-receipt.js";
-import { assertCompatibleExecutable, assertSystemPath } from "./in-place-target.js";
+import {
+    assertCompatibleExecutables,
+    assertSystemPath,
+    readInPlaceBuildVersion,
+} from "./in-place-target.js";
 import { checkInPlaceUpgrade } from "./in-place-watcher.js";
-import { verifyRelease } from "./release-manifest.js";
+import { verifyInPlaceRelease } from "./release-manifest.js";
 import { releasePointer } from "./releases.js";
 
 function archiveDigest(file: string): string {
@@ -41,7 +45,7 @@ export function readRuntimeFile(): string {
     const manifest = path.join(release, "release.json");
     assertSystemPath(manifest, false);
     if (sha256File(manifest) !== pointer.current) throw new Error("系统看板版本指纹已变化");
-    verifyRelease(release);
+    verifyInPlaceRelease(release);
     const runtime = path.join(release, "dist/runtime/main.js");
     assertSystemPath(runtime, false);
     return runtime;
@@ -82,18 +86,12 @@ export function startInPlace(): void {
             process.resourcesPath !== path.join(IN_PLACE_APP, "resources")
         )
             throw new Error("当前窗口不是已登记的 Fedora Codex");
-        const metadata = JSON.parse(
-            fs.readFileSync(
-                path.join(process.resourcesPath, "linux-package-metadata.json"),
-                "utf8",
-            ),
-        ) as { version?: unknown };
-        if (typeof metadata.version === "string") version = metadata.version;
+        version = readInPlaceBuildVersion();
         const installation = readInPlaceInstallation();
         if (installation?.phase !== "installed") throw new Error("安装记录缺失或尚未提交");
         if (installation.version !== version)
             throw new Error(`客户端已经替换已登记的 ${installation.version} 构建`);
-        assertCompatibleExecutable(process.execPath);
+        assertCompatibleExecutables(process.execPath);
         if (
             archiveDigest(path.join(IN_PLACE_APP, IN_PLACE_ARCHIVE)) !== installation.patched.sha256
         )
@@ -102,7 +100,11 @@ export function startInPlace(): void {
             app?: App;
             session?: { defaultSession?: unknown };
         };
-        if (typeof electron.app?.whenReady !== "function" || !electron.session)
+        if (
+            typeof electron.app?.whenReady !== "function" ||
+            typeof electron.app.on !== "function" ||
+            !electron.session
+        )
             throw new Error("Codex 当前窗口缺少所需的 Electron 接口");
         require(readRuntimeFile());
     } catch (error) {

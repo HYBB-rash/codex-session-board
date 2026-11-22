@@ -36,6 +36,8 @@ export function systemWatcherFiles(commands: {
         "[Service]",
         "Type=oneshot",
         `ExecStart=:${node} ${cli} in-place-check`,
+        "Restart=on-failure",
+        "RestartSec=15s",
         "",
         "[Install]",
         `WantedBy=${serviceTargets.join(" ")}`,
