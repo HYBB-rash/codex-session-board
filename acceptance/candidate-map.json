@@ -28,6 +28,20 @@
             "checkpoint_commit": "e2565ec",
             "coverage": "0.3.7 在登录的 Enhancer 测试副本复验两端移卡、备注、标题、归档、排序及重启读回，随包 CLI 与 MCP 复用同一窗口。"
         },
+        "native-mcp-and-remote-new": {
+            "file": "docs/session-board-typescript-acceptance.md",
+            "checkpoint_commit": "5e17a60",
+            "coverage": "Fedora 0.3.7 使用已安装 MCP App 写专用卡备注，网页及 Enhancer 读回；新建远程专用项目的空白输入页、首条输入和显式归属读回。"
+        },
+        "release-gate": {
+            "file": "acceptance/release-gate.md",
+            "checkpoint_commit": "ab2cbdc",
+            "coverage": "冻结断言逐项执行，双平台归档和原始附件绑定源码及有效期；回归测试覆盖失效和真实齐全时放行。"
+        },
+        "project-assignment-receipt": {
+            "file": "src/extensions/session-board/project-assignment.test.ts",
+            "test": "project assignment verifies a lost native acknowledgment and rejects the wrong host"
+        },
         "archive-receipt": {
             "file": "src/extensions/session-board/archive.test.ts",
             "test": "reopening an incomplete archive batch checks submitted items and never resends them"
@@ -250,14 +264,14 @@
                 ".mcp.json",
                 "src/runtime/board-broker.ts"
             ],
-            "evidence": ["native-move", "mcp-stdio"],
-            "remaining": "用受测产物从 Enhancer 和原生 MCP App 入口打开页面，再经备用网页核对三端共享实际状态。"
+            "evidence": ["native-move", "mcp-stdio", "native-mcp-and-remote-new"],
+            "remaining": "Fedora 已从插件详情打开原生 MCP App，三个入口读回同一备注。补最左侧图标直接打开 MCP App 的实测和 macOS 复验。"
         },
         "UI-001": {
             "status": "partial",
             "implementation": ["ui/board-drag.ts", "ui/board-columns.vue"],
-            "evidence": ["native-move"],
-            "remaining": "补验原生 MCP App 入口、刷新、同列、拖出看板及横向自动滚动。"
+            "evidence": ["native-move", "native-mcp-and-remote-new"],
+            "remaining": "补原生 MCP App 内的拖拽和刷新，并验证同列、拖出看板及横向自动滚动。"
         },
         "UI-002": {
             "status": "partial",
@@ -277,8 +291,8 @@
         "MCP-001": {
             "status": "partial",
             "implementation": [".mcp.json", "src/compat/mcp.ts", "ui/standalone.vite.config.ts"],
-            "evidence": ["mcp-stdio", "operation-routing"],
-            "remaining": "用随包的运行时从插件清单启动并验证实际宿主桥接的版本及输入版本；当前清单指向 PATH 中的 node。"
+            "evidence": ["mcp-stdio", "operation-routing", "native-mcp-and-remote-new"],
+            "remaining": "从随包清单启动原生 MCP App 和跨入口保存已实测。补 MCP App 内的真实版本冲突交互。"
         },
         "DATA-001": {
             "status": "partial",
@@ -351,16 +365,15 @@
             "remaining": "macOS 归档校验通过，目标版本的桌面完整性检查阻止运行；补兼容构建或允许的接入方式。"
         },
         "GATE-001": {
-            "status": "partial",
-            "implementation": ["acceptance/check-candidate.mjs", "acceptance/model.py"],
-            "evidence": ["native-move"],
-            "remaining": "为所有自动结果及真实宿主结果加入需求版本、候选产物指纹、完整性和新鲜度门槛。"
+            "status": "fixture",
+            "implementation": ["acceptance/release_gate.py", "acceptance/release_identity.py"],
+            "evidence": ["release-gate"]
         }
     },
-    "operation_evidence": ["operation-routing"],
+    "operation_evidence": ["operation-routing", "project-assignment-receipt"],
     "operations": {
         "Snapshot": "Fedora 已分别读取活动、归档、远程项目；补同 ID 冲突与真实重连后的缓存边界。",
-        "Update": "已有 Fedora 原生移卡检查点，补同候选跨入口写入、各版本冲突和远端回执丢失。",
+        "Update": "0.3.7 已从 MCP App 写入并在另外两端读回；补各版本冲突和远端回执丢失。",
         "Sort": "安装版已用 HTTP 验证排序冲突和重启持久化，并用 MCP 读回相同值；补 MCP 提交与反向更新。",
         "Archive": "本机手动和远程定时归档已实测读回；补已安装版本的筛选批次和新输入竞争。",
         "ArchiveBatches": "比较真实批次的未提交、待核对及已确认项，并重启读回。",
@@ -369,9 +382,9 @@
         "ArchiveBatchCheck": "隔离夹具已验证仅核对已提交项；补真实回执丢失、迟到。",
         "Open": "已从归档定位原会话及主机；补同名跨主机和无新轮次的对照。",
         "PreviewReply": "已确认原生两端完整回复；补迟到回执越过卡片或宿主切换的拒绝。",
-        "New": "安装版已打开本机默认空输入页；补本机指定项目和远程登记后的完整新建。",
+        "New": "Fedora 0.3.7 已打开本机默认及远程指定项目的空白输入页，远程从首条输入和归属读回。补本机指定项目。",
         "NewReset": "核对丢失回执和用户确认后重置旧新建请求。",
-        "ProjectAssign": "核对项目补登记、身份不符和重复确认。",
+        "ProjectAssign": "远程专用项目归属已实际写回，丢回执、主机错配和重复确认已用夹具验证。补桌面表单交互。",
         "Connect": "验证在 Codex 管理的连接界面完成重连，后续操作仍使用同一窗口的 authority。",
         "SshSetup": "验证兼容入口将设置交给 Codex，覆盖旧操作返回及前端提示。",
         "Refresh": "验证真实宿主中断后手动刷新、完整分页和旧数据保留。",
@@ -391,8 +404,8 @@
         },
         "mcp": {
             "status": "partial",
-            "evidence": ["mcp-stdio"],
-            "remaining": "补原生 Codex 对已安装插件清单的启动和 UI 交互。"
+            "evidence": ["mcp-stdio", "native-mcp-and-remote-new"],
+            "remaining": "Fedora 已从安装的插件启动并保存专用卡。补 macOS 宿主上的同一入口。"
         },
         "scan": {
             "status": "partial",
