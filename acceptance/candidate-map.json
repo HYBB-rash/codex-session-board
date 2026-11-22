@@ -1,0 +1,403 @@
+{
+    "schema_version": 1,
+    "upstream_commit": "2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc",
+    "operation_registry_sha256": "81a8af67ddb0988cf9e079bfaad7632a9aa0fc440184983e895251ada4a8dea4",
+    "evidence": {
+        "native-move": {
+            "file": "docs/session-board-native-checkpoint.md",
+            "checkpoint_commit": "f3a1512",
+            "coverage": "Fedora 宿主用 Chromium 拖动本机和 MacBook Pro 专用卡，原生侧栏与目标主机均读回；反向移卡使旧表单提交失败，已保存备注及草稿值保留。"
+        },
+        "http-security": {
+            "file": "src/compat/entrypoints.test.ts",
+            "test": "HTTP and PWA use loopback, active origin and validated shared operations"
+        },
+        "offline-cache": {
+            "file": "src/compat/entrypoints.test.ts",
+            "test": "offline account-specific snapshots never reissue writes or previews"
+        },
+        "operation-routing": {
+            "file": "src/compat/entrypoints.test.ts",
+            "test": "all 18 HTTP routes and MCP tools forward the same arguments and return the same result"
+        },
+        "mcp-stdio": {
+            "file": "src/compat/entrypoints.test.ts",
+            "test": "CLI mcp negotiates stdio, reads its packaged app and reports rejected saves"
+        },
+        "cli-instance": {
+            "file": "src/compat/entrypoints.test.ts",
+            "test": "CLI reuses the authorized instance and stop only closes its compatibility service"
+        },
+        "sections-import": {
+            "file": "src/compat/entrypoints.test.ts",
+            "test": "migrate-sections retains the source and refuses to overwrite an existing output"
+        },
+        "cli-import": {
+            "file": "src/compat/entrypoints.test.ts",
+            "test": "CLI migrate imports a live SQLite WAL and refuses an existing destination"
+        },
+        "migration-wal": {
+            "file": "src/migration/legacy.test.ts",
+            "test": "live committed WAL from all hosts is backed up without reading runtime files"
+        },
+        "migration-projection": {
+            "file": "src/migration/legacy.test.ts",
+            "test": "projection retains revisions, pending work, and same thread IDs per explicitly bound host"
+        },
+        "migration-retry": {
+            "file": "src/migration/legacy.test.ts",
+            "test": "migration refuses occupied destinations, rolls back privately, and can retry"
+        },
+        "migration-offline": {
+            "file": "src/migration/legacy.test.ts",
+            "test": "databases for offline hosts survive if the main database is missing"
+        },
+        "release-paths": {
+            "file": "src/installer/paths.test.ts",
+            "test": "compiled files sit in dist and runtime data stays in the repository"
+        },
+        "release-rollback": {
+            "file": "src/installer/releases.test.ts",
+            "test": "activation and rollback retain data and the previous immutable release"
+        },
+        "release-rejection": {
+            "file": "src/installer/releases.test.ts",
+            "test": "platform mismatch and symlink entries are rejected"
+        },
+        "ipc-frame": {
+            "file": "src/runtime/registry.test.ts",
+            "test": "ipc accepts only the top-level app frame"
+        }
+    },
+    "requirements": {
+        "STATE-001": {
+            "status": "partial",
+            "implementation": ["src/extensions/session-board/placement.ts", "ui/board-columns.vue"],
+            "evidence": ["native-move"],
+            "remaining": "对照六状态模式的列、顶部导航及状态选择顺序，再核对四列与五列配置。"
+        },
+        "AUTO-001": {
+            "status": "pending",
+            "implementation": ["src/extensions/session-board/activity.ts"],
+            "remaining": "在本机与远程实践真实开始、暂停及批准后的实际恢复，区分批准与恢复。"
+        },
+        "AUTO-002": {
+            "status": "pending",
+            "implementation": ["src/extensions/session-board/activity.ts"],
+            "remaining": "核验等待批准、工具输入、失败、中断及自动重试的状态和原因，并核对人工备注。"
+        },
+        "AUTO-003": {
+            "status": "pending",
+            "implementation": ["src/extensions/session-board/activity.ts"],
+            "remaining": "核验正常完成、讨论与澄清的最终回复均进入待审阅。"
+        },
+        "AUTO-004": {
+            "status": "pending",
+            "implementation": ["src/extensions/session-board/activity.ts"],
+            "remaining": "为仅打开、仅补读历史、输入尚未执行、轮次 ID 变更及正文声称完成补断言。"
+        },
+        "AUTO-005": {
+            "status": "pending",
+            "implementation": [
+                "src/extensions/session-board/activity.ts",
+                "src/extensions/session-board/board-service.ts"
+            ],
+            "remaining": "用对照轨迹验证重复观察和重启保留人工状态，新执行阶段解除人工覆盖。"
+        },
+        "AUTO-006": {
+            "status": "pending",
+            "implementation": [
+                "src/extensions/session-board/activity.ts",
+                "src/extensions/session-board/desktop-connection.ts"
+            ],
+            "remaining": "验证首次接入、旧轮次补读、notLoaded/interrupted 与断联的全部断言。"
+        },
+        "MANUAL-001": {
+            "status": "partial",
+            "implementation": [
+                "src/extensions/session-board/board-service.ts",
+                "src/extensions/session-board/records.ts"
+            ],
+            "evidence": ["native-move", "migration-projection"],
+            "remaining": "从当前实现写入六状态与备注后重启，逐项核对持久状态及变更记录。"
+        },
+        "MANUAL-002": {
+            "status": "partial",
+            "implementation": ["src/extensions/session-board/board-service.ts"],
+            "evidence": ["native-move", "mcp-stdio"],
+            "remaining": "覆盖第二入口竞争保存与编辑期间收到新用户输入，核对状态版本、输入版本及提示保留。"
+        },
+        "MANUAL-003": {
+            "status": "partial",
+            "implementation": [
+                "src/extensions/session-board/activity.ts",
+                "src/extensions/session-board/board-service.ts"
+            ],
+            "evidence": ["migration-projection"],
+            "remaining": "迁移测试能核对导入的输入版本；当前宿主需验证同轮新增输入、跨轮输入、重启和显式清除。"
+        },
+        "TITLE-001": {
+            "status": "pending",
+            "implementation": [
+                "src/extensions/session-board/activity.ts",
+                "src/extensions/session-board/board-service.ts"
+            ],
+            "remaining": "在已连接真实宿主上核对人工和自动状态变更后的即时改名以及最新完整标题。"
+        },
+        "TITLE-002": {
+            "status": "pending",
+            "implementation": ["src/extensions/session-board/activity.ts"],
+            "remaining": "补开头多重前缀、正文状态字样及目标已一致时零次写入的断言。"
+        },
+        "TITLE-003": {
+            "status": "partial",
+            "implementation": [
+                "src/extensions/session-board/board-service.ts",
+                "src/extensions/session-board/records.ts"
+            ],
+            "evidence": ["migration-projection"],
+            "remaining": "验证当前标题失败持久化、重启后重试，以及单次原生三秒预算和前台保存延迟。"
+        },
+        "TITLE-004": {
+            "status": "pending",
+            "implementation": ["src/extensions/session-board/board-service.ts"],
+            "remaining": "注入迟到回执、已成功但回执丢失、不断失败项，检查并发状态与重试公平性。"
+        },
+        "TITLE-005": {
+            "status": "pending",
+            "implementation": [
+                "src/extensions/session-board/board-service.ts",
+                "src/extensions/session-board/records.ts"
+            ],
+            "remaining": "验证历史补读无批量改名、启用边界重启后保持以及待重试工作继续。"
+        },
+        "DISCOVERY-001": {
+            "status": "partial",
+            "implementation": [
+                "src/extensions/session-board/desktop-connection.ts",
+                "src/extensions/session-board/board-service.ts"
+            ],
+            "evidence": ["native-move"],
+            "remaining": "核对完整多页、来源及模型提供方覆盖，稳定 ID 去重和达到上限提示。"
+        },
+        "DISCOVERY-002": {
+            "status": "partial",
+            "implementation": [
+                "src/extensions/session-board/board-service.ts",
+                "src/compat/cache.ts"
+            ],
+            "evidence": ["offline-cache"],
+            "remaining": "兼容入口能读限制后的缓存；仍需验证当前发现及逐条补读失败时的数据保留和读取公平性。"
+        },
+        "NAV-001": {
+            "status": "partial",
+            "implementation": [
+                "src/extensions/session-board/preview.ts",
+                "ui/reply-preview.ts",
+                "ui/board-card.tsx"
+            ],
+            "evidence": ["operation-routing"],
+            "remaining": "真实验证同名跨主机跳转、旧预览回执丢弃、阅读上一完整回复的提示，以及拖动和内部按钮互不触发。"
+        },
+        "APP-001": {
+            "status": "partial",
+            "implementation": [
+                "src/extensions/session-board/extension.ts",
+                ".mcp.json",
+                "src/runtime/board-broker.ts"
+            ],
+            "evidence": ["native-move", "mcp-stdio"],
+            "remaining": "用受测产物从 Enhancer 和原生 MCP App 入口打开页面，再经备用网页核对三端共享实际状态。"
+        },
+        "UI-001": {
+            "status": "partial",
+            "implementation": ["ui/board-drag.ts", "ui/board-columns.vue"],
+            "evidence": ["native-move"],
+            "remaining": "补验原生 MCP App 入口、刷新、同列、拖出看板及横向自动滚动。"
+        },
+        "UI-002": {
+            "status": "partial",
+            "implementation": ["ui/board-editor.ts", "ui/board-editor.vue", "ui/board-drag.ts"],
+            "evidence": ["native-move", "http-security"],
+            "remaining": "覆盖拖入与在阻塞列内拖放、取消、纯空白、主动清空、保留遗漏备注、自动与人工原因和三种版本冲突。"
+        },
+        "UI-003": {
+            "status": "pending",
+            "implementation": [
+                "ui/board-filters.tsx",
+                "ui/board-refresh.ts",
+                "ui/board-editor.vue"
+            ],
+            "remaining": "真实验证标题/项目搜索、空列接收拖放、表单键盘操作、暂停重绘和列内滚动位置。"
+        },
+        "MCP-001": {
+            "status": "partial",
+            "implementation": [".mcp.json", "src/compat/mcp.ts", "ui/standalone.vite.config.ts"],
+            "evidence": ["mcp-stdio", "operation-routing"],
+            "remaining": "用随包的运行时从插件清单启动并验证实际宿主桥接的版本及输入版本；当前清单指向 PATH 中的 node。"
+        },
+        "DATA-001": {
+            "status": "partial",
+            "implementation": [
+                "src/installer/paths.ts",
+                "src/compat/cli-config.ts",
+                "src/installer/releases.ts"
+            ],
+            "evidence": ["release-paths", "release-rollback", "cli-instance"],
+            "remaining": "验证两个独立用户目录下的配置优先级及相应发布包安装更新；旧命令/socket 已由宿主 authority 替换。"
+        },
+        "DATA-002": {
+            "status": "fixture",
+            "implementation": ["src/migration/legacy.ts", "src/migration/database.ts"],
+            "evidence": [
+                "migration-wal",
+                "migration-projection",
+                "migration-retry",
+                "migration-offline"
+            ]
+        },
+        "SERVICE-001": {
+            "status": "partial",
+            "implementation": [
+                "src/compat/receipt.ts",
+                "src/compat/client.ts",
+                "src/runtime/board-broker.ts"
+            ],
+            "evidence": ["cli-instance"],
+            "remaining": "验证桌面 authority 启停、应用更新/配置/端口变更、活跃但暂不可访问和旧实例停止竞争。"
+        },
+        "BOUNDARY-001": {
+            "status": "partial",
+            "implementation": [
+                "src/extensions/session-board/board-service.ts",
+                "src/extensions/session-board/desktop-world.ts",
+                "src/compat/operations.ts"
+            ],
+            "evidence": ["native-move", "ipc-frame", "offline-cache"],
+            "remaining": "验证被动读取、跳转和状态标记不会发送或归档；独立旧客户端 allowlist 由窗口现有连接上的有限操作替代，须核验新边界。"
+        },
+        "SECURITY-001": {
+            "status": "partial",
+            "implementation": [
+                "src/compat/server.ts",
+                "src/runtime/ipc-guard.ts",
+                "src/extensions/session-board/board-service.ts"
+            ],
+            "evidence": ["http-security", "ipc-frame"],
+            "remaining": "在当前宿主验证格式无效、未发现会话或别的账号/主机的打开和写入请求，以及原生导航边界。"
+        },
+        "HEALTH-001": {
+            "status": "partial",
+            "implementation": [
+                "src/extensions/session-board/board-service.ts",
+                "ui/board-health.ts"
+            ],
+            "evidence": ["offline-cache"],
+            "remaining": "真实界面分别验证发现不完整、局部历史错误、运行连接断开和标题重试。"
+        },
+        "DELIVERY-001": {
+            "status": "partial",
+            "implementation": ["src/installer/package-release.ts", "scripts/package.sh"],
+            "evidence": ["release-rejection", "release-rollback"],
+            "remaining": "核验两个平台的安装归档、SHA256、版本一致性、离线资产、验收复现物及运行数据排除。"
+        },
+        "GATE-001": {
+            "status": "partial",
+            "implementation": ["acceptance/check-candidate.mjs", "acceptance/model.py"],
+            "evidence": ["native-move"],
+            "remaining": "为所有自动结果及真实宿主结果加入需求版本、候选产物指纹、完整性和新鲜度门槛。"
+        }
+    },
+    "operation_evidence": ["operation-routing"],
+    "operations": {
+        "Snapshot": "核对真实宿主本机与远程的分页、排序、项目、活动和缓存数据。",
+        "Update": "已有 Fedora 原生移卡检查点，补同候选跨入口写入、各版本冲突和远端回执丢失。",
+        "Sort": "核对列排序持久化、输入冲突和跨入口可见。",
+        "Archive": "在专用本机与远程卡验证版本复核、实际归档及独立读回。",
+        "ArchiveBatches": "比较真实批次的未提交、待核对及已确认项，并重启读回。",
+        "ArchiveBatchStart": "补核验登记请求冲突、重复提交与批次持久化。",
+        "ArchiveBatchFinish": "补核验部分失败、关闭页面及结束状态。",
+        "ArchiveBatchCheck": "补核验只核对已提交项、回执丢失及迟到回执。",
+        "Open": "实际定位到同名跨主机的原会话并验证不会产生新轮次。",
+        "PreviewReply": "实际读取最新完整最终回复并验证迟到回执不会越过卡片或宿主切换。",
+        "New": "实际打开本机与远程选定项目的空输入页并核对未自动发送。",
+        "NewReset": "核对丢失回执和用户确认后重置旧新建请求。",
+        "ProjectAssign": "核对项目补登记、身份不符和重复确认。",
+        "Connect": "验证在 Codex 管理的连接界面完成重连，后续操作仍使用同一窗口的 authority。",
+        "SshSetup": "验证兼容入口将设置交给 Codex，覆盖旧操作返回及前端提示。",
+        "Refresh": "验证真实宿主中断后手动刷新、完整分页和旧数据保留。",
+        "PluginUpdateStatus": "从安装后的看板查询候选来源、版本和可用状态。",
+        "PluginUpdateStart": "从实际安装入口更新、重载，读取新版页面和原保留数据。"
+    },
+    "cli": {
+        "serve": {
+            "status": "partial",
+            "evidence": ["cli-instance"],
+            "remaining": "以已安装运行时确认复用实际窗口的兼容服务。"
+        },
+        "stop": {
+            "status": "partial",
+            "evidence": ["cli-instance"],
+            "remaining": "验证实际宿主继续运行并核对浏览器/MCP 停止与重新启用行为。"
+        },
+        "mcp": {
+            "status": "partial",
+            "evidence": ["mcp-stdio"],
+            "remaining": "补原生 Codex 对已安装插件清单的启动和 UI 交互。"
+        },
+        "scan": {
+            "status": "partial",
+            "evidence": ["cli-instance", "offline-cache"],
+            "remaining": "验证真实连接下匹配宿主扫描结果与离线读回。"
+        },
+        "migrate": {
+            "status": "partial",
+            "evidence": ["cli-import", "migration-wal", "migration-retry"],
+            "remaining": "补迁移数据进入实际宿主读回。"
+        },
+        "migrate-sections": {
+            "status": "fixture",
+            "evidence": ["sections-import"]
+        },
+        "check-sections": {
+            "status": "partial",
+            "evidence": ["cli-instance", "native-move"],
+            "remaining": "补真实原生分区 ID、异常项、空绑定和退出状态与上游契约对照。"
+        }
+    },
+    "goal_checks": {
+        "native-section-move": {
+            "status": "partial",
+            "evidence": ["native-move"],
+            "remaining": "首个 Fedora 本机/远程检查点通过；发布实现变更后需对受测安装包复验。"
+        },
+        "remote-authority": {
+            "status": "partial",
+            "evidence": ["native-move", "offline-cache", "migration-projection"],
+            "remaining": "补两个宿主相同 thread ID、账号/连接切换、迟到回执、真实断线重连以及当前宿主权限。"
+        },
+        "enhancer-entry": {
+            "status": "partial",
+            "evidence": ["native-move", "ipc-frame"],
+            "remaining": "补已安装候选与关页重开后观察器、标题重试、定时归档及订阅去重。"
+        },
+        "pwa-install": {
+            "status": "partial",
+            "evidence": ["http-security", "offline-cache"],
+            "remaining": "以实际浏览器安装 PWA，验证联网写入和离线只读。"
+        },
+        "linux-delivery": {
+            "status": "partial",
+            "evidence": ["release-rollback", "native-move"],
+            "remaining": "以 Linux x86_64 安装产物核验启动、实际入口更新、重载读回与回退。"
+        },
+        "macos-delivery": {
+            "status": "pending",
+            "remaining": "在 macOS arm64 桌面宿主上核验安装包及同一套真实行为；Fedora 接入远端只覆盖远程执行主机。"
+        },
+        "upstream-comparison": {
+            "status": "pending",
+            "remaining": "用对照输入运行固定 Rust 基线和 TypeScript 候选，比较状态、版本、回执及持久数据。"
+        }
+    }
+}
