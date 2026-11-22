@@ -21,7 +21,8 @@ let retained: string | null = null;
 let noteEdited = false;
 
 function draftKey(card: BoardSession) {
-  return "card-note:" + JSON.stringify([card.hostId || "local", card.threadId || card.id]);
+  const key = [card.hostId || "local", card.threadId || card.id];
+  return "card-note:" + JSON.stringify(card.accountScope ? [card.accountScope, ...key] : key);
 }
 
 function writeDraft(card: BoardSession, value: string | null) {
@@ -31,7 +32,8 @@ function writeDraft(card: BoardSession, value: string | null) {
   try {
     if (value === null) sessionStorage.removeItem(key);
     else sessionStorage.setItem(key, value);
-    if (!card.remote || card.id.startsWith("remote:")) sessionStorage.removeItem("failed-note:" + card.id);
+    if (!card.accountScope && (!card.remote || card.id.startsWith("remote:")))
+      sessionStorage.removeItem("failed-note:" + card.id);
     return true;
   } catch { return false; }
 }
@@ -41,7 +43,7 @@ function readDraft(card: BoardSession) {
   if (transientNotes.has(key)) return transientNotes.get(key)!;
   try {
     const stored = sessionStorage.getItem(key);
-    if (stored !== null || card.remote && !card.id.startsWith("remote:")) return stored;
+    if (stored !== null || card.accountScope || card.remote && !card.id.startsWith("remote:")) return stored;
     const legacy = sessionStorage.getItem("failed-note:" + card.id);
     if (legacy !== null) writeDraft(card, legacy);
     return legacy;

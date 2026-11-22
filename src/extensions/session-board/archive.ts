@@ -39,6 +39,7 @@ interface ArchivePorts {
     scope(): string;
     ledger(): BoardLedger;
     write(next: BoardLedger): Promise<void>;
+    nativeVersion(version: string | null): string;
     verify(item: ArchiveItem): Promise<void>;
     isArchived(id: string): Promise<boolean>;
     archive(item: ArchiveItem): Promise<void>;
@@ -111,7 +112,11 @@ export class Archive {
                 id,
                 createdAt: Date.now() / 1000,
                 finishedAt: null,
-                items: items.map((item) => ({ ...item, status: "awaiting" })),
+                items: items.map((item) => ({
+                    ...item,
+                    sectionVersion: this.ports.nativeVersion(item.sectionVersion),
+                    status: "awaiting",
+                })),
                 ...(single ? { single } : {}),
             };
             return { next: { ...old, batches: [batch, ...old.batches] }, result: batch };
@@ -172,6 +177,7 @@ export class Archive {
 
     async single(candidate: ArchiveTarget): Promise<ArchiveItem> {
         const scope = this.ports.scope();
+        const version = this.ports.nativeVersion(candidate.sectionVersion);
         const existing = this.batches().find(({ single, items }) => {
             const item = items[0];
             return (
@@ -179,7 +185,7 @@ export class Archive {
                 item?.id === candidate.id &&
                 item.version === candidate.version &&
                 item.inputVersion === candidate.inputVersion &&
-                item.sectionVersion === candidate.sectionVersion
+                item.sectionVersion === version
             );
         });
         const batch = existing ?? (await this.start(crypto.randomUUID(), [candidate], true));
@@ -197,7 +203,8 @@ export class Archive {
             !item ||
             item.version !== candidate.version ||
             item.inputVersion !== candidate.inputVersion ||
-            item.sectionVersion !== candidate.sectionVersion
+            (item.sectionVersion !== candidate.sectionVersion &&
+                item.sectionVersion !== this.ports.nativeVersion(candidate.sectionVersion))
         )
             throw new Error("归档请求版本与批次登记不符");
         if (item.status !== "awaiting") return item;

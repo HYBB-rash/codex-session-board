@@ -104,6 +104,7 @@ interface Edit {
 
 interface Card {
     id: string;
+    accountScope: string;
     hostId: HostId;
     threadId: Thread["id"];
     title: string;
@@ -151,6 +152,21 @@ const errorText = (error: unknown): string =>
     error instanceof Error ? error.message : String(error);
 const accountKey = (context: SidebarContext): string =>
     JSON.stringify([context.accountId, context.userId]);
+async function scopeDigest(account: string): Promise<string> {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(account));
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(
+        "",
+    );
+}
+
+function sectionScopeSuffix(scope: string): string {
+    return `,${JSON.stringify(scope)}]`;
+}
+
+function scopedSectionVersion(position: Placement, scope: string): string {
+    return position.version.slice(0, -1) + sectionScopeSuffix(scope);
+}
+
 const hostLabel = (host: HostId): string =>
     host === "local" ? "本机" : (host.split(":").pop() ?? host);
 
@@ -179,6 +195,7 @@ function isNewPhase(phase: Phase, current: CardRecord, since: number): boolean {
 export class BoardService {
     private readonly hosts = new Map<HostId, HostSnapshot>();
     private context: SidebarContext | undefined;
+    private accountScope = "";
     private records: Record<string, CardRecord> = {};
     private refreshing: Promise<void> | undefined;
     private readonly editing = new Set<string>();
@@ -197,6 +214,7 @@ export class BoardService {
         scope: () => accountKey(this.requiredContext()),
         ledger: () => this.ledger,
         write: (next) => this.writeLedger(next),
+        nativeVersion: (version) => this.nativeSectionVersion(version),
         verify: async (item) => {
             await this.verifyArchive(item);
         },
@@ -239,9 +257,10 @@ export class BoardService {
             ? await this.ports.titleEpoch(account)
             : undefined;
         if (switched) {
-            const [records, ledger] = await Promise.all([
+            const [records, ledger, accountScope] = await Promise.all([
                 this.ports.load(account),
                 this.ports.loadLedger(account),
+                scopeDigest(account),
             ]);
             if (account !== accountKey(await this.desktop.context()))
                 throw new Error("Codex 账号已变更");
@@ -252,6 +271,7 @@ export class BoardService {
             this.nextTitleAttempt.clear();
             this.records = records;
             this.ledger = ledger;
+            this.accountScope = accountScope;
             this.archiveDeadlines.clear();
             this.archiveRuns.clear();
         }
@@ -645,6 +665,7 @@ export class BoardService {
         const state = presentState(context, position, this.mode);
         return {
             id,
+            accountScope: this.accountScope,
             hostId,
             threadId: thread.id,
             title: thread.name || thread.preview || "未命名会话",
@@ -652,7 +673,7 @@ export class BoardService {
             projectId: thread.projectId ? projectKey(hostId, thread.projectId) : null,
             updatedAt: thread.updatedAt,
             state,
-            sectionVersion: position.version,
+            sectionVersion: scopedSectionVersion(position, this.accountScope),
             version: record.version,
             inputVersion: record.inputVersion,
             note: record.note,
@@ -833,6 +854,12 @@ export class BoardService {
             throw new Error("Codex 账号已变更");
     }
 
+    private nativeSectionVersion(version: string | null): string {
+        const suffix = sectionScopeSuffix(this.accountScope);
+        if (version?.endsWith(suffix)) return `${version.slice(0, -suffix.length)}]`;
+        throw new Error("卡片位置或输入已更新，请刷新后重试");
+    }
+
     private async freshContext(expected = this.requiredContext()): Promise<SidebarContext> {
         const account = accountKey(expected);
         const context = await this.desktop.context();
@@ -876,6 +903,7 @@ export class BoardService {
     private async resolveEdit(edit: Edit) {
         const { card, connection } = this.target(edit.id);
         if (card.readOnly) throw new Error("此会话目前只读");
+        const submittedSection = this.nativeSectionVersion(edit.sectionVersion);
         const context = await this.freshContext();
         const before = await this.desktop.read(connection, card.threadId, false);
         const latest = (await this.desktop.turns(connection, card.threadId, "summary")).data[0];
@@ -902,7 +930,7 @@ export class BoardService {
             !from.managed ||
             edit.version !== current.version ||
             edit.inputVersion !== current.inputVersion ||
-            edit.sectionVersion !== from.version
+            submittedSection !== from.version
         ) {
             throw new Error("卡片位置或输入已更新，请刷新后重试");
         }
@@ -1432,17 +1460,15 @@ export class BoardService {
         }
         const id = crypto.randomUUID();
         try {
-            await this.archive.start(
+            const targets = items.map(({ id, title, version, inputVersion, sectionVersion }) => ({
                 id,
-                items.map(({ id, title, version, inputVersion, sectionVersion }) => ({
-                    id,
-                    title,
-                    version,
-                    inputVersion,
-                    sectionVersion,
-                })),
-            );
-            for (const item of items) {
+                title,
+                version,
+                inputVersion,
+                sectionVersion,
+            }));
+            await this.archive.start(id, targets);
+            for (const item of targets) {
                 if (accountKey(context) !== accountKey(this.requiredContext())) return;
                 const result = await this.archive.submit(id, item);
                 if (result.status === "archived" || result.status === "verified")

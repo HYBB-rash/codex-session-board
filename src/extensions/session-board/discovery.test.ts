@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { type TestContext, test } from "node:test";
-import { emptyLedger } from "./archive.js";
+import { type BoardLedger, emptyLedger } from "./archive.js";
 import { BoardService } from "./board-service.js";
 import {
     DesktopConnection,
     hostId,
     localHostId,
+    type SidebarContext,
     type Thread,
     type ThreadId,
     type Turn,
@@ -50,6 +51,8 @@ interface ListArgs {
 interface NativeFixture {
     hosts: string[];
     accountId?: string;
+    sections?: SidebarContext["sections"];
+    archive?: (id: ThreadId) => void;
     list(host: string, args: ListArgs): { data: Thread[]; nextCursor: string | null };
     history?: (id: ThreadId) => Turn[];
     read?: (host: string, id: ThreadId) => Thread | Promise<Thread>;
@@ -65,6 +68,10 @@ async function readFixture(native: NativeFixture, host: string, method: string, 
         case "thread/read":
             assert.ok(native.read);
             return { thread: await native.read(host, params.threadId) };
+        case "thread/archive":
+            assert.ok(native.archive);
+            native.archive(params.threadId);
+            return {};
         case "project/list":
             return { data: [], nextCursor: null };
         default:
@@ -74,7 +81,11 @@ async function readFixture(native: NativeFixture, host: string, method: string, 
 
 function discoverySidebar(native: NativeFixture, command: DesktopCommand) {
     if (command.kind === "context")
-        return { accountId: native.accountId ?? "account", userId: "user", sections: [] };
+        return {
+            accountId: native.accountId ?? "account",
+            userId: "user",
+            sections: native.sections ?? [],
+        };
     assert.equal(command.kind, "open");
     assert.ok(native.open);
     return native.open(command);
@@ -85,6 +96,7 @@ function fixture(testContext: TestContext, maxPages = 3) {
     Reflect.set(globalThis, "window", globalThis);
     testContext.after(() => Reflect.set(globalThis, "window", oldWindow));
     const records: Record<string, CardRecord> = {};
+    const ledgers = new Map<string, BoardLedger>();
     const native: NativeFixture = {
         hosts: [localHostId],
         list(_host: string, _args: ListArgs): { data: Thread[]; nextCursor: string | null } {
@@ -117,8 +129,11 @@ function fixture(testContext: TestContext, maxPages = 3) {
         },
         settleTitle: async () => assert.fail("Discovery must not rename a card"),
         preparePhase: async () => assert.fail("History must not prepare a native move"),
-        loadLedger: async () => emptyLedger(),
-        writeLedger: async () => assert.fail("Discovery must not write the ledger"),
+        loadLedger: async (account) => ledgers.get(account) ?? emptyLedger(),
+        writeLedger: async (account, ledger) => {
+            assert.ok(native.archive, "Discovery must not write the ledger");
+            ledgers.set(account, ledger);
+        },
         settings: async () => ({ ...defaults, maxPages, pageSize: 2, historyPerPoll: 1 }),
         titleEpoch: async () => assert.fail("Titles disabled"),
         closePage: () => assert.ok(native.open, "Discovery must not navigate"),
@@ -126,7 +141,7 @@ function fixture(testContext: TestContext, maxPages = 3) {
         proof: () => {},
         updateStatus: async () => assert.fail("Discovery must not change release"),
     });
-    return { native, service, desktop, records };
+    return { native, service, desktop, records, ledgers };
 }
 
 function deferred<Value>() {
@@ -207,6 +222,119 @@ test("a delayed native preview cannot return the previous account's reply after 
     await service.refresh();
     paused.release();
     await pending;
+});
+
+test("a stale card cannot save or register an archive after a switch to identical native revisions", async (testContext) => {
+    const { native, service, records, ledgers } = fixture(testContext);
+    native.list = (_host, { archived }) => ({
+        data: archived ? [] : [row(first)],
+        nextCursor: null,
+    });
+    native.read = () => row(first);
+    native.history = () => [];
+    await service.refresh();
+    const [old] = service.snapshot().sessions;
+    assert.ok(old);
+    native.accountId = "next-account";
+    await service.refresh();
+    const [current] = service.snapshot().sessions;
+    assert.ok(current);
+    assert.equal(old.id, current.id);
+    assert.equal(old.version, current.version);
+    assert.equal(old.inputVersion, current.inputVersion);
+    assert.notEqual(old.sectionVersion, current.sectionVersion);
+    assert.notEqual(old.accountScope, current.accountScope);
+
+    const { id, title, version, inputVersion, sectionVersion } = old;
+    const revisions = { id, version, inputVersion, sectionVersion };
+    await assert.rejects(
+        service.request("/api/state", { ...revisions, state: null, note: "旧账号草稿" }),
+        /卡片位置或输入已更新/,
+    );
+    await assert.rejects(service.request("/api/archive", revisions), /卡片位置或输入已更新/);
+    await assert.rejects(
+        service.request("/api/archive-batches", {
+            id: crypto.randomUUID(),
+            items: [{ ...revisions, title }],
+        }),
+        /卡片位置或输入已更新/,
+    );
+    await assert.rejects(
+        service.request("/api/archive", { ...revisions, sectionVersion: "[null,null,null]" }),
+        /卡片位置或输入已更新/,
+    );
+    assert.equal(records[first], undefined);
+    assert.equal(ledgers.size, 0);
+    const submitted = { ...revisions, sectionVersion: current.sectionVersion };
+    await service.request("/api/state", { ...submitted, state: null, note: "当前账号备注" });
+    assert.equal(service.snapshot().sessions[0]?.note, "当前账号备注");
+});
+
+function archiveFixture(native: NativeFixture) {
+    const replica = "archive-replica" as NonNullable<Thread["section"]>["id"];
+    const section = "archive" as SidebarContext["sections"][number]["id"];
+    native.sections = [
+        { id: section, name: "待归档", hostSectionIds: { local: replica }, itemKeys: [] },
+    ];
+    const thread = (id: ThreadId) =>
+        row(id, { sectionEnteredAt: 10, section: { id: replica, name: "待归档" } });
+    const archivedThreads = new Set<ThreadId>([first]);
+    const writes: ThreadId[] = [];
+    native.list = (_host, { archived }) => ({
+        data: [first, second].filter((id) => archived === archivedThreads.has(id)).map(thread),
+        nextCursor: null,
+    });
+    native.read = (_host, id) => thread(id);
+    native.history = () => [];
+    native.archive = (id) => {
+        writes.push(id);
+        archivedThreads.add(id);
+    };
+    return { archivedThreads, writes, sectionVersion: JSON.stringify([replica, section, 10]) };
+}
+
+test("a previously registered unscoped archive batch keeps its pending and unsent semantics", async (testContext) => {
+    const { native, service, ledgers } = fixture(testContext);
+    const { archivedThreads, writes, sectionVersion } = archiveFixture(native);
+    const id = crypto.randomUUID();
+    const account = '["account","user"]';
+    const target = { id: second, title: "original", version: 0, inputVersion: 0, sectionVersion };
+    const previous: BoardLedger = {
+        ...emptyLedger(),
+        batches: [
+            {
+                id,
+                createdAt: 10,
+                finishedAt: null,
+                items: [
+                    { ...target, id: first, status: "pending" },
+                    { ...target, status: "awaiting" },
+                ],
+            },
+        ],
+    };
+    ledgers.set(account, previous);
+    const statuses = () => ledgers.get(account)?.batches[0]?.items.map(({ status }) => status);
+    await service.refresh();
+    await service.request("/api/archive-batches/check", { id });
+    assert.deepEqual(statuses(), ["verified", "awaiting"]);
+    assert.deepEqual(writes, []);
+    await service.request("/api/archive", { ...target, batchId: id });
+    assert.deepEqual(writes, [second]);
+    assert.deepEqual(statuses(), ["verified", "archived"]);
+
+    archivedThreads.delete(second);
+    await service.refresh();
+    const current = service.snapshot().sessions.find((card) => card.id === second);
+    assert.ok(current?.canArchive);
+    assert.notEqual(current.sectionVersion, sectionVersion);
+    const newTarget = { ...target, sectionVersion: current.sectionVersion };
+    const newBatch = crypto.randomUUID();
+    await service.request("/api/archive-batches", { id: newBatch, items: [newTarget] });
+    assert.deepEqual(statuses(), ["awaiting"]);
+    await service.request("/api/archive", { ...newTarget, batchId: newBatch });
+    assert.deepEqual(writes, [second, second]);
+    assert.deepEqual(statuses(), ["archived"]);
 });
 
 test("opening rejects invalid, undiscovered and mismatched threads and uses the verified host", async (testContext) => {

@@ -7,6 +7,7 @@ import type { mountBoardArchive } from "./board-archive";
 import type { PreviewSession } from "./reply-preview";
 
 export interface BoardSession extends PreviewSession {
+  accountScope?: string;
   state: string | null;
   note: string;
   threadId?: string;

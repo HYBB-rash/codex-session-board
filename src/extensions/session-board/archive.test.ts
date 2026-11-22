@@ -18,6 +18,7 @@ function harness() {
         new Archive({
             scope: () => scope,
             ledger: () => ledger,
+            nativeVersion: (version) => version ?? "",
             async write(next) {
                 ledger = JSON.parse(JSON.stringify(next)) as BoardLedger;
             },

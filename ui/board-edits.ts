@@ -25,7 +25,8 @@ interface StateResult {
 }
 
 function sameCard(row: BoardSession | undefined, session: BoardSession) {
-  return row?.id === session.id && (row.hostId || "local") === (session.hostId || "local") &&
+  return row?.id === session.id && row.accountScope === session.accountScope &&
+    (row.hostId || "local") === (session.hostId || "local") &&
     (row.threadId || row.id) === (session.threadId || session.id);
 }
 
@@ -54,7 +55,8 @@ export function mountBoardEdits(host: HTMLElement, fallback: () => HTMLElement, 
   function reconcile(sessions: BoardSession[]) {
     for (const [id, previous] of unconfirmed) {
       const row = sessions.find(session => session.id === id);
-      if (row && sameCard(row, previous) && !row.readOnly && (row.version > previous.version ||
+      if (row && row.accountScope !== previous.accountScope) unconfirmed.delete(id);
+      else if (row && sameCard(row, previous) && !row.readOnly && (row.version > previous.version ||
           row.inputVersion > previous.inputVersion || row.sectionVersion !== previous.sectionVersion))
         unconfirmed.delete(id);
     }
