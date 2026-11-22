@@ -2,6 +2,27 @@
 
 上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本通过本机和远程原生移卡检查点。macOS arm64 的目标 Codex 构建在加载看板之前拒绝了经过修改的启动归档，因此发布条件未满足。
 
+## 0.3.22 候选
+
+双平台归档由提交 `e8b24a6` 构建。31 项冻结需求中 18 项通过、13 项待验。75 项门槛自动检查通过，Fedora 有 34 条逐项现场断言，macOS 有 3 条打包断言。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.22.json) · [现场证据索引](../state/acceptance/live-0.3.22.json)
+
+| 项目 | 结果 |
+| --- | --- |
+| Enhancer 侧栏 | 已登录 Fedora 副本在普通布局显示入口。临时隐藏其他侧栏入口后，原生图标栏中只出现一个 Enhancer 按钮。点击后分别从本机和远端筛选读回专用卡，恢复布局时看板保持打开。[真机入口](../state/acceptance/fedora-enhancer-rail-0.3.22.json) · [8 项浏览器回归](../state/acceptance/fedora-host-mount-browser-0.3.22.json) |
+| 迁移及回退 | 用主库、主机分库和已提交 WAL 的合成夹具复验成品 CLI 和回环服务。目录缺失或首次远端扫描失败时，已绑定的迁移卡仍为只读。模拟原生连接恢复后用同一卡片 ID 接回，备注、版本及待核对状态保留。已核对批次的时间可读回。回退后重新启动服务，导入卡不再出现，源文件保持原校验值。[迁移回执](../state/acceptance/fedora-migration-0.3.22.json) · [复验脚本](../state/acceptance/fedora-migration-0.3.22.mjs) |
+| 标题重试 | 隔离数据库只拒绝专用卡的指定改名。状态、备注和待同步项一并保存。重启后恢复待同步项，解除故障后自动重试，独立原生读取核对标题、位置及版本。专用卡和配置已恢复。[改名及重启回执](../state/acceptance/fedora-title-retry-0.3.22-3b212658c.jsonl) |
+| Fedora 真实轮次 | 本机专用卡开始执行时进入进行中，普通澄清答复完毕后进入待审阅。另一专用轮次经可信点击停止后，原生确认同一轮中断，卡片进入已阻塞并保留自动原因和人工备注。执行时的预览接口读回前一条完整回复。两侧手动保存也在同次响应前读回原生完整标题。[开始与完成](../state/acceptance/fedora-title-001-live-0.3.22-1795378744546.json) · [中断](../state/acceptance/fedora-interrupt-0.3.22-d0337198.jsonl) · [双端标题](../state/acceptance/fedora-title-001-live-0.3.22-1795378696064.json) |
+| Fedora 配置与交互 | 四、五和旧六状态模式的列、导航与表单顺序通过。两台原生宿主仍缺待判断和已完成分区。阻塞草稿留空、取消、空白归一、分别拒绝三个过期版本，以及搜索、空列拖放、键盘和滚动保留均通过。每页一条时两端读回集合与原生分页一致，单页上限触发界面诊断。[状态](../state/acceptance/fedora-state-001-0.3.22-1795378437888.json) · [阻塞表单](../state/acceptance/fedora-ui-002-0.3.22-1795378404994.jsonl) · [搜索与键盘](../state/acceptance/fedora-ui-003-0.3.22-1795378416981.jsonl) · [分页](../state/acceptance/fedora-product-paging-0.3.22.json) · [诊断](../state/acceptance/fedora-health-0.3.22.json) |
+| 原生 MCP 与查看回复 | 从已安装插件详情进入原生 MCP App。远端专用卡跨列后，原生 App 和备用网页均读回目标位置及备注，反向拖放恢复原位置。同列、拖出和边缘横滚期间无额外保存。两张同名专用卡打开各自的原生会话，回复与两端原生读取一致。随包 MCP 页面在隔离浏览器内通过迟到、无完整回复和失败的模拟返回检查。[原生 MCP](../state/acceptance/fedora-mcp-gestures-live-0.3.22-1795378537287.json) · [同名与回复](../state/acceptance/fedora-nav-same-title-0.3.22-1795378688368.json) · [模拟返回](../state/acceptance/fedora-mcp-gestures-nav-fixture-0.3.22-1795378499746.json) |
+| Fedora 归档与远端恢复 | 在筛选后的看板归档专用卡，关页重开后读回原生归档结果。关闭看板时后台定时归档也能读回，专用卡随后取消归档并恢复。故意断开仅属于隔离副本的 SSH 传输后，远端卡暂时只读，Codex 在同一窗口自动重连，独立原生读取核对原分区。日用窗口的独立传输保持连接。[筛选后归档](../state/acceptance/fedora-archive-batch-0.3.22-1795378940686.jsonl) · [后台定时归档](../state/acceptance/fedora-archive-batch-0.3.22-1795378950125.jsonl) · [断线重连](../state/acceptance/fedora-reconnect-0.3.22-1795378960547.jsonl) |
+| Fedora 安装和公共入口 | 从已安装备用网页点击更新，重启读回 `0.3.22`，回退后读回 `0.3.21`，卸载恢复临时副本的启动归档。专用备注文件校验一致。已登录副本运行 `0.3.22` 时，HTTP、CLI 和 MCP 读回相同的专用卡。浏览器由 Service Worker 控制，安装检查无错误，系统安装与独立窗口待验。[更新、回退和卸载](../state/acceptance/fedora-installed-0.3.22.txt) · [已登录副本](../state/acceptance/fedora-signed-start-0.3.22.txt) · [公共入口](../state/acceptance/fedora-entrypoints-0.3.22.json) · [PWA 检查](../state/acceptance/fedora-pwa-installability-0.3.22.json) |
+| 双平台解包 | Fedora 通过 87 项随包测试。MacBook Pro 通过 85 项，跳过 2 项 Linux 专用测试。两端各通过 10 项公共入口、10 项冻结模型和 18 项门槛测试。macOS 的 `26.1111.21308` 因框架内嵌 ASAR 摘要在复制前拒绝安装，桌面安装、运行、更新和回退待验。[Fedora 解包](../state/acceptance/fedora-archive-0.3.22.log) · [MacBook Pro 解包与预检](../state/acceptance/packages/macos-0.3.22-preflight.txt) · [官方构建兼容性复查](../state/acceptance/packages/macos-official-builds.md) |
+
+Fedora 冻结需求仍待实测旧六状态的全列互移、批准后实际恢复执行、临时请求错误自动重试时保持执行状态、改名写入器繁忙时的预算、全部交互来源与提供方的原生发现，以及账号最左图标直达原生 MCP App。PWA 另缺系统安装和独立窗口回执。
+
+- [Fedora x86_64 归档](../state/acceptance/packages/session-board-0.3.22-linux-x86_64.tar.gz) · [SHA-256](../state/acceptance/packages/session-board-0.3.22-linux-x86_64.tar.gz.sha256)
+- [macOS arm64 归档](../state/acceptance/packages/session-board-0.3.22-macos-arm64.tar.gz) · [SHA-256](../state/acceptance/packages/session-board-0.3.22-macos-arm64.tar.gz.sha256)
+
 ## 0.3.21 候选
 
 双平台归档由提交 `cc7ed74` 构建。31 项冻结需求中 18 项通过、13 项待验，73 项门槛自动检查通过。Fedora 现场 27 条断言通过，macOS 现场通过 3 条归档断言。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.21.json) · [现场证据索引](../state/acceptance/live-0.3.21.json)
