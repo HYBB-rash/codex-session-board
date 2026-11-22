@@ -4,16 +4,18 @@
 
 ## 0.3.18 候选
 
-双平台归档由提交 `93e6c2e` 构建。31 项冻结需求中 18 项通过、13 项待验，71 项门槛自动检查通过，`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.18.json) · [现场证据索引](../state/acceptance/live-0.3.18.json)
+双平台归档由提交 `93e6c2e` 构建。31 项冻结需求中 18 项通过、13 项待验，71 项门槛自动检查通过，Fedora 通过 23 条现场断言。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.18.json) · [现场证据索引](../state/acceptance/live-0.3.18.json)
 
 | 项目 | 结果 |
 | --- | --- |
 | 构建与审计 | Fedora 和 MacBook Pro 均从干净解包通过 `npm ci`、`npm run typecheck:ui`。后端编译用 TypeScript `7.0.2`，`vue-tsc` 用 `6.0.3` 检查 Vue 单文件组件。构建时运行 Vue 类型检查，依赖安装不会复制客户端。预览解析器更新为 `markdown-it` `14.3.3`，两端 `npm audit` 均报告零项漏洞。[Fedora 类型检查](../state/acceptance/fedora-clean-vue-0.3.18.log) · [Fedora 审计](../state/acceptance/npm-audit-0.3.18.json) · [MacBook Pro 回执](../state/acceptance/packages/macos-0.3.18-preflight.txt) |
 | Fedora 安装与回退 | 从已安装网页点击更新，重启依次读回 `0.3.17 → 0.3.18 → 0.3.17`。卸载恢复测试副本启动归档，持久数据夹具通过校验。原登录隔离副本也升级至 `0.3.18`。[安装回执](../state/acceptance/fedora-installed-0.3.18.txt) · [已登录副本](../state/acceptance/fedora-signed-start-0.3.18.txt) |
-| Fedora 最近回复与导航 | 本机和远端专用卡的回复均与原生轮次一致。关闭预览保持路由，进入原会话按主机和 ID 选中目标。操作前后最新轮次与看板版本一致。真实同名会话、迟到回复及进行中提示仍需现场取证。[现场回执](../state/acceptance/fedora-nav-001-live-0.3.18-1795370450865.json) |
+| Fedora 最近回复与导航 | 本机和远端专用卡临时改为同一个原生标题后，仍各自读回对应的完整助手回复，并按主机和 ID 选中原生会话。关闭预览保持原路由。操作前后的会话集合、最新轮次及卡片版本一致，随后恢复原标题。真实运行中的预览接口返回上一条完整回复并标记轮次仍在执行。迟到回复以及界面的进行中、无完整回复和读取失败提示仍待现场核对。[同名跳转](../state/acceptance/fedora-nav-same-title-0.3.18-1795371315275.json) · [执行中回执](../state/acceptance/fedora-interrupt-0.3.18-a9667f2d.jsonl) |
+| Fedora 公共入口与 PWA | HTTP、CLI、MCP 读回两端专用卡的同一状态、版本和备注。HTTP 和 MCP 的回复一致，预览前后卡片版本一致。MCP 列出 18 个共享操作及看板入口。隔离 Chrome 的 Service Worker 获得控制，浏览器报告无可安装性错误。系统安装、独立窗口和最左侧快捷入口待验。[公共入口](../state/acceptance/fedora-entrypoints-0.3.18.json) · [浏览器回执](../state/acceptance/fedora-pwa-installability-0.3.18.json) |
 | Fedora 分页与诊断 | 本机 2 页、远端 3 页均读到终止游标，12 个活跃卡片 ID 去重后与原生集合一致。现场只出现 `vscode` 和 `openai`，多来源及重复游标由自动测试覆盖。临时限制为一页时，远端诊断显示未完成，9 张缓存卡只读。恢复配置后扫描完整。[分页回执](../state/acceptance/fedora-discovery-0.3.18.json) · [诊断回执](../state/acceptance/fedora-health-0.3.18.json) |
 | Fedora 三种状态模式 | 四、五、六状态模式的看板列、顶部跳转和编辑选项名称、标识及顺序一致。六状态模式中「待归档」在「已完成」之前。本机和远端缺少原生「待判断」与「已完成」分区，涉及这两列的真实移卡待验。[状态回执](../state/acceptance/fedora-state-001-0.3.18-1795370543907.json) |
 | Fedora 原生标题与真实轮次 | 两端专用卡手动移入「进行中」后，同次保存返回前读回新标题。表情、其他标签、正文状态词及长正文保留。本机专用轮次的原生开始、完成通知带同一轮次 ID，观察器自动读回「进行中」和「待审阅」原生分区及对应标题，备注保留。结束时恢复专用卡原标题和原分区。改名请求未落地便失败的情况已由隔离持久化夹具验证重启重试。[手动保存](../state/acceptance/fedora-title-001-live-0.3.18-1795370502136.json) · [自动状态和标题](../state/acceptance/fedora-title-001-live-0.3.18-1795370859190.json) · [重试测试](../state/acceptance/title-retry-0.3.17.log) |
+| Fedora 中断与澄清 | 点击原生「停止」后，独立读回同一轮次已中断，看板自动移入「已阻塞」并显示原因。另一轮普通答复包含说明和澄清问题，正常结束后自动回到「待审阅」。两次均核对原生分区并保留人工备注，验收后恢复专用卡原位置和原标题。[中断回执](../state/acceptance/fedora-interrupt-0.3.18-a9667f2d.jsonl) · [澄清回执](../state/acceptance/fedora-title-001-live-0.3.18-1795371360189.json) |
 | Fedora 表单与拖放 | 已复验阻塞表单的留空、取消、清空及陈旧版本拒绝。标题同列拖动、拖出看板及边缘横滚均无额外保存或原生跳转。键盘状态选择、Esc 取消、Enter 保存，以及拖动和编辑时的刷新锁定通过。[阻塞表单](../state/acceptance/fedora-ui-002-0.3.18-1795370591255.jsonl) · [筛选与键盘](../state/acceptance/fedora-ui-003-0.3.18-1795370608417.jsonl) · [标题拖动](../state/acceptance/fedora-ui-gestures-0.3.18-1795370631503.jsonl) |
 | 换号回归 | 从归档解出的网页在隔离 Chrome 通过五项回归，覆盖同账号刷新、同 ID 换号、迟到回执及空账号。[浏览器回执](../state/acceptance/browser-account-switch-0.3.18.json) |
 | 双平台干净解包 | Fedora 通过 77 项随包 Node 测试、10 项公共入口测试及 18 项门槛测试。MacBook Pro 通过 75 项随包 Node 测试，跳过 2 项 Linux 专用项，通过 10 项公共入口测试。两端各通过 10 项冻结模型检查。Mac Codex `26.1111.21308` 仍在复制前因 ASAR 完整性预检停止，系统归档校验一致。[Fedora 记录](../state/acceptance/fedora-clean-0.3.18.log) · [MacBook Pro 记录](../state/acceptance/packages/macos-0.3.18-preflight.txt) |
