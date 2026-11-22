@@ -2,6 +2,20 @@
 
 上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本通过本机和远程原生移卡检查点。macOS arm64 的目标 Codex 构建在加载看板之前拒绝了经过修改的启动归档，因此发布条件未满足。
 
+## 0.3.12 候选
+
+双平台归档由提交 `0b22c31` 构建。`0.3.11` 的冻结模型夹具漏接了自动阶段持久化接口，两个对照断言失败。`0.3.12` 修复夹具，两端重新执行，10 项冻结模型检查全部通过。
+
+| 项目 | 结果 |
+| --- | --- |
+| Fedora 真实中断 | 本机专用卡发起一轮后进入进行中，点击原生停止后进入已阻塞。目标分区独立读回，中断回执和历史轮次 ID 一致，自动原因、人工备注和标题均读回。隔离写入白名单复原。见 `state/acceptance/fedora-interrupt-0.3.12-7e923bad.jsonl`。 |
+| Fedora 普通澄清答复 | 同一本机专用卡从已阻塞进入进行中，答复正常完成后进入待审阅。两次移动均由本机连接独立读回，预览返回同轮最终答复，人工备注保留。见 `state/acceptance/fedora-clarification-0.3.12-5f010661.jsonl`。 |
+| 轮次故障夹具 | 验证同一阶段重启保留人工选择，新阶段可以移卡。原生写入后丢失回执再重启时，读回已生效的位置，保留备注且不重复写入。只读历史、排队输入、助手文字及请求自动重试不会单独触发自动移卡。 |
+| 兼容服务身份 | 测试验证目录、发行包构建指纹、配置和端口匹配时才复用。在 Fedora 隔离副本中，CLI 复用已启动的服务，`stop` 关闭兼容端点，桌面进程继续运行。重启隔离副本后端点恢复，读回 `0.3.12`。见 `state/acceptance/fedora-service-stop-0.3.12.txt`。 |
+| Fedora 安装生命周期 | 从已安装看板点击更新，重启读回 `0.3.10 → 0.3.12 → 0.3.10`。卸载恢复副本启动归档，数据夹具 SHA-256 一致。见 `state/acceptance/fedora-installed-0.3.12.txt`。 |
+| 双平台干净解包 | Fedora 通过 61 项随包 Node 测试、6 项公共入口测试和 18 项发布门槛测试。MacBook Pro 通过 59 项随包 Node 测试，跳过 2 项 Linux 专用测试。Mac Codex `26.1111.21308` 的框架内嵌 ASAR 摘要，安装预检仍以退出码 `1` 停止。见 `state/acceptance/fedora-clean-0.3.12.log` 和 `state/acceptance/packages/macos-0.3.12-preflight.txt`。 |
+| 统一发布门槛 | 31 项需求中 13 项通过，18 项待验。新通过 `AUTO-004` 和 `SERVICE-001`。`releaseReady` 为 `false`。见 `state/acceptance/release-gate-0.3.12.json`。 |
+
 ## 0.3.10 候选
 
 双平台归档、校验文件及解包清单位于 `state/acceptance/packages/`。候选由提交 `446e10b` 构建。
