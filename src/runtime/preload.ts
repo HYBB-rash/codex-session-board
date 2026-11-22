@@ -101,8 +101,8 @@ function connectBoard(desktop: DesktopConnection, closePage: () => void): BoardS
 
 function relay(board: BoardService): void {
     ipcRenderer.on("codex-enhancer:board-relay", (_event, value) => {
-        const { id, path, body } = value as BoardRelayRequest;
-        void board.request(path, body).then(
+        const { id, path, body, account } = value as BoardRelayRequest;
+        void board.request(path, body, account).then(
             (result) => ipcRenderer.send("codex-enhancer:board-result", { id, value: result }),
             (error: unknown) =>
                 ipcRenderer.send("codex-enhancer:board-result", {

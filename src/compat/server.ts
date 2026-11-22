@@ -144,20 +144,22 @@ async function dispatch(
 ): Promise<unknown> {
     const argument = argumentsFor(operation, payload);
     const account = runtime.options.cacheAccount?.();
+    let result: unknown;
     try {
-        const result = await runtime.options.request(operation.path, argument);
-        if (operation.action === "Snapshot") persist(runtime, account, result);
-        if (account && account !== runtime.options.cacheAccount?.()) {
-            throw new RequestError(409, "Codex 账号已变更，请重新读取看板");
-        }
-        return result;
+        result = await runtime.options.request(operation.path, argument);
     } catch (error) {
         if (!(error instanceof HostUnavailableError)) throw error;
+        if (account !== runtime.options.cacheAccount?.())
+            throw new RequestError(409, "Codex 账号已变更，请重新读取看板");
         const cached =
             operation.action === "Snapshot" && readCache(runtime.options.stateDir, account);
         if (cached) return cached;
         throw new RequestError(503, error.message);
     }
+    if (account !== runtime.options.cacheAccount?.())
+        throw new RequestError(409, "Codex 账号已变更，请重新读取看板");
+    if (operation.action === "Snapshot") persist(runtime, account, result);
+    return result;
 }
 
 async function respondAsset(

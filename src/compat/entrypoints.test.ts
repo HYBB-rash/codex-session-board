@@ -171,6 +171,34 @@ test("offline account-specific snapshots never reissue writes or previews", asyn
     assert.equal((await fetch(new URL("/api/sessions", url))).status, 503);
 });
 
+test("a pending offline response cannot fall back to the previous account's snapshot", async (test) => {
+    let online = true;
+    let requested!: () => void;
+    let disconnected!: () => void;
+    const entered = new Promise<void>((resolve) => {
+        requested = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+        disconnected = resolve;
+    });
+    const { url, switchAccount } = await fixture(test, async () => {
+        if (online) return example;
+        requested();
+        await released;
+        throw new HostUnavailableError();
+    });
+    const snapshot = new URL("/api/sessions", url);
+    assert.deepEqual(await (await fetch(snapshot)).json(), example);
+    online = false;
+    const pending = fetch(snapshot);
+    await entered;
+    switchAccount("new-account");
+    disconnected();
+    const response = await pending;
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { error: "Codex 账号已变更，请重新读取看板" });
+});
+
 function mcp(request: BoardRequest) {
     const rpc = createMcpHandler({ request, version });
     return async (method: string, params?: object) => {

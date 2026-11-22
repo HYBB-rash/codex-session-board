@@ -49,13 +49,14 @@ interface ListArgs {
 
 interface NativeFixture {
     hosts: string[];
+    accountId?: string;
     list(host: string, args: ListArgs): { data: Thread[]; nextCursor: string | null };
     history?: (id: ThreadId) => Turn[];
-    read?: (host: string, id: ThreadId) => Thread;
+    read?: (host: string, id: ThreadId) => Thread | Promise<Thread>;
     open?: (command: Extract<DesktopCommand, { kind: "open" }>) => void;
 }
 
-function readFixture(native: NativeFixture, host: string, method: string, params: ListArgs) {
+async function readFixture(native: NativeFixture, host: string, method: string, params: ListArgs) {
     switch (method) {
         case "thread/list":
             return native.list(host, params);
@@ -63,7 +64,7 @@ function readFixture(native: NativeFixture, host: string, method: string, params
             return { data: native.history?.(params.threadId) ?? [], nextCursor: null };
         case "thread/read":
             assert.ok(native.read);
-            return { thread: native.read(host, params.threadId) };
+            return { thread: await native.read(host, params.threadId) };
         case "project/list":
             return { data: [], nextCursor: null };
         default:
@@ -72,7 +73,8 @@ function readFixture(native: NativeFixture, host: string, method: string, params
 }
 
 function discoverySidebar(native: NativeFixture, command: DesktopCommand) {
-    if (command.kind === "context") return { accountId: "account", userId: "user", sections: [] };
+    if (command.kind === "context")
+        return { accountId: native.accountId ?? "account", userId: "user", sections: [] };
     assert.equal(command.kind, "open");
     assert.ok(native.open);
     return native.open(command);
@@ -98,7 +100,7 @@ function fixture(testContext: TestContext, maxPages = 3) {
                 request: { id: string; method: string; params: ListArgs };
             };
             const { id, method, params } = packet.request;
-            const result = readFixture(native, packet.hostId, method, params);
+            const result = await readFixture(native, packet.hostId, method, params);
             desktop.receive({
                 type: "mcp-response",
                 hostId: packet.hostId,
@@ -126,6 +128,86 @@ function fixture(testContext: TestContext, maxPages = 3) {
     });
     return { native, service, desktop, records };
 }
+
+function deferred<Value>() {
+    let resolve!: (value: Value) => void;
+    const promise = new Promise<Value>((done) => {
+        resolve = done;
+    });
+    return { promise, resolve };
+}
+
+function pauseRead(native: NativeFixture) {
+    const started = deferred<void>();
+    const reply = deferred<Thread>();
+    native.read = () => {
+        started.resolve();
+        return reply.promise;
+    };
+    return { started: started.promise, release: () => reply.resolve(row(first)) };
+}
+
+test("an in-flight same-column edit cannot persist after the active Codex account switches", async (testContext) => {
+    const { native, service, records } = fixture(testContext);
+    native.list = (_host, { archived }) => ({
+        data: archived ? [] : [row(first)],
+        nextCursor: null,
+    });
+    native.history = () => [];
+    await service.refresh();
+    const [card] = service.snapshot().sessions;
+    assert.ok(card);
+    const { id, version, inputVersion, sectionVersion } = card;
+    const paused = pauseRead(native);
+    const pending = assert.rejects(
+        service.update({ id, version, inputVersion, sectionVersion, state: null, note: "旧账号" }),
+        /Codex 账号已变更/,
+    );
+    await paused.started;
+    native.accountId = "next-account";
+    await service.refresh();
+    paused.release();
+    await pending;
+    assert.equal(records[first], undefined);
+    assert.equal(service.snapshot().sessions[0]?.note, "");
+    await assert.rejects(
+        service.request(
+            "/api/state",
+            { id, version, inputVersion, sectionVersion, state: null, note: "旧账号" },
+            '["account","user"]',
+        ),
+        /Codex 账号已变更/,
+    );
+    assert.equal(records[first], undefined);
+});
+
+test("a delayed native preview cannot return the previous account's reply after refresh", async (testContext) => {
+    const { native, service } = fixture(testContext);
+    native.list = (_host, { archived }) => ({
+        data: archived ? [] : [row(first)],
+        nextCursor: null,
+    });
+    native.history = () => [
+        {
+            id: "complete",
+            status: "completed",
+            items: [
+                { id: "reply", type: "agentMessage", phase: "final_answer", text: "旧账号回复" },
+            ],
+        },
+    ];
+    await service.refresh();
+    const paused = pauseRead(native);
+    const pending = assert.rejects(
+        service.request("/api/preview-reply", { id: first }),
+        /Codex 账号已变更/,
+    );
+    await paused.started;
+    native.accountId = "next-account";
+    await service.refresh();
+    paused.release();
+    await pending;
+});
 
 test("opening rejects invalid, undiscovered and mismatched threads and uses the verified host", async (testContext) => {
     const { native, service } = fixture(testContext);

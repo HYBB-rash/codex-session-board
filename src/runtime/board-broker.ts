@@ -8,6 +8,7 @@ import { boardUpdateStatus } from "../installer/releases.js";
 export interface BoardRelayRequest {
     id: string;
     path: string;
+    account: string;
     body?: object;
 }
 
@@ -61,9 +62,15 @@ export class BoardBroker {
     async dispatch(path: string, body?: object): Promise<unknown> {
         if (path === "/api/plugin-update") return boardUpdateStatus(body !== undefined);
         const sender = this.sender;
-        if (!sender || sender.isDestroyed() || !this.account) throw new HostUnavailableError();
+        const account = this.account;
+        if (!sender || sender.isDestroyed() || !account) throw new HostUnavailableError();
         const id = randomUUID();
-        const request: BoardRelayRequest = { id, path, ...(body === undefined ? {} : { body }) };
+        const request: BoardRelayRequest = {
+            id,
+            path,
+            account,
+            ...(body === undefined ? {} : { body }),
+        };
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => this.settle({ id, error: "Codex 看板请求超时" }), 30000);
             this.pending.set(id, { sender, timer, resolve, reject });

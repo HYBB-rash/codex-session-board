@@ -178,7 +178,7 @@ function isNewPhase(phase: Phase, current: CardRecord, since: number): boolean {
 
 export class BoardService {
     private readonly hosts = new Map<HostId, HostSnapshot>();
-    private context?: SidebarContext;
+    private context: SidebarContext | undefined;
     private records: Record<string, CardRecord> = {};
     private refreshing: Promise<void> | undefined;
     private readonly editing = new Set<string>();
@@ -229,20 +229,29 @@ export class BoardService {
     private async readBoard(): Promise<void> {
         const context = await this.desktop.context();
         const account = accountKey(context);
+        const switched = this.context === undefined || account !== accountKey(this.context);
+        if (switched && this.context) {
+            this.context = undefined;
+            this.ports.authority(undefined);
+        }
         const settings = await this.ports.settings(account);
         const titleStartedAt = settings.syncTitles
             ? await this.ports.titleEpoch(account)
             : undefined;
-        if (!this.context || account !== accountKey(this.context)) {
+        if (switched) {
+            const [records, ledger] = await Promise.all([
+                this.ports.load(account),
+                this.ports.loadLedger(account),
+            ]);
+            if (account !== accountKey(await this.desktop.context()))
+                throw new Error("Codex 账号已变更");
             this.hosts.clear();
             this.changed.clear();
             this.runtimeDirty.clear();
             this.historyReads.clear();
             this.nextTitleAttempt.clear();
-            [this.records, this.ledger] = await Promise.all([
-                this.ports.load(account),
-                this.ports.loadLedger(account),
-            ]);
+            this.records = records;
+            this.ledger = ledger;
             this.archiveDeadlines.clear();
             this.archiveRuns.clear();
         }
@@ -251,6 +260,7 @@ export class BoardService {
         this.context = context;
         this.ports.authority(account);
         await Promise.all(this.desktop.knownHosts().map((host) => this.refreshHost(host, context)));
+        this.requireAccount(account);
         this.autoArchive(context);
     }
 
@@ -296,7 +306,7 @@ export class BoardService {
                 if (!next.active.size) throw error;
                 next.error = errorText(error);
             }
-            await this.freshContext();
+            await this.freshContext(context);
             this.desktop.assertCurrent(connection);
             next.currentActive = new Set(next.active.keys());
             const archiveEpochMatches = last.connection?.epoch === connection.epoch;
@@ -558,10 +568,9 @@ export class BoardService {
         const current = await this.desktop.read(connection, thread.id, false);
         if (placement(context, connection.hostId, current).version !== position.version) return;
         const id = cardId({ hostId: connection.hostId, threadId: thread.id });
-        const fresh = await this.freshContext();
+        await this.freshContext(context);
         this.desktop.assertCurrent(connection);
         const account = accountKey(context);
-        if (account !== accountKey(fresh)) throw new Error("Codex 账号已变更");
         const pending = {
             account,
             id,
@@ -571,7 +580,7 @@ export class BoardService {
         if (!(await this.ports.preparePhase(pending)))
             throw new Error("自动阶段已过期，请刷新后重试");
         this.desktop.assertCurrent(connection);
-        if (account !== accountKey(this.requiredContext())) throw new Error("Codex 账号已变更");
+        this.requireAccount(account);
         this.records[id] = { ...(this.records[id] ?? emptyRecord), pendingPhaseKey: phase.key };
         const after = await this.moveCard(phase.state, connection, context, current);
         next.manual = false;
@@ -819,10 +828,16 @@ export class BoardService {
         return { card, connection: this.desktop.capture(card.hostId) };
     }
 
-    private async freshContext(): Promise<SidebarContext> {
-        const context = await this.desktop.context();
-        if (accountKey(context) !== accountKey(this.requiredContext()))
+    private requireAccount(account: string): void {
+        if (!this.context || account !== accountKey(this.context))
             throw new Error("Codex 账号已变更");
+    }
+
+    private async freshContext(expected = this.requiredContext()): Promise<SidebarContext> {
+        const account = accountKey(expected);
+        const context = await this.desktop.context();
+        this.requireAccount(account);
+        if (account !== accountKey(context)) throw new Error("Codex 账号已变更");
         return context;
     }
 
@@ -842,9 +857,10 @@ export class BoardService {
             this.records[edit.id]?.version === settled.version
         )
             await this.retryTitle(connection, settled.threadId);
+        this.requireAccount(account);
         const context = this.requiredContext();
         const current =
-            accountKey(context) === account && this.records[edit.id]?.version === settled.version
+            this.records[edit.id]?.version === settled.version
                 ? this.hosts.get(settled.hostId)?.active.get(settled.threadId)
                 : undefined;
         const session = current ? this.card(settled.hostId, current, context, true) : settled;
@@ -863,6 +879,8 @@ export class BoardService {
         const context = await this.freshContext();
         const before = await this.desktop.read(connection, card.threadId, false);
         const latest = (await this.desktop.turns(connection, card.threadId, "summary")).data[0];
+        await this.freshContext(context);
+        this.desktop.assertCurrent(connection);
         const from = placement(context, card.hostId, before);
         const current = this.records[edit.id] ?? emptyRecord;
         const inputKey = turnInput(latest) ?? current.inputKey ?? null;
@@ -896,7 +914,7 @@ export class BoardService {
             await this.resolveEdit(edit);
         const after = await this.moveCard(edit.state, connection, context, before);
         this.desktop.assertCurrent(connection);
-        const nextContext = await this.freshContext();
+        const nextContext = await this.freshContext(context);
         const record = {
             note: edit.note?.trim() ?? current.note,
             version: current.version + 1,
@@ -929,16 +947,16 @@ export class BoardService {
         record: CardRecord,
         change?: RecordChange,
     ): Promise<void> {
-        await this.freshContext();
+        await this.freshContext(context);
+        const account = accountKey(context);
         await this.ports.save({
-            account: accountKey(context),
+            account,
             id,
             expected,
             record,
             ...(change ? { change } : {}),
         });
-        if (accountKey(context) !== accountKey(this.requiredContext()))
-            throw new Error("保存期间 Codex 账号已变更");
+        this.requireAccount(account);
         this.records[id] = record;
     }
 
@@ -955,7 +973,7 @@ export class BoardService {
         state: BoardState | null,
         deadline: number,
     ): Promise<Thread | undefined> {
-        await this.freshContext();
+        const owner = await this.freshContext();
         const before = await this.desktop.read(
             connection,
             threadId,
@@ -966,7 +984,7 @@ export class BoardService {
         const current = before.name || before.preview.split("\n")[0] || threadId;
         const title = projectedTitle(current, state);
         if (title === current) return before;
-        const context = await this.freshContext();
+        const context = await this.freshContext(owner);
         if (this.records[id] !== record || this.editing.has(id) || !this.settings.syncTitles)
             return;
         const position = placement(context, connection.hostId, before);
@@ -979,7 +997,7 @@ export class BoardService {
             false,
             remainingTitleTime(deadline),
         );
-        await this.freshContext();
+        await this.freshContext(owner);
         if (after.name !== title) throw new Error("Codex 尚未读回更新后的标题");
         return after;
     }
@@ -1038,7 +1056,8 @@ export class BoardService {
         } finally {
             window.clearTimeout(timer);
         }
-        if (this.records[id] !== record) return;
+        if (!this.context || accountKey(this.context) !== account || this.records[id] !== record)
+            return;
         if (failure)
             this.nextTitleAttempt.set(id, {
                 version: record.version,
@@ -1085,7 +1104,7 @@ export class BoardService {
             failure = error;
         }
         const after = await this.desktop.read(connection, before.id, false);
-        const fresh = await this.freshContext();
+        const fresh = await this.freshContext(context);
         const expectedReplica = fresh.sections.find(({ id }) => id === destination)
             ?.hostSectionIds?.[connection.hostId];
         const confirmed = expectedReplica !== undefined && after.section?.id === expectedReplica;
@@ -1105,17 +1124,18 @@ export class BoardService {
     private async open(id: string): Promise<{ ok: true }> {
         const { card, connection } = this.target(id);
         if (!card.canOpen) throw new Error("会话目前只显示缓存，请重新发现");
-        const { accountId, userId } = await this.freshContext();
+        const context = await this.freshContext();
         await this.desktop.read(connection, card.threadId, false);
-        await this.freshContext();
+        await this.freshContext(context);
         this.desktop.assertCurrent(connection);
         await this.desktop.navigate({
             kind: "open",
-            accountId,
-            userId,
+            accountId: context.accountId,
+            userId: context.userId,
             hostId: card.hostId,
             threadId: card.threadId,
         });
+        this.requireAccount(accountKey(context));
         this.ports.closePage();
         return { ok: true };
     }
@@ -1123,9 +1143,9 @@ export class BoardService {
     private async preview(id: string) {
         const { card, connection } = this.target(id);
         if (!card.canOpen) throw new Error("会话目前只显示缓存，请重新发现");
-        await this.freshContext();
+        const context = await this.freshContext();
         const result = await previewReply(this.desktop, connection, card.threadId);
-        await this.freshContext();
+        await this.freshContext(context);
         this.desktop.assertCurrent(connection);
         return result;
     }
@@ -1156,6 +1176,7 @@ export class BoardService {
     }
 
     private async resumeDraft(input: DraftInput, draft: DraftRecord) {
+        const owner = this.requiredContext();
         const requestId = draft.requestId;
         const pending = { ok: false, pending: true, requestId };
         if (input.requestId !== requestId || !draft.threadId) {
@@ -1167,13 +1188,14 @@ export class BoardService {
         );
         if (!card) return { ...pending, error: "原会话尚未读回，请核对连接后刷新" };
         await this.open(card.id);
+        await this.freshContext(owner);
         await this.persistDraft({ ...draft, stage: "opened" });
         return { ok: true, requestId };
     }
 
-    private async launchDraft(input: DraftInput, record?: DraftRecord) {
+    private async launchDraft(input: DraftInput, owner: SidebarContext, record?: DraftRecord) {
         const { projectId } = input;
-        const { accountId, userId } = await this.freshContext();
+        const { accountId, userId } = await this.freshContext(owner);
         const selected = projectId ? this.findProject(projectId) : null;
         const host =
             selected?.hostId ?? this.desktop.knownHosts().find((hostId) => hostId === "local");
@@ -1188,6 +1210,7 @@ export class BoardService {
             projectId: selected?.project.id ?? null,
             roots: selected?.project.roots.map(({ path }) => path) ?? [],
         });
+        await this.freshContext(owner);
         this.desktop.assertCurrent(connection);
         if (result !== "registration" && result !== "composer")
             throw new Error("Codex 未确认输入页");
@@ -1202,6 +1225,7 @@ export class BoardService {
     }
 
     private async create(input: DraftInput) {
+        const owner = this.requiredContext();
         const { projectId, operationId } = input;
         const draft = unresolvedDrafts(this.ledger).find(
             ({ project, source }) => project === projectId && source === "legacy",
@@ -1227,7 +1251,7 @@ export class BoardService {
                   })
                 : undefined;
         try {
-            return await this.launchDraft(input, record);
+            return await this.launchDraft(input, owner, record);
         } catch (error) {
             if (!record) throw error;
             return { ok: false, pending: true, operationId, error: errorText(error) };
@@ -1245,14 +1269,14 @@ export class BoardService {
         ) {
             throw new Error("目标项目与会话主机或工作目录不一致");
         }
-        await this.freshContext();
+        const context = await this.freshContext();
         const before = await this.desktop.read(connection, card.threadId, false);
         if (
             before.cwd !== card.cwd ||
             (before.projectId !== null && before.projectId !== project.id)
         )
             throw new Error("项目归属已变更，请刷新后重试");
-        await this.freshContext();
+        await this.freshContext(context);
         let failure: unknown;
         if (before.projectId !== project.id) {
             try {
@@ -1265,7 +1289,7 @@ export class BoardService {
             before.projectId === project.id
                 ? before
                 : await this.desktop.read(connection, card.threadId, false);
-        await this.freshContext();
+        await this.freshContext(context);
         this.desktop.assertCurrent(connection);
         if (actual.projectId !== project.id || actual.cwd !== card.cwd)
             throw new Error(failure ? errorText(failure) : "Codex 尚未确认项目归属");
@@ -1275,7 +1299,9 @@ export class BoardService {
 
     private async writeLedger(next: BoardLedger): Promise<void> {
         const context = await this.freshContext();
-        await this.ports.writeLedger(accountKey(context), next);
+        const account = accountKey(context);
+        await this.ports.writeLedger(account, next);
+        this.requireAccount(account);
         this.ledger = next;
     }
 
@@ -1310,6 +1336,7 @@ export class BoardService {
         const context = await this.freshContext();
         const before = await this.desktop.read(connection, card.threadId, false);
         const latest = (await this.desktop.turns(connection, card.threadId, "summary")).data[0];
+        this.requireAccount(accountKey(context));
         const position = placement(context, card.hostId, before);
         const record = this.records[item.id] ?? emptyRecord;
         const input = turnInput(latest);
@@ -1337,19 +1364,24 @@ export class BoardService {
         ) {
             throw new Error("归档核对期间会话发生了变化");
         }
-        return { connection, threadId: after.id };
+        await this.freshContext(context);
+        this.desktop.assertCurrent(connection);
+        return { connection, context, threadId: after.id };
     }
 
     private async archiveThread(item: ArchiveItem): Promise<void> {
-        const { connection, threadId } = await this.verifyArchive(item).catch((error: unknown) => {
-            if (error instanceof NewInputError) throw error;
-            throw new ArchivePreconditionError(errorText(error));
-        });
+        const { connection, context, threadId } = await this.verifyArchive(item).catch(
+            (error: unknown) => {
+                if (error instanceof NewInputError) throw error;
+                throw new ArchivePreconditionError(errorText(error));
+            },
+        );
         await this.desktop.setArchived(connection, threadId, true);
-        await this.freshContext();
+        await this.freshContext(context);
     }
 
     private async archived(id: string): Promise<boolean> {
+        const owner = this.requiredContext();
         const known = [...this.hosts].find(([hostId, host]) =>
             [...host.active.values(), ...host.archived.values()].some(
                 (thread) => cardId({ hostId, threadId: thread.id }) === id,
@@ -1360,7 +1392,7 @@ export class BoardService {
         const connection = this.desktop.capture(hostId);
         const archived = new Map<ThreadId, Thread>();
         await this.readPages(connection, true, archived);
-        await this.freshContext();
+        await this.freshContext(owner);
         this.desktop.assertCurrent(connection);
         const result = [...archived.values()].find(
             (thread) => cardId({ hostId, threadId: thread.id }) === id,
@@ -1451,9 +1483,11 @@ export class BoardService {
         throw new Error("归档请求不完整");
     }
 
-    async request(path: string, body?: object): Promise<unknown> {
+    async request(path: string, body?: object, account?: string): Promise<unknown> {
+        if (account !== undefined) this.requireAccount(account);
         if (path === "/api/sessions" || path === "/api/refresh") {
             await this.refresh();
+            if (account !== undefined) this.requireAccount(account);
             return this.snapshot();
         }
         if (path === "/api/state" && body) return this.update(body as Edit);
@@ -1470,8 +1504,13 @@ export class BoardService {
         if (path === "/api/project/assign" && input?.confirmed && input.id && input.projectId)
             return this.assign(input.id, input.projectId);
         if (["/api/connect", "/api/ssh-setup"].includes(path)) {
-            const { accountId, userId } = await this.freshContext();
-            await this.desktop.navigate({ kind: "settings", accountId, userId });
+            const owner = await this.freshContext();
+            await this.desktop.navigate({
+                kind: "settings",
+                accountId: owner.accountId,
+                userId: owner.userId,
+            });
+            this.requireAccount(accountKey(owner));
             this.ports.closePage();
             if (path === "/api/ssh-setup")
                 return { ok: true, state: "applied", message: "已打开 Codex 远程连接设置" };
