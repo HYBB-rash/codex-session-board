@@ -1,13 +1,14 @@
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import type { BoardRequest } from "./operations.js";
 import { object } from "./operations.js";
-import { type Receipt, readReceipt } from "./receipt.js";
+import { processAlive, type Receipt, readReceipt } from "./receipt.js";
 import { HostUnavailableError } from "./server.js";
 
 export interface BoardClient {
     url: string;
     request: BoardRequest;
-    stop(): Promise<unknown>;
+    stop(): Promise<{ running: false; stopped: true; instance: string }>;
 }
 
 async function fetchLocal(path: string, receipt: Receipt, body?: object): Promise<unknown> {
@@ -39,9 +40,22 @@ async function fetchLocal(path: string, receipt: Receipt, body?: object): Promis
     return result;
 }
 
+async function awaitStop(directory: string, receipt: Receipt): Promise<void> {
+    const deadline = performance.now() + 45000;
+    while (performance.now() < deadline) {
+        const current = readReceipt(directory);
+        if (current?.instance !== receipt.instance || !processAlive(receipt.pid)) return;
+        await delay(50);
+    }
+    throw new Error("尚未确认看板服务退出");
+}
+
 export async function connectBoard(stateDir: string): Promise<BoardClient> {
-    const receipt = readReceipt(join(stateDir, "session-board")) ?? readReceipt(stateDir);
-    if (!receipt) throw new HostUnavailableError();
+    const nested = join(stateDir, "session-board");
+    const nestedReceipt = readReceipt(nested);
+    const directory = nestedReceipt ? nested : stateDir;
+    const receipt = nestedReceipt ?? readReceipt(directory);
+    if (!receipt || !processAlive(receipt.pid)) throw new HostUnavailableError();
     const information = object<"app" | "instance" | "url">(await fetchLocal("/api/info", receipt));
     if (
         information?.app !== receipt.app ||
@@ -52,6 +66,21 @@ export async function connectBoard(stateDir: string): Promise<BoardClient> {
     return {
         url: receipt.url,
         request: (path, body) => fetchLocal(path, receipt, body),
-        stop: () => fetchLocal("/api/service/stop", receipt, { instance: receipt.instance }),
+        async stop() {
+            const accepted = object<"instance" | "stopping" | "stopped">(
+                await fetchLocal("/api/service/stop", receipt, {
+                    instance: receipt.instance,
+                    pid: receipt.pid,
+                }),
+            );
+            if (
+                accepted?.instance !== receipt.instance ||
+                (accepted.stopping !== true && accepted.stopped !== true)
+            ) {
+                throw new Error("看板服务没有确认停止请求");
+            }
+            await awaitStop(directory, receipt);
+            return { running: false, stopped: true, instance: receipt.instance };
+        },
     };
 }

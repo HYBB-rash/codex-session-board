@@ -14,11 +14,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { type TestContext, test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { connectBoard } from "./client.js";
 import { createMcpHandler, resourceUri } from "./mcp.js";
 import { assetsDirectory, type BoardRequest, loadOperations } from "./operations.js";
-import { readReceipt } from "./receipt.js";
+import { readReceipt, writeReceipt } from "./receipt.js";
 import { HostUnavailableError, startBoardServer } from "./server.js";
 
 const exec = promisify(execFile);
@@ -303,8 +304,104 @@ test("CLI reuses the authorized instance and stop only closes its compatibility 
         { Authorization: `Bearer ${running.clientToken}` },
     );
     assert.equal(wrongInstance.status, 409);
+    const wrongProcess = await post(
+        url,
+        "api/service/stop",
+        { instance: running.instance, pid: running.pid + 1 },
+        { Authorization: `Bearer ${running.clientToken}` },
+    );
+    assert.equal(wrongProcess.status, 409);
     assert.equal(JSON.parse((await run("stop")).stdout).stopped, true);
+    assert.equal(readReceipt(directory), null);
     await assert.rejects(run("scan"), /请打开装有 Enhancer/);
+});
+
+test("CLI stop waits for the verified service to drain before reporting success", async (test) => {
+    let finish!: () => void;
+    const active = new Promise<void>((resolve) => {
+        finish = resolve;
+    });
+    let markReceived!: () => void;
+    const received = new Promise<void>((resolve) => {
+        markReceived = resolve;
+    });
+    const { directory, url } = await fixture(test, async () => {
+        markReceived();
+        await active;
+        return example;
+    });
+    const client = await connectBoard(directory);
+    const snapshot = client.request("/api/sessions");
+    await received;
+    const receipt = readReceipt(directory);
+    assert.ok(receipt);
+    const binary = join(assetsDirectory, "..", "bin", "codex-session-board.js");
+    const stopping = exec(process.execPath, [binary, "--state-dir", directory, "stop"]);
+    const stopResult = stopping.then(
+        () => "stopped",
+        () => "failed",
+    );
+    try {
+        let accepting = true;
+        for (let attempt = 0; attempt < 50 && accepting; attempt += 1) {
+            accepting = await fetch(`${url}api/info`).then(
+                async (response) => {
+                    await response.text();
+                    return true;
+                },
+                () => false,
+            );
+            if (accepting) await delay(20);
+        }
+        assert.equal(accepting, false, "the listener has stopped accepting connections");
+        assert.equal(readReceipt(directory)?.instance, receipt.instance);
+        assert.equal(await Promise.race([stopResult, delay(80, "draining")]), "draining");
+    } finally {
+        finish();
+    }
+    assert.deepEqual(await snapshot, example);
+    assert.deepEqual(JSON.parse((await stopping).stdout), {
+        running: false,
+        stopped: true,
+        instance: receipt.instance,
+    });
+    assert.equal(readReceipt(directory), null);
+});
+
+test("an unreachable live host keeps its state directory and cannot be replaced", async (test) => {
+    const { directory, close } = await fixture(test, async () => example);
+    const receipt = readReceipt(directory);
+    assert.ok(receipt);
+    await close();
+    writeReceipt(directory, receipt);
+    await assert.rejects(connectBoard(directory), HostUnavailableError);
+    const occupied = await fixture(test, async () => example);
+    await assert.rejects(
+        startBoardServer({
+            stateDir: directory,
+            port: Number(new URL(occupied.url).port),
+            request: async () => example,
+        }),
+        /已有看板服务实例/,
+    );
+    assert.deepEqual(readReceipt(directory), receipt);
+});
+
+test("a client bound to a stopped instance cannot close its replacement", async (test) => {
+    const { directory, url, close } = await fixture(test, async () => example);
+    const original = await connectBoard(directory);
+    await close();
+    const replacement = await startBoardServer({
+        stateDir: directory,
+        port: Number(new URL(url).port),
+        request: async () => example,
+    });
+    test.after(() => replacement.close());
+    const current = await connectBoard(directory);
+    const receipt = readReceipt(directory);
+    await assert.rejects(original.stop(), /看板服务实例已变更/);
+    assert.deepEqual(await current.request("/api/sessions"), example);
+    assert.deepEqual(readReceipt(directory), receipt);
 });
 
 test("migrate-sections retains the source and refuses to overwrite an existing output", async (test) => {

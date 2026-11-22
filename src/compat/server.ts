@@ -10,7 +10,7 @@ import {
     loadOperations,
     type Operation,
 } from "./operations.js";
-import { type Receipt, releaseReceipt, writeReceipt } from "./receipt.js";
+import { type Receipt, releaseReceipt, requireInactiveReceipt, writeReceipt } from "./receipt.js";
 
 export const defaultPort = 18767;
 
@@ -196,12 +196,16 @@ async function respond(runtime: Runtime, request: IncomingMessage, response: Ser
     }
     if (path === "/api/service/stop" && request.method === "POST" && client) {
         const match = (await body(request, 1024)) as Partial<Receipt>;
-        if (match?.instance !== runtime.receipt.instance)
+        if (
+            match?.instance !== runtime.receipt.instance ||
+            (match.pid !== undefined && match.pid !== runtime.receipt.pid)
+        ) {
             throw new RequestError(409, "看板服务实例已变更");
+        }
         response.once("finish", () => {
             void runtime.stop().catch(runtime.options.cacheError ?? console.error);
         });
-        json(response, 200, { running: false, stopped: true, instance: runtime.receipt.instance });
+        json(response, 202, { stopping: true, instance: runtime.receipt.instance });
         return;
     }
     const operation = runtime.operations.find(
@@ -239,6 +243,7 @@ function closeServer(server: Server): Promise<void> {
 }
 
 export async function startBoardServer(options: BoardServerOptions): Promise<BoardServer> {
+    requireInactiveReceipt(options.stateDir);
     const assetsDir = options.assetsDir ?? assetsDirectory;
     const operations = loadOperations(assetsDir);
     let runtime: Runtime | undefined;
@@ -269,7 +274,7 @@ export async function startBoardServer(options: BoardServerOptions): Promise<Boa
     }
     let stopped: Promise<void> | undefined;
     const close = () => {
-        stopped ??= closeServer(server).finally(() => releaseReceipt(options.stateDir, receipt));
+        stopped ??= closeServer(server).then(() => releaseReceipt(options.stateDir, receipt));
         return stopped;
     };
     runtime = {

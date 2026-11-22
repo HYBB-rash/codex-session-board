@@ -64,7 +64,7 @@ export function releaseReceipt(stateDir: string, receipt: Receipt): void {
     if (readReceipt(stateDir)?.instance === receipt.instance) unlinkSync(pathFor(stateDir));
 }
 
-function alive(pid: number): boolean {
+export function processAlive(pid: number): boolean {
     try {
         process.kill(pid, 0);
         return true;
@@ -74,13 +74,16 @@ function alive(pid: number): boolean {
     }
 }
 
+export function requireInactiveReceipt(stateDir: string): Receipt | null {
+    const previous = readReceipt(stateDir);
+    if (previous && processAlive(previous.pid)) throw new Error("已有看板服务实例");
+    return previous;
+}
+
 export function writeReceipt(stateDir: string, receipt: Receipt): void {
     mkdirSync(stateDir, { recursive: true, mode: 0o700 });
-    const previous = readReceipt(stateDir);
-    if (previous) {
-        if (alive(previous.pid)) throw new Error("已有看板服务实例");
-        releaseReceipt(stateDir, previous);
-    }
+    const previous = requireInactiveReceipt(stateDir);
+    if (previous) releaseReceipt(stateDir, previous);
     const destination = pathFor(stateDir);
     const temporary = `${destination}.${randomUUID()}.tmp`;
     writeFileSync(temporary, JSON.stringify(receipt), { flag: "wx", mode: 0o600, flush: true });
