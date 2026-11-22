@@ -87,6 +87,7 @@ export class BoardFixture {
         this.service = new BoardService(desktop, {
             load: async (key) => records.account(key),
             save: async (update) => records.write(update),
+            preparePhase: async (update) => records.preparePhase(update),
             loadLedger: async (key) => ledgers.load(key),
             writeLedger: async (key, ledger) => ledgers.save(key, ledger),
             settings: async () => ({ ...defaults, mode: "legacy" }),
