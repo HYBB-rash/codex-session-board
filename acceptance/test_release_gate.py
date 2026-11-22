@@ -19,7 +19,7 @@ class ReleaseGateTests(unittest.TestCase):
     def setUp(self):
         temporary = TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        self.root = Path(temporary.name).resolve()
         artifact = self.root / "native.log"
         artifact.write_text("pointer drop, original sidebar read back matching partition\n")
         self.now = datetime(2026, 11, 22, 12, tzinfo=timezone.utc)

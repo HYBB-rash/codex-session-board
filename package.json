@@ -16,7 +16,7 @@
         "launch": "npm run build --silent && node dist/bin/codex-enhancer.js launch",
         "lint": "biome check --error-on-warnings . && node scripts/check-comments.mjs",
         "format": "biome check --write .",
-        "test": "npm run build --silent && node --test dist/compat/*.test.js dist/extensions/session-board/*.test.js dist/installer/*.test.js dist/migration/*.test.js dist/runtime/*.test.js"
+        "test": "([ -f release.json ] || npm run build --silent) && node --test dist/compat/*.test.js dist/extensions/session-board/*.test.js dist/installer/*.test.js dist/migration/*.test.js dist/runtime/*.test.js"
     },
     "devDependencies": {
         "@biomejs/biome": "^2.6.8",
