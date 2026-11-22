@@ -2,6 +2,10 @@ declare namespace NodeJS {
     interface Process {
         resourcesPath: string;
     }
+
+    interface ProcessVersions {
+        chrome?: string;
+    }
 }
 
 declare module "electron" {
@@ -24,6 +28,7 @@ declare module "electron" {
     interface WebContents {
         id: number;
         capturePage(): Promise<NativeImage>;
+        executeJavaScript(code: string): Promise<unknown>;
         getURL(): string;
         isDestroyed(): boolean;
         send(channel: string, ...args: unknown[]): void;
@@ -76,6 +81,7 @@ declare module "electron" {
 
     interface IpcRenderer {
         send(channel: string, ...args: unknown[]): void;
+        sendSync(channel: string, ...args: unknown[]): unknown;
         invoke(channel: string, ...args: unknown[]): Promise<unknown>;
         on(channel: string, listener: (event: unknown, ...args: unknown[]) => void): void;
     }
@@ -86,6 +92,7 @@ declare module "electron" {
             event: "web-contents-created",
             listener: (event: unknown, contents: WebContents) => void,
         ): this;
+        getVersion(): string;
         isReady(): boolean;
         whenReady(): Promise<void>;
     }

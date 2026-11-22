@@ -2,8 +2,18 @@ import * as fs from "node:fs";
 import { createRequire } from "node:module";
 import * as path from "node:path";
 import type { App, IpcMain, IpcMainEvent, Session, WebContents } from "electron";
-import { logs, outputDir } from "../installer/paths.js";
+import type { BoardLedger } from "../extensions/session-board/archive.js";
+import { boardDesktopRequest } from "../extensions/session-board/desktop-main.js";
+import {
+    BoardLedgers,
+    BoardRecords,
+    type RecordWrite,
+} from "../extensions/session-board/records.js";
+import { logs, outputDir, stateDir } from "../installer/paths.js";
+import { runningVersion } from "../installer/releases.js";
+import { LegacyBoardRuntime } from "../migration/runtime.js";
 import type { ExtensionApi, ExtensionModule, SidebarItemInput } from "./api.js";
+import { BoardBroker, boardFrame } from "./board-broker.js";
 import { trustedAppFrame } from "./ipc-guard.js";
 import { type OwnedSidebarItem, SidebarRegistry } from "./registry.js";
 
@@ -73,19 +83,29 @@ function optionalString(value: unknown): string | null {
     return typeof value === "string" ? value : null;
 }
 
-function readAppInfo(): RuntimeInfo {
+function readAppInfo(app: App): RuntimeInfo {
     const resources = process.resourcesPath;
-    const metadataPath = path.join(resources, "linux-package-metadata.json");
     const owlPath = path.join(resources, "owl-electron-app.json");
+    const owlJson = fs.existsSync(owlPath) ? readJson(owlPath) : null;
+    const owl = isFields<OwlApp>(owlJson) ? owlJson : null;
+    const electronVersion = process.versions.electron ?? null;
+    const runtimeType =
+        optionalString(owl?.runtimeName) || (electronVersion ? "electron" : "unknown");
+    if (process.platform === "darwin") {
+        return {
+            codexVersion: app.getVersion(),
+            runtimeType,
+            chromiumVersion: process.versions.chrome ?? "unknown",
+            electronVersion,
+        };
+    }
+    const metadataPath = path.join(resources, "linux-package-metadata.json");
     const metadataJson = readJson(metadataPath);
     const metadata = isFields<PackageMetadata>(metadataJson) ? metadataJson : null;
-    const owlJson = readJson(owlPath);
-    const owl = isFields<OwlApp>(owlJson) ? owlJson : null;
     const chromium = fs.readFileSync(path.join(resources, "..", "version"), "utf8").trim();
-    const electronVersion = process.versions.electron ?? null;
     return {
         codexVersion: requiredString(metadata?.version, "version", metadataPath),
-        runtimeType: optionalString(owl?.runtimeName) || (electronVersion ? "electron" : "unknown"),
+        runtimeType,
         chromiumVersion: chromium,
         electronVersion,
     };
@@ -280,24 +300,84 @@ function registerIpc(
         if (!trustedSender(event)) throw new Error("enhancer IPC rejected");
         return uiPayload(registry);
     });
+    ipcMain.handle("codex-enhancer:board-desktop", (event, value) => {
+        if (!boardFrame(event)) throw new Error("enhancer IPC rejected");
+        return boardDesktopRequest(event, value);
+    });
+    registerBoardStorage(ipcMain);
     ipcMain.on("codex-enhancer:proof", (event, payload: unknown) => {
         captureProof(event, payload, BrowserWindow);
+    });
+}
+
+function registerBoardStorage(ipcMain: IpcMain): void {
+    const directory = path.join(stateDir, "session-board");
+    const boardRecords = new BoardRecords(path.join(directory, "records.json"));
+    const ledgers = new BoardLedgers(path.join(directory, "ledger.json"));
+    const legacy = new LegacyBoardRuntime(directory);
+    ipcMain.handle("codex-enhancer:board-ledger", (event, account, value) => {
+        if (!boardFrame(event) || typeof account !== "string")
+            throw new Error("enhancer IPC rejected");
+        const imported = legacy.forAccount(account)?.ledger;
+        if (value === undefined) return ledgers.load(account, imported);
+        if (
+            !isFields<BoardLedger>(value) ||
+            !Array.isArray(value.batches) ||
+            !isRecord(value.columnSorts)
+        ) {
+            throw new Error("Invalid board ledger");
+        }
+        ledgers.save(account, value, imported);
+        return null;
+    });
+    ipcMain.handle("codex-enhancer:board-config", (event, account) => {
+        if (!boardFrame(event) || typeof account !== "string")
+            throw new Error("enhancer IPC rejected");
+        const config = path.join(directory, "config.json");
+        return legacy.settings(account, fs.existsSync(config) ? readJson(config) : undefined);
+    });
+    ipcMain.handle("codex-enhancer:board-records", (event, value) => {
+        if (!boardFrame(event)) throw new Error("enhancer IPC rejected");
+        if (typeof value === "string")
+            return boardRecords.account(value, legacy.forAccount(value)?.board.cards);
+        if (
+            !isFields<RecordWrite>(value) ||
+            typeof value.record?.note !== "string" ||
+            typeof value.account !== "string" ||
+            typeof value.id !== "string" ||
+            !Number.isSafeInteger(value.expected) ||
+            value.record.version !== value.expected + 1
+        ) {
+            throw new Error("Invalid board record");
+        }
+        boardRecords.write(value, legacy.forAccount(value.account)?.board.cards);
+        return null;
     });
 }
 
 function start(): void {
     log("loader-entered", { pid: process.pid, execPath: process.execPath });
     const { app, session, ipcMain, BrowserWindow } = loadElectron();
-    const info = readAppInfo();
+    const info = readAppInfo(app);
     const registry = new SidebarRegistry();
     const appContents = new Set<WebContents>();
     const publish = (): void => broadcast(registry, appContents);
     const extensions = loadExtensions(registry, publish);
-    log("main-loaded", { ...info, extensions, items: registry.list().map((item) => item.id) });
+    log("main-loaded", {
+        ...info,
+        boardVersion: runningVersion(),
+        extensions,
+        items: registry.list().map((item) => item.id),
+    });
     const registered = new WeakSet<Session>();
     app.on("session-created", (ses) => installPreload(ses, "session-created", registered));
     watchContents(app, appContents, publish);
     registerIpc(ipcMain, registry, BrowserWindow);
+    const board = new BoardBroker();
+    board.register(ipcMain);
+    void board
+        .listen(log)
+        .catch((error: unknown) => log("board-listen-failed", { error: String(error) }));
     const installExisting = (): void =>
         installPreload(session.defaultSession, "default-session", registered);
     if (app.isReady()) installExisting();

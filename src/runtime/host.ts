@@ -10,6 +10,7 @@ export interface UiHostOptions {
     fetchState(): Promise<unknown>;
     subscribe(listener: (payload: unknown) => void): void;
     proof(stage: string, extra?: Record<string, unknown>): void;
+    mountPage?(id: string, panel: HTMLElement, close: () => void): (() => void) | undefined;
 }
 
 const RAIL = "nav[data-app-navigation-rail]";
@@ -33,6 +34,7 @@ interface HostState {
     autoOpened: boolean;
     activeId: string | null;
     panel: HTMLElement | null;
+    unmount: (() => void) | undefined;
     applying: boolean;
     sawMount: boolean;
     reportedMissing: boolean;
@@ -263,7 +265,10 @@ function openPage(host: HostState, item: SidebarItemRegistration): void {
         host.panel.setAttribute(PAGE, item.id);
         (document.body ?? document.documentElement).append(host.panel);
     }
-    host.panel.replaceChildren(pageContent(host, item));
+    host.unmount?.();
+    host.panel.replaceChildren();
+    host.unmount = host.options.mountPage?.(item.id, host.panel, () => closePage(host));
+    if (!host.unmount) host.panel.append(pageContent(host, item));
     place(host.panel);
     const box = contentBox();
     proof(host, "page-rendered", {
@@ -282,6 +287,8 @@ function openPage(host: HostState, item: SidebarItemRegistration): void {
 function closePage(host: HostState): void {
     const wasOpen = host.panel != null || host.activeId != null;
     host.activeId = null;
+    host.unmount?.();
+    host.unmount = undefined;
     host.panel?.remove();
     host.panel = null;
     for (const button of document.querySelectorAll(`[${ITEM}]`))
@@ -383,6 +390,7 @@ export function startUiHost(options: UiHostOptions): UiHost {
         autoOpen: false,
         autoOpened: false,
         activeId: null,
+        unmount: undefined,
         panel: null,
         applying: false,
         sawMount: false,
