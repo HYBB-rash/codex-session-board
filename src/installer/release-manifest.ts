@@ -5,6 +5,7 @@ import { sha256File } from "./asar.js";
 export const releaseManifestName = "release.json";
 export const releasePlatforms = ["linux-x86_64", "macos-arm64"] as const;
 export type ReleasePlatform = (typeof releasePlatforms)[number];
+export const inPlaceReleaseProtocol = 1;
 
 interface ReleaseFile {
     path: string;
@@ -15,6 +16,7 @@ export interface ReleaseManifest {
     schema: 1;
     version: string;
     platform: ReleasePlatform;
+    inPlaceProtocol?: number;
     files: ReleaseFile[];
 }
 
@@ -72,6 +74,8 @@ export function readReleaseManifest(file: string): ReleaseManifest {
         manifest.schema !== 1 ||
         typeof manifest.platform !== "string" ||
         !releasePlatforms.some((platform) => platform === manifest.platform) ||
+        (manifest.inPlaceProtocol !== undefined &&
+            (!Number.isSafeInteger(manifest.inPlaceProtocol) || manifest.inPlaceProtocol < 1)) ||
         !Array.isArray(manifest.files) ||
         !manifest.files.every(
             (entry) =>
@@ -95,6 +99,16 @@ export function verifyRelease(packageRoot: string, platform = releasePlatform())
         throw new Error("release files differ from their SHA-256 manifest");
     for (const entry of ["bin/codex-enhancer.js", "runtime/main.js", "runtime/preload.js"]) {
         if (!files.some((file) => file.path === entry)) throw new Error(`release lacks ${entry}`);
+    }
+    return manifest;
+}
+
+export function verifyInPlaceRelease(packageRoot: string): ReleaseManifest {
+    const manifest = verifyRelease(packageRoot, "linux-x86_64");
+    if (manifest.inPlaceProtocol !== inPlaceReleaseProtocol) {
+        throw new Error(
+            `release ${manifest.version} does not support in-place installation protocol ${inPlaceReleaseProtocol}`,
+        );
     }
     return manifest;
 }

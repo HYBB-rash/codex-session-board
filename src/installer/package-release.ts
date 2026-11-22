@@ -14,6 +14,7 @@ import * as path from "node:path";
 import { sha256File } from "./asar.js";
 import { outputDir, root } from "./paths.js";
 import {
+    inPlaceReleaseProtocol,
     type ReleasePlatform,
     releaseManifestName,
     releasePlatform,
@@ -81,6 +82,7 @@ export function packageRelease(
         const installGuide = path.join(root, "scripts", "package-install.md");
         if (existsSync(installGuide)) cpSync(installGuide, path.join(directory, "INSTALL.md"));
         const manifest = versionManifest(path.join(directory, "dist"), version, platform);
+        if (platform === "linux-x86_64") manifest.inPlaceProtocol = inPlaceReleaseProtocol;
         writeFileSync(
             path.join(directory, releaseManifestName),
             `${JSON.stringify(manifest, null, 2)}\n`,

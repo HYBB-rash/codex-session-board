@@ -24,6 +24,7 @@ import {
     readReleaseManifest,
     releaseManifestName,
     releasePlatform,
+    verifyInPlaceRelease,
     verifyRelease,
 } from "./release-manifest.js";
 
@@ -71,12 +72,18 @@ function writePointer(store: string, pointer: ReleasePointer): void {
     }
 }
 
+function verifyStoreRelease(store: string, packageRoot: string): ReleaseManifest {
+    return store === inPlaceReleaseStore()
+        ? verifyInPlaceRelease(packageRoot)
+        : verifyRelease(packageRoot);
+}
+
 function loadRelease(store: string, id: string): ReleaseManifest {
     const release = path.join(store, id);
     if (sha256File(path.join(release, releaseManifestName)) !== id) {
         throw new Error("active release manifest does not match its identity");
     }
-    return verifyRelease(release);
+    return verifyStoreRelease(store, release);
 }
 
 function stageRelease(packageRoot: string, store: string, id: string): void {
@@ -97,7 +104,7 @@ function stageRelease(packageRoot: string, store: string, id: string): void {
         if (sha256File(path.join(temporary, releaseManifestName)) !== id) {
             throw new Error("release manifest changed while staging");
         }
-        verifyRelease(temporary);
+        verifyStoreRelease(store, temporary);
         if (store === inPlaceReleaseStore()) {
             for (const member of readdirSync(temporary, { recursive: true, withFileTypes: true })) {
                 const installed = path.join(member.parentPath, member.name);
@@ -184,7 +191,7 @@ function changeRelease<Result>(store: string, change: () => Result): Result {
 
 export function activateRelease(packageRoot: string, store = releaseStore()): ReleaseManifest {
     return changeRelease(store, () => {
-        const manifest = verifyRelease(packageRoot);
+        const manifest = verifyStoreRelease(store, packageRoot);
         const id = sha256File(path.join(packageRoot, releaseManifestName));
         stageRelease(packageRoot, store, id);
         const previous = releasePointer(store)?.current ?? null;
