@@ -24,6 +24,7 @@ function launchEnvironment(): NodeJS.ProcessEnv {
     const env = {
         ...process.env,
         CODEX_HOME: paths.codexHome,
+        CODEX_ENHANCER_STATE_DIR: paths.stateDir,
         CODEX_ELECTRON_USER_DATA_PATH: paths.userData,
         CODEX_SPARKLE_ENABLED: "false",
         CODEX_ENHANCER_AUTO_OPEN: process.env.CODEX_ENHANCER_AUTO_OPEN ?? "0",
