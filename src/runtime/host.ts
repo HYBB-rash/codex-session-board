@@ -20,6 +20,24 @@ const SIDEBAR_SCROLL = "[data-app-action-sidebar-scroll]";
 const ITEM = "data-codex-enhancer-item";
 const PAGE = "data-codex-enhancer-page";
 
+interface Mount {
+    parent: HTMLElement;
+    sample: Element | null;
+    kind: "row" | "rail";
+}
+
+interface HostState {
+    options: UiHostOptions;
+    items: SidebarItemRegistration[];
+    autoOpen: boolean;
+    autoOpened: boolean;
+    activeId: string | null;
+    panel: HTMLElement | null;
+    applying: boolean;
+    sawMount: boolean;
+    reportedMissing: boolean;
+}
+
 function isElement(value: EventTarget | Node | null | undefined): value is Element {
     return value != null && typeof (value as Element).getAttribute === "function";
 }
@@ -28,10 +46,25 @@ function isHtmlElement(value: EventTarget | Node | null | undefined): value is H
     return isElement(value) && "style" in value;
 }
 
-interface Mount {
-    parent: HTMLElement;
-    sample: Element | null;
-    kind: "row" | "rail";
+function proof(host: HostState, stage: string, extra: Record<string, unknown> = {}): void {
+    host.options.proof(stage, extra);
+}
+
+function shellFacts(host: HostState): Record<string, unknown> {
+    return {
+        rail: document.querySelectorAll(RAIL).length,
+        destinations: document.querySelectorAll(DESTINATION).length,
+        workspace: document.querySelectorAll(WORKSPACE).length,
+        pageSidebar: document.querySelectorAll(PAGE_SIDEBAR).length,
+        mounted: document.querySelectorAll(`[${ITEM}]`).length,
+        activeId: host.activeId,
+    };
+}
+
+function reportFailure(host: HostState, error: unknown): void {
+    proof(host, "ui-items-failed", {
+        error: error instanceof Error ? error.message : String(error),
+    });
 }
 
 function visibleLabel(element: Element): string {
@@ -81,6 +114,47 @@ function dashboardIcon(): SVGElement {
         svg.append(shape);
     }
     return svg;
+}
+
+function itemButton(
+    host: HostState,
+    item: SidebarItemRegistration,
+    mount: Mount,
+): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = mount.sample?.className ?? "";
+    button.setAttribute(ITEM, item.id);
+    button.setAttribute("aria-label", item.title);
+    button.title = item.title;
+    const glyph = document.createElement("span");
+    glyph.setAttribute("aria-hidden", "true");
+    glyph.style.display = "inline-flex";
+    glyph.append(dashboardIcon());
+    const label = document.createElement("span");
+    label.textContent = item.title;
+    if (mount.kind === "rail") label.className = "sr-only";
+    button.append(glyph, label);
+    button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (host.activeId === item.id) closePage(host);
+        else openPage(host, item);
+    });
+    return button;
+}
+
+function ensureItem(host: HostState, item: SidebarItemRegistration, mount: Mount): void {
+    const selector = `[${ITEM}="${CSS.escape(item.id)}"]`;
+    const existing = mount.parent.querySelector(selector);
+    if (existing != null && existing.tagName === "BUTTON") {
+        existing.setAttribute("aria-current", host.activeId === item.id ? "page" : "false");
+        return;
+    }
+    const button = itemButton(host, item, mount);
+    const anchor = [...mount.parent.querySelectorAll(DESTINATION)].at(-1);
+    if (anchor != null) anchor.after(button);
+    else mount.parent.append(button);
 }
 
 function opaqueColor(start: Element | null): string {
@@ -154,222 +228,191 @@ function nativeButtonClass(): string {
     return "";
 }
 
+function pageContent(host: HostState, item: SidebarItemRegistration): HTMLElement {
+    const heading = document.createElement("h1");
+    heading.textContent = item.page.title;
+    heading.style.margin = "0 0 12px";
+    heading.style.fontSize = "28px";
+    const body = document.createElement("p");
+    body.textContent = item.page.body;
+    body.style.margin = "0";
+    body.style.fontSize = "16px";
+    const back = document.createElement("button");
+    back.type = "button";
+    back.textContent = "Back";
+    back.className = nativeButtonClass();
+    back.style.marginTop = "20px";
+    back.addEventListener("click", () => closePage(host));
+    const inner = document.createElement("div");
+    inner.style.padding = "32px";
+    inner.append(heading, body, back);
+    return inner;
+}
+
+function markActiveItem(id: string): void {
+    for (const button of document.querySelectorAll(`[${ITEM}]`)) {
+        if (!isHtmlElement(button)) continue;
+        button.setAttribute("aria-current", button.getAttribute(ITEM) === id ? "page" : "false");
+    }
+}
+
+function openPage(host: HostState, item: SidebarItemRegistration): void {
+    host.activeId = item.id;
+    if (host.panel == null) {
+        host.panel = document.createElement("section");
+        host.panel.setAttribute(PAGE, item.id);
+        (document.body ?? document.documentElement).append(host.panel);
+    }
+    host.panel.replaceChildren(pageContent(host, item));
+    place(host.panel);
+    const box = contentBox();
+    proof(host, "page-rendered", {
+        id: item.id,
+        route: item.route,
+        left: box?.x ?? null,
+        top: box?.y ?? null,
+        width: box?.width ?? null,
+        height: box?.height ?? null,
+        background: host.panel.style.background,
+        ...shellFacts(host),
+    });
+    markActiveItem(item.id);
+}
+
+function closePage(host: HostState): void {
+    const wasOpen = host.panel != null || host.activeId != null;
+    host.activeId = null;
+    host.panel?.remove();
+    host.panel = null;
+    for (const button of document.querySelectorAll(`[${ITEM}]`))
+        button.removeAttribute("aria-current");
+    if (wasOpen) proof(host, "page-closed", shellFacts(host));
+}
+
+function handleClick(host: HostState, event: MouseEvent): void {
+    if (host.activeId == null) return;
+    const target = event.target;
+    if (!isElement(target)) return;
+    if (target.closest(`[${ITEM}]`) != null || target.closest(`[${PAGE}]`) != null) return;
+    if (target.closest(DESTINATION) != null || target.closest(RAIL) != null) closePage(host);
+}
+
 export function startUiHost(options: UiHostOptions): UiHost {
-    let items: SidebarItemRegistration[] = [];
-    let autoOpen = false;
-    let autoOpened = false;
-    let activeId: string | null = null;
-    let panel: HTMLElement | null = null;
-    let applying = false;
-    let sawMount = false;
-    let reportedMissing = false;
+    const host: HostState = {
+        options,
+        items: [],
+        autoOpen: false,
+        autoOpened: false,
+        activeId: null,
+        panel: null,
+        applying: false,
+        sawMount: false,
+        reportedMissing: false,
+    };
 
-    function proof(stage: string, extra: Record<string, unknown> = {}): void {
-        options.proof(stage, extra);
+    function removeAllItems(): void {
+        for (const node of document.querySelectorAll(`[${ITEM}]`)) node.remove();
     }
 
-    function shellFacts(): Record<string, unknown> {
-        return {
-            rail: document.querySelectorAll(RAIL).length,
-            destinations: document.querySelectorAll(DESTINATION).length,
-            workspace: document.querySelectorAll(WORKSPACE).length,
-            pageSidebar: document.querySelectorAll(PAGE_SIDEBAR).length,
-            mounted: document.querySelectorAll(`[${ITEM}]`).length,
-            activeId,
-        };
-    }
-
-    function ensureItem(item: SidebarItemRegistration, mount: Mount): void {
-        const selector = `[${ITEM}="${CSS.escape(item.id)}"]`;
-        const existing = mount.parent.querySelector(selector);
-        if (existing != null && existing.tagName === "BUTTON") {
-            existing.setAttribute("aria-current", activeId === item.id ? "page" : "false");
+    function reportMissing(): void {
+        if (host.sawMount) {
+            host.sawMount = false;
+            proof(host, "sidebar-removed", shellFacts(host));
             return;
         }
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = mount.sample?.className ?? "";
-        button.setAttribute(ITEM, item.id);
-        button.setAttribute("aria-label", item.title);
-        button.title = item.title;
-        const glyph = document.createElement("span");
-        glyph.setAttribute("aria-hidden", "true");
-        glyph.style.display = "inline-flex";
-        glyph.append(dashboardIcon());
-        const label = document.createElement("span");
-        label.textContent = item.title;
-        if (mount.kind === "rail") label.className = "sr-only";
-        button.append(glyph, label);
-        button.addEventListener("click", (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            if (activeId === item.id) closePage();
-            else openPage(item);
-        });
-        const anchor = [...mount.parent.querySelectorAll(DESTINATION)].at(-1);
-        if (anchor != null) anchor.after(button);
-        else mount.parent.append(button);
+        if (host.reportedMissing) return;
+        host.reportedMissing = true;
+        proof(host, "shell-observed", shellFacts(host));
     }
 
-    function openPage(item: SidebarItemRegistration): void {
-        activeId = item.id;
-        if (panel == null) {
-            panel = document.createElement("section");
-            panel.setAttribute(PAGE, item.id);
-            (document.body ?? document.documentElement).append(panel);
-        }
-        panel.replaceChildren();
-        const heading = document.createElement("h1");
-        heading.textContent = item.page.title;
-        heading.style.margin = "0 0 12px";
-        heading.style.fontSize = "28px";
-        const body = document.createElement("p");
-        body.textContent = item.page.body;
-        body.style.margin = "0";
-        body.style.fontSize = "16px";
-        const back = document.createElement("button");
-        back.type = "button";
-        back.textContent = "Back";
-        back.className = nativeButtonClass();
-        back.style.marginTop = "20px";
-        back.addEventListener("click", () => closePage());
-        const inner = document.createElement("div");
-        inner.style.padding = "32px";
-        inner.append(heading, body, back);
-        panel.append(inner);
-        place(panel);
-        const box = contentBox();
-        proof("page-rendered", {
-            id: item.id,
-            route: item.route,
-            left: box?.x ?? null,
-            top: box?.y ?? null,
-            width: box?.width ?? null,
-            height: box?.height ?? null,
-            background: panel.style.background,
-            ...shellFacts(),
-        });
-        for (const button of document.querySelectorAll(`[${ITEM}]`)) {
-            if (isHtmlElement(button)) {
-                button.setAttribute(
-                    "aria-current",
-                    button.getAttribute(ITEM) === item.id ? "page" : "false",
-                );
+    function pruneItems(mount: Mount): void {
+        for (const node of document.querySelectorAll(`[${ITEM}]`)) {
+            const id = node.getAttribute(ITEM);
+            if (id == null || !host.items.some((item) => item.id === id)) {
+                node.remove();
+                continue;
             }
+            if (!mount.parent.contains(node)) node.remove();
         }
     }
 
-    function closePage(): void {
-        const wasOpen = panel != null || activeId != null;
-        activeId = null;
-        panel?.remove();
-        panel = null;
-        for (const button of document.querySelectorAll(`[${ITEM}]`))
-            button.removeAttribute("aria-current");
-        if (wasOpen) proof("page-closed", shellFacts());
+    function reportMounted(mount: Mount): void {
+        if (host.sawMount || host.items.length === 0) return;
+        host.sawMount = true;
+        proof(host, "sidebar-mounted", {
+            kind: mount.kind,
+            sampleClass: mount.sample?.className ?? "",
+            ...shellFacts(host),
+        });
+        if (!host.autoOpen || host.autoOpened) return;
+        host.autoOpened = true;
+        const item = host.items[0];
+        if (item != null) window.setTimeout(() => openPage(host, item), 1200);
     }
 
     function render(): void {
-        if (applying) return;
-        applying = true;
+        if (host.applying) return;
+        host.applying = true;
         try {
             const mount = chooseMount();
             if (mount == null) {
-                for (const node of document.querySelectorAll(`[${ITEM}]`)) node.remove();
-                if (sawMount) {
-                    sawMount = false;
-                    proof("sidebar-removed", shellFacts());
-                } else if (!reportedMissing) {
-                    reportedMissing = true;
-                    proof("shell-observed", shellFacts());
-                }
+                removeAllItems();
+                reportMissing();
                 return;
             }
-            for (const node of document.querySelectorAll(`[${ITEM}]`)) {
-                const id = node.getAttribute(ITEM);
-                if (
-                    id == null ||
-                    !items.some((item) => item.id === id) ||
-                    !mount.parent.contains(node)
-                )
-                    node.remove();
-            }
-            for (const item of items) ensureItem(item, mount);
-            if (!sawMount && items.length > 0) {
-                sawMount = true;
-                proof("sidebar-mounted", {
-                    kind: mount.kind,
-                    sampleClass: mount.sample?.className ?? "",
-                    ...shellFacts(),
-                });
-                if (autoOpen && !autoOpened) {
-                    autoOpened = true;
-                    const item = items[0];
-                    if (item != null) window.setTimeout(() => openPage(item), 1200);
-                }
-            }
-            if (panel != null) place(panel);
+            pruneItems(mount);
+            for (const item of host.items) ensureItem(host, item, mount);
+            reportMounted(mount);
+            if (host.panel != null) place(host.panel);
         } finally {
-            applying = false;
+            host.applying = false;
         }
     }
 
     function apply(payload: unknown): void {
         const state = parseUiPayload(payload);
-        items = state.items;
-        autoOpen = state.autoOpen;
+        host.items = state.items;
+        host.autoOpen = state.autoOpen;
         render();
     }
 
-    const observer = new MutationObserver(() => render());
     function watchShell(): void {
         const root = document.documentElement;
         if (!isHtmlElement(root)) return;
         observer.observe(root, { childList: true, subtree: true });
         render();
     }
+
+    function stop(): void {
+        observer.disconnect();
+        closePage(host);
+        for (const node of document.querySelectorAll(`[${ITEM}]`)) node.remove();
+    }
+
+    const observer = new MutationObserver(() => render());
     if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", watchShell, { once: true });
     } else {
         watchShell();
     }
-    document.addEventListener(
-        "click",
-        (event) => {
-            if (activeId == null) return;
-            const target = event.target;
-            if (!isElement(target)) return;
-            if (target.closest(`[${ITEM}]`) != null || target.closest(`[${PAGE}]`) != null) return;
-            if (target.closest(DESTINATION) != null || target.closest(RAIL) != null) closePage();
-        },
-        true,
-    );
+    document.addEventListener("click", (event) => handleClick(host, event), true);
     window.addEventListener("resize", () => {
-        if (panel != null) place(panel);
+        if (host.panel != null) place(host.panel);
     });
-
-    function stop(): void {
-        observer.disconnect();
-        closePage();
-        for (const node of document.querySelectorAll(`[${ITEM}]`)) node.remove();
-    }
-
     window.addEventListener("pagehide", () => stop(), { once: true });
     options.subscribe((payload) => {
         try {
             apply(payload);
         } catch (error) {
-            proof("ui-items-failed", {
-                error: error instanceof Error ? error.message : String(error),
-            });
+            reportFailure(host, error);
         }
     });
-    options.fetchState().then(apply, (error: unknown) => {
-        proof("ui-items-failed", { error: error instanceof Error ? error.message : String(error) });
-    });
+    options.fetchState().then(
+        (payload) => apply(payload),
+        (error: unknown) => reportFailure(host, error),
+    );
     window.setTimeout(() => {
-        if (!sawMount) proof("shell-observed", { delayed: true, ...shellFacts() });
+        if (!host.sawMount) proof(host, "shell-observed", { delayed: true, ...shellFacts(host) });
     }, 4000);
-
     return { stop };
 }
