@@ -24,6 +24,8 @@ const account = JSON.stringify(["account", "user"]);
 const sections = [
     { id: "review", name: "待审阅" },
     { id: "active", name: "进行中" },
+    { id: "blocked", name: "已阻塞" },
+    { id: "archive", name: "待归档" },
 ].map(({ id, name }) => ({
     id: id as LogicalSectionId,
     name,
@@ -63,6 +65,7 @@ function desktopFixture(
     threads: Map<ThreadId, Thread>,
     readContext: () => Promise<SidebarContext>,
     rename: (row: Thread, name: string) => Promise<void>,
+    moved: (row: Thread) => void,
 ) {
     async function handle({ method, params }: Packet["request"]): Promise<unknown> {
         if (method === "thread/list")
@@ -88,6 +91,7 @@ function desktopFixture(
             assert.ok(row && section);
             row.section = { id: section.hostSectionIds.local, name: section.name };
             row.sectionEnteredAt = Date.now();
+            moved(row);
             return null;
         },
         async send(payload) {
@@ -119,16 +123,31 @@ function testRecords(testContext: TestContext) {
     return { records, titleEpoch };
 }
 
+function assertMoveProof(stage: string): void {
+    assert.equal(stage, "board-native-move");
+}
+
+function seedTitle(records: BoardRecords, id: ThreadId): void {
+    records.write({
+        account,
+        id,
+        expected: 0,
+        record: { note: "持久备注", version: 1, inputVersion: 3, title: { state: "review" } },
+    });
+}
+
 function fixture(testContext: TestContext) {
     const { records, titleEpoch } = testRecords(testContext);
     const threads = new Map([first, second].map((id) => [id, thread(id)]));
     const names: { threadId: ThreadId; name: string }[] = [];
     const config = { syncTitles: true };
     const native = {
+        preparePhase: records.preparePhase.bind(records),
         context: async () => context,
         async rename(row: Thread, name: string): Promise<void> {
             row.name = name;
         },
+        moved: (_row: Thread): void => {},
     };
 
     function reopen() {
@@ -139,10 +158,12 @@ function fixture(testContext: TestContext) {
                 names.push({ threadId: row.id, name });
                 await native.rename(row, name);
             },
+            (row) => native.moved(row),
         );
         return new BoardService(desktop, {
             load: async (key) => records.account(key),
             save: async (update) => records.write(update),
+            preparePhase: async (update) => native.preparePhase(update),
             settleTitle: async (resolution) => records.settleTitle(resolution),
             loadLedger: async () => emptyLedger(),
             writeLedger: async () => assert.fail("Title must not touch the ledger"),
@@ -151,26 +172,15 @@ function fixture(testContext: TestContext) {
             closePage: () => assert.fail("Title must not navigate"),
             authority: () => {},
             updateStatus: async () => assert.fail("Title must not change release"),
-            proof: (stage, { confirmed }) => {
-                assert.equal(stage, "board-native-move");
-                assert.equal(confirmed, true);
-            },
+            proof: assertMoveProof,
         });
     }
 
-    function seed(id: ThreadId): void {
-        records.write({
-            account,
-            id,
-            expected: 0,
-            record: { note: "持久备注", version: 1, inputVersion: 3, title: { state: "review" } },
-        });
-    }
-
+    const seed = seedTitle.bind(null, records);
     return { reopen, names, threads, native, records, seed, config, titleEpoch };
 }
 
-function save(service: BoardService, state: "review" | "in_progress", note: string) {
+function save(service: BoardService, state: "review" | "in_progress" | "to_archive", note: string) {
     const card = service.snapshot().sessions.find(({ threadId }) => threadId === first);
     assert.ok(card);
     const { id, version, inputVersion, sectionVersion } = card;
@@ -346,6 +356,194 @@ test("a frequently failing title retries behind other pending cards", async (tes
     );
     assert.ok(records.account(account)[first]?.title?.error);
     assert.equal(records.account(account)[second]?.title, undefined);
+});
+
+function running(row: Thread, id: string, at: number, flags: string[] = []): void {
+    row.updatedAt = at;
+    row.status = { type: "active", activeFlags: flags };
+    row.turns = [{ id, status: "inProgress", startedAt: at, items: [] }];
+}
+
+function phaseCard(service: BoardService) {
+    const card = service.snapshot().sessions.find(({ threadId }) => threadId === first);
+    assert.ok(card);
+    return card;
+}
+
+function phaseThread(threads: Map<ThreadId, Thread>) {
+    const row = threads.get(first);
+    assert.ok(row);
+    return row;
+}
+
+test("automatic pause, resume and completion follow native evidence and preserve the manual note", async (testContext) => {
+    const { config, reopen, threads } = fixture(testContext);
+    config.syncTitles = false;
+    let now = Date.now();
+    testContext.mock.method(Date, "now", () => now);
+    const service = reopen();
+    await service.refresh();
+    const row = phaseThread(threads);
+    await save(service, "review", "人工备注继续保留");
+    now += 3000;
+    running(row, "live", now / 1000, ["waitingOnApproval"]);
+    const [turn] = row.turns;
+    assert.ok(turn);
+    await service.refresh();
+    const waiting = phaseCard(service);
+    assert.equal(waiting.state, "blocked");
+    assert.match(waiting.reason ?? "", /批准/);
+    await service.refresh();
+    assert.equal(phaseCard(service).version, waiting.version);
+    row.status = { type: "active", activeFlags: [] };
+    turn.status = "completed";
+    await service.refresh();
+    assert.equal(phaseCard(service).state, "blocked");
+    turn.status = "inProgress";
+    await service.refresh();
+    assert.equal(phaseCard(service).state, "in_progress");
+    row.status.activeFlags = ["waitingOnUserInput"];
+    await service.refresh();
+    assert.equal(phaseCard(service).state, "blocked");
+    assert.match(phaseCard(service).reason ?? "", /交互问题/);
+    now += 3000;
+    row.status = { type: "idle" };
+    turn.status = "completed";
+    turn.completedAt = now / 1000;
+    turn.items.push({
+        id: "reply",
+        type: "agentMessage",
+        phase: "final_answer",
+        text: "需要澄清这个要求吗？",
+    });
+    await service.refresh();
+    assert.equal(phaseCard(service).state, "review");
+    assert.equal(phaseCard(service).note, "人工备注继续保留");
+});
+
+test("a durable pending phase is recovered after restart without repeating an applied move", async (testContext) => {
+    const { config, reopen, native, records, threads } = fixture(testContext);
+    config.syncTitles = false;
+    let now = Date.now();
+    testContext.mock.method(Date, "now", () => now);
+    const service = reopen();
+    await service.refresh();
+    const row = phaseThread(threads);
+    await save(service, "review", "移动时的备注");
+    now += 3000;
+    running(row, "lost-receipt", now / 1000);
+    let moves = 0;
+    native.moved = () => {
+        moves++;
+        throw new Error("native move dispatched");
+    };
+    const sidebar = native.context;
+    native.context = async () => {
+        if (moves === 1) throw new Error("lost follow-up context");
+        return sidebar();
+    };
+    await service.refresh();
+    assert.equal(moves, 1);
+    assert.equal(row.section?.name, "进行中");
+    assert.match(records.account(account)[first]?.pendingPhaseKey ?? "", /lost-receipt/);
+    assert.equal(records.account(account)[first]?.note, "移动时的备注");
+    now += 10000;
+    native.context = sidebar;
+    const reopened = reopen();
+    await reopened.refresh();
+    assert.equal(moves, 1);
+    assert.equal(phaseCard(reopened).state, "in_progress");
+    assert.equal(phaseCard(reopened).manual, false);
+    assert.equal(phaseCard(reopened).note, "移动时的备注");
+    assert.equal(records.account(account)[first]?.pendingPhaseKey, undefined);
+});
+
+test("passive history and queued text cannot start or finish a turn", async (testContext) => {
+    const { config, reopen, threads, native } = fixture(testContext);
+    config.syncTitles = false;
+    const service = reopen();
+    await service.refresh();
+    const row = phaseThread(threads);
+    await save(service, "to_archive", "人工决定");
+    const previous = phaseCard(service);
+    native.moved = () => assert.fail("没有真实执行，不得移卡");
+    running(row, "queued", Date.now() / 1000);
+    row.status = { type: "idle" };
+    const [turn] = row.turns;
+    assert.ok(turn);
+    turn.items.push({ id: "user", type: "userMessage" });
+    await service.refresh();
+    turn.id = "changed-id";
+    turn.items.push({ id: "text", type: "agentMessage", phase: "commentary", text: "已完成" });
+    await service.refresh();
+    const card = phaseCard(service);
+    assert.equal(card.state, "to_archive");
+    assert.equal(card.manual, true);
+    assert.equal(card.note, "人工决定");
+    assert.equal(card.inputVersion, previous.inputVersion + 2);
+});
+
+test("manual placement survives same-turn output and restart until the stage changes", async (testContext) => {
+    const { config, reopen, threads } = fixture(testContext);
+    config.syncTitles = false;
+    let now = Date.now();
+    testContext.mock.method(Date, "now", () => now);
+    const service = reopen();
+    await service.refresh();
+    const row = phaseThread(threads);
+    now += 3000;
+    running(row, "continuing", now / 1000);
+    await service.refresh();
+    assert.equal(phaseCard(service).state, "in_progress");
+    await save(service, "to_archive", "手动优先");
+    const previous = phaseCard(service);
+    const [turn] = row.turns;
+    assert.ok(turn);
+    turn.items.push({ id: "text", type: "agentMessage", phase: "commentary", text: "仍在执行" });
+    await service.refresh();
+    assert.deepEqual(phaseCard(service), previous);
+    now += 10000;
+    const reopened = reopen();
+    await reopened.refresh();
+    assert.equal(phaseCard(reopened).state, "to_archive");
+    assert.equal(phaseCard(reopened).manual, true);
+    row.status.activeFlags = ["waitingOnApproval"];
+    await reopened.refresh();
+    assert.equal(phaseCard(reopened).state, "blocked");
+    assert.equal(phaseCard(reopened).manual, false);
+    assert.equal(phaseCard(reopened).note, "手动优先");
+});
+
+test("only confirmed failures and interruptions move a running turn to blocked", async (testContext) => {
+    const { config, reopen, threads } = fixture(testContext);
+    config.syncTitles = false;
+    let now = Date.now();
+    testContext.mock.method(Date, "now", () => now);
+    const service = reopen();
+    await service.refresh();
+    const row = phaseThread(threads);
+    await save(service, "review", "保留备注");
+    for (const [outcome, reason] of [
+        ["failed", /失败/],
+        ["interrupted", /中断/],
+    ] as const) {
+        now += 3000;
+        running(row, outcome, now / 1000);
+        await service.refresh();
+        const [turn] = row.turns;
+        assert.ok(turn);
+        turn.items.push({ id: "retry", type: "error" });
+        await service.refresh();
+        assert.equal(phaseCard(service).state, "in_progress");
+        now += 3000;
+        row.status = { type: "idle" };
+        turn.status = outcome;
+        turn.completedAt = now / 1000;
+        await service.refresh();
+        assert.equal(phaseCard(service).state, "blocked");
+        assert.match(phaseCard(service).reason ?? "", reason);
+        assert.equal(phaseCard(service).note, "保留备注");
+    }
 });
 
 test("a hanging native context respects the shared three-second title budget", {

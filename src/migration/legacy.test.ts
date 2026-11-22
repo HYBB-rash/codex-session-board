@@ -247,6 +247,7 @@ test("projection retains revisions, pending work, and same thread IDs per explic
         assert.equal(remote?.title?.error, `${sourceRemote} title retry`);
         assert.deepEqual(remote?.selectionUsers, ["msg-a", "msg-b"]);
         assert.equal(remote?.runtimePendingKey, "pending-phase");
+        assert.equal(remote?.pendingPhaseKey, "pending-phase");
         assert.equal(board.preferences.remoteAutoArchiveSeconds, 120);
         assert.equal(board.preferences.mode, "four");
         assert.deepEqual(board.columnSorts.to_archive, {

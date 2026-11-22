@@ -101,6 +101,7 @@ function fixture(testContext: TestContext, maxPages = 3) {
             records[id] = record;
         },
         settleTitle: async () => assert.fail("Discovery must not rename a card"),
+        preparePhase: async () => assert.fail("History must not prepare a native move"),
         loadLedger: async () => emptyLedger(),
         writeLedger: async () => assert.fail("Discovery must not write the ledger"),
         settings: async () => ({ ...defaults, maxPages, pageSize: 2, historyPerPoll: 1 }),

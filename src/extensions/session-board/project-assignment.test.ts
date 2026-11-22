@@ -90,6 +90,7 @@ function assignmentFixture() {
         load: async () => ({}),
         save: async () => assert.fail("Assignment must not change card records"),
         settleTitle: async () => assert.fail("Assignment must not change titles"),
+        preparePhase: async () => assert.fail("Assignment must not advance a phase"),
         loadLedger: async () => emptyLedger(),
         writeLedger: async () => assert.fail("Assignment must not change archive data"),
         settings: async () => defaults,

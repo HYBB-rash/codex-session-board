@@ -255,11 +255,13 @@ function representCard(
     const manual = remoteCache ? count(row.version) > 0 : savedState !== null;
     const reason = text(row.automatic_reason);
     const phaseKey = text(row.runtime_key);
+    const pendingPhaseKey = text(row.runtime_pending_key);
     return {
         ...scope,
         ...cardEvidence(row),
         ...(reason ? { reason } : {}),
         ...(phaseKey ? { phaseKey } : {}),
+        ...(pendingPhaseKey ? { pendingPhaseKey } : {}),
         threadId,
         displayTitle: text(row.title) ?? "",
         cwd: text(row.cwd) ?? "",

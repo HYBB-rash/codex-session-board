@@ -1,4 +1,11 @@
-import { finalAnswer, type Phase, projectedTitle, runtimePhase, turnInput } from "./activity.js";
+import {
+    finalAnswer,
+    type Phase,
+    phaseIsFromTurn,
+    projectedTitle,
+    runtimePhase,
+    turnInput,
+} from "./activity.js";
 import {
     Archive,
     type ArchiveItem,
@@ -32,12 +39,13 @@ import {
     visibleStates,
 } from "./placement.js";
 import { previewReply } from "./preview.js";
-import type { CardRecord, RecordWrite, TitleResolution } from "./records.js";
+import type { CardRecord, PhaseIntent, RecordWrite, TitleResolution } from "./records.js";
 import { type BoardSettings, defaults } from "./settings.js";
 
 interface BoardPorts {
     load(account: string): Promise<Record<string, CardRecord>>;
     save(update: RecordWrite): Promise<void>;
+    preparePhase(update: PhaseIntent): Promise<boolean>;
     settleTitle(resolution: TitleResolution): Promise<boolean>;
     loadLedger(account: string): Promise<BoardLedger>;
     writeLedger(account: string, ledger: BoardLedger): Promise<void>;
@@ -154,18 +162,12 @@ function remainingTitleTime(deadline: number): number {
     return Math.floor(remaining);
 }
 
-function isNewPhase(
-    phase: Phase,
-    turnId: string,
-    current: CardRecord,
-    since: number,
-    notified: boolean,
-): boolean {
+function isNewPhase(phase: Phase, current: CardRecord, since: number): boolean {
+    if (phaseIsFromTurn(current.pendingPhaseKey, phase.turnId)) return true;
     if (phase.key === current.phaseKey) return false;
-    const sameTurn = current.phaseKey?.startsWith(`${JSON.stringify([turnId]).slice(0, -1)},`);
-    if (notified && !phase.terminal && sameTurn) return true;
-    if (phase.at === null || phase.at < Math.floor(since)) return false;
-    return phase.at >= Math.floor(current.selectedAt ?? 0);
+    const sameTurn = phaseIsFromTurn(current.phaseKey, phase.turnId);
+    if (phase.terminal && (phase.at ?? 0) <= Math.floor(current.selectedAt ?? 0)) return false;
+    return sameTurn || (phase.at !== null && phase.at >= Math.floor(since));
 }
 
 export class BoardService {
@@ -415,13 +417,13 @@ export class BoardService {
             (thread, index) =>
                 dirty.has(thread.id) ||
                 thread.status?.type === "active" ||
+                this.records[cardId({ hostId: connection.hostId, threadId: thread.id })]
+                    ?.pendingPhaseKey !== undefined ||
                 (index < 12 && thread.updatedAt >= this.observationSince - 3),
         );
         for (const thread of realtime) {
             try {
-                await this.observeThread(connection, thread, context, {
-                    notified: dirty.has(thread.id),
-                });
+                await this.observeThread(connection, thread, context);
             } catch (error) {
                 host.runtimeError = errorText(error);
                 if (dirty.has(thread.id)) this.notice(connection.hostId, thread.id);
@@ -470,7 +472,7 @@ export class BoardService {
         connection: HostConnection,
         thread: Thread,
         context: SidebarContext,
-        options: { historyTimeout?: number; notified?: boolean },
+        options: { historyTimeout?: number } = {},
     ): Promise<void> {
         const id = cardId({ hostId: connection.hostId, threadId: thread.id });
         if (this.editing.has(id)) {
@@ -491,7 +493,10 @@ export class BoardService {
             const phase =
                 options.historyTimeout === undefined ? runtimePhase(thread.status, latest) : null;
             const inputChanged = changedInput(current, input);
-            const phaseChanged = phase !== null && current.phaseKey !== phase.key;
+            const phaseChanged =
+                phase !== null &&
+                (current.phaseKey !== phase.key ||
+                    phaseIsFromTurn(current.pendingPhaseKey, phase.turnId));
             const answer = latest && finalAnswer(latest) ? latest.id : undefined;
             if (!inputChanged && !phaseChanged && (!answer || answer === current.previewTurnId))
                 return;
@@ -503,12 +508,9 @@ export class BoardService {
                 ...(phase ? { phaseKey: phase.key } : {}),
                 ...(answer ? { previewTurnId: answer } : {}),
             };
-            if (
-                phase &&
-                latest &&
-                isNewPhase(phase, latest.id, current, this.observationSince, !!options.notified)
-            )
+            if (phase && isNewPhase(phase, current, this.observationSince))
                 await this.applyPhase(connection, thread, context, phase, next);
+            if (phaseChanged) delete next.pendingPhaseKey;
             await this.commitRecord(context, id, current.version, next);
             queuedTitle = next.title !== undefined && next.title !== current.title;
         } finally {
@@ -547,6 +549,22 @@ export class BoardService {
         if (!position.managed) return;
         const current = await this.desktop.read(connection, thread.id, false);
         if (placement(context, connection.hostId, current).version !== position.version) return;
+        const id = cardId({ hostId: connection.hostId, threadId: thread.id });
+        const fresh = await this.freshContext();
+        this.desktop.assertCurrent(connection);
+        const account = accountKey(context);
+        if (account !== accountKey(fresh)) throw new Error("Codex 账号已变更");
+        const pending = {
+            account,
+            id,
+            expected: next.version - 1,
+            phaseKey: phase.key,
+        };
+        if (!(await this.ports.preparePhase(pending)))
+            throw new Error("自动阶段已过期，请刷新后重试");
+        this.desktop.assertCurrent(connection);
+        if (account !== accountKey(this.requiredContext())) throw new Error("Codex 账号已变更");
+        this.records[id] = { ...(this.records[id] ?? emptyRecord), pendingPhaseKey: phase.key };
         const after = await this.moveCard(phase.state, connection, context, current);
         next.manual = false;
         next.reason = phase.reason;

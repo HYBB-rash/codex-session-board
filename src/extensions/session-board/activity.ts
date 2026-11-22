@@ -3,6 +3,7 @@ import { type BoardState, labels } from "./placement.js";
 
 export interface Phase {
     key: string;
+    turnId: string;
     state: BoardState;
     at: number | null;
     reason: string;
@@ -79,10 +80,15 @@ export function runtimePhase(status: Thread["status"], turn: Turn | undefined): 
             : turn.startedAt;
     return {
         ...decision,
+        turnId: turn.id,
         key: JSON.stringify([turn.id, decision.state, flags]),
         at: validTime(time) ? time : null,
         terminal,
     };
+}
+
+export function phaseIsFromTurn(key: string | undefined, turnId: string): boolean {
+    return key?.startsWith(`${JSON.stringify([turnId]).slice(0, -1)},`) ?? false;
 }
 
 const knownPrefixes = Object.values(labels).flatMap((label) => [`[${label}]`, `【${label}】`]);

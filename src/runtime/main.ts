@@ -7,6 +7,7 @@ import { boardDesktopRequest } from "../extensions/session-board/desktop-main.js
 import {
     BoardLedgers,
     BoardRecords,
+    type PhaseIntent,
     type RecordWrite,
     TitleEpochs,
     type TitleResolution,
@@ -352,6 +353,18 @@ function registerBoardRecords(
     boardRecords: BoardRecords,
     legacy: LegacyBoardRuntime,
 ): void {
+    ipcMain.handle("codex-enhancer:board-phase-intent", (event, value) => {
+        if (
+            !boardFrame(event) ||
+            !isFields<PhaseIntent>(value) ||
+            typeof value.account !== "string" ||
+            typeof value.id !== "string" ||
+            !Number.isSafeInteger(value.expected) ||
+            typeof value.phaseKey !== "string"
+        )
+            throw new Error("Invalid board phase intent");
+        return boardRecords.preparePhase(value, legacy.forAccount(value.account)?.board.cards);
+    });
     ipcMain.handle("codex-enhancer:board-records", (event, value) => {
         if (!boardFrame(event)) throw new Error("enhancer IPC rejected");
         if (typeof value === "string")

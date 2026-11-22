@@ -62,6 +62,9 @@ function connectBoard(desktop: DesktopConnection, closePage: () => void): BoardS
         async save(update) {
             await ipcRenderer.invoke("codex-enhancer:board-records", update);
         },
+        async preparePhase(update) {
+            return (await ipcRenderer.invoke("codex-enhancer:board-phase-intent", update)) === true;
+        },
         async settleTitle(resolution) {
             return (
                 (await ipcRenderer.invoke("codex-enhancer:board-title-result", resolution)) === true

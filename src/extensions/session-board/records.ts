@@ -14,6 +14,7 @@ export interface CardRecord {
     confirmedInputKey?: string;
     manual?: boolean;
     phaseKey?: string;
+    pendingPhaseKey?: string;
     previewTurnId?: string;
     selectedAt?: number;
     reason?: string;
@@ -32,6 +33,10 @@ export interface RecordWrite extends RecordRevision {
 
 export interface TitleResolution extends RecordRevision {
     failure?: string;
+}
+
+export interface PhaseIntent extends RecordRevision {
+    phaseKey: string;
 }
 
 function readRecord<T>(file: string): Record<string, T> {
@@ -127,6 +132,13 @@ export class BoardRecords {
                 ? { ...record, title: { ...title, error: update.failure } }
                 : record;
         });
+    }
+
+    preparePhase(update: PhaseIntent, imported: Record<string, CardRecord> = {}): boolean {
+        return this.change(update, imported, (current) => ({
+            ...(current ?? { note: "", version: 0, inputVersion: 0 }),
+            pendingPhaseKey: update.phaseKey,
+        }));
     }
 
     private change(
