@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import type { BoardRequest } from "./operations.js";
 import { object } from "./operations.js";
 import { type Receipt, readReceipt } from "./receipt.js";
@@ -39,7 +40,7 @@ async function fetchLocal(path: string, receipt: Receipt, body?: object): Promis
 }
 
 export async function connectBoard(stateDir: string): Promise<BoardClient> {
-    const receipt = readReceipt(stateDir);
+    const receipt = readReceipt(join(stateDir, "session-board")) ?? readReceipt(stateDir);
     if (!receipt) throw new HostUnavailableError();
     const information = object<"app" | "instance" | "url">(await fetchLocal("/api/info", receipt));
     if (

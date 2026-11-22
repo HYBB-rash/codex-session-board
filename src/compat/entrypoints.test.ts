@@ -319,6 +319,19 @@ test("migrate-sections retains the source and refuses to overwrite an existing o
     await assert.rejects(run(), /EEXIST/);
 });
 
+test("CLI finds the receipt in the actual Enhancer state layout", async (test) => {
+    const directory = isolated(test);
+    const service = await startBoardServer({
+        stateDir: join(directory, "session-board"),
+        port: 0,
+        request: async () => example,
+    });
+    test.after(() => service.close());
+    const binary = join(assetsDirectory, "..", "bin", "codex-session-board.js");
+    const result = await exec(process.execPath, [binary, "--state-dir", directory, "scan"]);
+    assert.deepEqual(JSON.parse(result.stdout), example);
+});
+
 test("CLI migrate imports a live SQLite WAL and refuses an existing destination", async (test) => {
     const directory = isolated(test);
     const source = join(directory, "old");
