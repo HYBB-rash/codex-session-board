@@ -2,6 +2,19 @@
 
 上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本通过本机和远程原生移卡检查点。macOS arm64 的目标 Codex 构建在加载看板之前拒绝了经过修改的启动归档，因此发布条件未满足。
 
+## 0.3.8 候选
+
+双平台归档、SHA-256 校验文件及解包清单位于 `state/acceptance/packages/`。当前候选由提交 `f1b2099` 构建。
+
+| 项目 | 结果 |
+| --- | --- |
+| Fedora 安装生命周期 | 从已安装看板点击更新，重启依次读回 `0.3.7 → 0.3.8 → 0.3.7`。卸载恢复副本的原始启动归档，数据夹具哈希保持一致。见 `state/acceptance/fedora-installed-0.3.8.txt`。 |
+| Fedora 原生 MCP App | 从已安装插件打开 MCP App，将远程专用卡拖到进行中，目标主机独立读回新分区。刷新后卡片及备注保留。网页先保存时，MCP App 拒绝旧表单，保留未提交的草稿，独立读回只保留较新的已保存备注。见 `state/acceptance/live-0.3.8.json` 的原始附件。 |
+| Fedora 浏览器离线恢复 | 停止 `0.3.7` 隔离宿主后，Service Worker 返回 `503` 离线页，页面只提供「重新连接」。启动 `0.3.8` 后点击「重新连接」，同一 Chrome 配置重新显示看板，读回版本 `0.3.8`。系统 PWA 安装及独立窗口模式仍待验。 |
+| MacBook Pro 真机 | `0.3.8` 的归档及源码校验完成，37 项 Node 测试通过，跳过 2 项 Linux 专用测试。两端各通过 10 项冻结模型检查。Mac 安装预检在复制前退出，系统启动归档哈希保持一致。见 `state/acceptance/packages/macos-0.3.8-preflight.txt`。 |
+| macOS 兼容构建复查 | 12 个完成检查的官方签名 arm64 构建中，10 个有框架内嵌 ASAR 摘要，另两个缺少当前接入使用的界面、账号及侧栏绑定。见 `state/acceptance/packages/macos-official-builds.md`。 |
+| 统一发布门槛 | Fedora 干净解包通过 39 项 Node 测试。门槛读入 8 条通过的现场断言，31 项需求中 `AUTO-005`、`DATA-002` 及 `GATE-001` 通过，另外 28 项待验。退出码为 `2`，`releaseReady` 为 `false`。见 `state/acceptance/release-gate-0.3.8.json`。 |
+
 ## Fedora 44 实测
 
 宿主是 Codex `26.1111.71704`。远程测试使用同一窗口已经连接的 `remote-ssh-discovered:macbook`。涉及会话写入的操作只使用本轮创建的专用卡。
