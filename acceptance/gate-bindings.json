@@ -44,9 +44,9 @@
             ["retired-connection", "history-rotation"]
         ],
         "MANUAL-001": [
-            [],
+            ["manual-change-history", "legacy-change-history", "legacy-change-rollback"],
             ["all_abstract_state_edges_match_the_typescript_service"],
-            ["disabled-titles-preserve-save"]
+            ["disabled-titles-preserve-save", "manual-change-history", "automatic-change-history"]
         ],
         "MANUAL-002": [["mcp-real-revisions"], ["mcp-real-revisions"]],
         "MANUAL-003": [
@@ -83,7 +83,12 @@
         ],
         "APP-001": [[], [], []],
         "UI-001": [[], [], []],
-        "UI-002": [[], [], [], []],
+        "UI-002": [
+            [],
+            ["manual-change-history"],
+            ["manual-change-history", "automatic-change-history"],
+            ["mcp-real-revisions", "manual-change-history"]
+        ],
         "UI-003": [[], [], []],
         "MCP-001": [
             ["mcp-stdio", "operation-routing", "mcp-inline-app-resources"],
@@ -95,8 +100,8 @@
             ["release-paths", "release-rollback"]
         ],
         "DATA-002": [
-            ["migration-wal", "migration-projection", "migration-offline"],
-            ["migration-retry"]
+            ["migration-wal", "migration-projection", "migration-offline", "legacy-change-history"],
+            ["migration-retry", "legacy-change-rollback"]
         ],
         "SERVICE-001": [
             ["service-build-identity", "service-config-identity", "service-directory-identity"],

@@ -118,6 +118,14 @@
             "file": "src/extensions/session-board/title-sync.test.ts",
             "test": "only confirmed failures and interruptions move a running turn to blocked"
         },
+        "legacy-change-history": {
+            "file": "src/migration/legacy.test.ts",
+            "test": "legacy change histories keep their source sequence and separate same-ID hosts"
+        },
+        "legacy-change-rollback": {
+            "file": "src/migration/legacy.test.ts",
+            "test": "migration rollback removes projected histories and keeps later manual changes"
+        },
         "service-build-identity": {
             "file": "src/compat/service-identity.test.ts",
             "test": "CLI reuses the selected build and rejects a same-version update until the host restarts"
@@ -254,19 +262,19 @@
                 "src/extensions/session-board/board-service.ts"
             ],
             "evidence": ["fedora-desktop", "runtime-real-stages"],
-            "remaining": "夹具已区分批准和恢复。补本机及批准后实际恢复的现场凭证。"
+            "remaining": "Fedora 本机已读回真实开始。仍需批准后实际恢复和 macOS 现场凭证。"
         },
         "AUTO-002": {
             "status": "partial",
             "implementation": ["src/extensions/session-board/activity.ts"],
             "evidence": ["runtime-real-stages", "runtime-confirmed-errors"],
-            "remaining": "在真实宿主核对审批、交互输入、系统错误和中断以及备注保留。"
+            "remaining": "Fedora 本机已独立读回真实中断及备注。补现场审批、交互输入、系统错误与 macOS 复验。"
         },
         "AUTO-003": {
             "status": "partial",
             "implementation": ["src/extensions/session-board/activity.ts"],
             "evidence": ["fedora-desktop", "runtime-real-stages"],
-            "remaining": "在真实宿主补本机完成及只讨论与澄清的最终答复。"
+            "remaining": "Fedora 已读回本机澄清答复及远程正常结束。补 macOS 现场凭证。"
         },
         "AUTO-004": {
             "status": "fixture",
@@ -291,13 +299,17 @@
             "evidence": ["history-rotation", "history-review-suggestion", "retired-connection"]
         },
         "MANUAL-001": {
-            "status": "partial",
+            "status": "fixture",
             "implementation": [
                 "src/extensions/session-board/board-service.ts",
                 "src/extensions/session-board/records.ts"
             ],
-            "evidence": ["native-move", "migration-projection"],
-            "remaining": "从当前实现写入六状态与备注后重启，逐项核对持久状态及变更记录。"
+            "evidence": [
+                "native-move",
+                "migration-projection",
+                "legacy-change-history",
+                "legacy-change-rollback"
+            ]
         },
         "MANUAL-002": {
             "status": "partial",

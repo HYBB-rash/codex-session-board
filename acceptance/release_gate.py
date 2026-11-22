@@ -19,6 +19,8 @@ ACCEPTANCE_TESTS = {
     "mcp-real-revisions": "MCP saves use the live state and input revisions across HTTP",
     "mcp-inline-app-resources": "the MCP resource bundles its SDK and styles without linked scripts or frames",
     "manual-follow-up-recovery": "new-input notices survive incomplete observations and clear only on manual confirmation",
+    "manual-change-history": "manual confirmations append durable change records and rejected saves leave them alone",
+    "automatic-change-history": "confirmed automatic phases append their reasons once without replacing the saved note",
     "disabled-titles-preserve-save": "disabling title sync still saves state and never renames",
     "launcher-passes-arguments-directly": "the client launcher passes the argument array without a shell",
     "loopback-token-rejects-untrusted-writes": "only loopback and same-origin token-authorized writes reach the board",
