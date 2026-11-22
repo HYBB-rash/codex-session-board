@@ -1,0 +1,274 @@
+{
+    "baseline": "2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc",
+    "requirements": {
+        "STATE-001": {
+            "sources": ["src/extensions/session-board/placement.ts", "ui/board-columns.vue"],
+            "checks": [
+                "frozen_requirements_and_model",
+                "state_names_and_display_order",
+                "all_abstract_state_edges_match_the_typescript_service"
+            ],
+            "missing": "还需覆盖退役分区和远端缓存的不同模式投影，以及依赖变更的原生分区形式模型。"
+        },
+        "AUTO-001": {
+            "sources": [
+                "src/extensions/session-board/activity.ts",
+                "src/extensions/session-board/board-service.ts"
+            ],
+            "checks": [
+                "runtime_evidence_table_frozen_summary",
+                "runtime_evidence_table_with_native_identity",
+                "all_abstract_state_edges_match_the_typescript_service"
+            ],
+            "missing": "还需在真实本机和远端验证开始、批准后仍等待、确实恢复三个时间点。"
+        },
+        "AUTO-002": {
+            "sources": [
+                "src/extensions/session-board/activity.ts",
+                "src/extensions/session-board/board-service.ts"
+            ],
+            "checks": [
+                "runtime_evidence_table_frozen_summary",
+                "runtime_evidence_table_with_native_identity",
+                "all_abstract_state_edges_match_the_typescript_service"
+            ],
+            "missing": "还需在真实宿主取证系统异常、暂时重试、等待批准和等待输入，分别核对原因和备注。"
+        },
+        "AUTO-003": {
+            "sources": [
+                "src/extensions/session-board/activity.ts",
+                "src/extensions/session-board/preview.ts"
+            ],
+            "checks": [
+                "runtime_evidence_table_with_native_identity",
+                "all_abstract_state_edges_match_the_typescript_service"
+            ],
+            "missing": "还需在真实宿主验证公开讨论、澄清以及没有最终消息的正常结束。"
+        },
+        "AUTO-004": {
+            "sources": [
+                "src/extensions/session-board/activity.ts",
+                "src/extensions/session-board/board-service.ts"
+            ],
+            "checks": [
+                "runtime_evidence_without_terminal_confirmation",
+                "model_view_and_restart_do_not_write"
+            ],
+            "missing": "查看和重启已纳入重放，尚缺队列输入、只变 ID 和纯自然语言结论的服务层操作夹具。"
+        },
+        "AUTO-005": {
+            "sources": [
+                "src/extensions/session-board/board-service.ts",
+                "src/extensions/session-board/records.ts"
+            ],
+            "checks": ["all_abstract_state_edges_match_the_typescript_service"],
+            "missing": "隔离重放仍复现同轮人工调整后的新批准、输入等待和系统异常被旧轮次开始时间挡住。还需对比重复批准、延迟回执、重新连接与人工选择的先后顺序。"
+        },
+        "AUTO-006": {
+            "sources": [
+                "src/extensions/session-board/activity.ts",
+                "src/extensions/session-board/board-service.ts"
+            ],
+            "checks": ["runtime_evidence_without_terminal_confirmation"],
+            "missing": "尚缺历史或连接错误、观察首次启用和旧正常终态的同数据对照；会话及备注必须保持可见。"
+        },
+        "MANUAL-001": {
+            "sources": [
+                "src/extensions/session-board/records.ts",
+                "src/extensions/session-board/board-service.ts"
+            ],
+            "checks": ["all_abstract_state_edges_match_the_typescript_service"],
+            "evidence": "Fedora 原生移卡实测保留了本机和远端专用卡原备注。见 docs/session-board-native-checkpoint.md。",
+            "missing": "还需确认全部模式相应的人工选项，以及可回读的变更历史持久保存。"
+        },
+        "MANUAL-002": {
+            "sources": [
+                "src/extensions/session-board/board-service.ts",
+                "src/extensions/session-board/records.ts"
+            ],
+            "checks": ["input_ids_ignore_order_and_assistant_updates"],
+            "evidence": "Fedora 本机及远端旧表单均在原生侧栏异动后拒绝并保留草稿。见 docs/session-board-native-checkpoint.md。",
+            "missing": "还需同轮新增输入夺取旧表单版本、两个同时提交及同一 ID 跨账号主机的自动对照。"
+        },
+        "MANUAL-003": {
+            "sources": [
+                "src/extensions/session-board/activity.ts",
+                "src/extensions/session-board/board-service.ts",
+                "src/migration/projection.ts"
+            ],
+            "checks": ["input_ids_ignore_order_and_assistant_updates"],
+            "evidence": "输入键隔离对照已通过同轮用户项换序、助手输出及未加载项检查。",
+            "missing": "还需服务级重放：提示跨多个自动阶段、重启、人工确认，且收到不完整轮次时不误清除。"
+        },
+        "TITLE-001": {
+            "sources": [
+                "src/extensions/session-board/activity.ts",
+                "src/extensions/session-board/board-service.ts"
+            ],
+            "checks": ["title_prefix_replacement_and_idempotence"],
+            "missing": "还需现场记录手动和自动入列后，何时读取完整原标题、提交并读回。"
+        },
+        "TITLE-002": {
+            "sources": [
+                "src/extensions/session-board/activity.ts",
+                "src/extensions/session-board/board-service.ts"
+            ],
+            "checks": [
+                "title_prefix_replacement_and_idempotence",
+                "title_projection_rejects_an_invalid_state"
+            ],
+            "evidence": "前缀替换、幂等、保留正文、空正文和拒绝非法状态的冻结断言均已通过。",
+            "missing": "还需对服务层计数，确认原生标题已匹配时不会再次重命名。"
+        },
+        "TITLE-003": {
+            "sources": [
+                "src/extensions/session-board/board-service.ts",
+                "src/extensions/session-board/records.ts"
+            ],
+            "missing": "尚缺重启前后续传、三秒原生同步上限和失败期间用户仍能保存其他卡片的证据。"
+        },
+        "TITLE-004": {
+            "sources": [
+                "src/extensions/session-board/board-service.ts",
+                "src/extensions/session-board/records.ts"
+            ],
+            "missing": "尚缺旧回执、新版本、写入成功但失联的矩阵及失败项队列公平性。"
+        },
+        "TITLE-005": {
+            "sources": [
+                "src/extensions/session-board/board-service.ts",
+                "src/extensions/session-board/settings.ts"
+            ],
+            "missing": "还需确认标题同步首次启用的持久边界、首次发现不改历史标题、旧任务重启后继续。"
+        },
+        "DISCOVERY-001": {
+            "sources": [
+                "src/extensions/session-board/desktop-connection.ts",
+                "src/extensions/session-board/board-service.ts"
+            ],
+            "evidence": "Fedora 窗口已读到本机及 MacBook Pro 的专用会话。见 docs/session-board-native-checkpoint.md。",
+            "missing": "尚缺 cli、vscode、appServer 各来源及模型提供方，重复或无尽分页和非交互排除的端到端证据。"
+        },
+        "DISCOVERY-002": {
+            "sources": ["src/extensions/session-board/board-service.ts", "src/compat/cache.ts"],
+            "missing": "尚缺一条读取失败、完整扫描缺席、离线后重启和后续恢复的逐条数据对照。"
+        },
+        "NAV-001": {
+            "sources": [
+                "src/extensions/session-board/preview.ts",
+                "src/extensions/session-board/board-service.ts",
+                "ui/board-session-reader.ts",
+                "ui/board-drag.ts"
+            ],
+            "missing": "还需现场验证本机和远端同名卡的来源、上一条回复与迟到结果，检查点击和拖动两种实际手势。"
+        },
+        "APP-001": {
+            "sources": [
+                "src/extensions/session-board/extension.ts",
+                "src/runtime/board-broker.ts",
+                "src/compat/server.ts",
+                "src/compat/mcp.ts"
+            ],
+            "evidence": "Fedora 在 Enhancer 正式 Vue 看板使用本机和真实远端卡。见 docs/session-board-native-checkpoint.md。",
+            "missing": "尚缺正式发行产物在两个桌面宿主直接点击入口、MCP/备用网页同账号共享状态的实测。"
+        },
+        "UI-001": {
+            "sources": [
+                "ui/board-drag.ts",
+                "ui/board-columns.vue",
+                "src/extensions/session-board/board-service.ts"
+            ],
+            "evidence": "Fedora 的本机和远端专用卡都经过真实拖拽、原生侧栏和独立分区读回，备注保留。见 docs/session-board-native-checkpoint.md。",
+            "missing": "同列、拖出看板、横向及边缘自动滚动以及 macOS 桌面尚未取证。"
+        },
+        "UI-002": {
+            "sources": [
+                "ui/board-editor.ts",
+                "ui/board-editor.vue",
+                "ui/board-edits.ts",
+                "src/extensions/session-board/board-service.ts"
+            ],
+            "missing": "还需分别演练空白、纯空白、取消、填入、清空、过期失败，核对备注、自动原因及草稿。"
+        },
+        "UI-003": {
+            "sources": ["ui/board-filters.tsx", "ui/board-refresh.ts", "ui/board-columns.vue"],
+            "missing": "还需真实键盘与指针操作中的刷新、空列、搜索、焦点、列滚动保持检查。"
+        },
+        "MCP-001": {
+            "sources": [
+                "src/compat/mcp.ts",
+                "src/compat/entrypoints.test.ts",
+                "ui/standalone-mcp.ts",
+                ".mcp.json"
+            ],
+            "missing": "已有 stdio 资源和拒绝写入测试入口。尚缺解包后的自包含资源、宿主复用和无外部 Node.js 的独立验证。"
+        },
+        "DATA-001": {
+            "sources": [
+                "src/compat/cli-config.ts",
+                "src/installer/paths.ts",
+                "src/installer/releases.test.ts"
+            ],
+            "missing": "已有隔离更新和回退测试入口，尚缺完整的显式配置和两平台安装路径、升级后状态留存核对。"
+        },
+        "DATA-002": {
+            "sources": [
+                "src/migration/legacy.ts",
+                "src/migration/legacy.test.ts",
+                "src/migration/projection.ts"
+            ],
+            "evidence": "九项 Fedora 独立迁移测试覆盖原库、已提交 WAL、并发和失败后的安全重试。",
+            "missing": "还需正式包执行账号绑定、业务端重新读回，确认未连接主机的延期导入及 macOS 一致性。"
+        },
+        "SERVICE-001": {
+            "sources": [
+                "src/compat/receipt.ts",
+                "src/compat/server.ts",
+                "src/compat/entrypoints.test.ts",
+                "src/runtime/board-broker.ts"
+            ],
+            "missing": "已有同一实例启动与关闭路径的测试入口，尚缺不同构建和配置、无响应实例以及实际退出的故障注入。"
+        },
+        "BOUNDARY-001": {
+            "sources": [
+                "src/extensions/session-board/desktop-connection.ts",
+                "src/extensions/session-board/desktop-world.ts",
+                "src/compat/operations.ts"
+            ],
+            "missing": "冻结契约写的是旧版独立只读连接。新目标明确允许原生分区及显式归档。须针对新版允许操作证明状态标记、预览和导航不会发送或执行任务，并留存所有入口的完整调用记录。"
+        },
+        "SECURITY-001": {
+            "sources": [
+                "src/compat/server.ts",
+                "src/compat/entrypoints.test.ts",
+                "src/runtime/ipc-guard.ts"
+            ],
+            "missing": "已有 HTTP 回环和 Origin 夹具。尚缺过期令牌、账号切换、无资格会话和跨主机的写入及跳转端到端测试。"
+        },
+        "HEALTH-001": {
+            "sources": [
+                "src/extensions/session-board/board-service.ts",
+                "ui/board-health.ts",
+                "ui/board-health-report.ts"
+            ],
+            "missing": "还需从真实看板经历断开、部分分页失败、标题同步失败与恢复，并核对每个警示。"
+        },
+        "DELIVERY-001": {
+            "sources": [
+                "scripts/package.sh",
+                "src/installer/package-release.ts",
+                "src/installer/releases.test.ts"
+            ],
+            "missing": "还需对最终 Linux 和 macOS 产物独立解包验收，记录哈希、离线运行、系统安装、更新和回退。"
+        },
+        "GATE-001": {
+            "sources": [
+                "acceptance/contract.lock.json",
+                "acceptance/verify-typescript.py",
+                "acceptance/typescript-evidence.json"
+            ],
+            "checks": ["frozen_requirements_and_model"],
+            "missing": "初步门槛始终拒绝含待验证项目的完整验收。仍需接入独立验收证据的构建指纹、时间与来源校验，并用故障样本验证门槛。"
+        }
+    }
+}
