@@ -1,10 +1,19 @@
 import * as path from "node:path";
 
 export const outputDir = path.resolve(__dirname, "..");
-export const root = path.resolve(outputDir, "..");
+const releaseRoot = path.resolve(outputDir, "..");
+const parent = path.dirname(releaseRoot);
+const runningInstalledRelease =
+    /^[a-f0-9]{64}$/.test(path.basename(releaseRoot)) &&
+    path.basename(parent) === "releases" &&
+    path.basename(path.dirname(parent)) === "state";
+export const root = runningInstalledRelease ? path.resolve(parent, "../..") : releaseRoot;
 export const runtimeMain = path.join(outputDir, "runtime", "main.js");
 export const stateDir = path.join(root, "state");
-export const testApp = path.join(root, "state", "test-app");
+export const testApp = path.join(
+    stateDir,
+    process.platform === "darwin" ? "Codex Enhancer.app" : "test-app",
+);
 export const backupDir = path.join(root, "state", "backups");
 export const installState = path.join(root, "state", "install.json");
 export const logs = path.join(root, "logs");

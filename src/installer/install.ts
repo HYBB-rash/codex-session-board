@@ -1,10 +1,23 @@
-import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { entryIncludes, openArchive, patchEntry, readEntry, sha256File } from "./asar.js";
 import { LINK_NAME, loaderStub, PATCH_VERSION, SENTINEL } from "./constants.js";
-import { type Detection, detect, findSystemApp } from "./detect.js";
+import {
+    assertIsolatedPath,
+    assertTestCopyStopped,
+    backupMacMetadata,
+    copyFile,
+    ensureTestCopy,
+    linkFile,
+    restoreMacMetadata,
+    signPatchedCopy,
+} from "./copy.js";
+import { type Detection, detect, findSystemApp, locateApp } from "./detect.js";
+import { assertPatchableMacBundle } from "./mac-integrity.js";
 import * as paths from "./paths.js";
+import { activateRelease } from "./releases.js";
+
+export { assertTestCopyStopped } from "./copy.js";
 
 export interface InstallState {
     schema: 1;
@@ -196,7 +209,10 @@ function parseState(value: unknown): InstallState {
 
 export function readState(): InstallState | null {
     if (!fs.existsSync(paths.installState)) return null;
-    return parseState(JSON.parse(fs.readFileSync(paths.installState, "utf8")));
+    const state = parseState(JSON.parse(fs.readFileSync(paths.installState, "utf8")));
+    if (state.target.path !== paths.testApp)
+        throw new Error("install state belongs to a different Enhancer copy");
+    return state;
 }
 
 export function writeState(state: InstallState): void {
@@ -206,84 +222,48 @@ export function writeState(state: InstallState): void {
     fs.renameSync(next, paths.installState);
 }
 
-function assertCopyIsIsolated(copyDir: string, systemDir: string): void {
-    const copy = path.resolve(copyDir);
-    const system = path.resolve(systemDir);
-    if (copy === system || copy.startsWith(`${system}${path.sep}`)) {
-        throw new Error(`refusing to modify the installed Codex at ${system}`);
-    }
-}
-
-function ensureTestCopy(systemDir: string): boolean {
-    assertCopyIsIsolated(paths.testApp, systemDir);
-    if (
-        fs.existsSync(path.join(paths.testApp, "ChatGPT")) &&
-        fs.existsSync(path.join(paths.testApp, "start.sh"))
-    ) {
-        return false;
-    }
-    fs.rmSync(paths.testApp, { recursive: true, force: true });
-    fs.mkdirSync(paths.stateDir, { recursive: true });
-    execFileSync("cp", ["-a", "--reflink=auto", systemDir, paths.testApp], { stdio: "inherit" });
-    return true;
-}
-
 function backupBaseline(archivePath: string, version: string, currentHash: string): string {
+    if (version !== path.basename(version) || version === "." || version === "..") {
+        throw new Error("invalid baseline version");
+    }
     const directory = path.join(paths.backupDir, version);
     fs.mkdirSync(directory, { recursive: true });
     const stable = path.join(directory, "app.asar");
     if (!fs.existsSync(stable)) {
-        execFileSync("cp", ["-a", "--reflink=auto", archivePath, stable], { stdio: "inherit" });
+        copyFile(archivePath, stable);
         return stable;
     }
     if (sha256File(stable) === currentHash) return stable;
     const versioned = path.join(directory, `${currentHash}.asar`);
     if (!fs.existsSync(versioned)) {
-        execFileSync("cp", ["-a", "--reflink=auto", archivePath, versioned], { stdio: "inherit" });
+        copyFile(archivePath, versioned);
     }
     return versioned;
 }
 
-export function assertTestCopyStopped(): void {
-    const needle = Buffer.from(`${paths.testApp}/`);
-    const pids: string[] = [];
-    for (const entry of fs.readdirSync("/proc")) {
-        if (!/^\d+$/.test(entry) || entry === String(process.pid)) continue;
-        let command: Buffer;
-        try {
-            command = fs.readFileSync(`/proc/${entry}/cmdline`);
-        } catch {
-            continue;
-        }
-        if (command.includes(needle)) pids.push(entry);
-    }
-    if (pids.length > 0) {
-        throw new Error(`quit the test copy before changing it (pids ${pids.join(", ")})`);
-    }
-}
-
-function writeLink(copyDir: string): void {
+function writeLink(copy: Detection): void {
     const link = {
         home: paths.root,
         runtime: paths.runtimeMain,
         patchVersion: PATCH_VERSION,
     };
-    fs.writeFileSync(path.join(copyDir, LINK_NAME), `${JSON.stringify(link, null, 2)}\n`);
+    const file = linkFile(locateApp(copy.appDir).resourcesDir);
+    assertIsolatedPath(file);
+    fs.writeFileSync(file, `${JSON.stringify(link, null, 2)}\n`, { mode: 0o600 });
 }
 
 function prepareCopy(): { source: Detection; copy: Detection } {
     assertTestCopyStopped();
     const system = findSystemApp();
     const source = detect(system.appDir);
-    ensureTestCopy(system.appDir);
-    assertCopyIsIsolated(paths.testApp, system.appDir);
-    const copy = detect(paths.testApp);
-    if (
-        copy.archive.main !== source.archive.main ||
-        copy.archive.relativeArchive !== source.archive.relativeArchive
-    ) {
-        throw new Error("test copy startup entry does not match the system install");
+    if (source.platform === "darwin") {
+        const target = fs.existsSync(paths.testApp) ? paths.testApp : source.appDir;
+        assertIsolatedPath(paths.testApp, source.appDir);
+        assertPatchableMacBundle(target, source.codexVersion);
     }
+    ensureTestCopy(source);
+    const copy = detect(paths.testApp);
+    assertIsolatedPath(copy.archive.archivePath, source.appDir);
     return { source, copy };
 }
 
@@ -326,22 +306,19 @@ interface PatchOutcome {
     backupPath: string;
 }
 
-function patchStartupEntry(
-    archivePath: string,
-    entry: string,
-    codexVersion: string,
-    currentHash: string,
-): PatchOutcome {
+function patchStartupEntry(copy: Detection, currentHash: string): PatchOutcome {
+    const { archivePath, main: entry } = copy.archive;
     if (entryIncludes(archivePath, entry, Buffer.from(SENTINEL))) {
         throw new Error(
             "startup entry already contains the loader but the archive is not the recorded patch; uninstall first",
         );
     }
-    const backupPath = backupBaseline(archivePath, codexVersion, currentHash);
+    const backupPath = backupBaseline(archivePath, copy.codexVersion, currentHash);
     const originalSha256 = sha256File(backupPath);
     if (originalSha256 !== currentHash) {
         throw new Error("backup does not match the archive that will be patched");
     }
+    backupMacMetadata(copy, backupPath);
     const stub = Buffer.from(loaderStub());
     const patched = patchEntry(archivePath, entry, (current) => {
         if (current.includes(Buffer.from(SENTINEL))) return current;
@@ -412,20 +389,37 @@ function buildState(
 
 export function install(): InstallResult {
     const { source, copy } = prepareCopy();
+    const manifest = path.join(paths.root, "release.json");
+    if (
+        fs.existsSync(manifest) &&
+        !fs.existsSync(path.join(paths.stateDir, "releases", "active.json"))
+    ) {
+        activateRelease(paths.root);
+    }
     const archivePath = copy.archive.archivePath;
-    const currentHash = sha256File(archivePath);
+    let currentHash = sha256File(archivePath);
     const existing = readState();
     if (isUpToDate(existing, currentHash)) {
-        writeLink(paths.testApp);
-        return { action: "unchanged", state: existing, source, copy };
+        if (existing.patchVersion === PATCH_VERSION) {
+            return { action: "unchanged", state: existing, source, copy };
+        }
+        if (sha256File(existing.backup.archive) !== existing.files.archive.originalSha256) {
+            throw new Error("stored archive backup no longer matches its checksum");
+        }
+        copyFile(existing.backup.archive, archivePath);
+        restoreMacMetadata(copy.appDir, existing.backup.archive);
+        currentHash = existing.files.archive.originalSha256;
     }
-    const patched = patchStartupEntry(
-        archivePath,
-        copy.archive.main,
-        copy.codexVersion,
-        currentHash,
-    );
-    writeLink(paths.testApp);
+    const patched = patchStartupEntry(copy, currentHash);
+    try {
+        writeLink(copy);
+        signPatchedCopy(copy);
+    } catch (error) {
+        copyFile(patched.backupPath, archivePath);
+        fs.rmSync(linkFile(locateApp(copy.appDir).resourcesDir), { force: true });
+        restoreMacMetadata(copy.appDir, patched.backupPath);
+        throw error;
+    }
     const state = buildState(source, copy, patched, archivePath);
     writeState(state);
     return { action: patched.changed ? "patched" : "already-patched", state, source, copy };
