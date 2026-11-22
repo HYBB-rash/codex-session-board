@@ -8,6 +8,29 @@
             "checkpoint_commit": "f3a1512",
             "coverage": "Fedora 宿主用 Chromium 拖动本机和 MacBook Pro 专用卡，原生侧栏与目标主机均读回；反向移卡使旧表单提交失败，已保存备注及草稿值保留。"
         },
+        "fedora-desktop": {
+            "file": "docs/session-board-typescript-acceptance.md",
+            "checkpoint_commit": "dc27e05",
+            "coverage": "Fedora 实际连接上的观察、预览、归档读回、原生导航和远程项目登记对话框。"
+        },
+        "fedora-package": {
+            "file": "docs/session-board-typescript-acceptance.md",
+            "checkpoint_commit": "dc27e05",
+            "coverage": "0.3.3 从 Fedora 已安装网页入口激活、完全退出重启、页面读回、回退、卸载和数据夹具。"
+        },
+        "macos-package": {
+            "file": "docs/session-board-typescript-acceptance.md",
+            "checkpoint_commit": "dc27e05",
+            "coverage": "MacBook Pro 上的 arm64 包结构和回退，以及桌面启动被内嵌 ASAR 完整性摘要拒绝的记录。"
+        },
+        "archive-receipt": {
+            "file": "src/extensions/session-board/archive.test.ts",
+            "test": "reopening an incomplete archive batch checks submitted items and never resends them"
+        },
+        "retired-connection": {
+            "file": "src/extensions/session-board/desktop-connection.test.ts",
+            "test": "a disconnected catalog host retires pending reads and prior connection epochs"
+        },
         "http-security": {
             "file": "src/compat/entrypoints.test.ts",
             "test": "HTTP and PWA use loopback, active origin and validated shared operations"
@@ -77,9 +100,10 @@
             "remaining": "对照六状态模式的列、顶部导航及状态选择顺序，再核对四列与五列配置。"
         },
         "AUTO-001": {
-            "status": "pending",
+            "status": "partial",
             "implementation": ["src/extensions/session-board/activity.ts"],
-            "remaining": "在本机与远程实践真实开始、暂停及批准后的实际恢复，区分批准与恢复。"
+            "evidence": ["fedora-desktop"],
+            "remaining": "已观察远程真实开始；补本机和批准后的实际恢复，区分批准与恢复。"
         },
         "AUTO-002": {
             "status": "pending",
@@ -87,9 +111,10 @@
             "remaining": "核验等待批准、工具输入、失败、中断及自动重试的状态和原因，并核对人工备注。"
         },
         "AUTO-003": {
-            "status": "pending",
+            "status": "partial",
             "implementation": ["src/extensions/session-board/activity.ts"],
-            "remaining": "核验正常完成、讨论与澄清的最终回复均进入待审阅。"
+            "evidence": ["fedora-desktop"],
+            "remaining": "已观察远程正常完成；补本机和只讨论与澄清的最终回复。"
         },
         "AUTO-004": {
             "status": "pending",
@@ -298,8 +323,13 @@
         "DELIVERY-001": {
             "status": "partial",
             "implementation": ["src/installer/package-release.ts", "scripts/package.sh"],
-            "evidence": ["release-rejection", "release-rollback"],
-            "remaining": "核验两个平台的安装归档、SHA256、版本一致性、离线资产、验收复现物及运行数据排除。"
+            "evidence": [
+                "release-rejection",
+                "release-rollback",
+                "fedora-package",
+                "macos-package"
+            ],
+            "remaining": "macOS 归档校验通过，目标版本的桌面完整性检查阻止运行；补兼容构建或允许的接入方式。"
         },
         "GATE-001": {
             "status": "partial",
@@ -310,24 +340,24 @@
     },
     "operation_evidence": ["operation-routing"],
     "operations": {
-        "Snapshot": "核对真实宿主本机与远程的分页、排序、项目、活动和缓存数据。",
+        "Snapshot": "Fedora 已分别读取活动、归档、远程项目；补同 ID 冲突与真实重连后的缓存边界。",
         "Update": "已有 Fedora 原生移卡检查点，补同候选跨入口写入、各版本冲突和远端回执丢失。",
         "Sort": "核对列排序持久化、输入冲突和跨入口可见。",
-        "Archive": "在专用本机与远程卡验证版本复核、实际归档及独立读回。",
+        "Archive": "本机手动和远程定时归档已实测读回；补已安装版本的筛选批次和新输入竞争。",
         "ArchiveBatches": "比较真实批次的未提交、待核对及已确认项，并重启读回。",
         "ArchiveBatchStart": "补核验登记请求冲突、重复提交与批次持久化。",
         "ArchiveBatchFinish": "补核验部分失败、关闭页面及结束状态。",
-        "ArchiveBatchCheck": "补核验只核对已提交项、回执丢失及迟到回执。",
-        "Open": "实际定位到同名跨主机的原会话并验证不会产生新轮次。",
-        "PreviewReply": "实际读取最新完整最终回复并验证迟到回执不会越过卡片或宿主切换。",
+        "ArchiveBatchCheck": "隔离夹具已验证仅核对已提交项；补真实回执丢失、迟到。",
+        "Open": "已从归档定位原会话及主机；补同名跨主机和无新轮次的对照。",
+        "PreviewReply": "已确认原生两端完整回复；补迟到回执越过卡片或宿主切换的拒绝。",
         "New": "实际打开本机与远程选定项目的空输入页并核对未自动发送。",
         "NewReset": "核对丢失回执和用户确认后重置旧新建请求。",
         "ProjectAssign": "核对项目补登记、身份不符和重复确认。",
         "Connect": "验证在 Codex 管理的连接界面完成重连，后续操作仍使用同一窗口的 authority。",
         "SshSetup": "验证兼容入口将设置交给 Codex，覆盖旧操作返回及前端提示。",
         "Refresh": "验证真实宿主中断后手动刷新、完整分页和旧数据保留。",
-        "PluginUpdateStatus": "从安装后的看板查询候选来源、版本和可用状态。",
-        "PluginUpdateStart": "从实际安装入口更新、重载，读取新版页面和原保留数据。"
+        "PluginUpdateStatus": "Fedora 已安装看板读回候选和当前运行版本；macOS 实际窗口尚无法运行。",
+        "PluginUpdateStart": "Fedora 已安装看板已更新、重载和回退；macOS 实际窗口尚无法运行。"
     },
     "cli": {
         "serve": {
@@ -373,27 +403,34 @@
         },
         "remote-authority": {
             "status": "partial",
-            "evidence": ["native-move", "offline-cache", "migration-projection"],
-            "remaining": "补两个宿主相同 thread ID、账号/连接切换、迟到回执、真实断线重连以及当前宿主权限。"
+            "evidence": [
+                "native-move",
+                "fedora-desktop",
+                "offline-cache",
+                "migration-projection",
+                "retired-connection"
+            ],
+            "remaining": "连接世代已在夹具验证；补相同 thread ID 的真实移卡、真实断线重连和当前宿主权限。"
         },
         "enhancer-entry": {
             "status": "partial",
-            "evidence": ["native-move", "ipc-frame"],
-            "remaining": "补已安装候选与关页重开后观察器、标题重试、定时归档及订阅去重。"
+            "evidence": ["native-move", "fedora-desktop", "archive-receipt", "ipc-frame"],
+            "remaining": "已确认关页期间观察器和定时归档；补已安装候选的订阅去重、标题失败重试。"
         },
         "pwa-install": {
             "status": "partial",
-            "evidence": ["http-security", "offline-cache"],
-            "remaining": "以实际浏览器安装 PWA，验证联网写入和离线只读。"
+            "evidence": ["http-security", "offline-cache", "fedora-desktop"],
+            "remaining": "实际 Chrome 已通过可安装性检测和 Service Worker 控制；补系统安装、联网写入和离线只读。"
         },
         "linux-delivery": {
             "status": "partial",
-            "evidence": ["release-rollback", "native-move"],
-            "remaining": "以 Linux x86_64 安装产物核验启动、实际入口更新、重载读回与回退。"
+            "evidence": ["release-rollback", "native-move", "fedora-package"],
+            "remaining": "Fedora 0.3.3 已从安装版网页验收完整更新生命周期；补新版安装后 signed-in 远程全功能复验。"
         },
         "macos-delivery": {
-            "status": "pending",
-            "remaining": "在 macOS arm64 桌面宿主上核验安装包及同一套真实行为；Fedora 接入远端只覆盖远程执行主机。"
+            "status": "partial",
+            "evidence": ["macos-package"],
+            "remaining": "实际 MacBook Pro 拒绝修改过的 ASAR。需要兼容宿主后才可验收桌面安装、运行和更新。"
         },
         "upstream-comparison": {
             "status": "pending",
