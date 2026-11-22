@@ -151,6 +151,14 @@
             "file": "src/extensions/session-board/title-sync.test.ts",
             "test": "passive history and queued text cannot start or finish a turn"
         },
+        "first-input-revision": {
+            "file": "src/extensions/session-board/title-sync.test.ts",
+            "test": "first native input advances the same revision before a save or a history scan"
+        },
+        "archive-independent-readback": {
+            "file": "src/extensions/session-board/discovery.test.ts",
+            "test": "a reopened batch reconciles uncached submitted cards on connected hosts independently"
+        },
         "runtime-manual-selection": {
             "file": "src/extensions/session-board/title-sync.test.ts",
             "test": "manual placement survives same-turn output and restart until the stage changes"
@@ -379,7 +387,7 @@
         "MANUAL-002": {
             "status": "partial",
             "implementation": ["src/extensions/session-board/board-service.ts"],
-            "evidence": ["native-move", "mcp-stdio"],
+            "evidence": ["native-move", "mcp-stdio", "first-input-revision"],
             "remaining": "覆盖第二入口竞争保存与编辑期间收到新用户输入，核对状态版本、输入版本及提示保留。"
         },
         "MANUAL-003": {
@@ -712,6 +720,7 @@
                 "archive-finish-after-claim",
                 "archive-schedule-settings",
                 "legacy-archive-section-version",
+                "archive-independent-readback",
                 "ipc-frame"
             ],
             "remaining": "已确认关页期间观察器和定时归档；补已安装候选的订阅去重、标题失败重试。"

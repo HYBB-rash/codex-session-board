@@ -176,7 +176,7 @@ function projectKey(hostId: HostId, id: string): string {
     return hostId === "local" ? id : `target:${JSON.stringify([hostId, "targetServer", id])}`;
 }
 
-function changedInput(current: CardRecord, input: string | null): boolean {
+function changedInput(current: CardRecord, input: string | null): input is string {
     return input !== null && input !== current.inputKey;
 }
 
@@ -983,11 +983,7 @@ export class BoardService {
         const from = placement(context, card.hostId, before);
         const current = this.records[edit.id] ?? emptyRecord;
         const inputKey = turnInput(latest) ?? current.inputKey ?? null;
-        const newInput =
-            inputKey !== null &&
-            inputKey !== current.inputKey &&
-            (current.inputKey !== undefined || (latest?.startedAt ?? 0) > card.updatedAt);
-        if (newInput) {
+        if (changedInput(current, inputKey)) {
             await this.commitRecord(context, card.id, current.version, {
                 ...current,
                 inputKey,

@@ -49,8 +49,13 @@
             ["disabled-titles-preserve-save", "manual-change-history", "automatic-change-history"]
         ],
         "MANUAL-002": [
-            ["mcp-real-revisions", "stale-account-edit", "stale-account-card"],
-            ["mcp-real-revisions"]
+            [
+                "mcp-real-revisions",
+                "stale-account-edit",
+                "stale-account-card",
+                "first-input-revision"
+            ],
+            ["mcp-real-revisions", "first-input-revision"]
         ],
         "MANUAL-003": [
             ["mcp-real-revisions", "manual-follow-up-recovery"],

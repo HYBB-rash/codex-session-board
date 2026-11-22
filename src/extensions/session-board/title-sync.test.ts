@@ -520,6 +520,44 @@ test("passive history and queued text cannot start or finish a turn", async (tes
     assert.equal(card.inputVersion, previous.inputVersion + 2);
 });
 
+test("first native input advances the same revision before a save or a history scan", async (testContext) => {
+    const { config, reopen, threads, records } = fixture(testContext);
+    config.syncTitles = false;
+    const service = reopen();
+    await service.refresh();
+    const initial = phaseCard(service);
+    const beforeScan = threads.get(first);
+    const duringScan = threads.get(second);
+    assert.ok(beforeScan && duringScan);
+    for (const row of [beforeScan, duringScan]) {
+        row.turns = [
+            {
+                id: "first-turn",
+                status: "inProgress",
+                startedAt: row.updatedAt,
+                items: [{ id: "first-input", type: "userMessage" }],
+            },
+        ];
+    }
+
+    await assert.rejects(save(service, "in_progress", "陈旧表单"), /卡片位置或输入已更新/);
+    const refreshed = phaseCard(service);
+    assert.equal(refreshed.note, initial.note);
+    assert.equal(refreshed.state, initial.state);
+    assert.equal(refreshed.inputVersion, initial.inputVersion + 1);
+    assert.equal(records.account(account)[first]?.confirmedInputKey, undefined);
+    await service.refresh();
+    assert.equal(phaseCard(service).inputVersion, refreshed.inputVersion);
+    const store = records.account(account);
+    assert.equal(store[first]?.inputKey, store[second]?.inputKey);
+    assert.equal(store[first]?.inputVersion, store[second]?.inputVersion);
+    const saved = await save(service, "review", "确认新输入");
+    assert.equal(saved.session.inputVersion, refreshed.inputVersion);
+    const record = records.account(account)[first];
+    assert.ok(record?.inputKey);
+    assert.equal(record.confirmedInputKey, record.inputKey);
+});
+
 test("manual placement survives same-turn output and restart until the stage changes", async (testContext) => {
     const { config, reopen, threads } = fixture(testContext);
     config.syncTitles = false;
