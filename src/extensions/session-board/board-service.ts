@@ -39,7 +39,13 @@ import {
     visibleStates,
 } from "./placement.js";
 import { previewReply } from "./preview.js";
-import type { CardRecord, PhaseIntent, RecordWrite, TitleResolution } from "./records.js";
+import type {
+    CardRecord,
+    PhaseIntent,
+    RecordChange,
+    RecordWrite,
+    TitleResolution,
+} from "./records.js";
 import { type BoardSettings, defaults } from "./settings.js";
 
 interface BoardPorts {
@@ -508,10 +514,12 @@ export class BoardService {
                 ...(phase ? { phaseKey: phase.key } : {}),
                 ...(answer ? { previewTurnId: answer } : {}),
             };
-            if (phase && isNewPhase(phase, current, this.observationSince))
-                await this.applyPhase(connection, thread, context, phase, next);
+            const change =
+                phase && isNewPhase(phase, current, this.observationSince)
+                    ? await this.applyPhase(connection, thread, context, phase, next)
+                    : undefined;
             if (phaseChanged) delete next.pendingPhaseKey;
-            await this.commitRecord(context, id, current.version, next);
+            await this.commitRecord(context, id, current.version, next, change);
             queuedTitle = next.title !== undefined && next.title !== current.title;
         } finally {
             this.editing.delete(id);
@@ -544,7 +552,7 @@ export class BoardService {
         context: SidebarContext,
         phase: Phase,
         next: CardRecord,
-    ): Promise<void> {
+    ): Promise<RecordChange | undefined> {
         const position = placement(context, connection.hostId, thread);
         if (!position.managed) return;
         const current = await this.desktop.read(connection, thread.id, false);
@@ -576,6 +584,7 @@ export class BoardService {
         if (this.settings.syncTitles && (afterActivation || next.title))
             next.title = { state: phase.state };
         this.publishThread(connection.hostId, after);
+        return { kind: "automatic", state: phase.state };
     }
 
     private async retryHostTitle(connection: HostConnection, host: HostSnapshot): Promise<void> {
@@ -889,7 +898,7 @@ export class BoardService {
         this.desktop.assertCurrent(connection);
         const nextContext = await this.freshContext();
         const record = {
-            note: edit.note ?? current.note,
+            note: edit.note?.trim() ?? current.note,
             version: current.version + 1,
             inputVersion: current.inputVersion,
             ...(inputKey === null ? {} : { inputKey, confirmedInputKey: inputKey }),
@@ -899,7 +908,10 @@ export class BoardService {
             selectedAt: Date.now() / 1000,
             ...(this.settings.syncTitles ? { title: { state: edit.state } } : {}),
         };
-        await this.commitRecord(context, card.id, current.version, record);
+        await this.commitRecord(context, card.id, current.version, record, {
+            kind: "manual",
+            state: edit.state,
+        });
         this.context = nextContext;
         this.publishThread(card.hostId, after);
         return {
@@ -915,9 +927,16 @@ export class BoardService {
         id: string,
         expected: number,
         record: CardRecord,
+        change?: RecordChange,
     ): Promise<void> {
         await this.freshContext();
-        await this.ports.save({ account: accountKey(context), id, expected, record });
+        await this.ports.save({
+            account: accountKey(context),
+            id,
+            expected,
+            record,
+            ...(change ? { change } : {}),
+        });
         if (accountKey(context) !== accountKey(this.requiredContext()))
             throw new Error("保存期间 Codex 账号已变更");
         this.records[id] = record;

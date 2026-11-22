@@ -26,6 +26,7 @@ class PublicBoardFixture extends BoardFixture {
     newInput = false;
     incomplete = false;
     laterTurn = false;
+    rejectMove = false;
 
     transport(packet, desktop) {
         const { hostId, request } = packet;
@@ -61,6 +62,7 @@ class PublicBoardFixture extends BoardFixture {
 
     sidebar(command) {
         this.commands.push(command);
+        if (command.kind === "move" && this.rejectMove) throw new Error("fixture move rejected");
         return super.sidebar(command);
     }
 
@@ -103,6 +105,11 @@ function assertRejected(result) {
     assert.deepEqual(Object.keys(result).sort(), ["content", "isError"]);
     assert.equal(result.isError, true);
     assert.match(result.content[0]?.text, /卡片位置或输入已更新/);
+}
+
+function changes(board) {
+    const [records] = Object.values(JSON.parse(board.persisted().files[0]));
+    return records[board.card().id]?.changes ?? [];
 }
 
 test("the MCP resource bundles its SDK and styles without linked scripts or frames", async () => {
@@ -223,6 +230,62 @@ test("disabling title sync still saves state and never renames", async (context)
     assert.equal(board.card().titleSyncPending, undefined);
     assert.equal(board.nativeMethods.includes("thread/name/set"), false);
     assert.equal(board.commands.filter(({ kind }) => kind === "move").length, 2);
+});
+
+test("manual confirmations append durable change records and rejected saves leave them alone", async (context) => {
+    const { board, client, mcpUpdate } = await liveBoard(context);
+    const stale = board.edit("to_archive", "initial");
+    const { session: first } = await client.request("/api/state", stale);
+    const { structuredContent: second } = await mcpUpdate(board.edit("blocked"));
+    assert.equal(second.session.note, "initial");
+    const { session: third } = await client.request("/api/state", board.edit("blocked", "　\t\n"));
+    assert.equal(third.note, "");
+    assert.deepEqual(
+        changes(board)
+            .filter(({ kind }) => kind === "manual")
+            .map(({ changedAt, ...change }) => {
+                assert.ok(Number.isFinite(changedAt));
+                return change;
+            }),
+        [
+            { kind: "manual", state: "to_archive", note: "initial", version: first.version },
+            { kind: "manual", state: "blocked", note: "initial", version: second.session.version },
+            { kind: "manual", state: "blocked", note: "", version: third.version },
+        ],
+    );
+    const committed = changes(board);
+    assertRejected(await mcpUpdate(stale));
+    board.rejectMove = true;
+    await assert.rejects(
+        client.request("/api/state", board.edit("review", "failed")),
+        /fixture move rejected/,
+    );
+    const afterFailure = changes(board);
+    assert.deepEqual(afterFailure, committed);
+    board.reopen();
+    await board.service.refresh();
+    assert.equal(board.card().state, "blocked");
+    assert.equal(board.card().note, "");
+    assert.deepEqual(changes(board), committed);
+});
+
+test("confirmed automatic phases append their reasons once without replacing the saved note", async (context) => {
+    const { board, client } = await liveBoard(context);
+    await client.request("/api/state", board.edit("to_archive", "keep"));
+    const count = changes(board).length;
+    await board.step("input", 1010);
+    const committed = changes(board);
+    assert.equal(committed.length, count + 1);
+    const latest = committed.at(-1);
+    assert.equal(latest.kind, "automatic");
+    assert.equal(latest.state, "blocked");
+    assert.equal(latest.note, board.card().reason);
+    assert.ok(latest.note);
+    assert.equal(board.card().note, "keep");
+    await board.step("input", 1011);
+    board.reopen();
+    await board.service.refresh();
+    assert.deepEqual(changes(board), committed);
 });
 
 test("only loopback and same-origin token-authorized writes reach the board", async (context) => {
