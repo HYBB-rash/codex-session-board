@@ -2,6 +2,18 @@
 
 上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本通过本机和远程原生移卡检查点。macOS arm64 的目标 Codex 构建在加载看板之前拒绝了经过修改的启动归档，因此发布条件未满足。
 
+## 0.3.15 候选
+
+双平台归档由提交 `44a39b2` 构建。31 项冻结需求中 18 项通过、13 项待验，`releaseReady` 为 `false`。同版本的 69 项门槛自动检查全部通过。[逐项门槛报告](../state/acceptance/release-gate-0.3.15.json) · [现场证据索引](../state/acceptance/live-0.3.15.json)
+
+| 项目 | 结果 |
+| --- | --- |
+| 保存和归档的账号绑定 | 两账号夹具使用同会话 ID、同位置和相同版本。旧账号表单无法保存，两个归档入口也拒绝旧账号的分区版本。新批次沿用旧账本的分区版本格式，旧批次中待核对项只回读，未提交项可核对后显式发送。 |
+| Fedora 安装与回退 | 从已安装网页看板点击更新，重启依次读回 `0.3.14 → 0.3.15 → 0.3.14`。卸载恢复副本启动归档，持久数据夹具校验一致。[安装回执](../state/acceptance/fedora-installed-0.3.15.txt) |
+| Fedora 已登录副本 | 本机和 MacBook Pro 专用卡均通过原窗口现有连接读回带账号标记的分区版本。远端专用卡以旧版分区版本提交同列保存时被拒绝，持久备注及三个版本均保持一致。跨账号测试使用夹具。[宿主回执](../state/acceptance/fedora-scope-0.3.15.json) |
+| 换号后的页面显示 | 编辑框打开时会暂停普通刷新，账号切换后旧草稿可能仍显示。已展开的归档结果也需要在换号时清除并重新读取。升级前的未保存草稿仍在浏览器旧键中，0.3.15 的编辑器需要有账号归属的草稿才会恢复。 |
+| 双平台干净解包 | Fedora 通过 75 项随包 Node 测试、10 项公共入口测试及 18 项门槛测试。MacBook Pro 通过 73 项随包 Node 测试，跳过 2 项 Linux 专用测试，通过 10 项公共入口测试。两端各通过 10 项冻结模型检查。Mac Codex `26.1111.21308` 的 Framework 内嵌归档摘要，安装预检在复制前停止，系统归档校验一致。[Fedora 测试记录](../state/acceptance/fedora-clean-0.3.15.log) · [MacBook Pro 测试和预检](../state/acceptance/packages/macos-0.3.15-preflight.txt) |
+
 ## 0.3.14 候选
 
 双平台归档由提交 `4c32dee` 构建。31 项冻结需求中 18 项通过、13 项待验，`releaseReady` 为 `false`。同版本的 68 项门槛自动检查全部通过。详见[逐项门槛报告](../state/acceptance/release-gate-0.3.14.json)和[现场证据索引](../state/acceptance/live-0.3.14.json)。
@@ -12,6 +24,7 @@
 | Fedora 安装与回退 | 从已安装网页看板点击更新，重启依次读回 `0.3.13 → 0.3.14 → 0.3.13`。卸载还原副本启动归档，数据夹具通过 SHA-256 校验。[安装生命周期](../state/acceptance/fedora-installed-0.3.14.txt) |
 | Fedora 本机及远程 | 已登录副本复用现有窗口连接。HTTP、安装包 CLI 和 MCP 读回本机及 MacBook Pro 专用卡的同一份状态、备注和版本。HTTP 与 MCP 预览返回相同原生轮次及回复，前后持久数据一致。MCP 列出冻结的 18 个共享操作及一个应用入口。[入口复验](../state/acceptance/fedora-entrypoints-0.3.14.json) |
 | Fedora 连接诊断 | 临时限制为一页后，9 张远端卡只读，远端扫描和观察均未完成。Enhancer 看板的详情显示分页上限及自动状态未连接，原有状态、备注和版本保留。隔离配置逐字节恢复，重新读取后远端扫描完整。[原生窗口回执](../state/acceptance/fedora-health-0.3.14.json) |
+| Fedora 标题拖动 | 在 Enhancer 真实窗口从专用卡标题起拖，分别在普通同列或看板外松手，以及在边缘自动滚动后松手。三次均无预览、原生跳转或保存；普通点击标题能打开预览。右缘横滚 290 像素并抵达最右列。专用卡和隔离配置读回一致。[手势回执](../state/acceptance/fedora-ui-gestures-0.3.14-1795366344155.jsonl) |
 | MCP 全局入口 | 干净解包测试验证插件清单声明一个带图标的完整应用入口。MCP 与网页可以互相读回状态及备注，重启后仍可读回。通过原生最左侧图标打开的现场验收仍待补。 |
 | 双平台干净解包 | Fedora 通过 73 项随包 Node 测试、10 项公共入口测试及 18 项门槛测试。MacBook Pro 通过 71 项随包 Node 测试，跳过 2 项 Linux 专用测试，通过 10 项公共入口测试。两端各通过 10 项冻结模型检查。Mac Codex `26.1111.21308` 内嵌 ASAR 摘要，安装器在复制前退出，系统启动归档 SHA-256 前后一致。[Fedora 测试记录](../state/acceptance/fedora-clean-0.3.14.log) · [MacBook Pro 测试和预检](../state/acceptance/packages/macos-0.3.14-preflight.txt) |
 
