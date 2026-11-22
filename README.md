@@ -9,9 +9,9 @@ Fedora 44 x86_64 已验证 Codex `26.1111.71704` 的安装、更新和回退。m
 在 Linux 候选包所在目录校验归档，再进入解压目录运行 Node.js 22 或更新版本。
 
 ```bash
-sha256sum -c session-board-0.3.20-linux-x86_64.tar.gz.sha256
-tar -xzf session-board-0.3.20-linux-x86_64.tar.gz
-cd session-board-0.3.20-linux-x86_64
+sha256sum -c session-board-0.3.21-linux-x86_64.tar.gz.sha256
+tar -xzf session-board-0.3.21-linux-x86_64.tar.gz
+cd session-board-0.3.21-linux-x86_64
 node dist/bin/codex-enhancer.js detect
 node dist/bin/codex-enhancer.js install
 node dist/bin/codex-enhancer.js launch
@@ -68,8 +68,8 @@ npm test
 npm run lint
 python3 acceptance/verify-typescript.py --model-only
 node acceptance/check-candidate.mjs --open
-bash scripts/package.sh 0.3.20 state/acceptance/packages linux-x86_64
-bash scripts/package.sh 0.3.20 state/acceptance/packages macos-arm64
+bash scripts/package.sh 0.3.21 state/acceptance/packages linux-x86_64
+bash scripts/package.sh 0.3.21 state/acceptance/packages macos-arm64
 ```
 
 查看 [Fedora 原生移卡检查点](docs/session-board-native-checkpoint.md)、[冻结模型对照](acceptance/typescript-model.md)、[逐项验收清单](acceptance/candidate-map.json)和[统一发布门槛](acceptance/release-gate.md)。

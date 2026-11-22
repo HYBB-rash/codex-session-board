@@ -67,6 +67,10 @@
             "file": "src/extensions/session-board/archive.test.ts",
             "test": "an item claimed before its batch finishes still records the native result"
         },
+        "archive-schedule-settings": {
+            "file": "src/extensions/session-board/discovery.test.ts",
+            "test": "archive deadlines follow the current host settings and configured time boundaries"
+        },
         "legacy-archive-section-version": {
             "file": "src/extensions/session-board/discovery.test.ts",
             "test": "a previously registered unscoped archive batch keeps its pending and unsent semantics"
@@ -696,6 +700,7 @@
                 "archive-finish-before-claim",
                 "archive-finish-after-failed-preflight",
                 "archive-finish-after-claim",
+                "archive-schedule-settings",
                 "legacy-archive-section-version",
                 "ipc-frame"
             ],

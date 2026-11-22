@@ -98,11 +98,10 @@ function fixture(testContext: TestContext, maxPages = 3) {
     testContext.after(() => Reflect.set(globalThis, "window", oldWindow));
     const records: Record<string, CardRecord> = {};
     const ledgers = new Map<string, BoardLedger>();
+    const settings = { ...defaults, maxPages, pageSize: 2, historyPerPoll: 1 };
     const native: NativeFixture = {
         hosts: [localHostId],
-        list(_host: string, _args: ListArgs): { data: Thread[]; nextCursor: string | null } {
-            return { data: [], nextCursor: null };
-        },
+        list: () => ({ data: [], nextCursor: null }),
     };
     const desktop = new DesktopConnection({
         bootstrap: () => ({ catalogHostIds: native.hosts }),
@@ -135,14 +134,14 @@ function fixture(testContext: TestContext, maxPages = 3) {
             assert.ok(native.archive, "Discovery must not write the ledger");
             ledgers.set(account, ledger);
         },
-        settings: async () => ({ ...defaults, maxPages, pageSize: 2, historyPerPoll: 1 }),
+        settings: async () => ({ ...settings }),
         titleEpoch: async () => assert.fail("Titles disabled"),
         closePage: () => assert.ok(native.open, "Discovery must not navigate"),
         authority: () => {},
         proof: () => {},
         updateStatus: async () => assert.fail("Discovery must not change release"),
     });
-    return { native, service, desktop, records, ledgers };
+    return { native, service, desktop, records, ledgers, settings };
 }
 
 function deferred<Value>() {
@@ -339,6 +338,46 @@ test("a previously registered unscoped archive batch keeps its pending and unsen
     await service.request("/api/archive", { ...newTarget, batchId: newBatch });
     assert.deepEqual(writes, [second, second]);
     assert.deepEqual(statuses(), ["archived"]);
+});
+
+test("archive deadlines follow the current host settings and configured time boundaries", async (testContext) => {
+    const { native, service, settings } = fixture(testContext);
+    native.hosts = [localHostId, remoteName];
+    let time = 3601;
+    testContext.mock.method(Date, "now", () => time * 1000);
+    settings.autoArchiveSeconds = 1800;
+    settings.remoteAutoArchiveSeconds = 900;
+    type Schedule = [
+        seconds: number | null,
+        nextAt: number | undefined,
+        lastAt: number | undefined,
+    ];
+    async function expectSchedules(local: Schedule, remote: Schedule) {
+        await service.refresh();
+        const { health } = service.snapshot();
+        const remoteHealth = health.remoteConnections.find(({ hostId }) => hostId === remoteName);
+        assert.ok(remoteHealth);
+        const timing = [health, remoteHealth].map(
+            ({ autoArchiveSeconds, autoArchiveNextAt, autoArchiveLastRun }) => [
+                autoArchiveSeconds,
+                autoArchiveNextAt,
+                autoArchiveLastRun?.at,
+            ],
+        );
+        assert.deepEqual(timing, [local, remote]);
+    }
+    await expectSchedules([1800, 5400, undefined], [900, 4500, undefined]);
+    time = 4501;
+    settings.autoArchiveSeconds = 300;
+    await expectSchedules([300, 4800, undefined], [900, 5400, 4501]);
+    time = 6301;
+    settings.remoteAutoArchiveSeconds = null;
+    await expectSchedules([300, 6600, 6301], [null, undefined, 4501]);
+    settings.mode = "legacy";
+    await expectSchedules([null, undefined, 6301], [null, undefined, 4501]);
+    time = 6600;
+    settings.mode = "four";
+    await expectSchedules([300, 6900, 6301], [null, undefined, 4501]);
 });
 
 test("opening rejects invalid, undiscovered and mismatched threads and uses the verified host", async (testContext) => {

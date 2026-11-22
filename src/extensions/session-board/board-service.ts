@@ -280,6 +280,10 @@ export class BoardService {
             this.archiveDeadlines.clear();
             this.archiveRuns.clear();
         }
+        for (const hostId of this.archiveDeadlines.keys()) {
+            if (this.archiveInterval(hostId) !== this.archiveInterval(hostId, settings))
+                this.archiveDeadlines.delete(hostId);
+        }
         this.settings = settings;
         this.titleStartedAt = titleStartedAt;
         this.context = context;
@@ -730,10 +734,9 @@ export class BoardService {
         return this.context;
     }
 
-    private archiveInterval(hostId: string) {
-        return hostId === "local"
-            ? this.settings.autoArchiveSeconds
-            : this.settings.remoteAutoArchiveSeconds;
+    private archiveInterval(hostId: string, settings = this.settings) {
+        if (settings.mode === "legacy") return null;
+        return hostId === "local" ? settings.autoArchiveSeconds : settings.remoteAutoArchiveSeconds;
     }
 
     private health(hostId: HostId, host: HostSnapshot | undefined) {
@@ -1463,16 +1466,14 @@ export class BoardService {
     }
 
     private autoArchive(context: SidebarContext): void {
-        if (this.mode === "legacy") return;
         const now = Date.now() / 1000;
         for (const [hostId, host] of this.hosts) {
             const seconds = this.archiveInterval(hostId);
             if (!seconds || !this.isLive(host)) continue;
-            const next = this.archiveDeadlines.get(hostId) ?? now + seconds;
-            this.archiveDeadlines.set(hostId, next);
-            if (next > now) continue;
-            this.archiveDeadlines.set(hostId, now + seconds);
-            void this.autoArchiveHost(hostId, context);
+            const next = (Math.floor(now / seconds) + 1) * seconds;
+            const deadline = this.archiveDeadlines.get(hostId) ?? next;
+            this.archiveDeadlines.set(hostId, deadline > now ? deadline : next);
+            if (deadline <= now) void this.autoArchiveHost(hostId, context);
         }
     }
 
