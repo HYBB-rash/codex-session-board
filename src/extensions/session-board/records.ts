@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { type BoardLedger, emptyLedger } from "./archive.js";
 import type { DraftRecord } from "./drafts.js";
-import type { BoardState } from "./placement.js";
+import { type BoardState, labels } from "./placement.js";
 
 export interface CardRecord {
     note: string;
@@ -29,6 +29,21 @@ interface RecordRevision {
 
 export interface RecordWrite extends RecordRevision {
     record: CardRecord;
+    change?: RecordChange;
+}
+
+export type RecordChange =
+    | { kind: "manual"; state: BoardState | null }
+    | { kind: "automatic"; state: BoardState };
+
+type SavedChange = RecordChange & {
+    changedAt: number;
+    note: string;
+    version: number;
+};
+
+interface StoredCardRecord extends CardRecord {
+    changes?: SavedChange[];
 }
 
 export interface TitleResolution extends RecordRevision {
@@ -50,6 +65,29 @@ function readRecord<T>(file: string): Record<string, T> {
 
 function mergeDrafts(imported: DraftRecord[] = [], saved: DraftRecord[] = []): DraftRecord[] {
     return [...new Map([...imported, ...saved].map((draft) => [draftKey(draft), draft])).values()];
+}
+
+function validRecordChange(value: unknown, record: CardRecord): boolean {
+    if (value === undefined) return true;
+    if (!value || typeof value !== "object" || !("state" in value) || !("kind" in value))
+        return false;
+    const { kind, state } = value;
+    const column = typeof state === "string" && Object.hasOwn(labels, state);
+    if (kind === "manual") return record.manual === true && (column || state === null);
+    return (
+        kind === "automatic" &&
+        record.manual === false &&
+        column &&
+        typeof record.reason === "string"
+    );
+}
+
+function savedChange(change: RecordChange, record: CardRecord): SavedChange {
+    const metadata = { changedAt: Date.now() / 1000, version: record.version };
+    const { kind, state } = change;
+    return kind === "manual"
+        ? { ...metadata, kind, state, note: record.note }
+        : { ...metadata, kind, state, note: record.reason ?? "" };
 }
 
 function draftKey({ project, requestId }: DraftRecord): string {
@@ -110,17 +148,23 @@ export class BoardLedgers {
 export class BoardRecords {
     constructor(private readonly file: string) {}
 
-    private read(): Record<string, Record<string, CardRecord>> {
-        return readRecord<Record<string, CardRecord>>(this.file);
+    private read(): Record<string, Record<string, StoredCardRecord>> {
+        return readRecord<Record<string, StoredCardRecord>>(this.file);
     }
 
     account(key: string, imported: Record<string, CardRecord> = {}): Record<string, CardRecord> {
         const accounts = this.read();
-        return { ...imported, ...(Object.hasOwn(accounts, key) ? accounts[key] : undefined) };
+        const saved = Object.hasOwn(accounts, key) ? accounts[key] : undefined;
+        const cards = Object.entries(saved ?? {}).map(([id, { changes: _changes, ...record }]) => [
+            id,
+            record,
+        ]);
+        return { ...imported, ...Object.fromEntries(cards) };
     }
 
     write(update: RecordWrite, imported: Record<string, CardRecord> = {}): void {
-        if (!this.change(update, imported, () => update.record))
+        if (!validRecordChange(update.change, update.record)) throw new Error("无效的看板变更记录");
+        if (!this.change(update, imported, () => update.record, update.change))
             throw new Error("卡片已更新，请刷新后重试");
     }
 
@@ -145,18 +189,20 @@ export class BoardRecords {
         { account, id, expected }: RecordRevision,
         imported: Record<string, CardRecord>,
         apply: (current: CardRecord | undefined) => CardRecord | undefined,
+        event?: RecordChange,
     ): boolean {
         const accounts = this.read();
         const rows = Object.hasOwn(accounts, account) ? (accounts[account] ?? {}) : {};
-        const current = Object.hasOwn(rows, id)
-            ? rows[id]
-            : Object.hasOwn(imported, id)
-              ? imported[id]
-              : undefined;
+        const saved = Object.hasOwn(rows, id) ? rows[id] : undefined;
+        const current = saved ?? (Object.hasOwn(imported, id) ? imported[id] : undefined);
         if ((current?.version ?? 0) !== expected) return false;
         const record = apply(current);
         if (!record) return false;
-        atomicWrite(this.file, { ...accounts, [account]: { ...rows, [id]: record } });
+        const { changes: _changes, ...card } = record as StoredCardRecord;
+        const changes = saved?.changes ?? [];
+        if (event) changes.push(savedChange(event, card));
+        const stored = changes.length ? { ...card, changes } : card;
+        atomicWrite(this.file, { ...accounts, [account]: { ...rows, [id]: stored } });
         return true;
     }
 }

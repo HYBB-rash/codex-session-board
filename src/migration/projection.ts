@@ -13,6 +13,8 @@ type OldColumn =
     | "cwd"
     | "state"
     | "note"
+    | "changed_at"
+    | "source_sequence"
     | "version"
     | "input_version"
     | "input_revision"
@@ -116,11 +118,19 @@ export interface LegacyImportDatabase {
     archiveItems: OldRow[];
 }
 
+export interface LegacyCardChange {
+    changedAt: number;
+    state: string | null;
+    note: string;
+    source: { database: string; sequence: number };
+}
+
 export interface MigratedBoard {
     migrationId: string;
     accountKey: string;
     preferences: LegacyPreferences;
     cards: Record<string, LegacyCardRecord>;
+    changes: Record<string, LegacyCardChange[]>;
     columnSorts: Partial<Record<LegacyColumn, ColumnSort>>;
     databases: LegacyImportDatabase[];
     unboundHostDirectories: string[];
@@ -226,6 +236,7 @@ function readPreferences(config: OldConfig): LegacyPreferences {
 const tables = [
     "sessions",
     "remote_sessions",
+    "changes",
     "settings",
     "remote_projects",
     "title_updates",
@@ -235,13 +246,41 @@ const tables = [
 type OldTable = (typeof tables)[number];
 
 class OldDatabase {
-    constructor(private readonly database: DatabaseSync) {}
+    constructor(
+        private readonly database: DatabaseSync,
+        private readonly relative: string,
+    ) {}
 
     rows(table: OldTable): OldRow[] {
         const found = this.database
             .prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?")
             .get(table);
-        return found ? this.database.prepare(`SELECT * FROM ${table}`).all() : [];
+        if (!found) return [];
+        const select =
+            table === "changes"
+                ? "rowid AS source_sequence, * FROM changes ORDER BY rowid"
+                : `* FROM ${table}`;
+        return this.database.prepare(`SELECT ${select}`).all();
+    }
+
+    changeHistory(): Map<string, LegacyCardChange[]> {
+        const history = new Map<string, LegacyCardChange[]>();
+        for (const row of this.rows("changes")) {
+            const id = text(row.thread_id);
+            const changedAt = finite(row.changed_at);
+            const note = text(row.note);
+            const sequence = row.source_sequence;
+            if (!id || changedAt === null || note === null || !validInteger(sequence)) continue;
+            const changes = history.get(id) ?? [];
+            changes.push({
+                changedAt,
+                state: text(row.state),
+                note,
+                source: { database: this.relative, sequence },
+            });
+            history.set(id, changes);
+        }
+        return history;
     }
 }
 
@@ -313,6 +352,27 @@ function oldCardId(record: LegacyCardRecord): string {
         : JSON.stringify([record.hostId, record.threadId]);
 }
 
+function addCard(
+    board: MigratedBoard,
+    record: LegacyCardRecord,
+    history: LegacyCardChange[] | undefined,
+): void {
+    const id = oldCardId(record);
+    board.cards[id] = record;
+    if (!history?.length) return;
+    const existing = board.changes[id];
+    board.changes[id] = existing ? [...existing, ...history].sort(changeOrder) : history;
+}
+
+function changeOrder(left: LegacyCardChange, right: LegacyCardChange): number {
+    const leftDatabase = left.source.database;
+    const rightDatabase = right.source.database;
+    if (leftDatabase === rightDatabase) return left.source.sequence - right.source.sequence;
+    if (leftDatabase === databaseName) return -1;
+    if (rightDatabase === databaseName) return 1;
+    return leftDatabase.localeCompare(rightDatabase);
+}
+
 function readSettings(database: OldDatabase): Record<string, string> {
     return Object.fromEntries(
         database.rows("settings").flatMap((row) => {
@@ -344,13 +404,18 @@ function readDatabase(
     const database = new DatabaseSync(join(migration.directory, relative), { readOnly: true });
     try {
         database.exec("PRAGMA trusted_schema=OFF");
-        action(new OldDatabase(database));
+        action(new OldDatabase(database, relative));
     } finally {
         database.close();
     }
 }
 
-function readBoundDatabase(database: OldDatabase, scope: Scope, board: MigratedBoard) {
+function readBoundDatabase(
+    database: OldDatabase,
+    scope: Scope,
+    board: MigratedBoard,
+    history = database.changeHistory(),
+) {
     const settings = readSettings(database);
     const titleUpdates = database.rows("title_updates");
     const titleJobs = new Map(
@@ -376,7 +441,7 @@ function readBoundDatabase(database: OldDatabase, scope: Scope, board: MigratedB
             const error = text(job.error);
             record.title = { state: jobState, ...(error ? { error } : {}) };
         }
-        board.cards[oldCardId(record)] = record;
+        addCard(board, record, history.get(id));
     }
     return settings;
 }
@@ -388,14 +453,15 @@ function readRootDatabase(
     board: MigratedBoard,
 ) {
     const scope = scopeFor(binding.hosts, text(config.host_id) ?? "local");
-    if (scope) board.columnSorts = readSorts(readBoundDatabase(database, scope, board));
+    const history = database.changeHistory();
+    if (scope) board.columnSorts = readSorts(readBoundDatabase(database, scope, board, history));
     for (const row of database.rows("remote_sessions")) {
         const source = text(row.host_id);
         const id = text(row.thread_id);
         const remote = source && scopeFor(binding.hosts, source);
         if (!id || !remote) continue;
         const record = representCard(remote, row, id, true);
-        board.cards[oldCardId(record)] = record;
+        addCard(board, record, history.get(text(row.id) ?? ""));
     }
 }
 
@@ -431,6 +497,7 @@ export function readMigratedBoard(
         accountKey: JSON.stringify([binding.accountId, binding.userId]),
         preferences: readPreferences(config),
         cards: Object.create(null),
+        changes: Object.create(null),
         columnSorts: {},
         databases: [],
         unboundHostDirectories: [],

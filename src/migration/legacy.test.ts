@@ -32,6 +32,7 @@ const sourceRemote = "remote:original";
 const sourceOffline = "remote:offline";
 const installedRemote = "remote-ssh-discovered:original";
 const threadId = "019ba3a3-ca32-7000-8000-d2079233e205";
+const legacyRemoteId = `remote:${JSON.stringify(["codex", sourceRemote, threadId])}`;
 const remoteDirectory = (host: string) => createHash("sha256").update(host).digest("hex");
 
 const fixtureSchema = `
@@ -42,7 +43,7 @@ const fixtureSchema = `
         native_state TEXT, native_section TEXT, runtime_pending_key TEXT, archived INTEGER NOT NULL,
         turn_json TEXT
     );
-    CREATE TABLE changes (thread_id TEXT, changed_at REAL, state TEXT, note TEXT);
+    CREATE TABLE changes (sequence INTEGER PRIMARY KEY, thread_id TEXT, changed_at REAL, state TEXT, note TEXT);
     CREATE TABLE title_updates (thread_id TEXT, version INTEGER, state TEXT, requested_at REAL, error TEXT);
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
     CREATE TABLE archive_batches (id TEXT PRIMARY KEY, created_at REAL, finished_at REAL);
@@ -53,6 +54,23 @@ const fixtureSchema = `
     CREATE TABLE remote_projects (id TEXT, value TEXT);
 `;
 
+function seedChanges(database: DatabaseSync, host: string): void {
+    const append = database.prepare(
+        "INSERT INTO changes (thread_id, changed_at, state, note) VALUES (?, ?, ?, ?)",
+    );
+    append.run(threadId, 9, "review", `${host} history`);
+    append.run(threadId, 9, null, "");
+    append.run(threadId, 8, "blocked", `${host} clock changed`);
+    if (host === "local") {
+        database
+            .prepare(
+                "INSERT INTO remote_sessions VALUES (?, ?, ?, 'cached', '/old', 8, 'review', 'cached', 12, 7)",
+            )
+            .run(legacyRemoteId, sourceRemote, threadId);
+        append.run(legacyRemoteId, 8, "review", "cached remote history");
+    }
+}
+
 function seed(database: DatabaseSync, host: string): void {
     database.exec(fixtureSchema);
     database.exec("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0");
@@ -62,9 +80,7 @@ function seed(database: DatabaseSync, host: string): void {
         'to_archive', 'old-replica', 'pending-phase', 0,
         '{"id":"turn","userItems":["msg-a","msg-b","msg-c"],"hasFinal":true}')`)
         .run(threadId, `${host} WAL note`);
-    database
-        .prepare("INSERT INTO changes VALUES (?, 9, 'review', ?)")
-        .run(threadId, `${host} history`);
+    seedChanges(database, host);
     database
         .prepare("INSERT INTO title_updates VALUES (?, 12, 'to_archive', 10, ?)")
         .run(threadId, `${host} title retry`);
@@ -272,22 +288,63 @@ const installedOffline = "remote-ssh-discovered:offline";
 const offlineId = JSON.stringify([installedOffline, threadId]);
 const archiveColumn = "to_archive";
 
+test("legacy change histories keep their source sequence and separate same-ID hosts", async () => {
+    const fixture = scopeFixture();
+    try {
+        await migrateLegacyBoard(fixture);
+        const board = readMigratedBoard(fixture.destination, {
+            accountId,
+            userId,
+            hosts: { local: "local", [sourceRemote]: installedRemote },
+        });
+        const local = board.changes[threadId];
+        const remote = board.changes[installedId];
+        assert.deepEqual(
+            local?.map(({ changedAt, state, note, source }) => [
+                source.sequence,
+                changedAt,
+                state,
+                note,
+            ]),
+            [
+                [1, 9, "review", "local history"],
+                [2, 9, null, ""],
+                [3, 8, "blocked", "local clock changed"],
+            ],
+        );
+        assert.equal(remote?.[0]?.source.database, "status.sqlite3");
+        assert.equal(remote?.[0]?.source.sequence, 4);
+        assert.equal(remote?.[0]?.note, "cached remote history");
+        const boundDatabase = `remote-hosts/${remoteDirectory(sourceRemote)}/status.sqlite3`;
+        assert.deepEqual(
+            remote?.slice(1).map(({ source, note }) => [source.database, source.sequence, note]),
+            [
+                [boundDatabase, 1, `${sourceRemote} history`],
+                [boundDatabase, 2, ""],
+                [boundDatabase, 3, `${sourceRemote} clock changed`],
+            ],
+        );
+        assert.equal(board.changes[offlineId], undefined);
+    } finally {
+        fixture.close();
+    }
+});
+
 function runtimeFixture(fixture: ReturnType<typeof scopeFixture>) {
     const directory = join(fixture.base, "runtime");
     const destination = join(directory, "legacy-migration");
     const bindingFile = join(directory, "legacy-binding.json");
     const recordsFile = join(directory, "records.json");
     const ledgersFile = join(directory, "ledger.json");
-    const retiredRemote = `remote:${JSON.stringify(["codex", sourceRemote, threadId])}`;
     mkdirSync(directory);
     const main = fixture.databases[0];
     assert.ok(main);
     main.prepare(
         "INSERT INTO archive_batch_items VALUES ('batch', 1, ?, ?, 'awaiting', NULL, NULL, NULL)",
     ).run(
-        retiredRemote,
+        legacyRemoteId,
         JSON.stringify({
-            id: retiredRemote,
+            id: legacyRemoteId,
             title: "remote",
             version: 12,
             inputVersion: 7,
@@ -306,6 +363,56 @@ function runtimeFixture(fixture: ReturnType<typeof scopeFixture>) {
             writeFileSync(bindingFile, JSON.stringify({ accountId, userId, hosts })),
     };
 }
+
+test("migration rollback removes projected histories and keeps later manual changes", async () => {
+    const fixture = scopeFixture();
+    try {
+        const { directory, destination, migration, records, recordsFile, writeBinding } =
+            runtimeFixture(fixture);
+        const imported = await migrateLegacyBoard({ ...fixture, destination });
+        writeBinding({ local: "local", [sourceRemote]: installedRemote });
+        const seed = migration.forAccount(storedAccount);
+        assert.ok(seed?.board.changes[threadId]?.length);
+        assert.ok(seed.board.changes[installedId]?.length);
+        assert.equal(migration.forAccount(JSON.stringify([accountId, "another-user"])), undefined);
+        const authored = [
+            [threadId, "new local"],
+            [installedId, "new remote"],
+        ] as const;
+        for (const [id, note] of authored) {
+            records.write(
+                {
+                    account: storedAccount,
+                    id,
+                    expected: 12,
+                    record: { note, manual: true, version: 13, inputVersion: 7 },
+                    change: { kind: "manual", state: "completed" },
+                },
+                seed.board.cards,
+            );
+        }
+        const saved = readFileSync(recordsFile, "utf8");
+        const accounts = JSON.parse(saved) as Record<
+            string,
+            Record<string, { changes: { note: string }[] }>
+        >;
+        for (const [id, note] of authored) {
+            const changes = accounts[storedAccount]?.[id]?.changes;
+            assert.deepEqual(
+                changes?.map(({ note }) => note),
+                [note],
+            );
+        }
+        rollbackLegacyMigration(destination, imported.receipt.id);
+        assert.equal(new LegacyBoardRuntime(directory).forAccount(storedAccount), undefined);
+        assert.equal(migration.forAccount(storedAccount), undefined);
+        assert.equal(readFileSync(recordsFile, "utf8"), saved);
+        const current = new BoardRecords(recordsFile).account(storedAccount);
+        for (const [id, note] of authored) assert.equal(current[id]?.note, note);
+    } finally {
+        fixture.close();
+    }
+});
 
 function assertSeeded(runtime: ReturnType<typeof runtimeFixture>) {
     const { migration, records, ledgers, recordsFile, ledgersFile } = runtime;
