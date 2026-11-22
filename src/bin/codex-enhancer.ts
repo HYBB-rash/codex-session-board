@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
+import { dirname } from "node:path";
 import { detect, findSystemApp, formatDetection } from "../installer/detect.js";
 import { install } from "../installer/install.js";
 import { launch } from "../installer/launch.js";
 import { packageRelease } from "../installer/package-release.js";
+import { outputDir } from "../installer/paths.js";
 import { releasePlatform, releasePlatforms } from "../installer/release-manifest.js";
 import { activateRelease, activeRelease, rollbackRelease } from "../installer/releases.js";
 import { restore } from "../installer/restore.js";
@@ -16,7 +18,32 @@ function fail(error: unknown): void {
     process.exitCode = 1;
 }
 
-if (command === "detect") {
+async function runInPlace(): Promise<void> {
+    const installer = await import("../installer/in-place.js");
+    const candidate = process.argv[4];
+    if (process.argv.length > (command === "update" ? 5 : 4))
+        throw new Error("原地安装命令参数无效");
+    if (command === "in-place-check")
+        console.log(JSON.stringify(await installer.runInPlaceCheck()));
+    else if (command === "install")
+        console.log(JSON.stringify(installer.installInPlace(dirname(outputDir))));
+    else if (command === "uninstall") console.log(JSON.stringify(installer.uninstallInPlace()));
+    else if (command === "status") console.log(JSON.stringify(installer.inPlaceStatus()));
+    else {
+        if (command === "update" && !candidate) throw new Error("请提供已解压的新版看板目录");
+        console.log(
+            `看板版本 ${installer.adjustInPlaceRelease(candidate)}。请从原图标重启 Codex。`,
+        );
+    }
+}
+
+if (
+    command === "in-place-check" ||
+    (["install", "uninstall", "status", "update", "rollback"].includes(command ?? "") &&
+        process.argv[3] === "--in-place")
+) {
+    void runInPlace().catch(fail);
+} else if (command === "detect") {
     try {
         console.log(formatDetection(detect(findSystemApp().appDir)));
     } catch (error) {
@@ -84,7 +111,7 @@ if (command === "detect") {
     }
 } else {
     console.log(
-        "Usage: codex-enhancer detect|install|uninstall|status|launch|update <directory>|rollback|package <version> <output> [platform]",
+        "Usage: codex-enhancer detect|install [--in-place]|uninstall [--in-place]|status [--in-place]|launch|update [--in-place] <directory>|rollback [--in-place]|package <version> <output> [platform]",
     );
     process.exitCode = command ? 1 : 0;
 }

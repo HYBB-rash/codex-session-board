@@ -1,0 +1,100 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { IN_PLACE_APP, IN_PLACE_ARCHIVE, IN_PLACE_ROOT } from "./constants.js";
+import { presentFile, syncDirectory } from "./in-place-archive.js";
+import { assertSystemPath } from "./in-place-target.js";
+import { systemWatcherFiles, systemWatcherLinks } from "./in-place-watcher.js";
+import { releaseManifestName, verifyRelease } from "./release-manifest.js";
+
+const control = path.join(IN_PLACE_ROOT, "control");
+const stagedControl = path.join(IN_PLACE_ROOT, ".control-stage");
+const node = "/usr/bin/node";
+const watcher = systemWatcherFiles({
+    node,
+    cli: path.join(control, "dist/bin/codex-enhancer.js"),
+    watch: path.dirname(path.join(IN_PLACE_APP, IN_PLACE_ARCHIVE)),
+});
+
+export function assertSystemRegistrationClear(): void {
+    for (const file of [...watcher.keys(), ...systemWatcherLinks().keys()]) {
+        if (fs.lstatSync(file, { throwIfNoEntry: false }))
+            throw new Error(`已有同名的升级检查器登记：${file}`);
+    }
+}
+
+export function installControl(packageRoot: string): void {
+    if (fs.existsSync(control)) {
+        assertSystemPath(control, true);
+        verifyRelease(control);
+        return;
+    }
+    fs.rmSync(stagedControl, { recursive: true, force: true });
+    fs.mkdirSync(stagedControl, { mode: 0o755 });
+    fs.cpSync(path.join(packageRoot, "dist"), path.join(stagedControl, "dist"), {
+        recursive: true,
+    });
+    fs.copyFileSync(
+        path.join(packageRoot, releaseManifestName),
+        path.join(stagedControl, releaseManifestName),
+    );
+    verifyRelease(stagedControl);
+    for (const item of fs.readdirSync(stagedControl, { recursive: true, withFileTypes: true })) {
+        const file = path.join(item.parentPath, item.name);
+        fs.chownSync(file, 0, 0);
+        if (item.isDirectory()) {
+            fs.chmodSync(file, 0o755);
+        } else {
+            fs.chmodSync(file, file.endsWith("/codex-session-board.js") ? 0o755 : 0o644);
+            const fd = fs.openSync(file, "r");
+            try {
+                fs.fsyncSync(fd);
+            } finally {
+                fs.closeSync(fd);
+            }
+        }
+    }
+    for (const item of fs
+        .readdirSync(stagedControl, { recursive: true, withFileTypes: true })
+        .reverse()) {
+        if (item.isDirectory()) syncDirectory(path.join(item.parentPath, item.name));
+    }
+    syncDirectory(stagedControl);
+    fs.renameSync(stagedControl, control);
+    syncDirectory(IN_PLACE_ROOT);
+}
+
+function hasOwnedUnit(file: string, contents: string, link: boolean): boolean {
+    const info = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (!info) return false;
+    const matches =
+        info.uid === 0 &&
+        (link
+            ? info.isSymbolicLink() && fs.readlinkSync(file) === contents
+            : info.isFile() && info.nlink === 1 && fs.readFileSync(file, "utf8") === contents);
+    if (!matches) throw new Error(`升级检查登记已变化：${file}`);
+    return true;
+}
+
+export function configureWatcher(enabled: boolean): void {
+    for (const [file, contents] of [...watcher, ...systemWatcherLinks()]) {
+        const link = !watcher.has(file);
+        if (hasOwnedUnit(file, contents, link)) {
+            if (!enabled) fs.unlinkSync(file);
+        } else if (enabled) {
+            const directory = path.dirname(file);
+            fs.mkdirSync(directory, { recursive: true, mode: 0o755 });
+            assertSystemPath(directory, true);
+            if (link) {
+                fs.symlinkSync(contents, file);
+            } else {
+                const next = `${file}.codex-enhancer-stage`;
+                if (presentFile(next)) fs.unlinkSync(next);
+                fs.writeFileSync(next, contents, { flag: "wx", mode: 0o644, flush: true });
+                fs.renameSync(next, file);
+            }
+        } else if (!link && presentFile(`${file}.codex-enhancer-stage`)) {
+            fs.unlinkSync(`${file}.codex-enhancer-stage`);
+        }
+        if (fs.existsSync(path.dirname(file))) syncDirectory(path.dirname(file));
+    }
+}
