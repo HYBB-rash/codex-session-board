@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -98,7 +99,7 @@ async function liveBoard(context) {
         assert.ok("result" in response);
         return response.result;
     };
-    return { ...server, board, client, mcpUpdate };
+    return { ...server, directory, board, client, mcpUpdate };
 }
 
 function assertRejected(result) {
@@ -111,6 +112,139 @@ function changes(board) {
     const [records] = Object.values(JSON.parse(board.persisted().files[0]));
     return records[board.card().id]?.changes ?? [];
 }
+
+function packageMcp(directory) {
+    const root = new URL("../", import.meta.url);
+    const plugin = JSON.parse(readFileSync(new URL(".codex-plugin/plugin.json", root)));
+    const { mcpServers } = JSON.parse(readFileSync(new URL(plugin.mcpServers, root)));
+    const server = mcpServers.session_board;
+    assert.equal(server.command, "node");
+    assert.ok(server.env_vars.includes("CODEX_ENHANCER_STATE_DIR"));
+    return {
+        icon: readFileSync(new URL(plugin.interface.composerIcon, root)).toString("base64"),
+        async call(requests) {
+            const output = await new Promise((resolve, reject) => {
+                const child = execFile(
+                    process.execPath,
+                    server.args,
+                    {
+                        cwd: new URL(server.cwd, root),
+                        env: { ...process.env, CODEX_ENHANCER_STATE_DIR: directory },
+                        timeout: 10_000,
+                        maxBuffer: 4 * 1024 * 1024,
+                    },
+                    (error, stdout) => (error ? reject(error) : resolve(stdout)),
+                );
+                child.stdin.end(
+                    requests
+                        .map(([method, params], id) =>
+                            JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+                        )
+                        .join("\n"),
+                );
+            });
+            const responses = output.trim().split("\n").map(JSON.parse);
+            assert.equal(responses.length, requests.length);
+            return responses.map((response, index) => {
+                assert.equal(response.id, index);
+                assert.ok("result" in response, JSON.stringify(response));
+                return response.result;
+            });
+        },
+    };
+}
+
+test("the installed MCP plugin declares one global entrypoint for the complete board page", async (context) => {
+    const { board, directory, url } = await liveBoard(context);
+    const mcp = packageMcp(directory);
+    const [tools, listed] = await mcp.call([["tools/list"], ["resources/list"]]);
+    const global = tools.tools.filter((tool) =>
+        tool._meta?.["openai/ui"]?.entrypoints?.some(({ type }) => type === "global"),
+    );
+    assert.equal(global.length, 1);
+    const [view] = global;
+    assert.equal(view.name, "board_view");
+    assert.equal(view.title, "会话看板");
+    assert.equal(view.annotations.readOnlyHint, true);
+    assert.deepEqual(view._meta.ui.visibility, ["app", "model"]);
+    assert.deepEqual(view._meta["openai/ui"].entrypoints, [{ type: "global" }]);
+    assert.deepEqual(view.icons[0], {
+        src: `data:image/svg+xml;base64,${mcp.icon}`,
+        mimeType: "image/svg+xml",
+    });
+    const resourceUri = view._meta.ui.resourceUri;
+    assert.deepEqual(listed.resources, [
+        { uri: resourceUri, name: "会话看板", mimeType: "text/html;profile=mcp-app" },
+    ]);
+    const [published, opened, snapshot] = await mcp.call([
+        ["resources/read", { uri: resourceUri }],
+        ["tools/call", { name: view.name }],
+        ["tools/call", { name: "board_snapshot" }],
+    ]);
+    const [page] = published.contents;
+    assert.equal(page.uri, resourceUri);
+    assert.equal(page.mimeType, listed.resources[0].mimeType);
+    assert.equal(page._meta["openai/ui"].preferredDisplayMode, "fullscreen");
+    assert.equal(opened.structuredContent.ready, true);
+    assert.deepEqual(snapshot.structuredContent.sessions, [board.card()]);
+    const html = await fetch(url);
+    assert.equal(html.status, 200);
+    assert.match(await html.text(), /<script src="\/board\.js" defer>/);
+    const script = await fetch(new URL("/board.js", url));
+    assert.equal(script.status, 200);
+    const webPage = await script.text();
+    for (const content of [page.text, webPage]) {
+        for (const landmark of ["board-viewport", "reply-reader", "board-editor"]) {
+            assert.ok(content.includes(landmark), landmark);
+        }
+    }
+});
+
+test("MCP App and the web page read each other's saved board state", async (context) => {
+    const { board, directory, url } = await liveBoard(context);
+    const mcp = packageMcp(directory);
+    const call = (name, args) => ["tools/call", { name, arguments: args }];
+    const sessionFromHTTP = async () => {
+        const response = await fetch(new URL("/api/sessions", url));
+        assert.equal(response.status, 200);
+        const { sessions } = await response.json();
+        assert.equal(sessions.length, 1);
+        return sessions[0];
+    };
+    const initial = await sessionFromHTTP();
+    const { requestToken } = await (await fetch(new URL("/api/info", url))).json();
+    const response = await fetch(new URL("/api/state", url), {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": requestToken,
+            Origin: new URL(url).origin,
+        },
+        body: JSON.stringify(board.edit("to_archive", "网页保存的备注")),
+    });
+    assert.equal(response.status, 200);
+    const webSaved = (await response.json()).session;
+    assert.equal(webSaved.id, initial.id);
+    assert.equal(webSaved.version, initial.version + 1);
+    assert.equal(webSaved.inputVersion, initial.inputVersion);
+    assert.equal(webSaved.state, "to_archive");
+    assert.equal(webSaved.note, "网页保存的备注");
+    const [readBack, saved] = await mcp.call([
+        call("board_snapshot"),
+        call("board_update", board.edit("blocked", "MCP 保存的备注")),
+    ]);
+    assert.deepEqual(readBack.structuredContent.sessions, [webSaved]);
+    assert.equal(saved.structuredContent.ok, true);
+    const mcpSaved = saved.structuredContent.session;
+    assert.equal(mcpSaved.id, initial.id);
+    assert.equal(mcpSaved.version, webSaved.version + 1);
+    assert.equal(mcpSaved.inputVersion, webSaved.inputVersion);
+    assert.equal(mcpSaved.state, "blocked");
+    assert.equal(mcpSaved.note, "MCP 保存的备注");
+    board.reopen();
+    await board.service.refresh();
+    assert.deepEqual(await sessionFromHTTP(), mcpSaved);
+});
 
 test("the MCP resource bundles its SDK and styles without linked scripts or frames", async () => {
     const rpc = createMcpHandler({
