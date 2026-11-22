@@ -125,7 +125,7 @@ def fingerprint_of(paths):
     return digest.hexdigest()
 
 
-def requirement_results(contract, results):
+def validate_model_bindings(contract, results):
     evidence = read_json("typescript-evidence.json")
     require(evidence["baseline"] == BASELINE, "逐项映射的上游提交不符")
     bindings = evidence["requirements"]
@@ -136,18 +136,16 @@ def requirement_results(contract, results):
     actual = {row["id"]: row for row in results}
     linked = {check for item in bindings.values() for check in item.get("checks", [])}
     require(linked == set(actual), "自动结果缺失、未绑定或出现未登记检查")
-    rows = []
     for identifier, item in bindings.items():
-        checks = [actual[check] for check in item.get("checks", [])]
         missing = item["missing"]
         require(missing and item["sources"], f"{identifier} 缺少取证范围或待验证原因")
-        status = "fail" if any(check["status"] == "fail" for check in checks) else "pending"
-        rows.append({"id": identifier, "status": status, **item, "results": checks})
-    return rows
 
 
 def main():
-    parser = argparse.ArgumentParser(description="在隔离夹具中重放冻结契约，逐项报告取证缺口")
+    if "--model-only" not in sys.argv[1:]:
+        from release_gate import main as release
+        return release()
+    parser = argparse.ArgumentParser(description="在隔离夹具中重放冻结契约")
     parser.add_argument("--node", default="node")
     parser.add_argument("--model-only", action="store_true")
     args = parser.parse_args()
@@ -159,26 +157,22 @@ def main():
             "README.md", "package.json", "package-lock.json", "tsconfig.json",
         ))
         runtime_fingerprint = fingerprint_of(("dist/extensions/session-board",))
-        requirements = requirement_results(contract, results)
+        validate_model_bindings(contract, results)
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(json.dumps({"releaseReady": False, "error": str(error)}, ensure_ascii=False))
         return 2
     automated = all(row["status"] == "pass" for row in results)
-    release_ready = automated and all(row["status"] == "pass" for row in requirements)
     report = {
         "contract": contract["contract_id"],
         "baseline": BASELINE,
         "sourceFingerprint": source_fingerprint,
         "runtimeFingerprint": runtime_fingerprint,
         "automatedModelPassed": automated,
-        "releaseReady": release_ready,
+        "releaseReady": False,
         "checks": results,
     }
-    if not args.model_only:
-        report["requirements"] = requirements
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    passed = automated if args.model_only else release_ready
-    return 0 if passed else 2
+    return 0 if automated else 2
 
 
 if __name__ == "__main__":

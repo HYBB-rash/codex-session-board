@@ -2,10 +2,10 @@
 
 ```bash
 npm run build
-python3 -B acceptance/verify-typescript.py
+python3 -B acceptance/verify-typescript.py --model-only
 ```
 
-脚本输出源文件和受测运行模块的指纹、模型对照结果及 31 项要求的证据缺口。有待验证、失败或未绑定结果时退出 `2`，`releaseReady` 为 `false`。只复跑当前自动对照时可加 `--model-only`。
+模型模式输出源文件和受测运行模块的指纹、全部模型对照结果。任何对照失败时退出 `2`。完整 31 项要求由[发布门槛](release-gate.md)核验。
 
 模型对照沿用上游 `tests/board_contract.rs` 的 40 个可达起点、13 种事件、520 条边及 1,417 次操作，含重开、查看各 40 次。每步比较状态、人工选择、备注及版本。重开和查看额外比较记录文件、归档账本和原生写入次数。夹具只模拟 Codex 请求回执和侧栏分区，调用生产 `BoardService`、`DesktopConnection`、`BoardRecords` 和 `BoardLedgers`，持久化写入位于回收的临时目录。
 

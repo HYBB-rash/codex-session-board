@@ -58,6 +58,6 @@
         "SECURITY-001": [["http-security"], [], []],
         "HEALTH-001": [[], []],
         "DELIVERY-001": [[], [], []],
-        "GATE-001": [[], [], []]
+        "GATE-001": [["gate-tests"], ["gate-tests"], ["gate-tests"]]
     }
 }
