@@ -15,6 +15,7 @@ import { mountBoardNewTarget } from "./board-new-target";
 import { createColumnSortSave, type SortPreference } from "./board-sorting";
 
 export interface BoardSnapshot {
+  accountScope?: string;
   states: Record<string, string>;
   sessions: BoardSession[];
   health: BoardHealth;
@@ -30,9 +31,14 @@ export interface BoardSnapshot {
 
 export type BoardRequest = (path: string, body?: object) => Promise<unknown>;
 
-export function mountBoardPage(root: ShadowRoot | Document, transport: BoardRequest) {
+export function mountBoardPage(
+  root: HTMLElement,
+  transport: BoardRequest,
+  replaceAccount: (snapshot: BoardSnapshot) => void,
+  initial?: BoardSnapshot,
+) {
 function byId<Element extends HTMLElement>(id: string): Element {
-  const element = root.getElementById(id);
+  const element = root.querySelector(`#${id}`);
   if (!element) throw new Error(`缺少看板元素 ${id}`);
   return element as Element;
 }
@@ -53,7 +59,9 @@ const invalidateSnapshot = (): void => { refresh.invalidate(); };
 const request: BoardRequest = async (path, body) => {
   lifetime.signal.throwIfAborted();
   if (body !== undefined) updateFilterLock();
-  return transport(path, body);
+  const result = await transport(path, body);
+  lifetime.signal.throwIfAborted();
+  return result;
 };
 const { filters, hostOptions, hostProjects, hostSessions, hostName, projectLabel, projectPresentation, visibleSessions } =
   mountBoardBrowse(byId("board-filters"), byId("filter-scope"), { snapshot, locked: filtersLocked, changed: render, announce });
@@ -130,6 +138,7 @@ const board = mountBoard({
 });
 
 function announce(message: string, error = false) {
+  if (lifetime.signal.aborted) return;
   const feedback = byId("feedback");
   feedback.textContent = message;
   feedback.className = error ? "feedback error" : "feedback";
@@ -145,11 +154,11 @@ function filtersLocked() {
 }
 
 function updateFilterLock() {
-  filters.updateLock();
+  if (!lifetime.signal.aborted) filters.updateLock();
 }
 
 function render(resetState: string | null = null) {
-  if (dragActive() || editorOpen()) return;
+  if (lifetime.signal.aborted || dragActive() || editorOpen()) return;
   filters.update(data);
   newTarget.update();
   const moving = movePanel.moving;
@@ -174,24 +183,30 @@ function render(resetState: string | null = null) {
 }
 
 function load(): Promise<void> {
-  return refresh.load();
+  return lifetime.signal.aborted ? Promise.resolve() : refresh.load();
+}
+
+function applySnapshot(next: BoardSnapshot) {
+  data = next;
+  archive.updateBoard(data);
+  sshSetup.update();
+  replyPreview.update(data.sessions, false);
+  edits.reconcile(data.sessions);
+  newSession.update(data);
+  render();
 }
 
 const stopPluginUpdate = mountPluginUpdate(byId("plugin-update"), byId("plugin-update-status"), request);
 const refresh = mountBoardRefresh(byId("refresh"), {
   request, locked: () => saving || filtersLocked(), moving: () => Boolean(movePanel.moving), announce, render,
-  renderHealth: connectionHealth.render,
-  received(next) {
+  renderHealth: () => { if (!lifetime.signal.aborted) connectionHealth.render(); },
+  currentScope: () => data.accountScope,
+  received(next, accountChanged) {
     if (lifetime.signal.aborted) return;
-    data = next;
-    archive.updateBoard(data);
-    sshSetup.update();
-    replyPreview.update(data.sessions, false);
-    edits.reconcile(data.sessions);
-    newSession.update(data);
-    render();
+    if (accountChanged) replaceAccount(next);
+    else applySnapshot(next);
   },
-});
+}, initial !== undefined);
 
 const boardPage = {
   request, load, refresh, filtersLocked, render, archive, openEditor, openSession, movePanel, moveCard, unconfirmedMoves,
@@ -202,7 +217,9 @@ const boardPage = {
   get creating() { return creating; }, set creating(value: boolean) { creating = value; },
   unmount() {
     lifetime.abort();
+    refresh.invalidate();
     window.clearInterval(poll);
+    board.drag.cancel();
     stopPluginUpdate();
     sessionReader.preview.unmount();
     archive.unmount();
@@ -213,7 +230,10 @@ const boardPage = {
 };
 
 filters.update(data);
-void load().then(() => { if (!lifetime.signal.aborted) return archive.restore(); });
 const poll = window.setInterval(load, 4000);
+if (initial) {
+  applySnapshot(initial);
+  void archive.restore();
+} else void load().then(() => { if (!lifetime.signal.aborted) return archive.restore(); });
 return boardPage;
 }

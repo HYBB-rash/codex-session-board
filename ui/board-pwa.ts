@@ -9,10 +9,12 @@ declare global {
   }
 }
 
-function setupPwa(button: HTMLElement, feedback: HTMLElement) {
+function setupPwa(button: HTMLElement) {
   const installed = window.matchMedia("(display-mode: standalone)");
   let installPrompt: InstallPromptEvent | null = null;
   const report = (message: string) => {
+    const feedback = document.getElementById("feedback");
+    if (!feedback) return;
     feedback.textContent = message;
     feedback.className = "feedback error";
   };
@@ -49,8 +51,7 @@ function setupPwa(button: HTMLElement, feedback: HTMLElement) {
 
 if (window.isSecureContext && window.top === window) {
   const button = document.getElementById("install-app");
-  const feedback = document.getElementById("feedback");
-  if (button && feedback) setupPwa(button, feedback);
+  if (button) setupPwa(button);
 }
 
 export {};

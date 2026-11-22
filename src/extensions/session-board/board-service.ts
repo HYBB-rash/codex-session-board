@@ -195,7 +195,7 @@ function isNewPhase(phase: Phase, current: CardRecord, since: number): boolean {
 export class BoardService {
     private readonly hosts = new Map<HostId, HostSnapshot>();
     private context: SidebarContext | undefined;
-    private accountScope = "";
+    private accountScope: string | null = null;
     private records: Record<string, CardRecord> = {};
     private refreshing: Promise<void> | undefined;
     private readonly editing = new Set<string>();
@@ -250,6 +250,7 @@ export class BoardService {
         const switched = this.context === undefined || account !== accountKey(this.context);
         if (switched && this.context) {
             this.context = undefined;
+            this.accountScope = null;
             this.ports.authority(undefined);
         }
         const settings = await this.ports.settings(account);
@@ -663,9 +664,10 @@ export class BoardService {
         const record = this.records[id] ?? emptyRecord;
         const position = placement(context, hostId, thread);
         const state = presentState(context, position, this.mode);
+        const scope = this.requiredScope();
         return {
             id,
-            accountScope: this.accountScope,
+            accountScope: scope,
             hostId,
             threadId: thread.id,
             title: thread.name || thread.preview || "未命名会话",
@@ -673,7 +675,7 @@ export class BoardService {
             projectId: thread.projectId ? projectKey(hostId, thread.projectId) : null,
             updatedAt: thread.updatedAt,
             state,
-            sectionVersion: scopedSectionVersion(position, this.accountScope),
+            sectionVersion: scopedSectionVersion(position, scope),
             version: record.version,
             inputVersion: record.inputVersion,
             note: record.note,
@@ -775,6 +777,7 @@ export class BoardService {
             .filter((key) => key !== "local")
             .map((key) => ({ hostId: key, hostLabel: hostLabel(key) }));
         return {
+            accountScope: this.requiredScope(),
             states: visibleStates(this.mode),
             sessions: [...this.hosts].flatMap(([hostId, host]) =>
                 this.hostCards(hostId, host, context),
@@ -854,8 +857,13 @@ export class BoardService {
             throw new Error("Codex 账号已变更");
     }
 
+    private requiredScope(): string {
+        if (this.accountScope === null) throw new Error("看板尚未读取当前账号");
+        return this.accountScope;
+    }
+
     private nativeSectionVersion(version: string | null): string {
-        const suffix = sectionScopeSuffix(this.accountScope);
+        const suffix = sectionScopeSuffix(this.requiredScope());
         if (version?.endsWith(suffix)) return `${version.slice(0, -suffix.length)}]`;
         throw new Error("卡片位置或输入已更新，请刷新后重试");
     }
