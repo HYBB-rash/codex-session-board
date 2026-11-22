@@ -33,6 +33,11 @@
             "checkpoint_commit": "5e17a60",
             "coverage": "Fedora 0.3.7 使用已安装 MCP App 写专用卡备注，网页及 Enhancer 读回；新建远程专用项目的空白输入页、首条输入和显式归属读回。"
         },
+        "mcp-global-fixtures": {
+            "file": "docs/session-board-typescript-acceptance.md",
+            "checkpoint_commit": "1e063d4",
+            "coverage": "随包 MCP stdio 暴露单一原生全局入口和完整看板。MCP 工具与网页相互读回已保存的状态和备注，重启后仍可读回。"
+        },
         "release-gate": {
             "file": "acceptance/release-gate.md",
             "checkpoint_commit": "ab2cbdc",
@@ -69,6 +74,10 @@
         "navigation-exact-thread": {
             "file": "src/extensions/session-board/discovery.test.ts",
             "test": "opening rejects invalid, undiscovered and mismatched threads and uses the verified host"
+        },
+        "stale-account-edit": {
+            "file": "src/extensions/session-board/discovery.test.ts",
+            "test": "an in-flight same-column edit cannot persist after the active Codex account switches"
         },
         "preview-previous-complete": {
             "file": "src/extensions/session-board/preview.test.ts",
@@ -417,7 +426,12 @@
                 ".mcp.json",
                 "src/runtime/board-broker.ts"
             ],
-            "evidence": ["native-move", "mcp-stdio", "native-mcp-and-remote-new"],
+            "evidence": [
+                "native-move",
+                "mcp-stdio",
+                "native-mcp-and-remote-new",
+                "mcp-global-fixtures"
+            ],
             "remaining": "Fedora 已从插件详情打开原生 MCP App，三个入口读回同一备注。补最左侧图标直接打开 MCP App 的实测和 macOS 复验。"
         },
         "UI-001": {

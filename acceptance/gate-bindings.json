@@ -48,7 +48,7 @@
             ["all_abstract_state_edges_match_the_typescript_service"],
             ["disabled-titles-preserve-save", "manual-change-history", "automatic-change-history"]
         ],
-        "MANUAL-002": [["mcp-real-revisions"], ["mcp-real-revisions"]],
+        "MANUAL-002": [["mcp-real-revisions", "stale-account-edit"], ["mcp-real-revisions"]],
         "MANUAL-003": [
             ["mcp-real-revisions", "manual-follow-up-recovery"],
             ["manual-follow-up-recovery"]
@@ -81,7 +81,7 @@
             ["navigation-exact-thread", "preview-previous-complete"],
             []
         ],
-        "APP-001": [[], [], []],
+        "APP-001": [["mcp-global-board"], ["mcp-shared-board-state"], ["mcp-global-board"]],
         "UI-001": [[], [], []],
         "UI-002": [
             [],
