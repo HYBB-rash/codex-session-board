@@ -1,11 +1,9 @@
-"use strict";
+export const SENTINEL = "CODEX_ENHANCER_LOADER_V1";
+export const PATCH_VERSION = "0.1.0";
+export const LINK_NAME = ".codex-enhancer-link.json";
+export const APP_ID = "codex-enh-poc";
 
-const SENTINEL = "CODEX_ENHANCER_LOADER_V1";
-const PATCH_VERSION = "0.1.0";
-const LINK_NAME = ".codex-enhancer-link.json";
-const APP_ID = "codex-enh-poc";
-
-function loaderStub() {
+export function loaderStub(): string {
   return (
     `/*${SENTINEL}*/` +
     `;try{const fs=require("fs"),path=require("path"),linkPath=path.join(process.resourcesPath,"..","${LINK_NAME}");` +
@@ -15,11 +13,3 @@ function loaderStub() {
     `catch(e){console.error("${SENTINEL}",e)}\n`
   );
 }
-
-module.exports = {
-  SENTINEL,
-  PATCH_VERSION,
-  LINK_NAME,
-  APP_ID,
-  loaderStub,
-};

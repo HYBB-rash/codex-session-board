@@ -1,15 +1,14 @@
 #!/usr/bin/env node
-"use strict";
 
-const { detect, findSystemApp, formatDetection } = require("../installer/detect");
-const { install } = require("../installer/install");
-const { launch } = require("../installer/launch");
-const { restore } = require("../installer/restore");
-const { formatStatus, status } = require("../installer/status");
+import { detect, findSystemApp, formatDetection } from "../installer/detect.js";
+import { install } from "../installer/install.js";
+import { launch } from "../installer/launch.js";
+import { restore } from "../installer/restore.js";
+import { formatStatus, status } from "../installer/status.js";
 
 const command = process.argv[2];
 
-function fail(error) {
+function fail(error: unknown): void {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 }

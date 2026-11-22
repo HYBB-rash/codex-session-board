@@ -1,22 +1,28 @@
-"use strict";
+/// <reference lib="dom" />
 
-const { ipcRenderer } = require("electron");
+import { ipcRenderer } from "electron";
 
 const buttonId = "codex-enhancer-button";
 
-function isOfficialUi() {
+function isOfficialUi(): boolean {
   return location.protocol === "app:";
 }
 
-function isEnhancerPage() {
-  return document.documentElement?.dataset?.codexEnhancerPage === "1";
+function isEnhancerPage(): boolean {
+  return document.documentElement?.dataset.codexEnhancerPage === "1";
 }
 
-function proof(stage, extra = {}) {
+function proof(stage: string, extra: Record<string, unknown> = {}): void {
   ipcRenderer.send("codex-enhancer:proof", { stage, href: location.href, ...extra });
 }
 
-function mount(label) {
+function buttonLabel(value: unknown): string {
+  if (typeof value !== "object" || value === null || !("buttonLabel" in value)) return "Enhancer";
+  const label = value.buttonLabel;
+  return typeof label === "string" && label.length > 0 ? label : "Enhancer";
+}
+
+function mount(label: string): void {
   if (!isOfficialUi() || isEnhancerPage() || !document.body || document.getElementById(buttonId)) return;
   const button = document.createElement("button");
   button.id = buttonId;
@@ -38,7 +44,7 @@ function mount(label) {
   ].join(";");
   button.addEventListener("click", () => {
     proof("button-clicked");
-    ipcRenderer.invoke("codex-enhancer:open-page").catch((error) => {
+    ipcRenderer.invoke("codex-enhancer:open-page").catch((error: unknown) => {
       proof("open-failed", { error: String(error) });
     });
   });
@@ -46,8 +52,8 @@ function mount(label) {
   proof("button-mounted");
 }
 
-function watch(label) {
-  const refresh = () => mount(label);
+function watch(label: string): void {
+  const refresh = (): void => mount(label);
   refresh();
   const observer = new MutationObserver(refresh);
   observer.observe(document.documentElement, { childList: true, subtree: true });
@@ -59,13 +65,13 @@ ipcRenderer.on("codex-enhancer:auto-open", () => {
 });
 
 ipcRenderer.invoke("codex-enhancer:info").then(
-  (info) => {
-    const label = info?.buttonLabel || "Enhancer";
+  (info: unknown) => {
+    const label = buttonLabel(info);
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", () => watch(label), { once: true });
     } else {
       watch(label);
     }
   },
-  (error) => proof("info-failed", { error: String(error) }),
+  (error: unknown) => proof("info-failed", { error: String(error) }),
 );

@@ -1,14 +1,34 @@
-"use strict";
+import { createRequire } from "node:module";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import type { ExtensionApi, ExtensionContribution, ExtensionModule } from "./api.js";
+import type { App, BrowserWindow, IpcMain, Session, WebContents } from "electron";
 
-const fs = require("node:fs");
-const path = require("node:path");
-
+const requireFromHere = createRequire(__filename);
 const runtimeDirectory = __dirname;
 const home = path.resolve(runtimeDirectory, "..");
 const logPath = path.join(home, "logs", "runtime.jsonl");
 const shotDirectory = path.join(home, "logs", "screenshots");
 
-function log(event, detail = {}) {
+interface RuntimeInfo {
+  codexVersion: string;
+  runtimeType: string;
+  chromiumVersion: string;
+  electronVersion: string | null;
+}
+
+interface ElectronModule {
+  app: App;
+  session: { defaultSession: Session };
+  ipcMain: IpcMain;
+  BrowserWindow: typeof import("electron").BrowserWindow;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function log(event: string, detail: object = {}): void {
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
   fs.appendFileSync(
     logPath,
@@ -16,63 +36,100 @@ function log(event, detail = {}) {
   );
 }
 
-function readAppInfo() {
+function readJson(filePath: string): unknown {
+  return JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown;
+}
+
+function requiredString(value: unknown, key: string, filePath: string): string {
+  if (!isRecord(value) || typeof value[key] !== "string") {
+    throw new Error(`${key} is missing in ${filePath}`);
+  }
+  return value[key];
+}
+
+function optionalString(value: unknown, key: string): string | null {
+  if (!isRecord(value)) return null;
+  const item = value[key];
+  return typeof item === "string" ? item : null;
+}
+
+function readAppInfo(): RuntimeInfo {
   const resources = process.resourcesPath;
-  const metadata = JSON.parse(fs.readFileSync(path.join(resources, "linux-package-metadata.json"), "utf8"));
-  const owl = JSON.parse(fs.readFileSync(path.join(resources, "owl-electron-app.json"), "utf8"));
+  const metadataPath = path.join(resources, "linux-package-metadata.json");
+  const owlPath = path.join(resources, "owl-electron-app.json");
+  const metadata = readJson(metadataPath);
+  const owl = readJson(owlPath);
   const chromium = fs.readFileSync(path.join(resources, "..", "version"), "utf8").trim();
+  const electronVersion = process.versions.electron ?? null;
   return {
-    codexVersion: metadata.version,
-    runtimeType: owl.runtimeName || (process.versions.electron ? "electron" : "unknown"),
+    codexVersion: requiredString(metadata, "version", metadataPath),
+    runtimeType: optionalString(owl, "runtimeName") || (electronVersion ? "electron" : "unknown"),
     chromiumVersion: chromium,
-    electronVersion: process.versions.electron || null,
+    electronVersion,
   };
 }
 
-function loadExtensions() {
+function loadExtension(file: string): ExtensionModule {
+  const loaded: unknown = requireFromHere(file);
+  if (!isRecord(loaded)) throw new Error(`extension is not an object: ${file}`);
+  const id = typeof loaded.id === "string" ? loaded.id : undefined;
+  const setup = typeof loaded.setup === "function" ? loaded.setup as ExtensionModule["setup"] : undefined;
+  return { id, setup };
+}
+
+function loadExtensions(): Array<{ id: string; contribution: ExtensionContribution }> {
   const directory = path.join(home, "extensions");
-  const loaded = [];
+  const loaded: Array<{ id: string; contribution: ExtensionContribution }> = [];
   if (!fs.existsSync(directory)) return loaded;
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const file = path.join(directory, entry.name, "extension.js");
     if (!fs.existsSync(file)) continue;
-    const extension = require(file);
-    const contribution = {};
+    const extension = loadExtension(file);
+    const contribution: ExtensionContribution = {};
     if (typeof extension.setup === "function") {
-      extension.setup({
+      const api: ExtensionApi = {
         log,
         contribute(value) {
           Object.assign(contribution, value);
         },
-      });
+      };
+      extension.setup(api);
     }
     loaded.push({ id: extension.id || entry.name, contribution });
   }
   return loaded;
 }
 
-async function capture(contents, fileName) {
+async function capture(contents: WebContents, fileName: string): Promise<void> {
   const image = await contents.capturePage();
   fs.mkdirSync(shotDirectory, { recursive: true });
   fs.writeFileSync(path.join(shotDirectory, fileName), image.toPNG());
   log("screenshot", { fileName, url: contents.getURL() });
 }
 
-function start() {
+function loadElectron(): ElectronModule {
+  const loaded: unknown = requireFromHere("electron");
+  if (!isRecord(loaded) || !("app" in loaded) || !("BrowserWindow" in loaded) || !("ipcMain" in loaded) || !("session" in loaded)) {
+    throw new Error("electron did not export app, session, ipcMain, and BrowserWindow");
+  }
+  return loaded as unknown as ElectronModule;
+}
+
+function start(): void {
   log("loader-entered", { pid: process.pid, execPath: process.execPath });
-  const { app, session, ipcMain, BrowserWindow } = require("electron");
+  const { app, session, ipcMain, BrowserWindow } = loadElectron();
   const info = readAppInfo();
   const extensions = loadExtensions();
   const buttonLabel = extensions.find((item) => item.contribution.buttonLabel)?.contribution.buttonLabel || "Enhancer";
   log("main-loaded", { ...info, extensions: extensions.map((item) => item.id), buttonLabel });
 
-  const registered = new WeakSet();
+  const registered = new WeakSet<Session>();
   const preloadPath = path.join(runtimeDirectory, "preload.js");
 
-  function installPreload(ses, reason) {
+  function installPreload(ses: Session | null | undefined, reason: string): void {
     if (!ses || registered.has(ses)) return;
-    const register = () => {
+    const register = (): void => {
       if (typeof ses.registerPreloadScript === "function") {
         ses.registerPreloadScript({ type: "frame", filePath: preloadPath, id: "codex-enhancer" });
         log("preload-registered", { reason, via: "registerPreloadScript" });
@@ -100,9 +157,9 @@ function start() {
   });
 
   let opened = false;
-  let pageWindow = null;
+  let pageWindow: BrowserWindow | null = null;
 
-  function pagePayload() {
+  function pagePayload(): RuntimeInfo & { buttonLabel: string; extensions: string[] } {
     return {
       ...info,
       buttonLabel,
@@ -111,13 +168,14 @@ function start() {
   }
 
   ipcMain.handle("codex-enhancer:info", () => pagePayload());
-  ipcMain.on("codex-enhancer:proof", (event, payload) => {
-    log("renderer-proof", payload);
-    if (payload?.stage === "button-mounted") {
+  ipcMain.on("codex-enhancer:proof", (event, payload: unknown) => {
+    const detail = isRecord(payload) ? payload : { payload: String(payload) };
+    log("renderer-proof", detail);
+    if (detail.stage === "button-mounted") {
       const contents = event.sender;
-      const bounds = contents.getOwnerBrowserWindow?.()?.getBounds?.() || BrowserWindow.fromWebContents(contents)?.getBounds();
+      const bounds = contents.getOwnerBrowserWindow?.()?.getBounds() || BrowserWindow.fromWebContents(contents)?.getBounds();
       if (bounds && bounds.width >= 480) {
-        capture(contents, `official-${contents.id}.png`).catch((error) => {
+        capture(contents, `official-${contents.id}.png`).catch((error: unknown) => {
           log("screenshot-failed", { error: String(error) });
         });
       }
@@ -126,8 +184,8 @@ function start() {
         contents.send("codex-enhancer:auto-open");
       }
     }
-    if (payload?.stage === "page-rendered") {
-      capture(event.sender, "custom-page.png").catch((error) => {
+    if (detail.stage === "page-rendered") {
+      capture(event.sender, "custom-page.png").catch((error: unknown) => {
         log("screenshot-failed", { error: String(error) });
       });
     }
@@ -161,13 +219,13 @@ function start() {
     return { ok: true };
   });
 
-  const installExisting = () => installPreload(session.defaultSession, "default-session");
-  const captureSettled = () => {
+  const installExisting = (): void => installPreload(session.defaultSession, "default-session");
+  const captureSettled = (): void => {
     setTimeout(() => {
       for (const win of BrowserWindow.getAllWindows()) {
         const contents = win.webContents;
         if (contents.isDestroyed() || !contents.getURL().startsWith("app://")) continue;
-        capture(contents, "official-settled.png").catch((error) => {
+        capture(contents, "official-settled.png").catch((error: unknown) => {
           log("screenshot-failed", { error: String(error) });
         });
       }

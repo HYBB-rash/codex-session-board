@@ -1,3 +1,15 @@
 state/
 logs/
 node_modules/
+
+dist/
+
+# tsc writes CommonJS next to the paths Electron and the scripts already load.
+bin/*.js
+bin/*.js.map
+installer/*.js
+installer/*.js.map
+runtime/*.js
+runtime/*.js.map
+extensions/**/*.js
+extensions/**/*.js.map

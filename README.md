@@ -38,18 +38,21 @@ Runtime Type: owl
 
 ## 布局
 
+源码是 TypeScript，在 `src/`。`npm run build` 把它编译成 CommonJS。`scripts/` 里的脚本会先编译，再执行 `bin/codex-enhancer.js`。Electron 加载编译结果 `runtime/main.js`、`runtime/preload.js`、`runtime/renderer.js` 和 `extensions/hello-world/extension.js`。
+
 ```text
-bin/codex-enhancer.js
-installer/          detect, asar patch, install, restore, status
-runtime/            main.js, preload.js, renderer.js, page.html
-extensions/hello-world/
-scripts/            install.sh, launch.sh, uninstall.sh
+src/bin/codex-enhancer.ts
+src/installer/      detect, asar patch, install, restore, status
+src/runtime/        main.ts, preload.ts, renderer.ts
+src/extensions/hello-world/
+runtime/page.html
+scripts/            build.sh, install.sh, launch.sh, uninstall.sh
 state/              test copy, backup, install.json; not part of source
 logs/               runtime log and captured window images
 docs/verification-report.md
 ```
 
-`node --test installer/asar.test.js` 检查归档读写，不启动 Codex。
+`npm test` 先编译，再检查归档读写，不启动 Codex。
 
 ## 边界
 

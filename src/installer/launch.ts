@@ -1,13 +1,11 @@
-"use strict";
+import { spawn } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { APP_ID } from "./constants.js";
+import { readState } from "./install.js";
+import * as paths from "./paths.js";
 
-const fs = require("node:fs");
-const path = require("node:path");
-const { spawn } = require("node:child_process");
-const { APP_ID } = require("./constants");
-const { readState } = require("./install");
-const paths = require("./paths");
-
-function launch(extraArgs = []) {
+export function launch(extraArgs: readonly string[] = []): number {
   const state = readState();
   if (!state || state.status !== "installed") {
     throw new Error("install the test copy before launching it");
@@ -31,7 +29,6 @@ function launch(extraArgs = []) {
     },
   });
   child.unref();
+  if (child.pid === undefined) throw new Error("test copy did not start");
   return child.pid;
 }
-
-module.exports = { launch };

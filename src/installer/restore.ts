@@ -1,14 +1,17 @@
-"use strict";
+import { execFileSync } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { sha256File } from "./asar.js";
+import { LINK_NAME } from "./constants.js";
+import { assertTestCopyStopped, readState, writeState, type InstallState } from "./install.js";
+import * as paths from "./paths.js";
 
-const fs = require("node:fs");
-const path = require("node:path");
-const { execFileSync } = require("node:child_process");
-const { sha256File } = require("./asar");
-const { LINK_NAME } = require("./constants");
-const { assertTestCopyStopped, readState, writeState } = require("./install");
-const paths = require("./paths");
+export interface RestoreResult {
+  state: InstallState;
+  archiveHash: string;
+}
 
-function restore() {
+export function restore(): RestoreResult {
   assertTestCopyStopped();
   const state = readState();
   if (!state) throw new Error("nothing is installed");
@@ -31,5 +34,3 @@ function restore() {
   writeState(state);
   return { state, archiveHash: hash };
 }
-
-module.exports = { restore };

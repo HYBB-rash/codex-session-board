@@ -1,30 +1,34 @@
-"use strict";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { entryIncludes, sha256File } from "./asar.js";
+import { SENTINEL } from "./constants.js";
+import { detect, findSystemApp, type Detection } from "./detect.js";
+import { readState, type InstallState } from "./install.js";
 
-const fs = require("node:fs");
-const path = require("node:path");
-const { openArchive, readEntry, sha256File } = require("./asar");
-const { SENTINEL } = require("./constants");
-const { detect, findSystemApp } = require("./detect");
-const { readState } = require("./install");
-
-function entryHasSentinel(archivePath, entryPath) {
-  const archive = openArchive(archivePath);
-  try {
-    return readEntry(archive, entryPath).includes(Buffer.from(SENTINEL));
-  } finally {
-    fs.closeSync(archive.fd);
-  }
+export interface Assessment {
+  result: "not-installed" | "patch-stale" | "removed" | "installed";
+  reasons: string[];
+  hash?: string;
+  sentinel?: boolean;
 }
 
-function assess(state, current) {
-  const reasons = [];
+export interface StatusReport {
+  state: InstallState | null;
+  system: Detection;
+  copy: Detection | null;
+  assessment: Assessment;
+  upstreamChanged: boolean;
+}
+
+export function assess(state: InstallState | null, current: Detection): Assessment {
+  const reasons: string[] = [];
   if (!state) return { result: "not-installed", reasons };
   const archivePath = path.join(state.target.path, state.files.archive.path);
   if (!fs.existsSync(archivePath)) {
     return { result: "patch-stale", reasons: ["archive-missing"] };
   }
   const hash = sha256File(archivePath);
-  const sentinel = entryHasSentinel(archivePath, state.app.entry);
+  const sentinel = entryIncludes(archivePath, state.app.entry, Buffer.from(SENTINEL));
   if (state.status === "removed") {
     if (hash !== state.files.archive.originalSha256) reasons.push("archive-hash-differs-from-original");
     if (sentinel) reasons.push("loader-still-present");
@@ -43,11 +47,11 @@ function assess(state, current) {
   };
 }
 
-function status() {
+export function status(): StatusReport {
   const state = readState();
   const system = detect(findSystemApp().appDir);
-  let copy = null;
-  let assessment = { result: "not-installed", reasons: [] };
+  let copy: Detection | null = null;
+  let assessment: Assessment = { result: "not-installed", reasons: [] };
   if (state && fs.existsSync(state.target.path)) {
     copy = detect(state.target.path);
     assessment = assess(state, copy);
@@ -58,22 +62,16 @@ function status() {
   return { state, system, copy, assessment, upstreamChanged };
 }
 
-function formatStatus(report) {
+export function formatStatus(report: StatusReport): string {
   const lines = [
     `result: ${report.assessment.result}`,
     `system version: ${report.system.codexVersion}`,
     `system runtime: ${report.system.runtimeType}`,
   ];
-  if (report.upstreamChanged) {
+  if (report.upstreamChanged && report.state) {
     lines.push(`upstream changed: ${report.state.source.codexVersion} -> ${report.system.codexVersion}`);
   }
-  if (report.assessment.reasons?.length) lines.push(`reasons: ${report.assessment.reasons.join(", ")}`);
+  if (report.assessment.reasons.length > 0) lines.push(`reasons: ${report.assessment.reasons.join(", ")}`);
   if (report.copy) lines.push(`test copy: ${report.copy.appDir}`);
   return lines.join("\n");
 }
-
-module.exports = {
-  assess,
-  formatStatus,
-  status,
-};
