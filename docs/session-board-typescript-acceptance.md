@@ -2,6 +2,22 @@
 
 上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本通过本机和远程原生移卡检查点。macOS arm64 的目标 Codex 构建在加载看板之前拒绝了经过修改的启动归档，因此发布条件未满足。
 
+## 0.3.13 候选
+
+双平台归档由提交 `e3af361` 构建。发布门槛逐项核对 31 条需求，18 条通过，13 条仍需现场凭证，`releaseReady` 为 `false`。新通过 `MANUAL-001`、`MCP-001`、`DATA-001`、`BOUNDARY-001` 和 `SECURITY-001`。见 `state/acceptance/release-gate-0.3.13.json`。
+
+| 项目 | 结果 |
+| --- | --- |
+| 安装、更新、回退及卸载 | Fedora 从已安装看板点击更新，重启依次读回 `0.3.12 → 0.3.13 → 0.3.12`。卸载恢复副本启动归档，数据夹具 SHA-256 一致。见 `state/acceptance/fedora-installed-0.3.13.txt`。 |
+| Fedora 本机与远程 | 已登录的隔离副本读回本机和 MacBook Pro 专用卡，两个主机均在线，两张卡均显示可打开。见 `state/acceptance/fedora-hosts-0.3.13.json`。 |
+| Fedora 三种列模式 | 隔离看板的四列、五列及旧六状态模式中，列、顶部导航和编辑选项均符合上游顺序。当前本机和远程缺少「待判断」「已完成」原生分区，向这两列写入仍待验。配置逐字节恢复。见 `state/acceptance/fedora-state-001-0.3.13-1795362887379.json`。 |
+| Fedora 阻塞表单 | 实际拖入阻塞列和在阻塞列内拖放均打开可留空的表单。取消保持原生位置和备注，纯空白保存为空字符串。过期状态、输入和分区版本分别被拒绝，空备注草稿在表单内保留。专用卡恢复位置、标题及备注，新增的验收变更历史按正常规则保留。见 `state/acceptance/fedora-ui-002-0.3.13-1795363338773.jsonl`。 |
+| Fedora 回复预览 | 安装版读回本机专用卡的同一轮澄清答复，格式无效的原生跳转请求被拒绝，卡片的状态版本、输入版本及分区版本保持一致。见 `state/acceptance/fedora-preview-0.3.13.json`。 |
+| Fedora 网页与 PWA | 独立 Chrome 配置加载 0.3.13，Service Worker 获得页面控制，浏览器返回空的安装错误列表。系统安装及独立窗口启动仍待验。见 `state/acceptance/fedora-pwa-installability-0.3.13.json`。 |
+| 持久化和迁移 | 已确认的人工保存和自动阶段与卡片数据一起写入变更记录。拒绝的请求和重复观察保持记录不变。迁移保留主库与远程分库的原始记录顺序，回退移除旧投影并保留后来写入的历史。 |
+| 调用边界 | 发现、预览与改名复用现有窗口连接。发现读 `thread/list`、`project/list`、`thread/turns/list`，预览另用 `thread/read` 核对原会话，标题同步用 `thread/read` 和 `thread/name/set`。状态标记夹具验证不会发消息、发起轮次或执行真实归档。 |
+| 双平台干净解包 | Fedora 通过 70 项随包 Node 测试、8 项公共入口测试及 18 项发布门槛测试。MacBook Pro 通过 68 项随包 Node 测试，跳过 2 项 Linux 专用测试。两端各通过 10 项冻结模型检查。macOS 系统 Codex `26.1111.21308` 的预检仍因内嵌 ASAR 摘要拒绝安装，系统启动归档 SHA-256 前后一致。见 `state/acceptance/fedora-clean-0.3.13.log` 和 `state/acceptance/packages/macos-0.3.13-preflight.txt`。 |
+
 ## 0.3.12 候选
 
 双平台归档由提交 `0b22c31` 构建。`0.3.11` 的冻结模型夹具漏接了自动阶段持久化接口，两个对照断言失败。`0.3.12` 修复夹具，两端重新执行，10 项冻结模型检查全部通过。
