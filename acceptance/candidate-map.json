@@ -31,6 +31,19 @@
             "file": "src/extensions/session-board/desktop-connection.test.ts",
             "test": "a disconnected catalog host retires pending reads and prior connection epochs"
         },
+        "title-deadline": {
+            "file": "src/extensions/session-board/desktop-connection.test.ts",
+            "test": "a bounded native call ignores a reply received after its deadline"
+        },
+        "section-replicas": {
+            "file": "src/extensions/session-board/placement.test.ts",
+            "test": "section preflight only accepts unique replicas on the queried host"
+        },
+        "frozen-cross-replay": {
+            "file": "docs/session-board-typescript-acceptance.md",
+            "checkpoint_commit": "da7e451",
+            "coverage": "指定提交的 Rust 及当前 TypeScript 分别运行同一独立模型的 520 条状态边和 1417 次操作，检查状态、版本、备注和查看、重开的持久数据。"
+        },
         "http-security": {
             "file": "src/compat/entrypoints.test.ts",
             "test": "HTTP and PWA use loopback, active origin and validated shared operations"
@@ -180,8 +193,8 @@
                 "src/extensions/session-board/board-service.ts",
                 "src/extensions/session-board/records.ts"
             ],
-            "evidence": ["migration-projection"],
-            "remaining": "验证当前标题失败持久化、重启后重试，以及单次原生三秒预算和前台保存延迟。"
+            "evidence": ["migration-projection", "title-deadline"],
+            "remaining": "补完整标题作业故障注入，核验重启后重试、每轮三秒总预算和前台保存延迟。"
         },
         "TITLE-004": {
             "status": "pending",
@@ -367,8 +380,8 @@
         },
         "stop": {
             "status": "partial",
-            "evidence": ["cli-instance"],
-            "remaining": "验证实际宿主继续运行并核对浏览器/MCP 停止与重新启用行为。"
+            "evidence": ["cli-instance", "fedora-desktop"],
+            "remaining": "已验证停止服务后 Fedora 窗口运行及 CLI 失败回执；补浏览器、MCP 停止后的显示。"
         },
         "mcp": {
             "status": "partial",
@@ -391,8 +404,8 @@
         },
         "check-sections": {
             "status": "partial",
-            "evidence": ["cli-instance", "native-move"],
-            "remaining": "补真实原生分区 ID、异常项、空绑定和退出状态与上游契约对照。"
+            "evidence": ["cli-instance", "section-replicas", "fedora-desktop"],
+            "remaining": "Fedora 如实读回分区 ID 及缺失绑定错误；补 CLI 构建和配置身份字段的契约对照。"
         }
     },
     "goal_checks": {
@@ -433,8 +446,9 @@
             "remaining": "实际 MacBook Pro 拒绝修改过的 ASAR。需要兼容宿主后才可验收桌面安装、运行和更新。"
         },
         "upstream-comparison": {
-            "status": "pending",
-            "remaining": "用对照输入运行固定 Rust 基线和 TypeScript 候选，比较状态、版本、回执及持久数据。"
+            "status": "partial",
+            "evidence": ["frozen-cross-replay"],
+            "remaining": "同一冻结模型已在 Rust 和 TypeScript 各自重放；补更广的原生分区、回执、账号与远程草稿轨迹。"
         }
     }
 }
