@@ -16,6 +16,7 @@ const RAIL = "nav[data-app-navigation-rail]";
 const DESTINATION = "[data-sidebar-destination]";
 const WORKSPACE = "[data-app-shell-workspace]";
 const PAGE_SIDEBAR = "[data-app-shell-page-sidebar]";
+const SIDEBAR_SCROLL = "[data-app-action-sidebar-scroll]";
 const ITEM = "data-codex-enhancer-item";
 const PAGE = "data-codex-enhancer-page";
 
@@ -121,6 +122,7 @@ export function startUiHost(options: UiHostOptions): UiHost {
     glyph.append(dashboardIcon());
     const label = document.createElement("span");
     label.textContent = item.title;
+    if (mount.kind === "rail") label.className = "sr-only";
     button.append(glyph, label);
     button.addEventListener("click", (event) => {
       event.preventDefault();
@@ -128,7 +130,24 @@ export function startUiHost(options: UiHostOptions): UiHost {
       if (activeId === item.id) closePage();
       else openPage(item);
     });
-    mount.parent.append(button);
+    const anchor = [...mount.parent.querySelectorAll(DESTINATION)].at(-1);
+    if (anchor != null) anchor.after(button);
+    else mount.parent.append(button);
+  }
+
+  function opaqueColor(start: Element | null): string {
+    let current = start;
+    while (isHtmlElement(current)) {
+      const color = getComputedStyle(current).backgroundColor;
+      const match = /rgba?\(([^)]+)\)/.exec(color);
+      if (match != null) {
+        const parts = match[1].split(",").map((part) => Number(part.trim()));
+        const alpha = parts.length === 4 ? parts[3] : 1;
+        if (alpha != null && alpha > 0.9) return color;
+      }
+      current = current.parentElement;
+    }
+    return "Canvas";
   }
 
   function contentBox(): DOMRect | null {
@@ -136,11 +155,14 @@ export function startUiHost(options: UiHostOptions): UiHost {
     if (!isHtmlElement(workspace)) return null;
     const bounds = workspace.getBoundingClientRect();
     let left = bounds.left;
-    for (const element of [document.querySelector(RAIL), document.querySelector(PAGE_SIDEBAR)]) {
+    for (const selector of [RAIL, PAGE_SIDEBAR, SIDEBAR_SCROLL]) {
+      const element = document.querySelector(selector);
       if (!isHtmlElement(element)) continue;
       const rect = element.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) continue;
-      if (rect.right <= bounds.left || rect.left >= bounds.right) continue;
+      if (rect.width < 8 || rect.height < 40) continue;
+      if (rect.width > bounds.width * 0.7) continue;
+      if (rect.right <= bounds.left + 1 || rect.left >= bounds.right - 1) continue;
+      if (rect.left > bounds.left + bounds.width * 0.75) continue;
       left = Math.max(left, rect.right);
     }
     const width = bounds.right - left;
@@ -157,7 +179,7 @@ export function startUiHost(options: UiHostOptions): UiHost {
     element.style.overflow = "auto";
     if (isHtmlElement(workspace)) {
       const style = getComputedStyle(workspace);
-      element.style.background = style.backgroundColor;
+      element.style.background = opaqueColor(workspace);
       element.style.color = style.color;
       element.style.font = style.font;
     }
@@ -210,12 +232,22 @@ export function startUiHost(options: UiHostOptions): UiHost {
     inner.append(heading, body, back);
     panel.append(inner);
     place(panel);
+    const box = contentBox();
+    proof("page-rendered", {
+      id: item.id,
+      route: item.route,
+      left: box?.x ?? null,
+      top: box?.y ?? null,
+      width: box?.width ?? null,
+      height: box?.height ?? null,
+      background: panel.style.background,
+      ...shellFacts(),
+    });
     for (const button of document.querySelectorAll(`[${ITEM}]`)) {
       if (isHtmlElement(button)) {
         button.setAttribute("aria-current", button.getAttribute(ITEM) === item.id ? "page" : "false");
       }
     }
-    proof("page-rendered", { id: item.id, route: item.route, ...shellFacts() });
   }
 
   function closePage(): void {
