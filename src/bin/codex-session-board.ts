@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { loadCliConfig, migrateSections } from "../compat/cli-config.js";
-import { connectBoard } from "../compat/client.js";
+import { connectBoard, stopBoard } from "../compat/client.js";
 import { serveMcp } from "../compat/mcp.js";
 import { assetsDirectory, object } from "../compat/operations.js";
 import { stateDir as defaultStateDir } from "../installer/paths.js";
@@ -119,13 +119,14 @@ async function execute(
 async function dispatchService(command: string, stateDir: string, config: string | undefined) {
     if (!["serve", "stop", "scan", "check-sections"].includes(command))
         throw new Error(`未知看板命令 ${command}`);
+    if (command === "stop") {
+        reply(await stopBoard(stateDir));
+        return;
+    }
     const service = await connectBoard(stateDir);
     switch (command) {
         case "serve":
             reply({ url: service.url, running: true, started: false, config: config ?? null });
-            break;
-        case "stop":
-            reply(await service.stop());
             break;
         case "scan":
             reply(await service.request("/api/sessions"));

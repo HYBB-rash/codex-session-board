@@ -11,6 +11,7 @@ import {
     writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { readServiceIdentity, type ServiceIdentity } from "./service-identity.js";
 
 export interface Receipt {
     readonly app: "codex-session-board";
@@ -18,9 +19,15 @@ export interface Receipt {
     readonly clientToken: string;
     readonly instance: string;
     readonly pid: number;
+    readonly service?: ServiceIdentity;
 }
 
 const pathFor = (stateDir: string) => join(stateDir, "board-service.json");
+
+function validLoopbackUrl(url: string): boolean {
+    const match = /^http:\/\/127\.0\.0\.1(?::([1-9]\d{0,4}))?\/$/.exec(url);
+    return match !== null && Number(match[1] ?? 80) <= 65535;
+}
 
 export function readReceipt(stateDir: string): Receipt | null {
     let descriptor: number;
@@ -44,13 +51,14 @@ export function readReceipt(stateDir: string): Receipt | null {
         if (
             receipt?.app !== "codex-session-board" ||
             typeof receipt.url !== "string" ||
-            !/^http:\/\/127\.0\.0\.1:[1-9]\d{0,4}\/$/.test(receipt.url) ||
+            !validLoopbackUrl(receipt.url) ||
             typeof receipt.clientToken !== "string" ||
             !/^[\da-f]{64}$/.test(receipt.clientToken) ||
             typeof receipt.instance !== "string" ||
             typeof receipt.pid !== "number" ||
             !Number.isSafeInteger(receipt.pid) ||
-            receipt.pid <= 0
+            receipt.pid <= 0 ||
+            (receipt.service !== undefined && !readServiceIdentity(receipt.service))
         ) {
             throw new Error("看板服务凭据格式无效");
         }

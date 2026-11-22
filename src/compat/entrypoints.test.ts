@@ -391,9 +391,10 @@ test("a client bound to a stopped instance cannot close its replacement", async 
     const { directory, url, close } = await fixture(test, async () => example);
     const original = await connectBoard(directory);
     await close();
+    const port = Number(new URL(url).port);
+    writeFileSync(join(directory, "config.json"), JSON.stringify({ port }));
     const replacement = await startBoardServer({
         stateDir: directory,
-        port: Number(new URL(url).port),
         request: async () => example,
     });
     test.after(() => replacement.close());

@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, realpath } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { readCache, writeCache } from "./cache.js";
@@ -11,8 +11,7 @@ import {
     type Operation,
 } from "./operations.js";
 import { type Receipt, releaseReceipt, requireInactiveReceipt, writeReceipt } from "./receipt.js";
-
-export const defaultPort = 18767;
+import { type ServiceIdentity, serviceBuild, serviceConfiguration } from "./service-identity.js";
 
 export class HostUnavailableError extends Error {
     constructor() {
@@ -165,6 +164,7 @@ async function respondAsset(
     runtime: Runtime,
     path: string,
     response: ServerResponse,
+    client: boolean,
 ): Promise<boolean> {
     if (path === "/api/info") {
         json(response, 200, {
@@ -172,6 +172,7 @@ async function respondAsset(
             instance: runtime.receipt.instance,
             url: runtime.url.href,
             requestToken: runtime.nonce,
+            ...(client ? { pid: runtime.receipt.pid, service: runtime.receipt.service } : {}),
         });
         return true;
     }
@@ -186,7 +187,7 @@ async function respond(runtime: Runtime, request: IncomingMessage, response: Ser
     const client = enforceOrigin(request, runtime);
     const path = request.url?.split("?")[0] ?? "";
     if (!path.startsWith("/") || path.startsWith("//")) throw new RequestError(404, "接口不存在");
-    if (request.method === "GET" && (await respondAsset(runtime, path, response))) return;
+    if (request.method === "GET" && (await respondAsset(runtime, path, response, client))) return;
     if (
         request.method === "POST" &&
         !client &&
@@ -242,8 +243,22 @@ function closeServer(server: Server): Promise<void> {
     );
 }
 
+async function prepareService(stateDir: string, portOverride?: number): Promise<ServiceIdentity> {
+    await mkdir(stateDir, { recursive: true, mode: 0o700 });
+    const directory = await realpath(stateDir);
+    requireInactiveReceipt(directory);
+    const config = serviceConfiguration(directory);
+    return {
+        directory,
+        build: serviceBuild(),
+        config: config.digest,
+        port: portOverride ?? config.port,
+    };
+}
+
 export async function startBoardServer(options: BoardServerOptions): Promise<BoardServer> {
-    requireInactiveReceipt(options.stateDir);
+    const identity = await prepareService(options.stateDir, options.port);
+    const { directory, port } = identity;
     const assetsDir = options.assetsDir ?? assetsDirectory;
     const operations = loadOperations(assetsDir);
     let runtime: Runtime | undefined;
@@ -258,23 +273,24 @@ export async function startBoardServer(options: BoardServerOptions): Promise<Boa
             });
         },
     );
-    const url = await listen(server, options.port ?? defaultPort);
+    const url = await listen(server, port);
     const receipt = {
         app: "codex-session-board" as const,
         url: url.href,
         clientToken: randomBytes(32).toString("hex"),
         instance: randomUUID(),
         pid: process.pid,
+        service: identity,
     };
     try {
-        writeReceipt(options.stateDir, receipt);
+        writeReceipt(directory, receipt);
     } catch (error) {
         await closeServer(server);
         throw error;
     }
     let stopped: Promise<void> | undefined;
     const close = () => {
-        stopped ??= closeServer(server).then(() => releaseReceipt(options.stateDir, receipt));
+        stopped ??= closeServer(server).then(() => releaseReceipt(directory, receipt));
         return stopped;
     };
     runtime = {
@@ -282,7 +298,7 @@ export async function startBoardServer(options: BoardServerOptions): Promise<Boa
         receipt,
         nonce: randomBytes(32).toString("hex"),
         assetsDir,
-        options,
+        options: { ...options, stateDir: directory },
         operations,
         stop: close,
         cachedAt: 0,

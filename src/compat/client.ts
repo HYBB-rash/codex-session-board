@@ -1,14 +1,27 @@
-import { join } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { BoardRequest } from "./operations.js";
 import { object } from "./operations.js";
 import { processAlive, type Receipt, readReceipt } from "./receipt.js";
 import { HostUnavailableError } from "./server.js";
+import {
+    expectedServiceBuild,
+    readServiceIdentity,
+    sameServiceIdentity,
+    serviceConfiguration,
+} from "./service-identity.js";
+
+interface StopResult {
+    running: false;
+    stopped: true;
+    instance: string;
+}
 
 export interface BoardClient {
     url: string;
     request: BoardRequest;
-    stop(): Promise<{ running: false; stopped: true; instance: string }>;
+    stop(): Promise<StopResult>;
 }
 
 async function fetchLocal(path: string, receipt: Receipt, body?: object): Promise<unknown> {
@@ -50,37 +63,77 @@ async function awaitStop(directory: string, receipt: Receipt): Promise<void> {
     throw new Error("尚未确认看板服务退出");
 }
 
-export async function connectBoard(stateDir: string): Promise<BoardClient> {
+async function discoverBoard(stateDir: string) {
     const nested = join(stateDir, "session-board");
     const nestedReceipt = readReceipt(nested);
-    const directory = nestedReceipt ? nested : stateDir;
-    const receipt = nestedReceipt ?? readReceipt(directory);
+    const receipt = nestedReceipt ?? readReceipt(stateDir);
     if (!receipt || !processAlive(receipt.pid)) throw new HostUnavailableError();
-    const information = object<"app" | "instance" | "url">(await fetchLocal("/api/info", receipt));
+    const directory = realpathSync(nestedReceipt ? nested : stateDir);
+    if (receipt.service && receipt.service.directory !== directory) {
+        throw new Error("看板服务属于其他数据目录");
+    }
+    const information = object<"app" | "instance" | "url" | "pid" | "service">(
+        await fetchLocal("/api/info", receipt),
+    );
     if (
         information?.app !== receipt.app ||
         information.instance !== receipt.instance ||
         information.url !== receipt.url
     )
         throw new Error("看板服务身份不一致");
+    if (receipt.service) {
+        const identity = readServiceIdentity(information.service);
+        if (
+            !identity ||
+            information.pid !== receipt.pid ||
+            !sameServiceIdentity(receipt.service, identity)
+        )
+            throw new Error("看板服务身份不一致");
+    }
+    const stateRoot = nestedReceipt
+        ? realpathSync(stateDir)
+        : basename(directory) === "session-board"
+          ? dirname(directory)
+          : directory;
+    return { directory, stateRoot, receipt };
+}
+
+async function stopReceipt(directory: string, receipt: Receipt): Promise<StopResult> {
+    const accepted = object<"instance" | "stopping" | "stopped">(
+        await fetchLocal("/api/service/stop", receipt, {
+            instance: receipt.instance,
+            pid: receipt.pid,
+        }),
+    );
+    if (
+        accepted?.instance !== receipt.instance ||
+        (accepted.stopping !== true && accepted.stopped !== true)
+    ) {
+        throw new Error("看板服务没有确认停止请求");
+    }
+    await awaitStop(directory, receipt);
+    return { running: false, stopped: true, instance: receipt.instance };
+}
+
+export async function stopBoard(stateDir: string): Promise<StopResult> {
+    const { directory, receipt } = await discoverBoard(stateDir);
+    return stopReceipt(directory, receipt);
+}
+
+export async function connectBoard(stateDir: string): Promise<BoardClient> {
+    const { directory, stateRoot, receipt } = await discoverBoard(stateDir);
+    const { service } = receipt;
+    if (!service || service.build !== expectedServiceBuild(stateRoot))
+        throw new Error("已有其他版本看板服务，请先停止并重新启动 Enhancer");
+    const config = serviceConfiguration(directory);
+    const actualPort = Number(new URL(receipt.url).port || 80);
+    if (service.port !== 0 && (service.port !== config.port || actualPort !== config.port))
+        throw new Error("运行服务的端口已变化，请先停止并重新启动 Enhancer");
+    if (service.config !== config.digest)
+        throw new Error("运行服务的配置已变化，请先停止并重新启动 Enhancer");
     return {
         url: receipt.url,
         request: (path, body) => fetchLocal(path, receipt, body),
-        async stop() {
-            const accepted = object<"instance" | "stopping" | "stopped">(
-                await fetchLocal("/api/service/stop", receipt, {
-                    instance: receipt.instance,
-                    pid: receipt.pid,
-                }),
-            );
-            if (
-                accepted?.instance !== receipt.instance ||
-                (accepted.stopping !== true && accepted.stopped !== true)
-            ) {
-                throw new Error("看板服务没有确认停止请求");
-            }
-            await awaitStop(directory, receipt);
-            return { running: false, stopped: true, instance: receipt.instance };
-        },
+        stop: () => stopReceipt(directory, receipt),
     };
 }
