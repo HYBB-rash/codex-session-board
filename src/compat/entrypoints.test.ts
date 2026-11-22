@@ -1,0 +1,357 @@
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { request as httpRequest } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { type TestContext, test } from "node:test";
+import { promisify } from "node:util";
+import { connectBoard } from "./client.js";
+import { createMcpHandler, resourceUri } from "./mcp.js";
+import { assetsDirectory, type BoardRequest, loadOperations } from "./operations.js";
+import { readReceipt } from "./receipt.js";
+import { HostUnavailableError, startBoardServer } from "./server.js";
+
+const exec = promisify(execFile);
+const version = "test";
+const state = {
+    id: "thread",
+    state: "review",
+    note: "",
+    version: 2,
+    inputVersion: 3,
+    sectionVersion: "live",
+};
+const projectCatalog = { loaded: true, items: [] };
+const example = {
+    states: { review: "待审阅" },
+    health: { nativeVerified: true },
+    projectCatalog,
+    sessions: [{ id: "thread", title: "A session", canOpen: true }],
+};
+const byId = { id: "thread" };
+const requestId = { projectId: "project", requestId: "request" };
+const argumentsByAction: Record<string, object> = {
+    Snapshot: {},
+    Update: state,
+    Sort: { state: "review", field: "updated_at", direction: "desc", version: 2 },
+    Archive: { ...byId, version: 2, inputVersion: 3, batchId: "batch" },
+    ArchiveBatches: {},
+    ArchiveBatchStart: {
+        id: "batch",
+        items: [{ ...byId, title: "A session", version: 2, inputVersion: 3 }],
+    },
+    ArchiveBatchFinish: { id: "batch" },
+    ArchiveBatchCheck: { id: "batch" },
+    Open: byId,
+    PreviewReply: byId,
+    New: requestId,
+    NewReset: { ...requestId, confirmed: true },
+    ProjectAssign: { ...byId, projectId: "project", confirmed: true },
+    Connect: { hostId: "remote-ssh-discovered:test" },
+    SshSetup: { action: "status" },
+    Refresh: {},
+    PluginUpdateStatus: {},
+    PluginUpdateStart: {},
+};
+
+function isolated(test: TestContext) {
+    const directory = mkdtempSync(join(tmpdir(), "enhancer-compat-"));
+    test.after(() => rmSync(directory, { force: true, recursive: true }));
+    return directory;
+}
+
+async function fixture(test: TestContext, request: BoardRequest) {
+    const directory = isolated(test);
+    let account = "test-account";
+    const server = await startBoardServer({
+        stateDir: directory,
+        port: 0,
+        request,
+        cacheAccount: () => account,
+    });
+    test.after(() => server.close());
+    return {
+        directory,
+        ...server,
+        switchAccount: (value: string) => {
+            account = value;
+        },
+    };
+}
+
+function hostRequest(url: string, host: string): Promise<number | undefined> {
+    return new Promise((resolve, reject) => {
+        const request = httpRequest(url, { headers: { Host: host } }, (response) => {
+            response.resume();
+            resolve(response.statusCode);
+        });
+        request.on("error", reject);
+        request.end();
+    });
+}
+
+function post(url: string, path: string, payload: object, headers?: Record<string, string>) {
+    return fetch(new URL(path, url), {
+        method: "POST",
+        body: JSON.stringify(payload),
+        headers: { "Content-Type": "application/json", ...headers },
+    });
+}
+
+test("HTTP and PWA use loopback, active origin and validated shared operations", async (test) => {
+    const received: unknown[][] = [];
+    const { url, directory } = await fixture(test, async (path, body) => {
+        received.push([path, body]);
+        return { path, body };
+    });
+    assert.equal(await hostRequest(url, "example.test"), 403);
+    for (const path of ["/", "/board.js", "/sw.js", "/manifest.webmanifest", "/assets/board.svg"]) {
+        const response = await fetch(new URL(path, url));
+        assert.equal(response.status, 200, path);
+        assert.equal(response.headers.get("Cache-Control"), "no-store");
+        assert.ok((await response.text()).length > 100);
+    }
+    const info = (await (await fetch(new URL("/api/info", url))).json()) as {
+        requestToken: string;
+    };
+    assert.equal(statSync(join(directory, "board-service.json")).mode & 0o777, 0o600);
+    assert.equal((await post(url, "api/state", state)).status, 403);
+    const headers = { "X-CSRF-Token": info.requestToken, origin: new URL(url).origin };
+    assert.equal(
+        (await post(url, "api/state", state, { ...headers, origin: "https://example.test" }))
+            .status,
+        403,
+    );
+    assert.equal(
+        (await post(url, "api/state", { ...state, hostId: "wrong" }, headers)).status,
+        400,
+    );
+    assert.equal((await post(url, "api/state", state, headers)).status, 200);
+    assert.equal((await post(url, "api/service/stop", {}, headers)).status, 404);
+    assert.deepEqual(received, [["/api/state", state]]);
+});
+
+test("offline account-specific snapshots never reissue writes or previews", async (test) => {
+    let online = true;
+    let updates = 0;
+    const { url, switchAccount } = await fixture(test, async (path) => {
+        if (!online) throw new HostUnavailableError();
+        if (path === "/api/state") updates++;
+        return example;
+    });
+    assert.deepEqual(await (await fetch(new URL("/api/sessions", url))).json(), example);
+    online = false;
+    const stale = (await (await fetch(new URL("/api/sessions", url))).json()) as {
+        offline: boolean;
+        sessions: { readOnly: boolean; canOpen: boolean }[];
+    };
+    assert.equal(stale.offline, true);
+    assert.equal(stale.sessions[0]?.readOnly, true);
+    assert.equal(stale.sessions[0]?.canOpen, false);
+    const info = (await (await fetch(new URL("/api/info", url))).json()) as {
+        requestToken: string;
+    };
+    const headers = { "X-CSRF-Token": info.requestToken };
+    assert.equal((await post(url, "api/state", state, headers)).status, 503);
+    assert.equal((await post(url, "api/preview-reply", { id: "thread" }, headers)).status, 503);
+    assert.equal(updates, 0);
+    switchAccount("new-account");
+    assert.equal((await fetch(new URL("/api/sessions", url))).status, 503);
+});
+
+function mcp(request: BoardRequest) {
+    const rpc = createMcpHandler({ request, version });
+    return async (method: string, params?: object) => {
+        const response = await rpc(JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }));
+        assert.ok(response && "result" in response);
+        return response.result;
+    };
+}
+
+function expectedToolResult(action: string, response: object) {
+    return action === "PreviewReply"
+        ? { content: [], _meta: { previewReply: response } }
+        : {
+              structuredContent: response,
+              content: [{ type: "text", text: JSON.stringify(response) }],
+          };
+}
+
+test("all 18 HTTP routes and MCP tools forward the same arguments and return the same result", async (test) => {
+    const received: unknown[][] = [];
+    const { directory, url } = await fixture(test, async (path, body) => {
+        received.push([path, body]);
+        return { path, body: body ?? null };
+    });
+    const operations = loadOperations();
+    const answer = mcp((await connectBoard(directory)).request);
+    const toolList = (await answer("tools/list")) as {
+        tools: {
+            name: string;
+            _meta: { "openai/ui"?: { entrypoints: object[] }; ui: { visibility: string[] } };
+        }[];
+    };
+    assert.deepEqual(
+        toolList.tools.map(({ name }) => name),
+        ["board_view", ...operations.map((operation) => operation.tool)],
+    );
+    assert.deepEqual(toolList.tools[0]?._meta["openai/ui"]?.entrypoints, [{ type: "global" }]);
+    assert.deepEqual(
+        Object.keys(argumentsByAction).sort(),
+        operations.map(({ action }) => action).sort(),
+    );
+    const info = (await (await fetch(new URL("/api/info", url))).json()) as {
+        requestToken: string;
+    };
+    const headers = { "X-CSRF-Token": info.requestToken, origin: new URL(url).origin };
+    for (const [index, { action, method, path, tool }] of operations.entries()) {
+        const payload = argumentsByAction[action];
+        assert.ok(payload, action);
+        const body = method === "POST" ? payload : undefined;
+        const expected = { path, body: body ?? null };
+        const http = body ? await post(url, path, body, headers) : await fetch(new URL(path, url));
+        assert.equal(http.status, action === "Refresh" ? 202 : 200, action);
+        assert.deepEqual(await http.json(), expected, action);
+        assert.deepEqual(toolList.tools[index + 1]?._meta.ui.visibility, ["app"], action);
+        const result = await answer("tools/call", { name: tool, arguments: payload });
+        assert.deepEqual(result, expectedToolResult(action, expected), action);
+        assert.deepEqual(received.splice(0), [
+            [path, body],
+            [path, body],
+        ]);
+    }
+});
+
+test("CLI mcp negotiates stdio, reads its packaged app and reports rejected saves", async (test) => {
+    const { directory } = await fixture(test, async (path) => {
+        if (path === "/api/state") throw new Error("状态版本过期");
+        return example;
+    });
+    const binary = join(assetsDirectory, "..", "bin", "codex-session-board.js");
+    const requests = [
+        { method: "initialize", params: { protocolVersion: "2025-11-25" } },
+        { method: "resources/read", params: { uri: resourceUri } },
+        { method: "tools/call", params: { name: "board_update", arguments: state } },
+    ];
+    const output = await new Promise<string>((resolve, reject) => {
+        const processHandle = execFile(
+            process.execPath,
+            [binary, "--state-dir", directory, "mcp"],
+            { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 },
+            (error, stdout) => (error ? reject(error) : resolve(stdout)),
+        );
+        processHandle.stdin?.end(
+            requests
+                .map((request, index) => JSON.stringify({ jsonrpc: "2.0", id: index, ...request }))
+                .join("\n"),
+        );
+    });
+    const responses = output
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+    assert.deepEqual(
+        responses.map((response) => response.id),
+        [0, 1, 2],
+    );
+    assert.equal(responses[0].result.protocolVersion, "2025-11-25");
+    const resource = responses[1].result.contents[0];
+    assert.match(resource.text, /<script>/);
+    assert.doesNotMatch(resource.text, /<(?:iframe|script)\b[^>]*\bsrc=/i);
+    assert.equal(resource.mimeType, "text/html;profile=mcp-app");
+    assert.deepEqual(responses[2].result, {
+        isError: true,
+        content: [{ type: "text", text: "状态版本过期" }],
+    });
+});
+
+test("CLI reuses the authorized instance and stop only closes its compatibility service", async (test) => {
+    const { directory, url } = await fixture(test, async () => example);
+    const binary = join(assetsDirectory, "..", "bin", "codex-session-board.js");
+    const run = (action: string) =>
+        exec(process.execPath, [binary, "--state-dir", directory, action]);
+    assert.deepEqual(JSON.parse((await run("serve")).stdout), {
+        url,
+        running: true,
+        started: false,
+        config: null,
+    });
+    assert.deepEqual(JSON.parse((await run("scan")).stdout), example);
+    assert.equal(JSON.parse((await run("check-sections")).stdout).nativeCatalogVerified, true);
+    const running = readReceipt(directory);
+    assert.ok(running);
+    const wrongInstance = await post(
+        url,
+        "api/service/stop",
+        { instance: "retired" },
+        { Authorization: `Bearer ${running.clientToken}` },
+    );
+    assert.equal(wrongInstance.status, 409);
+    assert.equal(JSON.parse((await run("stop")).stdout).stopped, true);
+    await assert.rejects(run("scan"), /请打开装有 Enhancer/);
+});
+
+test("migrate-sections retains the source and refuses to overwrite an existing output", async (test) => {
+    const directory = isolated(test);
+    const source = join(directory, "old.json");
+    const output = join(directory, "output.json");
+    const input = JSON.stringify({
+        native_sections: true,
+        data_dir: "saved",
+        status_sections: { completed: "old", review: "live" },
+    });
+    writeFileSync(source, input);
+    const binary = join(assetsDirectory, "..", "bin", "codex-session-board.js");
+    const run = () =>
+        exec(process.execPath, [
+            binary,
+            "--config",
+            source,
+            "migrate-sections",
+            "--output",
+            output,
+        ]);
+    assert.deepEqual(JSON.parse((await run()).stdout).removedStates, ["completed"]);
+    assert.equal(readFileSync(source, "utf8"), input);
+    assert.deepEqual(JSON.parse(readFileSync(output, "utf8")).status_sections, { review: "live" });
+    await assert.rejects(run(), /EEXIST/);
+});
+
+test("CLI migrate imports a live SQLite WAL and refuses an existing destination", async (test) => {
+    const directory = isolated(test);
+    const source = join(directory, "old");
+    const config = join(directory, "old.json");
+    const output = join(directory, "new");
+    mkdirSync(source);
+    writeFileSync(config, JSON.stringify({ data_dir: source }));
+    const database = new DatabaseSync(join(source, "status.sqlite3"));
+    test.after(() => database.close());
+    database.exec(
+        "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE fixture (note TEXT)",
+    );
+    database.prepare("INSERT INTO fixture VALUES (?)").run("saved");
+    const binary = join(assetsDirectory, "..", "bin", "codex-session-board.js");
+    const run = () =>
+        exec(process.execPath, [
+            binary,
+            "--state-dir",
+            directory,
+            "migrate",
+            "--source-config",
+            config,
+            "--output",
+            output,
+        ]);
+    const migrated = JSON.parse((await run()).stdout);
+    assert.equal(migrated.receipt.mainDatabase, true);
+    assert.equal(migrated.directory, join(output, "snapshot"));
+    const copy = new DatabaseSync(join(migrated.directory, "status.sqlite3"), { readOnly: true });
+    test.after(() => copy.close());
+    const { note: copiedNote } = copy.prepare("SELECT note FROM fixture").get() ?? {};
+    assert.equal(copiedNote, "saved");
+    await assert.rejects(run(), /已经存在/);
+    const { note: originalNote } = database.prepare("SELECT note FROM fixture").get() ?? {};
+    assert.equal(originalNote, "saved");
+});
