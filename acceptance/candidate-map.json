@@ -191,6 +191,10 @@
             "file": "src/extensions/session-board/title-sync.test.ts",
             "test": "restart reconciles a lost rename receipt without repeating an applied write"
         },
+        "title-retry-after-restart": {
+            "file": "src/extensions/session-board/title-sync.test.ts",
+            "test": "a rejected native rename preserves the saved card and is retried after reopening"
+        },
         "title-fair-retry": {
             "file": "src/extensions/session-board/title-sync.test.ts",
             "test": "a frequently failing title retries behind other pending cards"
@@ -374,6 +378,7 @@
             ],
             "evidence": [
                 "title-restart",
+                "title-retry-after-restart",
                 "title-deadline",
                 "title-concurrency",
                 "title-shared-budget"

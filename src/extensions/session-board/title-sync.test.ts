@@ -117,10 +117,11 @@ function testRecords(testContext: TestContext) {
         Reflect.set(globalThis, "window", previous);
         rmSync(directory, { recursive: true, force: true });
     });
-    const records = new BoardRecords(join(directory, "records.json"));
+    const file = join(directory, "records.json");
+    const records = new BoardRecords(file);
     const titleEpoch = (key: string) =>
         new TitleEpochs(join(directory, "title-activation.json")).start(key);
-    return { records, titleEpoch };
+    return { records, titleEpoch, file };
 }
 
 function assertMoveProof(stage: string): void {
@@ -137,7 +138,7 @@ function seedTitle(records: BoardRecords, id: ThreadId): void {
 }
 
 function fixture(testContext: TestContext) {
-    const { records, titleEpoch } = testRecords(testContext);
+    const { records, titleEpoch, file } = testRecords(testContext);
     const threads = new Map([first, second].map((id) => [id, thread(id)]));
     const names: { threadId: ThreadId; name: string }[] = [];
     const config = { syncTitles: true };
@@ -151,6 +152,7 @@ function fixture(testContext: TestContext) {
     };
 
     function reopen() {
+        const store = new BoardRecords(file);
         const desktop = desktopFixture(
             threads,
             () => native.context(),
@@ -161,10 +163,10 @@ function fixture(testContext: TestContext) {
             (row) => native.moved(row),
         );
         return new BoardService(desktop, {
-            load: async (key) => records.account(key),
-            save: async (update) => records.write(update),
+            load: async (key) => store.account(key),
+            save: async (update) => store.write(update),
             preparePhase: async (update) => native.preparePhase(update),
-            settleTitle: async (resolution) => records.settleTitle(resolution),
+            settleTitle: async (resolution) => store.settleTitle(resolution),
             loadLedger: async () => emptyLedger(),
             writeLedger: async () => assert.fail("Title must not touch the ledger"),
             settings: async () => ({ ...defaults, ...config }),
@@ -333,6 +335,41 @@ test("restart reconciles a lost rename receipt without repeating an applied writ
         selectedAt: records.account(account)[first]?.selectedAt,
     });
     assert.equal(reopened.snapshot().sessions[0]?.titleSyncPending, undefined);
+});
+
+test("a rejected native rename preserves the saved card and is retried after reopening", async (testContext) => {
+    const { reopen, names, native, records, threads } = fixture(testContext);
+    const original = phaseThread(threads).name;
+    const rename = native.rename;
+    native.rename = async () => {
+        throw new Error("rename rejected before writing");
+    };
+    const service = reopen();
+    await service.refresh();
+    const saved = await save(service, "in_progress", "标题失败后保留的备注");
+    assert.equal(saved.session.state, "in_progress");
+    assert.equal(saved.session.note, "标题失败后保留的备注");
+    assert.equal(saved.session.titleSyncPending, true);
+    assert.match(saved.session.titleSyncError ?? "", /rejected before writing/);
+    assert.equal(phaseThread(threads).name, original);
+    const pending = records.account(account)[first];
+    assert.equal(pending?.note, saved.session.note);
+    assert.equal(pending?.version, saved.session.version);
+    assert.equal(pending?.title?.state, "in_progress");
+    assert.match(pending?.title?.error ?? "", /rejected before writing/);
+
+    native.rename = rename;
+    const restarted = reopen();
+    await restarted.refresh();
+    const card = phaseCard(restarted);
+    assert.equal(names.length, 2);
+    assert.deepEqual(names[0], names[1]);
+    assert.match(card.title, /^\[进行中\]/);
+    assert.equal(card.titleSyncPending, undefined);
+    assert.equal(card.state, saved.session.state);
+    assert.equal(card.note, saved.session.note);
+    assert.equal(card.version, saved.session.version);
+    assert.equal(records.account(account)[first]?.title, undefined);
 });
 
 test("a frequently failing title retries behind other pending cards", async (testContext) => {

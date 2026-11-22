@@ -67,8 +67,8 @@
             ["title-manual-projection"]
         ],
         "TITLE-003": [
-            ["title-restart", "title-shared-budget"],
-            ["title-restart"],
+            ["title-restart", "title-retry-after-restart", "title-shared-budget"],
+            ["title-restart", "title-retry-after-restart"],
             ["title-concurrency", "title-shared-budget", "title-deadline"]
         ],
         "TITLE-004": [["title-concurrency"], ["title-restart"], ["title-fair-retry"]],
