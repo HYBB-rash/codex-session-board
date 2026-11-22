@@ -103,16 +103,28 @@ export function cardId(ref: ThreadRef): string {
 }
 
 export class DesktopConnection {
-    private readonly hosts = new Map<HostId, { epoch: number; connected: boolean }>();
+    private readonly hosts = new Map<
+        HostId,
+        { epoch: number; connected: boolean; catalog: boolean }
+    >();
     private readonly pending = new Map<string, Pending>();
 
     constructor(private readonly transport: DesktopTransport) {}
 
     knownHosts(): HostId[] {
         const bootstrap = this.transport.bootstrap() as { catalogHostIds?: string[] } | null;
-        for (const value of bootstrap?.catalogHostIds ?? []) {
-            const key = hostId(value);
-            if (key && !this.hosts.has(key)) this.hosts.set(key, { epoch: 0, connected: true });
+        if (!Array.isArray(bootstrap?.catalogHostIds)) return [...this.hosts.keys()];
+        const catalog = new Set(
+            bootstrap.catalogHostIds.map(hostId).filter((value) => value !== null),
+        );
+        for (const key of catalog) {
+            if (!this.hosts.has(key)) {
+                this.hosts.set(key, { epoch: 0, connected: true, catalog: true });
+            }
+        }
+        for (const [key, state] of this.hosts) {
+            if (state.catalog && !catalog.has(key)) this.setConnection(key, false, false);
+            if (!state.catalog && catalog.has(key)) this.setConnection(key, true, true);
         }
         return [...this.hosts.keys()];
     }
@@ -143,10 +155,11 @@ export class DesktopConnection {
         return packet;
     }
 
-    private setConnection(key: HostId, connected: boolean): void {
+    private setConnection(key: HostId, connected: boolean, catalog?: boolean): void {
         const previous = this.hosts.get(key);
-        if (previous?.connected === connected) return;
-        this.hosts.set(key, { epoch: (previous?.epoch ?? 0) + 1, connected });
+        const present = catalog ?? previous?.catalog ?? false;
+        if (previous?.connected === connected && previous.catalog === present) return;
+        this.hosts.set(key, { epoch: (previous?.epoch ?? 0) + 1, connected, catalog: present });
         for (const [id, pending] of this.pending) {
             if (pending.connection.hostId === key) this.fail(id, "Codex 连接已变更");
         }
