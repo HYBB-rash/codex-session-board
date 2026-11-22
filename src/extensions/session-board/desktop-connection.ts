@@ -12,6 +12,7 @@ export type ThreadId = string & { readonly [threadBrand]: true };
 export type LogicalSectionId = string & { readonly [logicalBrand]: true };
 export type HostSectionId = string & { readonly [replicaBrand]: true };
 export const localHostId = "local" as HostId;
+const interactiveSources = ["cli", "vscode", "appServer"];
 
 export interface ThreadRef {
     hostId: HostId;
@@ -30,6 +31,7 @@ export interface Thread {
     section: { id: HostSectionId; name: string } | null;
     sectionEnteredAt: number | null;
     ephemeral: boolean;
+    source?: string | { custom: string } | { subAgent: unknown };
     status: { type: string; activeFlags?: string[] };
     turns: Turn[];
 }
@@ -100,6 +102,14 @@ export function hostId(value: string): HostId | null {
 
 export function cardId(ref: ThreadRef): string {
     return ref.hostId === "local" ? ref.threadId : JSON.stringify([ref.hostId, ref.threadId]);
+}
+
+export function interactiveThread(thread: Thread): boolean {
+    if (thread.ephemeral || typeof thread.id !== "string" || !thread.id) return false;
+    return (
+        thread.source === undefined ||
+        (typeof thread.source === "string" && interactiveSources.includes(thread.source))
+    );
 }
 
 export class DesktopConnection {
@@ -238,12 +248,16 @@ export class DesktopConnection {
         connection: HostConnection,
         archived: boolean,
         cursor: string | null,
+        limit: number,
     ): Promise<Page<Thread>> {
         return this.page(connection, "thread/list", {
             cursor,
-            limit: 100,
+            limit,
             archived,
             sortKey: "updated_at",
+            sortDirection: "desc",
+            sourceKinds: interactiveSources,
+            modelProviders: [],
             useStateDbOnly: true,
         });
     }

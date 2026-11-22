@@ -103,6 +103,7 @@ export interface LegacyPreferences {
     runtimePollSeconds: number;
     pageSize: number;
     maxPages: number;
+    historyPerPoll: number;
 }
 
 export interface LegacyImportDatabase {
@@ -137,6 +138,7 @@ interface OldConfig {
     runtime_poll_seconds?: unknown;
     page_size?: unknown;
     max_pages?: unknown;
+    history_per_poll?: unknown;
 }
 
 interface Scope {
@@ -217,6 +219,7 @@ function readPreferences(config: OldConfig): LegacyPreferences {
         runtimePollSeconds: positive(config.runtime_poll_seconds) ?? 2,
         pageSize: positive(config.page_size) ?? 100,
         maxPages: positive(config.max_pages) ?? 100,
+        historyPerPoll: positive(config.history_per_poll) ?? 20,
     };
 }
 

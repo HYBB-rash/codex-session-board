@@ -15,6 +15,7 @@ import {
     type HostConnection,
     type HostId,
     type HostProject,
+    interactiveThread,
     localHostId,
     type SidebarContext,
     type Thread,
@@ -23,6 +24,7 @@ import {
 import { type DraftInput, type DraftRecord, stageDraft, unresolvedDrafts } from "./drafts.js";
 import {
     type BoardState,
+    type Placement,
     placement,
     presentState,
     sectionBindings,
@@ -48,16 +50,26 @@ interface BoardPorts {
 }
 
 interface HostSnapshot {
-    active: Map<string, Thread>;
-    archived: Map<string, Thread>;
+    active: Map<ThreadId, Thread>;
+    archived: Map<ThreadId, Thread>;
+    currentActive: Set<ThreadId>;
+    currentArchived: Set<ThreadId>;
     projects: Map<string, HostProject>;
     connection?: HostConnection;
     error?: string;
     lastRead?: number;
+    scanComplete?: boolean;
+    projectRead?: boolean;
     projectError?: string;
     archiveError?: string;
     runtimeError?: string;
     runtimeVerified?: boolean;
+    historyError?: string;
+}
+
+interface HistoryRead {
+    sequence: number;
+    error?: string;
 }
 
 interface AutoArchiveRun {
@@ -105,6 +117,8 @@ interface Card {
     reason?: string;
     titleSyncPending?: boolean;
     titleSyncError?: string;
+    observationError?: string;
+    observationWarning?: string;
     archivePending: boolean;
 }
 
@@ -114,6 +128,8 @@ const titleRetryDelayMs = 30000;
 const emptyHost = (): HostSnapshot => ({
     active: new Map(),
     archived: new Map(),
+    currentActive: new Set(),
+    currentArchived: new Set(),
     projects: new Map(),
 });
 const errorText = (error: unknown): string =>
@@ -160,7 +176,9 @@ export class BoardService {
     private settings: BoardSettings = defaults;
     private titleStartedAt: number | undefined;
     private readonly observationSince = Date.now() / 1000;
-    private readonly runtimeDirty = new Map<HostId, Set<ThreadId>>();
+    private readonly runtimeDirty = new Map<HostId, { epoch: number; ids: Set<ThreadId> }>();
+    private readonly historyReads = new Map<string, HistoryRead>();
+    private historySequence = 0;
     private readonly titleInFlight = new Set<string>();
     private readonly nextTitleAttempt = new Map<string, { version: number; at: number }>();
     private readonly changed = new Map<string, number>();
@@ -210,6 +228,7 @@ export class BoardService {
             this.hosts.clear();
             this.changed.clear();
             this.runtimeDirty.clear();
+            this.historyReads.clear();
             this.nextTitleAttempt.clear();
             [this.records, this.ledger] = await Promise.all([
                 this.ports.load(account),
@@ -229,36 +248,55 @@ export class BoardService {
     private async readPages(
         connection: HostConnection,
         archived: boolean,
-        rows: Map<string, Thread>,
+        rows: Map<ThreadId, Thread>,
     ): Promise<void> {
         const cursors = new Set<string>();
         let cursor: string | null = null;
-        do {
-            const page = await this.desktop.list(connection, archived, cursor);
+        for (let index = 0; index < this.settings.maxPages; index++) {
+            const page = await this.desktop.list(
+                connection,
+                archived,
+                cursor,
+                this.settings.pageSize,
+            );
             for (const thread of page.data) {
-                if (!thread.ephemeral && typeof thread.id === "string") rows.set(thread.id, thread);
+                if (interactiveThread(thread) && !rows.has(thread.id)) rows.set(thread.id, thread);
             }
             cursor = page.nextCursor;
-            if (cursor !== null && cursors.has(cursor))
-                throw new Error("Codex 返回了重复的分页游标");
-            if (cursor !== null) cursors.add(cursor);
-        } while (cursor !== null);
+            if (!cursor) return;
+            if (cursors.has(cursor)) throw new Error("Codex 返回了重复的分页游标");
+            cursors.add(cursor);
+        }
+        throw new Error(`会话列表达到分页上限（${this.settings.maxPages} 页）`);
     }
 
     private async refreshHost(hostId: HostId, context: SidebarContext): Promise<void> {
         const last = this.hosts.get(hostId) ?? emptyHost();
-        const next = emptyHost();
+        const next: HostSnapshot = {
+            ...emptyHost(),
+            archived: last.archived,
+            projects: last.projects,
+        };
         const scanVersion = this.changes;
         try {
             const connection = this.desktop.capture(hostId);
-            await this.readPages(connection, false, next.active);
+            try {
+                await this.readPages(connection, false, next.active);
+                next.scanComplete = true;
+            } catch (error) {
+                if (!next.active.size) throw error;
+                next.error = errorText(error);
+            }
             await this.freshContext();
             this.desktop.assertCurrent(connection);
+            next.currentActive = new Set(next.active.keys());
+            const archiveEpochMatches = last.connection?.epoch === connection.epoch;
+            if (archiveEpochMatches) next.currentArchived = new Set(last.currentArchived);
+            this.retainMissing(last.active, next.active);
             this.mergeLateWrites(hostId, last, next, scanVersion);
             next.connection = connection;
-            next.lastRead = Date.now() / 1000;
-            next.archived = last.archived;
-            next.projects = last.projects;
+            const lastRead = next.scanComplete ? Date.now() / 1000 : last.lastRead;
+            if (lastRead !== undefined) next.lastRead = lastRead;
             this.hosts.set(hostId, next);
             await Promise.all([
                 this.refreshArchives(connection, next),
@@ -268,13 +306,22 @@ export class BoardService {
         } catch (error) {
             const available = this.hosts.get(hostId) ?? last;
             this.hosts.set(hostId, {
+                ...emptyHost(),
                 active: available.active,
                 archived: available.archived,
                 projects: available.projects,
+                ...(this.isLive(available) && available.connection
+                    ? { connection: available.connection }
+                    : {}),
                 ...(available.lastRead === undefined ? {} : { lastRead: available.lastRead }),
+                scanComplete: false,
                 error: errorText(error),
             });
         }
+    }
+
+    private retainMissing(previous: Map<ThreadId, Thread>, result: Map<ThreadId, Thread>): void {
+        for (const [id, thread] of previous) if (!result.has(id)) result.set(id, thread);
     }
 
     private mergeLateWrites(
@@ -285,20 +332,37 @@ export class BoardService {
     ): void {
         for (const thread of old.active.values()) {
             const id = cardId({ hostId, threadId: thread.id });
-            if ((this.changed.get(id) ?? 0) > version) next.active.set(thread.id, thread);
+            if ((this.changed.get(id) ?? 0) > version) {
+                next.active.set(thread.id, thread);
+                next.currentActive.add(thread.id);
+            }
         }
     }
 
     private async refreshArchives(connection: HostConnection, host: HostSnapshot): Promise<void> {
         try {
-            const archived = new Map<string, Thread>();
+            const archived = new Map<ThreadId, Thread>();
             await this.readPages(connection, true, archived);
             await this.freshContext();
             this.desktop.assertCurrent(connection);
-            host.archived = archived;
+            this.mergeArchives(host, archived);
         } catch (error) {
+            host.currentArchived = new Set();
             host.archiveError = errorText(error);
         }
+    }
+
+    private mergeArchives(host: HostSnapshot, archived: Map<ThreadId, Thread>): void {
+        host.currentArchived = new Set(archived.keys());
+        for (const id of host.currentActive) {
+            archived.delete(id);
+            host.currentArchived.delete(id);
+        }
+        for (const id of host.currentArchived) host.active.delete(id);
+        for (const [id, thread] of host.archived) {
+            if (!host.currentActive.has(thread.id) && !archived.has(id)) archived.set(id, thread);
+        }
+        host.archived = archived;
     }
 
     private async refreshProjects(connection: HostConnection, host: HostSnapshot): Promise<void> {
@@ -316,15 +380,23 @@ export class BoardService {
             await this.freshContext();
             this.desktop.assertCurrent(connection);
             host.projects = projects;
+            host.projectRead = true;
         } catch (error) {
             host.projectError = errorText(error);
         }
     }
 
     notice(hostId: HostId, threadId: ThreadId): void {
-        const dirty = this.runtimeDirty.get(hostId) ?? new Set<ThreadId>();
-        dirty.add(threadId);
-        this.runtimeDirty.set(hostId, dirty);
+        let connection: HostConnection;
+        try {
+            connection = this.desktop.capture(hostId);
+        } catch {
+            return;
+        }
+        const previous = this.runtimeDirty.get(hostId);
+        const ids = previous?.epoch === connection.epoch ? previous.ids : new Set<ThreadId>();
+        ids.add(threadId);
+        this.runtimeDirty.set(hostId, { epoch: connection.epoch, ids });
     }
 
     private async observeHost(
@@ -332,62 +404,107 @@ export class BoardService {
         host: HostSnapshot,
         context: SidebarContext,
     ): Promise<void> {
-        const dirty = this.runtimeDirty.get(connection.hostId) ?? new Set<ThreadId>();
+        const pending = this.runtimeDirty.get(connection.hostId);
+        const dirty = pending?.epoch === connection.epoch ? pending.ids : new Set<ThreadId>();
         this.runtimeDirty.delete(connection.hostId);
-        const selected = [...host.active.values()].filter((thread, index) => {
-            return (
+        const threads = [...host.active.values()].filter(
+            (thread) => host.currentActive.has(thread.id) && this.canWrite(thread.id),
+        );
+        const realtime = threads.filter(
+            (thread, index) =>
                 dirty.has(thread.id) ||
                 thread.status?.type === "active" ||
-                (index < 12 && thread.updatedAt >= this.observationSince - 3)
-            );
-        });
-        for (const thread of selected) {
+                (index < 12 && thread.updatedAt >= this.observationSince - 3),
+        );
+        for (const thread of realtime) {
             try {
-                await this.observeThread(connection, thread, context, dirty.has(thread.id));
+                await this.observeThread(connection, thread, context, {
+                    notified: dirty.has(thread.id),
+                });
             } catch (error) {
                 host.runtimeError = errorText(error);
+                if (dirty.has(thread.id)) this.notice(connection.hostId, thread.id);
             }
         }
-        host.runtimeVerified = host.runtimeError === undefined;
+        host.runtimeVerified = host.scanComplete === true && host.runtimeError === undefined;
         await this.retryHostTitle(connection, host);
+        const checked = new Set(realtime.map(({ id }) => id));
+        await this.readHistory(
+            connection,
+            host,
+            context,
+            threads.filter(({ id }) => !checked.has(id)),
+        );
+    }
+
+    private async readHistory(
+        connection: HostConnection,
+        host: HostSnapshot,
+        context: SidebarContext,
+        candidates: Thread[],
+    ): Promise<void> {
+        const sequence = (thread: Thread) =>
+            this.historyReads.get(cardId({ hostId: connection.hostId, threadId: thread.id }))
+                ?.sequence ?? 0;
+        candidates.sort((left, right) => sequence(left) - sequence(right));
+        for (const thread of candidates.slice(0, this.settings.historyPerPoll)) {
+            try {
+                this.desktop.assertCurrent(connection);
+                await this.observeThread(connection, thread, context, { history: true });
+            } catch (error) {
+                host.historyError = errorText(error);
+            }
+        }
+        const errors = [...host.currentActive].filter(
+            (threadId) =>
+                this.historyReads.get(cardId({ hostId: connection.hostId, threadId }))?.error,
+        ).length;
+        if (errors) host.historyError = `${errors} 个会话的历史暂不可读`;
     }
 
     private async observeThread(
         connection: HostConnection,
         thread: Thread,
         context: SidebarContext,
-        notified: boolean,
+        options: { history?: true; notified?: boolean },
     ): Promise<void> {
         const id = cardId({ hostId: connection.hostId, threadId: thread.id });
-        if (!this.canWrite(thread.id)) return;
         if (this.editing.has(id)) {
-            this.notice(connection.hostId, thread.id);
+            if (!options.history) this.notice(connection.hostId, thread.id);
             return;
         }
         this.editing.add(id);
         let queuedTitle = false;
         try {
-            const latest = (await this.desktop.turns(connection, thread.id, "summary")).data[0];
+            const latest = await this.readObservedTurn(connection, thread.id, id);
             const current = this.records[id] ?? emptyRecord;
             const input = turnInput(latest);
-            const phase = runtimePhase(thread.status, latest);
+            const phase = options.history ? null : runtimePhase(thread.status, latest);
             const before = placement(context, connection.hostId, thread);
             const inputChanged = changedInput(current, input);
             const phaseChanged = phase !== null && current.phaseKey !== phase.key;
-            if (!inputChanged && !phaseChanged) return;
+            const answer = latest && finalAnswer(latest) ? latest.id : undefined;
+            if (!inputChanged && !phaseChanged && (!answer || answer === current.previewTurnId))
+                return;
             const next = {
                 ...current,
                 ...(input !== null ? { inputKey: input } : {}),
                 version: current.version + 1,
                 inputVersion: current.inputVersion + Number(inputChanged),
                 ...(phase ? { phaseKey: phase.key } : {}),
-                ...(latest && finalAnswer(latest) ? { previewTurnId: latest.id } : {}),
+                ...(answer ? { previewTurnId: answer } : {}),
             };
             const freshPhase =
                 phase &&
                 latest &&
                 before.managed &&
-                isNewPhase(phase, latest.id, current, this.observationSince, notified);
+                isNewPhase(
+                    phase,
+                    latest.id,
+                    current,
+                    this.observationSince,
+                    options.notified === true,
+                );
             if (freshPhase) await this.applyPhase(connection, thread, context, phase, next);
             await this.commitRecord(context, id, current.version, next);
             queuedTitle = next.title !== undefined && next.title !== current.title;
@@ -395,6 +512,18 @@ export class BoardService {
             this.editing.delete(id);
         }
         if (queuedTitle) void this.retryTitle(connection, thread.id);
+    }
+
+    private async readObservedTurn(connection: HostConnection, threadId: ThreadId, id: string) {
+        const sequence = ++this.historySequence;
+        try {
+            const latest = (await this.desktop.turns(connection, threadId, "summary")).data[0];
+            this.historyReads.set(id, { sequence });
+            return latest;
+        } catch (error) {
+            this.historyReads.set(id, { sequence, error: errorText(error) });
+            throw error;
+        }
     }
 
     private async applyPhase(
@@ -431,6 +560,7 @@ export class BoardService {
             const id = cardId({ hostId: connection.hostId, threadId: thread.id });
             const record = this.records[id];
             if (
+                !host.currentActive.has(thread.id) ||
                 !record?.title ||
                 !this.canWrite(thread.id) ||
                 this.editing.has(id) ||
@@ -468,6 +598,7 @@ export class BoardService {
         const id = cardId({ hostId, threadId: thread.id });
         const record = this.records[id] ?? emptyRecord;
         const position = placement(context, hostId, thread);
+        const state = presentState(context, position, this.mode);
         return {
             id,
             hostId,
@@ -476,7 +607,7 @@ export class BoardService {
             cwd: thread.cwd,
             projectId: thread.projectId ? projectKey(hostId, thread.projectId) : null,
             updatedAt: thread.updatedAt,
-            state: presentState(context, position, this.mode),
+            state,
             sectionVersion: position.version,
             version: record.version,
             inputVersion: record.inputVersion,
@@ -502,10 +633,24 @@ export class BoardService {
                 this.mode !== "legacy" &&
                 this.canWrite(thread.id),
             archivePending: this.archive.pending(id),
+            ...this.cardObservation(id, record, position),
+        };
+    }
+
+    private cardObservation(id: string, record: CardRecord, position: Placement) {
+        const observationError = this.historyReads.get(id)?.error;
+        return {
             ...(record.previewTurnId ? { previewTurnId: record.previewTurnId } : {}),
             ...(record.reason ? { reason: record.reason } : {}),
             ...(record.title ? { titleSyncPending: true } : {}),
             ...(record.title?.error ? { titleSyncError: record.title.error } : {}),
+            ...(observationError ? { observationError } : {}),
+            ...(position.sectionId === null &&
+            position.managed &&
+            record.manual !== true &&
+            record.previewTurnId !== undefined
+                ? { observationWarning: "历史轮次已有最终回复，可归入待审阅" }
+                : {}),
         };
     }
 
@@ -533,7 +678,7 @@ export class BoardService {
             lastSuccessAt: host?.lastRead,
             error: host?.error,
             connected,
-            scanComplete: connected && host?.lastRead !== undefined,
+            scanComplete: connected && host?.scanComplete === true,
             nativeSections: true,
             nativeVerified: connected && missingSections.length === 0,
             sectionBindings: bindings,
@@ -548,9 +693,10 @@ export class BoardService {
             autoArchiveLastRun: run,
             autoArchiveError: run?.error,
             archiveReadError: host?.archiveError,
+            historyError: host?.historyError,
             catalog: {
-                complete: connected && !host?.projectError,
-                cached: !connected || Boolean(host?.projectError),
+                complete: connected && host?.projectRead === true,
+                cached: !connected || host?.projectRead !== true,
                 capturedAt: host?.lastRead,
                 error: host?.projectError,
             },
@@ -563,17 +709,11 @@ export class BoardService {
         const remoteHosts = [...this.hosts.keys()]
             .filter((key) => key !== "local")
             .map((key) => ({ hostId: key, hostLabel: hostLabel(key) }));
-        const sessions = [...this.hosts].flatMap(([hostId, host]) => [
-            ...[...host.active.values()].map((thread) =>
-                this.card(hostId, thread, context, this.isLive(host)),
-            ),
-            ...[...host.archived.values()]
-                .filter((thread) => !host.active.has(thread.id))
-                .map((thread) => this.card(hostId, thread, context, this.isLive(host), true)),
-        ]);
         return {
             states: visibleStates(this.mode),
-            sessions,
+            sessions: [...this.hosts].flatMap(([hostId, host]) =>
+                this.hostCards(hostId, host, context),
+            ),
             health: {
                 ...this.health(localHostId, local),
                 nativeConnections: true,
@@ -585,11 +725,13 @@ export class BoardService {
                 })),
             },
             projectCatalog: {
-                loaded: [...this.hosts.values()].some((host) => host.lastRead),
+                loaded: [...this.hosts.values()].some(
+                    (host) => host.projectRead || host.projects.size,
+                ),
                 items: this.projectCatalog(),
                 remoteHosts,
                 error: local?.projectError,
-                cached: local?.connection === undefined || Boolean(local.projectError),
+                cached: local?.projectRead !== true || !this.isLive(local),
             },
             fourColumns: this.mode === "four",
             legacyMode: this.mode === "legacy",
@@ -598,6 +740,26 @@ export class BoardService {
                 ({ source }) => source === "legacy",
             ),
         };
+    }
+
+    private hostCards(hostId: HostId, host: HostSnapshot, context: SidebarContext): Card[] {
+        const connected = this.isLive(host);
+        return [
+            ...[...host.active.values()].map((thread) =>
+                this.card(hostId, thread, context, connected && host.currentActive.has(thread.id)),
+            ),
+            ...[...host.archived.values()]
+                .filter((thread) => !host.active.has(thread.id))
+                .map((thread) =>
+                    this.card(
+                        hostId,
+                        thread,
+                        context,
+                        connected && host.currentArchived.has(thread.id),
+                        true,
+                    ),
+                ),
+        ];
     }
 
     private projectCatalog() {
@@ -609,8 +771,8 @@ export class BoardService {
                 remote: hostId !== "local",
                 label: project.name,
                 paths: project.roots.map(({ path }) => path),
-                cached: !this.isLive(host),
-                canCreate: this.isLive(host),
+                cached: host.projectRead !== true || !this.isLive(host),
+                canCreate: host.projectRead === true && this.isLive(host),
                 ...(hostId === "local" ? {} : { origin: "targetServer" }),
             })),
         );
@@ -897,6 +1059,7 @@ export class BoardService {
 
     private async open(id: string): Promise<{ ok: true }> {
         const { card, connection } = this.target(id);
+        if (!card.canOpen) throw new Error("会话目前只显示缓存，请重新发现");
         const { accountId, userId } = await this.freshContext();
         await this.desktop.read(connection, card.threadId, false);
         await this.freshContext();
@@ -913,6 +1076,7 @@ export class BoardService {
 
     private async preview(id: string) {
         const { card, connection } = this.target(id);
+        if (!card.canOpen) throw new Error("会话目前只显示缓存，请重新发现");
         await this.freshContext();
         const result = await previewReply(this.desktop, connection, card.threadId);
         await this.freshContext();
@@ -923,7 +1087,10 @@ export class BoardService {
     private findProject(id: string) {
         for (const [hostId, host] of this.hosts) {
             for (const project of host.projects.values()) {
-                if (projectKey(hostId, project.id) === id) return { hostId, project };
+                if (projectKey(hostId, project.id) !== id) continue;
+                if (!host.projectRead || !this.isLive(host))
+                    throw new Error("项目当前仅有缓存，请重新发现");
+                return { hostId, project };
             }
         }
         throw new Error("项目已变更，请刷新后选择");
@@ -1145,15 +1312,15 @@ export class BoardService {
         if (!known) return false;
         const [hostId, host] = known;
         const connection = this.desktop.capture(hostId);
-        const archived = new Map<string, Thread>();
+        const archived = new Map<ThreadId, Thread>();
         await this.readPages(connection, true, archived);
         await this.freshContext();
         this.desktop.assertCurrent(connection);
-        host.archived = archived;
         const result = [...archived.values()].find(
             (thread) => cardId({ hostId, threadId: thread.id }) === id,
         );
-        if (result) host.active.delete(result.id);
+        if (result) host.currentActive.delete(result.id);
+        this.mergeArchives(host, archived);
         return result !== undefined;
     }
 

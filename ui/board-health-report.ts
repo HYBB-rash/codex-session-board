@@ -10,6 +10,7 @@ interface HostHealth extends AutoArchiveHealth {
   nativeStageError?: string | null;
   writeError?: string | null;
   archiveReadError?: string | null;
+  historyError?: string | null;
   lastSuccessAt?: number | null;
   lastScanAt?: number | null;
   runtimeLastAt?: number | null;
@@ -84,7 +85,7 @@ export function createBoardHealthReports(sources: HealthSources) {
       ? catalog.issues.map(issue => typeof issue === "string" ? issue : JSON.stringify(issue)).join("\n") : null;
     const diagnostics = diagnosticsFrom([["会话列表", listError], ["自动状态", current.runtimeError],
       ["状态分组", current.nativeError], ["状态更新", current.nativeStageError], ["修改权限", current.writeError],
-      ["项目列表", projectError], ["目录归属", catalogIssues], ["归档历史", current.archiveReadError],
+      ["项目列表", projectError], ["目录归属", catalogIssues], ["轮次历史", current.historyError], ["归档历史", current.archiveReadError],
       ["定时归档", current.autoArchiveError]]);
     if (catalog?.coverage) diagnostics.push(["目录覆盖", JSON.stringify(catalog.coverage)]);
     const incomplete = current.lastScanAt && !current.scanComplete && !current.refreshing;
@@ -97,6 +98,7 @@ export function createBoardHealthReports(sources: HealthSources) {
       !current.scanComplete ? "会话列表尚未读取完整" : !current.runtimeVerified ? "自动状态尚未连接" :
       current.nativeSections && !current.nativeVerified ? "状态分组尚未确认" : "会话列表已读取 · 自动状态已连接";
     if (current.autoArchiveError) status = "本轮后台自动归档未完成";
+    if (current.historyError) status = "部分会话历史暂不可读，保留已有记录";
     if (pendingProject) status = "部分会话的项目归属待确认";
     if (projectError) status = "项目列表暂不可读，保留上次分类";
     if (current.nativeError) status = "状态分组暂不可读，保留上次位置";

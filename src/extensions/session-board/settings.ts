@@ -5,6 +5,9 @@ export interface BoardSettings {
     syncTitles: boolean;
     autoArchiveSeconds: number | null;
     remoteAutoArchiveSeconds: number | null;
+    pageSize: number;
+    maxPages: number;
+    historyPerPoll: number;
     writableThreadIds?: string[];
 }
 
@@ -13,6 +16,9 @@ export const defaults: BoardSettings = {
     syncTitles: false,
     autoArchiveSeconds: null,
     remoteAutoArchiveSeconds: null,
+    pageSize: 100,
+    maxPages: 100,
+    historyPerPoll: 20,
 };
 
 export function readSettings(raw: unknown): BoardSettings {
@@ -27,13 +33,21 @@ export function readSettings(raw: unknown): BoardSettings {
         typeof value.syncTitles !== "boolean" ||
         !validInterval(value.autoArchiveSeconds) ||
         !validInterval(value.remoteAutoArchiveSeconds) ||
+        !positiveInteger(value.pageSize) ||
+        value.pageSize > 0xffffffff ||
+        !positiveInteger(value.maxPages) ||
+        !positiveInteger(value.historyPerPoll) ||
         (value.writableThreadIds !== undefined &&
             (!Array.isArray(value.writableThreadIds) ||
                 !value.writableThreadIds.every(
                     (id) => typeof id === "string" && /^[\da-f-]{36}$/i.test(id),
                 )))
     ) {
-        throw new Error("看板状态模式、标题同步或归档周期不合法");
+        throw new Error("看板状态模式、标题同步、归档周期或分页配置不合法");
     }
     return value;
+}
+
+function positiveInteger(value: number): boolean {
+    return Number.isSafeInteger(value) && value > 0;
 }
