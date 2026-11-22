@@ -28,9 +28,16 @@
             ["all_abstract_state_edges_match_the_typescript_service"]
         ],
         "AUTO-006": [[], [], []],
-        "MANUAL-001": [[], ["all_abstract_state_edges_match_the_typescript_service"], []],
-        "MANUAL-002": [[], []],
-        "MANUAL-003": [[], []],
+        "MANUAL-001": [
+            [],
+            ["all_abstract_state_edges_match_the_typescript_service"],
+            ["disabled-titles-preserve-save"]
+        ],
+        "MANUAL-002": [["mcp-real-revisions"], ["mcp-real-revisions"]],
+        "MANUAL-003": [
+            ["mcp-real-revisions", "manual-follow-up-recovery"],
+            ["manual-follow-up-recovery"]
+        ],
         "TITLE-001": [[], [], ["title_prefix_replacement_and_idempotence"]],
         "TITLE-002": [
             ["title_prefix_replacement_and_idempotence"],
@@ -47,17 +54,29 @@
         "UI-001": [[], [], []],
         "UI-002": [[], [], [], []],
         "UI-003": [[], [], []],
-        "MCP-001": [["mcp-stdio"], [], []],
+        "MCP-001": [
+            ["mcp-stdio", "operation-routing", "mcp-inline-app-resources"],
+            [],
+            ["mcp-real-revisions"]
+        ],
         "DATA-001": [[], ["release-paths", "release-rollback"]],
         "DATA-002": [
             ["migration-wal", "migration-projection", "migration-offline"],
             ["migration-retry"]
         ],
         "SERVICE-001": [[], [], []],
-        "BOUNDARY-001": [[], [], []],
-        "SECURITY-001": [["http-security"], [], []],
+        "BOUNDARY-001": [[], [], ["disabled-titles-preserve-save"]],
+        "SECURITY-001": [
+            ["http-security", "loopback-token-rejects-untrusted-writes"],
+            [],
+            ["launcher-passes-arguments-directly"]
+        ],
         "HEALTH-001": [[], []],
-        "DELIVERY-001": [[], [], []],
+        "DELIVERY-001": [
+            ["delivery-archive-contents"],
+            ["delivery-archive-exclusions"],
+            ["delivery-archive-integrity"]
+        ],
         "GATE-001": [["gate-tests"], ["gate-tests"], ["gate-tests"]]
     }
 }

@@ -3,6 +3,7 @@ import json
 import re
 import tarfile
 from pathlib import Path, PurePosixPath
+from delivery_checks import delivery_checks
 
 
 BASELINE = "2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc"
@@ -159,6 +160,7 @@ def open_archive(handle):
         manifest = None
         version = None
         plugin_version = None
+        documented_migration = False
         for member in archive:
             name = relative_file(member.name)
             need(name not in members, f"归档路径重复 {name}")
@@ -177,10 +179,19 @@ def open_archive(handle):
                 elif relative == f"dist/{VERSION_FILE}":
                     version = stream.read()
                     files[relative] = hashlib.sha256(version).hexdigest()
+                elif relative == "README.md":
+                    readme = stream.read()
+                    files[relative] = hashlib.sha256(readme).hexdigest()
+                    documented_migration = all(
+                        marker in readme for marker in (b"migrate --source-config", b"migrate --rollback")
+                    )
                 else:
                     files[relative] = stream_sha256(stream)
         need(len(roots) == 1 and manifest is not None, "发行归档缺少唯一根目录或 release.json")
-        return manifest, files, version, plugin_version
+        entries = {
+            PurePosixPath(*name.parts[1:]).as_posix() for name in members if len(name.parts) > 1
+        }
+        return manifest, files, version, plugin_version, entries, documented_migration
 
 
 def archive_identity(path, platform, source, runtime):
@@ -188,7 +199,7 @@ def archive_identity(path, platform, source, runtime):
     with path.open("rb") as handle:
         compressed = stream_sha256(handle)
         handle.seek(0)
-        manifest, files, packaged_version, plugin_version = open_archive(handle)
+        manifest, files, packaged_version, plugin_version, entries, documented_migration = open_archive(handle)
     need(manifest["schema"] == 1 and manifest["platform"] == platform, f"归档平台范围不符 {platform}")
     version = manifest["version"]
     need(
@@ -217,6 +228,7 @@ def archive_identity(path, platform, source, runtime):
         "version": version,
         "archiveSha256": compressed,
         "runtimeSha256": fingerprint(archived_runtime),
+        "deliveryChecks": delivery_checks(path, compressed, files, entries, documented_migration),
     }
 
 

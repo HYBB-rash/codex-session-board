@@ -2,6 +2,8 @@
 
 从候选源码构建后，向门槛提供同版本的 Linux x86_64 和 macOS arm64 发行归档。`--identify` 读取每个归档的 SHA-256、平台、版本和运行文件清单，并核对归档的源码与本地构建。它可用于准备实测记录。
 
+每份归档旁边保留同名 `.sha256` 文件。交付断言核对两份归档的离线资源、测试、迁移说明、数据与缓存排除、内部运行文件清单和外部 SHA-256。报告按平台在 `archives` 的 `deliveryChecks` 列出内容或校验缺口。
+
 ```bash
 npm run build
 python3 -B acceptance/release_gate.py --identify \

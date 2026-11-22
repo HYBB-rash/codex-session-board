@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 
+from delivery_checks import DELIVERY_CHECKS
 from release_identity import (
     BASELINE, PLATFORMS, contract_at, evidence_file, identify, json_file, need, parse, sha256,
 )
@@ -14,6 +15,14 @@ from release_identity import (
 ROOT = Path(__file__).resolve().parents[1]
 MAX_AGE = timedelta(days=30)
 STATUSES = {"pass", "fail", "error", "skip"}
+ACCEPTANCE_TESTS = {
+    "mcp-real-revisions": "MCP saves use the live state and input revisions across HTTP",
+    "mcp-inline-app-resources": "the MCP resource bundles its SDK and styles without linked scripts or frames",
+    "manual-follow-up-recovery": "new-input notices survive incomplete observations and clear only on manual confirmation",
+    "disabled-titles-preserve-save": "disabling title sync still saves state and never renames",
+    "launcher-passes-arguments-directly": "the client launcher passes the argument array without a shell",
+    "loopback-token-rejects-untrusted-writes": "only loopback and same-origin token-authorized writes reach the board",
+}
 TAP_TEST = re.compile(r"^(ok|not ok) \d+ - (.+)$")
 TAP_DIRECTIVE = re.compile(r" # (SKIP|TODO)(?:\s.*)?$", re.IGNORECASE)
 
@@ -50,8 +59,16 @@ def bindings_at(root, requirements):
     )
     model_ids = {check for item in model["requirements"].values() for check in item.get("checks", [])}
     node_tests = {identifier: item for identifier, item in candidate["evidence"].items() if item.get("test")}
-    providers = {"gate-tests", *model_ids, *node_tests}
-    need(len(providers) == 1 + len(model_ids) + len(node_tests), "自动断言的提供方有重名")
+    need(not (node_tests.keys() & ACCEPTANCE_TESTS.keys()), "独立与候选测试 ID 重名")
+    node_tests.update({
+        identifier: {"file": "acceptance/public-operations.test.mjs", "test": name}
+        for identifier, name in ACCEPTANCE_TESTS.items()
+    })
+    providers = {"gate-tests", *model_ids, *node_tests, *DELIVERY_CHECKS}
+    need(
+        len(providers) == 1 + len(model_ids) + len(node_tests) + len(DELIVERY_CHECKS),
+        "自动断言的提供方有重名",
+    )
     for requirement in requirements:
         identifier = requirement["id"]
         assertions = bindings["assertions"][identifier]
@@ -83,8 +100,11 @@ def node_results(root, node, requested, tests):
     for identifier in sorted(requested & tests.keys()):
         reference = tests[identifier]
         file = Path(reference["file"])
-        need(not file.is_absolute() and file.is_relative_to("src") and ".." not in file.parts, "Node 测试源码路径无效")
-        compiled = root / "dist" / file.relative_to("src").with_suffix(".js")
+        if identifier in ACCEPTANCE_TESTS:
+            compiled = root / file
+        else:
+            need(not file.is_absolute() and file.is_relative_to("src") and ".." not in file.parts, "Node 测试源码路径无效")
+            compiled = root / "dist" / file.relative_to("src").with_suffix(".js")
         groups.setdefault(compiled, []).append((reference["test"], identifier))
     records = {}
     errors = []
@@ -100,6 +120,20 @@ def node_results(root, node, requested, tests):
         if process.returncode:
             errors.append(f"Node 测试失败 {path.relative_to(root)}")
     return records, errors
+
+
+def delivery_results(identity):
+    records = {}
+    for identifier in DELIVERY_CHECKS:
+        results = [
+            item.get("deliveryChecks", {}).get(identifier)
+            for item in identity["archives"].values()
+        ]
+        if any(results) or identity["archiveErrors"]:
+            records[identifier] = "fail"
+        elif len(results) == len(PLATFORMS) and all(result == "" for result in results):
+            records[identifier] = "pass"
+    return records
 
 
 def automated_checks(root, node, bindings, model_ids, node_tests):
@@ -288,6 +322,7 @@ def main(argv=None):
             return 2 if identity["archiveErrors"] else 0
         results, errors = automated_checks(ROOT, args.node, bindings, model_ids, node_tests)
         need(identify(ROOT, archives) == identity, "验证期间候选实现、运行文件或归档发生变化")
+        results.update(delivery_results(identity))
         path = args.evidence.absolute() if args.evidence else None
         evidence = json_file(path) if path else None
         evidence_root = path.parent.resolve() if path else ROOT

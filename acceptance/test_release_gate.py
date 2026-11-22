@@ -7,7 +7,8 @@ import tarfile
 from tempfile import TemporaryDirectory
 import unittest
 
-from release_gate import PLATFORMS, archive_arguments, evaluate, tap_results
+from delivery_checks import CONTENTS, EXCLUSIONS, INTEGRITY, REQUIRED_FILES, delivery_checks
+from release_gate import PLATFORMS, archive_arguments, delivery_results, evaluate, tap_results
 from release_identity import (
     BASELINE, CONTRACT, FROZEN, PLUGIN_MANIFEST, archive_identity, plugin_identity, sha256,
     stream_sha256,
@@ -240,6 +241,52 @@ class ArchiveVerificationTests(unittest.TestCase):
                             "candidate/.mcp.json": b'{"mcpServers":{"other":{}}}'})
         with self.assertRaisesRegex(ValueError, "归档源码"):
             self.identify()
+
+
+class DeliveryChecksTests(unittest.TestCase):
+    def setUp(self):
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.archive = Path(temporary.name, "candidate.tar.gz")
+        self.inventory = dict.fromkeys(REQUIRED_FILES, "same-content")
+        self.checksum = "a" * 64
+        self.receipt = self.archive.with_suffix(".gz.sha256")
+        self.receipt.write_text(f"{self.checksum}  {self.archive.name}\n")
+
+    def test_complete_inventory_includes_migration_and_public_checksum(self):
+        result = delivery_checks(self.archive, self.checksum, self.inventory, self.inventory.keys(), True)
+        self.assertEqual(result, {CONTENTS: "", EXCLUSIONS: "", INTEGRITY: ""})
+        del self.inventory["dist/board-assets/mcp.html"]
+        result = delivery_checks(self.archive, self.checksum, self.inventory, self.inventory.keys(), False)
+        self.assertIn("mcp.html", result[CONTENTS])
+        self.assertIn("迁移和回退", result[CONTENTS])
+
+    def test_injected_data_paths_and_missing_or_corrupt_checksum_are_rejected(self):
+        added = {
+            "node_modules/dependency", "dist/board-assets/config.json", "dist/db/status.sqlite3-wal",
+            "state/session-board/records.json", "ui/previous.png", "docs/fixture.jsonl",
+            "dist/cache", "acceptance/__pycache__", "acceptance/.untracked/snapshot", "unexpected.txt",
+        }
+        self.receipt.write_text(f"{'b' * 64}  {self.archive.name}\n")
+        result = delivery_checks(self.archive, self.checksum, self.inventory, self.inventory.keys() | added, True)
+        for name in added:
+            with self.subTest(name=name):
+                self.assertIn(name, result[EXCLUSIONS])
+        self.assertIn("匹配", result[INTEGRITY])
+        self.receipt.unlink()
+        result = delivery_checks(self.archive, self.checksum, self.inventory, self.inventory.keys(), True)
+        self.assertIn("匹配", result[INTEGRITY])
+
+    def test_delivery_needs_both_candidate_archives_and_keeps_failed_clause(self):
+        valid = {CONTENTS: "", EXCLUSIONS: "", INTEGRITY: ""}
+        identity = {"archives": {"linux-x86_64": {"deliveryChecks": valid}}, "archiveErrors": {}}
+        self.assertEqual(delivery_results(identity), {})
+        identity["archives"]["macos-arm64"] = {"deliveryChecks": {**valid, EXCLUSIONS: "leaked data"}}
+        self.assertEqual(delivery_results(identity), {
+            CONTENTS: "pass", EXCLUSIONS: "fail", INTEGRITY: "pass",
+        })
+        identity["archives"]["macos-arm64"]["deliveryChecks"] = valid
+        self.assertEqual(delivery_results(identity), dict.fromkeys(valid, "pass"))
 
 
 if __name__ == "__main__":
