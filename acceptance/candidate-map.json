@@ -51,6 +51,22 @@
             "file": "src/extensions/session-board/archive.test.ts",
             "test": "reopening an incomplete archive batch checks submitted items and never resends them"
         },
+        "archive-registration-replay": {
+            "file": "src/extensions/session-board/archive.test.ts",
+            "test": "a repeated batch registration accepts only the original ordered targets"
+        },
+        "archive-finish-before-claim": {
+            "file": "src/extensions/session-board/archive.test.ts",
+            "test": "finishing a batch during preflight leaves the item unsubmitted"
+        },
+        "archive-finish-after-failed-preflight": {
+            "file": "src/extensions/session-board/archive.test.ts",
+            "test": "a failed preflight cannot change an item after its batch finishes"
+        },
+        "archive-finish-after-claim": {
+            "file": "src/extensions/session-board/archive.test.ts",
+            "test": "an item claimed before its batch finishes still records the native result"
+        },
         "legacy-archive-section-version": {
             "file": "src/extensions/session-board/discovery.test.ts",
             "test": "a previously registered unscoped archive batch keeps its pending and unsent semantics"
@@ -603,8 +619,8 @@
         "Sort": "安装版已用 HTTP 验证排序冲突和重启持久化，并用 MCP 读回相同值；补 MCP 提交与反向更新。",
         "Archive": "本机手动和远程定时归档已实测读回；补已安装版本的筛选批次和新输入竞争。",
         "ArchiveBatches": "比较真实批次的未提交、待核对及已确认项，并重启读回。",
-        "ArchiveBatchStart": "补核验登记请求冲突、重复提交与批次持久化。",
-        "ArchiveBatchFinish": "补核验部分失败、关闭页面及结束状态。",
+        "ArchiveBatchStart": "验证原始顺序和所有目标字段一致时才重放登记，兼容已登记的旧分区版本。现场批次持久化待验。",
+        "ArchiveBatchFinish": "验证结束期间未提交项保持等待，已提交项正常收取原生回执。现场关闭页面与部分失败待验。",
         "ArchiveBatchCheck": "隔离夹具已验证仅核对已提交项；补真实回执丢失、迟到。",
         "Open": "已从归档定位原会话及主机；补同名跨主机和无新轮次的对照。",
         "PreviewReply": "已确认原生两端完整回复；补迟到回执越过卡片或宿主切换的拒绝。",
@@ -676,6 +692,10 @@
                 "native-move",
                 "fedora-desktop",
                 "archive-receipt",
+                "archive-registration-replay",
+                "archive-finish-before-claim",
+                "archive-finish-after-failed-preflight",
+                "archive-finish-after-claim",
                 "legacy-archive-section-version",
                 "ipc-frame"
             ],

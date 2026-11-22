@@ -25,7 +25,7 @@ node dist/bin/codex-enhancer.js uninstall
 在解压目录复跑随包测试和冻结契约时，无需安装构建依赖。模型对照需要 Python 3。
 
 ```bash
-node --test dist/compat/*.test.js dist/extensions/session-board/*.test.js dist/installer/*.test.js dist/migration/*.test.js dist/runtime/*.test.js
+npm test
 python3 -B acceptance/verify-typescript.py --model-only
 node acceptance/check-candidate.mjs --open
 ```

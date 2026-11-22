@@ -8,7 +8,12 @@ import {
     emptyLedger,
 } from "./archive.js";
 
-function harness(verify: () => Promise<void> = async () => {}) {
+function harness(
+    verify: () => Promise<void> = async () => {},
+    respond: () => Promise<void> = async () => {
+        throw new Error("归档回执丢失");
+    },
+) {
     let ledger: BoardLedger = emptyLedger();
     let scope = "account-a";
     let writes = 0;
@@ -30,7 +35,7 @@ function harness(verify: () => Promise<void> = async () => {}) {
             async archive({ id }) {
                 if (id === "rejected") throw new ArchivePreconditionError("位置已变更");
                 writes++;
-                throw new Error("归档回执丢失");
+                await respond();
             },
         });
     return {
@@ -149,4 +154,37 @@ test("a failed preflight cannot change an item after its batch finishes", async 
     failPreflight(new ArchivePreconditionError("输入版本已变更"));
     assert.equal((await result).status, "awaiting");
     assert.equal(fixture.writes(), 0);
+});
+
+test("an item claimed before its batch finishes still records the native result", async () => {
+    let started!: () => void;
+    const inFlight = new Promise<void>((resolve) => {
+        started = resolve;
+    });
+    let confirm!: () => void;
+    const receipt = new Promise<void>((resolve) => {
+        confirm = resolve;
+    });
+    const fixture = harness(
+        async () => {},
+        () => {
+            started();
+            return receipt;
+        },
+    );
+    const archive = fixture.create();
+    const id = crypto.randomUUID();
+    const candidate = item("claimed");
+    await archive.start(id, [candidate]);
+    const result = archive.submit(id, candidate);
+    await inFlight;
+    const finished = await archive.finish(id);
+    assert.equal(finished.items[0]?.status, "pending");
+    fixture.archived.add(candidate.id);
+    confirm();
+    assert.equal((await result).status, "archived");
+    const stored = await fixture.create().check(id);
+    assert.equal(stored.items[0]?.status, "archived");
+    assert.equal(stored.finishedAt, finished.finishedAt);
+    assert.equal(fixture.writes(), 1);
 });

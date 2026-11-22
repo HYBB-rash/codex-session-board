@@ -317,6 +317,9 @@ test("a previously registered unscoped archive batch keeps its pending and unsen
     ledgers.set(account, previous);
     const statuses = () => ledgers.get(account)?.batches[0]?.items.map(({ status }) => status);
     await service.refresh();
+    const items = [{ ...target, id: first }, target];
+    const replay = await service.request("/api/archive-batches", { id, items });
+    assert.deepEqual(replay, { batch: previous.batches[0] });
     await service.request("/api/archive-batches/check", { id });
     assert.deepEqual(statuses(), ["verified", "awaiting"]);
     assert.deepEqual(writes, []);
