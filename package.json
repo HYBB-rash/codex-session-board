@@ -1,0 +1,17 @@
+{
+  "name": "codex-enhancer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Proof of concept that loads an external runtime into a test copy of Codex Desktop.",
+  "bin": {
+    "codex-enhancer": "./bin/codex-enhancer.js"
+  },
+  "scripts": {
+    "detect": "node bin/codex-enhancer.js detect",
+    "install": "node bin/codex-enhancer.js install",
+    "uninstall": "node bin/codex-enhancer.js uninstall",
+    "status": "node bin/codex-enhancer.js status",
+    "launch": "node bin/codex-enhancer.js launch",
+    "test": "node --test installer/asar.test.js"
+  }
+}
