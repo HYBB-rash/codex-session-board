@@ -40,6 +40,7 @@ interface BoardPorts {
     loadLedger(account: string): Promise<BoardLedger>;
     writeLedger(account: string, ledger: BoardLedger): Promise<void>;
     settings(account: string): Promise<BoardSettings>;
+    titleEpoch(account: string): Promise<number>;
     closePage(): void;
     authority(account: string | undefined): void;
     updateStatus(start: boolean): Promise<unknown>;
@@ -157,6 +158,7 @@ export class BoardService {
     private refreshing: Promise<void> | undefined;
     private readonly editing = new Set<string>();
     private settings: BoardSettings = defaults;
+    private titleStartedAt: number | undefined;
     private readonly observationSince = Date.now() / 1000;
     private readonly runtimeDirty = new Map<HostId, Set<ThreadId>>();
     private readonly titleInFlight = new Set<string>();
@@ -200,7 +202,10 @@ export class BoardService {
     private async readBoard(): Promise<void> {
         const context = await this.desktop.context();
         const account = accountKey(context);
-        this.settings = await this.ports.settings(account);
+        const settings = await this.ports.settings(account);
+        const titleStartedAt = settings.syncTitles
+            ? await this.ports.titleEpoch(account)
+            : undefined;
         if (!this.context || account !== accountKey(this.context)) {
             this.hosts.clear();
             this.changed.clear();
@@ -213,6 +218,8 @@ export class BoardService {
             this.archiveDeadlines.clear();
             this.archiveRuns.clear();
         }
+        this.settings = settings;
+        this.titleStartedAt = titleStartedAt;
         this.context = context;
         this.ports.authority(account);
         await Promise.all(this.desktop.knownHosts().map((host) => this.refreshHost(host, context)));
@@ -381,8 +388,7 @@ export class BoardService {
                 latest &&
                 before.managed &&
                 isNewPhase(phase, latest.id, current, this.observationSince, notified);
-            if (freshPhase)
-                await this.applyPhase(connection, thread, context, phase.state, phase.reason, next);
+            if (freshPhase) await this.applyPhase(connection, thread, context, phase, next);
             await this.commitRecord(context, id, current.version, next);
             queuedTitle = next.title !== undefined && next.title !== current.title;
         } finally {
@@ -395,8 +401,7 @@ export class BoardService {
         connection: HostConnection,
         thread: Thread,
         context: SidebarContext,
-        state: BoardState,
-        reason: string,
+        phase: Phase,
         next: CardRecord,
     ): Promise<void> {
         const current = await this.desktop.read(connection, thread.id, false);
@@ -405,10 +410,16 @@ export class BoardService {
             placement(context, connection.hostId, thread).version
         )
             return;
-        const after = await this.moveCard(state, connection, context, current);
+        const after = await this.moveCard(phase.state, connection, context, current);
         next.manual = false;
-        next.reason = reason;
-        if (this.settings.syncTitles) next.title = { state };
+        next.reason = phase.reason;
+        const afterActivation =
+            !phase.terminal ||
+            (phase.at !== null &&
+                this.titleStartedAt !== undefined &&
+                phase.at >= Math.floor(this.titleStartedAt));
+        if (this.settings.syncTitles && (afterActivation || next.title))
+            next.title = { state: phase.state };
         this.publishThread(connection.hostId, after);
     }
 

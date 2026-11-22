@@ -76,4 +76,11 @@ export class LegacyBoardRuntime {
             ...config,
         });
     }
+
+    titleEpoch(account: string): number | undefined {
+        const epochs = this.forAccount(account)
+            ?.board.databases.map(({ settings: { title_sync_started_at: epoch } }) => Number(epoch))
+            .filter((epoch) => Number.isFinite(epoch) && epoch > 0);
+        return epochs?.length ? Math.min(...epochs) : undefined;
+    }
 }

@@ -93,6 +93,7 @@ function assignmentFixture() {
         loadLedger: async () => emptyLedger(),
         writeLedger: async () => assert.fail("Assignment must not change archive data"),
         settings: async () => defaults,
+        titleEpoch: async () => assert.fail("Assignment must not enable title synchronization"),
         closePage: () => assert.fail("Assignment must not navigate"),
         authority: () => {},
         updateStatus: async () => assert.fail("Assignment must not update the board"),

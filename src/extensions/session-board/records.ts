@@ -149,6 +149,19 @@ export class BoardRecords {
     }
 }
 
+export class TitleEpochs {
+    constructor(private readonly file: string) {}
+
+    start(account: string, imported?: number): number {
+        const epochs = readRecord<number>(this.file);
+        if (Object.hasOwn(epochs, account) && Number.isFinite(epochs[account]))
+            return epochs[account] as number;
+        const epoch = imported ?? Date.now() / 1000;
+        atomicWrite(this.file, { ...epochs, [account]: epoch });
+        return epoch;
+    }
+}
+
 export function atomicWrite(target: string, value: unknown): void {
     mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
     const file = `${target}.${randomUUID()}.tmp`;

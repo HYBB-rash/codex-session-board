@@ -79,6 +79,12 @@ function connectBoard(desktop: DesktopConnection, closePage: () => void): BoardS
         async settings(account) {
             return readSettings(await ipcRenderer.invoke("codex-enhancer:board-config", account));
         },
+        async titleEpoch(account) {
+            return (await ipcRenderer.invoke(
+                "codex-enhancer:board-title-epoch",
+                account,
+            )) as number;
+        },
         closePage,
         authority(account) {
             ipcRenderer.send("codex-enhancer:board-authority", account);

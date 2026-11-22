@@ -8,6 +8,7 @@ import {
     BoardLedgers,
     BoardRecords,
     type RecordWrite,
+    TitleEpochs,
     type TitleResolution,
 } from "../extensions/session-board/records.js";
 import { logs, outputDir, stateDir } from "../installer/paths.js";
@@ -315,6 +316,7 @@ function registerBoardStorage(ipcMain: IpcMain): void {
     const directory = path.join(stateDir, "session-board");
     const boardRecords = new BoardRecords(path.join(directory, "records.json"));
     const ledgers = new BoardLedgers(path.join(directory, "ledger.json"));
+    const titleEpochs = new TitleEpochs(path.join(directory, "title-activation.json"));
     const legacy = new LegacyBoardRuntime(directory);
     ipcMain.handle("codex-enhancer:board-ledger", (event, account, value) => {
         if (!boardFrame(event) || typeof account !== "string")
@@ -336,6 +338,11 @@ function registerBoardStorage(ipcMain: IpcMain): void {
             throw new Error("enhancer IPC rejected");
         const config = path.join(directory, "config.json");
         return legacy.settings(account, fs.existsSync(config) ? readJson(config) : undefined);
+    });
+    ipcMain.handle("codex-enhancer:board-title-epoch", (event, account) => {
+        if (!boardFrame(event) || typeof account !== "string")
+            throw new Error("enhancer IPC rejected");
+        return titleEpochs.start(account, legacy.titleEpoch(account));
     });
     registerBoardRecords(ipcMain, boardRecords, legacy);
 }

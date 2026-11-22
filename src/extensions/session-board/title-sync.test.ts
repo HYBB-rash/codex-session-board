@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type TestContext, test } from "node:test";
+import { setImmediate as nextTick } from "node:timers/promises";
 import { emptyLedger } from "./archive.js";
 import { BoardService } from "./board-service.js";
 import {
@@ -14,7 +15,7 @@ import {
     type Thread,
     type ThreadId,
 } from "./desktop-connection.js";
-import { BoardRecords } from "./records.js";
+import { BoardRecords, TitleEpochs } from "./records.js";
 import { defaults } from "./settings.js";
 
 const first = "00000000-0000-4000-8000-000000000001" as ThreadId;
@@ -66,10 +67,10 @@ function desktopFixture(
     async function handle({ method, params }: Packet["request"]): Promise<unknown> {
         if (method === "thread/list")
             return { data: params.archived ? [] : [...threads.values()], nextCursor: null };
-        if (method === "thread/turns/list" || method === "project/list")
-            return { data: [], nextCursor: null };
+        if (method === "project/list") return { data: [], nextCursor: null };
         const row = params.threadId && threads.get(params.threadId);
         assert.ok(row);
+        if (method === "thread/turns/list") return { data: row.turns, nextCursor: null };
         if (method === "thread/read") return { thread: row };
         assert.equal(method, "thread/name/set");
         assert.ok(params.name);
@@ -112,13 +113,17 @@ function testRecords(testContext: TestContext) {
         Reflect.set(globalThis, "window", previous);
         rmSync(directory, { recursive: true, force: true });
     });
-    return new BoardRecords(join(directory, "records.json"));
+    const records = new BoardRecords(join(directory, "records.json"));
+    const titleEpoch = (key: string) =>
+        new TitleEpochs(join(directory, "title-activation.json")).start(key);
+    return { records, titleEpoch };
 }
 
 function fixture(testContext: TestContext) {
-    const records = testRecords(testContext);
+    const { records, titleEpoch } = testRecords(testContext);
     const threads = new Map([first, second].map((id) => [id, thread(id)]));
     const names: { threadId: ThreadId; name: string }[] = [];
+    const config = { syncTitles: true };
     const native = {
         context: async () => context,
         async rename(row: Thread, name: string): Promise<void> {
@@ -141,7 +146,8 @@ function fixture(testContext: TestContext) {
             settleTitle: async (resolution) => records.settleTitle(resolution),
             loadLedger: async () => emptyLedger(),
             writeLedger: async () => assert.fail("Title must not touch the ledger"),
-            settings: async () => ({ ...defaults, syncTitles: true }),
+            settings: async () => ({ ...defaults, ...config }),
+            titleEpoch: async (key) => titleEpoch(key),
             closePage: () => assert.fail("Title must not navigate"),
             authority: () => {},
             updateStatus: async () => assert.fail("Title must not change release"),
@@ -161,7 +167,7 @@ function fixture(testContext: TestContext) {
         });
     }
 
-    return { reopen, names, threads, native, records, seed };
+    return { reopen, names, threads, native, records, seed, config, titleEpoch };
 }
 
 function save(service: BoardService, state: "review" | "in_progress", note: string) {
@@ -178,6 +184,66 @@ function deferred<Value>() {
     });
     return { promise, resolve };
 }
+
+function conclude(row: Thread, completedAt: number) {
+    row.status = { type: "idle" };
+    row.updatedAt = completedAt;
+    row.section = { id: "active-replica" as HostSectionId, name: "进行中" };
+    row.turns = [
+        {
+            id: `turn-${row.id}`,
+            status: "completed",
+            startedAt: completedAt - 1,
+            completedAt,
+            items: [],
+        },
+    ];
+}
+
+test("enabling and reopening do not rename historical activity; new automatic states sync", async (testContext) => {
+    const { config, reopen, names, native, threads, titleEpoch } = fixture(testContext);
+    let clock = Date.now();
+    testContext.mock.method(Date, "now", () => clock);
+    config.syncTitles = false;
+    const service = reopen();
+    await service.refresh();
+    const historical = threads.get(first);
+    const active = threads.get(second);
+    assert.ok(historical && active);
+    clock += 10000;
+    conclude(historical, clock / 1000 - 2);
+    config.syncTitles = true;
+    await service.refresh();
+    assert.equal(
+        service.snapshot().sessions.find(({ threadId }) => threadId === first)?.state,
+        "review",
+    );
+    assert.equal(names.length, 0);
+    const activated = titleEpoch(account);
+    assert.equal(activated, clock / 1000);
+    clock += 10000;
+    const reopened = reopen();
+    await reopened.refresh();
+    assert.equal(titleEpoch(account), activated);
+    assert.equal(names.length, 0);
+    const renamed = deferred<void>();
+    native.rename = async (row, name) => {
+        row.name = name;
+        renamed.resolve();
+    };
+    clock += 3000;
+    conclude(active, clock / 1000);
+    await reopened.refresh();
+    await renamed.promise;
+    await nextTick();
+    assert.equal(names.length, 1);
+    assert.equal(names[0]?.threadId, second);
+    assert.match(names[0]?.name ?? "", /^\[待审阅\]/);
+    assert.equal(
+        reopened.snapshot().sessions.find(({ threadId }) => threadId === second)?.titleSyncPending,
+        undefined,
+    );
+});
 
 test("manual saves sync the latest full title and strip only leading state prefixes", async (testContext) => {
     const { reopen, names, threads } = fixture(testContext);
