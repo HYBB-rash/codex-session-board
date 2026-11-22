@@ -210,6 +210,10 @@ export class BoardService {
     private readonly changed = new Map<string, number>();
     private changes = 0;
     private ledger: BoardLedger = emptyLedger();
+    private readonly openingDrafts = new Map<
+        string,
+        { projectId: string; result: ReturnType<BoardService["createTrackedDraft"]> }
+    >();
     private readonly archive = new Archive({
         scope: () => accountKey(this.requiredContext()),
         ledger: () => this.ledger,
@@ -1260,6 +1264,20 @@ export class BoardService {
         };
     }
 
+    private async createTrackedDraft(input: DraftInput, owner: SidebarContext, draft: DraftRecord) {
+        const record = await this.persistDraft(draft);
+        try {
+            return await this.launchDraft(input, owner, record);
+        } catch (error) {
+            return {
+                ok: false,
+                pending: true,
+                operationId: record.requestId,
+                error: errorText(error),
+            };
+        }
+    }
+
     private async create(input: DraftInput) {
         const owner = this.requiredContext();
         const { projectId, operationId } = input;
@@ -1268,29 +1286,35 @@ export class BoardService {
         );
         if (draft) return this.resumeDraft(input, draft);
         if (input.requestId) throw new Error("旧新建请求已结束，请重新选择目标");
-        if (operationId && (!projectId || !/^[0-9a-f-]{36}$/i.test(operationId)))
+        if (!operationId) return this.launchDraft(input, owner);
+        if (!projectId || !/^[0-9a-f-]{36}$/i.test(operationId))
             throw new Error("新建操作 ID 无效");
+        const key = JSON.stringify([accountKey(owner), operationId]);
+        const opening = this.openingDrafts.get(key);
+        if (opening) {
+            if (opening.projectId !== projectId) throw new Error("新建操作已用于其他项目");
+            if (input.hostId && this.findProject(projectId).hostId !== input.hostId)
+                throw new Error("选定的 Codex 连接不可用");
+            return opening.result;
+        }
         const existing = this.ledger.pendingDrafts?.find(
             ({ requestId }) => requestId === operationId,
         );
         if (existing?.project !== undefined && existing.project !== projectId)
             throw new Error("新建操作已用于其他项目");
         if (existing?.stage === "opened") return { ok: true, operationId };
-        const record =
-            projectId && operationId
-                ? await this.persistDraft({
-                      project: projectId,
-                      requestId: operationId,
-                      stage: "starting",
-                      threadId: null,
-                      source: "native",
-                  })
-                : undefined;
+        const result = this.createTrackedDraft(input, owner, {
+            project: projectId,
+            requestId: operationId,
+            stage: "starting",
+            threadId: null,
+            source: "native",
+        });
+        this.openingDrafts.set(key, { projectId, result });
         try {
-            return await this.launchDraft(input, owner, record);
-        } catch (error) {
-            if (!record) throw error;
-            return { ok: false, pending: true, operationId, error: errorText(error) };
+            return await result;
+        } finally {
+            this.openingDrafts.delete(key);
         }
     }
 
