@@ -105,7 +105,8 @@ export function cardId(ref: ThreadRef): string {
 }
 
 export function interactiveThread(thread: Thread): boolean {
-    if (thread.ephemeral || typeof thread.id !== "string" || !thread.id) return false;
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+    if (thread.ephemeral || typeof thread.id !== "string" || !uuid.test(thread.id)) return false;
     return (
         thread.source === undefined ||
         (typeof thread.source === "string" && interactiveSources.includes(thread.source))

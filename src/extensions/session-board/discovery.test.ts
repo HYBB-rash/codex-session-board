@@ -10,6 +10,7 @@ import {
     type ThreadId,
     type Turn,
 } from "./desktop-connection.js";
+import type { DesktopCommand } from "./desktop-world.js";
 import type { CardRecord } from "./records.js";
 import { defaults } from "./settings.js";
 
@@ -50,6 +51,8 @@ interface NativeFixture {
     hosts: string[];
     list(host: string, args: ListArgs): { data: Thread[]; nextCursor: string | null };
     history?: (id: ThreadId) => Turn[];
+    read?: (host: string, id: ThreadId) => Thread;
+    open?: (command: Extract<DesktopCommand, { kind: "open" }>) => void;
 }
 
 function readFixture(native: NativeFixture, host: string, method: string, params: ListArgs) {
@@ -58,11 +61,21 @@ function readFixture(native: NativeFixture, host: string, method: string, params
             return native.list(host, params);
         case "thread/turns/list":
             return { data: native.history?.(params.threadId) ?? [], nextCursor: null };
+        case "thread/read":
+            assert.ok(native.read);
+            return { thread: native.read(host, params.threadId) };
         case "project/list":
             return { data: [], nextCursor: null };
         default:
             return assert.fail(method);
     }
+}
+
+function discoverySidebar(native: NativeFixture, command: DesktopCommand) {
+    if (command.kind === "context") return { accountId: "account", userId: "user", sections: [] };
+    assert.equal(command.kind, "open");
+    assert.ok(native.open);
+    return native.open(command);
 }
 
 function fixture(testContext: TestContext, maxPages = 3) {
@@ -78,7 +91,7 @@ function fixture(testContext: TestContext, maxPages = 3) {
     };
     const desktop = new DesktopConnection({
         bootstrap: () => ({ catalogHostIds: native.hosts }),
-        sidebar: async () => ({ accountId: "account", userId: "user", sections: [] }),
+        sidebar: async (command) => discoverySidebar(native, command),
         async send(payload) {
             const packet = payload as {
                 hostId: string;
@@ -106,13 +119,48 @@ function fixture(testContext: TestContext, maxPages = 3) {
         writeLedger: async () => assert.fail("Discovery must not write the ledger"),
         settings: async () => ({ ...defaults, maxPages, pageSize: 2, historyPerPoll: 1 }),
         titleEpoch: async () => assert.fail("Titles disabled"),
-        closePage: () => assert.fail("Discovery must not navigate"),
+        closePage: () => assert.ok(native.open, "Discovery must not navigate"),
         authority: () => {},
         proof: () => {},
         updateStatus: async () => assert.fail("Discovery must not change release"),
     });
     return { native, service, desktop, records };
 }
+
+test("opening rejects invalid, undiscovered and mismatched threads and uses the verified host", async (testContext) => {
+    const { native, service } = fixture(testContext);
+    const invalid = "../settings" as ThreadId;
+    const remote = hostId(remoteName);
+    assert.ok(remote);
+    native.hosts = [localHostId, remote];
+    native.list = (_host, { archived }) => ({
+        data: archived ? [] : [row(invalid), row(first)],
+        nextCursor: null,
+    });
+    const dispatched: DesktopCommand[] = [];
+    const reads: string[] = [];
+    native.open = (command) => void dispatched.push(command);
+    await service.refresh();
+    assert.equal(service.snapshot().sessions.length, 2);
+    for (const id of [invalid, second, JSON.stringify([remote, invalid])])
+        await assert.rejects(service.request("/api/open", { id }), /找不到该会话/);
+    const id = JSON.stringify([remote, first]);
+    native.read = (host) => {
+        reads.push(host);
+        return row(second);
+    };
+    await assert.rejects(service.request("/api/open", { id }), /回执会话不一致/);
+    assert.deepEqual(dispatched, []);
+    native.read = (host, threadId) => {
+        reads.push(host);
+        return row(threadId);
+    };
+    assert.deepEqual(await service.request("/api/open", { id }), { ok: true });
+    assert.deepEqual(reads, [remote, remote]);
+    assert.deepEqual(dispatched, [
+        { accountId: "account", userId: "user", hostId: remote, threadId: first, kind: "open" },
+    ]);
+});
 
 test("discovery pages interactive sources across all providers and keeps the newest duplicate", async (testContext) => {
     const { native, service } = fixture(testContext);

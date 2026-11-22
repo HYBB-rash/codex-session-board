@@ -1089,6 +1089,7 @@ export class BoardService {
         const { accountId, userId } = await this.freshContext();
         await this.desktop.read(connection, card.threadId, false);
         await this.freshContext();
+        this.desktop.assertCurrent(connection);
         await this.desktop.navigate({
             kind: "open",
             accountId,
