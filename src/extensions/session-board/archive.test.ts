@@ -8,7 +8,7 @@ import {
     emptyLedger,
 } from "./archive.js";
 
-function harness() {
+function harness(verify: () => Promise<void> = async () => {}) {
     let ledger: BoardLedger = emptyLedger();
     let scope = "account-a";
     let writes = 0;
@@ -22,7 +22,7 @@ function harness() {
             async write(next) {
                 ledger = JSON.parse(JSON.stringify(next)) as BoardLedger;
             },
-            async verify() {},
+            verify,
             async isArchived(id) {
                 checked.push(id);
                 return archived.has(id);
@@ -93,4 +93,60 @@ test("an archive ledger update queued before an account switch cannot commit aft
     fixture.changeScope();
     await assert.rejects(task, /账号已变更/);
     assert.deepEqual(archive.batches(), []);
+});
+
+test("a repeated batch registration accepts only the original ordered targets", async () => {
+    const original = harness().create();
+    const batchId = crypto.randomUUID();
+    const first = item("first");
+    const second = item("second");
+    const batch = await original.start(batchId, [first, second]);
+    assert.deepEqual(await original.start(batchId, [first, second]), batch);
+    for (const replacement of [
+        { ...first, title: "other selection" },
+        { ...first, version: 4 },
+        { ...first, inputVersion: 5 },
+        { ...first, sectionVersion: "unexpected" },
+    ]) {
+        await assert.rejects(original.start(batchId, [replacement, second]), /名单已固定/);
+    }
+    await assert.rejects(original.start(batchId, [second, first]), /名单已固定/);
+    assert.deepEqual(original.batches(), [batch]);
+});
+
+test("finishing a batch during preflight leaves the item unsubmitted", async () => {
+    let completePreflight!: () => void;
+    const preflight = new Promise<void>((resolve) => {
+        completePreflight = resolve;
+    });
+    const fixture = harness(() => preflight);
+    const original = fixture.create();
+    const batchId = crypto.randomUUID();
+    const candidate = item("awaiting");
+    await original.start(batchId, [candidate]);
+    const result = original.submit(batchId, candidate);
+    const finished = await original.finish(batchId);
+    assert.equal(finished.items[0]?.status, "awaiting");
+    completePreflight();
+    assert.equal((await result).status, "awaiting");
+    assert.deepEqual(await fixture.create().check(batchId), finished);
+    assert.deepEqual(fixture.checked, []);
+    assert.equal(fixture.writes(), 0);
+});
+
+test("a failed preflight cannot change an item after its batch finishes", async () => {
+    let failPreflight!: (error: Error) => void;
+    const preflight = new Promise<void>((_resolve, reject) => {
+        failPreflight = reject;
+    });
+    const fixture = harness(() => preflight);
+    const archive = fixture.create();
+    const id = crypto.randomUUID();
+    const candidate = item("unchanged");
+    await archive.start(id, [candidate]);
+    const result = archive.submit(id, candidate);
+    await archive.finish(id);
+    failPreflight(new ArchivePreconditionError("输入版本已变更"));
+    assert.equal((await result).status, "awaiting");
+    assert.equal(fixture.writes(), 0);
 });

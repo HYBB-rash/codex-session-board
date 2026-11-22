@@ -101,22 +101,26 @@ export class Archive {
             throw new Error("归档批次不合法");
         return this.change((old) => {
             const previous = old.batches.find((entry) => entry.id === id);
-            if (
-                previous &&
-                JSON.stringify(previous.items.map(({ id }) => id)) !==
-                    JSON.stringify(items.map(({ id }) => id))
-            )
-                throw new Error("批次 ID 已用于其他会话");
-            if (previous) return { next: old, result: previous };
+            const targets = items.map(({ sectionVersion, ...item }, index) => ({
+                ...item,
+                sectionVersion:
+                    previous?.items[index]?.sectionVersion === sectionVersion
+                        ? sectionVersion
+                        : this.ports.nativeVersion(sectionVersion),
+            }));
+            if (previous) {
+                if (
+                    previous.items.length !== targets.length ||
+                    previous.items.some((item, index) => !sameArchiveTarget(item, targets[index]))
+                )
+                    throw new Error("归档批次名单已固定");
+                return { next: old, result: previous };
+            }
             const batch: ArchiveBatch = {
                 id,
                 createdAt: Date.now() / 1000,
                 finishedAt: null,
-                items: items.map((item) => ({
-                    ...item,
-                    sectionVersion: this.ports.nativeVersion(item.sectionVersion),
-                    status: "awaiting",
-                })),
+                items: targets.map((item) => ({ ...item, status: "awaiting" })),
                 ...(single ? { single } : {}),
             };
             return { next: { ...old, batches: [batch, ...old.batches] }, result: batch };
@@ -143,19 +147,33 @@ export class Archive {
         }));
     }
 
-    private async set(
+    private set(
         id: string,
         item: ArchiveItem,
+        from: "awaiting" | "pending",
         status: ArchiveState,
         message?: string,
-    ): Promise<ArchiveItem> {
-        const next = { ...item, status, ...(message ? { message } : {}) };
-        if (!message) delete next.message;
-        await this.patch(id, (batch) => ({
-            ...batch,
-            items: batch.items.map((row) => (row.id === item.id ? next : row)),
-        }));
-        return next;
+    ): Promise<{ item: ArchiveItem; changed: boolean }> {
+        return this.change<{ item: ArchiveItem; changed: boolean }>((old) => {
+            const batch = this.requireBatch(id);
+            const current = batch.items.find((row) => row.id === item.id);
+            if (!current) throw new Error("会话不在此归档批次");
+            if (current.status !== from || (from === "awaiting" && batch.finishedAt !== null))
+                return { next: old, result: { item: current, changed: false } };
+            const next = { ...current, status, ...(message ? { message } : {}) };
+            if (!message) delete next.message;
+            const updated = {
+                ...batch,
+                items: batch.items.map((row) => (row.id === item.id ? next : row)),
+            };
+            return {
+                next: {
+                    ...old,
+                    batches: old.batches.map((row) => (row.id === id ? updated : row)),
+                },
+                result: { item: next, changed: true },
+            };
+        });
     }
 
     pending(id: string): boolean {
@@ -170,7 +188,7 @@ export class Archive {
             if (item.status !== "pending" || this.submitted.has(item.id)) continue;
             const archived = await this.ports.isArchived(item.id);
             this.requireScope(scope);
-            if (archived) await this.set(id, item, "verified");
+            if (archived) await this.set(id, item, "pending", "verified");
         }
         return this.requireBatch(id);
     }
@@ -225,40 +243,57 @@ export class Archive {
             await this.ports.verify(item);
         } catch (error) {
             this.requireScope(scope);
-            return this.set(
+            const rejected = await this.set(
                 batch,
                 item,
+                "awaiting",
                 error instanceof NewInputError ? "newInput" : "rejected",
                 String(error),
             );
+            return rejected.item;
         }
         this.requireScope(scope);
-        let pending = await this.set(batch, item, "pending");
+        const claimed = await this.set(batch, item, "awaiting", "pending");
+        if (!claimed.changed) return claimed.item;
+        let pending = claimed.item;
         try {
             this.requireScope(scope);
             await this.ports.archive(item);
         } catch (error) {
             this.requireScope(scope);
-            if (error instanceof ArchivePreconditionError)
-                return this.set(
+            if (error instanceof ArchivePreconditionError) {
+                const rejected = await this.set(
                     batch,
                     item,
+                    "pending",
                     error instanceof NewInputError ? "newInput" : "rejected",
                     String(error),
                 );
-            pending = await this.set(batch, pending, "pending", String(error));
+                return rejected.item;
+            }
+            pending = (await this.set(batch, pending, "pending", "pending", String(error))).item;
         }
         try {
             this.requireScope(scope);
             const archived = await this.ports.isArchived(item.id);
             this.requireScope(scope);
-            if (archived) return await this.set(batch, pending, "archived");
+            if (archived) return (await this.set(batch, pending, "pending", "archived")).item;
         } catch (error) {
             this.requireScope(scope);
-            return this.set(batch, pending, "pending", String(error));
+            return (await this.set(batch, pending, "pending", "pending", String(error))).item;
         }
         return pending;
     }
+}
+
+function sameArchiveTarget(item: ArchiveTarget, other: ArchiveTarget | undefined): boolean {
+    return (
+        item.id === other?.id &&
+        item.title === other.title &&
+        item.version === other.version &&
+        item.inputVersion === other.inputVersion &&
+        item.sectionVersion === other.sectionVersion
+    );
 }
 
 import type { DraftRecord } from "./drafts.js";
