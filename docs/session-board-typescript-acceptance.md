@@ -4,7 +4,7 @@
 
 ## 0.3.24 候选
 
-由 `694c335` 构建。默认副本安装仍可用，Linux 包另含显式的 Fedora 原地模式。两个平台共 76 项门槛自动检查通过。31 项冻结需求中 18 项通过、13 项仍需本候选现场证据。Fedora 和 macOS 各有 3 条随包交付现场断言。原地安装回执单列。`releaseReady` 为 `false`。[逐项门槛](../state/acceptance/release-gate-0.3.24.json) · [现场证据索引](../state/acceptance/live-0.3.24.json)
+由 `694c335` 构建。默认副本安装仍可用，Linux 包另含显式的 Fedora 原地模式。两个平台共 76 项门槛自动检查通过。31 项冻结需求中 18 项通过、13 项仍需本候选现场证据。Fedora 记录 4 条逐项现场断言，macOS 记录 3 条随包交付断言。原地安装回执单列。`releaseReady` 为 `false`。[逐项门槛](../state/acceptance/release-gate-0.3.24.json) · [现场证据索引](../state/acceptance/live-0.3.24.json)
 
 | 场景 | 现场观察 |
 | --- | --- |
@@ -12,6 +12,7 @@
 | 安装失败、中断与竞争 | 原客户端运行时拒绝安装和卸载，安装前后 `/run/user/1000/codex-desktop/` 的两个监听 socket 路径一致。归档复制遇到操作系统文件大小限制后，原件指纹和元数据一致，系统安装目录已清理。首次记录落盘后杀掉安装器，重试成功。首次记录残留和 `umask 077` 下的安装也可重试。RPM 事务锁被占用时拒绝安装，回执缺失时拒绝卸载并保留备份。[运行中保护](../state/acceptance/in-place-rpm/results/enhancer-024-guard.txt) · [中断恢复](../state/acceptance/in-place-rpm/results/enhancer-024-recover.txt) · [竞争与回执缺失](../state/acceptance/in-place-rpm/results/enhancer-024-rename.txt) |
 | 更新、回退与双模式隔离 | 旧副本包被原地协议拒绝，活动指针字节保持一致。从原图标读回更新演练版本 `0.3.24-rehearsal.1`，回退后读回 `0.3.24`，客户端补丁文件保持一致。原地模式存在时，可用默认命令新建并卸载独立副本，副本归档恢复为原件，系统原地归档和启动元数据保持一致。[更新和回退](../state/acceptance/in-place-rpm/results/enhancer-024-update.txt) · [副本共存](../state/acceptance/in-place-rpm/results/enhancer-024-lifecycle.txt) |
 | 已登录副本及公共入口 | 已安装副本更新并重启，复用原有本机和 MacBook Pro 连接。普通侧栏启动能看到双端专用卡。HTTP、成品 CLI 与 MCP stdio 读回相同的双端卡片及版本，预览同轮最终回复，保存数据保持一致。本候选从原生插件详情点击打开后未观察到 MCP App webview，重试时窗口未在限时内恢复连接。隔离插件和配置已复原，原生 MCP App 拖放仍沿用 `0.3.23` 的回执。[原生连接](../state/acceptance/fedora-signed-native-0.3.24.txt) · [侧栏](../state/acceptance/fedora-enhancer-rail-0.3.24.json) · [公共入口](../state/acceptance/fedora-entrypoints-0.3.24.json) · [当前原生 App 尝试](../state/acceptance/fedora-native-mcp-run-0.3.24.txt) |
+| 标题写入预算 | 在已登录副本暂留专用卡的第一次原生改名回执，原生会话和轮次读取保持工作。后台还在等待时，前台同卡保存用时 175.34 毫秒，备注和新待同步项已落盘。独立预算试验中，三秒共享预算扣除原生读取后给改名 2919 毫秒，标题同步约 2999.30 毫秒结束。迟到的旧回执未清除新任务，随后恢复专用卡及写入限制。[计时与复原](../state/acceptance/fedora-title-003-ack-0.3.24-447d9a4be.jsonl) |
 | Fedora PWA 系统安装 | 隔离 Chrome 中通过看板与原生确认框安装。Chrome 生成的 `.desktop` 通过系统校验。通过该启动项首次打开和关闭后重开，两次均获得独立窗口和 Service Worker，读回同一 `0.3.24` 实例。看板配置、记录、归档账本及标题启用记录校验一致。[安装和重开](../state/acceptance/fedora-pwa-installed-0.3.24.json) |
 | Loader 保留且构建变化 | 修改客体构建标签模拟混合替换。检查器报告 `incompatible`，原进程从原图标启动并初始化本机连接，Loader 给出版本和停用原因，看板运行日志无新条目。复原构建标签后状态恢复。真实登录、远程离线和短暂失败在原地模式待补。[停用及恢复](../state/acceptance/in-place-rpm/results/enhancer-024-lifecycle.txt) · [原进程日志](../state/acceptance/in-place-rpm/results/original-gtk-launch-final-024-incompatible.log) |
 | RPM 覆盖入口及通知 | 桌面在线时执行真实 RPM 事务切换至 `26.1111.21308`，独立用户服务识别覆盖并发送通知。图形用户退出且 D-Bus 消失后同版本重装，下一次登录发出通知。用本地重打包 RPM 验证升级改名为 `.vite/build/rpm-lab-renamed.js` 后仍能识别覆盖，卸载后原图标能启动改名构建。该改名来自隔离夹具。[异构建替换](../state/acceptance/in-place-rpm/results/enhancer-024-lifecycle.txt) · [重装及重新登录](../state/acceptance/in-place-rpm/results/enhancer-024-late-notification.txt) · [改名升级](../state/acceptance/in-place-rpm/results/enhancer-024-rename.txt) |
