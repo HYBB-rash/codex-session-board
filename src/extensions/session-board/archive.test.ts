@@ -57,20 +57,28 @@ const item = (id: string): ArchiveTarget => ({
     sectionVersion: "expected",
 });
 
-test("reopening an incomplete archive batch checks submitted items and never resends them", async () => {
+test("reopening an incomplete archive batch checks submitted items and never resends them", async (testContext) => {
+    let time = 1000;
+    testContext.mock.method(Date, "now", () => time);
     const fixture = harness();
     const original = fixture.create();
     const batchId = crypto.randomUUID();
     const first = item("sent");
     const untouched = item("not sent");
     await original.start(batchId, [first, untouched]);
-    assert.equal((await original.submit(batchId, first)).status, "pending");
+    const pending = await original.submit(batchId, first);
+    assert.equal(pending.status, "pending");
+    assert.equal(pending.checkedAt, 1);
     assert.equal(fixture.writes(), 1);
     const reopened = fixture.create();
     fixture.archived.add(first.id);
+    time = 2500;
     assert.deepEqual(
-        (await reopened.check(batchId)).items.map(({ status }) => status),
-        ["verified", "awaiting"],
+        (await reopened.check(batchId)).items.map(({ status, checkedAt }) => [status, checkedAt]),
+        [
+            ["verified", 2.5],
+            ["awaiting", undefined],
+        ],
     );
     assert.deepEqual(fixture.checked, [first.id, first.id]);
     await reopened.finish(batchId);

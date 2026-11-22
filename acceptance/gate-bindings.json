@@ -79,7 +79,7 @@
             ["discovery-limit", "discovery-repeated-cursor"]
         ],
         "DISCOVERY-002": [
-            ["offline-cache", "discovery-limit", "discovery-reconnect"],
+            ["offline-cache", "discovery-limit", "discovery-reconnect", "legacy-offline-card"],
             ["history-rotation"]
         ],
         "NAV-001": [
@@ -107,7 +107,14 @@
             ["release-paths", "release-rollback", "install-first-retry", "install-upgrade-retry"]
         ],
         "DATA-002": [
-            ["migration-wal", "migration-projection", "migration-offline", "legacy-change-history"],
+            [
+                "migration-wal",
+                "migration-projection",
+                "migration-offline",
+                "legacy-offline-card",
+                "legacy-offline-authority",
+                "legacy-change-history"
+            ],
             ["migration-retry", "legacy-change-rollback"]
         ],
         "SERVICE-001": [

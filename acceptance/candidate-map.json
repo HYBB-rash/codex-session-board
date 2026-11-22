@@ -276,6 +276,14 @@
             "file": "src/migration/legacy.test.ts",
             "test": "databases for offline hosts survive if the main database is missing"
         },
+        "legacy-offline-card": {
+            "file": "src/migration/legacy.test.ts",
+            "test": "a bound remote migration is visible even if Codex has never connected"
+        },
+        "legacy-offline-authority": {
+            "file": "src/migration/legacy.test.ts",
+            "test": "a migrated remote card belongs to the bound user and yields to native discovery"
+        },
         "release-paths": {
             "file": "src/installer/paths.test.ts",
             "test": "compiled files sit in dist and runtime data stays in the repository"
@@ -539,7 +547,9 @@
                 "migration-wal",
                 "migration-projection",
                 "migration-retry",
-                "migration-offline"
+                "migration-offline",
+                "legacy-offline-card",
+                "legacy-offline-authority"
             ]
         },
         "SERVICE-001": {

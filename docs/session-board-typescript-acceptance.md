@@ -4,13 +4,16 @@
 
 ## 0.3.21 候选
 
-双平台归档由提交 `cc7ed74` 构建。31 项冻结需求中 18 项通过、13 项待验，73 项门槛自动检查通过。Fedora 现场 12 条断言通过，macOS 现场通过 3 条归档断言。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.21.json) · [现场证据索引](../state/acceptance/live-0.3.21.json)
+双平台归档由提交 `cc7ed74` 构建。31 项冻结需求中 18 项通过、13 项待验，73 项门槛自动检查通过。Fedora 现场 27 条断言通过，macOS 现场通过 3 条归档断言。`releaseReady` 为 `false`。[逐项门槛报告](../state/acceptance/release-gate-0.3.21.json) · [现场证据索引](../state/acceptance/live-0.3.21.json)
 
 | 项目 | 结果 |
 | --- | --- |
 | 定时归档配置 | 缩短周期会按新周期重新计算截止时间，停用及切换到旧六状态模式会清除截止时间。各宿主独立调度，恢复后使用下一周期边界。两台空宿主的隔离夹具复现了 `0.3.20` 的旧截止时间问题，`0.3.21` 通过全部 7 项检查。[原版复现](../state/acceptance/fedora-timer-configuration-0.3.20.json) · [修复后复验](../state/acceptance/fedora-timer-configuration-0.3.21.json) |
 | Fedora 关页定时归档 | 关闭 Enhancer 看板后，仅允许归档本机专用卡。独立原生列表先读回归档结果，随后从看板接口核对该轮归档记录和原备注。停用后清除下一次截止时间，验收后取消归档，并恢复专用卡、写入限制及配置原字节。[后台定时归档回执](../state/acceptance/fedora-archive-batch-0.3.21-1795376234815.jsonl) |
 | Fedora 原生操作 | 本机与远端专用卡同次保存返回前均独立读回原生新标题。筛选后的本机专用卡经看板归档，关闭重开仍读回结果。原生 MCP App 对远端专用卡进行跨列、刷新和反向拖放，备用网页与原生分区读回一致。备注保留，专用卡的原位置和标题已恢复。[标题读回](../state/acceptance/fedora-title-001-live-0.3.21-1795375974388.json) · [归档回执](../state/acceptance/fedora-archive-batch-0.3.21-1795375983506.jsonl) · [原生 MCP App](../state/acceptance/fedora-mcp-gestures-live-0.3.21-1795376077076.json) |
+| Fedora 真轮次与状态模式 | 专用卡原生执行时自动进入进行中。普通澄清答复结束后进入待审阅。另一轮点击原生停止后进入已阻塞，自动原因与人工备注同时保留。四、五及旧六状态的列顺序、导航和表单一致。原生目录仍缺待判断与已完成分区。[澄清与完成](../state/acceptance/fedora-title-001-live-0.3.21-1795376971788.json) · [停止](../state/acceptance/fedora-interrupt-0.3.21-c34e24ac.jsonl) · [状态](../state/acceptance/fedora-state-001-0.3.21-1795377091818.json) |
+| Fedora 分页、导航和表单 | 每页一条时，本机及远端共读回 12 张卡，独立原生集合一致。限制至一页后，诊断报告未完成，已保存数据保留。同名专用卡均定位到正确主机和会话，原生轮次不变。搜索、空列拖放和键盘编辑通过。[分页](../state/acceptance/fedora-product-paging-0.3.21.json) · [诊断](../state/acceptance/fedora-health-0.3.21.json) · [导航](../state/acceptance/fedora-nav-same-title-0.3.21-1795377143491.json) · [键盘与筛选](../state/acceptance/fedora-ui-003-0.3.21-1795377121630.jsonl) |
+| Fedora 改名失败 | 隔离数据库拒绝专用卡改名时，原生状态和备注保存，界面显示标题同步待重试。测试副本在临时授权配置下重启后，未在观察窗口内读回原生连接，重试轨迹待复验。临时限制已撤除，专用卡原位置和标题已恢复。[保存与等待](../state/acceptance/fedora-title-retry-0.3.21-8fce2ad58.jsonl) · [恢复](../state/acceptance/fedora-title-retry-cleanup-0.3.21-8fce2ad58.json) |
 | Fedora 安装生命周期 | 从已安装备用网页点击更新，重启读回 `0.3.21`，回退并重启后读回 `0.3.20`。卸载后试验副本启动归档与系统归档一致，专用备注夹具校验通过。已登录隔离副本也独立加载 `0.3.21`，HTTP、CLI 和 MCP 读回同一份双端数据及原生回复。[网页更新及回退](../state/acceptance/fedora-installed-0.3.21.txt) · [公共入口回执](../state/acceptance/fedora-entrypoints-0.3.21.json) |
 | 双平台解包 | Fedora 通过 85 项随包测试，MacBook Pro 通过 83 项并跳过 2 项 Linux 专用测试。两端各通过 10 项公共入口、10 项冻结模型和 18 项门槛测试，运行文件与随包清单保持一致。macOS Codex `26.1111.21308` 仍在复制前因框架内嵌 ASAR 摘要拒绝安装。[Fedora 解包结果](../state/acceptance/fedora-archive-0.3.21.log) · [MacBook Pro 测试与预检](../state/acceptance/packages/macos-0.3.21-preflight.txt) |
 
