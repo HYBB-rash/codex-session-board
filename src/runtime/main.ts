@@ -62,7 +62,7 @@ function readAppInfo(): RuntimeInfo {
     const metadata = readJson(metadataPath);
     const owl = readJson(owlPath);
     const chromium = fs.readFileSync(path.join(resources, "..", "version"), "utf8").trim();
-    const electronVersion = process.versions.electron ?? null;
+    const electronVersion = process.versions["electron"] ?? null;
     return {
         codexVersion: requiredString(metadata, "version", metadataPath),
         runtimeType:
@@ -75,10 +75,12 @@ function readAppInfo(): RuntimeInfo {
 function loadExtension(file: string): ExtensionModule {
     const loaded: unknown = requireFromHere(file);
     if (!isRecord(loaded)) throw new Error(`extension is not an object: ${file}`);
-    const id = typeof loaded.id === "string" ? loaded.id : undefined;
-    const setup =
-        typeof loaded.setup === "function" ? (loaded.setup as ExtensionModule["setup"]) : undefined;
-    return { id, setup };
+    const extension: ExtensionModule = {};
+    const id = loaded["id"];
+    if (typeof id === "string") extension.id = id;
+    const setup = loaded["setup"];
+    if (typeof setup === "function") extension.setup = setup as (api: ExtensionApi) => void;
+    return extension;
 }
 
 function loadExtensions(registry: SidebarRegistry, publish: () => void): string[] {
@@ -136,7 +138,7 @@ function loadElectron(): ElectronModule {
 function uiPayload(registry: SidebarRegistry): { items: OwnedSidebarItem[]; autoOpen: boolean } {
     return {
         items: registry.list(),
-        autoOpen: process.env.CODEX_ENHANCER_AUTO_OPEN === "1",
+        autoOpen: process.env["CODEX_ENHANCER_AUTO_OPEN"] === "1",
     };
 }
 
@@ -234,7 +236,7 @@ function start(): void {
         if (!trusted(event)) return;
         const detail = isRecord(payload) ? payload : { payload: String(payload) };
         log("renderer-proof", detail);
-        const stage = detail.stage;
+        const stage = isRecord(payload) ? payload["stage"] : undefined;
         const contents = event.sender;
         const bounds =
             contents.getOwnerBrowserWindow?.()?.getBounds() ||

@@ -87,12 +87,12 @@ function nullableStringField(
 
 function parseState(value: unknown): InstallState {
     if (!isRecord(value)) throw new Error("install state is not an object");
-    if (value.schema !== 1) throw new Error("install state schema is not 1");
-    const status = value.status;
+    if (value["schema"] !== 1) throw new Error("install state schema is not 1");
+    const status = value["status"];
     if (status !== "installed" && status !== "removed") {
         throw new Error("install state status is not installed or removed");
     }
-    const removedAt = value.removedAt;
+    const removedAt = value["removedAt"];
     if (removedAt !== undefined && typeof removedAt !== "string") {
         throw new Error("install state removedAt is not a string");
     }
@@ -103,7 +103,8 @@ function parseState(value: unknown): InstallState {
     const archive = recordField(files, "archive", "files.archive");
     const backup = recordField(value, "backup", "backup");
     const loader = recordField(value, "loader", "loader");
-    if (target.kind !== "test-copy") throw new Error("install state target.kind is not test-copy");
+    if (target["kind"] !== "test-copy")
+        throw new Error("install state target.kind is not test-copy");
     const state: InstallState = {
         schema: 1,
         status,

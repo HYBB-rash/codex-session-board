@@ -43,27 +43,31 @@ export function sidebarItem(value: unknown): SidebarItemRegistration {
     if (!route.startsWith("/") || route.startsWith("//") || /\s/.test(route)) {
         throw new Error(`sidebar item route is invalid: ${route}`);
     }
-    if (value.icon !== undefined && typeof value.icon !== "string") {
+    const icon = value["icon"];
+    if (icon !== undefined && typeof icon !== "string") {
         throw new Error("sidebar item icon must be a string");
     }
-    if (!isRecord(value.page)) throw new Error("sidebar item page must be an object");
+    const page = value["page"];
+    if (!isRecord(page)) throw new Error("sidebar item page must be an object");
     return {
         id,
         title,
         route,
-        icon: typeof value.icon === "string" ? value.icon : null,
+        icon: typeof icon === "string" ? icon : null,
         page: {
-            title: requiredString(value.page, "title"),
-            body: requiredString(value.page, "body"),
+            title: requiredString(page, "title"),
+            body: requiredString(page, "body"),
         },
     };
 }
 
 export function parseUiPayload(value: unknown): UiState {
-    if (!isRecord(value) || !Array.isArray(value.items)) throw new Error("ui state is incomplete");
+    if (!isRecord(value)) throw new Error("ui state is incomplete");
+    const items = value["items"];
+    if (!Array.isArray(items)) throw new Error("ui state is incomplete");
     return {
-        items: value.items.map((item) => sidebarItem(item)),
-        autoOpen: value.autoOpen === true,
+        items: items.map((item) => sidebarItem(item)),
+        autoOpen: value["autoOpen"] === true,
     };
 }
 

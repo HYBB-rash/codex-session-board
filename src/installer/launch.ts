@@ -18,7 +18,7 @@ export function launch(extraArgs: readonly string[] = []): number {
     fs.mkdirSync(paths.logs, { recursive: true });
     const desktopLog = path.join(paths.logs, "desktop.log");
     const logFd =
-        process.env.CODEX_ENHANCER_LOG_STDOUT === "1" ? fs.openSync(desktopLog, "a") : null;
+        process.env["CODEX_ENHANCER_LOG_STDOUT"] === "1" ? fs.openSync(desktopLog, "a") : null;
     const child = spawn(startScript, ["--user-data-dir", paths.userData, ...extraArgs], {
         cwd: state.target.path,
         detached: true,
@@ -30,7 +30,7 @@ export function launch(extraArgs: readonly string[] = []): number {
             CODEX_HOME: paths.codexHome,
             XDG_CONFIG_HOME: paths.xdgConfig,
             CODEX_LINUX_DISABLE_USAGE_REPORTING: "1",
-            CODEX_ENHANCER_AUTO_OPEN: process.env.CODEX_ENHANCER_AUTO_OPEN ?? "0",
+            CODEX_ENHANCER_AUTO_OPEN: process.env["CODEX_ENHANCER_AUTO_OPEN"] ?? "0",
         },
     });
     child.unref();

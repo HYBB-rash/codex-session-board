@@ -146,8 +146,9 @@ export function startUiHost(options: UiHostOptions): UiHost {
         while (isHtmlElement(current)) {
             const color = getComputedStyle(current).backgroundColor;
             const match = /rgba?\(([^)]+)\)/.exec(color);
-            if (match != null) {
-                const parts = match[1].split(",").map((part) => Number(part.trim()));
+            const captured = match?.[1];
+            if (captured != null) {
+                const parts = captured.split(",").map((part) => Number(part.trim()));
                 const alpha = parts.length === 4 ? parts[3] : 1;
                 if (alpha != null && alpha > 0.9) return color;
             }
