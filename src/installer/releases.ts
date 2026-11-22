@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
+    chmodSync,
+    chownSync,
     cpSync,
     existsSync,
     mkdirSync,
@@ -14,6 +16,8 @@ import {
 } from "node:fs";
 import * as path from "node:path";
 import { sha256File } from "./asar.js";
+import { inPlaceReleaseStore } from "./in-place-receipt.js";
+import { assertSystemPath } from "./in-place-target.js";
 import * as paths from "./paths.js";
 import {
     type ReleaseManifest,
@@ -38,10 +42,10 @@ export interface UpdateStatus {
 }
 
 export function releaseStore(): string {
-    return path.join(paths.stateDir, "releases");
+    return paths.inPlaceRuntime ? inPlaceReleaseStore() : path.join(paths.stateDir, "releases");
 }
 
-function releasePointer(store: string): ReleasePointer | null {
+export function releasePointer(store: string): ReleasePointer | null {
     const file = path.join(store, "active.json");
     if (!existsSync(file)) return null;
     const value: unknown = JSON.parse(readFileSync(file, "utf8"));
@@ -57,7 +61,10 @@ function releasePointer(store: string): ReleasePointer | null {
 function writePointer(store: string, pointer: ReleasePointer): void {
     const temporary = path.join(store, `active-${randomUUID()}.tmp`);
     try {
-        writeFileSync(temporary, `${JSON.stringify(pointer)}\n`, { mode: 0o600, flush: true });
+        writeFileSync(temporary, `${JSON.stringify(pointer)}\n`, {
+            mode: store === inPlaceReleaseStore() ? 0o644 : 0o600,
+            flush: true,
+        });
         renameSync(temporary, path.join(store, "active.json"));
     } finally {
         rmSync(temporary, { force: true });
@@ -74,12 +81,14 @@ function loadRelease(store: string, id: string): ReleaseManifest {
 
 function stageRelease(packageRoot: string, store: string, id: string): void {
     if (existsSync(path.join(store, id))) {
+        if (store === inPlaceReleaseStore())
+            assertSystemPath(path.join(store, id, releaseManifestName), false);
         loadRelease(store, id);
         return;
     }
     const temporary = path.join(store, `stage-${randomUUID()}`);
     try {
-        mkdirSync(temporary, { mode: 0o700 });
+        mkdirSync(temporary, { mode: store === inPlaceReleaseStore() ? 0o755 : 0o700 });
         cpSync(path.join(packageRoot, "dist"), path.join(temporary, "dist"), { recursive: true });
         cpSync(
             path.join(packageRoot, releaseManifestName),
@@ -89,6 +98,18 @@ function stageRelease(packageRoot: string, store: string, id: string): void {
             throw new Error("release manifest changed while staging");
         }
         verifyRelease(temporary);
+        if (store === inPlaceReleaseStore()) {
+            for (const member of readdirSync(temporary, { recursive: true, withFileTypes: true })) {
+                const installed = path.join(member.parentPath, member.name);
+                chownSync(installed, 0, 0);
+                chmodSync(
+                    installed,
+                    member.isDirectory() || member.name === "codex-session-board.js"
+                        ? 0o755
+                        : 0o644,
+                );
+            }
+        }
         renameSync(temporary, path.join(store, id));
     } finally {
         rmSync(temporary, { recursive: true, force: true });
@@ -150,7 +171,7 @@ function acquireLock(store: string, lock: string, owner: string): void {
 }
 
 function changeRelease<Result>(store: string, change: () => Result): Result {
-    mkdirSync(store, { recursive: true, mode: 0o700 });
+    mkdirSync(store, { recursive: true, mode: store === inPlaceReleaseStore() ? 0o755 : 0o700 });
     const lock = path.join(store, ".activating");
     const owner = `${process.pid}-${randomUUID()}`;
     acquireLock(store, lock, owner);
@@ -199,6 +220,18 @@ function runningManifest(): string {
 
 function updateStatus(start: boolean): UpdateStatus {
     const running = runningVersion();
+    if (paths.inPlaceRuntime) {
+        const installed = activeRelease();
+        const current = runningManifest();
+        if (!installed || sha256File(current) === releasePointer(releaseStore())?.current)
+            return { available: false, runningVersion: running };
+        return {
+            available: true,
+            phase: "awaiting_desktop_reload",
+            runningVersion: running,
+            version: installed.version,
+        };
+    }
     const packageRoot = path.join(paths.stateDir, "update-candidate");
     const manifest = path.join(packageRoot, releaseManifestName);
     if (!existsSync(manifest)) return { available: false, runningVersion: running };

@@ -2,13 +2,8 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { entryIncludes, sha256File } from "./asar.js";
-import { SENTINEL } from "./constants.js";
+import { IN_PLACE_APP, IN_PLACE_ARCHIVE, SENTINEL } from "./constants.js";
 import { type Detection, detect, findStartupArchive } from "./detect.js";
-
-export const inPlaceApp = "/opt/codex-desktop";
-export const inPlaceRoot = "/var/lib/codex-enhancer";
-export const inPlaceArchive = "resources/app.asar";
-export const inPlaceReceipt = "installation.json";
 
 const compatibleBuild = {
     version: "26.1111.71704",
@@ -138,7 +133,7 @@ function assertRpmFile(file: string, rpm: RpmFile, sha256: string): void {
         throw new Error(`文件与 RPM 记录不同：${file}`);
 }
 
-export function inspectStockArchive(app = inPlaceApp): InstalledArchive {
+export function inspectStockArchive(app = IN_PLACE_APP): InstalledArchive {
     if (!fs.existsSync(app)) return { kind: "missing" };
     try {
         assertSystemPath(path.join(app, "resources"), true);
@@ -163,7 +158,7 @@ export function inspectStockArchive(app = inPlaceApp): InstalledArchive {
     }
 }
 
-export function requireCompatibleRpm(app = inPlaceApp): {
+export function requireCompatibleRpm(app = IN_PLACE_APP): {
     build: Detection;
     package: string;
     archive: FileProof;
@@ -171,14 +166,14 @@ export function requireCompatibleRpm(app = inPlaceApp): {
     if (process.platform !== "linux" || process.arch !== "x64")
         throw new Error("原地安装目前仅支持已核对的 Fedora x86_64 RPM");
     assertSystemPath(path.join(app, "resources"), true);
-    assertSystemPath(path.join(app, inPlaceArchive), false);
+    assertSystemPath(path.join(app, IN_PLACE_ARCHIVE), false);
     assertSystemPath(path.join(app, "ChatGPT"), false);
     const build = detect(app);
     if (
         build.codexVersion !== compatibleBuild.version ||
         build.runtimeType !== compatibleBuild.runtime ||
         build.archive.main !== compatibleBuild.entry ||
-        build.archive.relativeArchive !== inPlaceArchive
+        build.archive.relativeArchive !== IN_PLACE_ARCHIVE
     ) {
         throw new Error(`Codex ${build.codexVersion} 尚未通过原地安装兼容性验证`);
     }

@@ -2,6 +2,18 @@ export const SENTINEL = "CODEX_ENHANCER_LOADER_V1";
 export const PATCH_VERSION = "0.3.0";
 export const LINK_NAME = ".codex-enhancer-link.json";
 export const APP_ID = "codex-enh-poc";
+export const IN_PLACE_APP = "/opt/codex-desktop";
+export const IN_PLACE_ROOT = "/var/lib/codex-enhancer";
+export const IN_PLACE_ARCHIVE = "resources/app.asar";
+export const IN_PLACE_RECEIPT = "installation.json";
+
+export function inPlaceLoader(): string {
+    return (
+        `/*${SENTINEL}*/` +
+        `;try{require("${IN_PLACE_ROOT}/control/dist/installer/in-place-bootstrap.js").startInPlace()}` +
+        `catch(e){console.error("${SENTINEL}",e)}\n`
+    );
+}
 
 export function loaderStub(): string {
     return (

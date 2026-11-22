@@ -62,7 +62,7 @@ function discard(file: string): void {
     syncDirectory(path.dirname(file));
 }
 
-export function writeInstallationReceipt<T extends ArchiveProof>(receipt: string, value: T): void {
+export function writeInstallationReceipt(receipt: string, value: object): void {
     const directory = path.dirname(receipt);
     const next = path.join(directory, `.receipt-${randomUUID()}`);
     try {

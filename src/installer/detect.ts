@@ -92,7 +92,10 @@ function optionalString(value: unknown): string | null {
 
 function commandOutput(command: string, args: string[]): string | null {
     try {
-        return execFileSync(command, args, { encoding: "utf8" }).trim();
+        return execFileSync(command, args, {
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe"],
+        }).trim();
     } catch {
         return null;
     }

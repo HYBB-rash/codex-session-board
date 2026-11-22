@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
+import { inPlaceReleaseStore, inPlaceUserDirectory } from "../installer/in-place-receipt.js";
 import { releaseFiles, releaseManifestName, verifyRelease } from "../installer/release-manifest.js";
 import { activeRelease } from "../installer/releases.js";
 import { assetsDirectory, object } from "./operations.js";
 
 const defaultPort = 18767;
+const inPlacePort = 18768;
 const output = dirname(assetsDirectory);
 
 export interface ServiceIdentity {
@@ -44,7 +46,9 @@ function readBoardConfig(directory: string) {
 
 export function serviceConfiguration(directory: string): { port: number; digest: string } {
     const config = readBoardConfig(directory);
-    const port = config.port === undefined ? defaultPort : config.port;
+    const fallback =
+        directory === join(inPlaceUserDirectory(), "session-board") ? inPlacePort : defaultPort;
+    const port = config.port === undefined ? fallback : config.port;
     if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) {
         throw new Error("看板配置中的 port 必须为 1 到 65535 的整数");
     }
@@ -63,7 +67,9 @@ export function serviceBuild(): string {
 }
 
 export function expectedServiceBuild(stateRoot: string): string {
-    const active = activeRelease(join(stateRoot, "releases"));
+    const store =
+        stateRoot === inPlaceUserDirectory() ? inPlaceReleaseStore() : join(stateRoot, "releases");
+    const active = activeRelease(store);
     return active ? fingerprint(JSON.stringify(active)) : serviceBuild();
 }
 

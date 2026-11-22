@@ -12,7 +12,7 @@ import {
     TitleEpochs,
     type TitleResolution,
 } from "../extensions/session-board/records.js";
-import { logs, outputDir, stateDir } from "../installer/paths.js";
+import { inPlaceRuntime, logs, outputDir, stateDir } from "../installer/paths.js";
 import { runningVersion } from "../installer/releases.js";
 import { LegacyBoardRuntime } from "../migration/runtime.js";
 import type { ExtensionApi, ExtensionModule, SidebarItemInput } from "./api.js";
@@ -281,6 +281,7 @@ function captureProof(
     if (!trustedSender(event)) return;
     const detail = isFields<RendererProof>(payload) ? payload : { payload: String(payload) };
     log("renderer-proof", detail);
+    if (inPlaceRuntime) return;
     const stage = isFields<RendererProof>(payload) ? payload.stage : undefined;
     const contents = event.sender;
     const bounds =
