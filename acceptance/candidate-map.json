@@ -71,6 +71,10 @@
             "file": "src/extensions/session-board/discovery.test.ts",
             "test": "an incomplete discovery retains partial discoveries and leaves missing cards read-only"
         },
+        "discovery-repeated-cursor": {
+            "file": "src/extensions/session-board/discovery.test.ts",
+            "test": "a repeated discovery cursor preserves read cards and reports the scan as incomplete"
+        },
         "discovery-reconnect": {
             "file": "src/extensions/session-board/discovery.test.ts",
             "test": "remote cache survives removal, a failed scan, reconnect, and a confirmed archive"
@@ -395,7 +399,12 @@
                 "src/extensions/session-board/desktop-connection.ts",
                 "src/extensions/session-board/board-service.ts"
             ],
-            "evidence": ["native-move", "discovery-coverage", "discovery-limit"],
+            "evidence": [
+                "native-move",
+                "discovery-coverage",
+                "discovery-limit",
+                "discovery-repeated-cursor"
+            ],
             "remaining": "分页协议、去重和上限已通过夹具，补两平台对多种来源及提供方的实测。"
         },
         "DISCOVERY-002": {

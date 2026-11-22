@@ -18,6 +18,7 @@ import { defaults } from "./settings.js";
 const remoteName = "remote-ssh-discovered:fixture";
 const first = "00000000-0000-4000-8000-000000000011" as ThreadId;
 const second = "00000000-0000-4000-8000-000000000012" as ThreadId;
+const vscode = "00000000-0000-4000-8000-000000000015" as ThreadId;
 
 function row(id: ThreadId, fields: Partial<Thread> = {}): Thread {
     return {
@@ -375,31 +376,57 @@ test("opening rejects invalid, undiscovered and mismatched threads and uses the 
 test("discovery pages interactive sources across all providers and keeps the newest duplicate", async (testContext) => {
     const { native, service } = fixture(testContext);
     const requested: (string | null)[] = [];
+    const available = [
+        Object.assign(row(first, { source: "cli", name: "latest" }), { modelProvider: "openai" }),
+        Object.assign(row(vscode), { modelProvider: "fixture-provider" }),
+        Object.assign(row(first, { source: "cli", name: "older" }), { modelProvider: "openai" }),
+        Object.assign(row(second, { source: "appServer" }), { modelProvider: "fixture-provider" }),
+        row("child" as ThreadId, { source: { subAgent: "review" } }),
+    ];
     native.list = (_host, args) => {
         assert.deepEqual(args.sourceKinds, ["cli", "vscode", "appServer"]);
         assert.deepEqual(args.modelProviders, []);
         assert.equal(args.limit, 2);
         if (args.archived) return { data: [], nextCursor: null };
         requested.push(args.cursor);
-        if (args.cursor === null)
-            return { data: [row(first, { source: "cli", name: "latest" })], nextCursor: "next" };
-        const excluded = row("child" as ThreadId, { source: { subAgent: "review" } });
+        const offset = Number(args.cursor ?? "0");
         return {
-            data: [row(first), row(second, { source: "appServer" }), excluded],
-            nextCursor: "",
+            data: available.slice(offset, offset + args.limit),
+            nextCursor: offset + args.limit < available.length ? String(offset + args.limit) : "",
         };
     };
     await service.refresh();
-    assert.deepEqual(requested, [null, "next"]);
+    assert.deepEqual(requested, [null, "2", "4"]);
     const { sessions, health } = service.snapshot();
     assert.equal(health.scanComplete, true);
     assert.deepEqual(
         sessions.map(({ id, title }) => [id, title]),
         [
             [first, "latest"],
+            [vscode, "original"],
             [second, "original"],
         ],
     );
+});
+
+test("a repeated discovery cursor preserves read cards and reports the scan as incomplete", async (testContext) => {
+    const { native, service } = fixture(testContext);
+    const requested: (string | null)[] = [];
+    native.list = (_host, { archived, cursor }) => {
+        if (archived) return { data: [], nextCursor: null };
+        requested.push(cursor);
+        return { data: [row(cursor === null ? first : second)], nextCursor: "repeat" };
+    };
+    await service.refresh();
+    const { sessions, health } = service.snapshot();
+    assert.deepEqual(requested, [null, "repeat"]);
+    assert.deepEqual(
+        sessions.map(({ id }) => id),
+        [first, second],
+    );
+    assert.equal(health.scanComplete, false);
+    assert.equal(health.runtimeVerified, false);
+    assert.match(health.error ?? "", /重复的分页游标/);
 });
 
 test("historical read failures rotate and old interrupted turns do not change native placement", async (testContext) => {

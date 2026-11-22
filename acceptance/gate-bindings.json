@@ -73,7 +73,11 @@
         ],
         "TITLE-004": [["title-concurrency"], ["title-restart"], ["title-fair-retry"]],
         "TITLE-005": [["title-epoch"], ["title-epoch"], ["title-restart"]],
-        "DISCOVERY-001": [["discovery-coverage"], ["discovery-coverage"], ["discovery-limit"]],
+        "DISCOVERY-001": [
+            ["discovery-coverage"],
+            ["discovery-coverage"],
+            ["discovery-limit", "discovery-repeated-cursor"]
+        ],
         "DISCOVERY-002": [
             ["offline-cache", "discovery-limit", "discovery-reconnect"],
             ["history-rotation"]
