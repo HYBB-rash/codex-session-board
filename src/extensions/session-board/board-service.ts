@@ -125,6 +125,7 @@ interface Card {
 const emptyRecord: CardRecord = { note: "", version: 0, inputVersion: 0 };
 const titleRpcBudgetMs = 3000;
 const titleRetryDelayMs = 30000;
+const historyPollBudgetMs = 3000;
 const emptyHost = (): HostSnapshot => ({
     active: new Map(),
     archived: new Map(),
@@ -447,10 +448,13 @@ export class BoardService {
             this.historyReads.get(cardId({ hostId: connection.hostId, threadId: thread.id }))
                 ?.sequence ?? 0;
         candidates.sort((left, right) => sequence(left) - sequence(right));
+        const deadline = performance.now() + historyPollBudgetMs;
         for (const thread of candidates.slice(0, this.settings.historyPerPoll)) {
+            const timeout = Math.floor(deadline - performance.now());
+            if (timeout < 1) break;
             try {
                 this.desktop.assertCurrent(connection);
-                await this.observeThread(connection, thread, context, { history: true });
+                await this.observeThread(connection, thread, context, { historyTimeout: timeout });
             } catch (error) {
                 host.historyError = errorText(error);
             }
@@ -466,21 +470,26 @@ export class BoardService {
         connection: HostConnection,
         thread: Thread,
         context: SidebarContext,
-        options: { history?: true; notified?: boolean },
+        options: { historyTimeout?: number; notified?: boolean },
     ): Promise<void> {
         const id = cardId({ hostId: connection.hostId, threadId: thread.id });
         if (this.editing.has(id)) {
-            if (!options.history) this.notice(connection.hostId, thread.id);
+            if (options.historyTimeout === undefined) this.notice(connection.hostId, thread.id);
             return;
         }
         this.editing.add(id);
         let queuedTitle = false;
         try {
-            const latest = await this.readObservedTurn(connection, thread.id, id);
+            const latest = await this.readObservedTurn(
+                connection,
+                thread.id,
+                id,
+                options.historyTimeout,
+            );
             const current = this.records[id] ?? emptyRecord;
             const input = turnInput(latest);
-            const phase = options.history ? null : runtimePhase(thread.status, latest);
-            const before = placement(context, connection.hostId, thread);
+            const phase =
+                options.historyTimeout === undefined ? runtimePhase(thread.status, latest) : null;
             const inputChanged = changedInput(current, input);
             const phaseChanged = phase !== null && current.phaseKey !== phase.key;
             const answer = latest && finalAnswer(latest) ? latest.id : undefined;
@@ -494,18 +503,12 @@ export class BoardService {
                 ...(phase ? { phaseKey: phase.key } : {}),
                 ...(answer ? { previewTurnId: answer } : {}),
             };
-            const freshPhase =
+            if (
                 phase &&
                 latest &&
-                before.managed &&
-                isNewPhase(
-                    phase,
-                    latest.id,
-                    current,
-                    this.observationSince,
-                    options.notified === true,
-                );
-            if (freshPhase) await this.applyPhase(connection, thread, context, phase, next);
+                isNewPhase(phase, latest.id, current, this.observationSince, !!options.notified)
+            )
+                await this.applyPhase(connection, thread, context, phase, next);
             await this.commitRecord(context, id, current.version, next);
             queuedTitle = next.title !== undefined && next.title !== current.title;
         } finally {
@@ -514,10 +517,17 @@ export class BoardService {
         if (queuedTitle) void this.retryTitle(connection, thread.id);
     }
 
-    private async readObservedTurn(connection: HostConnection, threadId: ThreadId, id: string) {
+    private async readObservedTurn(
+        connection: HostConnection,
+        threadId: ThreadId,
+        id: string,
+        timeout?: number,
+    ) {
         const sequence = ++this.historySequence;
         try {
-            const latest = (await this.desktop.turns(connection, threadId, "summary")).data[0];
+            const latest = (
+                await this.desktop.turns(connection, threadId, "summary", null, timeout)
+            ).data[0];
             this.historyReads.set(id, { sequence });
             return latest;
         } catch (error) {
@@ -533,12 +543,10 @@ export class BoardService {
         phase: Phase,
         next: CardRecord,
     ): Promise<void> {
+        const position = placement(context, connection.hostId, thread);
+        if (!position.managed) return;
         const current = await this.desktop.read(connection, thread.id, false);
-        if (
-            placement(context, connection.hostId, current).version !==
-            placement(context, connection.hostId, thread).version
-        )
-            return;
+        if (placement(context, connection.hostId, current).version !== position.version) return;
         const after = await this.moveCard(phase.state, connection, context, current);
         next.manual = false;
         next.reason = phase.reason;

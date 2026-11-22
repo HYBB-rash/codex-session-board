@@ -233,8 +233,11 @@ export class DesktopConnection {
         connection: HostConnection,
         method: string,
         params: object,
+        timeoutMs?: number,
     ): Promise<Page<T>> {
-        const reply = (await this.request(connection, method, params)) as Partial<Page<T>> | null;
+        const reply = (await this.request(connection, method, params, timeoutMs)) as Partial<
+            Page<T>
+        > | null;
         if (
             !Array.isArray(reply?.data) ||
             (reply.nextCursor != null && typeof reply.nextCursor !== "string")
@@ -271,14 +274,20 @@ export class DesktopConnection {
         threadId: ThreadId,
         itemsView: "summary" | "notLoaded",
         cursor: string | null = null,
+        timeoutMs?: number,
     ): Promise<Page<Turn>> {
-        return this.page(connection, "thread/turns/list", {
-            threadId,
-            limit: 1,
-            sortDirection: "desc",
-            itemsView,
-            cursor,
-        });
+        return this.page(
+            connection,
+            "thread/turns/list",
+            {
+                threadId,
+                limit: 1,
+                sortDirection: "desc",
+                itemsView,
+                cursor,
+            },
+            timeoutMs,
+        );
     }
 
     async rename(

@@ -8,6 +8,7 @@ import {
     localHostId,
     type Thread,
     type ThreadId,
+    type Turn,
 } from "./desktop-connection.js";
 import type { CardRecord } from "./records.js";
 import { defaults } from "./settings.js";
@@ -42,6 +43,26 @@ interface ListArgs {
     limit: number;
     modelProviders: string[];
     sourceKinds: string[];
+    threadId: ThreadId;
+}
+
+interface NativeFixture {
+    hosts: string[];
+    list(host: string, args: ListArgs): { data: Thread[]; nextCursor: string | null };
+    history?: (id: ThreadId) => Turn[];
+}
+
+function readFixture(native: NativeFixture, host: string, method: string, params: ListArgs) {
+    switch (method) {
+        case "thread/list":
+            return native.list(host, params);
+        case "thread/turns/list":
+            return { data: native.history?.(params.threadId) ?? [], nextCursor: null };
+        case "project/list":
+            return { data: [], nextCursor: null };
+        default:
+            return assert.fail(method);
+    }
 }
 
 function fixture(testContext: TestContext, maxPages = 3) {
@@ -49,8 +70,8 @@ function fixture(testContext: TestContext, maxPages = 3) {
     Reflect.set(globalThis, "window", globalThis);
     testContext.after(() => Reflect.set(globalThis, "window", oldWindow));
     const records: Record<string, CardRecord> = {};
-    const native = {
-        hosts: [localHostId as string],
+    const native: NativeFixture = {
+        hosts: [localHostId],
         list(_host: string, _args: ListArgs): { data: Thread[]; nextCursor: string | null } {
             return { data: [], nextCursor: null };
         },
@@ -64,11 +85,7 @@ function fixture(testContext: TestContext, maxPages = 3) {
                 request: { id: string; method: string; params: ListArgs };
             };
             const { id, method, params } = packet.request;
-            assert.ok(["thread/list", "project/list"].includes(method), method);
-            const result =
-                method === "thread/list"
-                    ? native.list(packet.hostId, params)
-                    : { data: [], nextCursor: null };
+            const result = readFixture(native, packet.hostId, method, params);
             desktop.receive({
                 type: "mcp-response",
                 hostId: packet.hostId,
@@ -78,11 +95,15 @@ function fixture(testContext: TestContext, maxPages = 3) {
     });
     const service = new BoardService(desktop, {
         load: async () => records,
-        save: async () => assert.fail("Discovery must not edit a card"),
+        save: async ({ id, expected, record }) => {
+            assert.ok(native.history);
+            assert.equal(records[id]?.version ?? 0, expected);
+            records[id] = record;
+        },
         settleTitle: async () => assert.fail("Discovery must not rename a card"),
         loadLedger: async () => emptyLedger(),
         writeLedger: async () => assert.fail("Discovery must not write the ledger"),
-        settings: async () => ({ ...defaults, maxPages, pageSize: 2 }),
+        settings: async () => ({ ...defaults, maxPages, pageSize: 2, historyPerPoll: 1 }),
         titleEpoch: async () => assert.fail("Titles disabled"),
         closePage: () => assert.fail("Discovery must not navigate"),
         authority: () => {},
@@ -120,6 +141,71 @@ test("discovery pages interactive sources across all providers and keeps the new
             [second, "original"],
         ],
     );
+});
+
+test("historical read failures rotate and old interrupted turns do not change native placement", async (testContext) => {
+    const { desktop, native, service, records } = fixture(testContext);
+    const attempts: ThreadId[] = [];
+    const active = "00000000-0000-4000-8000-000000000013" as ThreadId;
+    records[second] = { note: "人工备注", manual: true, version: 9, inputVersion: 5 };
+    native.list = (_host, { archived }) => ({
+        data: archived
+            ? []
+            : [row(first), row(second), row(active, { status: { type: "active" } })],
+        nextCursor: null,
+    });
+    native.history = (id) => {
+        attempts.push(id);
+        if (id === first) throw new Error("fixture history unavailable");
+        if (id === second) return [{ id: "old", status: "interrupted", completedAt: 2, items: [] }];
+        return [];
+    };
+    await service.refresh();
+    assert.deepEqual(attempts, [active, first]);
+    const byId = (id: ThreadId) => service.snapshot().sessions.find((card) => card.id === id);
+    assert.match(byId(first)?.observationError ?? "", /history unavailable/);
+    assert.equal(service.snapshot().health.runtimeVerified, true);
+    assert.match(service.snapshot().health.historyError ?? "", /历史暂不可读/);
+    await service.refresh();
+    assert.deepEqual(attempts, [active, first, active, second]);
+    assert.equal(byId(second)?.manual, true);
+    assert.equal(byId(second)?.state, null);
+    assert.equal(byId(second)?.note, "人工备注");
+    assert.equal(byId(second)?.version, 9);
+    assert.equal(records[first], undefined);
+    desktop.receive({
+        type: "codex-app-server-connection-changed",
+        hostId: localHostId,
+        state: "disconnected",
+    });
+    await service.refresh();
+    assert.equal(byId(second)?.readOnly, true);
+    assert.equal(service.snapshot().health.runtimeVerified, false);
+});
+
+test("an old final reply suggests review without issuing a move or changing the current state", async (testContext) => {
+    const { native, service, records } = fixture(testContext);
+    native.list = (_host, { archived }) => ({
+        data: archived ? [] : [row(first)],
+        nextCursor: null,
+    });
+    native.history = () => [
+        {
+            id: "old-answer",
+            status: "completed",
+            completedAt: 1,
+            items: [{ id: "done", type: "agentMessage", phase: "final_answer", text: "完成" }],
+        },
+    ];
+    await service.refresh();
+    const card = service.snapshot().sessions[0];
+    assert.equal(card?.state, null);
+    assert.equal(card?.manual, false);
+    assert.equal(card?.previewTurnId, "old-answer");
+    assert.match(card?.observationWarning ?? "", /可归入待审阅/);
+    assert.equal(records[first]?.phaseKey, undefined);
+    await service.refresh();
+    assert.equal(service.snapshot().sessions[0]?.version, card?.version);
 });
 
 test("an incomplete discovery retains partial discoveries and leaves missing cards read-only", async (testContext) => {
