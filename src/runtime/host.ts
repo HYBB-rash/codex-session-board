@@ -20,6 +20,7 @@ const PAGE_SIDEBAR = "[data-app-shell-page-sidebar]";
 const SIDEBAR_SCROLL = "[data-app-action-sidebar-scroll]";
 const ITEM = "data-codex-enhancer-item";
 const PAGE = "data-codex-enhancer-page";
+const NAVIGATION = `${RAIL}, ${DESTINATION}`;
 
 interface Mount {
     parent: HTMLElement;
@@ -76,19 +77,29 @@ function visibleLabel(element: Element): string {
     return copy.textContent?.replace(/\s+/g, " ").trim() ?? "";
 }
 
+function visible(element: Element): boolean {
+    return (
+        element.getClientRects().length > 0 &&
+        getComputedStyle(element).visibility === "visible" &&
+        element.closest("[inert], [aria-hidden='true']") == null
+    );
+}
+
 function chooseMount(): Mount | null {
     const labeled = [...document.querySelectorAll(DESTINATION)].find((element) => {
         return (
             element.closest(RAIL) == null &&
             element.parentElement != null &&
+            visible(element) &&
             visibleLabel(element).length > 0
         );
     });
     if (labeled?.parentElement)
         return { parent: labeled.parentElement, sample: labeled, kind: "row" };
-    const rail = document.querySelector(RAIL);
+    const rail = [...document.querySelectorAll(RAIL)].find(visible);
     if (isHtmlElement(rail)) {
-        return { parent: rail, sample: rail.querySelector(DESTINATION), kind: "rail" };
+        const sample = [...rail.querySelectorAll(DESTINATION)].find(visible) ?? null;
+        return { parent: rail, sample, kind: "rail" };
     }
     return null;
 }
@@ -154,7 +165,7 @@ function ensureItem(host: HostState, item: SidebarItemRegistration, mount: Mount
         return;
     }
     const button = itemButton(host, item, mount);
-    const anchor = [...mount.parent.querySelectorAll(DESTINATION)].at(-1);
+    const anchor = [...mount.parent.querySelectorAll(DESTINATION)].findLast(visible);
     if (anchor != null) anchor.after(button);
     else mount.parent.append(button);
 }
@@ -352,6 +363,7 @@ function render(host: HostState): void {
         if (mount == null) {
             removeAllItems();
             reportMissing(host);
+            if (host.panel != null) place(host.panel);
             return;
         }
         pruneItems(host, mount);
@@ -373,8 +385,22 @@ function apply(host: HostState, payload: unknown): void {
 function watchShell(host: HostState, observer: MutationObserver): void {
     const root = document.documentElement;
     if (!isHtmlElement(root)) return;
-    observer.observe(root, { childList: true, subtree: true });
+    observer.observe(root, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["class", "style", "hidden", "inert", "aria-hidden"],
+    });
     render(host);
+}
+
+function shellChanged(mutation: MutationRecord): boolean {
+    if (mutation.type === "childList") return true;
+    const element = mutation.target;
+    return (
+        isElement(element) &&
+        (element.matches(NAVIGATION) || element.querySelector(NAVIGATION) != null)
+    );
 }
 
 function stop(host: HostState, observer: MutationObserver): void {
@@ -396,7 +422,9 @@ export function startUiHost(options: UiHostOptions): UiHost {
         sawMount: false,
         reportedMissing: false,
     };
-    const observer = new MutationObserver(() => render(host));
+    const observer = new MutationObserver((mutations) => {
+        if (mutations.some(shellChanged)) render(host);
+    });
     const watch = (): void => watchShell(host, observer);
     if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", watch, { once: true });
@@ -404,10 +432,13 @@ export function startUiHost(options: UiHostOptions): UiHost {
         watch();
     }
     document.addEventListener("click", (event) => handleClick(host, event), true);
-    window.addEventListener("resize", () => {
-        if (host.panel != null) place(host.panel);
-    });
-    window.addEventListener("pagehide", () => stop(host, observer), { once: true });
+    const resize = (): void => render(host);
+    const stopWatching = (): void => {
+        window.removeEventListener("resize", resize);
+        stop(host, observer);
+    };
+    window.addEventListener("resize", resize);
+    window.addEventListener("pagehide", stopWatching, { once: true });
     options.subscribe((payload) => {
         try {
             apply(host, payload);
@@ -422,5 +453,5 @@ export function startUiHost(options: UiHostOptions): UiHost {
     window.setTimeout(() => {
         if (!host.sawMount) proof(host, "shell-observed", { delayed: true, ...shellFacts(host) });
     }, 4000);
-    return { stop: () => stop(host, observer) };
+    return { stop: stopWatching };
 }
