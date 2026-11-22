@@ -54,101 +54,143 @@ export interface InstallResult {
     copy: Detection;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+interface RawSource {
+    path: unknown;
+    codexVersion: unknown;
+    runtimeType: unknown;
+    chromiumVersion: unknown;
+    rpm: unknown;
+}
+
+interface RawTarget {
+    kind: unknown;
+    path: unknown;
+}
+
+interface RawApp {
+    codexVersion: unknown;
+    runtimeType: unknown;
+    chromiumVersion: unknown;
+    archive: unknown;
+    entry: unknown;
+}
+
+interface RawArchive {
+    path: unknown;
+    originalSha256: unknown;
+    patchedSha256: unknown;
+}
+
+interface RawFiles {
+    archive: unknown;
+}
+
+interface RawBackup {
+    archive: unknown;
+}
+
+interface RawLoader {
+    sentinel: unknown;
+    link: unknown;
+    runtime: unknown;
+}
+
+interface RawInstallState {
+    schema: unknown;
+    status: unknown;
+    removedAt?: unknown;
+    patchVersion: unknown;
+    installedAt: unknown;
+    source: unknown;
+    target: unknown;
+    app: unknown;
+    files: unknown;
+    backup: unknown;
+    loader: unknown;
+}
+
+function isFields<T extends object>(value: unknown): value is T {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function recordField(
-    value: Record<string, unknown>,
-    key: string,
-    label: string,
-): Record<string, unknown> {
-    const child = value[key];
-    if (!isRecord(child)) throw new Error(`install state ${label} is not an object`);
-    return child;
+function expectFields<T extends object>(value: unknown, label: string): T {
+    if (!isFields<T>(value)) throw new Error(`install state ${label} is not an object`);
+    return value;
 }
 
-function stringField(value: Record<string, unknown>, key: string, label: string): string {
-    const child = value[key];
-    if (typeof child !== "string") throw new Error(`install state ${label} is not a string`);
-    return child;
+function expectString(value: unknown, label: string): string {
+    if (typeof value !== "string") throw new Error(`install state ${label} is not a string`);
+    return value;
 }
 
-function nullableStringField(
-    value: Record<string, unknown>,
-    key: string,
-    label: string,
-): string | null {
-    const child = value[key];
-    if (child === null) return null;
-    if (typeof child !== "string") throw new Error(`install state ${label} is not a string`);
-    return child;
+function expectNullableString(value: unknown, label: string): string | null {
+    if (value === null) return null;
+    if (typeof value !== "string") throw new Error(`install state ${label} is not a string`);
+    return value;
+}
+
+function readSource(value: unknown): InstallState["source"] {
+    const source = expectFields<RawSource>(value, "source");
+    return {
+        path: expectString(source.path, "source.path"),
+        codexVersion: expectString(source.codexVersion, "source.codexVersion"),
+        runtimeType: expectNullableString(source.runtimeType, "source.runtimeType"),
+        chromiumVersion: expectString(source.chromiumVersion, "source.chromiumVersion"),
+        rpm: expectNullableString(source.rpm, "source.rpm"),
+    };
+}
+
+function readApp(value: unknown): InstallState["app"] {
+    const app = expectFields<RawApp>(value, "app");
+    return {
+        codexVersion: expectString(app.codexVersion, "app.codexVersion"),
+        runtimeType: expectNullableString(app.runtimeType, "app.runtimeType"),
+        chromiumVersion: expectString(app.chromiumVersion, "app.chromiumVersion"),
+        archive: expectString(app.archive, "app.archive"),
+        entry: expectString(app.entry, "app.entry"),
+    };
+}
+
+function readArchive(value: unknown): InstallState["files"]["archive"] {
+    const archive = expectFields<RawArchive>(value, "files.archive");
+    return {
+        path: expectString(archive.path, "files.archive.path"),
+        originalSha256: expectString(archive.originalSha256, "files.archive.originalSha256"),
+        patchedSha256: expectString(archive.patchedSha256, "files.archive.patchedSha256"),
+    };
 }
 
 function parseState(value: unknown): InstallState {
-    if (!isRecord(value)) throw new Error("install state is not an object");
-    if (value["schema"] !== 1) throw new Error("install state schema is not 1");
-    const status = value["status"];
-    if (status !== "installed" && status !== "removed") {
+    if (!isFields<RawInstallState>(value)) throw new Error("install state is not an object");
+    if (value.schema !== 1) throw new Error("install state schema is not 1");
+    if (value.status !== "installed" && value.status !== "removed") {
         throw new Error("install state status is not installed or removed");
     }
-    const removedAt = value["removedAt"];
-    if (removedAt !== undefined && typeof removedAt !== "string") {
+    if (value.removedAt !== undefined && typeof value.removedAt !== "string") {
         throw new Error("install state removedAt is not a string");
     }
-    const source = recordField(value, "source", "source");
-    const target = recordField(value, "target", "target");
-    const app = recordField(value, "app", "app");
-    const files = recordField(value, "files", "files");
-    const archive = recordField(files, "archive", "files.archive");
-    const backup = recordField(value, "backup", "backup");
-    const loader = recordField(value, "loader", "loader");
-    if (target["kind"] !== "test-copy")
-        throw new Error("install state target.kind is not test-copy");
+    const target = expectFields<RawTarget>(value.target, "target");
+    if (target.kind !== "test-copy") throw new Error("install state target.kind is not test-copy");
+    const files = expectFields<RawFiles>(value.files, "files");
+    const backup = expectFields<RawBackup>(value.backup, "backup");
+    const loader = expectFields<RawLoader>(value.loader, "loader");
     const state: InstallState = {
         schema: 1,
-        status,
-        patchVersion: stringField(value, "patchVersion", "patchVersion"),
-        installedAt: stringField(value, "installedAt", "installedAt"),
-        source: {
-            path: stringField(source, "path", "source.path"),
-            codexVersion: stringField(source, "codexVersion", "source.codexVersion"),
-            runtimeType: nullableStringField(source, "runtimeType", "source.runtimeType"),
-            chromiumVersion: stringField(source, "chromiumVersion", "source.chromiumVersion"),
-            rpm: nullableStringField(source, "rpm", "source.rpm"),
-        },
-        target: {
-            kind: "test-copy",
-            path: stringField(target, "path", "target.path"),
-        },
-        app: {
-            codexVersion: stringField(app, "codexVersion", "app.codexVersion"),
-            runtimeType: nullableStringField(app, "runtimeType", "app.runtimeType"),
-            chromiumVersion: stringField(app, "chromiumVersion", "app.chromiumVersion"),
-            archive: stringField(app, "archive", "app.archive"),
-            entry: stringField(app, "entry", "app.entry"),
-        },
-        files: {
-            archive: {
-                path: stringField(archive, "path", "files.archive.path"),
-                originalSha256: stringField(
-                    archive,
-                    "originalSha256",
-                    "files.archive.originalSha256",
-                ),
-                patchedSha256: stringField(archive, "patchedSha256", "files.archive.patchedSha256"),
-            },
-        },
-        backup: {
-            archive: stringField(backup, "archive", "backup.archive"),
-        },
+        status: value.status,
+        patchVersion: expectString(value.patchVersion, "patchVersion"),
+        installedAt: expectString(value.installedAt, "installedAt"),
+        source: readSource(value.source),
+        target: { kind: "test-copy", path: expectString(target.path, "target.path") },
+        app: readApp(value.app),
+        files: { archive: readArchive(files.archive) },
+        backup: { archive: expectString(backup.archive, "backup.archive") },
         loader: {
-            sentinel: stringField(loader, "sentinel", "loader.sentinel"),
-            link: stringField(loader, "link", "loader.link"),
-            runtime: stringField(loader, "runtime", "loader.runtime"),
+            sentinel: expectString(loader.sentinel, "loader.sentinel"),
+            link: expectString(loader.link, "loader.link"),
+            runtime: expectString(loader.runtime, "loader.runtime"),
         },
     };
-    if (typeof removedAt === "string") state.removedAt = removedAt;
+    if (typeof value.removedAt === "string") state.removedAt = value.removedAt;
     return state;
 }
 
@@ -229,7 +271,7 @@ function writeLink(copyDir: string): void {
     fs.writeFileSync(path.join(copyDir, LINK_NAME), `${JSON.stringify(link, null, 2)}\n`);
 }
 
-export function install(): InstallResult {
+function prepareCopy(): { source: Detection; copy: Detection } {
     assertTestCopyStopped();
     const system = findSystemApp();
     const source = detect(system.appDir);
@@ -242,98 +284,149 @@ export function install(): InstallResult {
     ) {
         throw new Error("test copy startup entry does not match the system install");
     }
+    return { source, copy };
+}
 
-    const archivePath = copy.archive.archivePath;
-    const existing = readState();
-    const currentHash = sha256File(archivePath);
-    if (
-        existing?.status === "installed" &&
-        existing.target.path === paths.testApp &&
-        existing.files.archive.patchedSha256 === currentHash
-    ) {
-        writeLink(paths.testApp);
-        return { action: "unchanged", state: existing, source, copy };
+function isUpToDate(state: InstallState | null, currentHash: string): state is InstallState {
+    return (
+        state?.status === "installed" &&
+        state.target.path === paths.testApp &&
+        state.files.archive.patchedSha256 === currentHash
+    );
+}
+
+function verifyPatch(
+    backupPath: string,
+    archivePath: string,
+    entry: string,
+    stubLength: number,
+): void {
+    const backupArchive = openArchive(backupPath);
+    const patchedArchive = openArchive(archivePath);
+    try {
+        const originalEntry = readEntry(backupArchive, entry);
+        const patchedEntry = readEntry(patchedArchive, entry);
+        if (!patchedEntry.subarray(stubLength).equals(originalEntry)) {
+            throw new Error("patched startup entry does not keep the original program");
+        }
+        const originalManifest = readEntry(backupArchive, "package.json");
+        const patchedManifest = readEntry(patchedArchive, "package.json");
+        if (!patchedManifest.equals(originalManifest)) {
+            throw new Error("patched archive changed package.json");
+        }
+    } finally {
+        fs.closeSync(backupArchive.fd);
+        fs.closeSync(patchedArchive.fd);
     }
-    if (entryIncludes(archivePath, copy.archive.main, Buffer.from(SENTINEL))) {
+}
+
+interface PatchOutcome {
+    changed: boolean;
+    originalSha256: string;
+    backupPath: string;
+}
+
+function patchStartupEntry(
+    archivePath: string,
+    entry: string,
+    codexVersion: string,
+    currentHash: string,
+): PatchOutcome {
+    if (entryIncludes(archivePath, entry, Buffer.from(SENTINEL))) {
         throw new Error(
             "startup entry already contains the loader but the archive is not the recorded patch; uninstall first",
         );
     }
-
-    const backupPath = backupBaseline(archivePath, copy.codexVersion, currentHash);
+    const backupPath = backupBaseline(archivePath, codexVersion, currentHash);
     const originalSha256 = sha256File(backupPath);
     if (originalSha256 !== currentHash) {
         throw new Error("backup does not match the archive that will be patched");
     }
-
     const stub = Buffer.from(loaderStub());
-    const patched = patchEntry(archivePath, copy.archive.main, (current) => {
+    const patched = patchEntry(archivePath, entry, (current) => {
         if (current.includes(Buffer.from(SENTINEL))) return current;
         return Buffer.concat([stub, current]);
     });
     if (!patched.bytes.includes(Buffer.from(SENTINEL))) {
         throw new Error("loader sentinel was not written into the startup entry");
     }
-    if (patched.changed) {
-        const backupArchive = openArchive(backupPath);
-        const patchedArchive = openArchive(archivePath);
-        try {
-            const originalEntry = readEntry(backupArchive, copy.archive.main);
-            const patchedEntry = readEntry(patchedArchive, copy.archive.main);
-            if (!patchedEntry.subarray(stub.length).equals(originalEntry)) {
-                throw new Error("patched startup entry does not keep the original program");
-            }
-            const originalManifest = readEntry(backupArchive, "package.json");
-            const patchedManifest = readEntry(patchedArchive, "package.json");
-            if (!patchedManifest.equals(originalManifest)) {
-                throw new Error("patched archive changed package.json");
-            }
-        } finally {
-            fs.closeSync(backupArchive.fd);
-            fs.closeSync(patchedArchive.fd);
-        }
-    }
-    writeLink(paths.testApp);
+    if (patched.changed) verifyPatch(backupPath, archivePath, entry, stub.length);
+    return { changed: patched.changed, originalSha256, backupPath };
+}
 
-    const state: InstallState = {
+function stateSource(source: Detection): InstallState["source"] {
+    return {
+        path: source.appDir,
+        codexVersion: source.codexVersion,
+        runtimeType: source.runtimeType,
+        chromiumVersion: source.chromiumVersion,
+        rpm: source.rpm,
+    };
+}
+
+function stateApp(copy: Detection): InstallState["app"] {
+    return {
+        codexVersion: copy.codexVersion,
+        runtimeType: copy.runtimeType,
+        chromiumVersion: copy.chromiumVersion,
+        archive: copy.archive.relativeArchive,
+        entry: copy.archive.main,
+    };
+}
+
+function stateArchive(
+    copy: Detection,
+    patched: PatchOutcome,
+    archivePath: string,
+): InstallState["files"]["archive"] {
+    return {
+        path: path.join(copy.archive.relativeArchive),
+        originalSha256: patched.originalSha256,
+        patchedSha256: sha256File(archivePath),
+    };
+}
+
+function stateLoader(): InstallState["loader"] {
+    return { sentinel: SENTINEL, link: LINK_NAME, runtime: paths.runtimeMain };
+}
+
+function buildState(
+    source: Detection,
+    copy: Detection,
+    patched: PatchOutcome,
+    archivePath: string,
+): InstallState {
+    return {
         schema: 1,
         status: "installed",
         patchVersion: PATCH_VERSION,
         installedAt: new Date().toISOString(),
-        source: {
-            path: source.appDir,
-            codexVersion: source.codexVersion,
-            runtimeType: source.runtimeType,
-            chromiumVersion: source.chromiumVersion,
-            rpm: source.rpm,
-        },
-        target: {
-            kind: "test-copy",
-            path: paths.testApp,
-        },
-        app: {
-            codexVersion: copy.codexVersion,
-            runtimeType: copy.runtimeType,
-            chromiumVersion: copy.chromiumVersion,
-            archive: copy.archive.relativeArchive,
-            entry: copy.archive.main,
-        },
-        files: {
-            archive: {
-                path: path.join(copy.archive.relativeArchive),
-                originalSha256,
-                patchedSha256: sha256File(archivePath),
-            },
-        },
-        backup: {
-            archive: backupPath,
-        },
-        loader: {
-            sentinel: SENTINEL,
-            link: LINK_NAME,
-            runtime: paths.runtimeMain,
-        },
+        source: stateSource(source),
+        target: { kind: "test-copy", path: paths.testApp },
+        app: stateApp(copy),
+        files: { archive: stateArchive(copy, patched, archivePath) },
+        backup: { archive: patched.backupPath },
+        loader: stateLoader(),
     };
+}
+
+export function install(): InstallResult {
+    const { source, copy } = prepareCopy();
+    const archivePath = copy.archive.archivePath;
+    const currentHash = sha256File(archivePath);
+    const existing = readState();
+    if (isUpToDate(existing, currentHash)) {
+        writeLink(paths.testApp);
+        return { action: "unchanged", state: existing, source, copy };
+    }
+    const patched = patchStartupEntry(
+        archivePath,
+        copy.archive.main,
+        copy.codexVersion,
+        currentHash,
+    );
+    writeLink(paths.testApp);
+    const state = buildState(source, copy, patched, archivePath);
     writeState(state);
     return { action: patched.changed ? "patched" : "already-patched", state, source, copy };
 }
