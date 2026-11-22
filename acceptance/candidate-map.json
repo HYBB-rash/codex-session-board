@@ -16,7 +16,7 @@
         "fedora-package": {
             "file": "docs/session-board-typescript-acceptance.md",
             "checkpoint_commit": "dc27e05",
-            "coverage": "0.3.3 从 Fedora 已安装网页入口激活、完全退出重启、页面读回、回退、卸载和数据夹具。"
+            "coverage": "0.3.4 从 Fedora 已安装网页入口激活、完全退出重启、页面读回、回退、卸载和数据夹具。"
         },
         "macos-package": {
             "file": "docs/session-board-typescript-acceptance.md",
@@ -425,7 +425,7 @@
         "linux-delivery": {
             "status": "partial",
             "evidence": ["release-rollback", "native-move", "fedora-package"],
-            "remaining": "Fedora 0.3.3 已从安装版网页验收完整更新生命周期；补新版安装后 signed-in 远程全功能复验。"
+            "remaining": "Fedora 0.3.4 已从安装版网页验收完整更新生命周期；补新版安装并登录后的远程全功能复验。"
         },
         "macos-delivery": {
             "status": "partial",
