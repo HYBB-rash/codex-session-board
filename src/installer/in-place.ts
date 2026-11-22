@@ -26,13 +26,24 @@ import {
     assertSystemRegistrationClear,
     configureWatcher,
     installControl,
+    reloadUserWatchers,
 } from "./in-place-registration.js";
-import { assertSystemPath, inspectStockArchive, requireCompatibleRpm } from "./in-place-target.js";
+import {
+    assertCompatibleExecutable,
+    assertOriginalRpmRecorded,
+    assertSystemPath,
+    inspectStockArchive,
+    requireCompatibleRpm,
+} from "./in-place-target.js";
 import { checkInPlaceUpgrade, type InPlaceWatchStatus } from "./in-place-watcher.js";
 import { verifyRelease } from "./release-manifest.js";
-import { activateRelease, rollbackRelease } from "./releases.js";
+import { activateRelease, activeRelease, rollbackRelease } from "./releases.js";
 
 const rpmLock = "/usr/lib/sysimage/rpm/.rpm.lock";
+
+function refreshWatchers(enabled: boolean): void {
+    for (const warning of reloadUserWatchers(enabled)) console.error(warning);
+}
 
 function assertStopped(): void {
     const running = fs.readdirSync("/proc").filter((entry) => {
@@ -91,6 +102,7 @@ function stockMatches(installation: InPlaceInstallation): boolean {
 function cleanInstallation(installation: InPlaceInstallation): void {
     const transaction = inPlaceTransaction(installation);
     configureWatcher(false);
+    refreshWatchers(false);
     cleanArchiveStage(transaction);
     discardArchiveBackup(transaction, installation.original);
     for (const name of ["state", "control", ".control-stage"])
@@ -148,7 +160,11 @@ export function installInPlace(packageRoot: string): {
         if (installation.phase === "installed") {
             if (archivePosition(transaction, installation) !== "patched")
                 throw new Error("Codex 已变化，请先卸载旧登记，再安装兼容版");
-            return { action: "unchanged", version: installation.version };
+            const active = activeRelease(inPlaceReleaseStore());
+            if (!active) throw new Error("原地安装没有已激活的看板版本");
+            configureWatcher(true);
+            refreshWatchers(true);
+            return { action: "unchanged", version: active.version };
         }
         try {
             if (installation.phase === "preparing") {
@@ -167,6 +183,7 @@ export function installInPlace(packageRoot: string): {
             configureWatcher(true);
             commitArchive(transaction, installation, assertStopped);
             writeInstallationReceipt(transaction.receipt, { ...installation, phase: "installed" });
+            refreshWatchers(true);
             return { action: "installed", version: manifest.version };
         } catch (error) {
             try {
@@ -198,6 +215,14 @@ export function uninstallInPlace(): { action: "restored" | "kept-rpm" | "not-ins
         const observed = position !== "patched" ? inspectStockArchive() : undefined;
         if (position !== "patched" && observed?.kind !== "stock")
             throw new Error("启动归档的归属无法核对，已保留恢复材料");
+        if (position === "patched") {
+            assertOriginalRpmRecorded(
+                transaction.archive,
+                installation.package,
+                installation.original,
+            );
+            assertCompatibleExecutable(path.join(IN_PLACE_APP, "ChatGPT"));
+        }
         writeInstallationReceipt(transaction.receipt, { ...installation, phase: "removing" });
         if (position === "patched") restoreArchive(transaction, installation, assertStopped);
         cleanInstallation(installation);
@@ -233,7 +258,21 @@ export function inPlaceStatus(): InPlaceWatchStatus {
                     "utf8",
                 ),
             ) as { version?: unknown };
-            if (metadata.version === installation.version) return { kind: "ready" };
+            if (metadata.version === installation.version) {
+                try {
+                    assertCompatibleExecutable(path.join(IN_PLACE_APP, "ChatGPT"));
+                    return { kind: "ready" };
+                } catch (error) {
+                    const detail = error instanceof Error ? error.message : String(error);
+                    return {
+                        kind: "incompatible",
+                        fingerprint: createHash("sha256")
+                            .update(`${installation.version}\n${detail}`)
+                            .digest("hex"),
+                        message: `Codex ${installation.version} 已停用会话看板。${detail}。请安装兼容版看板或检查安装状态。`,
+                    };
+                }
+            }
             return {
                 kind: "incompatible",
                 fingerprint: createHash("sha256").update(String(metadata.version)).digest("hex"),

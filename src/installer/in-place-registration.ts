@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { IN_PLACE_APP, IN_PLACE_ARCHIVE, IN_PLACE_ROOT } from "./constants.js";
@@ -96,5 +97,54 @@ export function configureWatcher(enabled: boolean): void {
             fs.unlinkSync(`${file}.codex-enhancer-stage`);
         }
         if (fs.existsSync(path.dirname(file))) syncDirectory(path.dirname(file));
+    }
+}
+
+export function reloadUserWatchers(enabled: boolean): string[] {
+    const units = [...watcher.keys()].map((file) => path.basename(file));
+    const pathUnit = units.find((unit) => unit.endsWith(".path"));
+    if (!pathUnit) throw new Error("缺少路径检查单元");
+    const options = {
+        encoding: "utf8" as const,
+        env: { PATH: "/usr/bin:/bin", LC_ALL: "C" },
+        timeout: 7000,
+        stdio: ["ignore", "pipe", "pipe"] as const,
+    };
+    try {
+        const result: unknown = JSON.parse(
+            execFileSync("/usr/bin/loginctl", ["list-users", "--json=short"], {
+                ...options,
+                stdio: [...options.stdio],
+            }),
+        );
+        if (!Array.isArray(result)) throw new Error("loginctl 未返回用户列表");
+        return result.flatMap((entry: { uid?: unknown; user?: unknown }) => {
+            if (
+                !entry ||
+                !Number.isSafeInteger(entry.uid) ||
+                entry.uid === 0 ||
+                typeof entry.user !== "string" ||
+                !/^[\w.-]+$/.test(entry.user)
+            )
+                return [];
+            const bus = `--machine=${entry.user}@.host`;
+            const systemctl = (...command: string[]) =>
+                execFileSync("/usr/bin/systemctl", ["--user", bus, ...command], {
+                    ...options,
+                    stdio: [...options.stdio],
+                });
+            try {
+                if (!enabled) systemctl("stop", ...units);
+                systemctl("daemon-reload");
+                if (enabled) systemctl("start", pathUnit);
+                return [];
+            } catch {
+                return [
+                    `用户 ${entry.user} 的升级检查器未即时${enabled ? "启动" : "停止"}，下次登录将读取当前登记`,
+                ];
+            }
+        });
+    } catch {
+        return ["未能刷新已登录用户的升级检查器，下次登录将读取当前登记"];
     }
 }

@@ -133,6 +133,26 @@ function assertRpmFile(file: string, rpm: RpmFile, sha256: string): void {
         throw new Error(`文件与 RPM 记录不同：${file}`);
 }
 
+export function assertCompatibleExecutable(binary: string): void {
+    assertSystemPath(binary, false);
+    if (sha256File(binary) !== compatibleBuild.binarySha256)
+        throw new Error("Codex 可执行文件与经过验收的构建不同");
+}
+
+export function assertOriginalRpmRecorded(
+    file: string,
+    recordedPackage: string,
+    original: FileProof,
+): void {
+    const rpm = rpmFile(file);
+    if (
+        rpm.package !== recordedPackage ||
+        rpm.sha256 !== original.sha256 ||
+        rpm.mode !== original.mode
+    )
+        throw new Error("RPM 已换包但旧补丁仍在，已保留恢复材料");
+}
+
 export function inspectStockArchive(app = IN_PLACE_APP): InstalledArchive {
     if (!fs.existsSync(app)) return { kind: "missing" };
     try {

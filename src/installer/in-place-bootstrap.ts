@@ -10,7 +10,7 @@ import {
     inPlaceUserDirectory,
     readInPlaceInstallation,
 } from "./in-place-receipt.js";
-import { assertSystemPath } from "./in-place-target.js";
+import { assertCompatibleExecutable, assertSystemPath } from "./in-place-target.js";
 import { checkInPlaceUpgrade } from "./in-place-watcher.js";
 import { verifyRelease } from "./release-manifest.js";
 import { releasePointer } from "./releases.js";
@@ -93,6 +93,7 @@ export function startInPlace(): void {
         if (installation?.phase !== "installed") throw new Error("安装记录缺失或尚未提交");
         if (installation.version !== version)
             throw new Error(`客户端已经替换已登记的 ${installation.version} 构建`);
+        assertCompatibleExecutable(process.execPath);
         if (
             archiveDigest(path.join(IN_PLACE_APP, IN_PLACE_ARCHIVE)) !== installation.patched.sha256
         )
