@@ -19,6 +19,8 @@ node dist/bin/codex-enhancer.js launch
 
 安装器把客户端复制到本目录的 `state/`，只给副本的启动入口加 Loader。登录后，从侧栏打开「会话看板」。通过 Codex 的远程连接设置连接主机。状态列使用同名的原生侧栏分区，缺少分区时先在原生侧栏登记。远程项目尚未在该桌面登记目录时，「新建会话」会打开 Codex 的项目登记对话框，由用户确认后打开输入页。
 
+安装前可用 `CODEX_ENHANCER_SOURCE` 指定 Codex 客户端所在目录，启动时可用 `CODEX_CLI_PATH` 指定客户端使用的 Codex 命令路径。Linux 副本默认使用客户端随包命令，在 `XDG_RUNTIME_DIR` 下使用独立的桌面 socket。用 `CODEX_ENHANCER_BRIDGE_SOCKET` 可指定该副本的 socket 路径。相对命令和 socket 路径以调用启动器的目录为准。
+
 ## 更新和回退
 
 先核对候选归档的 `.sha256`，将解压后的 `release.json` 和 `dist/` 放入安装目录的 `state/update-candidate/`。在已安装看板里点击「更新」，完全退出并重新启动 Enhancer 副本，再打开看板核对版本。也可以从安装目录执行这些命令。
