@@ -15,13 +15,18 @@
         },
         "fedora-package": {
             "file": "docs/session-board-typescript-acceptance.md",
-            "checkpoint_commit": "dc27e05",
-            "coverage": "0.3.5 从 Fedora 已安装网页入口激活、完全退出重启、页面读回、回退、卸载和数据夹具。"
+            "checkpoint_commit": "e2565ec",
+            "coverage": "0.3.7 从 Fedora 已安装网页入口激活、完全退出重启、页面读回、回退、卸载和数据夹具。"
         },
         "macos-package": {
             "file": "docs/session-board-typescript-acceptance.md",
-            "checkpoint_commit": "dc27e05",
-            "coverage": "MacBook Pro 上的 arm64 包结构和回退，以及桌面启动被内嵌 ASAR 完整性摘要拒绝的记录。"
+            "checkpoint_commit": "e2565ec",
+            "coverage": "MacBook Pro 清洁解包运行 0.3.7 测试和冻结模型，安装预检报告内嵌 ASAR 完整性摘要。"
+        },
+        "fedora-signed-package": {
+            "file": "docs/session-board-typescript-acceptance.md",
+            "checkpoint_commit": "e2565ec",
+            "coverage": "0.3.7 在登录的 Enhancer 测试副本复验两端移卡、备注、标题、归档、排序及重启读回，随包 CLI 与 MCP 复用同一窗口。"
         },
         "archive-receipt": {
             "file": "src/extensions/session-board/archive.test.ts",
@@ -175,12 +180,13 @@
             "remaining": "迁移测试能核对导入的输入版本；当前宿主需验证同轮新增输入、跨轮输入、重启和显式清除。"
         },
         "TITLE-001": {
-            "status": "pending",
+            "status": "partial",
             "implementation": [
                 "src/extensions/session-board/activity.ts",
                 "src/extensions/session-board/board-service.ts"
             ],
-            "remaining": "在已连接真实宿主上核对人工和自动状态变更后的即时改名以及最新完整标题。"
+            "evidence": ["fedora-signed-package", "fedora-desktop"],
+            "remaining": "Fedora 安装版两端人工移卡已同步标题；补最新长标题与自动阶段的完整对照。"
         },
         "TITLE-002": {
             "status": "pending",
@@ -355,7 +361,7 @@
     "operations": {
         "Snapshot": "Fedora 已分别读取活动、归档、远程项目；补同 ID 冲突与真实重连后的缓存边界。",
         "Update": "已有 Fedora 原生移卡检查点，补同候选跨入口写入、各版本冲突和远端回执丢失。",
-        "Sort": "核对列排序持久化、输入冲突和跨入口可见。",
+        "Sort": "安装版已用 HTTP 验证排序冲突和重启持久化，并用 MCP 读回相同值；补 MCP 提交与反向更新。",
         "Archive": "本机手动和远程定时归档已实测读回；补已安装版本的筛选批次和新输入竞争。",
         "ArchiveBatches": "比较真实批次的未提交、待核对及已确认项，并重启读回。",
         "ArchiveBatchStart": "补核验登记请求冲突、重复提交与批次持久化。",
@@ -363,7 +369,7 @@
         "ArchiveBatchCheck": "隔离夹具已验证仅核对已提交项；补真实回执丢失、迟到。",
         "Open": "已从归档定位原会话及主机；补同名跨主机和无新轮次的对照。",
         "PreviewReply": "已确认原生两端完整回复；补迟到回执越过卡片或宿主切换的拒绝。",
-        "New": "实际打开本机与远程选定项目的空输入页并核对未自动发送。",
+        "New": "安装版已打开本机默认空输入页；补本机指定项目和远程登记后的完整新建。",
         "NewReset": "核对丢失回执和用户确认后重置旧新建请求。",
         "ProjectAssign": "核对项目补登记、身份不符和重复确认。",
         "Connect": "验证在 Codex 管理的连接界面完成重连，后续操作仍使用同一窗口的 authority。",
@@ -375,8 +381,8 @@
     "cli": {
         "serve": {
             "status": "partial",
-            "evidence": ["cli-instance"],
-            "remaining": "已确认复用 Fedora 测试副本的实际窗口；补已安装版本及另一平台复验。"
+            "evidence": ["cli-instance", "fedora-signed-package"],
+            "remaining": "已确认 Fedora 安装版复用实际窗口；补 macOS 宿主复验。"
         },
         "stop": {
             "status": "partial",
@@ -411,8 +417,8 @@
     "goal_checks": {
         "native-section-move": {
             "status": "partial",
-            "evidence": ["native-move"],
-            "remaining": "首个 Fedora 本机/远程检查点通过；发布实现变更后需对受测安装包复验。"
+            "evidence": ["native-move", "fedora-signed-package"],
+            "remaining": "Fedora 本机与远程原生拖放检查点通过；安装版 HTTP 已验证下发与读回，仍需重跑安装版的完整界面拖放与旧表单链。"
         },
         "remote-authority": {
             "status": "partial",
@@ -437,8 +443,13 @@
         },
         "linux-delivery": {
             "status": "partial",
-            "evidence": ["release-rollback", "native-move", "fedora-package"],
-            "remaining": "Fedora 0.3.5 已从安装版网页验收完整更新生命周期；补新版安装并登录后的远程全功能复验。"
+            "evidence": [
+                "release-rollback",
+                "native-move",
+                "fedora-package",
+                "fedora-signed-package"
+            ],
+            "remaining": "Fedora 0.3.7 验证网页更新生命周期及登录后的两端移卡。补远程新建、重连及新版安装件的故障场景。"
         },
         "macos-delivery": {
             "status": "partial",
