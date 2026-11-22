@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "files": {
+    "requirements.json": "5b20b6135b59c3daf4002bea17316c0fbaf80228cd822e24ffb9853a4d69c32b",
+    "model.py": "afc587078c415ccb631fed4efdcef304269096fbfece812e680a6d4e195738d7"
+  }
+}
