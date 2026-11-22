@@ -367,8 +367,7 @@ function registerBoardRecords(
     });
     ipcMain.handle("codex-enhancer:board-records", (event, value) => {
         if (!boardFrame(event)) throw new Error("enhancer IPC rejected");
-        if (typeof value === "string")
-            return boardRecords.account(value, legacy.forAccount(value)?.board.cards);
+        if (typeof value === "string") return legacy.loadRecords(value, boardRecords);
         if (
             !isFields<RecordWrite>(value) ||
             typeof value.record?.note !== "string" ||

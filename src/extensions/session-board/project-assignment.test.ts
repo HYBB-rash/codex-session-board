@@ -103,7 +103,7 @@ function transportFixture(
 function assignmentFixture() {
     const { desktop, writes } = transportFixture();
     const service = new BoardService(desktop, {
-        load: async () => ({}),
+        load: async () => ({ records: {}, legacyCachedCards: [] }),
         save: async () => assert.fail("Assignment must not change card records"),
         settleTitle: async () => assert.fail("Assignment must not change titles"),
         preparePhase: async () => assert.fail("Assignment must not advance a phase"),
@@ -166,7 +166,7 @@ function draftFixture() {
     const stages: string[] = [];
     let closeCount = 0;
     const service = new BoardService(desktop, {
-        load: async () => ({}),
+        load: async () => ({ records: {}, legacyCachedCards: [] }),
         save: async () => assert.fail("New input page must not change card records"),
         settleTitle: async () => assert.fail("New input page must not change titles"),
         preparePhase: async () => assert.fail("New input page must not advance a phase"),

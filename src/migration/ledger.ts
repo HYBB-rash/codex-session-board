@@ -71,6 +71,9 @@ function itemFrom(
         sectionVersion: target.sectionVersion,
         status,
         ...(typeof row.reason === "string" ? { message: row.reason } : {}),
+        ...(typeof row.checked_at === "number" && Number.isFinite(row.checked_at)
+            ? { checkedAt: row.checked_at }
+            : {}),
     };
 }
 

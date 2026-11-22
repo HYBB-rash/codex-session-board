@@ -8,7 +8,7 @@ import {
     hostId,
     type ThreadId,
 } from "../extensions/session-board/desktop-connection.js";
-import type { CardRecord } from "../extensions/session-board/records.js";
+import type { LoadedBoardRecords } from "../extensions/session-board/records.js";
 import { readSettings } from "../extensions/session-board/settings.js";
 import type { BoardRelayRequest } from "./board-broker.js";
 import { startUiHost } from "./host.js";
@@ -54,10 +54,10 @@ function observeDesktop(desktop: DesktopConnection, board: BoardService): void {
 function connectBoard(desktop: DesktopConnection, closePage: () => void): BoardService {
     return new BoardService(desktop, {
         async load(account) {
-            return (await ipcRenderer.invoke("codex-enhancer:board-records", account)) as Record<
-                string,
-                CardRecord
-            >;
+            return (await ipcRenderer.invoke(
+                "codex-enhancer:board-records",
+                account,
+            )) as LoadedBoardRecords;
         },
         async save(update) {
             await ipcRenderer.invoke("codex-enhancer:board-records", update);

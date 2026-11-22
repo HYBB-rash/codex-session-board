@@ -13,7 +13,11 @@ export type ArchiveState =
     | "verified"
     | "newInput"
     | "rejected";
-export type ArchiveItem = ArchiveTarget & { status: ArchiveState; message?: string };
+export type ArchiveItem = ArchiveTarget & {
+    status: ArchiveState;
+    message?: string;
+    checkedAt?: number;
+};
 
 export interface ArchiveBatch {
     id: string;
@@ -161,6 +165,7 @@ export class Archive {
             if (current.status !== from || (from === "awaiting" && batch.finishedAt !== null))
                 return { next: old, result: { item: current, changed: false } };
             const next = { ...current, status, ...(message ? { message } : {}) };
+            if (from === "pending" || status !== "pending") next.checkedAt = Date.now() / 1000;
             if (!message) delete next.message;
             const updated = {
                 ...batch,

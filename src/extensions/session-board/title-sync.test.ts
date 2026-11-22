@@ -163,7 +163,7 @@ function fixture(testContext: TestContext) {
             (row) => native.moved(row),
         );
         return new BoardService(desktop, {
-            load: async (key) => store.account(key),
+            load: async (key) => ({ records: store.account(key), legacyCachedCards: [] }),
             save: async (update) => store.write(update),
             preparePhase: async (update) => native.preparePhase(update),
             settleTitle: async (resolution) => store.settleTitle(resolution),

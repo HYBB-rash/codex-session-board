@@ -121,7 +121,7 @@ function fixture(testContext: TestContext, maxPages = 3) {
         },
     });
     const service = new BoardService(desktop, {
-        load: async () => records,
+        load: async () => ({ records, legacyCachedCards: [] }),
         save: async ({ id, expected, record }) => {
             assert.ok(native.history);
             assert.equal(records[id]?.version ?? 0, expected);

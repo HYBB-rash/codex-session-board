@@ -15,7 +15,13 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
+import { BoardService } from "../extensions/session-board/board-service.js";
+import {
+    DesktopConnection,
+    type SidebarContext,
+    type Thread,
+} from "../extensions/session-board/desktop-connection.js";
 import { BoardLedgers, BoardRecords } from "../extensions/session-board/records.js";
 import {
     migrateLegacyBoard,
@@ -100,7 +106,7 @@ function seed(database: DatabaseSync, host: string): void {
     database.exec("INSERT INTO archive_batches VALUES ('batch', 10, NULL)");
     database
         .prepare(
-            "INSERT INTO archive_batch_items VALUES ('batch', 0, ?, ?, 'pending', NULL, ?, NULL)",
+            "INSERT INTO archive_batch_items VALUES ('batch', 0, ?, ?, 'pending', NULL, ?, 11.5)",
         )
         .run(
             threadId,
@@ -436,10 +442,10 @@ function assertSeeded(runtime: ReturnType<typeof runtimeFixture>) {
     assert.deepEqual(
         existing.batches
             .find(({ id }) => id === "batch")
-            ?.items.map(({ id, status }) => [id, status]),
+            ?.items.map(({ id, status, checkedAt }) => [id, status, checkedAt]),
         [
-            [threadId, "pending"],
-            [installedId, "awaiting"],
+            [threadId, "pending", 11.5],
+            [installedId, "awaiting", undefined],
         ],
     );
     assert.equal(existing.columnSorts[archiveColumn]?.version, 4);
@@ -526,6 +532,211 @@ test("runtime overlays explicitly bound records, preferences and batches without
     } finally {
         fixture.close();
     }
+});
+
+function migrationThread(host: string): Thread {
+    return {
+        id: threadId as Thread["id"],
+        name: `Native ${host}`,
+        preview: "",
+        cwd: "/native",
+        projectId: null,
+        updatedAt: 99,
+        createdAt: 1,
+        recencyAt: null,
+        section: null,
+        sectionEnteredAt: null,
+        ephemeral: false,
+        source: "vscode",
+        status: { type: "notLoaded" },
+        turns: [],
+    };
+}
+
+function boardForMigration(runtime: ReturnType<typeof runtimeFixture>) {
+    const context: SidebarContext = { accountId, userId, sections: [] };
+    const hosts = ["local"];
+    const nativeCalls: string[] = [];
+    const available = new Set(["local"]);
+    const desktop = new DesktopConnection({
+        bootstrap: () => ({ catalogHostIds: hosts }),
+        sidebar: async (command) => {
+            assert.equal(command.kind, "context");
+            return { ...context };
+        },
+        async send(event) {
+            const { hostId, request } = event as {
+                hostId: string;
+                request: { id: string; method: string; params: { archived?: boolean } };
+            };
+            nativeCalls.push(hostId);
+            if (!available.has(hostId)) throw new Error("fixture offline");
+            const active = request.method === "thread/list" && !request.params.archived;
+            assert.ok(
+                ["thread/list", "thread/turns/list", "project/list"].includes(request.method),
+            );
+            desktop.receive({
+                type: "mcp-response",
+                hostId,
+                message: {
+                    id: request.id,
+                    result: { data: active ? [migrationThread(hostId)] : [], nextCursor: null },
+                },
+            });
+        },
+    });
+    const service = new BoardService(desktop, {
+        load: async (key) => runtime.migration.loadRecords(key, runtime.records),
+        loadLedger: async (key) =>
+            runtime.ledgers.load(key, runtime.migration.forAccount(key)?.ledger),
+        settings: async (key) => runtime.migration.settings(key, { syncTitles: false }),
+        save: async () => assert.fail("Writing a cached card must be rejected"),
+        preparePhase: async () => assert.fail("A cached card must not move"),
+        settleTitle: async () => assert.fail("A cached card must not rename"),
+        titleEpoch: async () => assert.fail("Title synchronization is disabled"),
+        writeLedger: async () => assert.fail("A cached card cannot verify its archive receipt"),
+        closePage: () => assert.fail("A cached card must not open"),
+        authority: () => {},
+        proof: () => {},
+        updateStatus: async () => assert.fail("Unexpected update"),
+    });
+    return { context, hosts, available, nativeCalls, service };
+}
+
+async function boundMigration(test: TestContext) {
+    const fixture = scopeFixture();
+    const oldWindow = Reflect.get(globalThis, "window");
+    Reflect.set(globalThis, "window", globalThis);
+    test.after(() => {
+        Reflect.set(globalThis, "window", oldWindow);
+        fixture.close();
+    });
+    const runtime = runtimeFixture(fixture);
+    const imported = await migrateLegacyBoard({ ...fixture, destination: runtime.destination });
+    runtime.writeBinding({ local: "local", [sourceOffline]: installedOffline });
+    return { runtime, imported, ...boardForMigration(runtime) };
+}
+
+type BoardCard = ReturnType<BoardService["snapshot"]>["sessions"][number];
+
+function assertOfflineCard(cached: BoardCard | undefined): asserts cached is BoardCard {
+    assert.ok(cached);
+    assert.partialDeepStrictEqual(cached, {
+        hostId: installedOffline,
+        threadId,
+        title: "fixture",
+        state: "to_archive",
+        note: `${sourceOffline} WAL note`,
+        version: 12,
+        inputVersion: 7,
+        followUp: true,
+        titleSyncPending: true,
+        titleSyncError: `${sourceOffline} title retry`,
+        archivePending: true,
+        catalogCurrent: false,
+        readOnly: true,
+        canOpen: false,
+        canArchive: false,
+        presence: "cachedUnknown",
+        sectionVersion: null,
+    });
+    assert.equal(cached.previewTurnId, undefined);
+}
+
+async function assertReadOnly(service: BoardService, cached: BoardCard) {
+    for (const action of ["/api/open", "/api/preview-reply", "/api/state", "/api/archive"]) {
+        await assert.rejects(service.request(action, cached), /只显示缓存/);
+    }
+    await assert.rejects(
+        service.request("/api/project/assign", {
+            id: offlineId,
+            projectId: "default",
+            confirmed: true,
+        }),
+        /只显示缓存/,
+    );
+}
+
+test("a bound remote migration is visible even if Codex has never connected", async (testContext) => {
+    const { runtime, nativeCalls, service, hosts } = await boundMigration(testContext);
+    await service.refresh();
+    const first = service.snapshot();
+    assert.deepEqual(new Set(nativeCalls), new Set(["local"]));
+    assert.deepEqual(
+        first.sessions.map(({ id }) => id),
+        [threadId, offlineId],
+    );
+    assert.deepEqual(
+        first.projectCatalog.remoteHosts.map(({ hostId }) => hostId),
+        [installedOffline],
+    );
+    assert.equal(first.health.remoteConnections[0]?.connected, false);
+    assert.equal(first.health.remoteConnections[0]?.scanComplete, false);
+    const cached = first.sessions.find(({ id }) => id === offlineId);
+    assertOfflineCard(cached);
+    const priorCalls = nativeCalls.length;
+    await assertReadOnly(service, cached);
+    const { batches } = runtime.migration.forAccount(storedAccount)?.ledger ?? assert.fail();
+    assert.deepEqual(await service.request("/api/archive-batches"), { batches });
+    const remoteBatch = batches.find(({ items }) => items.some(({ id }) => id === offlineId));
+    assert.ok(remoteBatch);
+    assert.deepEqual(await service.request("/api/archive-batches/check", { id: remoteBatch.id }), {
+        batch: remoteBatch,
+    });
+    assert.equal(nativeCalls.length, priorCalls);
+    hosts.push(installedOffline);
+    await service.refresh();
+    assert.match(service.snapshot().health.remoteConnections[0]?.error ?? "", /fixture offline/);
+    assert.deepEqual(
+        service.snapshot().sessions.find(({ id }) => id === offlineId),
+        cached,
+    );
+});
+
+async function assertNoImportedCards(service: BoardService) {
+    assert.deepEqual(
+        service.snapshot().sessions.map(({ id, note }) => ({ id, note })),
+        [{ id: threadId, note: "" }],
+    );
+    assert.deepEqual(await service.request("/api/archive-batches"), { batches: [] });
+}
+
+test("a migrated remote card belongs to the bound user and yields to native discovery", async (testContext) => {
+    const { runtime, imported, context, hosts, available, service } =
+        await boundMigration(testContext);
+    await service.refresh();
+    const first = service.snapshot();
+    const cached = first.sessions.find(({ id }) => id === offlineId);
+    assertOfflineCard(cached);
+
+    context.userId = "other-user";
+    await service.refresh();
+    assert.notEqual(service.snapshot().accountScope, first.accountScope);
+    await assertNoImportedCards(service);
+
+    context.userId = userId;
+    hosts.push(installedOffline);
+    available.add(installedOffline);
+    await service.refresh();
+    const remote = service.snapshot().sessions.filter(({ id }) => id === offlineId);
+    assert.equal(remote.length, 1);
+    assert.partialDeepStrictEqual(remote[0], {
+        title: `Native ${installedOffline}`,
+        presence: "present",
+        canOpen: true,
+        readOnly: false,
+        note: cached.note,
+        version: cached.version,
+    });
+    assert.equal(
+        runtime.migration.forAccount(storedAccount)?.board.changes[offlineId]?.[0]?.note,
+        `${sourceOffline} history`,
+    );
+
+    rollbackLegacyMigration(runtime.destination, imported.receipt.id);
+    const reopened = boardForMigration(runtime).service;
+    await reopened.refresh();
+    await assertNoImportedCards(reopened);
 });
 
 test("migration refuses occupied destinations, rolls back privately, and can retry", async () => {

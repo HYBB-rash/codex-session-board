@@ -41,6 +41,8 @@ import {
 import { previewReply } from "./preview.js";
 import type {
     CardRecord,
+    LegacyCachedCard,
+    LoadedBoardRecords,
     PhaseIntent,
     RecordChange,
     RecordWrite,
@@ -49,7 +51,7 @@ import type {
 import { type BoardSettings, defaults } from "./settings.js";
 
 interface BoardPorts {
-    load(account: string): Promise<Record<string, CardRecord>>;
+    load(account: string): Promise<LoadedBoardRecords>;
     save(update: RecordWrite): Promise<void>;
     preparePhase(update: PhaseIntent): Promise<boolean>;
     settleTitle(resolution: TitleResolution): Promise<boolean>;
@@ -112,7 +114,7 @@ interface Card {
     projectId: string | null;
     updatedAt: number;
     state: BoardState | null;
-    sectionVersion: string;
+    sectionVersion: string | null;
     version: number;
     inputVersion: number;
     note: string;
@@ -197,6 +199,7 @@ export class BoardService {
     private context: SidebarContext | undefined;
     private accountScope: string | null = null;
     private records: Record<string, CardRecord> = {};
+    private legacyCachedCards: LegacyCachedCard[] = [];
     private refreshing: Promise<void> | undefined;
     private readonly editing = new Set<string>();
     private settings: BoardSettings = defaults;
@@ -262,7 +265,7 @@ export class BoardService {
             ? await this.ports.titleEpoch(account)
             : undefined;
         if (switched) {
-            const [records, ledger, accountScope] = await Promise.all([
+            const [{ records, legacyCachedCards }, ledger, accountScope] = await Promise.all([
                 this.ports.load(account),
                 this.ports.loadLedger(account),
                 scopeDigest(account),
@@ -275,6 +278,7 @@ export class BoardService {
             this.historyReads.clear();
             this.nextTitleAttempt.clear();
             this.records = records;
+            this.legacyCachedCards = legacyCachedCards;
             this.ledger = ledger;
             this.accountScope = accountScope;
             this.archiveDeadlines.clear();
@@ -712,15 +716,52 @@ export class BoardService {
         };
     }
 
-    private cardObservation(id: string, record: CardRecord, position: Placement) {
+    private cachedLegacyCard(cached: LegacyCachedCard, states: Record<string, string>): Card {
+        const { hostId, threadId, title, cwd, updatedAt, archived, followUp } = cached;
+        const id = cardId({ hostId, threadId });
+        const record = this.records[id] ?? emptyRecord;
+        const fallback = this.mode === "four" ? null : "unknown";
+        const state = cached.state && Object.hasOwn(states, cached.state) ? cached.state : fallback;
+        return {
+            id,
+            accountScope: this.requiredScope(),
+            hostId,
+            threadId,
+            title: title || "未命名会话",
+            cwd,
+            projectId: null,
+            updatedAt,
+            state,
+            sectionVersion: null,
+            version: record.version,
+            inputVersion: record.inputVersion,
+            note: record.note,
+            manual: record.manual === true,
+            remote: true,
+            ordinary: true,
+            canOpen: false,
+            readOnly: true,
+            archived,
+            presence: "cachedUnknown",
+            catalogCurrent: false,
+            source: "codex",
+            hostLabel: hostLabel(hostId),
+            followUp,
+            canArchive: false,
+            archivePending: this.archive.pending(id),
+            ...this.cardObservation(id, record),
+        };
+    }
+
+    private cardObservation(id: string, record: CardRecord, position?: Placement) {
         const observationError = this.historyReads.get(id)?.error;
         return {
-            ...(record.previewTurnId ? { previewTurnId: record.previewTurnId } : {}),
+            ...(position && record.previewTurnId ? { previewTurnId: record.previewTurnId } : {}),
             ...(record.reason ? { reason: record.reason } : {}),
             ...(record.title ? { titleSyncPending: true } : {}),
             ...(record.title?.error ? { titleSyncError: record.title.error } : {}),
             ...(observationError ? { observationError } : {}),
-            ...(position.sectionId === null &&
+            ...(position?.sectionId === null &&
             position.managed &&
             record.manual !== true &&
             record.previewTurnId !== undefined
@@ -780,15 +821,18 @@ export class BoardService {
     snapshot() {
         const context = this.requiredContext();
         const local = this.hosts.get(localHostId);
-        const remoteHosts = [...this.hosts.keys()]
+        const states = visibleStates(this.mode);
+        const remoteIds = new Set([
+            ...this.hosts.keys(),
+            ...this.legacyCachedCards.map(({ hostId }) => hostId),
+        ]);
+        const remoteHosts = [...remoteIds]
             .filter((key) => key !== "local")
             .map((key) => ({ hostId: key, hostLabel: hostLabel(key) }));
         return {
             accountScope: this.requiredScope(),
-            states: visibleStates(this.mode),
-            sessions: [...this.hosts].flatMap(([hostId, host]) =>
-                this.hostCards(hostId, host, context),
-            ),
+            states,
+            sessions: this.sessions(context, states),
             health: {
                 ...this.health(localHostId, local),
                 nativeConnections: true,
@@ -815,6 +859,17 @@ export class BoardService {
                 ({ source }) => source === "legacy",
             ),
         };
+    }
+
+    private sessions(context: SidebarContext, states: Record<string, string>): Card[] {
+        const native = [...this.hosts].flatMap(([hostId, host]) =>
+            this.hostCards(hostId, host, context),
+        );
+        const discovered = new Set(native.map(({ id }) => id));
+        const cached = this.legacyCachedCards
+            .filter((card) => !discovered.has(cardId(card)))
+            .map((card) => this.cachedLegacyCard(card, states));
+        return [...native, ...cached];
     }
 
     private hostCards(hostId: HostId, host: HostSnapshot, context: SidebarContext): Card[] {
@@ -856,6 +911,7 @@ export class BoardService {
     private target(id: string) {
         const card = this.snapshot().sessions.find((row) => row.id === id);
         if (!card) throw new Error("看板找不到该会话");
+        if (!card.canOpen) throw new Error("会话目前只显示缓存，请重新发现");
         return { card, connection: this.desktop.capture(card.hostId) };
     }
 
@@ -1166,7 +1222,6 @@ export class BoardService {
 
     private async open(id: string): Promise<{ ok: true }> {
         const { card, connection } = this.target(id);
-        if (!card.canOpen) throw new Error("会话目前只显示缓存，请重新发现");
         const context = await this.freshContext();
         await this.desktop.read(connection, card.threadId, false);
         await this.freshContext(context);
@@ -1185,7 +1240,6 @@ export class BoardService {
 
     private async preview(id: string) {
         const { card, connection } = this.target(id);
-        if (!card.canOpen) throw new Error("会话目前只显示缓存，请重新发现");
         const context = await this.freshContext();
         const result = await previewReply(this.desktop, connection, card.threadId);
         await this.freshContext(context);

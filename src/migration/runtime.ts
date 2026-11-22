@@ -1,16 +1,28 @@
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { BoardLedger } from "../extensions/session-board/archive.js";
+import {
+    hostId,
+    localHostId,
+    type ThreadId,
+} from "../extensions/session-board/desktop-connection.js";
+import type {
+    BoardRecords,
+    LegacyCachedCard,
+    LoadedBoardRecords,
+} from "../extensions/session-board/records.js";
 import { type BoardSettings, readSettings } from "../extensions/session-board/settings.js";
 import { readRegular, regularFile } from "./files.js";
 import { projectLedger } from "./ledger.js";
 import type { LegacyAccountBinding, MigratedBoard } from "./projection.js";
 
 const requireHere = createRequire(__filename);
+const threadUuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 
 interface Import {
     board: MigratedBoard;
     ledger: BoardLedger;
+    cachedCards: LegacyCachedCard[];
 }
 
 interface CachedImport extends Import {
@@ -39,6 +51,25 @@ function bindingOf(contents: string): LegacyAccountBinding {
     };
 }
 
+function projectCachedCards(board: MigratedBoard): LegacyCachedCard[] {
+    return Object.values(board.cards).flatMap((record) => {
+        const host = hostId(record.hostId);
+        if (!host || host === localHostId || !threadUuid.test(record.threadId)) return [];
+        return [
+            {
+                hostId: host,
+                threadId: record.threadId as ThreadId,
+                title: record.displayTitle,
+                cwd: record.cwd,
+                updatedAt: record.updatedAt,
+                state: record.nativeState ?? record.selectedState ?? record.automaticState,
+                archived: record.archived,
+                followUp: record.followUp,
+            },
+        ];
+    });
+}
+
 export class LegacyBoardRuntime {
     private cached: CachedImport | undefined;
 
@@ -59,8 +90,21 @@ export class LegacyBoardRuntime {
             "./projection.js",
         ) as typeof import("./projection.js");
         const board = readMigratedBoard(destination, binding);
-        this.cached = { identity, board, ledger: projectLedger(board, binding) };
+        this.cached = {
+            identity,
+            board,
+            ledger: projectLedger(board, binding),
+            cachedCards: projectCachedCards(board),
+        };
         return this.cached;
+    }
+
+    loadRecords(account: string, records: BoardRecords): LoadedBoardRecords {
+        const imported = this.forAccount(account);
+        return {
+            records: records.account(account, imported?.board.cards),
+            legacyCachedCards: imported?.cachedCards ?? [],
+        };
     }
 
     settings(account: string | undefined, config: unknown): BoardSettings {

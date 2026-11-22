@@ -85,7 +85,7 @@ export class BoardFixture {
             sidebar: async (command) => this.sidebar(command),
         });
         this.service = new BoardService(desktop, {
-            load: async (key) => records.account(key),
+            load: async (key) => ({ records: records.account(key), legacyCachedCards: [] }),
             save: async (update) => records.write(update),
             preparePhase: async (update) => records.preparePhase(update),
             loadLedger: async (key) => ledgers.load(key),

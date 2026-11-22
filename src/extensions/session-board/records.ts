@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "
 import { dirname } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { type BoardLedger, emptyLedger } from "./archive.js";
+import type { ThreadRef } from "./desktop-connection.js";
 import type { DraftRecord } from "./drafts.js";
 import { type BoardState, labels } from "./placement.js";
 
@@ -19,6 +20,20 @@ export interface CardRecord {
     selectedAt?: number;
     reason?: string;
     title?: { state: BoardState | null; error?: string };
+}
+
+export interface LegacyCachedCard extends ThreadRef {
+    title: string;
+    cwd: string;
+    updatedAt: number;
+    state: BoardState | null;
+    archived: boolean;
+    followUp: boolean;
+}
+
+export interface LoadedBoardRecords {
+    records: Record<string, CardRecord>;
+    legacyCachedCards: LegacyCachedCard[];
 }
 
 interface RecordRevision {
