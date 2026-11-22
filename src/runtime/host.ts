@@ -297,6 +297,85 @@ function handleClick(host: HostState, event: MouseEvent): void {
     if (target.closest(DESTINATION) != null || target.closest(RAIL) != null) closePage(host);
 }
 
+function removeAllItems(): void {
+    for (const node of document.querySelectorAll(`[${ITEM}]`)) node.remove();
+}
+
+function reportMissing(host: HostState): void {
+    if (host.sawMount) {
+        host.sawMount = false;
+        proof(host, "sidebar-removed", shellFacts(host));
+        return;
+    }
+    if (host.reportedMissing) return;
+    host.reportedMissing = true;
+    proof(host, "shell-observed", shellFacts(host));
+}
+
+function pruneItems(host: HostState, mount: Mount): void {
+    for (const node of document.querySelectorAll(`[${ITEM}]`)) {
+        const id = node.getAttribute(ITEM);
+        if (id == null || !host.items.some((item) => item.id === id)) {
+            node.remove();
+            continue;
+        }
+        if (!mount.parent.contains(node)) node.remove();
+    }
+}
+
+function reportMounted(host: HostState, mount: Mount): void {
+    if (host.sawMount || host.items.length === 0) return;
+    host.sawMount = true;
+    proof(host, "sidebar-mounted", {
+        kind: mount.kind,
+        sampleClass: mount.sample?.className ?? "",
+        ...shellFacts(host),
+    });
+    if (!host.autoOpen || host.autoOpened) return;
+    host.autoOpened = true;
+    const item = host.items[0];
+    if (item != null) window.setTimeout(() => openPage(host, item), 1200);
+}
+
+function render(host: HostState): void {
+    if (host.applying) return;
+    host.applying = true;
+    try {
+        const mount = chooseMount();
+        if (mount == null) {
+            removeAllItems();
+            reportMissing(host);
+            return;
+        }
+        pruneItems(host, mount);
+        for (const item of host.items) ensureItem(host, item, mount);
+        reportMounted(host, mount);
+        if (host.panel != null) place(host.panel);
+    } finally {
+        host.applying = false;
+    }
+}
+
+function apply(host: HostState, payload: unknown): void {
+    const state = parseUiPayload(payload);
+    host.items = state.items;
+    host.autoOpen = state.autoOpen;
+    render(host);
+}
+
+function watchShell(host: HostState, observer: MutationObserver): void {
+    const root = document.documentElement;
+    if (!isHtmlElement(root)) return;
+    observer.observe(root, { childList: true, subtree: true });
+    render(host);
+}
+
+function stop(host: HostState, observer: MutationObserver): void {
+    observer.disconnect();
+    closePage(host);
+    for (const node of document.querySelectorAll(`[${ITEM}]`)) node.remove();
+}
+
 export function startUiHost(options: UiHostOptions): UiHost {
     const host: HostState = {
         options,
@@ -309,110 +388,31 @@ export function startUiHost(options: UiHostOptions): UiHost {
         sawMount: false,
         reportedMissing: false,
     };
-
-    function removeAllItems(): void {
-        for (const node of document.querySelectorAll(`[${ITEM}]`)) node.remove();
-    }
-
-    function reportMissing(): void {
-        if (host.sawMount) {
-            host.sawMount = false;
-            proof(host, "sidebar-removed", shellFacts(host));
-            return;
-        }
-        if (host.reportedMissing) return;
-        host.reportedMissing = true;
-        proof(host, "shell-observed", shellFacts(host));
-    }
-
-    function pruneItems(mount: Mount): void {
-        for (const node of document.querySelectorAll(`[${ITEM}]`)) {
-            const id = node.getAttribute(ITEM);
-            if (id == null || !host.items.some((item) => item.id === id)) {
-                node.remove();
-                continue;
-            }
-            if (!mount.parent.contains(node)) node.remove();
-        }
-    }
-
-    function reportMounted(mount: Mount): void {
-        if (host.sawMount || host.items.length === 0) return;
-        host.sawMount = true;
-        proof(host, "sidebar-mounted", {
-            kind: mount.kind,
-            sampleClass: mount.sample?.className ?? "",
-            ...shellFacts(host),
-        });
-        if (!host.autoOpen || host.autoOpened) return;
-        host.autoOpened = true;
-        const item = host.items[0];
-        if (item != null) window.setTimeout(() => openPage(host, item), 1200);
-    }
-
-    function render(): void {
-        if (host.applying) return;
-        host.applying = true;
-        try {
-            const mount = chooseMount();
-            if (mount == null) {
-                removeAllItems();
-                reportMissing();
-                return;
-            }
-            pruneItems(mount);
-            for (const item of host.items) ensureItem(host, item, mount);
-            reportMounted(mount);
-            if (host.panel != null) place(host.panel);
-        } finally {
-            host.applying = false;
-        }
-    }
-
-    function apply(payload: unknown): void {
-        const state = parseUiPayload(payload);
-        host.items = state.items;
-        host.autoOpen = state.autoOpen;
-        render();
-    }
-
-    function watchShell(): void {
-        const root = document.documentElement;
-        if (!isHtmlElement(root)) return;
-        observer.observe(root, { childList: true, subtree: true });
-        render();
-    }
-
-    function stop(): void {
-        observer.disconnect();
-        closePage(host);
-        for (const node of document.querySelectorAll(`[${ITEM}]`)) node.remove();
-    }
-
-    const observer = new MutationObserver(() => render());
+    const observer = new MutationObserver(() => render(host));
+    const watch = (): void => watchShell(host, observer);
     if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", watchShell, { once: true });
+        document.addEventListener("DOMContentLoaded", watch, { once: true });
     } else {
-        watchShell();
+        watch();
     }
     document.addEventListener("click", (event) => handleClick(host, event), true);
     window.addEventListener("resize", () => {
         if (host.panel != null) place(host.panel);
     });
-    window.addEventListener("pagehide", () => stop(), { once: true });
+    window.addEventListener("pagehide", () => stop(host, observer), { once: true });
     options.subscribe((payload) => {
         try {
-            apply(payload);
+            apply(host, payload);
         } catch (error) {
             reportFailure(host, error);
         }
     });
     options.fetchState().then(
-        (payload) => apply(payload),
+        (payload) => apply(host, payload),
         (error: unknown) => reportFailure(host, error),
     );
     window.setTimeout(() => {
         if (!host.sawMount) proof(host, "shell-observed", { delayed: true, ...shellFacts(host) });
     }, 4000);
-    return { stop };
+    return { stop: () => stop(host, observer) };
 }

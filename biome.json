@@ -32,6 +32,15 @@
         "enabled": true,
         "rules": {
             "preset": "recommended",
+            "complexity": {
+                "noExcessiveLinesPerFunction": {
+                    "level": "error",
+                    "options": {
+                        "maxLines": 41
+                    }
+                },
+                "useLiteralKeys": "error"
+            },
             "suspicious": {
                 "noExplicitAny": "error"
             }
