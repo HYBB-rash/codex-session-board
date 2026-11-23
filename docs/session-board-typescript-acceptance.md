@@ -1,18 +1,29 @@
 # TypeScript 会话看板验收
 
-上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本通过本机和远程原生移卡检查点。macOS arm64 的目标 Codex 构建在加载看板之前拒绝了经过修改的启动归档，因此发布条件未满足。
+上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本及真实 RPM 原地安装均通过本机和远程原生移卡。macOS arm64 目标构建触发启动归档完整性预检，安装在写入前停止，因此发布条件未满足。
 
 ## 0.3.25 候选
 
-由 `f3c54ec` 构建。31 项冻结需求中 18 项通过、13 项待验，76 项门槛自动检查通过。Fedora 记录 8 条逐项现场断言，macOS 记录 3 条随包交付断言。`releaseReady` 为 `false`。[逐项门槛](../state/acceptance/release-gate-0.3.25.json) · [现场证据索引](../state/acceptance/live-0.3.25.json)
+由 `f3c54ec` 构建。31 项冻结需求中，18 项达到双平台门槛，13 项仍有待验。76 项门槛自动检查通过。Fedora 通过 39/40 条现场断言，剩余一条是账号最左侧固定图标直达原生 MCP App。macOS 通过 3/40 条随包交付断言，37 条桌面现场断言待验。`releaseReady` 为 `false`。[逐项门槛](../state/acceptance/release-gate-0.3.25.json) · [现场证据索引](../state/acceptance/live-0.3.25.json)
 
 | 场景 | 现场观察 |
 | --- | --- |
 | Fedora 原地双端移卡 | 同一台 Fedora 44 使用隔离容器安装真实 RPM，Codex `26.1111.71704`。安装前后均从 RPM 自带的 `.desktop` 打开 `/opt/codex-desktop/ChatGPT`，启动参数字节一致。保留专用登录、项目和本机、MacBook Pro 两端连接。从原窗口的 Enhancer 入口把两个专用卡从待审阅拖到进行中。两个目标分区均在原生侧栏显示，并由各自原生连接独立读回。反向拖放恢复分区，两条测试备注保持。[原版窗口](../state/acceptance/in-place-rootless/signed-stock-native.json) · [原地安装](../state/acceptance/in-place-rootless/signed-reinstall.txt) · [双端移卡和恢复](../state/acceptance/in-place-rootless/signed-live-drag.jsonl) |
 | Fedora 原生 MCP App | 从已安装插件详情点击打开原生 App，核对发行包 iframe。原生子进程收到自定义 `XDG_STATE_HOME` 和有效看板目录，原生 App 与回环网页读回两个专用卡及备注。双端跨列、刷新与反向移回通过。同列和拖出均保留原版本，右缘自动横滚达到最右端。账号最左侧固定图标直达仍待专用账号验证。[打开插件](../state/acceptance/in-place-rootless/signed-native-mcp-click.jsonl) · [共享路径](../state/acceptance/in-place-rootless/signed-native-mcp-verified.jsonl) · [真实拖放](../state/acceptance/in-place-rootless/signed-native-mcp-drag-retry.jsonl) |
 | Fedora 原地卸载 | 在同一隔离环境卸载后 `rpm -V` 通过，原启动器和桌面入口的 SHA-256 一致。从原图标启动并读回与原版基线相同的项目、登录类型和两端专用会话分区。升级提示仍以有桌面用户服务的 `0.3.24` 客体回执为准。[卸载回执](../state/acceptance/in-place-rootless/signed-final-uninstall.txt) · [原版再次启动](../state/acceptance/in-place-rootless/signed-final-stock-native.json) |
-| Fedora 轮次协议 | 在断网夹具中运行该构建随包 App Server 和 `0.3.25` 看板。实际收到批准请求后进入已阻塞。同一轮获批并执行命令后进入进行中，完成后进入待审阅。暂时流错误的 `willRetry: true` 保持进行中，终态失败后进入已阻塞。用本地 provider 和分区夹具控制时序，已登录窗口的批准交互及真实分区写入待验。[两次原生协议复验](../state/acceptance/fedora-offline-native-turns-0.3.25.json) |
+| Fedora 副本更新回退 | 已登录副本从看板实际点击更新，重启后从界面和 HTTP 读回 `0.3.25`。从安装版执行回退并重启，读回 `0.3.24`，两端原生连接、专用分区、标题和备注保持。系统归档和隔离配置的 SHA-256 一致。[更新](../state/acceptance/fedora-signed-copy-update-0.3.25.jsonl) · [回退与复验](../state/acceptance/fedora-signed-copy-rollback-0.3.25.jsonl) |
+| Fedora 旧六状态 | 用原生侧栏新建缺少的待判断和已完成两个本机分区，专用卡依次进入六个分区并回到待审阅。独立读回每次原生位置，两个临时分区、看板配置及卡片恢复。操作期间从隔离副本的 SSH 开关临时断开远端，完成后复连。[跨列与清理](../state/acceptance/fedora-native-six-columns-0.3.25-1795395377472.json) · [断开及复连](../state/acceptance/fedora-native-six-connectivity-0.3.25-1795395376377.jsonl) |
+| Fedora 原生轮次 | 已登录副本使用回环测试提供方触发原生批准请求。审批进入已阻塞，可信点击「允许一次」后同一轮实际执行固定测试命令并回到进行中。流错误报告 `willRetry` 时，原生分区和看板均保持进行中。普通澄清结束后进入待审阅，可信停止进入已阻塞。备注保持，临时会话归档。[批准与重试](../state/acceptance/desktop-approval-0.3.25-c045ca84.jsonl) · [澄清](../state/acceptance/fedora-title-001-live-0.3.25-1795393813569.json) · [停止](../state/acceptance/fedora-interrupt-0.3.25-fe06cf0a.jsonl) · [终态失败离线复验](../state/acceptance/fedora-offline-native-turns-0.3.25.json) |
+| Fedora 标题同步 | 双端均在同次保存返回前读回新标题。测试数据库拒绝专用卡改名后，状态和备注先落盘，重启后仍有待同步项。解除限制后自动改名并清空队列。单轮原生预算为 3,000 毫秒，观测到超时结算用时 2,999.90 毫秒。后台等待旧回执时，前台保存耗时 157.92 毫秒，旧回执没有覆盖新待办。[双端读回](../state/acceptance/fedora-title-001-live-0.3.25-1795393518136.json) · [重启重试](../state/acceptance/fedora-title-retry-0.3.25-f216b8d74.jsonl) · [预算](../state/acceptance/fedora-title-003-ack-0.3.25-6c182f853.jsonl) |
+| Fedora 发现、打开与新建 | 本机与远端按每页一条完整读回，12 张卡与两端原生 ID 集合一致。原生 App Server 索引三种合成交互来源和两个提供方标签，排除子代理。两个同名专用会话按各自主机和 ID 打开。远端专用项目打开空白原生输入页，重放同一操作后独立读回的会话清单一致。[分页](../state/acceptance/fedora-0.3.25-discovery.log) · [发现来源](../state/acceptance/fedora-discovery-sources-0.3.25.json) · [同名定位](../state/acceptance/fedora-nav-same-title-0.3.25-1795393511475.json) · [远端输入页](../state/acceptance/fedora-remote-composer-0.3.25-1795395512945.json) |
+| Fedora 表单与预览 | 阻塞表单支持取消、显式清空和保留原备注，三个旧版本分别被拒。搜索保留空列，键盘可编辑保存。标题的同列拖动、拖出和边缘横滚均保持原生路由与预览状态。执行中读回上一条完整答复，随包 iframe 通过关闭、切卡后忽略迟到响应的控制试验。[表单](../state/acceptance/fedora-ui-002-0.3.25-1795393493341.jsonl) · [键盘](../state/acceptance/fedora-ui-003-0.3.25-1795393472800.jsonl) · [原生手势](../state/acceptance/fedora-ui-gestures-0.3.25-1795394582535.jsonl) · [执行中预览](../state/acceptance/fedora-title-001-live-0.3.25-1795393763566.json) · [回复控制试验](../state/acceptance/fedora-mcp-gestures-nav-fixture-0.3.25-1795393719095.json) |
+| Fedora 归档与主机恢复 | 筛选后批量归档、关页重开以及关页定时归档均从原生连接读回，专用卡随后恢复。中断隔离副本自己的 SSH 传输时，远端卡暂为只读。相同窗口自动重连并读回原位置，日用连接在试验期间保持在线。[批量归档](../state/acceptance/fedora-archive-batch-0.3.25-1795393831984.jsonl) · [定时归档](../state/acceptance/fedora-archive-batch-0.3.25-1795393843425.jsonl) · [连接恢复](../state/acceptance/fedora-reconnect-0.3.25-1795393857592.jsonl) |
+| Fedora 入口与迁移 | 隔离浏览器安装 PWA，从生成的系统启动项首次打开及关闭重开均控制同一版服务。HTTP、CLI、MCP 读回相同的双端状态、版本和同轮回复，随包登记 18 个共享操作。用冻结 schema 的合成 SQLite 主库、远端分库及已提交 WAL 验证迁移和回退。[PWA](../state/acceptance/fedora-pwa-installed-0.3.25.json) · [公共入口](../state/acceptance/fedora-entrypoints-0.3.25.json) · [迁移](../state/acceptance/fedora-migration-0.3.25.json) |
 | 双平台解包 | Fedora 通过 100 项随包测试，MacBook Pro 通过 96 项、跳过 4 项 Linux 专用测试。两平台各通过 10 项公共入口、10 项冻结模型和 18 项门槛测试。Mac Codex `26.1111.21308` 的副本预检因框架内嵌 ASAR 摘要停止，原地预检因平台限制停止。系统应用签名与启动归档均通过复验。[Fedora](../state/acceptance/fedora-archive-0.3.25.log) · [MacBook Pro](../state/acceptance/packages/macos-0.3.25-preflight.txt) |
+
+Fedora 剩余的原生 MCP 图标直达需要可写入侧栏偏好的专用账号。已登录隔离副本沿用现有账号，侧栏固定状态由账号共享，验收使用原生插件详情入口。
+
+2026 年 11 月 23 日在 MacBook Pro 复验了系统应用的官方签名，以及签名资源清单记录的完整 ASAR 摘要和 `Info.plist` 记录的 ASAR 头摘要。13 个受查构建的启动入口都存放在启动归档内。副本仍需可通过完整性预检且具有所需原生接口的官方构建。macOS 原地模式还需实现官方签名和应用元数据的恢复，并在真机完成生命周期验收。[签名与入口回执](../state/acceptance/packages/macos-20261123-boot-entry-and-seals.md) · [历史官方构建预检](../state/acceptance/packages/macos-official-builds.md)
 
 - [Fedora x86_64 归档](../state/acceptance/packages/session-board-0.3.25-linux-x86_64.tar.gz) · [SHA-256](../state/acceptance/packages/session-board-0.3.25-linux-x86_64.tar.gz.sha256)
 - [macOS arm64 归档](../state/acceptance/packages/session-board-0.3.25-macos-arm64.tar.gz) · [SHA-256](../state/acceptance/packages/session-board-0.3.25-macos-arm64.tar.gz.sha256)
