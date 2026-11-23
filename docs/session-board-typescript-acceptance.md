@@ -31,9 +31,11 @@ Fedora 测试账号初始使用默认侧栏。临时固定后，可信点击最�
 
 此前在同一官方构建上验证过两条接入路径。修改启动归档后，本地 ad hoc 签名无法满足官方签名要求。保留官方签名并只安装 MCP 插件时，窗口能打开看板界面，插件无法从原窗口读取会话。原地模式仍需要能保留官方身份和权限的接入方式。 [签名连续性对照](../state/acceptance/packages/macos-0.3.31-signature-continuity-verified.jsonl) · [官方窗口内的 MCP 对照](../state/acceptance/packages/macos-0.3.31-stock-native-plugin-final.jsonl)
 
+2026 年 11 月 24 日复查 arm64 正式更新源。MacBook Pro 只读挂载 `26.1117.41037` 的完整官方应用，并按日用 `26.1111.21308` 的指定签名要求通过深度严格验签。新版 `app.asar` 的实算摘要与签名资源清单一致。两个构建都只将本机守护进程选择应用于本机连接，MCP 页面调用仍受绑定服务器及已授权工具范围约束。新版随包 App Server 宿主由 Electron 启动为应用内部进程。本次为应用包只读核验，日用应用及其偏好摘要前后一致。 [官方身份与连接实现回执](../state/acceptance/output-033/macos-0.3.33-official-identity-and-transport.json)
+
 - [Fedora x86_64 安装候选](../state/acceptance/packages/session-board-0.3.33-linux-x86_64.tar.gz "sha256=4da8c3f7f7b667409325d8928b0a0be010ccd2d3dfdfa12f37fc5ea133476a84") · [校验文件](../state/acceptance/packages/session-board-0.3.33-linux-x86_64.tar.gz.sha256)
 - [macOS arm64 安装候选](../state/acceptance/packages/session-board-0.3.33-macos-arm64.tar.gz "sha256=e5b347603e7e842392d1db63e8ee984df9a08b25cc086ebabdb492cf2895478e") · [校验文件](../state/acceptance/packages/session-board-0.3.33-macos-arm64.tar.gz.sha256)
-- [逐项验收证据归档](../state/acceptance/packages/session-board-0.3.33-acceptance.tar.gz "sha256=f0acc2b5b550b2c49efa92772508dd6fbcfc776aab07e58c6c0450fc3972e7ba") · [校验文件](../state/acceptance/packages/session-board-0.3.33-acceptance.tar.gz.sha256)
+- [逐项验收证据归档](../state/acceptance/packages/session-board-0.3.33-acceptance.tar.gz "sha256=e9c4f473c7a6b73dc158b03a60c21798ca7db97c1c25118835930cd1318b306e") · [校验文件](../state/acceptance/packages/session-board-0.3.33-acceptance.tar.gz.sha256)
 
 ## 0.3.31 候选
 
