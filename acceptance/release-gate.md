@@ -26,8 +26,10 @@ python3 -B acceptance/release_gate.py --identify \
 
 记录和附件保存在候选源码目录树之外。验收人核对附件确实记录了实现中的操作和读回。脚本核对归档、附件、测试、时间和实测范围。
 
+门槛使用独立 Chrome 配置运行随包 MCP 界面测试。可通过 `BOARD_TEST_BROWSER` 指定 Chrome 或 Chromium 可执行文件。单独复验界面执行 `node --test acceptance/board-interaction.test.mjs`。
+
 ```bash
-python3 -B acceptance/verify-typescript.py \
+python3 -B acceptance/release_gate.py \
   --archive linux-x86_64=/path/to/linux.tar.gz \
   --archive macos-arm64=/path/to/macos.tar.gz \
   --evidence /path/to/releases.json

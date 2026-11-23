@@ -15,17 +15,28 @@ from release_identity import (
 ROOT = Path(__file__).resolve().parents[1]
 MAX_AGE = timedelta(days=30)
 STATUSES = {"pass", "fail", "error", "skip"}
+ACCEPTANCE_TEST_FILES = {
+    "acceptance/public-operations.test.mjs": {
+        "mcp-global-board": "the installed MCP plugin declares one global entrypoint for the complete board page",
+        "mcp-shared-board-state": "MCP App and the web page read each other's saved board state",
+        "mcp-real-revisions": "MCP saves use the live state and input revisions across HTTP",
+        "mcp-inline-app-resources": "the MCP resource bundles its SDK and styles without linked scripts or frames",
+        "manual-follow-up-recovery": "new-input notices survive incomplete observations and clear only on manual confirmation",
+        "manual-change-history": "manual confirmations append durable change records and rejected saves leave them alone",
+        "automatic-change-history": "confirmed automatic phases append their reasons once without replacing the saved note",
+        "disabled-titles-preserve-save": "disabling title sync still saves state and never renames",
+        "launcher-passes-arguments-directly": "the client launcher passes the argument array without a shell",
+        "loopback-token-rejects-untrusted-writes": "only loopback and same-origin token-authorized writes reach the board",
+    },
+    "acceptance/board-interaction.test.mjs": {
+        "title-drag-control-isolation": "dragging the card title suppresses preview and navigation without disabling nearby controls",
+        "blocked-editor-explicit-save": "the blocked editor accepts an optional reason and sends no update until explicit save",
+    },
+}
 ACCEPTANCE_TESTS = {
-    "mcp-global-board": "the installed MCP plugin declares one global entrypoint for the complete board page",
-    "mcp-shared-board-state": "MCP App and the web page read each other's saved board state",
-    "mcp-real-revisions": "MCP saves use the live state and input revisions across HTTP",
-    "mcp-inline-app-resources": "the MCP resource bundles its SDK and styles without linked scripts or frames",
-    "manual-follow-up-recovery": "new-input notices survive incomplete observations and clear only on manual confirmation",
-    "manual-change-history": "manual confirmations append durable change records and rejected saves leave them alone",
-    "automatic-change-history": "confirmed automatic phases append their reasons once without replacing the saved note",
-    "disabled-titles-preserve-save": "disabling title sync still saves state and never renames",
-    "launcher-passes-arguments-directly": "the client launcher passes the argument array without a shell",
-    "loopback-token-rejects-untrusted-writes": "only loopback and same-origin token-authorized writes reach the board",
+    identifier: {"file": file, "test": name}
+    for file, tests in ACCEPTANCE_TEST_FILES.items()
+    for identifier, name in tests.items()
 }
 TAP_TEST = re.compile(r"^(ok|not ok) \d+ - (.+)$")
 TAP_DIRECTIVE = re.compile(r" # (SKIP|TODO)(?:\s.*)?$", re.IGNORECASE)
@@ -64,10 +75,7 @@ def bindings_at(root, requirements):
     model_ids = {check for item in model["requirements"].values() for check in item.get("checks", [])}
     node_tests = {identifier: item for identifier, item in candidate["evidence"].items() if item.get("test")}
     need(not (node_tests.keys() & ACCEPTANCE_TESTS.keys()), "独立与候选测试 ID 重名")
-    node_tests.update({
-        identifier: {"file": "acceptance/public-operations.test.mjs", "test": name}
-        for identifier, name in ACCEPTANCE_TESTS.items()
-    })
+    node_tests.update(ACCEPTANCE_TESTS)
     providers = {"gate-tests", *model_ids, *node_tests, *DELIVERY_CHECKS}
     need(
         len(providers) == 1 + len(model_ids) + len(node_tests) + len(DELIVERY_CHECKS),

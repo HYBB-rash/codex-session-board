@@ -12,7 +12,7 @@ REQUIRED_FILES = {
     "acceptance/model.py", "acceptance/requirements.json", "acceptance/contract.lock.json",
     "acceptance/candidate-map.json", "acceptance/gate-bindings.json",
     "acceptance/check-candidate.mjs", "acceptance/verify-typescript.py",
-    "acceptance/public-operations.test.mjs", "acceptance/release_gate.py",
+    "acceptance/public-operations.test.mjs", "acceptance/board-interaction.test.mjs", "acceptance/release_gate.py",
     "acceptance/release_identity.py", "acceptance/delivery_checks.py",
     "scripts/package-install.md", "dist/bin/codex-enhancer.js",
     "dist/bin/codex-session-board.js", "dist/runtime/main.js", "dist/runtime/preload.js",

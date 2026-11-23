@@ -91,12 +91,12 @@
             ["preview-previous-complete", "preview-confirm-latest"],
             ["preview-previous-complete", "preview-errors"],
             ["navigation-exact-thread", "preview-previous-complete"],
-            []
+            ["title-drag-control-isolation"]
         ],
         "APP-001": [["mcp-global-board"], ["mcp-shared-board-state"], ["mcp-global-board"]],
         "UI-001": [[], [], []],
         "UI-002": [
-            [],
+            ["blocked-editor-explicit-save"],
             ["manual-change-history"],
             ["manual-change-history", "automatic-change-history"],
             ["mcp-real-revisions", "manual-change-history"]
