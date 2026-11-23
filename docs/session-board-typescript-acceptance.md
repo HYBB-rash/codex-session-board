@@ -37,6 +37,7 @@
 | macOS 官方签名对照 | 从原样复制并通过官方签名核验的客户端启动。它沿用专用登录，原生接口能读同一张本机专用卡。只登记 `0.3.31` MCP 插件后，最左侧原生图标能打开随包界面。看板提示连接断开，显示零张卡。对空状态目录直接调用随包 `board_snapshot` 也提示启动带 Enhancer 的窗口。退出后恢复原测试配置和此前的专用副本，并复核系统应用签名和文件。 [实际窗口与清理](../state/acceptance/packages/macos-0.3.31-stock-native-plugin-final.jsonl) · [随包 MCP 对照](../state/acceptance/packages/macos-0.3.31-mcp-exact-no-runtime.json) |
 | macOS 官方窗口的 App Server 通道 | 从保持官方签名的副本按默认通道启动。客户端日志记录 `stdio`，所属 App Server 无命名 Unix 套接字和 TCP 监听。App Tools 使用另有客户端授权的套接字。官方包中本机守护进程和 WebSocket 均需显式选用，不能接入这次已启动的窗口。此次渲染器未重新验回登录，以前一条对照记录为准。已恢复专用配置和此前窗口，系统应用签名及文件摘要验回。 [通道现场回执](../state/acceptance/packages/macos-0.3.31-stock-app-server-live-transport.jsonl) · [官方包通道实现](../state/acceptance/packages/macos-0.3.31-stock-transport-contract.json) |
 | macOS 原生插件工具范围 | 从保持官方签名的已登录窗口打开随包看板。插件页面用原生 MCP 通道调用自身 `board_view` 成功。对 `list_threads` 发出带无效分页参数的探测，返回工具不可用，未读取会话。官方包的窗口实现以当前宿主、已登记服务器和工具范围分派请求。复验后卸载专用插件并验回原配置、系统应用签名及文件摘要。 [工具范围真机回执](../state/acceptance/packages/macos-0.3.31-stock-mcp-tool-scope-20261124.jsonl) · [官方包分派实现](../state/acceptance/packages/macos-0.3.31-stock-mcp-tool-scope-source.json) |
+| macOS 更新源预检 | 2026 年 11 月 24 日，面向当前 arm64 正式渠道的更新源返回 Codex `26.1117.41037`。从官方发布归档只读取目录、`Info.plist` 及签名资源清单。新版仍声明 ASAR 完整性摘要，签名资源清单仍包含 `app.asar` 的 SHA-256。完整下载超时，尚未整包验签或启动。 [官方更新源回执](../state/acceptance/packages/macos-0.3.31-official-update-feed-20261124.json) · [归档元数据](../state/acceptance/packages/macos-0.3.31-new-official-archive-metadata-20261124.jsonl) |
 
 2026 年 11 月 23 日 Mac 发起的 Fedora 连接曾在 SSH 签名阶段超时。11 月 24 日，用户授权为该既有登记配置专用密钥及 Apple Keychain。本轮核对了无 Agent、无控制连接复用的新认证和服务端接受的身份。Mac 整机睡眠和重启仍未实测。 [此前签名阶段](../state/acceptance/packages/macos-0.3.31-native-route-final-recheck.json) · [新认证](../state/acceptance/macos-0.3.31-dedicated-ssh-live-auth-20261124.json)
 
@@ -48,7 +49,7 @@ Fedora 原装客户端的固定按钮在 ChatGPT 登录模式下写入账号侧�
 
 - [Fedora x86_64 安装候选](../state/acceptance/packages/session-board-0.3.31-linux-x86_64.tar.gz "sha256=3fce27047e049ae90a2ca421161841320c3cd6754d9ee929207880b5990c684c") · [校验文件](../state/acceptance/packages/session-board-0.3.31-linux-x86_64.tar.gz.sha256)
 - [macOS arm64 安装候选](../state/acceptance/packages/session-board-0.3.31-macos-arm64.tar.gz "sha256=8d5d309aade6f3d801a45ac85306c83274ac5c267637c220499796e55ea1fc08") · [校验文件](../state/acceptance/packages/session-board-0.3.31-macos-arm64.tar.gz.sha256)
-- [逐项验收证据归档](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz "sha256=e530898ef0e65818330ea566acf213653276746f99f96e1de2c363dccfe92f91") · [校验文件](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz.sha256)
+- [逐项验收证据归档](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz "sha256=a53391cf82f4753672835daa94ebfd21e7aab58f0a75c303bd933949cbb81afc") · [校验文件](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz.sha256)
 
 证据归档自带 44 份由现场索引引用的回执、额外的平台边界证据和两个安装包的摘要。从干净解包运行随包检查，复现同一份逐项门槛报告。
 
