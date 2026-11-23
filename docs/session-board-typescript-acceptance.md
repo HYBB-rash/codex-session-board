@@ -6,6 +6,8 @@
 
 2026 年 11 月 23 日从提交 `ec0f152` 构建。看板回执记录进程启动身份，旧版回执也能识别已由无关进程接手的 PID。从干净解包运行门槛，两端归档校验和 78 项自动检查通过，31 条冻结需求中 30 条达到本版双平台门槛。macOS 通过 40/40 条现场断言，Fedora 通过 39/40 条，剩余 `APP-001` 的最左侧原生固定图标直达。 [本版门槛](../state/acceptance/release-gate-0.3.31.json) · [本版现场证据](../state/acceptance/live-0.3.31.json)
 
+当前仓库的发布门槛逐项检查两平台的副本及原地模式。本版两端副本启动、双端原生移卡和副本更新回退均有候选级证据。Fedora 已验回原地启动、双端原生移卡和看板更新回退。macOS 原地预检失败，其余待验项见逐项结果。 [安装方式门槛](../acceptance/release-gate.md) · [本版原始回执与逐项判定](../state/acceptance/installation-audit-0.3.31.json)
+
 | 场景 | 现场观察 |
 | --- | --- |
 | Fedora 解包 | 102 项 Node 测试、12 项公共入口与浏览器测试、冻结模型和 18 项门槛测试通过。 [随包测试](../state/acceptance/fedora-archive-0.3.31-final.log) |
@@ -13,6 +15,7 @@
 | Fedora 原生双端移卡 | 从 RPM 原图标启动，经插件详情打开原生 MCP App，核对随包脚本及回环网页状态。本机和 MacBook Pro 的专用卡均实际跨列，原生分区独立读回，刷新保留备注，反拖恢复。远端卡复验同列、拖出及横滚。卸载后核对 RPM 原件。 [入口与登录](../state/acceptance/in-place-rootless/signed-native-mcp-click-0.3.31.jsonl) · [双端拖放和复位](../state/acceptance/in-place-rootless/signed-native-mcp-drag-retry-0.3.31.jsonl) · [卸载](../state/acceptance/in-place-rootless/signed-final-uninstall-0.3.31.txt) |
 | Fedora 图形验收 CLI | 在独立 Xvfb、D-Bus 和运行目录中用 `--ozone-platform=x11` 启动已有副本。原生接口确认 ChatGPT 登录，本机和 MacBook Pro 通过 Codex 已有连接读回。两端专用卡均用可信指针跨列，独立原生读回与侧栏一致，反拖后分区和备注验回。退出测试窗口，回退副本版本选择至 0.3.24，三份受保护文件的摘要一致。 [登录、双端拖放和退出](../state/acceptance/fedora-0.3.31-gui-cli-native-two-hosts.log) |
 | Fedora 公共入口与 PWA | 副本重启读回 0.3.31。HTTP、CLI 与 MCP 在同一本机专用卡上读回一致状态和回复，MCP 枚举 18 项共享操作。隔离浏览器安装的系统启动项两次打开独立看板窗口。部分读取时界面显示异常，缓存只读又保留已保存的版本及备注，恢复配置后重扫成功。复验后副本回退到 0.3.24。 [公共入口](../state/acceptance/fedora-0.3.31-entrypoints-local.log) · [PWA](../state/acceptance/fedora-pwa-installed-0.3.31.json) · [部分读取](../state/acceptance/fedora-0.3.31-health-local.log) · [副本回退](../state/acceptance/fedora-signed-copy-rollback-0.3.31-field-finish-local-field.jsonl) |
+| 双平台副本更新与回退 | Fedora 从 0.3.24、Mac 从 0.3.30 的实际看板点击更新，重启后读回 0.3.31。回退再重启读回各自原版本，三次读回的专用卡原生位置、状态和备注一致。Fedora 验回测试配置和原文件，Mac 候选已卸载，此前的专用副本已恢复。 [Fedora 现场回执](../state/acceptance/fedora-0.3.31-copy-ui-update-and-rollback-retry.jsonl) · [Mac 真机回执](../state/acceptance/packages/macos-0.3.31-copy-ui-update-and-rollback.jsonl) |
 | Fedora 发现 | 每页一条读完本机和 MacBook Pro，两端独立原生枚举合计 12 条稳定 ID，与看板一致。恢复配置后再次核对。断网的真实 App Server 补验三种交互来源、两个提供方、子代理排除和分页上限。 [原生分页](../state/acceptance/fedora-0.3.31-discovery-two-hosts.log) · [来源夹具](../state/acceptance/fedora-discovery-sources-0.3.31-offline.json) |
 | Fedora 补充现场检查 | 六列顺序、导航和表单选项均与冻结规范一致。在六列模式下利用既有本机分区完成三次跨列并复位，未修改原生分区目录。标题保存和重启重试、同名导航和预览、阻塞表单、筛选键盘交互及滚动均补验通过。 [六列跨列](../state/acceptance/fedora-native-six-columns-0.3.31-1795435556078.json) · [标题重试](../state/acceptance/fedora-title-retry-0.3.31-ccd3cddff.jsonl) · [标题预算](../state/acceptance/fedora-title-003-ack-0.3.31-9f0f5b64f.jsonl) · [导航](../state/acceptance/same-title-0.3.31-1f8774fc-e160-4737-a67d-3581aa4ca3ef.json) · [表单](../state/acceptance/fedora-ui-002-0.3.31-1795434353862.jsonl) · [滚动及键盘](../state/acceptance/fedora-ui-003-0.3.31-1795434515272.jsonl) |
 | Fedora 原地运行保护 | 原图标启动并读回专用卡后，安装、更新、回退和卸载四个命令均因进程存活而拒绝。原地回执及 RPM 文件保持，退出后卸载验回原件。 [实际进程保护及卸载](../state/acceptance/in-place-rootless/signed-live-process-guard-0.3.31.txt) |
@@ -42,7 +45,7 @@ Fedora 原装客户端的固定按钮在 ChatGPT 登录模式下写入账号侧�
 
 - [Fedora x86_64 安装候选](../state/acceptance/packages/session-board-0.3.31-linux-x86_64.tar.gz "sha256=3fce27047e049ae90a2ca421161841320c3cd6754d9ee929207880b5990c684c") · [校验文件](../state/acceptance/packages/session-board-0.3.31-linux-x86_64.tar.gz.sha256)
 - [macOS arm64 安装候选](../state/acceptance/packages/session-board-0.3.31-macos-arm64.tar.gz "sha256=8d5d309aade6f3d801a45ac85306c83274ac5c267637c220499796e55ea1fc08") · [校验文件](../state/acceptance/packages/session-board-0.3.31-macos-arm64.tar.gz.sha256)
-- [逐项验收证据归档](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz "sha256=45feed8a8ef02902de4bc3557a34e5e05d279fed511797e364c7bd6330b0f823") · [校验文件](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz.sha256)
+- [逐项验收证据归档](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz "sha256=a86179dedb0fc74b6f2fb26cba749858d21edd4d4f1001058883382d8d80b471") · [校验文件](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz.sha256)
 
 证据归档自带 44 份由现场索引引用的回执、额外的平台边界证据和两个安装包的摘要。从干净解包运行随包检查，复现同一份逐项门槛报告。
 
