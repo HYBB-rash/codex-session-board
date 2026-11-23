@@ -4,7 +4,7 @@
 
 ## 0.3.31 候选
 
-2026 年 11 月 23 日从提交 `ec0f152` 构建。看板回执记录进程启动身份，旧版回执也能识别已由无关进程接手的 PID。从干净解包运行门槛，两端归档校验和 78 项自动检查通过，31 条冻结需求中 28 条达到本版双平台门槛。40 条现场断言中，Fedora 通过 39 条，macOS 通过 33 条。待验需求为 `TITLE-003`、`NAV-001` 和 `APP-001`。 [本版门槛](../state/acceptance/release-gate-0.3.31.json) · [本版现场证据](../state/acceptance/live-0.3.31.json)
+2026 年 11 月 23 日从提交 `ec0f152` 构建。看板回执记录进程启动身份，旧版回执也能识别已由无关进程接手的 PID。从干净解包运行门槛，两端归档校验和 78 项自动检查通过，31 条冻结需求中 30 条达到本版双平台门槛。Fedora 和 macOS 各通过 39/40 条现场断言，剩余 `APP-001` 的最左侧原生固定图标直达。 [本版门槛](../state/acceptance/release-gate-0.3.31.json) · [本版现场证据](../state/acceptance/live-0.3.31.json)
 
 | 场景 | 现场观察 |
 | --- | --- |
@@ -22,7 +22,12 @@
 | MacBook Pro 原生 MCP App | 从专用市场注册后经插件详情打开，核对随包脚本及备用网页状态。可信跨列、反拖、刷新、同列、拖出及边缘横滚均通过。六列名称、顺序和表单选项一致，六列下原生跨列和反拖验回。标题拖动保持路由，标题与相邻调整控件分别执行各自操作。筛选保留空列，键盘取消和保存、操作期间暂停重绘、刷新保留滚动均通过。阻塞表单验回空备注、取消、旧版本拒绝及空草稿。 [拖放、筛选和标题控件](../state/acceptance/packages/macos-0.3.31-native-mcp-extended-final.log) · [六列复验](../state/acceptance/packages/macos-0.3.31-native-mcp-legacy.log) · [阻塞表单及复原](../state/acceptance/packages/macos-0.3.31-native-mcp-extended-bounded.log) |
 | MacBook Pro 发现与部分读取 | 已安装副本沿用真实本机连接，逐页独立读回两张专用卡的稳定 ID。一页上限触发部分读取和观察未就绪提示，已保存状态、备注和版本保持，恢复配置后扫描正常。临时恢复的一张测试卡已重新归档。断网的官方 App Server 同版夹具另外读回三页，覆盖三种交互来源、两个提供方及子代理排除。 [真实窗口与恢复](../state/acceptance/packages/macos-0.3.31-gui-cli-health-partial.log) · [断网 App Server 回执](../state/acceptance/packages/macos-discovery-sources-0.3.31-offline.json) |
 | MacBook Pro 标题同步 | 在已登录专用副本建立命名夹具。独立原生改名后，从看板保存状态，同次保存写入当前状态方括号前缀，原生读回完整正文、表情和其他标签。复位后原生标题、分区及备注一致，测试卡归档，两份配置逐字节恢复。 [同次保存与清理](../state/acceptance/packages/macos-0.3.31-gui-cli-title-manual.log) |
+| MacBook Pro 标题重试 | 专用库拒绝改名后，原生分区改变，备注、保存版本和标题待办同时保留。重新启动后解除拒绝，后台改名并清空待办。在同一运行构建中暂扣原生改名回执，RPC 预算为 2935 毫秒，较早回执仍被暂扣时前台保存用时 153 毫秒，迟到回执未清除较新待办。测试卡复位归档，故障夹具已移除。 [重启及重试](../state/acceptance/packages/macos-0.3.31-gui-cli-title-retry.log) · [预算、并发及清理](../state/acceptance/packages/macos-0.3.31-gui-cli-title-retry-budget.log) |
+| MacBook Pro 预览和同名跳转 | 真实轮次进行中从窗口读回上一条完整回复。两张同名专用卡各自预览完整回复并进入不同的原生会话 ID，会话集合、轮次和卡片版本保持。随包浏览器夹具复验迟到回复、空回复和读取失败。两张专用卡已归档，两份配置逐字节恢复。 [真实轮次及跳转](../state/acceptance/packages/macos-0.3.31-gui-cli-native-navigation-categorized.log) · [随包浏览器夹具](../state/acceptance/packages/macos-0.3.31-gui-cli-preview-fixture.log) |
 | MacBook Pro 图形验收 CLI | 通过同一 CLI 在已登录的 Mac 图形会话启动专用副本。原生 MCP App 的可信跨列、反拖、刷新及备注保存复验通过。另一次启动经原生接口确认 ChatGPT 登录，既有 Fedora 连接完成扫描和运行观察，独立原生列表返回会话。此前 LaunchServices 路径返回 `-32000`，早先窗口日志记录 SSH Agent 拒签。Mac 发起的远程移卡仍待验。各次候选均卸载并恢复此前专用副本。 [本机拖放](../state/acceptance/packages/macos-0.3.31-gui-cli-native-drag.log) · [原生登录及 Fedora 列表](../state/acceptance/packages/macos-0.3.31-gui-cli-account-health.log) · [LaunchServices 复验](../state/acceptance/packages/macos-0.3.31-gui-cli-authority.log) · [先前签名诊断](../state/acceptance/packages/macos-0.3.31-native-fedora-diagnosis.json) |
+| MacBook Pro 发起远端移卡 | 新一轮复跑确认本机账号仍为 ChatGPT。既有 Fedora 连接的原生路径探测超时，独立列表请求也超时，验收在创建测试卡前结束。只读终端复核连接到同一 SSH 目标后，既有 Agent 拒绝签名。Fedora 本机的 CLI 版本检查即时返回。候选已卸载并恢复专用副本。 [原生超时及清理](../state/acceptance/packages/macos-0.3.31-gui-cli-native-remote-drag-focused.log) |
+
+两平台最左侧图标直达需在允许变更固定设置的账号复验。macOS 原地模式仍待验证官方签名和系统权限的连续性。 [Mac 签名核验](../state/acceptance/packages/macos-0.3.28-signature-continuity.json)
 
 - [Fedora x86_64 安装候选](../state/acceptance/packages/session-board-0.3.31-linux-x86_64.tar.gz "sha256=3fce27047e049ae90a2ca421161841320c3cd6754d9ee929207880b5990c684c") · [校验文件](../state/acceptance/packages/session-board-0.3.31-linux-x86_64.tar.gz.sha256)
 - [macOS arm64 安装候选](../state/acceptance/packages/session-board-0.3.31-macos-arm64.tar.gz "sha256=8d5d309aade6f3d801a45ac85306c83274ac5c267637c220499796e55ea1fc08") · [校验文件](../state/acceptance/packages/session-board-0.3.31-macos-arm64.tar.gz.sha256)
