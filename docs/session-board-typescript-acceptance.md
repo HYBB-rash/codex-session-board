@@ -2,6 +2,21 @@
 
 上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本通过本机和远程原生移卡检查点。macOS arm64 的目标 Codex 构建在加载看板之前拒绝了经过修改的启动归档，因此发布条件未满足。
 
+## 0.3.25 候选
+
+由 `f3c54ec` 构建。31 项冻结需求中 18 项通过、13 项待验，76 项门槛自动检查通过。Fedora 记录 8 条逐项现场断言，macOS 记录 3 条随包交付断言。`releaseReady` 为 `false`。[逐项门槛](../state/acceptance/release-gate-0.3.25.json) · [现场证据索引](../state/acceptance/live-0.3.25.json)
+
+| 场景 | 现场观察 |
+| --- | --- |
+| Fedora 原地双端移卡 | 同一台 Fedora 44 使用隔离容器安装真实 RPM，Codex `26.1111.71704`。安装前后均从 RPM 自带的 `.desktop` 打开 `/opt/codex-desktop/ChatGPT`，启动参数字节一致。保留专用登录、项目和本机、MacBook Pro 两端连接。从原窗口的 Enhancer 入口把两个专用卡从待审阅拖到进行中。两个目标分区均在原生侧栏显示，并由各自原生连接独立读回。反向拖放恢复分区，两条测试备注保持。[原版窗口](../state/acceptance/in-place-rootless/signed-stock-native.json) · [原地安装](../state/acceptance/in-place-rootless/signed-reinstall.txt) · [双端移卡和恢复](../state/acceptance/in-place-rootless/signed-live-drag.jsonl) |
+| Fedora 原生 MCP App | 从已安装插件详情点击打开原生 App，核对发行包 iframe。原生子进程收到自定义 `XDG_STATE_HOME` 和有效看板目录，原生 App 与回环网页读回两个专用卡及备注。双端跨列、刷新与反向移回通过。同列和拖出均保留原版本，右缘自动横滚达到最右端。账号最左侧固定图标直达仍待专用账号验证。[打开插件](../state/acceptance/in-place-rootless/signed-native-mcp-click.jsonl) · [共享路径](../state/acceptance/in-place-rootless/signed-native-mcp-verified.jsonl) · [真实拖放](../state/acceptance/in-place-rootless/signed-native-mcp-drag-retry.jsonl) |
+| Fedora 原地卸载 | 在同一隔离环境卸载后 `rpm -V` 通过，原启动器和桌面入口的 SHA-256 一致。从原图标启动并读回与原版基线相同的项目、登录类型和两端专用会话分区。升级提示仍以有桌面用户服务的 `0.3.24` 客体回执为准。[卸载回执](../state/acceptance/in-place-rootless/signed-final-uninstall.txt) · [原版再次启动](../state/acceptance/in-place-rootless/signed-final-stock-native.json) |
+| Fedora 轮次协议 | 在断网夹具中运行该构建随包 App Server 和 `0.3.25` 看板。实际收到批准请求后进入已阻塞。同一轮获批并执行命令后进入进行中，完成后进入待审阅。暂时流错误的 `willRetry: true` 保持进行中，终态失败后进入已阻塞。用本地 provider 和分区夹具控制时序，已登录窗口的批准交互及真实分区写入待验。[两次原生协议复验](../state/acceptance/fedora-offline-native-turns-0.3.25.json) |
+| 双平台解包 | Fedora 通过 100 项随包测试，MacBook Pro 通过 96 项、跳过 4 项 Linux 专用测试。两平台各通过 10 项公共入口、10 项冻结模型和 18 项门槛测试。Mac Codex `26.1111.21308` 的副本预检因框架内嵌 ASAR 摘要停止，原地预检因平台限制停止。系统应用签名与启动归档均通过复验。[Fedora](../state/acceptance/fedora-archive-0.3.25.log) · [MacBook Pro](../state/acceptance/packages/macos-0.3.25-preflight.txt) |
+
+- [Fedora x86_64 归档](../state/acceptance/packages/session-board-0.3.25-linux-x86_64.tar.gz) · [SHA-256](../state/acceptance/packages/session-board-0.3.25-linux-x86_64.tar.gz.sha256)
+- [macOS arm64 归档](../state/acceptance/packages/session-board-0.3.25-macos-arm64.tar.gz) · [SHA-256](../state/acceptance/packages/session-board-0.3.25-macos-arm64.tar.gz.sha256)
+
 ## 0.3.24 候选
 
 由 `694c335` 构建。默认副本安装仍可用，Linux 包另含显式的 Fedora 原地模式。两个平台共 76 项门槛自动检查通过。31 项冻结需求中 18 项通过、13 项仍需本候选现场证据。Fedora 记录 4 条逐项现场断言，macOS 记录 3 条随包交付断言。原地安装回执单列。`releaseReady` 为 `false`。[逐项门槛](../state/acceptance/release-gate-0.3.24.json) · [现场证据索引](../state/acceptance/live-0.3.24.json)
