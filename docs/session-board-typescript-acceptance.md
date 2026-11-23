@@ -26,7 +26,7 @@
 | MacBook Pro 标题重试 | 专用库拒绝改名后，原生分区改变，备注、保存版本和标题待办同时保留。重新启动后解除拒绝，后台改名并清空待办。在同一运行构建中暂扣原生改名回执，RPC 预算为 2935 毫秒，较早回执仍被暂扣时前台保存用时 153 毫秒，迟到回执未清除较新待办。测试卡复位归档，故障夹具已移除。 [重启及重试](../state/acceptance/packages/macos-0.3.31-gui-cli-title-retry.log) · [预算、并发及清理](../state/acceptance/packages/macos-0.3.31-gui-cli-title-retry-budget.log) |
 | MacBook Pro 预览和同名跳转 | 真实轮次进行中从窗口读回上一条完整回复。两张同名专用卡各自预览完整回复并进入不同的原生会话 ID，会话集合、轮次和卡片版本保持。随包浏览器夹具复验迟到回复、空回复和读取失败。两张专用卡已归档，两份配置逐字节恢复。 [真实轮次及跳转](../state/acceptance/packages/macos-0.3.31-gui-cli-native-navigation-categorized.log) · [随包浏览器夹具](../state/acceptance/packages/macos-0.3.31-gui-cli-preview-fixture.log) |
 | MacBook Pro 图形验收 CLI | 通过同一 CLI 在已登录的 Mac 图形会话启动专用副本。原生 MCP App 的可信跨列、反拖、刷新及备注保存复验通过。另一次启动经原生接口确认 ChatGPT 登录，已有 Fedora 连接完成扫描和运行观察，独立原生列表返回会话。各次候选均卸载并恢复此前专用副本。 [本机拖放](../state/acceptance/packages/macos-0.3.31-gui-cli-native-drag.log) · [原生登录及 Fedora 列表](../state/acceptance/packages/macos-0.3.31-gui-cli-account-health.log) |
-| MacBook Pro 发起远端移卡 | 2026 年 11 月 24 日从新启动的 `0.3.31` 专用窗口沿用既有 Fedora 主机登记。原生列表通过，专用卡从待审阅拖入进行中，Fedora 独立读回目标分区，Mac 原生侧栏同步显示进行中。反拖验回原分区、备注和标题。专用卡归档并经独立列表确认，候选卸载后验回看板配置，恢复此前专用副本。两端已授权的 SSH 配置摘要保持一致。 [可信拖放、原生读回和清理](../state/acceptance/packages/macos-0.3.31-native-fedora-drag-retry-20261124.jsonl) · [SSH 配置及服务端身份核对](../state/acceptance/fedora-0.3.31-mac-ssh-roundtrip-preserved-20261124.json) |
+| MacBook Pro 发起远端移卡 | 2026 年 11 月 24 日从新启动的 `0.3.31` 专用窗口沿用既有 Fedora 主机登记。从看板拖入进行中，原生侧栏同步显示，Fedora 独立读回目标分区。补验从 Codex 原生侧栏移回同一张卡，旧表单被拒绝并保留草稿，已保存备注和标题保持。专用卡归档并经独立列表确认，候选卸载后验回看板配置、连接登记和自动连接偏好。 [完整移卡检查点](session-board-native-checkpoint.md#macbook-pro-桌面实测) · [原生侧栏移回和旧表单](../state/acceptance/packages/macos-0.3.31-remote-sidebar-drag-and-stale-20261124.jsonl) · [SSH 配置及服务端身份核对](../state/acceptance/fedora-0.3.31-mac-ssh-roundtrip-preserved-20261124.json) |
 | macOS 签名连续性 | 在官方 Codex `26.1111.21308` 上，`0.3.31` 的 ad hoc 副本通过严格验签，以原包的指定签名要求复核时被拒绝。卸载后副本重新满足该要求，启动归档、主程序、`Info.plist` 和签名资源清单均验回原件。本版 `--in-place` 在 macOS 上由预检拒绝，官方包签名和四个文件的摘要验回。 [本版验签和复原回执](../state/acceptance/packages/macos-0.3.31-signature-continuity-verified.jsonl) · [原地预检](../state/acceptance/packages/macos-0.3.31-in-place-preflight-exact.json) |
 | macOS 官方签名对照 | 从原样复制并通过官方签名核验的客户端启动。它沿用专用登录，原生接口能读同一张本机专用卡。只登记 `0.3.31` MCP 插件后，最左侧原生图标能打开随包界面。看板提示连接断开，显示零张卡。对空状态目录直接调用随包 `board_snapshot` 也提示启动带 Enhancer 的窗口。退出后恢复原测试配置和此前的专用副本，并复核系统应用签名和文件。 [实际窗口与清理](../state/acceptance/packages/macos-0.3.31-stock-native-plugin-final.jsonl) · [随包 MCP 对照](../state/acceptance/packages/macos-0.3.31-mcp-exact-no-runtime.json) |
 | macOS 官方窗口的 App Server 通道 | 从保持官方签名的副本按默认通道启动。客户端日志记录 `stdio`，所属 App Server 无命名 Unix 套接字和 TCP 监听。App Tools 使用另有客户端授权的套接字。官方包中本机守护进程和 WebSocket 均需显式选用，不能接入这次已启动的窗口。此次渲染器未重新验回登录，以前一条对照记录为准。已恢复专用配置和此前窗口，系统应用签名及文件摘要验回。 [通道现场回执](../state/acceptance/packages/macos-0.3.31-stock-app-server-live-transport.jsonl) · [官方包通道实现](../state/acceptance/packages/macos-0.3.31-stock-transport-contract.json) |
@@ -39,9 +39,9 @@ Fedora 原装客户端的固定按钮在 ChatGPT 登录模式下写入账号侧�
 
 - [Fedora x86_64 安装候选](../state/acceptance/packages/session-board-0.3.31-linux-x86_64.tar.gz "sha256=3fce27047e049ae90a2ca421161841320c3cd6754d9ee929207880b5990c684c") · [校验文件](../state/acceptance/packages/session-board-0.3.31-linux-x86_64.tar.gz.sha256)
 - [macOS arm64 安装候选](../state/acceptance/packages/session-board-0.3.31-macos-arm64.tar.gz "sha256=8d5d309aade6f3d801a45ac85306c83274ac5c267637c220499796e55ea1fc08") · [校验文件](../state/acceptance/packages/session-board-0.3.31-macos-arm64.tar.gz.sha256)
-- [逐项验收证据归档](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz "sha256=e3c17a82f9ab77ea78214af9ba5240ecfdbf1e535ad4b93e5d99b30106d8b34c") · [校验文件](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz.sha256)
+- [逐项验收证据归档](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz "sha256=bcf0a22bf49dbe63bf9b27fe64b3ccc943c3774ff1714942d778820d11e8ed90") · [校验文件](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz.sha256)
 
-证据归档自带 43 份由现场索引引用的回执、额外的平台边界证据和两个安装包的摘要。从干净解包运行随包检查，复现同一份逐项门槛报告。
+证据归档自带 44 份由现场索引引用的回执、额外的平台边界证据和两个安装包的摘要。从干净解包运行随包检查，复现同一份逐项门槛报告。
 
 ## 0.3.30 候选
 
