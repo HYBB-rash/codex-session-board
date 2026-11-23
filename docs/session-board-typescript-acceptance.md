@@ -30,12 +30,15 @@
 | macOS 签名连续性 | 在官方 Codex `26.1111.21308` 上，`0.3.31` 的 ad hoc 副本通过严格验签，以原包的指定签名要求复核时被拒绝。卸载后副本重新满足该要求，启动归档、主程序、`Info.plist` 和签名资源清单均验回原件。本版 `--in-place` 在 macOS 上由预检拒绝，官方包签名和四个文件的摘要验回。 [本版验签和复原回执](../state/acceptance/packages/macos-0.3.31-signature-continuity-verified.jsonl) · [原地预检](../state/acceptance/packages/macos-0.3.31-in-place-preflight-exact.json) |
 | macOS 官方签名对照 | 从原样复制并通过官方签名核验的客户端启动。它沿用专用登录，原生接口能读同一张本机专用卡。只登记 `0.3.31` MCP 插件后，最左侧原生图标能打开随包界面。看板提示连接断开，显示零张卡。对空状态目录直接调用随包 `board_snapshot` 也提示启动带 Enhancer 的窗口。退出后恢复原测试配置和此前的专用副本，并复核系统应用签名和文件。 [实际窗口与清理](../state/acceptance/packages/macos-0.3.31-stock-native-plugin-final.jsonl) · [随包 MCP 对照](../state/acceptance/packages/macos-0.3.31-mcp-exact-no-runtime.json) |
 
-Mac 的三个既有远程登记已分别复核。Fedora 返回 SSH 握手，另外两个地址在 TCP 阶段超时。Mac 上既有 SSH Agent 能列出密钥，最近移卡期间 Fedora 服务端仍未收到该 Mac 的认证成功。 [已登记地址探针](../state/acceptance/packages/macos-0.3.31-existing-host-route-recheck.json) · [SSH Agent 探针](../state/acceptance/packages/macos-0.3.31-native-ssh-agent-inventory.json)
+Mac 的三个既有远程登记已分别复核。Fedora 返回 SSH 握手，另外两个地址在 TCP 阶段超时。Mac 上既有 SSH Agent 能列出密钥。22:46 复验时 Fedora 接受公钥，签名阶段超时。运行中的旧 Mac 专用副本也显示该远端未连接。 [已登记地址探针](../state/acceptance/packages/macos-0.3.31-existing-host-route-recheck.json) · [签名阶段回执](../state/acceptance/packages/macos-0.3.31-existing-fedora-signature-direct.json) · [运行中副本](../state/acceptance/packages/macos-0.3.31-surviving-copy-state-direct.json)
 
 Fedora 原装客户端的固定按钮在 ChatGPT 登录模式下写入账号侧栏设置。两台专用副本的原生登录身份不同。Fedora 隔离 RPM 已登录并能从插件详情打开看板，离开看板后，最左侧原生应用栏未显示该图标。该次验收没有写入账号设置，已退出隔离窗口并验回 RPM 和测试配置。 [固定入口写入范围](../state/acceptance/fedora-0.3.31-native-pin-auth-boundary.json) · [账号身份对比](../state/acceptance/fedora-0.3.31-native-sidebar-account-scope.json) · [隔离 RPM 只读回执](../state/acceptance/fedora-0.3.31-native-sidebar-rpm-read-only.jsonl)
 
 - [Fedora x86_64 安装候选](../state/acceptance/packages/session-board-0.3.31-linux-x86_64.tar.gz "sha256=3fce27047e049ae90a2ca421161841320c3cd6754d9ee929207880b5990c684c") · [校验文件](../state/acceptance/packages/session-board-0.3.31-linux-x86_64.tar.gz.sha256)
 - [macOS arm64 安装候选](../state/acceptance/packages/session-board-0.3.31-macos-arm64.tar.gz "sha256=8d5d309aade6f3d801a45ac85306c83274ac5c267637c220499796e55ea1fc08") · [校验文件](../state/acceptance/packages/session-board-0.3.31-macos-arm64.tar.gz.sha256)
+- [逐项验收证据归档](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz "sha256=9dd98e24ca657ac1c593234493ed422dbe7138aaf4e4f4d75a03a3e7e8f18146") · [校验文件](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz.sha256)
+
+证据归档自带 41 份由现场索引引用的回执、额外的平台边界证据和两个安装包的摘要。从干净解包运行随包检查，复现同一份逐项门槛报告。
 
 ## 0.3.30 候选
 
