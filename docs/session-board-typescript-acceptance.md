@@ -4,7 +4,7 @@
 
 ## 0.3.33 候选
 
-2026 年 11 月 24 日从提交 `34a4e70` 的干净源码构建。Fedora 解包通过 102 项 Node 测试。MacBook Pro 解包通过 99 项 Node 测试、12 项公共入口与浏览器测试、10 项冻结模型检查和 20 项门槛测试。发布门槛通过 78 项自动检查，29/31 条冻结需求通过本版双平台验收。`0.3.31` 的现场记录继续按原版本保留。 [Fedora 测试](../state/acceptance/output-033/fedora-packaged-node.log) · [Mac 真机测试](../state/acceptance/output-033/macos-0.3.33-packaged-tests.log) · [逐项门槛](../state/acceptance/output-033/release-gate-0.3.33.json)
+2026 年 11 月 24 日从提交 `34a4e70` 的干净源码构建。Fedora 解包通过 102 项 Node 测试。MacBook Pro 解包通过 99 项 Node 测试、12 项公共入口与浏览器测试、10 项冻结模型检查和 20 项门槛测试。发布门槛通过 78 项自动检查，31/31 条冻结需求通过本版双平台验收。`0.3.31` 的现场记录继续按原版本保留。 [Fedora 测试](../state/acceptance/output-033/fedora-packaged-node.log) · [Mac 真机测试](../state/acceptance/output-033/macos-0.3.33-packaged-tests.log) · [逐项门槛](../state/acceptance/output-033/release-gate-0.3.33.json)
 
 Mac 副本重启后沿用已有登录和 Fedora 连接。Mac 与 Fedora 专用卡均由真实拖放触发，目标原生分区均独立读回。远程卡从 Codex 原生侧栏移回，旧表单拒绝且保留草稿，测试卡已归档。另用两个同时运行的独立副本验证卸载隔离，原应用签名、日用偏好和原测试窗口验回。 [原生移卡和清理](../state/acceptance/output-033/macos-0.3.33-restart-existing-two-hosts-ready.jsonl) · [卸载隔离](../state/acceptance/output-033/macos-0.3.33-two-copy-isolation.jsonl)
 
@@ -20,16 +20,20 @@ Fedora 测试账号初始使用默认侧栏。临时固定后，可信点击最�
 
 两端已登录窗口的分页发现结果与原生列表一致。一页限制时界面报部分读取，保存的状态和备注保持，解除限制后恢复。两端断网 App Server 另验三种交互来源、两个提供方和非交互子代理排除。 [Fedora 分页与恢复](../state/acceptance/output-033/fedora-0.3.33-discovery-health.jsonl) · [Mac 分页与恢复](../state/acceptance/output-033/macos-0.3.33-discovery-health.jsonl) · [Fedora 来源夹具](../state/acceptance/output-033/fedora-0.3.33-discovery-sources.json) · [Mac 来源夹具](../state/acceptance/output-033/macos-0.3.33-discovery-sources.json)
 
+两端真实轮次预览读回上一条完整回复，同名卡分别跳转到原生会话 ID。随包浏览器夹具复验迟到回复、空回复和读取失败。两端拒绝原生改名后仍保留状态和备注，重启后自动恢复。Fedora 与 Mac 的单次改名 RPC 预算分别为 2,946 和 2,936 毫秒，后台改名回执暂扣时前台保存分别用时 166.38 和 160 毫秒。 [Fedora 预览与跳转](../state/acceptance/output-033/fedora-0.3.33-native-navigation-verified.jsonl) · [Mac 预览与跳转](../state/acceptance/output-033/macos-0.3.33-native-navigation-workflow-long-readiness.jsonl) · [Mac 标题与控件](../state/acceptance/output-033/macos-0.3.33-native-mcp-navigation-verified.jsonl) · [Fedora 标题重试与预算](../state/acceptance/output-033/fedora-0.3.33-native-title-retry.jsonl) · [Mac 标题重试与预算](../state/acceptance/output-033/macos-0.3.33-native-title-retry.jsonl)
+
 | 安装方式 | 本版现场判定 |
 | --- | --- |
 | Fedora 副本 | 3/3 条通过。从界面更新 `0.3.24` 至 `0.3.33` 并重启，随后回退并重启，专用卡原生位置和备注一致。隔离 RPM 环境分别卸载副本和原地模式，验回另一模式的安装和数据。 [界面更新与回退](../state/acceptance/output-033/fedora-copy-ui-update-and-rollback.jsonl) · [安装方式隔离](../state/acceptance/output-033/rpm-guest/enhancer-033-isolation-and-upgrade.txt) |
 | Fedora 原地 | 5/5 条通过。从原图标启动，更新、回退并重启。原窗口通过原生 MCP 看板实际拖动本机与 MacBook 专用卡，两端原生分区独立读回并复位。卸载后，原窗口继续读到另一项已提交的移卡操作。SELinux enforcing 客体通过写入中断、升级入口改名、冷启动通知和文件属性保护检查。 [原图标与双端拖放](../state/acceptance/output-033/fedora-rpm-update-and-native-drag.jsonl) · [卸载后位置读回](../state/acceptance/output-033/fedora-rpm-retained-after-uninstall.jsonl) · [RPM 生命周期](../state/acceptance/output-033/rpm-guest/enhancer-033-suite.txt) |
 | macOS 副本 | 2/3 条通过。从界面更新 `0.3.32` 至 `0.3.33` 并重启，随后回退并重启，读回专用卡原生位置和备注。两个独立副本的卸载隔离已通过，副本和原地模式同时安装的隔离仍待验。 [界面更新与回退](../state/acceptance/output-033/macos-copy-ui-update-and-rollback.jsonl) · [两个副本的卸载隔离](../state/acceptance/output-033/macos-0.3.33-two-copy-isolation.jsonl) |
-| macOS 原地 | 官方签名的客户端在安装预检被拒，0/5 条通过。 [原地预检](../state/acceptance/output-033/macos-in-place-preflight.json) |
+| macOS 原地 | 官方签名的客户端在安装预检被拒，0/4 条通过。原包校验值及官方签名验回。 [原地预检](../state/acceptance/output-033/macos-in-place-preflight.json) |
+
+此前在同一官方构建上验证过两条接入路径。修改启动归档后，本地 ad hoc 签名无法满足官方签名要求。保留官方签名并只安装 MCP 插件时，窗口能打开看板界面，插件无法从原窗口读取会话。原地模式仍需要能保留官方身份和权限的接入方式。 [签名连续性对照](../state/acceptance/packages/macos-0.3.31-signature-continuity-verified.jsonl) · [官方窗口内的 MCP 对照](../state/acceptance/packages/macos-0.3.31-stock-native-plugin-final.jsonl)
 
 - [Fedora x86_64 安装候选](../state/acceptance/packages/session-board-0.3.33-linux-x86_64.tar.gz "sha256=4da8c3f7f7b667409325d8928b0a0be010ccd2d3dfdfa12f37fc5ea133476a84") · [校验文件](../state/acceptance/packages/session-board-0.3.33-linux-x86_64.tar.gz.sha256)
 - [macOS arm64 安装候选](../state/acceptance/packages/session-board-0.3.33-macos-arm64.tar.gz "sha256=e5b347603e7e842392d1db63e8ee984df9a08b25cc086ebabdb492cf2895478e") · [校验文件](../state/acceptance/packages/session-board-0.3.33-macos-arm64.tar.gz.sha256)
-- [逐项验收证据归档](../state/acceptance/packages/session-board-0.3.33-acceptance.tar.gz "sha256=11f01e533e4dd96b4c13cbe3ac4fab2e93ca81c5508a8dca78a8fe90e982f60e") · [校验文件](../state/acceptance/packages/session-board-0.3.33-acceptance.tar.gz.sha256)
+- [逐项验收证据归档](../state/acceptance/packages/session-board-0.3.33-acceptance.tar.gz "sha256=f0acc2b5b550b2c49efa92772508dd6fbcfc776aab07e58c6c0450fc3972e7ba") · [校验文件](../state/acceptance/packages/session-board-0.3.33-acceptance.tar.gz.sha256)
 
 ## 0.3.31 候选
 
