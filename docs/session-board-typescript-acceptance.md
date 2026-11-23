@@ -21,6 +21,8 @@
 | MacBook Pro 解包 | macOS arm64 真机复核归档 SHA-256，启动场景所用官方 Codex 构建为 `26.1111.21308`。随包 98 项 Node 测试、12 项公共入口与浏览器测试、冻结模型和 18 项门槛测试通过。 [真机身份](../state/acceptance/packages/macos-0.3.30-host-identity.txt) · [随包测试](../state/acceptance/packages/macos-0.3.30-native-turns.log) |
 | MacBook Pro 副本与原生轮次 | 从 0.3.30 安装独立签名副本，复用专用已登录配置。原生批准等待进入已阻塞，点击允许一次后同一轮确实执行。暂时请求错误宣布重试时保持进行中。澄清答复结束后独立读回待审阅和原生回复。专用卡归档、两份配置逐字节恢复，候选卸载并恢复此前测试副本。 [原生轮次及清理](../state/acceptance/packages/macos-0.3.30-native-turns-fresh-profile.log) |
 
+Fedora 原地切换探针在启用新版前失败。原进程残留回执指向已分配给无关进程的 PID，看板误报已有实例。隔离包复现表明，无关进程退出后使用同一回执即可启动。Mac 原生 MCP 补验在专用市场登记超时，候选已卸载并恢复测试副本。 [原地切换及恢复](../state/acceptance/in-place-rootless/signed-release-transition-0.3.30.txt) · [回执缺陷复现](../state/acceptance/fedora-0.3.30-stale-service-receipt-reproduction.json) · [Mac 市场登记](../state/acceptance/packages/macos-0.3.30-native-product-retry.log)
+
 - [Fedora x86_64 安装候选](../state/acceptance/packages/session-board-0.3.30-linux-x86_64.tar.gz "sha256=0907fb8e8fed69895c44893152b6d41017a68671120f4dc2d92491c6e343f238") · [校验文件](../state/acceptance/packages/session-board-0.3.30-linux-x86_64.tar.gz.sha256)
 - [macOS arm64 安装候选](../state/acceptance/packages/session-board-0.3.30-macos-arm64.tar.gz "sha256=f2e1c8a85f65b48e553386eafcf23f3e7153681a7965491b75b3fabec3406ec2") · [校验文件](../state/acceptance/packages/session-board-0.3.30-macos-arm64.tar.gz.sha256)
 
