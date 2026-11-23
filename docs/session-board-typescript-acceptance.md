@@ -2,6 +2,24 @@
 
 上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本及真实 RPM 原地安装均通过本机和远程原生移卡。macOS arm64 的官方 Codex `26.1111.21308` 已通过自动副本安装、重启、本机原生移卡和卸载。完整发布门槛仍未达到。
 
+## 0.3.31 候选
+
+2026 年 11 月 23 日从提交 `ec0f152` 构建。看板回执记录进程启动身份，旧版回执也能识别已由无关进程接手的 PID。两端归档校验通过，78 项自动门槛检查通过，31 条冻结需求中 21 条达到本版双平台门槛。40 条现场断言中，Fedora 通过 20 条，macOS 通过 10 条。 [本版门槛](../state/acceptance/release-gate-0.3.31.json) · [本版现场证据](../state/acceptance/live-0.3.31.json)
+
+| 场景 | 现场观察 |
+| --- | --- |
+| Fedora 解包 | 102 项 Node 测试、12 项公共入口与浏览器测试、冻结模型和 18 项门槛测试通过。 [随包测试](../state/acceptance/fedora-archive-0.3.31-final.log) |
+| Fedora 原地 | 从隔离环境的真实 RPM 原图标启动，0.3.31 识别并替换指向无关存活进程的旧回执。无关进程继续运行，本机原生连接及专用卡读回成功。另从 0.3.30 原地更新、重启、回退、再重启，专用卡分区和备注摘要一致，卸载后 RPM 文件、启动器与桌面项验回。 [回执恢复](../state/acceptance/in-place-rootless/signed-receipt-recovery-0.3.31.txt) · [原地更新和回退](../state/acceptance/in-place-rootless/signed-release-transition-0.3.31.txt) |
+| Fedora 原生双端移卡 | 从 RPM 原图标启动，经插件详情打开原生 MCP App，核对随包脚本及回环网页状态。本机和 MacBook Pro 的专用卡均实际跨列，原生分区独立读回，刷新保留备注，反拖恢复。远端卡复验同列、拖出及横滚。卸载后核对 RPM 原件。 [入口与登录](../state/acceptance/in-place-rootless/signed-native-mcp-click-0.3.31.jsonl) · [双端拖放和复位](../state/acceptance/in-place-rootless/signed-native-mcp-drag-retry-0.3.31.jsonl) · [卸载](../state/acceptance/in-place-rootless/signed-final-uninstall-0.3.31.txt) |
+| Fedora 公共入口与 PWA | 副本重启读回 0.3.31。HTTP、CLI 与 MCP 在同一本机专用卡上读回一致状态和回复，MCP 枚举 18 项共享操作。隔离浏览器安装的系统启动项两次打开独立看板窗口。部分读取时界面显示异常，缓存只读又保留已保存的版本及备注，恢复配置后重扫成功。复验后副本回退到 0.3.24。 [公共入口](../state/acceptance/fedora-0.3.31-entrypoints-local.log) · [PWA](../state/acceptance/fedora-pwa-installed-0.3.31.json) · [部分读取](../state/acceptance/fedora-0.3.31-health-local.log) · [副本回退](../state/acceptance/fedora-signed-copy-rollback-0.3.31-field-finish-local-field.jsonl) |
+| Fedora 发现 | 每页一条读完本机和 MacBook Pro，两端独立原生枚举合计 12 条稳定 ID，与看板一致。恢复配置后再次核对。断网的真实 App Server 补验三种交互来源、两个提供方、子代理排除和分页上限。 [原生分页](../state/acceptance/fedora-0.3.31-discovery-two-hosts.log) · [来源夹具](../state/acceptance/fedora-discovery-sources-0.3.31-offline.json) |
+| 双平台原生轮次 | 两端均观察到批准等待、可信批准后的同轮执行、暂时错误重试期间保持进行中，以及澄清结束后读回待审阅和完整答复。测试卡已归档。Mac 脚本内的配置差异检查中止了清理记录，外层恢复了配置和专用副本，随后独立核对归档索引、归档文件和恢复后的写范围。 [Fedora 轮次](../state/acceptance/desktop-approval-0.3.31-007f9387.jsonl) · [Mac 轮次](../state/acceptance/packages/macos-0.3.31-native-turns.log) · [Mac 清理核验](../state/acceptance/packages/macos-0.3.31-native-turns-cleanup.json) |
+| MacBook Pro 解包 | 真机核对归档 SHA-256，99 项 Node 测试、12 项公共入口与浏览器测试、冻结模型和 18 项门槛测试通过。 [包指纹及 Node 测试](../state/acceptance/packages/macos-0.3.31-package-tests.log) · [随包门槛](../state/acceptance/packages/macos-0.3.31-package-gates.log) |
+| MacBook Pro 原生连接 | 官方 Codex `26.1111.21308` 的专用副本启动并读回本机连接。窗内既有 Fedora 连接未就绪，原生读取未返回，针对该目标的窗口日志记录 SSH Agent 拒绝签名。另经 LaunchServices 启动同一副本，向既有主机发出的独立原生列表请求返回 `-32000`。Mac 发起的远程移卡仍待验。候选已卸载，专用配置目录及此前副本已恢复。 [窗口连接及独立读取](../state/acceptance/packages/macos-0.3.31-native-fedora-authority.log) · [签名拒绝及复原](../state/acceptance/packages/macos-0.3.31-native-fedora-diagnosis.json) · [LaunchServices 复验](../state/acceptance/packages/macos-0.3.31-native-fedora-gui-direct-ready.log) |
+
+- [Fedora x86_64 安装候选](../state/acceptance/packages/session-board-0.3.31-linux-x86_64.tar.gz "sha256=3fce27047e049ae90a2ca421161841320c3cd6754d9ee929207880b5990c684c") · [校验文件](../state/acceptance/packages/session-board-0.3.31-linux-x86_64.tar.gz.sha256)
+- [macOS arm64 安装候选](../state/acceptance/packages/session-board-0.3.31-macos-arm64.tar.gz "sha256=8d5d309aade6f3d801a45ac85306c83274ac5c267637c220499796e55ea1fc08") · [校验文件](../state/acceptance/packages/session-board-0.3.31-macos-arm64.tar.gz.sha256)
+
 ## 0.3.30 候选
 
 2026 年 11 月 23 日从提交 `2137b7e` 构建。跟踪的新建请求先核对项目所属主机，再登记或重放。双平台归档内容及 SHA-256 校验通过，78 项门槛自动检查通过。40 条现场断言中，Fedora 通过 39 条，macOS 通过 10 条。31 条冻结需求中 21 条达到本版双平台门槛。Fedora 剩余最左侧原生固定图标直达。 [新建回归](../src/extensions/session-board/project-assignment.test.ts) · [本版门槛](../state/acceptance/release-gate-0.3.30.json) · [本版双平台证据索引](../state/acceptance/live-0.3.30.json)
