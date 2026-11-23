@@ -4,15 +4,32 @@
 
 ## 0.3.33 候选
 
-2026 年 11 月 24 日从提交 `34a4e70` 的干净源码构建。Fedora 解包通过 102 项 Node 测试。MacBook Pro 解包通过 99 项 Node 测试、12 项公共入口与浏览器测试、10 项冻结模型检查和 20 项门槛测试。发布门槛通过 78 项自动检查，18/31 条冻结需求已有本版所需凭证。`0.3.31` 的现场记录继续按原版本保留。 [Fedora 测试](../state/acceptance/output-033/fedora-packaged-node.log) · [Mac 真机测试](../state/acceptance/output-033/macos-0.3.33-packaged-tests.log) · [逐项门槛](../state/acceptance/output-033/release-gate-0.3.33.json)
+2026 年 11 月 24 日从提交 `34a4e70` 的干净源码构建。Fedora 解包通过 102 项 Node 测试。MacBook Pro 解包通过 99 项 Node 测试、12 项公共入口与浏览器测试、10 项冻结模型检查和 20 项门槛测试。发布门槛通过 78 项自动检查，29/31 条冻结需求通过本版双平台验收。`0.3.31` 的现场记录继续按原版本保留。 [Fedora 测试](../state/acceptance/output-033/fedora-packaged-node.log) · [Mac 真机测试](../state/acceptance/output-033/macos-0.3.33-packaged-tests.log) · [逐项门槛](../state/acceptance/output-033/release-gate-0.3.33.json)
 
 Mac 副本重启后沿用已有登录和 Fedora 连接。Mac 与 Fedora 专用卡均由真实拖放触发，目标原生分区均独立读回。远程卡从 Codex 原生侧栏移回，旧表单拒绝且保留草稿，测试卡已归档。另用两个同时运行的独立副本验证卸载隔离，原应用签名、日用偏好和原测试窗口验回。 [原生移卡和清理](../state/acceptance/output-033/macos-0.3.33-restart-existing-two-hosts-ready.jsonl) · [卸载隔离](../state/acceptance/output-033/macos-0.3.33-two-copy-isolation.jsonl)
 
 Fedora 已登录副本重启后，经已登记的 `macbook` 连接完成本机与远程专用卡的原生双向移卡和备注读回。默认 SSH Agent 未及时建立连接，本轮仅为隔离测试进程加载已有授权的临时 SSH 身份。macOS 原地预检仍拒绝安装，原客户端文件和签名验回。 [Fedora 回执](../state/acceptance/output-033/fedora-0.3.33-restart-existing-two-hosts.jsonl) · [macOS 原地预检](../state/acceptance/output-033/macos-in-place-preflight.json)
 
+Mac 测试账号已有固定入口。待已安装插件在窗口加载后，离开看板并点击最左侧原生固定图标，打开与备用网页读数一致的随包看板。前后只读核对侧栏设置，摘要一致。 [原生直达与账号设置核对](../state/acceptance/output-033/macos-0.3.33-native-sidebar-primed.jsonl)
+
+Fedora 测试账号初始使用默认侧栏。临时固定后，可信点击最左侧原生图标，打开随包看板，专用卡的状态和备注与备用网页一致。客户端默认重置恢复了原显示和顺序，并读回零项固定覆盖。服务端将此前未保存的默认项记录为显式默认值，复验前后该默认值的摘要一致。 [原生直达和复验读回](../state/acceptance/output-033/fedora-0.3.33-native-sidebar-visible-widget.jsonl) · [首次默认重置](../state/acceptance/output-033/fedora-0.3.33-native-sidebar-single-pass.jsonl)
+
+两端原生 MCP 看板已复验跨列、同列、拖出、边缘横滚、刷新读回和备注。两端也通过空阻塞原因、取消、旧表单拒绝，以及筛选、键盘与刷新保留位置检查。 [Fedora 原生拖放](../state/acceptance/output-033/fedora-rpm-update-and-native-drag.jsonl) · [Fedora 表单与刷新](../state/acceptance/output-033/fedora-0.3.33-board-ui.jsonl) · [Mac 拖放和表单](../state/acceptance/output-033/macos-0.3.33-native-mcp-interactions.jsonl) · [Mac 筛选、键盘与刷新](../state/acceptance/output-033/macos-0.3.33-native-mcp-filters.jsonl)
+
+两端通过旧六状态顺序及跨列复验。真实轮次的批准等待、批准后同一轮恢复、暂时错误重试及澄清完成分别读回原生位置。手动状态保存当次同步原标题和状态前缀。 [Fedora 六分区](../state/acceptance/output-033/fedora-0.3.33-six-native-positions.json) · [Mac 六列](../state/acceptance/output-033/macos-0.3.33-native-mcp-legacy.jsonl) · [Fedora 原生轮次](../state/acceptance/output-033/fedora-0.3.33-native-approval.jsonl) · [Mac 原生轮次](../state/acceptance/output-033/macos-0.3.33-native-approval.jsonl) · [Fedora 标题](../state/acceptance/output-033/fedora-0.3.33-native-title.jsonl) · [Mac 标题](../state/acceptance/output-033/macos-0.3.33-native-title.jsonl)
+
+两端已登录窗口的分页发现结果与原生列表一致。一页限制时界面报部分读取，保存的状态和备注保持，解除限制后恢复。两端断网 App Server 另验三种交互来源、两个提供方和非交互子代理排除。 [Fedora 分页与恢复](../state/acceptance/output-033/fedora-0.3.33-discovery-health.jsonl) · [Mac 分页与恢复](../state/acceptance/output-033/macos-0.3.33-discovery-health.jsonl) · [Fedora 来源夹具](../state/acceptance/output-033/fedora-0.3.33-discovery-sources.json) · [Mac 来源夹具](../state/acceptance/output-033/macos-0.3.33-discovery-sources.json)
+
+| 安装方式 | 本版现场判定 |
+| --- | --- |
+| Fedora 副本 | 3/3 条通过。从界面更新 `0.3.24` 至 `0.3.33` 并重启，随后回退并重启，专用卡原生位置和备注一致。隔离 RPM 环境分别卸载副本和原地模式，验回另一模式的安装和数据。 [界面更新与回退](../state/acceptance/output-033/fedora-copy-ui-update-and-rollback.jsonl) · [安装方式隔离](../state/acceptance/output-033/rpm-guest/enhancer-033-isolation-and-upgrade.txt) |
+| Fedora 原地 | 5/5 条通过。从原图标启动，更新、回退并重启。原窗口通过原生 MCP 看板实际拖动本机与 MacBook 专用卡，两端原生分区独立读回并复位。卸载后，原窗口继续读到另一项已提交的移卡操作。SELinux enforcing 客体通过写入中断、升级入口改名、冷启动通知和文件属性保护检查。 [原图标与双端拖放](../state/acceptance/output-033/fedora-rpm-update-and-native-drag.jsonl) · [卸载后位置读回](../state/acceptance/output-033/fedora-rpm-retained-after-uninstall.jsonl) · [RPM 生命周期](../state/acceptance/output-033/rpm-guest/enhancer-033-suite.txt) |
+| macOS 副本 | 2/3 条通过。从界面更新 `0.3.32` 至 `0.3.33` 并重启，随后回退并重启，读回专用卡原生位置和备注。两个独立副本的卸载隔离已通过，副本和原地模式同时安装的隔离仍待验。 [界面更新与回退](../state/acceptance/output-033/macos-copy-ui-update-and-rollback.jsonl) · [两个副本的卸载隔离](../state/acceptance/output-033/macos-0.3.33-two-copy-isolation.jsonl) |
+| macOS 原地 | 官方签名的客户端在安装预检被拒，0/5 条通过。 [原地预检](../state/acceptance/output-033/macos-in-place-preflight.json) |
+
 - [Fedora x86_64 安装候选](../state/acceptance/packages/session-board-0.3.33-linux-x86_64.tar.gz "sha256=4da8c3f7f7b667409325d8928b0a0be010ccd2d3dfdfa12f37fc5ea133476a84") · [校验文件](../state/acceptance/packages/session-board-0.3.33-linux-x86_64.tar.gz.sha256)
 - [macOS arm64 安装候选](../state/acceptance/packages/session-board-0.3.33-macos-arm64.tar.gz "sha256=e5b347603e7e842392d1db63e8ee984df9a08b25cc086ebabdb492cf2895478e") · [校验文件](../state/acceptance/packages/session-board-0.3.33-macos-arm64.tar.gz.sha256)
-- [逐项验收证据归档](../state/acceptance/packages/session-board-0.3.33-acceptance.tar.gz "sha256=7c05ca273227571b374f1fde788a7fc6a087b3109af4014bd201c8113a85672d") · [校验文件](../state/acceptance/packages/session-board-0.3.33-acceptance.tar.gz.sha256)
+- [逐项验收证据归档](../state/acceptance/packages/session-board-0.3.33-acceptance.tar.gz "sha256=11f01e533e4dd96b4c13cbe3ac4fab2e93ca81c5508a8dca78a8fe90e982f60e") · [校验文件](../state/acceptance/packages/session-board-0.3.33-acceptance.tar.gz.sha256)
 
 ## 0.3.31 候选
 
