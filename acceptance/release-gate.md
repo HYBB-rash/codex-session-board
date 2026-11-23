@@ -26,6 +26,8 @@ python3 -B acceptance/release_gate.py --identify \
 
 记录和附件保存在候选源码目录树之外。验收人核对附件确实记录了实现中的操作和读回。脚本核对归档、附件、测试、时间和实测范围。
 
+同一份凭证用 `installationRuns` 分别记录 Linux x86_64、macOS arm64 的 `copy` 和 `in-place` 实测。每条记录用 `mode` 替代 `requirement`，沿用平台、版本、归档指纹、宿主与原始附件等字段。断言顺序见报告 `installations`，覆盖各方式的安装启动、更新、回退和卸载。macOS 原地验收还需在真实 Mac 上验证官方应用身份、已授系统权限、原窗口已有的本机和远程连接，以及 Codex 更新后的停用与提示。
+
 门槛使用独立 Chrome 配置运行随包 MCP 界面测试。可通过 `BOARD_TEST_BROWSER` 指定 Chrome 或 Chromium 可执行文件。单独复验界面执行 `node --test acceptance/board-interaction.test.mjs`。
 
 ```bash
@@ -37,7 +39,7 @@ python3 -B acceptance/release_gate.py \
 
 报告逐项列出冻结断言和自动、现场结果。`gate-bindings.json` 按 `then` 的原顺序绑定自动断言，空数组代表仍缺覆盖。补上测试后可引用 `candidate-map.json` 中登记的证据 ID，或冻结模型适配器的断言 ID。脚本重新执行已绑定检查，跳过和失败都会阻止通过。`--model-only` 只执行独立模型对照。
 
-仅 `releaseReady: true` 且退出 `0` 表示通过完整门槛。退出 `1` 表示失败或输入不合规，退出 `2` 表示仍有待验项目。现有历史记录可供查证，正式发布需要当前候选两平台的现场凭证。
+仅 `releaseReady: true` 且退出 `0` 表示通过完整门槛。冻结需求和两平台的四种安装组合全部通过后才满足这一条件。退出 `1` 表示失败或输入不合规，退出 `2` 表示仍有待验项目。现有历史记录可供查证，正式发布需要当前候选两平台的现场凭证。
 
 ```bash
 python3 -B -m unittest discover -s acceptance -p test_release_gate.py

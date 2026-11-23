@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from delivery_checks import CONTENTS, EXCLUSIONS, INTEGRITY, REQUIRED_FILES, delivery_checks
-from release_gate import PLATFORMS, archive_arguments, delivery_results, evaluate, tap_results
+from release_gate import INSTALLATION_ASSERTIONS, PLATFORMS, archive_arguments, delivery_results, evaluate, tap_results
 from release_identity import (
     BASELINE, CONTRACT, FROZEN, PLUGIN_MANIFEST, archive_identity, plugin_identity, sha256,
     stream_sha256,
@@ -57,6 +57,20 @@ class ReleaseGateTests(unittest.TestCase):
                 for platform, scope in PLATFORMS.items()
             ],
         }
+        self.evidence["installationRuns"] = [
+            {
+                **{key: value for key, value in next(
+                    run for run in self.evidence["runs"] if run["platform"] == platform
+                ).items() if key not in {"requirement", "assertions"}},
+                "mode": mode,
+                "assertions": [
+                    {"index": index, "status": "pass", "observation": "安装方式实测结果",
+                     "artifacts": [{"path": artifact.name, "sha256": sha256(artifact)}]}
+                    for index in range(1, len(clauses) + 1)
+                ],
+            }
+            for (mode, platform), clauses in INSTALLATION_ASSERTIONS.items()
+        ]
 
     def evaluate(self, evidence):
         return evaluate(
@@ -70,6 +84,33 @@ class ReleaseGateTests(unittest.TestCase):
         result = self.evaluate(self.evidence)
         self.assertTrue(result["releaseReady"], result)
         self.assertEqual([row["status"] for row in result["requirements"]], ["pass", "pass"])
+        self.assertEqual([row["status"] for row in result["installations"]], ["pass"] * 4)
+
+    def test_frozen_requirements_cannot_release_without_macos_in_place_evidence(self):
+        runs = self.evidence["installationRuns"]
+        mac_in_place = next(run for run in runs if (run["mode"], run["platform"]) == ("in-place", "macos-arm64"))
+        runs.remove(mac_in_place)
+        result = self.evaluate(self.evidence)
+        self.assertFalse(result["releaseReady"])
+        self.assertTrue(all(row["status"] == "pass" for row in result["requirements"]))
+        self.assertEqual(result["installations"][-1]["status"], "pending")
+        del self.evidence["installationRuns"]
+        result = self.evaluate(self.evidence)
+        self.assertFalse(result["releaseReady"])
+        self.assertTrue(all(row["status"] == "pending" for row in result["installations"]))
+
+    def test_installation_evidence_checks_scope_and_attachment(self):
+        run = self.evidence["installationRuns"][-1]
+        run["assertions"][0]["artifacts"][0]["sha256"] = "0" * 64
+        result = self.evaluate(self.evidence)
+        self.assertFalse(result["releaseReady"])
+        self.assertIn("SHA256", result["installations"][-1]["assertions"][0]["detail"])
+        run["assertions"][0]["status"] = "fail"
+        self.assertEqual(self.evaluate(self.evidence)["installations"][-1]["status"], "fail")
+        run["mode"] = "copy"
+        result = self.evaluate(self.evidence)
+        self.assertFalse(result["releaseReady"])
+        self.assertIn("重复", result["errors"][0])
 
     def test_automated_success_without_live_evidence_is_pending(self):
         result = self.evaluate(None)

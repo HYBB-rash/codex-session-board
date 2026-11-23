@@ -15,6 +15,28 @@ from release_identity import (
 ROOT = Path(__file__).resolve().parents[1]
 MAX_AGE = timedelta(days=30)
 STATUSES = {"pass", "fail", "error", "skip"}
+COPY_ASSERTIONS = (
+    "从发行包安装并重启独立副本，沿用副本已有登录、项目及本机和远程连接，独立验回原生移卡。",
+    "从已安装入口更新并重启读回新版，回退再重启后验回原生位置及看板数据。",
+    "卸载后验回原客户端及日用配置，确认副本和原地模式的服务、数据与卸载范围相互独立。",
+)
+INSTALLATION_ASSERTIONS = {
+    ("copy", "linux-x86_64"): COPY_ASSERTIONS,
+    ("in-place", "linux-x86_64"): (
+        "在真实隔离 RPM 上从原图标启动，沿用原登录、项目、会话和连接，经现有本机及远程连接移卡后独立验回。",
+        "核对安装权限、备份及回执，演练写入失败、中断、重复安装及与重装竞争，核实安全恢复和未知改动保护。",
+        "从原地模式更新、重启及回退看板，验回原生位置和保留的数据。",
+        "复验不兼容构建及 RPM 更新、同版重装、启动入口改名、离线登录场景，核实停用看板并提示，原 Codex 能启动。",
+        "卸载后核对 RPM 文件、所有权、权限、SELinux 标签和原启动入口，保留升级后的原包及用户业务结果。",
+    ),
+    ("copy", "macos-arm64"): COPY_ASSERTIONS,
+    ("in-place", "macos-arm64"): (
+        "在真实 Mac 上原地安装并从原图标启动，验回原应用身份、已授系统权限、登录、项目及现有连接。",
+        "从原地看板经窗口既有本机及远程连接移卡，在原生侧栏确认，并分别从实际主机独立验回。",
+        "看板更新和回退后可正常启动。Codex 更新覆盖 Loader 时停用看板和后台写入，并提示恢复方法。",
+        "卸载后验回官方签名、应用元数据和原启动入口，核对配置与用户业务结果。",
+    ),
+}
 ACCEPTANCE_TEST_FILES = {
     "acceptance/public-operations.test.mjs": {
         "mcp-global-board": "the installed MCP plugin declares one global entrypoint for the complete board page",
@@ -176,21 +198,29 @@ def automated_checks(root, node, bindings, model_ids, node_tests):
     return records, errors
 
 
-def evidence_entries(evidence, identity, requirements):
-    if evidence is None:
-        return {}
-    need(evidence["schemaVersion"] == 1, "现场验收凭证格式版本不符")
-    need(evidence["contract"] == identity["contract"], "现场凭证的冻结契约或基线不符")
-    need(evidence["sourceSha256"] == identity["candidate"]["sourceSha256"], "候选源码改变，旧现场凭证失效")
-    live_requirements = {item["id"] for item in requirements if item["verification"] in {"mixed", "live"}}
+def index_runs(runs, scope_field, allowed):
     entries = {}
-    need(isinstance(evidence["runs"], list), "现场凭证缺少逐项实测记录")
-    for entry in evidence["runs"]:
-        scope = entry["requirement"], entry["platform"]
-        need(scope[0] in live_requirements and scope[1] in PLATFORMS, f"现场证据范围错误 {scope}")
+    need(isinstance(runs, list), f"现场凭证缺少 {scope_field} 实测记录")
+    for entry in runs:
+        scope = entry[scope_field], entry["platform"]
+        need(scope in allowed, f"现场证据范围错误 {scope}")
         need(scope not in entries, f"现场记录重复 {scope}")
         entries[scope] = entry
     return entries
+
+
+def evidence_entries(evidence, identity, requirements):
+    if evidence is None:
+        return {}, {}
+    need(evidence["schemaVersion"] == 1, "现场验收凭证格式版本不符")
+    need(evidence["contract"] == identity["contract"], "现场凭证的冻结契约或基线不符")
+    need(evidence["sourceSha256"] == identity["candidate"]["sourceSha256"], "候选源码改变，旧现场凭证失效")
+    live_requirements = {(item["id"], platform) for item in requirements
+                         if item["verification"] in {"mixed", "live"} for platform in PLATFORMS}
+    return (
+        index_runs(evidence["runs"], "requirement", live_requirements),
+        index_runs(evidence.get("installationRuns", []), "mode", INSTALLATION_ASSERTIONS),
+    )
 
 
 def live_scope(entry, platform, release, now):
@@ -277,12 +307,26 @@ def requirement_result(requirement, bindings, results, live):
             "status": aggregate([row["status"] for row in assertions]), "assertions": assertions}
 
 
+def installation_results(entries, archives, evidence_root, now):
+    rows = []
+    for (mode, platform), clauses in INSTALLATION_ASSERTIONS.items():
+        live = live_results(entries.get((mode, platform)), platform, archives.get(platform),
+                            evidence_root, now, len(clauses))
+        assertions = [
+            {"index": index, "assertion": clause, "status": status, "detail": detail}
+            for index, (clause, (status, detail)) in enumerate(zip(clauses, live), start=1)
+        ]
+        rows.append({"mode": mode, "platform": platform, "status": aggregate([row["status"] for row in assertions]),
+                     "assertions": assertions})
+    return rows
+
+
 def evaluate(requirements, bindings, results, identity, evidence, evidence_root, now, errors=()):
     global_errors = list(errors)
     try:
-        entries = evidence_entries(evidence, identity, requirements)
+        entries, installation_entries = evidence_entries(evidence, identity, requirements)
     except (ValueError, KeyError, TypeError, AttributeError) as error:
-        entries = {}
+        entries, installation_entries = {}, {}
         global_errors.append(str(error))
     rows = []
     for requirement in requirements:
@@ -295,8 +339,9 @@ def evaluate(requirements, bindings, results, identity, evidence, evidence_root,
                     evidence_root, now, len(requirement["then"]),
                 )
         rows.append(requirement_result(requirement, bindings[identifier], results, live))
-    complete = not global_errors and set(identity["archives"]) == PLATFORMS.keys() and all(
-        row["status"] == "pass" for row in rows
+    installations = installation_results(installation_entries, identity["archives"], evidence_root, now)
+    complete = not global_errors and not identity["archiveErrors"] and set(identity["archives"]) == PLATFORMS.keys() and all(
+        row["status"] == "pass" for row in (*rows, *installations)
     )
     return {
         "schemaVersion": 1,
@@ -305,6 +350,7 @@ def evaluate(requirements, bindings, results, identity, evidence, evidence_root,
         "errors": global_errors,
         "automated": results,
         "requirements": rows,
+        "installations": installations,
     }
 
 
@@ -347,8 +393,8 @@ def main(argv=None):
     print(json.dumps(report, ensure_ascii=False, indent=2))
     if report["releaseReady"]:
         return 0
-    return 1 if report.get("error") or report.get("errors") or any(
-        row["status"] == "fail" for row in report.get("requirements", [])
+    return 1 if report.get("error") or report.get("errors") or report.get("archiveErrors") or any(
+        row["status"] == "fail" for section in ("requirements", "installations") for row in report.get(section, [])
     ) else 2
 
 
