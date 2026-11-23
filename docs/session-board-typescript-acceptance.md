@@ -1,6 +1,23 @@
 # TypeScript 会话看板验收
 
-上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本及真实 RPM 原地安装均通过本机和远程原生移卡。macOS arm64 目标构建触发启动归档完整性预检，安装在写入前停止，因此发布条件未满足。
+上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本及真实 RPM 原地安装均通过本机和远程原生移卡。macOS arm64 的官方 Codex `26.1111.21308` 已通过自动副本安装、重启、本机原生移卡和卸载。完整发布门槛仍未达到。
+
+## 0.3.28 候选
+
+2026 年 11 月 23 日从提交 `749f513` 构建。31 条冻结需求中 18 条达到双平台门槛、13 条仍待验，76 项自动门槛检查通过。两平台各有 3 条随包交付现场断言；以下 Mac 安装与 Enhancer 拖放是另行取证的场景。 [逐项门槛](../state/acceptance/release-gate-0.3.28.json) · [现场证据索引](../state/acceptance/live-0.3.28.json)
+
+| 场景 | 现场观察 |
+| --- | --- |
+| MacBook Pro 副本安装 | 安装器验证 OpenAI 签名、整份 ASAR、plist 中的归档头 SHA-256 和框架中唯一启用的字典摘要。仅在暂存副本修改启动入口，逐个重签 8 个 Helper 和 3 个 dylib，再签框架与主包。官方 `26.1111.21308` 的正常启动、重启与本机原生分区读取通过。卸载后副本恢复官方签名及原始 ASAR，系统应用的归档与 plist 前后一致。 [自动安装、重启及卸载](../state/acceptance/packages/macos-0.3.28-window-final.json) |
+| Mac 安装中断与同步失败 | 在发布前、发布后和卸载交换中间强制结束安装器，分别验证可重装、已发布回执可补齐、旧补丁可恢复。回执重命名遇到持续 `EACCES` 时，现有补丁副本及其 inode 保持，解除后卸载成功。首次进程退出和实际回环端口占用均恢复官方包并保留诊断。 [真机故障注入](../state/acceptance/packages/macos-0.3.28-recovery-final.json) |
+| Mac 更新、拖放与回退 | 从安装版 CLI 选择 `0.3.28`，重启后在已登录专用配置读回版本。把本机专用会话从进行中拖到待审阅，原生侧栏和独立 `thread/read` 读回一致。旧表单返回 HTTP 400，非空备注保持。反向拖放恢复原生分区，回退 `0.3.27` 后重启读回原分区和备注。测试后恢复原专用副本并关闭调试。 [更新命令回执](../state/acceptance/packages/macos-0.3.28-runtime-update.json) · [重启、拖放及回退](../state/acceptance/packages/macos-0.3.28-runtime-update-confirmed.json) |
+| Mac 远程连接 | 已登录窗口读回原生本机卡片和三个已登记的 SSH 连接。Fedora 连接已启用，`thread/read` 和 `threadSection/list` 均超时。Mac→Fedora 的只读独立探测确认 1Password SSH Agent 拒绝签名。当前候选的 Mac→Fedora 远程拖放待验。 [原生连接回执](../state/acceptance/packages/macos-0.3.27-signed-in-remote.json) · [SSH 诊断](../state/acceptance/packages/macos-0.3.27-fedora-ssh-probe.txt) |
+| Mac 原地安装与发布签名 | `install --in-place` 回报仅支持 Fedora RPM，退出码为 1。系统原包的官方签名和启动归档仍一致。本地 ad hoc 副本通过严格验签，Gatekeeper 的分发评估拒绝该签名。同机评估接受 OpenAI 公证原包。Mac 原地模式、正式签名和公证仍待验。 [真机预检](../state/acceptance/packages/macos-0.3.28-in-place-preflight.json) · [签名评估](../state/acceptance/packages/macos-0.3.28-signing-assessment.json) |
+| Fedora 现有副本 | 在已安装 `0.3.24` 的 Enhancer 侧栏点击更新，重启后从实际界面读回 `0.3.28`。本机与 MacBook Pro 两条原生连接均在线。回退后分别读取两张专用卡，分区、备注与标题保持，系统归档及隔离配置前后校验一致。 [界面更新及重启](../state/acceptance/fedora-signed-copy-update-0.3.28.jsonl) · [回退和双端独立读回](../state/acceptance/fedora-signed-copy-rollback-0.3.28.jsonl) |
+| 双平台随包复验 | Fedora 通过 101 项 Node 测试，跳过 1 项 macOS 专用测试。MacBook Pro 通过 98 项，跳过 4 项 Linux 专用测试。两端各通过 10 项公共入口测试、冻结模型复验和 18 项门槛测试。 [Fedora](../state/acceptance/fedora-archive-0.3.28-final.log) · [MacBook Pro](../state/acceptance/packages/macos-0.3.28-package-final.log) |
+
+- [Fedora x86_64 安装候选](../state/acceptance/packages/session-board-0.3.28-linux-x86_64.tar.gz "sha256=a6b38e842059eb953bf7139f6172acbf6c3b178d39968c4ec80871eff876275b") · [校验文件](../state/acceptance/packages/session-board-0.3.28-linux-x86_64.tar.gz.sha256)
+- [macOS arm64 安装候选](../state/acceptance/packages/session-board-0.3.28-macos-arm64.tar.gz "sha256=dfb91c2793debe78d0aec8ebdf061de4a45cb8eb7fc8a0ab2e06d7d055b60b7f") · [校验文件](../state/acceptance/packages/session-board-0.3.28-macos-arm64.tar.gz.sha256)
 
 ## 0.3.26 候选
 
