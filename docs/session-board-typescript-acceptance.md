@@ -38,9 +38,11 @@ Fedora 原装客户端的固定按钮在 ChatGPT 登录模式下写入账号侧�
 
 从 Fedora 专用副本再次读取账号设置，服务端返回成功，客户端已登记候选，但没有返回侧栏自定义对象。原生「重置自定义」会写入空的固定覆盖和当前入口顺序。该操作能清除自定义固定，但尚无证据证明能恢复云端原先没有自定义对象的状态。 [账号设置只读回执](../state/acceptance/fedora-0.3.31-native-sidebar-baseline-read-only.jsonl) · [原生重置实现核对](../state/acceptance/fedora-0.3.31-native-sidebar-default-reset-source.json)
 
+11 月 24 日获准临时固定后，再从已登录的 Fedora 隔离 RPM 直接读回账号设置。客户端仍未返回可还原的自定义对象，最左侧原生栏未出现候选图标。验前检查写入零项账号设置，隔离 RPM 及测试配置已验回。 [验前读取与清理](../state/acceptance/fedora-0.3.31-native-sidebar-authorized-preflight-20261124.jsonl)
+
 - [Fedora x86_64 安装候选](../state/acceptance/packages/session-board-0.3.31-linux-x86_64.tar.gz "sha256=3fce27047e049ae90a2ca421161841320c3cd6754d9ee929207880b5990c684c") · [校验文件](../state/acceptance/packages/session-board-0.3.31-linux-x86_64.tar.gz.sha256)
 - [macOS arm64 安装候选](../state/acceptance/packages/session-board-0.3.31-macos-arm64.tar.gz "sha256=8d5d309aade6f3d801a45ac85306c83274ac5c267637c220499796e55ea1fc08") · [校验文件](../state/acceptance/packages/session-board-0.3.31-macos-arm64.tar.gz.sha256)
-- [逐项验收证据归档](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz "sha256=223bbb8e716cebde219a1eca7046997c26bf1e5a27b546700389849059375d13") · [校验文件](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz.sha256)
+- [逐项验收证据归档](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz "sha256=45feed8a8ef02902de4bc3557a34e5e05d279fed511797e364c7bd6330b0f823") · [校验文件](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz.sha256)
 
 证据归档自带 44 份由现场索引引用的回执、额外的平台边界证据和两个安装包的摘要。从干净解包运行随包检查，复现同一份逐项门槛报告。
 
