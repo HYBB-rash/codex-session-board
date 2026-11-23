@@ -8,17 +8,29 @@ import {
     linkFile,
     restoreMacMetadata,
 } from "./copy.js";
-import { assertTestCopyStopped, type InstallState, readState, writeState } from "./install.js";
+import {
+    assertTestCopyStopped,
+    type InstallState,
+    readState,
+    restoreEmbeddedMac,
+    withRecoveredMacCopy,
+    writeState,
+} from "./install.js";
 
 export interface RestoreResult {
     state: InstallState;
     archiveHash: string;
 }
 
-export function restore(): RestoreResult {
+function restoreCopy(state: InstallState | null): RestoreResult {
     assertTestCopyStopped();
-    const state = readState();
     if (!state) throw new Error("nothing is installed");
+    if (state.mac) {
+        return {
+            state: restoreEmbeddedMac(state),
+            archiveHash: state.files.archive.originalSha256,
+        };
+    }
     const archivePath = path.join(state.target.path, state.files.archive.path);
     assertIsolatedPath(archivePath);
     const backupPath = state.backup.archive;
@@ -53,4 +65,9 @@ export function restore(): RestoreResult {
     state.removedAt = new Date().toISOString();
     writeState(state);
     return { state, archiveHash: hash };
+}
+
+export function restore(): RestoreResult {
+    if (process.platform === "darwin") return withRecoveredMacCopy(restoreCopy);
+    return restoreCopy(readState());
 }

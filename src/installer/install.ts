@@ -15,7 +15,24 @@ import {
     signPatchedCopy,
 } from "./copy.js";
 import { type Detection, detect, findSystemApp, locateApp } from "./detect.js";
-import { assertPatchableMacBundle } from "./mac-integrity.js";
+import {
+    dittoBundle,
+    hasBundle,
+    macCandidate,
+    macPending,
+    macWorkspace,
+    officialBackup,
+    publishMacCopy,
+    recoverMacCopy,
+    verifyBundleState,
+    withMacCopyLock,
+} from "./mac-copy.js";
+import {
+    embeddedFramework,
+    updateEmbeddedIntegrity,
+    verifyEmbeddedIntegrity,
+} from "./mac-integrity.js";
+import { signEmbeddedCopy, verifyOfficialCopy } from "./mac-signing.js";
 import * as paths from "./paths.js";
 import { activateRelease } from "./releases.js";
 
@@ -126,6 +143,7 @@ interface RawInstallState {
     app: unknown;
     files: unknown;
     backup: unknown;
+    mac?: unknown;
     loader: unknown;
 }
 
@@ -211,15 +229,44 @@ function parseState(value: unknown): InstallState {
         },
     };
     if (typeof value.removedAt === "string") state.removedAt = value.removedAt;
+    if (value.mac !== undefined) {
+        const receipt = expectFields<NonNullable<InstallState["mac"]>>(value.mac, "mac");
+        state.mac = {
+            originalCodeHash: expectString(receipt.originalCodeHash, "mac.originalCodeHash"),
+            patchedCodeHash: expectString(receipt.patchedCodeHash, "mac.patchedCodeHash"),
+        };
+        if (receipt.bootedAt !== undefined)
+            state.mac.bootedAt = expectString(receipt.bootedAt, "mac.bootedAt");
+    }
     return state;
 }
 
-export function readState(): InstallState | null {
-    if (!fs.existsSync(paths.installState)) return null;
-    const state = parseState(JSON.parse(fs.readFileSync(paths.installState, "utf8")));
+function readStateFile(file: string): InstallState | null {
+    if (!fs.existsSync(file)) return null;
+    const state = parseState(JSON.parse(fs.readFileSync(file, "utf8")));
     if (state.target.path !== paths.testApp)
         throw new Error("install state belongs to a different Enhancer copy");
     return state;
+}
+
+export function withRecoveredMacCopy<Result>(
+    operation: (previous: InstallState | null) => Result,
+): Result {
+    return withMacCopyLock(() => {
+        finishMacCopy();
+        return operation(readStateFile(paths.installState));
+    });
+}
+
+function finishMacCopy(): void {
+    recoverMacCopy(() => readStateFile(macPending), writeState);
+}
+
+export function readState(): InstallState | null {
+    if (process.platform === "darwin" && fs.existsSync(macPending)) {
+        return withRecoveredMacCopy((state) => state);
+    }
+    return readStateFile(paths.installState);
 }
 
 export function writeState(state: InstallState): void {
@@ -295,19 +342,11 @@ function recover(error: unknown, steps: ReadonlyArray<() => void>): never {
     throw error;
 }
 
-function prepareCopy(): { source: Detection; copy: Detection } {
-    assertTestCopyStopped();
-    const system = findSystemApp();
-    const source = detect(system.appDir);
-    if (source.platform === "darwin") {
-        const target = fs.existsSync(paths.testApp) ? paths.testApp : source.appDir;
-        assertIsolatedPath(paths.testApp, source.appDir);
-        assertPatchableMacBundle(target, source.codexVersion);
-    }
+function prepareCopy(source: Detection): Detection {
     ensureTestCopy(source);
     const copy = detect(paths.testApp);
     assertIsolatedPath(copy.archive.archivePath, source.appDir);
-    return { source, copy };
+    return copy;
 }
 
 function previousPatch(currentHash: string): InstallState | null {
@@ -452,8 +491,7 @@ function buildState(
     };
 }
 
-export function install(): InstallResult {
-    const { source, copy } = prepareCopy();
+function activateInitialRelease(): void {
     const manifest = path.join(paths.root, "release.json");
     if (
         fs.existsSync(manifest) &&
@@ -461,6 +499,11 @@ export function install(): InstallResult {
     ) {
         activateRelease(paths.root);
     }
+}
+
+function installLegacy(source: Detection): InstallResult {
+    const copy = prepareCopy(source);
+    activateInitialRelease();
     const archivePath = copy.archive.archivePath;
     const currentHash = sha256File(archivePath);
     const previous = previousPatch(currentHash);
@@ -496,5 +539,123 @@ export function install(): InstallResult {
             },
             () => restoreMacMetadata(copy.appDir, rollbackArchive),
         ]);
+    }
+}
+
+function backUpOfficialBundle(source: Detection, codeHash: string): string {
+    if (!hasBundle(paths.backupDir)) fs.mkdirSync(paths.backupDir, { mode: 0o700 });
+    const destination = officialBackup(codeHash);
+    const savedArchive = path.join(destination, source.archive.relativeArchive);
+    if (hasBundle(destination)) {
+        if (verifyOfficialCopy(destination, savedArchive) !== codeHash) {
+            throw new Error("official macOS backup does not match the source signature");
+        }
+        return savedArchive;
+    }
+    const candidate = path.join(macWorkspace, "stock.app");
+    dittoBundle(source.appDir, candidate);
+    const archive = path.join(candidate, source.archive.relativeArchive);
+    if (verifyOfficialCopy(candidate, archive) !== codeHash) {
+        throw new Error("source signature changed while copying the official app");
+    }
+    fs.renameSync(candidate, destination);
+    return savedArchive;
+}
+
+function stageEmbeddedPatch(source: Detection, framework: string): InstallState {
+    const codeHash = verifyOfficialCopy(source.appDir, source.archive.archivePath);
+    verifyEmbeddedIntegrity(source, framework);
+    assertUnpatched(source);
+    const backupPath = backUpOfficialBundle(source, codeHash);
+    dittoBundle(officialBackup(codeHash), macCandidate);
+    const copy = detect(macCandidate);
+    const binary = embeddedFramework(copy.appDir);
+    if (!binary) throw new Error("verified macOS stock backup lost its framework digest");
+    const integrity = verifyEmbeddedIntegrity(copy, binary);
+    const patched = patchStartupEntry(copy, backupPath, sha256File(backupPath));
+    if (!patched.changed) throw new Error("the signed source already contains an Enhancer loader");
+    writeLink(linkFile(locateApp(copy.appDir).resourcesDir));
+    updateEmbeddedIntegrity(copy, integrity);
+    const patchedCodeHash = signEmbeddedCopy(copy.appDir, binary, macWorkspace);
+    verifyEmbeddedIntegrity(copy, binary);
+    const state = buildState(source, copy, patched, copy.archive.archivePath);
+    state.mac = { originalCodeHash: codeHash, patchedCodeHash };
+    return state;
+}
+
+function installEmbeddedMac(
+    source: Detection,
+    previous: InstallState | null,
+    framework: string,
+): InstallResult {
+    const targetExists = hasBundle(paths.testApp);
+    if (targetExists) {
+        if (!previous?.mac) throw new Error("existing macOS app copy has no signed bundle receipt");
+        verifyBundleState(paths.testApp, previous);
+        if (previous.status === "installed") {
+            activateInitialRelease();
+            return { action: "unchanged", state: previous, source, copy: detect(paths.testApp) };
+        }
+    }
+    activateInitialRelease();
+    fs.mkdirSync(macWorkspace, { mode: 0o700 });
+    try {
+        const state = stageEmbeddedPatch(source, framework);
+        publishMacCopy(state, targetExists);
+        finishMacCopy();
+        return { action: "patched", state, source, copy: detect(paths.testApp) };
+    } catch (error) {
+        recover(error, [finishMacCopy]);
+    }
+}
+
+export function install(): InstallResult {
+    assertTestCopyStopped();
+    const source = detect(findSystemApp().appDir);
+    if (source.platform !== "darwin") return installLegacy(source);
+    return withRecoveredMacCopy((previous) => {
+        assertTestCopyStopped();
+        if (hasBundle(paths.testApp)) {
+            const installedFramework = embeddedFramework(paths.testApp);
+            if (!installedFramework && !previous?.mac) return installLegacy(source);
+        }
+        const framework = embeddedFramework(source.appDir);
+        if (framework) return installEmbeddedMac(source, previous, framework);
+        if (hasBundle(paths.testApp) && embeddedFramework(paths.testApp)) {
+            if (previous?.status !== "installed" || !previous.mac) {
+                throw new Error("embedded ASAR copy must be restored against a supported source");
+            }
+            verifyBundleState(paths.testApp, previous);
+            activateInitialRelease();
+            return { action: "unchanged", state: previous, source, copy: detect(paths.testApp) };
+        }
+        return installLegacy(source);
+    });
+}
+
+export function restoreEmbeddedMac(previous: InstallState): InstallState {
+    const receipt = previous.mac;
+    if (!receipt) throw new Error("missing macOS bundle receipt");
+    const bundle = officialBackup(receipt.originalCodeHash);
+    if (previous.backup.archive !== path.join(bundle, previous.files.archive.path)) {
+        throw new Error("macOS backup path differs from the installation receipt");
+    }
+    verifyBundleState(paths.testApp, previous);
+    if (previous.status === "removed") return previous;
+    const state: InstallState = {
+        ...previous,
+        status: "removed",
+        removedAt: new Date().toISOString(),
+    };
+    verifyBundleState(bundle, state);
+    fs.mkdirSync(macWorkspace, { mode: 0o700 });
+    try {
+        dittoBundle(bundle, macCandidate);
+        verifyBundleState(macCandidate, state);
+        publishMacCopy(state, true);
+        finishMacCopy();
+        return state;
+    } catch (error) {
+        recover(error, [finishMacCopy]);
     }
 }

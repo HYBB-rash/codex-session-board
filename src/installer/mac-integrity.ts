@@ -46,15 +46,6 @@ export function embeddedFramework(appDirectory: string): string | null {
     return match;
 }
 
-export function assertPatchableMacBundle(appDirectory: string, version: string): void {
-    const binary = embeddedFramework(appDirectory);
-    if (binary) {
-        throw new Error(
-            `Codex ${version} embeds the app.asar integrity dictionary digest in ${path.basename(binary)}; the startup-entry patch cannot preserve it`,
-        );
-    }
-}
-
 interface IntegrityEntry {
     algorithm: string;
     hash: string;

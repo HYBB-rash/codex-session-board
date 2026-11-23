@@ -1,10 +1,18 @@
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { APP_ID } from "./constants.js";
+import { assertTestCopyStopped } from "./copy.js";
 import { locateApp } from "./detect.js";
-import { readState } from "./install.js";
+import {
+    type InstallState,
+    readState,
+    restoreEmbeddedMac,
+    withRecoveredMacCopy,
+    writeState,
+} from "./install.js";
 import * as paths from "./paths.js";
 
 function deploymentId(): string {
@@ -44,8 +52,10 @@ function launchEnvironment(resourcesDir: string): NodeJS.ProcessEnv {
     };
 }
 
-export function launch(extraArgs: readonly string[] = []): number {
-    const state = readState();
+const desktopLog = path.join(paths.logs, "desktop.log");
+const runtimeLog = path.join(paths.logs, "runtime.jsonl");
+
+function launchCopy(state: InstallState | null, extraArgs: readonly string[]): ChildProcess {
     if (state?.status !== "installed") {
         throw new Error("install the test copy before launching it");
     }
@@ -62,9 +72,9 @@ export function launch(extraArgs: readonly string[] = []): number {
     fs.mkdirSync(paths.codexHome, { recursive: true });
     fs.mkdirSync(paths.xdgConfig, { recursive: true });
     fs.mkdirSync(paths.logs, { recursive: true });
-    const desktopLog = path.join(paths.logs, "desktop.log");
-    const logFd =
-        process.env.CODEX_ENHANCER_LOG_STDOUT === "1" ? fs.openSync(desktopLog, "a") : null;
+    const captureOutput =
+        (state.mac && !state.mac.bootedAt) || process.env.CODEX_ENHANCER_LOG_STDOUT === "1";
+    const logFd = captureOutput ? fs.openSync(desktopLog, "a", 0o600) : null;
     const child = spawn(startScript, [`--user-data-dir=${paths.userData}`, ...extraArgs], {
         cwd: state.target.path,
         detached: true,
@@ -73,6 +83,119 @@ export function launch(extraArgs: readonly string[] = []): number {
     });
     child.unref();
     if (logFd != null) fs.closeSync(logFd);
+    return child;
+}
+
+function didLoadWindow(start: number): boolean {
+    if (!fs.existsSync(runtimeLog)) return false;
+    const file = fs.openSync(runtimeLog, "r");
+    try {
+        const end = fs.fstatSync(file).size;
+        const offset = Math.max(start, end - 256 * 1024);
+        const bytes = Buffer.alloc(Math.max(0, end - offset));
+        fs.readSync(file, bytes, 0, bytes.length, offset);
+        return /"event":"did-finish-load","id":\d+,"url":"app:\/\//.test(bytes.toString("utf8"));
+    } finally {
+        fs.closeSync(file);
+    }
+}
+
+function matchingFirstBoot(
+    previous: InstallState | null,
+    started: InstallState,
+): InstallState | null {
+    if (
+        previous?.status !== "installed" ||
+        previous.installedAt !== started.installedAt ||
+        !previous.mac ||
+        previous.mac.bootedAt
+    )
+        return null;
+    return previous;
+}
+
+async function restoreFailedBoot(state: InstallState): Promise<void> {
+    for (let attempt = 0; ; attempt += 1) {
+        try {
+            assertTestCopyStopped();
+            break;
+        } catch (error) {
+            if (attempt >= 24) throw error;
+            await delay(250);
+        }
+    }
+    withRecoveredMacCopy((previous) => {
+        const current = matchingFirstBoot(previous, state);
+        if (!current) return;
+        assertTestCopyStopped();
+        restoreEmbeddedMac(current);
+    });
+}
+
+async function confirmFirstBoot(
+    child: ChildProcess,
+    state: InstallState,
+    offset: number,
+): Promise<void> {
+    let spawnError: Error | undefined;
+    child.once("error", (error) => {
+        spawnError = error;
+    });
+    const deadline = Date.now() + 45000;
+    while (Date.now() < deadline) {
+        if (spawnError || child.exitCode !== null || child.signalCode !== null) {
+            const message = `the macOS copy exited during first launch; see ${desktopLog}`;
+            try {
+                await restoreFailedBoot(state);
+            } catch (error) {
+                throw new Error(
+                    `${message}; restoring the official bundle failed: ${String(error)}`,
+                    {
+                        cause: error,
+                    },
+                );
+            }
+            throw new Error(message, { cause: spawnError });
+        }
+        if (didLoadWindow(offset)) {
+            withRecoveredMacCopy((previous) => {
+                const current = matchingFirstBoot(previous, state);
+                if (current?.mac) {
+                    current.mac.bootedAt = new Date().toISOString();
+                    writeState(current);
+                }
+            });
+            return;
+        }
+        await delay(250);
+    }
+    throw new Error(`the macOS copy is still starting; see ${desktopLog}`);
+}
+
+export function launch(extraArgs: readonly string[] = []): number {
+    const child = launchCopy(readState(), extraArgs);
+    if (child.pid === undefined) {
+        child.once("error", () => {});
+        throw new Error("test copy did not start");
+    }
+    return child.pid;
+}
+
+export async function launchAndConfirm(extraArgs: readonly string[] = []): Promise<number> {
+    if (process.platform !== "darwin" || !readState()?.mac) return launch(extraArgs);
+    const start = (state: InstallState | null) => {
+        if (state?.mac && !state.mac.bootedAt) {
+            assertTestCopyStopped();
+            const offset = fs.statSync(runtimeLog, { throwIfNoEntry: false })?.size ?? 0;
+            return { child: launchCopy(state, extraArgs), firstBoot: { state, offset } };
+        }
+        return { child: launchCopy(state, extraArgs), firstBoot: null };
+    };
+    const { child, firstBoot } = withRecoveredMacCopy(start);
+    if (firstBoot) await confirmFirstBoot(child, firstBoot.state, firstBoot.offset);
+    else if (child.pid === undefined) {
+        await new Promise<never>((_, reject) => child.once("error", reject));
+    }
     if (child.pid === undefined) throw new Error("test copy did not start");
     return child.pid;
 }

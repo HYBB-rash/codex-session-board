@@ -4,7 +4,7 @@
 
 ## 安装和打开
 
-Fedora 44 x86_64 已验证 Codex `26.1111.71704` 的副本安装、更新和回退。macOS arm64 候选包已在 MacBook Pro 解压并校验。该机的 Codex `26.1111.21308` 在写入前因框架内嵌 ASAR 摘要被拒绝。macOS 副本桌面运行、更新和回退待验，原地模式尚未开放。
+Fedora 44 x86_64 已验证 Codex `26.1111.71704` 的副本安装、更新和回退。macOS arm64 的副本安装支持官方签名的 Codex `26.1111.21308`，采用本机 ad hoc 签名，保留 Electron 的 ASAR 完整性校验。macOS 原地模式、发布签名及公证仍待验。
 
 在 Linux 候选包所在目录校验归档，再进入解压目录运行 Node.js 22 或更新版本。
 
@@ -12,6 +12,17 @@ Fedora 44 x86_64 已验证 Codex `26.1111.71704` 的副本安装、更新和回�
 sha256sum -c session-board-0.3.23-linux-x86_64.tar.gz.sha256
 tar -xzf session-board-0.3.23-linux-x86_64.tar.gz
 cd session-board-0.3.23-linux-x86_64
+node dist/bin/codex-enhancer.js detect
+node dist/bin/codex-enhancer.js install
+node dist/bin/codex-enhancer.js launch
+```
+
+macOS 使用终端执行以下命令。独立副本写入当前用户可写的解压目录，安装无需管理员权限或 Developer ID。首次启动确认原生窗口加载。若进程在此前退出，安装器恢复副本的官方原包，诊断保存在 `logs/desktop.log`。
+
+```zsh
+shasum -a 256 -c session-board-0.3.27-macos-arm64.tar.gz.sha256
+tar -xzf session-board-0.3.27-macos-arm64.tar.gz
+cd session-board-0.3.27-macos-arm64
 node dist/bin/codex-enhancer.js detect
 node dist/bin/codex-enhancer.js install
 node dist/bin/codex-enhancer.js launch
@@ -33,7 +44,7 @@ node dist/bin/codex-enhancer.js status
 
 更新和回退切换已校验的运行时目录，配置和记录保存在安装目录的 `state/session-board/`。退出副本后，执行 `node dist/bin/codex-enhancer.js uninstall` 恢复副本的原始启动归档。
 
-macOS 副本卸载还会恢复原始签名文件并校验整个应用包。旧副本若缺少完整签名备份，卸载会在写入前停止。
+macOS 副本卸载会恢复官方签名与完整的应用包。安装器保存并验证原始签名备份。备份缺失或校验失败时，卸载停止并保留现有副本。
 
 ## Fedora 原地安装候选
 

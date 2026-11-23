@@ -3,7 +3,7 @@
 import { dirname } from "node:path";
 import { detect, findSystemApp, formatDetection } from "../installer/detect.js";
 import { install } from "../installer/install.js";
-import { launch } from "../installer/launch.js";
+import { launchAndConfirm } from "../installer/launch.js";
 import { packageRelease } from "../installer/package-release.js";
 import { outputDir } from "../installer/paths.js";
 import { releasePlatform, releasePlatforms } from "../installer/release-manifest.js";
@@ -83,12 +83,7 @@ if (
         fail(error);
     }
 } else if (command === "launch") {
-    try {
-        const pid = launch(process.argv.slice(3));
-        console.log(`pid: ${pid}`);
-    } catch (error) {
-        fail(error);
-    }
+    void launchAndConfirm(process.argv.slice(3)).then((pid) => console.log(`pid: ${pid}`), fail);
 } else if (command === "update" || command === "rollback") {
     try {
         const candidate = process.argv[3];
