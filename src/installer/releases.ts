@@ -138,7 +138,7 @@ function removeLock(lock: string, owner: string): void {
     }
 }
 
-function clearExitedOwner(lock: string): void {
+function clearExitedOwner(lock: string, operation: string): void {
     let names: string[];
     try {
         names = readdirSync(lock);
@@ -149,7 +149,7 @@ function clearExitedOwner(lock: string): void {
     const owner = names[0];
     if (!owner) return;
     const pid = /^(\d+)-[a-f0-9-]+$/.exec(owner)?.[1];
-    if (!pid || names.length !== 1) throw new Error(`unknown update lock at ${lock}`);
+    if (!pid || names.length !== 1) throw new Error(`unknown transaction lock at ${lock}`);
     try {
         process.kill(Number(pid), 0);
     } catch (error) {
@@ -157,10 +157,10 @@ function clearExitedOwner(lock: string): void {
         removeLock(lock, owner);
         return;
     }
-    throw new Error(`another update or rollback is in progress (pid ${pid})`);
+    throw new Error(`another ${operation} is in progress (pid ${pid})`);
 }
 
-function acquireLock(store: string, lock: string, owner: string): void {
+function acquireLock(store: string, lock: string, owner: string, operation: string): void {
     const candidate = mkdtempSync(path.join(store, ".lock-"));
     try {
         writeFileSync(path.join(candidate, owner), "");
@@ -169,7 +169,7 @@ function acquireLock(store: string, lock: string, owner: string): void {
         } catch (error) {
             const code = (error as NodeJS.ErrnoException).code;
             if (code !== "ENOTEMPTY" && code !== "EEXIST") throw error;
-            clearExitedOwner(lock);
+            clearExitedOwner(lock, operation);
             renameSync(candidate, lock);
         }
     } finally {
@@ -177,16 +177,24 @@ function acquireLock(store: string, lock: string, owner: string): void {
     }
 }
 
-function changeRelease<Result>(store: string, change: () => Result): Result {
-    mkdirSync(store, { recursive: true, mode: store === inPlaceReleaseStore() ? 0o755 : 0o700 });
-    const lock = path.join(store, ".activating");
+export function withDirectoryLock<Result>(
+    lock: string,
+    change: () => Result,
+    operation = "transaction",
+): Result {
+    const store = path.dirname(lock);
     const owner = `${process.pid}-${randomUUID()}`;
-    acquireLock(store, lock, owner);
+    acquireLock(store, lock, owner, operation);
     try {
         return change();
     } finally {
         removeLock(lock, owner);
     }
+}
+
+function changeRelease<Result>(store: string, change: () => Result): Result {
+    mkdirSync(store, { recursive: true, mode: store === inPlaceReleaseStore() ? 0o755 : 0o700 });
+    return withDirectoryLock(path.join(store, ".activating"), change, "update or rollback");
 }
 
 export function activateRelease(packageRoot: string, store = releaseStore()): ReleaseManifest {

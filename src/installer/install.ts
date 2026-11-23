@@ -55,6 +55,11 @@ export interface InstallState {
     backup: {
         archive: string;
     };
+    mac?: {
+        originalCodeHash: string;
+        patchedCodeHash: string;
+        bootedAt?: string;
+    };
     loader: {
         sentinel: string;
         link: string;

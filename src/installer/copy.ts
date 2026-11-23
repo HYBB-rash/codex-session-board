@@ -39,8 +39,13 @@ export function assertIsolatedPath(item: string, source?: string): void {
     if (!inside(copy, location) || copy !== expected) {
         throw new Error(`refusing to modify outside the Enhancer copy at ${paths.testApp}`);
     }
-    const system = resolvedExisting(source ?? findSystemApp().appDir);
-    if (inside(system, location) || inside(copy, system)) {
+    assertSeparateFromSource(copy, source ?? findSystemApp().appDir);
+}
+
+export function assertSeparateFromSource(item: string, source: string): void {
+    const location = resolvedExisting(item);
+    const system = resolvedExisting(source);
+    if (inside(system, location) || inside(location, system)) {
         throw new Error(`refusing to modify the installed Codex at ${system}`);
     }
 }
@@ -109,9 +114,14 @@ function linuxCopyPids(): string[] {
 
 function macCopyPids(): string[] {
     const processes = execFileSync("/bin/ps", ["-ax", "-o", "pid=,comm="], { encoding: "utf8" });
+    const canonical = resolvedExisting(paths.testApp);
+    const alias = canonical.replace(/^\/private(?=\/(?:tmp|var|etc)\/)/, "");
+    const prefixes = [paths.testApp, canonical, alias].map((directory) => `${directory}/`);
     return processes.split("\n").flatMap((line) => {
         const match = /^\s*(\d+)\s+(.*)$/.exec(line);
-        return match?.[1] && match[2]?.startsWith(`${paths.testApp}/`) ? [match[1]] : [];
+        return match?.[1] && prefixes.some((prefix) => match[2]?.startsWith(prefix))
+            ? [match[1]]
+            : [];
     });
 }
 
