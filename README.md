@@ -42,7 +42,7 @@ sudo /usr/bin/node dist/bin/codex-enhancer.js install --in-place
 /usr/bin/node dist/bin/codex-enhancer.js status --in-place
 ```
 
-从原 Codex 图标启动，沿用该窗口已有的登录、项目和远程连接。系统归档备份、看板运行时和当前版本指针保存在 `/var/lib/codex-enhancer/`，归系统管理员所有。每个用户的看板数据保存在 `$XDG_STATE_HOME/codex-enhancer/in-place/`，缺省为 `~/.local/state/codex-enhancer/in-place/`。原地网页使用 `http://127.0.0.1:18768/`，公共 CLI 和 MCP 可用 `--state-dir` 指向原地数据目录。原地模式在隔离 Fedora 中验证启动，实际登录后沿用既有连接的端到端验收仍待补齐。现场覆盖见[验收记录](docs/session-board-typescript-acceptance.md)。
+从原 Codex 图标启动，沿用该窗口已有的登录、项目和远程连接。系统归档备份、看板运行时和当前版本指针保存在 `/var/lib/codex-enhancer/`，归系统管理员所有。每个用户的看板数据保存在 `$XDG_STATE_HOME/codex-enhancer/in-place/`，缺省为 `~/.local/state/codex-enhancer/in-place/`。原地网页使用 `http://127.0.0.1:18768/`，公共 CLI 和 MCP 可用 `--state-dir` 指向原地数据目录。Fedora 44 已在隔离 RPM 环境验证沿用专用测试登录、项目和双端连接，完成原生移卡、原生 MCP App 和卸载复验。现场覆盖见[验收记录](docs/session-board-typescript-acceptance.md)。
 
 退出原 Codex 后，在解压目录更新、回退或卸载。校验新版归档后，将 `update` 参数指向新版解压目录。
 
