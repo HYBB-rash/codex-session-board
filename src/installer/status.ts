@@ -4,6 +4,7 @@ import { entryIncludes, sha256File } from "./asar.js";
 import { SENTINEL } from "./constants.js";
 import { type Detection, detect, findSystemApp } from "./detect.js";
 import { type InstallState, readState } from "./install.js";
+import { verifyBundleState } from "./mac-copy.js";
 
 export interface Assessment {
     result: "not-installed" | "patch-stale" | "removed" | "installed";
@@ -61,6 +62,14 @@ export function status(): StatusReport {
     if (state && fs.existsSync(state.target.path)) {
         copy = detect(state.target.path);
         assessment = assess(state, copy);
+        if (state.mac && assessment.result !== "patch-stale") {
+            try {
+                verifyBundleState(state.target.path, state);
+            } catch {
+                assessment.result = "patch-stale";
+                assessment.reasons.push("macos-bundle-signature-changed");
+            }
+        }
     } else if (state) {
         assessment = { result: "patch-stale", reasons: ["test-copy-missing"] };
     }

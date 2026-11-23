@@ -13,6 +13,7 @@ import {
     withRecoveredMacCopy,
     writeState,
 } from "./install.js";
+import { verifyBundleState } from "./mac-copy.js";
 import * as paths from "./paths.js";
 
 function deploymentId(): string {
@@ -86,15 +87,23 @@ function launchCopy(state: InstallState | null, extraArgs: readonly string[]): C
     return child;
 }
 
-function didLoadWindow(start: number): boolean {
-    if (!fs.existsSync(runtimeLog)) return false;
+function bootStatus(start: number, pid: number | undefined): "waiting" | "loaded" | "failed" {
+    if (pid === undefined || !fs.existsSync(runtimeLog)) return "waiting";
     const file = fs.openSync(runtimeLog, "r");
     try {
         const end = fs.fstatSync(file).size;
         const offset = Math.max(start, end - 256 * 1024);
         const bytes = Buffer.alloc(Math.max(0, end - offset));
         fs.readSync(file, bytes, 0, bytes.length, offset);
-        return /"event":"did-finish-load","id":\d+,"url":"app:\/\//.test(bytes.toString("utf8"));
+        const log = bytes.toString("utf8");
+        const beginning = log.lastIndexOf(`"event":"loader-entered","pid":${pid},`);
+        if (beginning < 0) return "waiting";
+        const events = log.slice(beginning);
+        if (/"event":"(?:fatal|board-listen-failed)"/.test(events)) return "failed";
+        return events.includes('"event":"board-listening"') &&
+            /"event":"did-finish-load","id":\d+,"url":"app:\/\//.test(events)
+            ? "loaded"
+            : "waiting";
     } finally {
         fs.closeSync(file);
     }
@@ -143,21 +152,25 @@ async function confirmFirstBoot(
     });
     const deadline = Date.now() + 45000;
     while (Date.now() < deadline) {
-        if (spawnError || child.exitCode !== null || child.signalCode !== null) {
-            const message = `the macOS copy exited during first launch; see ${desktopLog}`;
-            try {
-                await restoreFailedBoot(state);
-            } catch (error) {
-                throw new Error(
-                    `${message}; restoring the official bundle failed: ${String(error)}`,
-                    {
-                        cause: error,
-                    },
-                );
+        const status = bootStatus(offset, child.pid);
+        if (status === "failed" && child.exitCode === null && child.signalCode === null) {
+            if (child.pid !== undefined) {
+                try {
+                    process.kill(-child.pid, "SIGTERM");
+                } catch (error) {
+                    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+                }
             }
-            throw new Error(message, { cause: spawnError });
+            await handleFailedBoot(state, `runtime startup failed; see ${runtimeLog}`);
         }
-        if (didLoadWindow(offset)) {
+        if (spawnError || child.exitCode !== null || child.signalCode !== null) {
+            await handleFailedBoot(
+                state,
+                `the macOS copy exited during first launch; see ${desktopLog}`,
+                spawnError,
+            );
+        }
+        if (status === "loaded") {
             withRecoveredMacCopy((previous) => {
                 const current = matchingFirstBoot(previous, state);
                 if (current?.mac) {
@@ -172,6 +185,21 @@ async function confirmFirstBoot(
     throw new Error(`the macOS copy is still starting; see ${desktopLog}`);
 }
 
+async function handleFailedBoot(
+    state: InstallState,
+    message: string,
+    cause?: Error,
+): Promise<never> {
+    try {
+        await restoreFailedBoot(state);
+    } catch (error) {
+        throw new Error(`${message}; restoring the official bundle failed: ${String(error)}`, {
+            cause: error,
+        });
+    }
+    throw new Error(message, { cause });
+}
+
 export function launch(extraArgs: readonly string[] = []): number {
     const child = launchCopy(readState(), extraArgs);
     if (child.pid === undefined) {
@@ -184,6 +212,7 @@ export function launch(extraArgs: readonly string[] = []): number {
 export async function launchAndConfirm(extraArgs: readonly string[] = []): Promise<number> {
     if (process.platform !== "darwin" || !readState()?.mac) return launch(extraArgs);
     const start = (state: InstallState | null) => {
+        if (state?.mac && state.status === "installed") verifyBundleState(state.target.path, state);
         if (state?.mac && !state.mac.bootedAt) {
             assertTestCopyStopped();
             const offset = fs.statSync(runtimeLog, { throwIfNoEntry: false })?.size ?? 0;

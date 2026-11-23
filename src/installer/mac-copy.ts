@@ -3,7 +3,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { sha256File } from "./asar.js";
 import { assertIsolatedPath, assertSeparateFromSource } from "./copy.js";
-import { findSystemApp } from "./detect.js";
 import type { InstallState } from "./install.js";
 import { verifyMacSignature, verifyOfficialCopy } from "./mac-signing.js";
 import * as paths from "./paths.js";
@@ -14,8 +13,8 @@ export const macCandidate = path.join(macWorkspace, "candidate.app");
 export const macPending = path.join(macWorkspace, "pending.json");
 const displaced = path.join(macWorkspace, "previous.app");
 
-export function withMacCopyLock<Result>(operation: () => Result): Result {
-    assertSeparateFromSource(paths.stateDir, findSystemApp().appDir);
+export function withMacCopyLock<Result>(source: string, operation: () => Result): Result {
+    assertSeparateFromSource(paths.stateDir, source);
     fs.mkdirSync(paths.stateDir, { recursive: true, mode: 0o700 });
     return withDirectoryLock(path.join(paths.stateDir, ".mac-copy-lock"), operation);
 }
@@ -53,11 +52,12 @@ export function verifyBundleState(bundle: string, state: InstallState): void {
 }
 
 export function recoverMacCopy(
+    source: string,
     readPending: () => InstallState | null,
     persist: (state: InstallState) => void,
 ): void {
-    assertIsolatedPath(paths.testApp);
     if (!hasBundle(macWorkspace)) return;
+    assertIsolatedPath(paths.testApp, source);
     const pending = readPending();
     const candidate = hasBundle(macCandidate);
     const target = hasBundle(paths.testApp);
@@ -65,18 +65,29 @@ export function recoverMacCopy(
     if (pending && !candidate) {
         if (!target) throw new Error("missing macOS bundle after publication");
         verifyBundleState(paths.testApp, pending);
-        persist(pending);
+        try {
+            persist(pending);
+        } catch (error) {
+            fs.renameSync(paths.testApp, macCandidate);
+            if (previous) fs.renameSync(displaced, paths.testApp);
+            clearMacWorkspace();
+            throw error;
+        }
     } else if (previous) {
         if (!pending || target) throw new Error("conflicting macOS copy transaction paths");
         fs.renameSync(displaced, paths.testApp);
     }
+    clearMacWorkspace();
+}
+
+function clearMacWorkspace(): void {
     fs.rmSync(displaced, { recursive: true, force: true });
     fs.rmSync(macPending, { force: true });
     fs.rmSync(macWorkspace, { recursive: true });
 }
 
 export function publishMacCopy(state: InstallState, hadPrevious: boolean): void {
-    assertIsolatedPath(paths.testApp);
+    assertIsolatedPath(paths.testApp, state.source.path);
     if (hasBundle(paths.testApp) !== hadPrevious) {
         throw new Error("macOS copy target changed while preparing the transaction");
     }

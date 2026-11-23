@@ -17,12 +17,12 @@ node dist/bin/codex-enhancer.js install
 node dist/bin/codex-enhancer.js launch
 ```
 
-macOS 使用终端执行以下命令。独立副本写入当前用户可写的解压目录，安装无需管理员权限或 Developer ID。首次启动确认原生窗口加载。若进程在此前退出，安装器恢复副本的官方原包，诊断保存在 `logs/desktop.log`。
+macOS 使用终端执行以下命令。独立副本写入当前用户可写的解压目录，安装无需管理员权限或 Developer ID。首次启动确认原生窗口和看板服务。若启动失败，安装器恢复副本的官方原包，诊断保存在 `logs/`。
 
 ```zsh
-shasum -a 256 -c session-board-0.3.27-macos-arm64.tar.gz.sha256
-tar -xzf session-board-0.3.27-macos-arm64.tar.gz
-cd session-board-0.3.27-macos-arm64
+shasum -a 256 -c session-board-0.3.28-macos-arm64.tar.gz.sha256
+tar -xzf session-board-0.3.28-macos-arm64.tar.gz
+cd session-board-0.3.28-macos-arm64
 node dist/bin/codex-enhancer.js detect
 node dist/bin/codex-enhancer.js install
 node dist/bin/codex-enhancer.js launch

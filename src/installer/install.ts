@@ -252,14 +252,20 @@ function readStateFile(file: string): InstallState | null {
 export function withRecoveredMacCopy<Result>(
     operation: (previous: InstallState | null) => Result,
 ): Result {
-    return withMacCopyLock(() => {
-        finishMacCopy();
+    const source = macSource();
+    return withMacCopyLock(source, () => {
+        finishMacCopy(source);
         return operation(readStateFile(paths.installState));
     });
 }
 
-function finishMacCopy(): void {
-    recoverMacCopy(() => readStateFile(macPending), writeState);
+function macSource(): string {
+    const receipt = readStateFile(paths.installState) ?? readStateFile(macPending);
+    return receipt?.source.path ?? findSystemApp().appDir;
+}
+
+function finishMacCopy(source = macSource()): void {
+    recoverMacCopy(source, () => readStateFile(macPending), writeState);
 }
 
 export function readState(): InstallState | null {
