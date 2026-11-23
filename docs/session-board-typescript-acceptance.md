@@ -4,7 +4,7 @@
 
 ## 0.3.29 候选
 
-2026 年 11 月 23 日从提交 `ca4bad9` 构建。31 条冻结需求中 21 条通过双平台门槛，10 条待验，78 项自动检查通过。40 条现场断言中，Fedora 通过 34 条，macOS 通过 16 条。新增的两个浏览器断言分别核对标题拖动与相邻控件，以及阻塞表单的显式保存。`NAV-001` 第四条在两端通过，`UI-001`、`UI-002` 和 `UI-003` 通过完整门槛。 [逐项门槛](../state/acceptance/release-gate-0.3.29.json) · [现场证据索引](../state/acceptance/live-0.3.29.json)
+2026 年 11 月 23 日从提交 `ca4bad9` 构建。31 条冻结需求中 21 条通过双平台门槛，10 条待验，78 项自动检查通过。40 条现场断言中，Fedora 通过 39 条，剩余原生最左侧固定图标直达。macOS 通过 16 条。`UI-001`、`UI-002` 和 `UI-003` 通过完整门槛。 [逐项门槛](../state/acceptance/release-gate-0.3.29.json) · [现场证据索引](../state/acceptance/live-0.3.29.json)
 
 | 场景 | 现场观察 |
 | --- | --- |
@@ -13,7 +13,8 @@
 | Fedora 副本 | 在专用 Enhancer 窗口点击更新，重启后读回 `0.3.29`。复验标题拖动与原生路由、阻塞表单、搜索与键盘，以及系统 PWA 两次独立启动。回退到原运行版后复核两端专用卡、备注、标题和测试配置。 [更新](../state/acceptance/fedora-signed-copy-update-0.3.29.jsonl) · [交互复验](../state/acceptance/fedora-0.3.29-update-field.jsonl) · [回退](../state/acceptance/fedora-signed-copy-rollback-0.3.29.jsonl) |
 | Fedora 标题重试 | 专用库拒绝改名时，状态、备注和待重试项已一起写入。重启后从窗口读到同版本待重试项，独立验回原生目标分区。解除拒绝后后台自动同步并读回标题，磁盘队列清空。专用卡和配置都已恢复。 [重启、重试和复位](../state/acceptance/fedora-title-retry-0.3.29-90aa4aa57.jsonl) |
 | Fedora 本机补验 | 已装 `0.3.29` 的隔离窗口读回六个原生分区的实际移动，七次移动后恢复原标题、备注、原生位置和临时分区目录。真实轮次的原生批准等待、可信批准后的同轮实际执行、暂时错误自动重试均通过。本机原生标题在同次保存中读回。后台标题回执被暂扣时，前台保存用时 122.04 毫秒，改名 RPC 预算为 2,938 毫秒，迟到回执保持新待办。可信停止未取得通过回执，随后独立确认该测试轮次已完成，原分区、标题、备注和写入限制已恢复。 [六状态](../state/acceptance/fedora-native-six-columns-0.3.29-1795420039940.json) · [批准和重试](../state/acceptance/fedora-0.3.29-extended-local.jsonl) · [标题复验](../state/acceptance/fedora-0.3.29-local-followup.jsonl) · [中断夹具复位](../state/acceptance/fedora-0.3.29-interrupt-recovery-retry.jsonl) |
-| Fedora 发现来源 | 在断网隔离的真实 Codex App Server 上索引合成历史，覆盖 cli、vscode、appServer、两个提供方及非交互子代理排除。限制扫描为一页后返回分页上限和未完成。已连接实测的跨端全量场景仍待本版复验。 [独立原生目录](../state/acceptance/fedora-discovery-sources-0.3.29-offline.json) |
+| Fedora 发现与部分读取 | 已安装副本无需登记，按每页一条读完两条本机会话，独立原生枚举验回同一组 ID。限制一页时界面报告读取未完成，将回退缓存设为只读，保留备注和版本，恢复配置后扫描成功。另在断网隔离的真实 Codex App Server 索引合成历史，覆盖 cli、vscode、appServer、两个提供方及非交互子代理排除。本次补验远端离线，跨端完整分页仍待本版复验。 [本机分页](../state/acceptance/fedora-0.3.29-discovery-local.log) · [部分读取和恢复](../state/acceptance/fedora-0.3.29-health-local.log) · [来源枚举](../state/acceptance/fedora-discovery-sources-0.3.29-offline.json) |
+| Fedora 预览与跳转 | 从两张同名本机卡读回最近完整回复，并进入两个不同的原生会话 ID。保存版本和轮次保持，未发生创建或发送。真实进行中轮次显示上一条完整回复，只有阶段消息时提示暂无完整回复。同一归档的 MCP 界面夹具覆盖切卡或关闭后的迟到响应以及读取失败。专用卡已归档，隔离配置已恢复。 [原生回复和同名跳转](../state/acceptance/same-title-0.3.29-eb924b1a-8e31-4b2c-be5a-259d4507d6d6.json) · [浏览器夹具](../state/acceptance/fedora-mcp-gestures-nav-fixture-0.3.29-1795420097179.json) · [副本回退](../state/acceptance/fedora-signed-copy-rollback-0.3.29-field-finish-local-navigation.jsonl) |
 | Fedora 澄清与离线提示 | 隔离提供方经真实 App Server 完成包含澄清问题的答复。看板自动进入待审阅，从原生分区和回复读回后保持该状态、原人工备注。既有远端离线时，隔离 Chrome 中的实际看板显示异常及需处理的主机数。 [真机复验索引](../state/acceptance/fedora-0.3.29-local-clarification-retry.jsonl) · [离线提示回执](../state/acceptance/fedora-0.3.29-offline-health-web-retry.log) |
 | Mac 原生 MCP App | 复验随包脚本、本机跨列和独立原生读回、刷新、边缘横滚及反拖复位。阻塞表单完成取消、空备注、三个旧版本拒绝和空草稿保留。可信标题拖动保持原生路由及预览状态，单击标题能读回完整回复，调整按钮只打开编辑器。 [拖放和表单](../state/acceptance/packages/macos-0.3.29-native-mcp-interactions-retry.jsonl) · [标题与控件](../state/acceptance/packages/macos-0.3.29-native-nav-retry.log) |
 | Mac 搜索、键盘与重绘 | 标题及目录搜索保留所有状态列，空阻塞列可接收可信标题拖放。拖动和编辑跨过定时刷新时未重绘。键盘输入、Esc 取消和 Enter 保存通过，独立读回原分区和备注。保存期间控件锁定，手动和定时刷新保留列内位置。 [MCP 交互回执](../state/acceptance/packages/macos-0.3.29-native-mcp-filters-verified.jsonl) |
