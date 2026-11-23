@@ -4,16 +4,19 @@
 
 ## 0.3.26 候选
 
-由 `6933599` 构建。本版的 macOS 副本卸载会恢复原始应用签名并复验整个包。安装前保护和官方签名恢复已分别在 MacBook Pro 验证。31 项冻结需求中 18 项通过，13 项待验，76 项门槛自动检查通过。现场证据按候选绑定，`0.3.25` 的 39 条 Fedora 现场断言保留在其原门槛报告。 [逐项门槛](../state/acceptance/release-gate-0.3.26.json) · [现场证据索引](../state/acceptance/live-0.3.26.json)
+由 `6933599` 构建。31 项冻结需求中 18 项达到双平台门槛，13 项待验，76 项自动门槛检查通过。Fedora 本版通过 39/40 条现场断言，唯一待验项是从账号最左侧固定图标直达原生 MCP App。macOS 通过 3/40 条随包交付断言，旧版副本启动试验另列。 [逐项门槛](../state/acceptance/release-gate-0.3.26.json) · [现场证据索引](../state/acceptance/live-0.3.26.json)
 
 | 场景 | 现场观察 |
 | --- | --- |
 | macOS 官方签名恢复 | 用留存的官方 `26.803.81509` 构建，在私有目录从 `0.3.26` 压缩包安装客户端副本，切换运行时到 `0.3.25`，回退至 `0.3.26`，随后卸载。恢复后 Team ID、CDHash、指定要求及 7,121 个包内条目的内容、权限、所有权和文件标志相符，严格验签通过。参考副本已有的扩展属性保持，恢复副本另有系统写入的 `com.apple.provenance`。此实验没有启动旧版桌面。 [候选包与签名回执](../state/acceptance/packages/macos-0.3.26-copy-lifecycle.json) |
 | macOS 安装保护 | 目标系统 Codex `26.1111.21308` 仍因框架内嵌摘要在复制前停止。原应用签名和归档 SHA-256 一致。Mac 真机合成包另验证了安装回执写入失败后复原、签名备份缺失时卸载停止，以及补回备份后成功卸载。 [目标构建预检](../state/acceptance/packages/macos-0.3.26-copy-lifecycle.json) · [安装器故障回归](../state/acceptance/packages/macos-0.3.26-package-checks.log) |
+| macOS 旧版桌面 | 官方 `26.803.81509` 的私有副本经随包启动命令打开。Loader、Runtime、preload 和渲染器均启动，本机 `threadSection/list` 读回 1 个分区，`thread/list` 读回空列表，`account/read` 确认为未登录。退出后卸载并重新通过严格签名验证。旧版侧栏分组与各主机 App Server 分区之间的映射需要已登录的专用环境核对。 [旧版启动回执](../state/acceptance/packages/macos-0.3.26-legacy-window-launcher.json) |
 | Fedora 副本 | 从已登录副本点击更新并重启，从界面读回 `0.3.26`。HTTP、CLI、MCP 读回同一双端状态和回复，可信标题拖动通过。回退到 `0.3.24` 后，双端专用会话由各自主机独立读回，原分区、标题和备注保持。 [更新](../state/acceptance/fedora-signed-copy-update-0.3.26.jsonl) · [公共入口](../state/acceptance/fedora-entrypoints-0.3.26.json) · [手势](../state/acceptance/fedora-ui-gestures-0.3.26-1795397578913.jsonl) · [回退](../state/acceptance/fedora-signed-copy-rollback-0.3.26.jsonl) |
+| Fedora 原地与原生 MCP App | 在隔离 RPM 环境从原图标启动，在已安装插件详情打开原生 MCP App，核对随包 iframe 和自定义 XDG 路径。两张专用卡跨列移动，刷新和反向移回后均独立读回位置及备注。卸载后原启动器、桌面项及 RPM 校验通过。 [原地安装](../state/acceptance/in-place-rootless/signed-reinstall-0.3.26.txt) · [插件详情入口](../state/acceptance/in-place-rootless/signed-native-mcp-click-0.3.26.jsonl) · [双端拖放](../state/acceptance/in-place-rootless/signed-native-mcp-drag-retry-0.3.26.jsonl) · [卸载](../state/acceptance/in-place-rootless/signed-final-uninstall-0.3.26.txt) |
+| Fedora 扩展现场 | 独立读回六列互移、同轮审批恢复、原生中断和标题重试。分页、远端空白新建、PWA 系统安装和旧库迁移另有回执。试验后恢复专用卡和隔离配置。 [六列](../state/acceptance/fedora-native-six-columns-0.3.26-1795399521723.json) · [批准](../state/acceptance/desktop-approval-0.3.26-acc31092.jsonl) · [中断](../state/acceptance/fedora-interrupt-0.3.26-3c985175.jsonl) · [重启重试](../state/acceptance/fedora-title-retry-0.3.26-a5d9ec0a5.jsonl) · [远端新建](../state/acceptance/fedora-remote-composer-0.3.26-1795398570634.json) · [PWA](../state/acceptance/fedora-pwa-installed-0.3.26.json) · [迁移](../state/acceptance/fedora-migration-0.3.26.json) |
 | 双平台随包复验 | Fedora 通过 100 项，跳过 1 项 macOS 专用测试。MacBook Pro 通过 97 项，跳过 4 项 Linux 专用测试。两端各通过 10 项公共入口、10 项冻结模型和 18 项门槛测试。 [Fedora](../state/acceptance/fedora-archive-0.3.26.log) · [MacBook Pro](../state/acceptance/packages/macos-0.3.26-package-checks.log) |
 
-目标 macOS 客户端仍缺可加载 Loader 的兼容构建。副本的桌面运行和原地模式仍待验。Fedora 原生 MCP 最左侧图标直达仍需隔离账号。
+目标 macOS 客户端仍受启动归档完整性检查限制。旧版 `26.803.81509` 已通过未登录副本启动，原生侧栏与远端分区能否同步、已登录看板以及原地模式仍待验。Fedora 原生 MCP 最左侧图标直达仍需隔离账号。
 
 - [Fedora x86_64 候选](../state/acceptance/packages/session-board-0.3.26-linux-x86_64.tar.gz) · [SHA-256](../state/acceptance/packages/session-board-0.3.26-linux-x86_64.tar.gz.sha256)
 - [macOS arm64 候选](../state/acceptance/packages/session-board-0.3.26-macos-arm64.tar.gz) · [SHA-256](../state/acceptance/packages/session-board-0.3.26-macos-arm64.tar.gz.sha256)
