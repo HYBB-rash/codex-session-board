@@ -26,6 +26,7 @@ import {
     type HostProject,
     interactiveThread,
     localHostId,
+    hostId as nativeHostId,
     type SidebarContext,
     type Thread,
     type ThreadId,
@@ -176,6 +177,22 @@ const hostLabel = (host: HostId): string =>
 
 function projectKey(hostId: HostId, id: string): string {
     return hostId === "local" ? id : `target:${JSON.stringify([hostId, "targetServer", id])}`;
+}
+
+function projectKeyHost(project: string): HostId | null {
+    const prefix = "target:";
+    if (!project.startsWith(prefix)) return localHostId;
+    let fields: unknown;
+    try {
+        fields = JSON.parse(project.slice(prefix.length));
+    } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+        return null;
+    }
+    if (!Array.isArray(fields) || typeof fields[0] !== "string" || typeof fields[2] !== "string")
+        return null;
+    const owner = nativeHostId(fields[0]);
+    return owner && projectKey(owner, fields[2]) === project ? owner : null;
 }
 
 function changedInput(current: CardRecord, input: string | null): input is string {
@@ -1278,6 +1295,7 @@ export class BoardService {
             return { ...pending, error: "请先在 Codex 核对这个旧新建请求的结果" };
         }
         const { hostId } = this.findProject(draft.project);
+        if (input.hostId && input.hostId !== hostId) throw new Error("选定的 Codex 连接不可用");
         const card = this.snapshot().sessions.find(
             (row) => row.hostId === hostId && row.threadId === draft.threadId,
         );
@@ -1344,12 +1362,12 @@ export class BoardService {
         if (!operationId) return this.launchDraft(input, owner);
         if (!projectId || !/^[0-9a-f-]{36}$/i.test(operationId))
             throw new Error("新建操作 ID 无效");
+        if (input.hostId && projectKeyHost(projectId) !== input.hostId)
+            throw new Error("选定的 Codex 连接不可用");
         const key = JSON.stringify([accountKey(owner), operationId]);
         const opening = this.openingDrafts.get(key);
         if (opening) {
             if (opening.projectId !== projectId) throw new Error("新建操作已用于其他项目");
-            if (input.hostId && this.findProject(projectId).hostId !== input.hostId)
-                throw new Error("选定的 Codex 连接不可用");
             return opening.result;
         }
         const existing = this.ledger.pendingDrafts?.find(

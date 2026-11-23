@@ -186,7 +186,32 @@ function draftFixture() {
         updateStatus: async () => assert.fail("New input page must not update the board"),
         proof: () => {},
     });
-    return { service, stages, gates, calls, writes, closed: () => closeCount };
+    return { service, desktop, stages, gates, calls, writes, closed: () => closeCount };
+}
+
+async function verifyOpenedDraftReplay(
+    service: BoardService,
+    desktop: DesktopConnection,
+    projectId: string,
+    operationId: string,
+) {
+    assert.ok(remote);
+    const request = (hostId: string) =>
+        service.request("/api/new", { projectId, operationId, hostId });
+    assert.deepEqual(await request(remote), { ok: true, operationId });
+    await assert.rejects(request(localHostId), /连接不可用/);
+    desktop.receive({
+        type: "codex-app-server-connection-changed",
+        hostId: remote,
+        state: "disconnected",
+    });
+    await service.refresh();
+    assert.equal(
+        service.snapshot().projectCatalog.items.find(({ id }) => id === projectId)?.canCreate,
+        false,
+    );
+    assert.deepEqual(await request(remote), { ok: true, operationId });
+    await assert.rejects(request(localHostId), /连接不可用/);
 }
 
 test("overlapping requests share one native draft open and can resume after registration", {
@@ -195,7 +220,7 @@ test("overlapping requests share one native draft open and can resume after regi
     const original = Reflect.get(globalThis, "window");
     Reflect.set(globalThis, "window", globalThis);
     try {
-        const { service, stages, gates, calls, writes, closed } = draftFixture();
+        const { service, desktop, stages, gates, calls, writes, closed } = draftFixture();
         const [registration, composer] = gates;
         assert.ok(registration && composer);
         await service.refresh();
@@ -206,6 +231,8 @@ test("overlapping requests share one native draft open and can resume after regi
         const operationId = "00000000-0000-4000-8000-000000000025";
         const request = (projectId = target.id, hostId = remote) =>
             service.request("/api/new", { projectId, operationId, hostId });
+        await assert.rejects(request(target.id, localHostId), /连接不可用/);
+        assert.deepEqual(stages, []);
         const first = request();
         await registration.entered.promise;
         const duplicate = request();
@@ -225,7 +252,7 @@ test("overlapping requests share one native draft open and can resume after regi
         composer.outcome.resolve("composer");
         for (const outcome of await Promise.all([registered, retry]))
             assert.deepEqual(outcome, { ok: true, registration: false, operationId });
-        assert.deepEqual(await request(), { ok: true, operationId });
+        await verifyOpenedDraftReplay(service, desktop, target.id, operationId);
         assert.deepEqual(calls, [project.id, project.id]);
         assert.deepEqual(stages, ["starting", "starting", "opened"]);
         assert.deepEqual(writes, []);
