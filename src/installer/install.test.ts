@@ -14,7 +14,10 @@ function mockMacSigning(context: TestContext, compiled: string): void {
     const copies = load(path.join(compiled, "copy.js")) as typeof import("./copy.js");
     context.mock.method(copies, "backupMacMetadata", () => {});
     context.mock.method(copies, "assertMacMetadataAvailable", () => {});
-    context.mock.method(copies, "signPatchedCopy", () => {});
+    const applyCopyIdentifier: typeof copies.signPatchedCopy = (copy) => {
+        if (copy.platform === "darwin") copies.setIsolatedMacBundleIdentifier(copy.appDir);
+    };
+    context.mock.method(copies, "signPatchedCopy", applyCopyIdentifier);
     context.mock.method(copies, "restoreMacMetadata", () => {});
 }
 
@@ -45,6 +48,7 @@ function fixture(context: TestContext) {
             path.join(source, "Contents/Info.plist"),
             '<?xml version="1.0"?><plist version="1.0"><dict>' +
                 "<key>CFBundleExecutable</key><string>Synthetic</string>" +
+                "<key>CFBundleIdentifier</key><string>local.enhancer-install-fixture</string>" +
                 "<key>CFBundleShortVersionString</key><string>1.0</string></dict></plist>",
         );
     } else {
