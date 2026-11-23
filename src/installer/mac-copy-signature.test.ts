@@ -91,6 +91,14 @@ test("a Mac copy restores its original signature after a failed install and on u
 
     const result = install.install();
     const patched = bundleFingerprint(app);
+    const identifierOf = (bundle: string) =>
+        execFileSync(
+            "/usr/bin/plutil",
+            ["-extract", "CFBundleIdentifier", "raw", "-o", "-", path.join(bundle, plist)],
+            { encoding: "utf8" },
+        ).trim();
+    assert.match(identifierOf(app), /^com\.codex-enhancer\.copy\.[a-f0-9]{24}$/);
+    assert.equal(identifierOf(stock), "local.enhancer-signature-fixture");
     assert.notEqual(patched[0], original[0]);
     assert.notEqual(patched[1], original[1]);
     const backup = `${result.state.backup.archive}.mac-signature`;

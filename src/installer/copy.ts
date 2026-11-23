@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { entryIncludes, sha256ArchiveHeader, sha256File } from "./asar.js";
@@ -137,6 +137,31 @@ export function linkFile(resourcesDirectory: string): string {
 
 function bundlePlist(copy: string): string {
     return path.join(copy, "Contents", "Info.plist");
+}
+
+function copyBundleIdentifier(): string {
+    const deployment = createHash("sha256").update(resolvedExisting(paths.testApp)).digest("hex");
+    return `com.codex-enhancer.copy.${deployment.slice(0, 24)}`;
+}
+
+export function hasIsolatedMacBundleIdentifier(bundle: string): boolean {
+    return (
+        execFileSync(
+            "/usr/bin/plutil",
+            ["-extract", "CFBundleIdentifier", "raw", "-o", "-", bundlePlist(bundle)],
+            { encoding: "utf8" },
+        ).trim() === copyBundleIdentifier()
+    );
+}
+
+export function setIsolatedMacBundleIdentifier(bundle: string): void {
+    execFileSync("/usr/bin/plutil", [
+        "-replace",
+        "CFBundleIdentifier",
+        "-string",
+        copyBundleIdentifier(),
+        bundlePlist(bundle),
+    ]);
 }
 
 function verifyBundle(copy: string): void {
@@ -314,6 +339,7 @@ export function signPatchedCopy(copy: Detection): void {
         const digest = sha256ArchiveHeader(copy.archive.archivePath);
         updateIntegrity(plist, copy.archive.relativeArchive, digest);
     }
+    setIsolatedMacBundleIdentifier(copy.appDir);
     signBundle(copy.appDir);
 }
 

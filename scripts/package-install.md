@@ -26,6 +26,8 @@ node dist/bin/codex-enhancer.js uninstall
 
 macOS 副本卸载会恢复官方签名与完整应用包。签名备份缺失或校验失败时，卸载停止并保留副本。macOS 当前提供副本安装。`--in-place` 仅适用于已核对的 Fedora x86_64 RPM。macOS 发布签名及公证仍待验。
 
+每个 macOS 副本使用专用应用标识保存系统偏好。已有副本需退出后，在同一部署目录运行新版安装器的 `install`，以迁移应用标识并保留看板数据和独立配置。
+
 ## Fedora 原地安装
 
 原地模式支持通过预检的 Fedora x86_64 Codex RPM。确认系统提供 `/usr/bin/node` 22 或更新版本，完全退出原 Codex，再从解压目录执行安装。

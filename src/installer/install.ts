@@ -10,8 +10,10 @@ import {
     backupMacMetadata,
     copyFile,
     ensureTestCopy,
+    hasIsolatedMacBundleIdentifier,
     linkFile,
     restoreMacMetadata,
+    setIsolatedMacBundleIdentifier,
     signPatchedCopy,
 } from "./copy.js";
 import { type Detection, detect, findSystemApp, locateApp } from "./detect.js";
@@ -513,7 +515,10 @@ function installLegacy(source: Detection): InstallResult {
     const archivePath = copy.archive.archivePath;
     const currentHash = sha256File(archivePath);
     const previous = previousPatch(currentHash);
-    if (previous?.patchVersion === PATCH_VERSION) {
+    if (
+        previous?.patchVersion === PATCH_VERSION &&
+        (copy.platform !== "darwin" || hasIsolatedMacBundleIdentifier(copy.appDir))
+    ) {
         return { action: "unchanged", state: previous, source, copy };
     }
     if (!previous) assertUnpatched(copy);
@@ -582,6 +587,7 @@ function stageEmbeddedPatch(source: Detection, framework: string): InstallState 
     if (!patched.changed) throw new Error("the signed source already contains an Enhancer loader");
     writeLink(linkFile(locateApp(copy.appDir).resourcesDir));
     updateEmbeddedIntegrity(copy, integrity);
+    setIsolatedMacBundleIdentifier(copy.appDir);
     const patchedCodeHash = signEmbeddedCopy(copy.appDir, binary, macWorkspace);
     verifyEmbeddedIntegrity(copy, binary);
     const state = buildState(source, copy, patched, copy.archive.archivePath);
@@ -598,7 +604,7 @@ function installEmbeddedMac(
     if (targetExists) {
         if (!previous?.mac) throw new Error("existing macOS app copy has no signed bundle receipt");
         verifyBundleState(paths.testApp, previous);
-        if (previous.status === "installed") {
+        if (previous.status === "installed" && hasIsolatedMacBundleIdentifier(paths.testApp)) {
             activateInitialRelease();
             return { action: "unchanged", state: previous, source, copy: detect(paths.testApp) };
         }

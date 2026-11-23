@@ -46,6 +46,8 @@ node dist/bin/codex-enhancer.js status
 
 macOS 副本卸载会恢复官方签名与完整的应用包。安装器保存并验证原始签名备份。备份缺失或校验失败时，卸载停止并保留现有副本。
 
+新版 macOS 安装器会为每个独立副本分配专用应用标识，用于隔离系统偏好。已有副本在停止运行后，在同一部署目录运行新版安装器的 `install`，原有看板数据和独立配置会保留。
+
 ## Fedora 原地安装候选
 
 原地模式要求 Fedora x86_64、由 RPM 管理的 `/opt/codex-desktop`、通过预检的 Codex `26.1111.71704`，以及 `/usr/bin/node` 22 或更新版本。安装器还使用 Fedora 的 `rpm`、`flock`、`getfattr` 及桌面用户服务。选择带原地安装协议的 Linux 候选，校验 `.sha256` 后解压。退出原 Codex 的所有进程，再在解压目录执行。
