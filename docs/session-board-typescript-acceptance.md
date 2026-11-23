@@ -4,7 +4,7 @@
 
 ## 0.3.29 候选
 
-2026 年 11 月 23 日从提交 `ca4bad9` 构建。31 条冻结需求中 21 条通过双平台门槛，10 条待验，78 项自动检查通过。新增的两个浏览器断言分别核对标题拖动与相邻控件，以及阻塞表单的显式保存。`NAV-001` 第四条在两端通过，`UI-001`、`UI-002` 和 `UI-003` 通过完整门槛。 [逐项门槛](../state/acceptance/release-gate-0.3.29.json) · [现场证据索引](../state/acceptance/live-0.3.29.json)
+2026 年 11 月 23 日从提交 `ca4bad9` 构建。31 条冻结需求中 21 条通过双平台门槛，10 条待验，78 项自动检查通过。40 条现场断言中，Fedora 通过 34 条，macOS 通过 16 条。新增的两个浏览器断言分别核对标题拖动与相邻控件，以及阻塞表单的显式保存。`NAV-001` 第四条在两端通过，`UI-001`、`UI-002` 和 `UI-003` 通过完整门槛。 [逐项门槛](../state/acceptance/release-gate-0.3.29.json) · [现场证据索引](../state/acceptance/live-0.3.29.json)
 
 | 场景 | 现场观察 |
 | --- | --- |
@@ -12,10 +12,14 @@
 | Fedora 原地与原生 MCP App | 从真实 RPM 启动入口进入 Codex，经插件详情打开对应的原生界面。本机和 MacBook Pro 专用卡跨列后独立读回，刷新保留非空备注，反拖恢复原分区。同列、拖出和边缘横滚通过。卸载后复核 RPM、原启动器和桌面项。 [安装和拖放](../state/acceptance/fedora-0.3.29-in-place.log) · [卸载](../state/acceptance/in-place-rootless/signed-final-uninstall-0.3.29.txt) |
 | Fedora 副本 | 在专用 Enhancer 窗口点击更新，重启后读回 `0.3.29`。复验标题拖动与原生路由、阻塞表单、搜索与键盘，以及系统 PWA 两次独立启动。回退到原运行版后复核两端专用卡、备注、标题和测试配置。 [更新](../state/acceptance/fedora-signed-copy-update-0.3.29.jsonl) · [交互复验](../state/acceptance/fedora-0.3.29-update-field.jsonl) · [回退](../state/acceptance/fedora-signed-copy-rollback-0.3.29.jsonl) |
 | Fedora 标题重试 | 专用库拒绝改名时，状态、备注和待重试项已一起写入。重启后从窗口读到同版本待重试项，独立验回原生目标分区。解除拒绝后后台自动同步并读回标题，磁盘队列清空。专用卡和配置都已恢复。 [重启、重试和复位](../state/acceptance/fedora-title-retry-0.3.29-90aa4aa57.jsonl) |
+| Fedora 本机补验 | 已装 `0.3.29` 的隔离窗口读回六个原生分区的实际移动，七次移动后恢复原标题、备注、原生位置和临时分区目录。真实轮次的原生批准等待、可信批准后的同轮实际执行、暂时错误自动重试均通过。本机原生标题在同次保存中读回。后台标题回执被暂扣时，前台保存用时 122.04 毫秒，改名 RPC 预算为 2,938 毫秒，迟到回执保持新待办。可信停止未取得通过回执，随后独立确认该测试轮次已完成，原分区、标题、备注和写入限制已恢复。 [六状态](../state/acceptance/fedora-native-six-columns-0.3.29-1795420039940.json) · [批准和重试](../state/acceptance/fedora-0.3.29-extended-local.jsonl) · [标题复验](../state/acceptance/fedora-0.3.29-local-followup.jsonl) · [中断夹具复位](../state/acceptance/fedora-0.3.29-interrupt-recovery-retry.jsonl) |
+| Fedora 发现来源 | 在断网隔离的真实 Codex App Server 上索引合成历史，覆盖 cli、vscode、appServer、两个提供方及非交互子代理排除。限制扫描为一页后返回分页上限和未完成。已连接实测的跨端全量场景仍待本版复验。 [独立原生目录](../state/acceptance/fedora-discovery-sources-0.3.29-offline.json) |
+| Fedora 澄清与离线提示 | 隔离提供方经真实 App Server 完成包含澄清问题的答复。看板自动进入待审阅，从原生分区和回复读回后保持该状态、原人工备注。既有远端离线时，隔离 Chrome 中的实际看板显示异常及需处理的主机数。 [真机复验索引](../state/acceptance/fedora-0.3.29-local-clarification-retry.jsonl) · [离线提示回执](../state/acceptance/fedora-0.3.29-offline-health-web-retry.log) |
 | Mac 原生 MCP App | 复验随包脚本、本机跨列和独立原生读回、刷新、边缘横滚及反拖复位。阻塞表单完成取消、空备注、三个旧版本拒绝和空草稿保留。可信标题拖动保持原生路由及预览状态，单击标题能读回完整回复，调整按钮只打开编辑器。 [拖放和表单](../state/acceptance/packages/macos-0.3.29-native-mcp-interactions-retry.jsonl) · [标题与控件](../state/acceptance/packages/macos-0.3.29-native-nav-retry.log) |
 | Mac 搜索、键盘与重绘 | 标题及目录搜索保留所有状态列，空阻塞列可接收可信标题拖放。拖动和编辑跨过定时刷新时未重绘。键盘输入、Esc 取消和 Enter 保存通过，独立读回原分区和备注。保存期间控件锁定，手动和定时刷新保留列内位置。 [MCP 交互回执](../state/acceptance/packages/macos-0.3.29-native-mcp-filters-verified.jsonl) |
 | Mac 安装与公共入口 | 官方 `26.1111.21308` 的独立副本通过安装、启动、重启和卸载。卸载验回官方签名、ASAR 和 plist。已登录副本的 HTTP、CLI 和 MCP 读回同一状态及回复，MCP 登记 18 项共享操作。系统 PWA 从隔离快捷方式两次独立启动并卸载。 [副本签名和原生读取](../state/acceptance/packages/macos-0.3.29-window-final.json) · [公共入口和 PWA](../state/acceptance/packages/macos-0.3.29-native-nav-retry.log) |
 | Mac 远程与原地 | Mac→Fedora 到达已登记 SSH 目标，服务端接受所选公钥进入签名阶段，1Password SSH Agent 拒绝签名。Mac 远程移卡仍待验。macOS 原地模式仍缺官方身份和系统权限连续性。两平台最左侧固定图标直达仍待专用账号验证。 [当次 SSH 回执](../state/acceptance/packages/macos-0.3.29-fedora-ssh-diagnosis.txt) · [原包签名要求核验](../state/acceptance/packages/macos-0.3.28-signature-continuity.json) |
+| Mac 补验通道 | 后续 Fedora→Mac 真机复验同样到达 SSH 签名阶段。限时验证在签名等待中结束，同一轮次探针的传输进程仍存活，尚未进入 Mac 测试副本。 [签名等待回执](../state/acceptance/fedora-0.3.29-mac-ssh-workflow-wait.json) |
 
 - [Fedora x86_64 安装候选](../state/acceptance/packages/session-board-0.3.29-linux-x86_64.tar.gz "sha256=6e7794cccc761343fde19aac9694da33a7e999e651e5bfc98b27d8cf11887430") · [校验文件](../state/acceptance/packages/session-board-0.3.29-linux-x86_64.tar.gz.sha256)
 - [macOS arm64 安装候选](../state/acceptance/packages/session-board-0.3.29-macos-arm64.tar.gz "sha256=fa145d5bbe59ad1eb7ee40b4d45396e8caa6deb90c9fbd1998287e7f7034e653") · [校验文件](../state/acceptance/packages/session-board-0.3.29-macos-arm64.tar.gz.sha256)
