@@ -4,7 +4,7 @@
 
 ## 安装和打开
 
-Fedora 44 x86_64 已验证 Codex `26.1111.71704` 的副本安装、更新和回退。macOS arm64 的副本安装支持官方签名的 Codex `26.1111.21308`，采用本机 ad hoc 签名，保留 Electron 的 ASAR 完整性校验。macOS 原地模式、发布签名及公证仍待验。
+Fedora 44 x86_64 已验证 Codex `26.1111.71704` 的副本安装、更新和回退。macOS arm64 的副本安装支持官方签名的 Codex `26.1111.21308`，采用本机 ad hoc 签名，保留 Electron 的 ASAR 完整性校验。macOS 当前提供副本安装。`--in-place` 仅适用于已核对的 Fedora x86_64 RPM。macOS 发布签名及公证仍待验。
 
 在 Linux 候选包所在目录校验归档，再进入解压目录运行 Node.js 22 或更新版本。
 

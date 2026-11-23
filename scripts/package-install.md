@@ -24,7 +24,7 @@ node dist/bin/codex-enhancer.js uninstall
 
 退出副本后再卸载。看板配置和运行数据在 `state/session-board/`。
 
-macOS 副本卸载会恢复官方签名与完整应用包。签名备份缺失或校验失败时，卸载停止并保留副本。macOS 原地模式、发布签名及公证仍待验。
+macOS 副本卸载会恢复官方签名与完整应用包。签名备份缺失或校验失败时，卸载停止并保留副本。macOS 当前提供副本安装。`--in-place` 仅适用于已核对的 Fedora x86_64 RPM。macOS 发布签名及公证仍待验。
 
 ## Fedora 原地安装
 
