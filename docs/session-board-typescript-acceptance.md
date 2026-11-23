@@ -2,6 +2,18 @@
 
 上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本及真实 RPM 原地安装均通过本机和远程原生移卡。macOS arm64 的官方 Codex `26.1111.21308` 已通过自动副本安装、重启、卸载、本机移卡及从 Mac 发起的 Fedora 原生移卡。完整发布门槛仍未达到。
 
+## 0.3.33 候选
+
+2026 年 11 月 24 日从提交 `34a4e70` 的干净源码构建。Fedora 解包通过 102 项 Node 测试。MacBook Pro 解包通过 99 项 Node 测试、12 项公共入口与浏览器测试、10 项冻结模型检查和 20 项门槛测试。发布门槛通过 78 项自动检查，18/31 条冻结需求已有本版所需凭证。`0.3.31` 的现场记录继续按原版本保留。 [Fedora 测试](../state/acceptance/output-033/fedora-packaged-node.log) · [Mac 真机测试](../state/acceptance/output-033/macos-0.3.33-packaged-tests.log) · [逐项门槛](../state/acceptance/output-033/release-gate-0.3.33.json)
+
+Mac 副本重启后沿用已有登录和 Fedora 连接。Mac 与 Fedora 专用卡均由真实拖放触发，目标原生分区均独立读回。远程卡从 Codex 原生侧栏移回，旧表单拒绝且保留草稿，测试卡已归档。另用两个同时运行的独立副本验证卸载隔离，原应用签名、日用偏好和原测试窗口验回。 [原生移卡和清理](../state/acceptance/output-033/macos-0.3.33-restart-existing-two-hosts-ready.jsonl) · [卸载隔离](../state/acceptance/output-033/macos-0.3.33-two-copy-isolation.jsonl)
+
+Fedora 已登录副本重启后，经已登记的 `macbook` 连接完成本机与远程专用卡的原生双向移卡和备注读回。默认 SSH Agent 未及时建立连接，本轮仅为隔离测试进程加载已有授权的临时 SSH 身份。macOS 原地预检仍拒绝安装，原客户端文件和签名验回。 [Fedora 回执](../state/acceptance/output-033/fedora-0.3.33-restart-existing-two-hosts.jsonl) · [macOS 原地预检](../state/acceptance/output-033/macos-in-place-preflight.json)
+
+- [Fedora x86_64 安装候选](../state/acceptance/packages/session-board-0.3.33-linux-x86_64.tar.gz "sha256=4da8c3f7f7b667409325d8928b0a0be010ccd2d3dfdfa12f37fc5ea133476a84") · [校验文件](../state/acceptance/packages/session-board-0.3.33-linux-x86_64.tar.gz.sha256)
+- [macOS arm64 安装候选](../state/acceptance/packages/session-board-0.3.33-macos-arm64.tar.gz "sha256=e5b347603e7e842392d1db63e8ee984df9a08b25cc086ebabdb492cf2895478e") · [校验文件](../state/acceptance/packages/session-board-0.3.33-macos-arm64.tar.gz.sha256)
+- [逐项验收证据归档](../state/acceptance/packages/session-board-0.3.33-acceptance.tar.gz "sha256=7c05ca273227571b374f1fde788a7fc6a087b3109af4014bd201c8113a85672d") · [校验文件](../state/acceptance/packages/session-board-0.3.33-acceptance.tar.gz.sha256)
+
 ## 0.3.31 候选
 
 2026 年 11 月 23 日从提交 `ec0f152` 构建。看板回执记录进程启动身份，旧版回执也能识别已由无关进程接手的 PID。从干净解包运行门槛，两端归档校验和 78 项自动检查通过，31 条冻结需求中 30 条达到本版双平台门槛。macOS 通过 40/40 条现场断言，Fedora 通过 39/40 条，剩余 `APP-001` 的最左侧原生固定图标直达。 [本版门槛](../state/acceptance/release-gate-0.3.31.json) · [本版现场证据](../state/acceptance/live-0.3.31.json)
