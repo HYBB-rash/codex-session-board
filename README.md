@@ -9,9 +9,9 @@ Fedora 44 x86_64 已验证 Codex `26.1111.71704` 的副本安装、更新和回�
 在 Linux 候选包所在目录校验归档，再进入解压目录运行 Node.js 22 或更新版本。
 
 ```bash
-sha256sum -c session-board-0.3.23-linux-x86_64.tar.gz.sha256
-tar -xzf session-board-0.3.23-linux-x86_64.tar.gz
-cd session-board-0.3.23-linux-x86_64
+sha256sum -c session-board-0.3.31-linux-x86_64.tar.gz.sha256
+tar -xzf session-board-0.3.31-linux-x86_64.tar.gz
+cd session-board-0.3.31-linux-x86_64
 node dist/bin/codex-enhancer.js detect
 node dist/bin/codex-enhancer.js install
 node dist/bin/codex-enhancer.js launch
@@ -20,9 +20,9 @@ node dist/bin/codex-enhancer.js launch
 macOS 使用终端执行以下命令。独立副本写入当前用户可写的解压目录，安装无需管理员权限或 Developer ID。首次启动确认原生窗口和看板服务。若启动失败，安装器恢复副本的官方原包，诊断保存在 `logs/`。
 
 ```zsh
-shasum -a 256 -c session-board-0.3.28-macos-arm64.tar.gz.sha256
-tar -xzf session-board-0.3.28-macos-arm64.tar.gz
-cd session-board-0.3.28-macos-arm64
+shasum -a 256 -c session-board-0.3.31-macos-arm64.tar.gz.sha256
+tar -xzf session-board-0.3.31-macos-arm64.tar.gz
+cd session-board-0.3.31-macos-arm64
 node dist/bin/codex-enhancer.js detect
 node dist/bin/codex-enhancer.js install
 node dist/bin/codex-enhancer.js launch
@@ -81,6 +81,8 @@ node dist/bin/codex-session-board.js mcp
 ```
 
 MCP 配置见 [.mcp.json](.mcp.json)。从另一目录调用时可以指定 `--state-dir`，或把 `CODEX_ENHANCER_STATE_DIR` 指向 Enhancer 的 `state/`。`stop` 核对实例后关闭网页服务。重新启动 Enhancer 副本可恢复服务。
+
+已在 Codex 登记随包插件时，可在插件详情用「打开插件」进入原生看板。Codex 的「固定到侧栏」由用户选择，并保存到当前 ChatGPT 账号的侧栏设置。插件详情入口已实测，最左侧固定图标直达尚待现场验收。见[入口验收记录](docs/session-board-typescript-acceptance.md#031-候选)。
 
 ## 设置与迁移
 
