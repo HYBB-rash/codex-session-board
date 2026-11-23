@@ -10,6 +10,14 @@ import { LINK_NAME, PATCH_VERSION } from "./constants.js";
 const load = createRequire(__filename);
 const fsModule = load("node:fs") as typeof fs;
 
+function mockMacSigning(context: TestContext, compiled: string): void {
+    const copies = load(path.join(compiled, "copy.js")) as typeof import("./copy.js");
+    context.mock.method(copies, "backupMacMetadata", () => {});
+    context.mock.method(copies, "assertMacMetadataAvailable", () => {});
+    context.mock.method(copies, "signPatchedCopy", () => {});
+    context.mock.method(copies, "restoreMacMetadata", () => {});
+}
+
 function fixture(context: TestContext) {
     const root = fs.mkdtempSync(path.join(fs.realpathSync(tmpdir()), "enhancer-install-"));
     const mac = process.platform === "darwin";
@@ -53,9 +61,7 @@ function fixture(context: TestContext) {
     fs.cpSync(__dirname, compiled, { recursive: true });
     const installer = load(path.join(compiled, "install.js")) as typeof import("./install.js");
     const uninstaller = load(path.join(compiled, "restore.js")) as typeof import("./restore.js");
-    const copies = load(path.join(compiled, "copy.js")) as typeof import("./copy.js");
-    context.mock.method(copies, "signPatchedCopy", () => {});
-    context.mock.method(copies, "restoreMacMetadata", () => {});
+    mockMacSigning(context, compiled);
     return { ...installer, ...uninstaller, archive, link, receipt, state, target };
 }
 

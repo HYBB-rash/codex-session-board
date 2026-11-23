@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { entryIncludes, sha256ArchiveHeader, sha256File } from "./asar.js";
@@ -9,6 +10,10 @@ import { assertSystemPath } from "./in-place-target.js";
 import * as paths from "./paths.js";
 
 export function copyFile(source: string, destination: string): void {
+    if (process.platform === "darwin") {
+        dittoFile(source, destination);
+        return;
+    }
     fs.copyFileSync(source, destination, fs.constants.COPYFILE_FICLONE);
 }
 
@@ -124,6 +129,12 @@ function bundlePlist(copy: string): string {
     return path.join(copy, "Contents", "Info.plist");
 }
 
+function verifyBundle(copy: string): void {
+    execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", copy], {
+        stdio: "inherit",
+    });
+}
+
 function signBundle(copy: string): void {
     const entitlements = path.join(paths.backupDir, "adhoc-entitlements.plist");
     fs.mkdirSync(paths.backupDir, { recursive: true, mode: 0o700 });
@@ -142,9 +153,7 @@ function signBundle(copy: string): void {
         ["--force", "--sign", "-", "--entitlements", entitlements, copy],
         { stdio: "inherit" },
     );
-    execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", copy], {
-        stdio: "inherit",
-    });
+    verifyBundle(copy);
 }
 
 function updateIntegrity(plist: string, relativeArchive: string, digest: string): void {
@@ -185,12 +194,105 @@ function hasIntegrityManifest(plist: string): boolean {
     return value !== null && typeof value === "object" && "ElectronAsarIntegrity" in value;
 }
 
+function macMetadataPaths(bundle: string, executable: string): string[] {
+    if (
+        !executable ||
+        executable !== path.basename(executable) ||
+        executable === "." ||
+        executable === ".."
+    ) {
+        throw new Error("invalid macOS signature backup executable");
+    }
+    return [
+        bundlePlist(bundle),
+        path.join(bundle, "Contents", "MacOS", executable),
+        path.join(bundle, "Contents", "_CodeSignature", "CodeResources"),
+    ];
+}
+
+function macMetadataFingerprint(files: readonly string[]): string[] {
+    return files.map((file) => {
+        const stat = fs.lstatSync(file);
+        if (!stat.isFile()) throw new Error(`macOS signature file is not a regular file: ${file}`);
+        return `${sha256File(file)}:${stat.mode & 0o7777}`;
+    });
+}
+
+function assertMacFingerprints(files: readonly string[], fingerprints: unknown): void {
+    if (JSON.stringify(macMetadataFingerprint(files)) !== JSON.stringify(fingerprints)) {
+        throw new Error("macOS signature metadata does not match its original fingerprints");
+    }
+}
+
+function dittoFile(source: string, destination: string): void {
+    execFileSync("/usr/bin/ditto", ["--rsrc", source, destination], { stdio: "inherit" });
+}
+
+function readMacMetadata(backupArchive: string) {
+    const directory = `${backupArchive}.mac-signature`;
+    if (!fs.lstatSync(directory, { throwIfNoEntry: false })?.isDirectory()) {
+        throw new Error(
+            "macOS signature backup is missing; the original signature cannot be restored",
+        );
+    }
+    const receipt = path.join(directory, "receipt.json");
+    if (!fs.lstatSync(receipt, { throwIfNoEntry: false })?.isFile()) {
+        throw new Error("macOS signature backup receipt is missing");
+    }
+    const data = JSON.parse(fs.readFileSync(receipt, "utf8")) as {
+        executable?: unknown;
+        fingerprints?: unknown;
+    } | null;
+    if (typeof data?.executable !== "string" || !Array.isArray(data.fingerprints)) {
+        throw new Error("invalid macOS signature backup receipt");
+    }
+    const files = macMetadataPaths(directory, data.executable);
+    assertMacFingerprints(files, data.fingerprints);
+    return { executable: data.executable, files, fingerprints: data.fingerprints };
+}
+
+export function assertMacMetadataAvailable(backupArchive: string): void {
+    if (process.platform === "darwin") readMacMetadata(backupArchive);
+}
+
 export function backupMacMetadata(copy: Detection, backupArchive: string): void {
     if (copy.platform !== "darwin") return;
-    const plist = bundlePlist(copy.appDir);
-    assertIsolatedPath(plist);
-    const backup = `${backupArchive}.Info.plist`;
-    if (!fs.existsSync(backup)) copyFile(plist, backup);
+    const executable = path.basename(copy.binary);
+    const files = macMetadataPaths(copy.appDir, executable);
+    for (const file of files) assertIsolatedPath(file);
+    const directory = `${backupArchive}.mac-signature`;
+    if (fs.existsSync(directory)) {
+        const saved = readMacMetadata(backupArchive);
+        if (saved.executable !== executable) {
+            throw new Error("existing macOS signature backup belongs to a different application");
+        }
+        assertMacFingerprints(files, saved.fingerprints);
+        return;
+    }
+    verifyBundle(copy.appDir);
+    const fingerprints = macMetadataFingerprint(files);
+    const staging = fs.mkdtempSync(`${directory}.next-`);
+    try {
+        macMetadataPaths(staging, executable).forEach((target, index) => {
+            const original = files[index];
+            if (!original) throw new Error("missing macOS signature source file");
+            fs.mkdirSync(path.dirname(target), { recursive: true });
+            dittoFile(original, target);
+        });
+        assertMacFingerprints(macMetadataPaths(staging, executable), fingerprints);
+        fs.writeFileSync(
+            path.join(staging, "receipt.json"),
+            JSON.stringify({ executable, fingerprints }),
+            {
+                flag: "wx",
+                mode: 0o600,
+                flush: true,
+            },
+        );
+        fs.renameSync(staging, directory);
+    } finally {
+        fs.rmSync(staging, { recursive: true, force: true });
+    }
 }
 
 export function signPatchedCopy(copy: Detection): void {
@@ -207,8 +309,20 @@ export function signPatchedCopy(copy: Detection): void {
 
 export function restoreMacMetadata(copy: string, backupArchive: string): void {
     if (process.platform !== "darwin") return;
-    const plist = bundlePlist(copy);
-    assertIsolatedPath(plist);
-    copyFile(`${backupArchive}.Info.plist`, plist);
-    signBundle(copy);
+    const saved = readMacMetadata(backupArchive);
+    const targets = macMetadataPaths(copy, saved.executable);
+    targets.forEach((target, index) => {
+        const original = saved.files[index];
+        if (!original) throw new Error("missing macOS signature backup file");
+        assertIsolatedPath(target);
+        const staging = `${target}.${randomUUID()}.restore`;
+        try {
+            dittoFile(original, staging);
+            fs.renameSync(staging, target);
+        } finally {
+            fs.rmSync(staging, { force: true });
+        }
+    });
+    assertMacFingerprints(targets, saved.fingerprints);
+    verifyBundle(copy);
 }

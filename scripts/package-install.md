@@ -24,6 +24,8 @@ node dist/bin/codex-enhancer.js uninstall
 
 退出副本后再卸载。看板配置和运行数据在 `state/session-board/`。
 
+macOS 副本卸载会恢复原始签名文件并校验整个应用包。旧副本若缺少完整签名备份，卸载会在写入前停止。
+
 ## Fedora 原地安装
 
 原地模式支持通过预检的 Fedora x86_64 Codex RPM。确认系统提供 `/usr/bin/node` 22 或更新版本，完全退出原 Codex，再从解压目录执行安装。

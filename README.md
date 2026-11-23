@@ -33,6 +33,8 @@ node dist/bin/codex-enhancer.js status
 
 更新和回退切换已校验的运行时目录，配置和记录保存在安装目录的 `state/session-board/`。退出副本后，执行 `node dist/bin/codex-enhancer.js uninstall` 恢复副本的原始启动归档。
 
+macOS 副本卸载还会恢复原始签名文件并校验整个应用包。旧副本若缺少完整签名备份，卸载会在写入前停止。
+
 ## Fedora 原地安装候选
 
 原地模式要求 Fedora x86_64、由 RPM 管理的 `/opt/codex-desktop`、通过预检的 Codex `26.1111.71704`，以及 `/usr/bin/node` 22 或更新版本。安装器还使用 Fedora 的 `rpm`、`flock`、`getfattr` 及桌面用户服务。选择带原地安装协议的 Linux 候选，校验 `.sha256` 后解压。退出原 Codex 的所有进程，再在解压目录执行。

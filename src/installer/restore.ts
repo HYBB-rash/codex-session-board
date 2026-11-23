@@ -1,8 +1,13 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { sha256File } from "./asar.js";
-import { assertIsolatedPath, copyFile, linkFile, restoreMacMetadata } from "./copy.js";
-import { locateApp } from "./detect.js";
+import {
+    assertIsolatedPath,
+    assertMacMetadataAvailable,
+    copyFile,
+    linkFile,
+    restoreMacMetadata,
+} from "./copy.js";
 import { assertTestCopyStopped, type InstallState, readState, writeState } from "./install.js";
 
 export interface RestoreResult {
@@ -31,12 +36,13 @@ export function restore(): RestoreResult {
     ) {
         throw new Error("the copy archive changed after installation");
     }
+    const link = linkFile(path.dirname(archivePath));
+    assertIsolatedPath(link);
+    assertMacMetadataAvailable(backupPath);
     const restored = `${archivePath}.restore`;
     assertIsolatedPath(restored);
     copyFile(backupPath, restored);
     fs.renameSync(restored, archivePath);
-    const link = linkFile(locateApp(state.target.path).resourcesDir);
-    assertIsolatedPath(link);
     fs.rmSync(link, { force: true });
     restoreMacMetadata(state.target.path, backupPath);
     const hash = sha256File(archivePath);

@@ -5,6 +5,7 @@ import { entryIncludes, openArchive, patchEntry, readEntry, sha256File } from ".
 import { LINK_NAME, loaderStub, PATCH_VERSION, SENTINEL } from "./constants.js";
 import {
     assertIsolatedPath,
+    assertMacMetadataAvailable,
     assertTestCopyStopped,
     backupMacMetadata,
     copyFile,
@@ -304,12 +305,23 @@ function prepareCopy(): { source: Detection; copy: Detection } {
     return { source, copy };
 }
 
-function isUpToDate(state: InstallState | null, currentHash: string): state is InstallState {
-    return (
-        state?.status === "installed" &&
-        state.target.path === paths.testApp &&
-        state.files.archive.patchedSha256 === currentHash
-    );
+function previousPatch(currentHash: string): InstallState | null {
+    const state = readState();
+    if (
+        state?.status !== "installed" ||
+        state.target.path !== paths.testApp ||
+        state.files.archive.patchedSha256 !== currentHash
+    ) {
+        return null;
+    }
+    assertMacMetadataAvailable(state.backup.archive);
+    if (
+        state.patchVersion !== PATCH_VERSION &&
+        sha256File(state.backup.archive) !== state.files.archive.originalSha256
+    ) {
+        throw new Error("stored archive backup no longer matches its checksum");
+    }
+    return state;
 }
 
 function verifyPatch(
@@ -446,8 +458,7 @@ export function install(): InstallResult {
     }
     const archivePath = copy.archive.archivePath;
     const currentHash = sha256File(archivePath);
-    const existing = readState();
-    const previous = isUpToDate(existing, currentHash) ? existing : null;
+    const previous = previousPatch(currentHash);
     if (previous?.patchVersion === PATCH_VERSION) {
         return { action: "unchanged", state: previous, source, copy };
     }
@@ -456,14 +467,12 @@ export function install(): InstallResult {
     assertIsolatedPath(file, source.appDir);
     const previousLink = readLink(file);
     const originalSha256 = previous?.files.archive.originalSha256 ?? currentHash;
-    if (previous && sha256File(previous.backup.archive) !== originalSha256) {
-        throw new Error("stored archive backup no longer matches its checksum");
-    }
     const rollbackArchive = backupCopy(copy, currentHash);
     const backupPath = previous?.backup.archive ?? rollbackArchive;
     try {
         if (previous) {
             copyFile(backupPath, archivePath);
+            if (copy.platform === "darwin") fs.rmSync(file, { force: true });
             restoreMacMetadata(copy.appDir, backupPath);
             assertUnpatched(copy);
         }
