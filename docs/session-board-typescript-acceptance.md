@@ -29,8 +29,9 @@
 | MacBook Pro 发起远端移卡 | 23:05 从已登录的 `0.3.31` 专用窗口，向已有 Fedora 连接发出与原生重连按钮相同的请求。独立会话列表返回认证错误。Fedora 服务端记录 3 次认证前断开、0 次公钥认证成功。验收到创建测试卡前结束。候选卸载后验回已登记连接、自动连接偏好及看板配置，恢复此前的专用副本。 [原生重连和清理](../state/acceptance/packages/macos-0.3.31-native-reconnect-handler.jsonl) · [Fedora 服务端回执](../state/acceptance/fedora-0.3.31-macos-explicit-reconnect-sshd.json) · [先前原生超时](../state/acceptance/packages/macos-0.3.31-gui-cli-native-remote-drag-after-sidebar.log) |
 | macOS 签名连续性 | 在官方 Codex `26.1111.21308` 上，`0.3.31` 的 ad hoc 副本通过严格验签，以原包的指定签名要求复核时被拒绝。卸载后副本重新满足该要求，启动归档、主程序、`Info.plist` 和签名资源清单均验回原件。本版 `--in-place` 在 macOS 上由预检拒绝，官方包签名和四个文件的摘要验回。 [本版验签和复原回执](../state/acceptance/packages/macos-0.3.31-signature-continuity-verified.jsonl) · [原地预检](../state/acceptance/packages/macos-0.3.31-in-place-preflight-exact.json) |
 | macOS 官方签名对照 | 从原样复制并通过官方签名核验的客户端启动。它沿用专用登录，原生接口能读同一张本机专用卡。只登记 `0.3.31` MCP 插件后，最左侧原生图标能打开随包界面。看板提示连接断开，显示零张卡。对空状态目录直接调用随包 `board_snapshot` 也提示启动带 Enhancer 的窗口。退出后恢复原测试配置和此前的专用副本，并复核系统应用签名和文件。 [实际窗口与清理](../state/acceptance/packages/macos-0.3.31-stock-native-plugin-final.jsonl) · [随包 MCP 对照](../state/acceptance/packages/macos-0.3.31-mcp-exact-no-runtime.json) |
+| macOS 官方窗口的 App Server 通道 | 从保持官方签名的副本按默认通道启动。客户端日志记录 `stdio`，所属 App Server 无命名 Unix 套接字和 TCP 监听。App Tools 使用另有客户端授权的套接字。官方包中本机守护进程和 WebSocket 均需显式选用，不能接入这次已启动的窗口。此次渲染器未重新验回登录，以前一条对照记录为准。已恢复专用配置和此前窗口，系统应用签名及文件摘要验回。 [通道现场回执](../state/acceptance/packages/macos-0.3.31-stock-app-server-live-transport.jsonl) · [官方包通道实现](../state/acceptance/packages/macos-0.3.31-stock-transport-contract.json) |
 
-Mac 的三个既有远程登记已分别复核。Fedora 返回 SSH 握手，另外两个地址在 TCP 阶段超时。Mac 上既有 SSH Agent 能列出密钥。22:46 复验时 Fedora 接受公钥，签名阶段超时。运行中的旧 Mac 专用副本也显示该远端未连接。 [已登记地址探针](../state/acceptance/packages/macos-0.3.31-existing-host-route-recheck.json) · [签名阶段回执](../state/acceptance/packages/macos-0.3.31-existing-fedora-signature-direct.json) · [运行中副本](../state/acceptance/packages/macos-0.3.31-surviving-copy-state-direct.json)
+Mac 的三个既有远程登记已分别复核。Fedora 返回 SSH 握手，另外两个地址在 TCP 阶段超时。Mac 上既有 SSH Agent 能列出密钥。23:19 复验时 Fedora 仍接受公钥，签名阶段仍超时。 [已登记地址探针](../state/acceptance/packages/macos-0.3.31-existing-host-route-recheck.json) · [签名阶段回执](../state/acceptance/packages/macos-0.3.31-native-route-final-recheck.json) · [此前运行中副本](../state/acceptance/packages/macos-0.3.31-surviving-copy-state-direct.json)
 
 Fedora 原装客户端的固定按钮在 ChatGPT 登录模式下写入账号侧栏设置。两台专用副本的原生登录身份不同。Fedora 隔离 RPM 已登录并能从插件详情打开看板，离开看板后，最左侧原生应用栏未显示该图标。该次验收没有写入账号设置，已退出隔离窗口并验回 RPM 和测试配置。 [固定入口写入范围](../state/acceptance/fedora-0.3.31-native-pin-auth-boundary.json) · [账号身份对比](../state/acceptance/fedora-0.3.31-native-sidebar-account-scope.json) · [隔离 RPM 只读回执](../state/acceptance/fedora-0.3.31-native-sidebar-rpm-read-only.jsonl)
 
@@ -38,7 +39,7 @@ Fedora 原装客户端的固定按钮在 ChatGPT 登录模式下写入账号侧�
 
 - [Fedora x86_64 安装候选](../state/acceptance/packages/session-board-0.3.31-linux-x86_64.tar.gz "sha256=3fce27047e049ae90a2ca421161841320c3cd6754d9ee929207880b5990c684c") · [校验文件](../state/acceptance/packages/session-board-0.3.31-linux-x86_64.tar.gz.sha256)
 - [macOS arm64 安装候选](../state/acceptance/packages/session-board-0.3.31-macos-arm64.tar.gz "sha256=8d5d309aade6f3d801a45ac85306c83274ac5c267637c220499796e55ea1fc08") · [校验文件](../state/acceptance/packages/session-board-0.3.31-macos-arm64.tar.gz.sha256)
-- [逐项验收证据归档](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz "sha256=0c5d2a5d51dd54eda4c1b3a9ce73c56eff43c73990ba1271b4ee4478b6d075ce") · [校验文件](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz.sha256)
+- [逐项验收证据归档](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz "sha256=d8178d8b81b302135e616d35dd959b3f4a22c9db59063f973a600a9caa40ea65") · [校验文件](../state/acceptance/packages/session-board-0.3.31-acceptance.tar.gz.sha256)
 
 证据归档自带 41 份由现场索引引用的回执、额外的平台边界证据和两个安装包的摘要。从干净解包运行随包检查，复现同一份逐项门槛报告。
 
