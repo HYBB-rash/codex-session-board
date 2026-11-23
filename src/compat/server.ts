@@ -10,6 +10,7 @@ import {
     loadOperations,
     type Operation,
 } from "./operations.js";
+import { processStartIdentity } from "./process-start.js";
 import { type Receipt, releaseReceipt, requireInactiveReceipt, writeReceipt } from "./receipt.js";
 import { type ServiceIdentity, serviceBuild, serviceConfiguration } from "./service-identity.js";
 
@@ -258,6 +259,19 @@ async function prepareService(stateDir: string, portOverride?: number): Promise<
     };
 }
 
+function createReceipt(url: URL, identity: ServiceIdentity): Receipt {
+    const processStart = processStartIdentity(process.pid);
+    return {
+        app: "codex-session-board",
+        url: url.href,
+        clientToken: randomBytes(32).toString("hex"),
+        instance: randomUUID(),
+        pid: process.pid,
+        ...(processStart === null ? {} : { processStart }),
+        service: identity,
+    };
+}
+
 export async function startBoardServer(options: BoardServerOptions): Promise<BoardServer> {
     const identity = await prepareService(options.stateDir, options.port);
     const { directory, port } = identity;
@@ -276,14 +290,7 @@ export async function startBoardServer(options: BoardServerOptions): Promise<Boa
         },
     );
     const url = await listen(server, port);
-    const receipt = {
-        app: "codex-session-board" as const,
-        url: url.href,
-        clientToken: randomBytes(32).toString("hex"),
-        instance: randomUUID(),
-        pid: process.pid,
-        service: identity,
-    };
+    const receipt = createReceipt(url, identity);
     try {
         writeReceipt(directory, receipt);
     } catch (error) {

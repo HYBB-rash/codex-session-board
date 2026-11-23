@@ -11,6 +11,7 @@ import {
     writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { processStartIdentity, processStartTime } from "./process-start.js";
 import { readServiceIdentity, type ServiceIdentity } from "./service-identity.js";
 
 export interface Receipt {
@@ -19,7 +20,13 @@ export interface Receipt {
     readonly clientToken: string;
     readonly instance: string;
     readonly pid: number;
+    readonly processStart?: string;
     readonly service?: ServiceIdentity;
+}
+
+interface ReceiptFile {
+    readonly receipt: Receipt;
+    readonly modifiedAt: number;
 }
 
 const pathFor = (stateDir: string) => join(stateDir, "board-service.json");
@@ -29,7 +36,7 @@ function validLoopbackUrl(url: string): boolean {
     return match !== null && Number(match[1] ?? 80) <= 65535;
 }
 
-export function readReceipt(stateDir: string): Receipt | null {
+function readReceiptFile(stateDir: string): ReceiptFile | null {
     let descriptor: number;
     try {
         descriptor = openSync(pathFor(stateDir), constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -58,21 +65,30 @@ export function readReceipt(stateDir: string): Receipt | null {
             typeof receipt.pid !== "number" ||
             !Number.isSafeInteger(receipt.pid) ||
             receipt.pid <= 0 ||
+            (receipt.processStart !== undefined &&
+                (typeof receipt.processStart !== "string" ||
+                    !/^(?:darwin:\d+|linux:[\da-f-]{36}:pid:\[\d+\]:\d+)$/.test(
+                        receipt.processStart,
+                    ))) ||
             (receipt.service !== undefined && !readServiceIdentity(receipt.service))
         ) {
             throw new Error("看板服务凭据格式无效");
         }
-        return receipt as Receipt;
+        return { receipt: receipt as Receipt, modifiedAt: stat.mtimeMs };
     } finally {
         closeSync(descriptor);
     }
+}
+
+export function readReceipt(stateDir: string): Receipt | null {
+    return readReceiptFile(stateDir)?.receipt ?? null;
 }
 
 export function releaseReceipt(stateDir: string, receipt: Receipt): void {
     if (readReceipt(stateDir)?.instance === receipt.instance) unlinkSync(pathFor(stateDir));
 }
 
-export function processAlive(pid: number): boolean {
+function processAlive(pid: number): boolean {
     try {
         process.kill(pid, 0);
         return true;
@@ -82,10 +98,26 @@ export function processAlive(pid: number): boolean {
     }
 }
 
+function hasLiveOwner({ receipt, modifiedAt }: ReceiptFile): boolean {
+    if (!processAlive(receipt.pid)) return false;
+    if (receipt.processStart !== undefined) {
+        const current = processStartIdentity(receipt.pid);
+        return current === null || current === receipt.processStart;
+    }
+    const current = processStartTime(receipt.pid);
+    const legacyClockToleranceMs = 2000;
+    return current === null || current <= modifiedAt + legacyClockToleranceMs;
+}
+
+export function readActiveReceipt(stateDir: string): Receipt | null {
+    const file = readReceiptFile(stateDir);
+    return file && hasLiveOwner(file) ? file.receipt : null;
+}
+
 export function requireInactiveReceipt(stateDir: string): Receipt | null {
-    const previous = readReceipt(stateDir);
-    if (previous && processAlive(previous.pid)) throw new Error("已有看板服务实例");
-    return previous;
+    const previous = readReceiptFile(stateDir);
+    if (previous && hasLiveOwner(previous)) throw new Error("已有看板服务实例");
+    return previous?.receipt ?? null;
 }
 
 export function writeReceipt(stateDir: string, receipt: Receipt): void {

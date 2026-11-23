@@ -7,6 +7,7 @@ import {
     realpathSync,
     rmSync,
     statSync,
+    utimesSync,
     writeFileSync,
 } from "node:fs";
 import { request as httpRequest } from "node:http";
@@ -401,18 +402,54 @@ test("an unreachable live host keeps its state directory and cannot be replaced"
     const receipt = readReceipt(directory);
     assert.ok(receipt);
     await close();
-    writeReceipt(directory, receipt);
-    await assert.rejects(connectBoard(directory), HostUnavailableError);
     const occupied = await fixture(test, async () => example);
-    await assert.rejects(
-        startBoardServer({
+    const { processStart, ...legacyReceipt } = receipt;
+    assert.ok(processStart);
+    for (const live of [receipt, legacyReceipt]) {
+        writeReceipt(directory, live);
+        await assert.rejects(connectBoard(directory), HostUnavailableError);
+        await assert.rejects(
+            startBoardServer({
+                stateDir: directory,
+                port: Number(new URL(occupied.url).port),
+                request: async () => example,
+            }),
+            /已有看板服务实例/,
+        );
+        assert.deepEqual(readReceipt(directory), live);
+        rmSync(join(directory, "board-service.json"));
+    }
+});
+
+test("a reused process ID does not hold a stale board receipt", async (test) => {
+    const { directory, close } = await fixture(test, async () => example);
+    const receipt = readReceipt(directory);
+    assert.ok(receipt?.processStart);
+    await close();
+    const target = join(directory, "board-service.json");
+    const previousStart = receipt.processStart.replace(/\d+$/, "0");
+    for (const stale of [
+        { ...receipt, processStart: previousStart },
+        { ...receipt, processStart: undefined },
+    ]) {
+        writeFileSync(target, JSON.stringify(stale), { mode: 0o600 });
+        utimesSync(target, new Date(0), new Date(0));
+        await assert.rejects(connectBoard(directory), HostUnavailableError);
+        const replacement = await startBoardServer({
             stateDir: directory,
-            port: Number(new URL(occupied.url).port),
+            port: 0,
             request: async () => example,
-        }),
-        /已有看板服务实例/,
-    );
-    assert.deepEqual(readReceipt(directory), receipt);
+        });
+        try {
+            assert.notEqual(readReceipt(directory)?.instance, receipt.instance);
+            assert.deepEqual(
+                await (await connectBoard(directory)).request("/api/sessions"),
+                example,
+            );
+        } finally {
+            await replacement.close();
+        }
+    }
 });
 
 test("a client bound to a stopped instance cannot close its replacement", async (test) => {

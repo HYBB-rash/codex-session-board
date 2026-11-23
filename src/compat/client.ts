@@ -3,7 +3,7 @@ import { basename, dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { BoardRequest } from "./operations.js";
 import { object } from "./operations.js";
-import { processAlive, type Receipt, readReceipt } from "./receipt.js";
+import { type Receipt, readActiveReceipt, readReceipt } from "./receipt.js";
 import { HostUnavailableError } from "./server.js";
 import {
     expectedServiceBuild,
@@ -56,8 +56,8 @@ async function fetchLocal(path: string, receipt: Receipt, body?: object): Promis
 async function awaitStop(directory: string, receipt: Receipt): Promise<void> {
     const deadline = performance.now() + 45000;
     while (performance.now() < deadline) {
-        const current = readReceipt(directory);
-        if (current?.instance !== receipt.instance || !processAlive(receipt.pid)) return;
+        const current = readActiveReceipt(directory);
+        if (current?.instance !== receipt.instance) return;
         await delay(50);
     }
     throw new Error("尚未确认看板服务退出");
@@ -66,9 +66,10 @@ async function awaitStop(directory: string, receipt: Receipt): Promise<void> {
 async function discoverBoard(stateDir: string) {
     const nested = join(stateDir, "session-board");
     const nestedReceipt = readReceipt(nested);
-    const receipt = nestedReceipt ?? readReceipt(stateDir);
-    if (!receipt || !processAlive(receipt.pid)) throw new HostUnavailableError();
-    const directory = realpathSync(nestedReceipt ? nested : stateDir);
+    const receiptDirectory = nestedReceipt ? nested : stateDir;
+    const receipt = readActiveReceipt(receiptDirectory);
+    if (!receipt) throw new HostUnavailableError();
+    const directory = realpathSync(receiptDirectory);
     if (receipt.service && receipt.service.directory !== directory) {
         throw new Error("看板服务属于其他数据目录");
     }
