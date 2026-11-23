@@ -2,6 +2,18 @@
 
 上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本及真实 RPM 原地安装均通过本机和远程原生移卡。macOS arm64 的官方 Codex `26.1111.21308` 已通过自动副本安装、重启、本机原生移卡和卸载。完整发布门槛仍未达到。
 
+## 0.3.30 候选
+
+2026 年 11 月 23 日从提交 `2137b7e` 构建。跟踪的新建请求先核对项目所属主机，再登记或重放。回归测试覆盖初次提交和重放时拒绝错误主机，正确的既有回执在目标断线后仍可读回。双平台归档通过内容及 SHA-256 校验，78 项门槛自动检查通过，31 条冻结需求中 17 条达到本版双平台门槛。Fedora 已执行随包测试和副本现场复验，macOS 的现场证据仍在 `0.3.29`。 [新建回归](../src/extensions/session-board/project-assignment.test.ts) · [本版门槛](../state/acceptance/release-gate-0.3.30.json) · [本版 Fedora 证据索引](../state/acceptance/live-0.3.30.json)
+
+| 场景 | 现场观察 |
+| --- | --- |
+| Fedora 解包 | 101 项 Node 测试通过，跳过 1 项 macOS 专用测试。12 项公共入口和浏览器测试、冻结模型及 18 项门槛测试通过。 [随包测试](../state/acceptance/fedora-archive-0.3.30-final.log) |
+| Fedora 副本及本机输入页 | 从已安装看板点击更新，重启读回 `0.3.30`。请求把远端项目指向本机时返回 HTTP 400，账本不变。默认本机入口打开一处空白原生输入区，独立枚举的活动和归档 ID 集合一致，未收到会话或轮次启动事件。回退并重启后读回 `0.3.24`，专用卡、系统归档和隔离配置校验一致。 [真实更新](../state/acceptance/fedora-signed-copy-update-0.3.30.jsonl) · [原生输入区](../state/acceptance/fedora-native-composer-0.3.30.json) · [回退](../state/acceptance/fedora-signed-copy-rollback-0.3.30-local-update.jsonl) |
+
+- [Fedora x86_64 安装候选](../state/acceptance/packages/session-board-0.3.30-linux-x86_64.tar.gz "sha256=0907fb8e8fed69895c44893152b6d41017a68671120f4dc2d92491c6e343f238") · [校验文件](../state/acceptance/packages/session-board-0.3.30-linux-x86_64.tar.gz.sha256)
+- [macOS arm64 安装候选](../state/acceptance/packages/session-board-0.3.30-macos-arm64.tar.gz "sha256=f2e1c8a85f65b48e553386eafcf23f3e7153681a7965491b75b3fabec3406ec2") · [校验文件](../state/acceptance/packages/session-board-0.3.30-macos-arm64.tar.gz.sha256)
+
 ## 0.3.29 候选
 
 2026 年 11 月 23 日从提交 `ca4bad9` 构建。31 条冻结需求中 21 条通过双平台门槛，10 条待验，78 项自动检查通过。40 条现场断言中，Fedora 通过 39 条，剩余原生最左侧固定图标直达。macOS 通过 16 条。`UI-001`、`UI-002` 和 `UI-003` 通过完整门槛。 [逐项门槛](../state/acceptance/release-gate-0.3.29.json) · [现场证据索引](../state/acceptance/live-0.3.29.json)
