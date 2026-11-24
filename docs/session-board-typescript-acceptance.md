@@ -2,6 +2,18 @@
 
 上游行为基线为 `2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc`。Fedora 44 的 Enhancer 副本及真实 RPM 原地安装均通过本机和远程原生移卡。macOS arm64 的官方 Codex `26.1111.21308` 已通过自动副本安装、重启、卸载、本机移卡及从 Mac 发起的 Fedora 原生移卡。完整发布门槛仍未达到。
 
+## 本轮交付范围
+
+2026 年 11 月 24 日确认，本轮以 Linux 可用为交付范围，暂缓 macOS 剩余验收。`0.3.33` 已在 Fedora 44 x86_64 真机验收，副本通过 3/3 项，原地模式通过 5/5 项。原双平台门槛报告仍记录完整范围下的结果。 [逐项门槛](../state/acceptance/output-033/release-gate-0.3.33.json)
+
+| macOS 暂缓项 | 已验证结果与待补证据 |
+| --- | --- |
+| 正式原地安装与启动 | 发行包的 `install --in-place` 在 Mac 预检时拒绝安装。原型在隔离账户的原路径启动，保留应用 ID，并读取已有登录和双端连接。正式安装仍须验证原图标、应用身份和已授系统权限。 [发行包预检](../state/acceptance/output-033/macos-in-place-preflight.json) · [原型双端读回](../state/acceptance/mac-in-place-test-account-native-moves-20261124.jsonl) |
+| 原地双端原生移卡 | 解锁后补丁版仍能读取 Mac 和 Fedora 会话。官方原版也在读账号时报错，工作区未加载。待实测两端拖放、原生侧栏变化及独立读回。 [原型复验](../state/acceptance/mac-in-place-test-account-unlocked-moves-20261124.jsonl) · [官方原版对照](../state/acceptance/mac-in-place-test-account-unlocked-stock-20261124.jsonl) |
+| 原地更新与回退 | Sparkle 曾发现官方更新，后续未观察到下载完成或安装替换。待验证原地看板更新和回退，以及官方更新覆盖 Loader 后停用看板、停止后台写入并提示恢复方法。 [发现更新](../state/acceptance/mac-in-place-test-account-updater-policy-20261124.jsonl) · [下载与安装复验](../state/acceptance/mac-in-place-test-account-native-update-unlocked-20261124.jsonl) |
+| 正式原地卸载 | 原型恢复了官方签名和原文件。用新版官方包模拟替换后，原型卸载逻辑保留了新版。待用发行包验回原图标、应用元数据、用户配置和已提交的原生会话操作。 [原型恢复记录](../state/acceptance/mac-in-place-test-account-bundle-recovery-20261124.jsonl) |
+| 副本与原地模式共存隔离 | 两个独立副本之间的卸载隔离已通过。待两种安装方式共存时分别卸载，验回另一边的服务和数据。 [双副本隔离记录](../state/acceptance/output-033/macos-0.3.33-two-copy-isolation.jsonl) |
+
 ## 0.3.33 候选
 
 2026 年 11 月 24 日从提交 `34a4e70` 的干净源码构建。Fedora 解包通过 102 项 Node 测试。MacBook Pro 解包通过 99 项 Node 测试、12 项公共入口与浏览器测试、10 项冻结模型检查和 20 项门槛测试。发布门槛通过 78 项自动检查，31/31 条冻结需求通过本版双平台验收。`0.3.31` 的现场记录继续按原版本保留。 [Fedora 测试](../state/acceptance/output-033/fedora-packaged-node.log) · [Mac 真机测试](../state/acceptance/output-033/macos-0.3.33-packaged-tests.log) · [逐项门槛](../state/acceptance/output-033/release-gate-0.3.33.json)
