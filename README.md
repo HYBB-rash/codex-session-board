@@ -1,28 +1,28 @@
 # Codex Enhancer 会话看板
 
-从 Codex 的 Enhancer 侧栏打开会话看板。看板通过当前窗口读取本机和已连接的远程会话，状态列对应 Codex 原生侧栏分区。默认安装独立副本。Fedora 提供显式选择的原地安装候选。
+从 Codex 的 Enhancer 侧栏打开会话看板。看板复用当前窗口的本机与远程连接，状态列对应 Codex 原生侧栏分区。默认安装独立副本。Fedora 也可以选择原地安装。
 
 ## 安装和打开
 
-Fedora 44 x86_64 已验证 Codex `26.1111.71704` 的副本安装、更新和回退。macOS arm64 的副本安装支持官方签名的 Codex `26.1111.21308`，采用本机 ad hoc 签名，保留 Electron 的 ASAR 完整性校验。macOS 当前提供副本安装。`--in-place` 仅适用于已核对的 Fedora x86_64 RPM。macOS 发布签名及公证仍待验。
+本轮交付 `0.3.33`。Fedora 44 x86_64 的 Codex `26.1111.71704` 已通过副本和原地模式的安装、启动、更新、回退和卸载验收。macOS arm64 另有对照用副本候选，剩余验收暂缓。 [下载与校验文件](docs/session-board-typescript-acceptance.md#033-候选) · [macOS 暂缓项](docs/session-board-typescript-acceptance.md#本轮交付范围)
 
 在 Linux 候选包所在目录校验归档，再进入解压目录运行 Node.js 22 或更新版本。
 
 ```bash
-sha256sum -c session-board-0.3.31-linux-x86_64.tar.gz.sha256
-tar -xzf session-board-0.3.31-linux-x86_64.tar.gz
-cd session-board-0.3.31-linux-x86_64
+sha256sum -c session-board-0.3.33-linux-x86_64.tar.gz.sha256
+tar -xzf session-board-0.3.33-linux-x86_64.tar.gz
+cd session-board-0.3.33-linux-x86_64
 node dist/bin/codex-enhancer.js detect
 node dist/bin/codex-enhancer.js install
 node dist/bin/codex-enhancer.js launch
 ```
 
-macOS 使用终端执行以下命令。独立副本写入当前用户可写的解压目录，安装无需管理员权限或 Developer ID。首次启动确认原生窗口和看板服务。若启动失败，安装器恢复副本的官方原包，诊断保存在 `logs/`。
+macOS 副本候选在官方签名的 Codex `26.1111.21308` 上验证，采用本机 ad hoc 签名并保留 Electron ASAR 完整性校验。独立副本写入当前用户可写的解压目录，安装无需管理员权限或 Developer ID。首次启动确认原生窗口和看板服务。若启动失败，安装器恢复副本的官方原包，诊断保存在 `logs/`。
 
 ```zsh
-shasum -a 256 -c session-board-0.3.31-macos-arm64.tar.gz.sha256
-tar -xzf session-board-0.3.31-macos-arm64.tar.gz
-cd session-board-0.3.31-macos-arm64
+shasum -a 256 -c session-board-0.3.33-macos-arm64.tar.gz.sha256
+tar -xzf session-board-0.3.33-macos-arm64.tar.gz
+cd session-board-0.3.33-macos-arm64
 node dist/bin/codex-enhancer.js detect
 node dist/bin/codex-enhancer.js install
 node dist/bin/codex-enhancer.js launch
@@ -48,7 +48,7 @@ macOS 副本卸载会恢复官方签名与完整的应用包。安装器保存�
 
 新版 macOS 安装器会为每个独立副本分配专用应用标识，用于隔离系统偏好。已有副本在停止运行后，在同一部署目录运行新版安装器的 `install`，原有看板数据和独立配置会保留。
 
-## Fedora 原地安装候选
+## Fedora 原地安装
 
 原地模式要求 Fedora x86_64、由 RPM 管理的 `/opt/codex-desktop`、通过预检的 Codex `26.1111.71704`，以及 `/usr/bin/node` 22 或更新版本。安装器还使用 Fedora 的 `rpm`、`flock`、`getfattr` 及桌面用户服务。选择带原地安装协议的 Linux 候选，校验 `.sha256` 后解压。退出原 Codex 的所有进程，再在解压目录执行。
 
@@ -84,7 +84,7 @@ node dist/bin/codex-session-board.js mcp
 
 MCP 配置见 [.mcp.json](.mcp.json)。从另一目录调用时可以指定 `--state-dir`，或把 `CODEX_ENHANCER_STATE_DIR` 指向 Enhancer 的 `state/`。`stop` 核对实例后关闭网页服务。重新启动 Enhancer 副本可恢复服务。
 
-已在 Codex 登记随包插件时，可在插件详情用「打开插件」进入原生看板。Codex 的「固定到侧栏」由用户选择，并保存到当前 ChatGPT 账号的侧栏设置。插件详情入口已实测，最左侧固定图标直达尚待现场验收。见[入口验收记录](docs/session-board-typescript-acceptance.md#031-候选)。
+已在 Codex 登记随包插件时，可在插件详情用「打开插件」进入原生看板。也可选「固定到侧栏」，然后从最左侧固定图标直达看板。Codex 将固定项保存到当前 ChatGPT 账号，两种入口在 Fedora 均已实测。 [入口验收记录](docs/session-board-typescript-acceptance.md#033-候选)
 
 ## 设置与迁移
 
