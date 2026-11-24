@@ -3,7 +3,7 @@ import json
 import re
 import tarfile
 from pathlib import Path, PurePosixPath
-from delivery_checks import delivery_checks
+from delivery_checks import LIVE_ACCEPTANCE_PATH, delivery_checks
 
 
 BASELINE = "2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc"
@@ -117,6 +117,7 @@ def source_path(name):
         or (
             bool(parts)
             and parts[0] in SOURCE_DIRECTORIES
+            and parts[:2] != LIVE_ACCEPTANCE_PATH
             and not ({"node_modules", "__pycache__", "dist"} & set(parts))
             and not any(part.startswith(".") for part in parts[1:])
         )

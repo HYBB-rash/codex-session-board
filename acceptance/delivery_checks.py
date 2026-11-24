@@ -24,6 +24,7 @@ REQUIRED_FILES = {
     "dist/migration/legacy.js",
 }
 EVIDENCE_DOCS = {"session-board-native-checkpoint.md", "session-board-typescript-acceptance.md"}
+LIVE_ACCEPTANCE_PATH = ("acceptance", "live")
 FORBIDDEN_PATHS = {
     "state", "logs", "screenshots", "node_modules", "cache", "caches", ".cache", "__pycache__",
     "codex-home", "user-data", ".git", "config.json", "records.json", "ledger.json",
@@ -37,6 +38,8 @@ FORBIDDEN_FILE = re.compile(
 
 def unexpected_entry(name):
     parts = PurePosixPath(name).parts
+    if parts[:2] == LIVE_ACCEPTANCE_PATH:
+        return True
     if set(piece.lower() for piece in parts) & FORBIDDEN_PATHS or FORBIDDEN_FILE.search(parts[-1]):
         return True
     if len(parts) == 1:

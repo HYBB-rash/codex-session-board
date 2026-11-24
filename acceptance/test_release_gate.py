@@ -266,6 +266,11 @@ class ArchiveVerificationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "越界"):
             self.identify()
 
+    def test_workspace_only_live_tool_fails_delivery_exclusions(self):
+        tool = "acceptance/live/board-accept.py"
+        self.archive(extra={f"candidate/{tool}": b"live tool"})
+        self.assertIn(tool, self.identify()["deliveryChecks"][EXCLUSIONS])
+
     def test_packaged_plugin_version_and_mcp_entry_are_bound(self):
         self.source[PLUGIN_MANIFEST] = b'{"version":"0.3.7","name":"fixture"}'
         self.source[".mcp.json"] = b'{"mcpServers":{}}'

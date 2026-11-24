@@ -37,12 +37,14 @@ const acceptanceFiles = [
 ];
 
 function packageAcceptance(directory: string): void {
+    const liveAcceptance = path.join(root, "acceptance", "live");
     for (const file of acceptanceFiles) {
         cpSync(path.join(root, file), path.join(directory, file), {
             recursive: true,
             filter: (source) => {
                 const name = path.basename(source);
                 return (
+                    source !== liveAcceptance &&
                     !["node_modules", "__pycache__"].includes(name) &&
                     !name.startsWith(".") &&
                     !lstatSync(source).isSymbolicLink()
