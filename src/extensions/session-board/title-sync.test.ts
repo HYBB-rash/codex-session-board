@@ -13,7 +13,7 @@ import {
     type SidebarContext,
     type Thread,
     type ThreadId,
-} from "./desktop-connection.js";
+} from "./desktop/connection.js";
 import { BoardRecords, TitleEpochs } from "./records.js";
 import { BoardService } from "./service.js";
 import { defaults } from "./settings.js";

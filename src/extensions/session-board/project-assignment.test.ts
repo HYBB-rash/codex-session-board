@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { type BoardLedger, emptyLedger } from "./archive.js";
-import type { DesktopCommand } from "./desktop/world.js";
 import {
     cardId,
     DesktopConnection,
     hostId,
     localHostId,
     type ThreadId,
-} from "./desktop-connection.js";
+} from "./desktop/connection.js";
+import type { DesktopCommand } from "./desktop/world.js";
 import { BoardService } from "./service.js";
 import { defaults } from "./settings.js";
 

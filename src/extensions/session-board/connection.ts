@@ -1,1 +1,1 @@
-export * from "./desktop-connection.js";
+export * from "./desktop/connection.js";

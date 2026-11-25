@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DesktopConnection } from "../dist/extensions/session-board/desktop-connection.js";
+import { DesktopConnection } from "../dist/extensions/session-board/desktop/connection.js";
 import { BoardLedgers, BoardRecords } from "../dist/extensions/session-board/records.js";
 import { BoardService } from "../dist/extensions/session-board/service.js";
 import { defaults } from "../dist/extensions/session-board/settings.js";
