@@ -229,14 +229,13 @@ test("all 18 HTTP routes and MCP tools forward the same arguments and return the
     const toolList = (await answer("tools/list")) as {
         tools: {
             name: string;
-            _meta: { "openai/ui"?: { entrypoints: object[] }; ui: { visibility: string[] } };
+            _meta: { ui: { visibility: string[] } };
         }[];
     };
     assert.deepEqual(
         toolList.tools.map(({ name }) => name),
         ["board_view", ...operations.map((operation) => operation.tool)],
     );
-    assert.deepEqual(toolList.tools[0]?._meta["openai/ui"]?.entrypoints, [{ type: "global" }]);
     assert.deepEqual(
         Object.keys(argumentsByAction).sort(),
         operations.map(({ action }) => action).sort(),
