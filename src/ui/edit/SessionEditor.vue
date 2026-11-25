@@ -41,8 +41,8 @@
 </template>
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, shallowRef } from "vue";
-import EditFields from "../../../shared/board/edit-fields";
 import type { BoardSession } from "../session";
+import EditFields from "../shared/board/edit-fields";
 import { readDraft, writeDraft } from "./drafts";
 import type { EditorPorts } from "./mount";
 

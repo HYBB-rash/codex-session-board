@@ -160,7 +160,7 @@
             "sources": [
                 "src/extensions/session-board/preview.ts",
                 "src/extensions/session-board/service.ts",
-                "src/ui/views/board/preview/reader.ts",
+                "src/ui/preview/reader.ts",
                 "src/ui/views/board/drag.ts"
             ],
             "missing": "还需现场验证本机和远端同名卡的来源、上一条回复与迟到结果，检查点击和拖动两种实际手势。"
@@ -186,9 +186,9 @@
         },
         "UI-002": {
             "sources": [
-                "src/ui/views/board/edit/mount.ts",
-                "src/ui/views/board/edit/SessionEditor.vue",
-                "src/ui/views/board/edit/edits.ts",
+                "src/ui/edit/mount.ts",
+                "src/ui/edit/SessionEditor.vue",
+                "src/ui/edit/edits.ts",
                 "src/extensions/session-board/service.ts"
             ],
             "missing": "还需分别演练空白、纯空白、取消、填入、清空、过期失败，核对备注、自动原因及草稿。"
