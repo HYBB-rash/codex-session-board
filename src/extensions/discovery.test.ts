@@ -10,7 +10,7 @@ import {
     type ThreadId,
     type Turn,
 } from "./desktop/connection.js";
-import type { DesktopCommand } from "./desktop/world.js";
+import type { DesktopCommand, DesktopRequest } from "./desktop/world.js";
 import type { CardRecord } from "./records.js";
 import { createBoardService } from "./service.js";
 import { defaults } from "./settings.js";
@@ -82,7 +82,7 @@ async function readFixture(native: NativeFixture, host: string, method: string, 
     }
 }
 
-function discoverySidebar(native: NativeFixture, command: DesktopCommand) {
+function discoverySidebar(native: NativeFixture, command: DesktopRequest) {
     if (command.kind === "context")
         return {
             accountId: native.accountId ?? "account",

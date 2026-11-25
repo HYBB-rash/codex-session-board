@@ -21,6 +21,10 @@ export type DesktopCommand =
               | { kind: "settings" }
           ));
 
+export type DesktopRequest =
+    | DesktopCommand
+    | { kind: "local-project-root"; cwd: string; roots: string[] };
+
 interface DesktopAccount {
     accountId: string;
     userId: string;

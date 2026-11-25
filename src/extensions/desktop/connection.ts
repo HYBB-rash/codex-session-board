@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 
-import type { DesktopCommand } from "./world.js";
+import type { DesktopCommand, DesktopRequest } from "./world.js";
 
 declare const hostBrand: unique symbol;
 declare const threadBrand: unique symbol;
@@ -102,7 +102,7 @@ export interface HostProject {
 export interface DesktopTransport {
     bootstrap(): unknown;
     send(value: object): Promise<unknown>;
-    sidebar(command: DesktopCommand): Promise<unknown>;
+    sidebar(command: DesktopRequest): Promise<unknown>;
 }
 
 export function hostId(value: string): HostId | null {
@@ -376,6 +376,12 @@ export function createDesktopConnection(transport: DesktopTransport) {
         return transport.sidebar(command);
     }
 
+    async function matchesLocalProjectRoot(cwd: string, roots: string[]): Promise<boolean> {
+        if (roots.includes(cwd)) return true;
+        if (!roots.length) return false;
+        return (await transport.sidebar({ kind: "local-project-root", cwd, roots })) === true;
+    }
+
     async function move(
         connection: HostConnection,
         identity: Pick<SidebarContext, "accountId" | "userId">,
@@ -409,6 +415,7 @@ export function createDesktopConnection(transport: DesktopTransport) {
         read,
         context,
         navigate,
+        matchesLocalProjectRoot,
         move,
     };
 }

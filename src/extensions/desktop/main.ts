@@ -1,6 +1,8 @@
+import { realpath } from "node:fs/promises";
+import { isAbsolute } from "node:path";
 import type { IpcMainEvent } from "electron";
 import { hostId as parseHostId } from "./connection.js";
-import { type DesktopCommand, desktopWorldSource } from "./world.js";
+import { type DesktopCommand, type DesktopRequest, desktopWorldSource } from "./world.js";
 
 function parseNewTarget(projectId: unknown, roots: unknown) {
     if (projectId !== null && typeof projectId !== "string") return;
@@ -19,7 +21,34 @@ function parseDraftCommand(draftId: unknown, account: { accountId: string; userI
     return { kind: "draft" as const, ...account, draftId };
 }
 
-function parseDesktopCommand(value: unknown): DesktopCommand {
+function parseLocalProjectRoot(cwd: unknown, roots: unknown): DesktopRequest {
+    if (
+        typeof cwd !== "string" ||
+        !isAbsolute(cwd) ||
+        !Array.isArray(roots) ||
+        !roots.every((root): root is string => typeof root === "string" && isAbsolute(root))
+    )
+        throw new Error("Invalid local project directory");
+    return { kind: "local-project-root", cwd, roots };
+}
+
+async function resolvedDirectory(path: string) {
+    try {
+        return await realpath(path);
+    } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "ENOENT" || code === "ENOTDIR") return undefined;
+        throw error;
+    }
+}
+
+export async function matchesLocalProjectRoot(cwd: string, roots: readonly string[]) {
+    const directory = await resolvedDirectory(cwd);
+    if (directory === undefined) return false;
+    return (await Promise.all(roots.map(resolvedDirectory))).includes(directory);
+}
+
+function parseDesktopCommand(value: unknown): DesktopRequest {
     if (typeof value !== "object" || value === null)
         throw new Error("Invalid board desktop request");
     const command = value as Partial<Omit<Extract<DesktopCommand, { kind: "move" }>, "kind">> & {
@@ -28,8 +57,14 @@ function parseDesktopCommand(value: unknown): DesktopCommand {
         roots?: unknown;
         besideBoard?: unknown;
         draftId?: unknown;
+        cwd?: unknown;
     };
-    if (command.kind === "context") return { kind: "context" };
+    switch (command.kind) {
+        case "context":
+            return { kind: "context" };
+        case "local-project-root":
+            return parseLocalProjectRoot(command.cwd, command.roots);
+    }
     const { accountId, userId, hostId, threadId, from, to } = command;
     if (typeof accountId !== "string" || typeof userId !== "string")
         throw new Error("Invalid board account");
@@ -64,5 +99,7 @@ function parseDesktopCommand(value: unknown): DesktopCommand {
 
 export function boardDesktopRequest(event: IpcMainEvent, value: unknown): Promise<unknown> {
     const command = parseDesktopCommand(value);
+    if (command.kind === "local-project-root")
+        return matchesLocalProjectRoot(command.cwd, command.roots);
     return event.sender.executeJavaScript(desktopWorldSource(command));
 }

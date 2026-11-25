@@ -1498,7 +1498,8 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         const before = await waitForUnassignedThread(owner, connection, threadId);
         if (!before) return;
         const { project } = findProject(projectId);
-        if (!project.roots.some(({ path }) => path === before.cwd)) return;
+        const roots = project.roots.map(({ path }) => path);
+        if (!(await desktop.matchesLocalProjectRoot(before.cwd, roots))) return;
         await freshContext(owner);
         const latest = await desktop.read(connection, threadId, false);
         if (latest.projectId !== null || latest.cwd !== before.cwd) return;

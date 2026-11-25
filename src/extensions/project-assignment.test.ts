@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { setImmediate } from "node:timers/promises";
 import { type BoardLedger, emptyLedger } from "./archive.js";
@@ -10,6 +13,7 @@ import {
     localHostId,
     type ThreadId,
 } from "./desktop/connection.js";
+import { matchesLocalProjectRoot } from "./desktop/main.js";
 import type { DesktopCommand } from "./desktop/world.js";
 import { type BoardService, createBoardService } from "./service.js";
 import { defaults } from "./settings.js";
@@ -63,6 +67,7 @@ function transportFixture(
         binding: Promise<ThreadId | null>;
         existingProject?: string;
         workingDirectory?: string;
+        projectRoot?: string;
     },
 ) {
     const thread = initialThread();
@@ -71,10 +76,16 @@ function transportFixture(
     thread.cwd = localDraft?.workingDirectory ?? cwd;
     const writes: string[] = [];
     const readIds: (ThreadId | undefined)[] = [];
+    const rootChecked = deferred<void>();
     const desktop = createDesktopConnection({
         bootstrap: () => ({ catalogHostIds: [localHostId, remote] }),
         async sidebar(command) {
             if (command.kind === "new") return open(command);
+            if (command.kind === "local-project-root") {
+                const matches = await matchesLocalProjectRoot(command.cwd, command.roots);
+                rootChecked.resolve();
+                return matches;
+            }
             if (command.kind === "draft") {
                 assert.equal(command.draftId, nativeDraftId);
                 assert.ok(localDraft);
@@ -111,7 +122,15 @@ function transportFixture(
             case "thread/list":
                 return page(host === threadHost && !archived ? [structuredClone(thread)] : []);
             case "project/list":
-                return page([host === remote ? project : { ...project, id: "local-project" }]);
+                return page([
+                    host === remote
+                        ? project
+                        : {
+                              ...project,
+                              id: "local-project",
+                              roots: [{ path: localDraft?.projectRoot ?? cwd }],
+                          },
+                ]);
             case "thread/read":
                 assert.equal(host, threadHost);
                 return { thread: structuredClone(thread) };
@@ -122,7 +141,7 @@ function transportFixture(
                 return assert.fail(`Unexpected fixture call ${method}`);
         }
     }
-    return { desktop, writes, readIds };
+    return { desktop, writes, readIds, rootChecked: rootChecked.promise };
 }
 
 function assignmentFixture({ desktop, writes, readIds } = transportFixture()) {
@@ -170,7 +189,13 @@ test("project assignment verifies a lost native acknowledgment and rejects the w
     }
 });
 
-test("local new sessions repair only the bound draft with no existing assignment", async () => {
+test("local new sessions repair only the bound draft with no existing assignment", async (context) => {
+    const directory = await mkdtemp(join(tmpdir(), "board-project-root-"));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    const actualRoot = join(directory, "Documents");
+    const registeredRoot = join(directory, "文档");
+    await mkdir(actualRoot);
+    await symlink(actualRoot, registeredRoot, "dir");
     const original = Reflect.get(globalThis, "window");
     Reflect.set(globalThis, "window", globalThis);
     try {
@@ -179,8 +204,14 @@ test("local new sessions repair only the bound draft with no existing assignment
             { bound: null, expected: [] },
             { bound: threadId, existingProject: "already-assigned", expected: [] },
             { bound: threadId, workingDirectory: "/another/project", expected: [] },
+            {
+                bound: threadId,
+                workingDirectory: actualRoot,
+                projectRoot: registeredRoot,
+                expected: ["local-project"],
+            },
         ];
-        for (const { bound, expected, existingProject, workingDirectory } of cases) {
+        for (const { bound, expected, existingProject, workingDirectory, projectRoot } of cases) {
             const binding = deferred<ThreadId | null>();
             let draftsShown = 0;
             const transport = transportFixture(
@@ -193,6 +224,7 @@ test("local new sessions repair only the bound draft with no existing assignment
                     binding: binding.promise,
                     ...(existingProject ? { existingProject } : {}),
                     ...(workingDirectory ? { workingDirectory } : {}),
+                    ...(projectRoot ? { projectRoot } : {}),
                 },
             );
             const { service, writes, readIds } = assignmentFixture(transport);
@@ -207,6 +239,7 @@ test("local new sessions repair only the bound draft with no existing assignment
             assert.deepEqual(writes, []);
             const readsBeforeBinding = readIds.length;
             binding.resolve(bound);
+            if (workingDirectory) await transport.rootChecked;
             await setImmediate();
             assert.deepEqual(writes, expected);
             if (bound) {
