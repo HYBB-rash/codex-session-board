@@ -49,6 +49,14 @@
                 },
                 "useLiteralKeys": "error"
             },
+            "nursery": {
+                "useVueBlockOrder": {
+                    "level": "info",
+                    "options": {
+                        "order": ["template", "script", "style"]
+                    }
+                }
+            },
             "style": {
                 "noNonNullAssertion": "error",
                 "useImportType": "error"
