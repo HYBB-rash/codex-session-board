@@ -1,0 +1,61 @@
+engine biome(1.0)
+language js(typescript, jsx)
+
+or {
+    JsClassExpression() as $class,
+    JsClassExportDefaultDeclaration() as $class,
+    JsClassDeclaration(id=$name) as $class where {
+        not or {
+            and {
+                $filename <: r"(?:^|.*[/\\])acceptance[/\\]public-operations\.test\.mjs$",
+                $name <: r"^PublicBoardFixture$"
+            },
+            and {
+                $filename <: r"(?:^|.*[/\\])acceptance[/\\]typescript-fixture\.mjs$",
+                $name <: r"^BoardFixture$"
+            },
+            and {
+                $filename <: r"(?:^|.*[/\\])src[/\\]compat[/\\]mcp\.ts$",
+                $name <: r"^RpcError$"
+            },
+            and {
+                $filename <: r"(?:^|.*[/\\])src[/\\]compat[/\\]server\.ts$",
+                $name <: r"^(?:HostUnavailableError|RequestError)$"
+            },
+            and {
+                $filename <: r"(?:^|.*[/\\])src[/\\]extensions[/\\]archive\.ts$",
+                $name <: r"^(?:Archive|ArchivePreconditionError|ArchiveReadUnavailable|NewInputError)$"
+            },
+            and {
+                $filename <: r"(?:^|.*[/\\])src[/\\]extensions[/\\]desktop[/\\]connection\.ts$",
+                $name <: r"^DesktopConnection$"
+            },
+            and {
+                $filename <: r"(?:^|.*[/\\])src[/\\]extensions[/\\]records\.ts$",
+                $name <: r"^(?:BoardLedgers|BoardRecords|TitleEpochs)$"
+            },
+            and {
+                $filename <: r"(?:^|.*[/\\])src[/\\]extensions[/\\]service\.ts$",
+                $name <: r"^BoardService$"
+            },
+            and {
+                $filename <: r"(?:^|.*[/\\])src[/\\]migration[/\\]projection\.ts$",
+                $name <: r"^OldDatabase$"
+            },
+            and {
+                $filename <: r"(?:^|.*[/\\])src[/\\]migration[/\\]runtime\.ts$",
+                $name <: r"^LegacyBoardRuntime$"
+            },
+            and {
+                $filename <: r"(?:^|.*[/\\])src[/\\]runtime[/\\]board[/\\]broker\.ts$",
+                $name <: r"^BoardBroker$"
+            },
+            and {
+                $filename <: r"(?:^|.*[/\\])src[/\\]runtime[/\\]registry\.ts$",
+                $name <: r"^SidebarRegistry$"
+            }
+        }
+    }
+} where {
+    register_diagnostic(span=$class, message="Prefer functions and plain data. Use a function factory for instance state.")
+}

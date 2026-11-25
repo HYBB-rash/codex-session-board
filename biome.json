@@ -36,6 +36,7 @@
             "enabled": true
         }
     },
+    "plugins": ["./scripts/prefer-functions.grit"],
     "overrides": [
         {
             "includes": ["**/*.vue"],
