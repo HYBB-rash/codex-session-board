@@ -1,4 +1,4 @@
-import type { Thread, Turn } from "./desktop-connection.js";
+import type { Thread, Turn } from "./connection.js";
 import { type BoardState, labels } from "./placement.js";
 
 export interface Phase {

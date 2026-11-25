@@ -6,7 +6,7 @@ import {
     DesktopConnection,
     hostId,
     type ThreadId,
-} from "../extensions/session-board/desktop-connection.js";
+} from "../extensions/session-board/connection.js";
 import type { LoadedBoardRecords } from "../extensions/session-board/records.js";
 import { BoardService } from "../extensions/session-board/service.js";
 import { readSettings } from "../extensions/session-board/settings.js";
