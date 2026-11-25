@@ -1,5 +1,5 @@
-import type { CatalogProject } from "../browse/scope";
-import type { BoardSnapshot } from "../controller";
+import type { CatalogProject } from "../../browse/scope";
+import type { BoardSnapshot } from "../../controller";
 
 interface NewSessionElements {
     button: HTMLButtonElement;

@@ -1,8 +1,8 @@
 import { mountBoardArchive } from "./archive/controls";
 import { type CatalogProject, type HostIdentity, mountBoardBrowse } from "./browse/scope";
 import { type BoardModel, mountBoard } from "./columns";
-import { mountBoardNewSession } from "./connection/new-session";
-import { mountBoardNewTarget } from "./connection/new-target";
+import { mountBoardNewSession } from "./connection/new/session";
+import { mountBoardNewTarget } from "./connection/new/target";
 import { mountProjectAssignment } from "./connection/project-assignment";
 import { mountBoardSshSetup } from "./connection/ssh-setup";
 import { mountBoardEdits } from "./edit/edits";

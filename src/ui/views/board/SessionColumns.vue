@@ -94,8 +94,8 @@
 
 <script setup lang="ts">
 import ColumnSort from "./ColumnSort.vue";
+import SessionCard from "./card";
 import type { BoardControls, BoardModel } from "./columns";
-import SessionCard from "./session-card";
 
 defineProps<{ model: BoardModel; dependencies: BoardControls; unplaced?: boolean }>();
 </script>

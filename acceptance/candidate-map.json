@@ -481,7 +481,7 @@
             "implementation": [
                 "src/extensions/session-board/preview.ts",
                 "src/ui/views/board/preview/mount.ts",
-                "src/ui/views/board/session-card.tsx"
+                "src/ui/views/board/card.tsx"
             ],
             "evidence": [
                 "operation-routing",
