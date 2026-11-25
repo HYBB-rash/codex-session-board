@@ -87,7 +87,7 @@ export function startInPlace(): void {
         if (installation?.phase !== "installed") throw new Error("安装记录缺失或尚未提交");
         if (installation.version !== version)
             throw new Error(`客户端已经替换已登记的 ${installation.version} 构建`);
-        assertCompatibleExecutables(process.execPath);
+        assertCompatibleExecutables(process.execPath, version);
         if (
             archiveDigest(path.join(IN_PLACE_APP, IN_PLACE_ARCHIVE)) !== installation.patched.sha256
         )

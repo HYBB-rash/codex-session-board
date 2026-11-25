@@ -68,7 +68,7 @@ function assertStopped(): void {
     if (running.length) throw new Error(`请先退出原 Codex 客户端，仍有进程 ${running.join(", ")}`);
 }
 
-function withRpmLock<T>(change: () => T): T {
+function withRpmLock<T>(change: () => T, { requiresStopped = true } = {}): T {
     if (process.platform !== "linux" || process.arch !== "x64")
         throw new Error("当前原地安装仅支持已核对的 Fedora x86_64 RPM");
     if (process.getuid?.() !== 0) throw new Error("原地安装修改系统文件，需要管理员权限");
@@ -85,7 +85,7 @@ function withRpmLock<T>(change: () => T): T {
                 throw new Error("RPM 更新或原地安装事务正在进行，请稍后重试");
             throw error;
         }
-        assertStopped();
+        if (requiresStopped) assertStopped();
         return change();
     } finally {
         process.umask(previousMask);
@@ -245,7 +245,7 @@ export function uninstallInPlace(): { action: "restored" | "kept-rpm" | "not-ins
                 installation.package,
                 installation.original,
             );
-            assertCompatibleExecutables(path.join(IN_PLACE_APP, "ChatGPT"));
+            assertCompatibleExecutables(path.join(IN_PLACE_APP, "ChatGPT"), installation.version);
         }
         writeInstallationReceipt(transaction.receipt, { ...installation, phase: "removing" });
         if (position === "patched") restoreArchive(transaction, installation, assertStopped);
@@ -255,17 +255,20 @@ export function uninstallInPlace(): { action: "restored" | "kept-rpm" | "not-ins
 }
 
 export function adjustInPlaceRelease(candidate?: string): string {
-    return withRpmLock(() => {
-        const installation = readInPlaceInstallation();
-        if (
-            installation?.phase !== "installed" ||
-            archivePosition(inPlaceTransaction(installation), installation) !== "patched"
-        )
-            throw new Error("当前 Codex 的原地安装记录无法核对");
-        const store = inPlaceReleaseStore();
-        const release = candidate ? activateRelease(candidate, store) : rollbackRelease(store);
-        return release.version;
-    });
+    return withRpmLock(
+        () => {
+            const installation = readInPlaceInstallation();
+            if (
+                installation?.phase !== "installed" ||
+                archivePosition(inPlaceTransaction(installation), installation) !== "patched"
+            )
+                throw new Error("当前 Codex 的原地安装记录无法核对");
+            const store = inPlaceReleaseStore();
+            const release = candidate ? activateRelease(candidate, store) : rollbackRelease(store);
+            return release.version;
+        },
+        { requiresStopped: false },
+    );
 }
 
 function patchedStatus(installation: InPlaceInstallation): InPlaceWatchStatus {
@@ -273,7 +276,7 @@ function patchedStatus(installation: InPlaceInstallation): InPlaceWatchStatus {
     try {
         if (version !== installation.version)
             throw new Error(`构建与已登记的 ${installation.version} 不同`);
-        assertCompatibleExecutables(path.join(IN_PLACE_APP, "ChatGPT"));
+        assertCompatibleExecutables(path.join(IN_PLACE_APP, "ChatGPT"), version);
         readRuntimeFile();
         return { kind: "ready" };
     } catch (error) {

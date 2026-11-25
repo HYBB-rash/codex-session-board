@@ -5,14 +5,30 @@ import { entryIncludes, sha256File } from "../asar.js";
 import { IN_PLACE_APP, IN_PLACE_ARCHIVE, SENTINEL } from "../constants.js";
 import { type Detection, detect, findStartupArchive } from "../detect.js";
 
-const compatibleBuild = {
-    version: "26.1111.71704",
-    runtime: "owl",
-    entry: ".vite/build/early-bootstrap.js",
-    archiveSha256: "20c53634196da5d0a84b7cc5c8113a7370aa4ec0b78fffeb6cda3c03f138301e",
-    binarySha256: "48db1e43e1692275688084bd9b13ba68fbd2dde9710ca139a574f39ef6f0c80d",
-    backendSha256: "cbb37386e174dbaea5f34a84944270fd7a1850f4451ed74f580a27ea0367d905",
-} as const;
+const compatibleBuilds = [
+    {
+        version: "26.1111.71704",
+        runtime: "owl",
+        entry: ".vite/build/early-bootstrap.js",
+        archiveSha256: "20c53634196da5d0a84b7cc5c8113a7370aa4ec0b78fffeb6cda3c03f138301e",
+        binarySha256: "48db1e43e1692275688084bd9b13ba68fbd2dde9710ca139a574f39ef6f0c80d",
+        backendSha256: "cbb37386e174dbaea5f34a84944270fd7a1850f4451ed74f580a27ea0367d905",
+    },
+    {
+        version: "26.1120.50957",
+        runtime: "owl",
+        entry: ".vite/build/early-bootstrap.js",
+        archiveSha256: "641776c60cdda9c8a1048cfb0a775137e8d1fba1fbb3e7cf2f372ad3c011cde0",
+        binarySha256: "a41b4eacb205ff9c765c5e98783f640f6bcb5d4a30fc8dca05a9eedc421a5590",
+        backendSha256: "99647b0233fd5fecf3d7047fc76de5e8d24cbdc45ace224ead7b4d0a8cb31baa",
+    },
+] as const;
+
+function requireCompatibleBuild(version: string) {
+    const build = compatibleBuilds.find((candidate) => candidate.version === version);
+    if (!build) throw new Error(`Codex ${version} 尚未通过原地安装兼容性验证`);
+    return build;
+}
 
 export interface FileProof {
     sha256: string;
@@ -134,7 +150,8 @@ function assertRpmFile(file: string, rpm: RpmFile, sha256: string): void {
         throw new Error(`文件与 RPM 记录不同：${file}`);
 }
 
-export function assertCompatibleExecutables(binary: string): void {
+export function assertCompatibleExecutables(binary: string, version: string): void {
+    const compatibleBuild = requireCompatibleBuild(version);
     const backend = path.join(path.dirname(binary), "resources/codex");
     assertSystemPath(binary, false);
     assertSystemPath(backend, false);
@@ -203,8 +220,8 @@ export function requireCompatibleRpm(app = IN_PLACE_APP): {
     assertSystemPath(path.join(app, IN_PLACE_ARCHIVE), false);
     assertSystemPath(path.join(app, "ChatGPT"), false);
     const build = detect(app);
+    const compatibleBuild = requireCompatibleBuild(build.codexVersion);
     if (
-        build.codexVersion !== compatibleBuild.version ||
         build.runtimeType !== compatibleBuild.runtime ||
         build.archive.main !== compatibleBuild.entry ||
         build.archive.relativeArchive !== IN_PLACE_ARCHIVE

@@ -180,12 +180,12 @@ export class DesktopConnection {
     receive(value: unknown): NativePacket | undefined {
         if (typeof value !== "object" || value === null) return;
         const packet = value as NativePacket;
-        const key = packet.hostId && hostId(packet.hostId);
+        const key = typeof packet.hostId === "string" && hostId(packet.hostId);
         if (!key) return;
         if (packet.type === "codex-app-server-connection-changed") {
             this.setConnection(key, packet.state === "connected");
         }
-        if (packet.type === "mcp-response" && packet.message?.id) {
+        if (packet.type === "mcp-response" && typeof packet.message?.id === "string") {
             this.receiveReply(key, packet.message.id, packet.message);
         }
         return packet;

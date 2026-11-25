@@ -24,16 +24,18 @@ export type MountBoard = (
 ) => () => void;
 
 function observeDesktop(desktop: DesktopConnection, board: BoardService): void {
-    ipcRenderer.on("codex_desktop:message-for-view", (_event, value) => {
-        const packet = desktop.receive(value);
+    window.addEventListener("message", ({ data, origin, source }) => {
+        if (source !== window || origin !== location.origin) return;
+        const packet = desktop.receive(data);
         const host = packet?.hostId && hostId(packet.hostId);
         const thread = packet?.params?.threadId;
         if (
             packet?.type === "mcp-notification" &&
             host &&
-            thread &&
+            typeof thread === "string" &&
+            typeof packet.method === "string" &&
             /^(turn\/(started|completed)|thread\/(status\/changed|archived|unarchived)|item\/completed)$/.test(
-                packet.method ?? "",
+                packet.method,
             )
         ) {
             board.notice(host, thread as ThreadId);
