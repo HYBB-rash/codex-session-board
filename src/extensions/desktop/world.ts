@@ -53,8 +53,10 @@ interface DesktopRouter {
     navigate(path: string, options?: { state?: object }): Promise<unknown>;
 }
 
+type LocalProjects = Record<string, { rootPaths: string[] }>;
+
 interface WorkspaceModule {
-    Gv?: DesktopAtom<Record<string, { rootPaths: string[] }>>;
+    Gv?: DesktopAtom<LocalProjects>;
     n8?: DesktopAtom<{ id: string; hostId: string; remotePath: string }[]>;
 }
 
@@ -144,6 +146,20 @@ function desktopRouter(): DesktopRouter {
     throw new Error("Codex navigation is unavailable");
 }
 
+export function resolveLocalProjectId(projects: LocalProjects, projectId: string, roots: string[]) {
+    const canonical = projects[projectId]?.rootPaths[0];
+    if (canonical && roots.includes(canonical)) return projectId;
+    if (roots.length === 0) return undefined;
+    const matches = Object.entries(projects).filter(
+        ([, { rootPaths }]) =>
+            rootPaths.length === roots.length &&
+            rootPaths.every((root, index) => root === roots[index]),
+    );
+    if (matches.length > 1)
+        throw new Error("Codex 中有多个本机项目使用相同目录，无法确定要打开的项目");
+    return matches[0]?.[0];
+}
+
 function composerProject(
     command: Extract<DesktopCommand, { kind: "new" }>,
     modules: DesktopModules,
@@ -158,10 +174,8 @@ function composerProject(
     ]);
     const { hostId, projectId, roots } = command;
     if (hostId === "local" && workspace.Gv && projectId !== null) {
-        const project = scope.get(workspace.Gv)[projectId];
-        const canonical = project?.rootPaths[0];
-        if (canonical && roots.includes(canonical))
-            return { projectId, projectKind: "local" as const };
+        const nativeId = resolveLocalProjectId(scope.get(workspace.Gv), projectId, roots);
+        if (nativeId) return { projectId: nativeId, projectKind: "local" as const };
     }
     if (hostId !== "local" && workspace.n8) {
         const projects = scope
@@ -354,6 +368,7 @@ export function desktopWorldSource(command: DesktopCommand): string {
         shellFibers,
         appScope,
         desktopRouter,
+        resolveLocalProjectId,
         composerProject,
         registerRemoteProject,
         openComposer,
