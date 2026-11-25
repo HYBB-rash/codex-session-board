@@ -1,4 +1,4 @@
-import type { PreviewSession } from "./preview/mount-preview";
+import type { PreviewSession } from "./preview/mount";
 
 export interface BoardSession extends PreviewSession {
     accountScope?: string;

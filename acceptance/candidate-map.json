@@ -480,7 +480,7 @@
             "status": "partial",
             "implementation": [
                 "src/extensions/session-board/preview.ts",
-                "src/ui/views/board/preview/mount-preview.ts",
+                "src/ui/views/board/preview/mount.ts",
                 "src/ui/views/board/session-card.tsx"
             ],
             "evidence": [
@@ -519,7 +519,7 @@
         "UI-002": {
             "status": "partial",
             "implementation": [
-                "src/ui/views/board/edit/mount-editor.ts",
+                "src/ui/views/board/edit/mount.ts",
                 "src/ui/views/board/edit/SessionEditor.vue",
                 "src/ui/views/board/drag.ts"
             ],

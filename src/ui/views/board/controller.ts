@@ -10,7 +10,7 @@ import { mountMoveFeedback } from "./edit/move-feedback";
 import { mountBoardHealth } from "./health/banner";
 import { type BoardHealth, createBoardHealthReports } from "./health/report";
 import { mountPluginUpdate } from "./plugin-update";
-import { mountBoardSessionReader } from "./preview/session-reader";
+import { mountBoardSessionReader } from "./preview/reader";
 import { mountBoardRefresh } from "./refresh";
 import type { BoardSession } from "./session";
 import { createColumnSortSave, type SortPreference } from "./sorting";

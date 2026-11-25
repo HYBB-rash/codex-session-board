@@ -1,6 +1,6 @@
 import type { BoardSnapshot } from "../controller";
 import type { BoardSession } from "../session";
-import { mountCardEditor } from "./mount-editor";
+import { mountCardEditor } from "./mount";
 import type { mountMoveFeedback } from "./move-feedback";
 
 interface EditsPorts {

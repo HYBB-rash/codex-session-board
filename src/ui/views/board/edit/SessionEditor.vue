@@ -43,8 +43,8 @@
 import { nextTick, onBeforeUnmount, ref, shallowRef } from "vue";
 import EditFields from "../../../shared/board/edit-fields";
 import type { BoardSession } from "../session";
-import type { EditorPorts } from "./mount-editor";
-import { readDraft, writeDraft } from "./note-drafts";
+import { readDraft, writeDraft } from "./drafts";
+import type { EditorPorts } from "./mount";
 
 const { ports } = defineProps<{ ports: EditorPorts }>();
 const dialog = ref<HTMLDialogElement>();
