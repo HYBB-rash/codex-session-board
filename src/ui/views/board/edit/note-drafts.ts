@@ -1,4 +1,4 @@
-import type { BoardSession } from "../../../board-view";
+import type { BoardSession } from "../session";
 
 const transientNotes = new Map<string, string>();
 

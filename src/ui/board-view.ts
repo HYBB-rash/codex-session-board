@@ -2,40 +2,11 @@ import { h, render } from "vue";
 import type { mountBoardArchive } from "./views/board/archive/archive";
 import { createCardDrag } from "./views/board/drag";
 import { type BoardElements, createBoardLayout } from "./views/board/layout";
-import type { PreviewSession } from "./views/board/preview/mount-preview";
 import BoardColumns from "./views/board/SessionColumns.vue";
+import type { BoardSession } from "./views/board/session";
 import { type SortMenuProps, type SortPreference, sortColumn } from "./views/board/sorting";
 
-export interface BoardSession extends PreviewSession {
-    accountScope?: string;
-    state: string | null;
-    note: string;
-    threadId?: string;
-    version: number;
-    inputVersion: number;
-    sectionVersion: string | null;
-    readOnly?: boolean;
-    manual?: boolean;
-    reason?: string;
-    placementReason?: string;
-    remote?: boolean;
-    archived?: boolean;
-    canArchive?: boolean;
-    archivePending?: boolean;
-    presence?: string;
-    catalogCurrent?: boolean;
-    ordinary?: boolean;
-    hostId?: string;
-    projectId?: string | null;
-    projectIssue?: string | null;
-    cwd?: string;
-    source?: string;
-    followUp?: boolean;
-    observationError?: string;
-    observationWarning?: string;
-    titleSyncPending?: boolean;
-    titleSyncError?: string;
-}
+export type { BoardSession } from "./views/board/session";
 
 export interface ProjectTag {
     label: string;

@@ -1,5 +1,5 @@
-import type { BoardSession } from "../../../board-view";
 import type { BoardSnapshot } from "../controller";
+import type { BoardSession } from "../session";
 import type { ArchiveRequests, ArchiveTarget } from "./batches";
 import { mountArchiveResults } from "./results";
 

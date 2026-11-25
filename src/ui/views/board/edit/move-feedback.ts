@@ -1,4 +1,4 @@
-import type { BoardSession } from "../../../board-view";
+import type { BoardSession } from "../session";
 
 interface MoveOperation extends BoardSession {
     from: string | null;

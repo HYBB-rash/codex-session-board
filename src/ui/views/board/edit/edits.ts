@@ -1,5 +1,5 @@
-import type { BoardSession } from "../../../board-view";
 import type { BoardSnapshot } from "../controller";
+import type { BoardSession } from "../session";
 import { mountCardEditor } from "./mount-editor";
 import type { mountMoveFeedback } from "./move-feedback";
 

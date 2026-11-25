@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, shallowRef } from "vue";
-import type { BoardSession } from "../../../board-view";
 import EditFields from "../../../shared/board-edit-fields";
+import type { BoardSession } from "../session";
 import type { EditorPorts } from "./mount-editor";
 import { readDraft, writeDraft } from "./note-drafts";
 

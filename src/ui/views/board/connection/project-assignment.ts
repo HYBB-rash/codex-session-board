@@ -1,5 +1,5 @@
-import type { BoardSession } from "../../../board-view";
 import type { CatalogProject } from "../browse/browse";
+import type { BoardSession } from "../session";
 
 interface AssignmentElements {
     dialog: HTMLDialogElement;

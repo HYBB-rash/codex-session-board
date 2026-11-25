@@ -1,5 +1,5 @@
 import { createApp } from "vue";
-import type { BoardSession } from "../../../board-view";
+import type { BoardSession } from "../session";
 import CardEditor from "./SessionEditor.vue";
 
 export interface EditorPorts {
