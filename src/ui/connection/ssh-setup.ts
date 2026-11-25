@@ -48,14 +48,6 @@ function resumable(
     );
 }
 
-export function mountBoardSshSetup(
-    settings: HTMLButtonElement,
-    dialog: HTMLDialogElement,
-    ports: SshSetupPorts,
-) {
-    return new BoardSshSetup(settings, dialog, ports);
-}
-
 function sshSetupElements(dialog: HTMLDialogElement) {
     const form = dialog.querySelector("form");
     if (!form) throw new Error("缺少 SSH 配置表单");
@@ -93,44 +85,16 @@ function showChange(change: { label: string; detail?: string }) {
     return item;
 }
 
-class BoardSshSetup {
-    result: SetupResult = { state: "form" };
-    busy = false;
-    private currentPreview: PreviewRequest | undefined;
-    private readonly elements: ReturnType<typeof sshSetupElements>;
+export function mountBoardSshSetup(
+    settings: HTMLButtonElement,
+    dialog: HTMLDialogElement,
+    ports: SshSetupPorts,
+) {
+    let setupResult: SetupResult = { state: "form" };
+    let busy = false;
+    let previewRequest: PreviewRequest | undefined;
 
-    constructor(
-        private readonly settings: HTMLButtonElement,
-        private readonly dialog: HTMLDialogElement,
-        private readonly ports: SshSetupPorts,
-    ) {
-        this.elements = sshSetupElements(dialog);
-        const { form, decline, restore, recheck, close } = this.elements;
-        settings.onclick = () => this.open();
-        form.onsubmit = (event) => this.submit(event);
-        decline.onclick = () => {
-            if (this.result.state === "preview")
-                void this.requestSetup({ action: "decline", previewId: this.result.previewId });
-        };
-        restore.onclick = () => {
-            if (this.result.state === "declined")
-                void this.requestSetup({ action: "restore", targetId: this.result.targetId });
-        };
-        recheck.onclick = () => {
-            if (resumable(this.result))
-                void this.requestSetup({ action: "recheck", targetId: this.result.targetId });
-        };
-        close.onclick = () => dialog.close();
-        dialog.addEventListener("cancel", (event) => {
-            if (this.busy) event.preventDefault();
-        });
-        dialog.addEventListener("close", () => {
-            ports.updateFilterLock();
-            void ports.load();
-        });
-    }
-
-    private showSaved(record: SavedSetup) {
+    function showSaved(record: SavedSetup) {
         const item = document.createElement("p"),
             message = document.createElement("span");
         item.textContent = record.summary;
@@ -140,39 +104,42 @@ class BoardSshSetup {
             const button = document.createElement("button");
             button.type = "button";
             button.textContent = record.state === "declined" ? "重新启用" : "核对配置进度";
-            button.disabled = this.busy;
+            button.disabled = busy;
             button.onclick = () => {
-                this.result = record;
+                setupResult = record;
                 if (record.state === "declined")
-                    void this.requestSetup({ action: "restore", targetId: record.targetId });
-                else this.render();
+                    void requestSetup({ action: "restore", targetId: record.targetId });
+                else render();
             };
             item.append(" ", button);
         }
         return item;
     }
 
-    private render() {
-        const { busy, result: current } = this;
-        const {
-            aliasChoice,
-            alias,
-            fields,
-            previewPanel,
-            target,
-            changes,
-            notice,
-            decline,
-            restore,
-            saved,
-            recheck,
-            next,
-            close,
-        } = this.elements;
+    function renderActions(current: SetupResult) {
+        const { decline, restore, recheck, next, close } = elements;
         const preview = current.state === "preview";
+        const continuing = resumable(current);
+        decline.hidden = !preview;
+        restore.hidden = current.state !== "declined";
+        recheck.hidden = !continuing;
+        next.hidden = !(
+            preview ||
+            continuing ||
+            current.state === "form" ||
+            current.state === "selectAlias"
+        );
+        next.textContent = preview ? "同意并配置" : continuing ? "继续配置" : "检查并预览";
+        next.disabled = busy || (preview && current.canApply !== true);
+        for (const button of [close, decline, restore, recheck]) button.disabled = busy;
+    }
+
+    function render() {
+        const current = setupResult;
+        const { aliasChoice, alias, fields, previewPanel, target, changes, notice, saved } =
+            elements;
         const choosing = current.state === "selectAlias";
         const entering = current.state === "form";
-        const continuing = resumable(current);
         aliasChoice.hidden = !choosing;
         if (choosing && !busy)
             alias.replaceChildren(...current.aliases.map((name) => new Option(name, name)));
@@ -181,88 +148,112 @@ class BoardSshSetup {
         fields.hidden = !entering;
         previewPanel.hidden = entering || choosing;
         target.textContent = current.summary || "";
-        changes.replaceChildren(...(preview ? current.changes.map(showChange) : []));
+        changes.replaceChildren(
+            ...(current.state === "preview" ? current.changes.map(showChange) : []),
+        );
         notice.textContent = current.message || "";
-        decline.hidden = !preview;
-        restore.hidden = current.state !== "declined";
         const records = entering ? (current.saved ?? []) : [];
         saved.hidden = !records.length;
-        saved.replaceChildren(...records.map((record) => this.showSaved(record)));
-        recheck.hidden = !continuing;
-        next.hidden = !entering && !preview && !continuing && !choosing;
-        next.textContent = preview ? "同意并配置" : continuing ? "继续配置" : "检查并预览";
-        next.disabled = busy || (preview && current.canApply !== true);
-        for (const button of [close, decline, restore, recheck]) button.disabled = busy;
+        saved.replaceChildren(...records.map((record) => showSaved(record)));
+        renderActions(current);
     }
 
-    private async requestSetup(request: SetupRequest, selection?: string) {
-        const { ports, dialog } = this;
-        if (this.busy || !ports.available()) return;
-        if (
-            request.action === "preview" ||
-            request.action === "restore" ||
-            request.action === "recheck"
-        )
-            this.currentPreview = request;
-        this.busy = true;
-        this.render();
+    function closeAfterApply(result: SetupResult) {
+        if (result.state !== "applied") return;
+        ports.announce(result.message || "");
+        dialog.close();
+    }
+
+    function finishRequest() {
+        busy = false;
+        render();
+        if (!dialog.open) void ports.load();
+    }
+
+    async function requestSetup(request: SetupRequest, selection?: string) {
+        if (busy || !ports.available()) return;
+        if (request.action === "preview" || "targetId" in request) previewRequest = request;
+        busy = true;
+        render();
         try {
-            this.result = (await ports.request(
+            setupResult = (await ports.request(
                 "/api/ssh-setup",
                 selection ? { ...request, alias: selection } : request,
             )) as SetupResult;
-            if (this.result.state === "applied") {
-                ports.announce(this.result.message || "");
-                dialog.close();
-            }
+            closeAfterApply(setupResult);
         } catch (error) {
-            this.result = {
-                ...this.result,
+            setupResult = {
+                ...setupResult,
                 message: error instanceof Error ? error.message : String(error),
             };
         } finally {
-            this.busy = false;
-            this.render();
-            if (!dialog.open) void ports.load();
+            finishRequest();
         }
     }
 
-    private open() {
-        const { ports, dialog } = this;
+    function open() {
         if (ports.locked()) return;
         if (ports.native()) {
-            void this.requestSetup({ action: "status" });
+            void requestSetup({ action: "status" });
             return;
         }
-        this.result = { state: "form" };
-        this.currentPreview = undefined;
+        setupResult = { state: "form" };
+        previewRequest = undefined;
         dialog.showModal();
         ports.updateFilterLock();
-        void this.requestSetup({ action: "status" });
+        void requestSetup({ action: "status" });
     }
 
-    private submit(event: SubmitEvent) {
-        const { result, currentPreview } = this;
-        const { alias, form } = this.elements;
+    function submit(event: SubmitEvent) {
+        const result = setupResult;
+        const currentPreview = previewRequest;
+        const { alias, form } = elements;
         event.preventDefault();
         if (resumable(result) || (result.state === "preview" && result.canApply === true))
-            void this.requestSetup({ action: "apply", previewId: result.previewId });
+            void requestSetup({ action: "apply", previewId: result.previewId });
         else if (result.state === "selectAlias" && currentPreview)
-            void this.requestSetup(currentPreview, alias.value);
+            void requestSetup(currentPreview, alias.value);
         else if (result.state === "form")
-            void this.requestSetup({
+            void requestSetup({
                 action: "preview",
                 target: Object.fromEntries(new FormData(form)),
             });
     }
 
-    update() {
-        const { settings, ports } = this;
+    function update() {
         settings.hidden = !ports.available();
         if (ports.native()) settings.textContent = "Codex 远程连接";
     }
 
-    get openDialog() {
-        return this.dialog.open;
-    }
+    const elements = sshSetupElements(dialog);
+    const { form, decline, restore, recheck, close } = elements;
+    settings.onclick = () => open();
+    form.onsubmit = (event) => submit(event);
+    decline.onclick = () => {
+        if (setupResult.state === "preview")
+            void requestSetup({ action: "decline", previewId: setupResult.previewId });
+    };
+    restore.onclick = () => {
+        if (setupResult.state === "declined")
+            void requestSetup({ action: "restore", targetId: setupResult.targetId });
+    };
+    recheck.onclick = () => {
+        if (resumable(setupResult))
+            void requestSetup({ action: "recheck", targetId: setupResult.targetId });
+    };
+    close.onclick = () => dialog.close();
+    dialog.addEventListener("cancel", (event) => {
+        if (busy) event.preventDefault();
+    });
+    dialog.addEventListener("close", () => {
+        ports.updateFilterLock();
+        void ports.load();
+    });
+
+    return {
+        update,
+        get openDialog() {
+            return dialog.open;
+        },
+    };
 }
