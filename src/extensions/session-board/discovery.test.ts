@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { type TestContext, test } from "node:test";
 import { type BoardLedger, emptyLedger } from "./archive.js";
 import { BoardService } from "./board-service.js";
+import type { DesktopCommand } from "./desktop/world.js";
 import {
     DesktopConnection,
     hostId,
@@ -11,7 +12,6 @@ import {
     type ThreadId,
     type Turn,
 } from "./desktop-connection.js";
-import type { DesktopCommand } from "./desktop-world.js";
 import type { CardRecord } from "./records.js";
 import { defaults } from "./settings.js";
 

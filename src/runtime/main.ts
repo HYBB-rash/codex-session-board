@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import * as path from "node:path";
 import type { App, IpcMain, IpcMainEvent, Session, WebContents } from "electron";
 import type { BoardLedger } from "../extensions/session-board/archive.js";
-import { boardDesktopRequest } from "../extensions/session-board/desktop-main.js";
+import { boardDesktopRequest } from "../extensions/session-board/desktop/main.js";
 import {
     BoardLedgers,
     BoardRecords,
@@ -16,8 +16,8 @@ import { inPlaceRuntime, logs, outputDir, stateDir } from "../installer/paths.js
 import { runningVersion } from "../installer/release/store.js";
 import { LegacyBoardRuntime } from "../migration/runtime.js";
 import type { ExtensionApi, ExtensionModule, SidebarItemInput } from "./api.js";
-import { BoardBroker, boardFrame } from "./board-broker.js";
-import { trustedAppFrame } from "./ipc-guard.js";
+import { BoardBroker, boardFrame } from "./board/broker.js";
+import { trustedAppFrame } from "./ipc/guard.js";
 import { type OwnedSidebarItem, SidebarRegistry } from "./registry.js";
 
 const requireFromHere = createRequire(__filename);

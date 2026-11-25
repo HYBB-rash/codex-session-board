@@ -1,6 +1,6 @@
 import type { IpcMainEvent } from "electron";
-import { hostId as parseHostId } from "./desktop-connection.js";
-import { type DesktopCommand, desktopWorldSource } from "./desktop-world.js";
+import { hostId as parseHostId } from "../desktop-connection.js";
+import { type DesktopCommand, desktopWorldSource } from "./world.js";
 
 function parseDesktopCommand(value: unknown): DesktopCommand {
     if (typeof value !== "object" || value === null)

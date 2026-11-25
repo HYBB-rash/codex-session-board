@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { trustedAppFrame } from "./ipc-guard.js";
+import { trustedAppFrame } from "./ipc/guard.js";
 import { parseUiPayload, SidebarRegistry } from "./registry.js";
 
 const page = { title: "Session Board", body: "Codex Enhancer UI integration successful." };

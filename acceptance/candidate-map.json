@@ -497,7 +497,7 @@
             "implementation": [
                 "src/extensions/session-board/extension.ts",
                 ".mcp.json",
-                "src/runtime/board-broker.ts"
+                "src/runtime/board/broker.ts"
             ],
             "evidence": [
                 "native-move",
@@ -580,7 +580,7 @@
                 "src/compat/service/receipt.ts",
                 "src/compat/client.ts",
                 "src/compat/service/identity.ts",
-                "src/runtime/board-broker.ts"
+                "src/runtime/board/broker.ts"
             ],
             "evidence": [
                 "cli-instance",
@@ -597,7 +597,7 @@
             "implementation": [
                 "src/extensions/session-board/board-service.ts",
                 "src/extensions/session-board/desktop-connection.ts",
-                "src/extensions/session-board/desktop-world.ts",
+                "src/extensions/session-board/desktop/world.ts",
                 "src/compat/operations.ts"
             ],
             "evidence": [
@@ -613,7 +613,7 @@
             "status": "fixture",
             "implementation": [
                 "src/compat/server.ts",
-                "src/runtime/ipc-guard.ts",
+                "src/runtime/ipc/guard.ts",
                 "src/extensions/session-board/board-service.ts"
             ],
             "evidence": ["http-security", "ipc-frame", "navigation-exact-thread"]

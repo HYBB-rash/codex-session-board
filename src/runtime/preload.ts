@@ -10,7 +10,7 @@ import {
 } from "../extensions/session-board/desktop-connection.js";
 import type { LoadedBoardRecords } from "../extensions/session-board/records.js";
 import { readSettings } from "../extensions/session-board/settings.js";
-import type { BoardRelayRequest } from "./board-broker.js";
+import type { BoardRelayRequest } from "./board/broker.js";
 import { startUiHost } from "./host.js";
 
 function proof(stage: string, extra: Record<string, unknown> = {}): void {

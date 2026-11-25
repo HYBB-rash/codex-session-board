@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 
-import type { DesktopCommand } from "./desktop-world.js";
+import type { DesktopCommand } from "./desktop/world.js";
 
 declare const hostBrand: unique symbol;
 declare const threadBrand: unique symbol;
