@@ -434,21 +434,6 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         get mode() {
             return this.settings.mode;
         },
-        refresh,
-        readBoard,
-        loadAccount,
-        readPages,
-        refreshHost,
-        readActive,
-        refreshArchives,
-        refreshProjects,
-        notice,
-        observeHost,
-        readHistory,
-        observeThread,
-        storeObservation,
-        readObservedTurn,
-        applyPhase,
         retryHostTitle,
         oldestTitleRetry,
         canRetryHostTitle,
@@ -506,80 +491,76 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         requestChange,
     };
 
-    async function refresh(this: Runtime): Promise<void> {
-        this.refreshing ??= this.readBoard()
+    async function refresh(): Promise<void> {
+        runtime.refreshing ??= readBoard()
             .catch((error: unknown) => {
-                this.ports.authority(undefined);
+                ports.authority(undefined);
                 throw error;
             })
             .finally(() => {
-                this.refreshing = undefined;
+                runtime.refreshing = undefined;
             });
-        await this.refreshing;
+        await runtime.refreshing;
     }
 
-    async function readBoard(this: Runtime): Promise<void> {
-        const context = await this.desktop.context();
+    async function readBoard(): Promise<void> {
+        const context = await desktop.context();
         const account = accountKey(context);
-        const switched = this.context === undefined || account !== accountKey(this.context);
-        if (switched && this.context) {
-            this.context = undefined;
-            this.accountScope = null;
-            this.ports.authority(undefined);
+        const switched = runtime.context === undefined || account !== accountKey(runtime.context);
+        if (switched && runtime.context) {
+            runtime.context = undefined;
+            runtime.accountScope = null;
+            ports.authority(undefined);
         }
-        const settings = await this.ports.settings(account);
-        const titleStartedAt = settings.syncTitles
-            ? await this.ports.titleEpoch(account)
-            : undefined;
-        if (switched) await this.loadAccount(account);
-        for (const hostId of this.archiveDeadlines.keys()) {
-            if (archiveInterval(this.settings, hostId) !== archiveInterval(settings, hostId))
-                this.archiveDeadlines.delete(hostId);
+        const settings = await ports.settings(account);
+        const titleStartedAt = settings.syncTitles ? await ports.titleEpoch(account) : undefined;
+        if (switched) await loadAccount(account);
+        for (const hostId of runtime.archiveDeadlines.keys()) {
+            if (archiveInterval(runtime.settings, hostId) !== archiveInterval(settings, hostId))
+                runtime.archiveDeadlines.delete(hostId);
         }
-        this.settings = settings;
-        this.titleStartedAt = titleStartedAt;
-        this.context = context;
-        this.ports.authority(account);
-        await Promise.all(this.desktop.knownHosts().map((host) => this.refreshHost(host, context)));
-        this.requireAccount(account);
-        this.autoArchive(context);
+        runtime.settings = settings;
+        runtime.titleStartedAt = titleStartedAt;
+        runtime.context = context;
+        ports.authority(account);
+        await Promise.all(desktop.knownHosts().map((host) => refreshHost(host, context)));
+        runtime.requireAccount(account);
+        runtime.autoArchive(context);
     }
 
-    async function loadAccount(this: Runtime, account: string): Promise<void> {
+    async function loadAccount(account: string): Promise<void> {
         const [{ records, legacyCachedCards }, ledger, accountScope] = await Promise.all([
-            this.ports.load(account),
-            this.ports.loadLedger(account),
+            ports.load(account),
+            ports.loadLedger(account),
             scopeDigest(account),
         ]);
-        if (account !== accountKey(await this.desktop.context()))
-            throw new Error("Codex 账号已变更");
-        this.hosts.clear();
-        this.changed.clear();
-        this.runtimeDirty.clear();
-        this.historyReads.clear();
-        this.nextTitleAttempt.clear();
-        this.records = records;
-        this.legacyCachedCards = legacyCachedCards;
-        this.ledger = ledger;
-        this.accountScope = accountScope;
-        this.archiveDeadlines.clear();
-        this.archiveRuns.clear();
+        if (account !== accountKey(await desktop.context())) throw new Error("Codex 账号已变更");
+        runtime.hosts.clear();
+        runtime.changed.clear();
+        runtime.runtimeDirty.clear();
+        runtime.historyReads.clear();
+        runtime.nextTitleAttempt.clear();
+        runtime.records = records;
+        runtime.legacyCachedCards = legacyCachedCards;
+        runtime.ledger = ledger;
+        runtime.accountScope = accountScope;
+        runtime.archiveDeadlines.clear();
+        runtime.archiveRuns.clear();
     }
 
     async function readPages(
-        this: Runtime,
         connection: HostConnection,
         archived: boolean,
         rows: Map<ThreadId, Thread>,
     ): Promise<void> {
         const cursors = new Set<string>();
         let cursor: string | null = null;
-        for (let index = 0; index < this.settings.maxPages; index++) {
-            const page = await this.desktop.list(
+        for (let index = 0; index < runtime.settings.maxPages; index++) {
+            const page = await desktop.list(
                 connection,
                 archived,
                 cursor,
-                this.settings.pageSize,
+                runtime.settings.pageSize,
             );
             addUnseenThreads(rows, page.data);
             cursor = page.nextCursor;
@@ -587,53 +568,45 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             if (cursors.has(cursor)) throw new Error("Codex 返回了重复的分页游标");
             cursors.add(cursor);
         }
-        throw new Error(`会话列表达到分页上限（${this.settings.maxPages} 页）`);
+        throw new Error(`会话列表达到分页上限（${runtime.settings.maxPages} 页）`);
     }
 
-    async function refreshHost(
-        this: Runtime,
-        hostId: HostId,
-        context: SidebarContext,
-    ): Promise<void> {
-        const last = this.hosts.get(hostId) ?? emptyHost();
+    async function refreshHost(hostId: HostId, context: SidebarContext): Promise<void> {
+        const last = runtime.hosts.get(hostId) ?? emptyHost();
         const next: HostSnapshot = {
             ...emptyHost(),
             archived: last.archived,
             projects: last.projects,
         };
-        const scanVersion = this.changes;
+        const scanVersion = runtime.changes;
         try {
-            const connection = this.desktop.capture(hostId);
-            await this.readActive(connection, next);
-            await this.freshContext(context);
-            this.desktop.assertCurrent(connection);
+            const connection = desktop.capture(hostId);
+            await readActive(connection, next);
+            await runtime.freshContext(context);
+            desktop.assertCurrent(connection);
             next.currentActive = new Set(next.active.keys());
             const archiveEpochMatches = last.connection?.epoch === connection.epoch;
             if (archiveEpochMatches) next.currentArchived = new Set(last.currentArchived);
             retainMissing(last.active, next.active);
-            mergeLateWrites(this.changed, hostId, last, next, scanVersion);
+            mergeLateWrites(runtime.changed, hostId, last, next, scanVersion);
             next.connection = connection;
             const lastRead = next.scanComplete ? Date.now() / 1000 : last.lastRead;
             if (lastRead !== undefined) next.lastRead = lastRead;
-            this.hosts.set(hostId, next);
+            runtime.hosts.set(hostId, next);
             await Promise.all([
-                this.refreshArchives(connection, next),
-                this.refreshProjects(connection, next),
-                this.observeHost(connection, next, context),
+                refreshArchives(connection, next),
+                refreshProjects(connection, next),
+                observeHost(connection, next, context),
             ]);
         } catch (error) {
-            const available = this.hosts.get(hostId) ?? last;
-            this.hosts.set(hostId, failedHostScan(this.desktop, available, error));
+            const available = runtime.hosts.get(hostId) ?? last;
+            runtime.hosts.set(hostId, failedHostScan(desktop, available, error));
         }
     }
 
-    async function readActive(
-        this: Runtime,
-        connection: HostConnection,
-        host: HostSnapshot,
-    ): Promise<void> {
+    async function readActive(connection: HostConnection, host: HostSnapshot): Promise<void> {
         try {
-            await this.readPages(connection, false, host.active);
+            await readPages(connection, false, host.active);
             host.scanComplete = true;
         } catch (error) {
             if (!host.active.size) throw error;
@@ -641,16 +614,12 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         }
     }
 
-    async function refreshArchives(
-        this: Runtime,
-        connection: HostConnection,
-        host: HostSnapshot,
-    ): Promise<void> {
+    async function refreshArchives(connection: HostConnection, host: HostSnapshot): Promise<void> {
         try {
             const archived = new Map<ThreadId, Thread>();
-            await this.readPages(connection, true, archived);
-            await this.freshContext();
-            this.desktop.assertCurrent(connection);
+            await readPages(connection, true, archived);
+            await runtime.freshContext();
+            desktop.assertCurrent(connection);
             mergeArchives(host, archived);
         } catch (error) {
             host.currentArchived = new Set();
@@ -658,24 +627,20 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         }
     }
 
-    async function refreshProjects(
-        this: Runtime,
-        connection: HostConnection,
-        host: HostSnapshot,
-    ): Promise<void> {
+    async function refreshProjects(connection: HostConnection, host: HostSnapshot): Promise<void> {
         try {
             const projects = new Map<string, HostProject>();
             const cursors = new Set<string>();
             let cursor: string | null = null;
             do {
-                const page = await this.desktop.projects(connection, cursor);
+                const page = await desktop.projects(connection, cursor);
                 for (const project of page.data) projects.set(project.id, project);
                 cursor = page.nextCursor;
                 if (cursor && cursors.has(cursor)) throw new Error("项目分页游标重复");
                 if (cursor) cursors.add(cursor);
             } while (cursor);
-            await this.freshContext();
-            this.desktop.assertCurrent(connection);
+            await runtime.freshContext();
+            desktop.assertCurrent(connection);
             host.projects = projects;
             host.projectRead = true;
         } catch (error) {
@@ -683,51 +648,50 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         }
     }
 
-    function notice(this: Runtime, hostId: HostId, threadId: ThreadId): void {
+    function notice(hostId: HostId, threadId: ThreadId): void {
         let connection: HostConnection;
         try {
-            connection = this.desktop.capture(hostId);
+            connection = desktop.capture(hostId);
         } catch {
             return;
         }
-        const previous = this.runtimeDirty.get(hostId);
+        const previous = runtime.runtimeDirty.get(hostId);
         const ids = previous?.epoch === connection.epoch ? previous.ids : new Set<ThreadId>();
         ids.add(threadId);
-        this.runtimeDirty.set(hostId, { epoch: connection.epoch, ids });
+        runtime.runtimeDirty.set(hostId, { epoch: connection.epoch, ids });
     }
 
     async function observeHost(
-        this: Runtime,
         connection: HostConnection,
         host: HostSnapshot,
         context: SidebarContext,
     ): Promise<void> {
-        const pending = this.runtimeDirty.get(connection.hostId);
+        const pending = runtime.runtimeDirty.get(connection.hostId);
         const dirty = pending?.epoch === connection.epoch ? pending.ids : new Set<ThreadId>();
-        this.runtimeDirty.delete(connection.hostId);
+        runtime.runtimeDirty.delete(connection.hostId);
         const threads = [...host.active.values()].filter(
-            (thread) => host.currentActive.has(thread.id) && canWrite(this.settings, thread.id),
+            (thread) => host.currentActive.has(thread.id) && canWrite(runtime.settings, thread.id),
         );
         const realtime = threads.filter(
             (thread, index) =>
                 dirty.has(thread.id) ||
                 thread.status?.type === "active" ||
-                this.records[cardId({ hostId: connection.hostId, threadId: thread.id })]
+                runtime.records[cardId({ hostId: connection.hostId, threadId: thread.id })]
                     ?.pendingPhaseKey !== undefined ||
-                (index < 12 && thread.updatedAt >= this.observationSince - 3),
+                (index < 12 && thread.updatedAt >= runtime.observationSince - 3),
         );
         for (const thread of realtime) {
             try {
-                await this.observeThread(connection, thread, context);
+                await observeThread(connection, thread, context);
             } catch (error) {
                 host.runtimeError = errorText(error);
-                if (dirty.has(thread.id)) this.notice(connection.hostId, thread.id);
+                if (dirty.has(thread.id)) notice(connection.hostId, thread.id);
             }
         }
         host.runtimeVerified = host.scanComplete === true && host.runtimeError === undefined;
-        await this.retryHostTitle(connection, host);
+        await runtime.retryHostTitle(connection, host);
         const checked = new Set(realtime.map(({ id }) => id));
-        await this.readHistory(
+        await readHistory(
             connection,
             host,
             context,
@@ -736,50 +700,48 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     }
 
     async function readHistory(
-        this: Runtime,
         connection: HostConnection,
         host: HostSnapshot,
         context: SidebarContext,
         candidates: Thread[],
     ): Promise<void> {
         const sequence = (thread: Thread) =>
-            this.historyReads.get(cardId({ hostId: connection.hostId, threadId: thread.id }))
+            runtime.historyReads.get(cardId({ hostId: connection.hostId, threadId: thread.id }))
                 ?.sequence ?? 0;
         candidates.sort((left, right) => sequence(left) - sequence(right));
         const deadline = performance.now() + historyPollBudgetMs;
-        for (const thread of candidates.slice(0, this.settings.historyPerPoll)) {
+        for (const thread of candidates.slice(0, runtime.settings.historyPerPoll)) {
             const timeout = Math.floor(deadline - performance.now());
             if (timeout < 1) break;
             try {
-                this.desktop.assertCurrent(connection);
-                await this.observeThread(connection, thread, context, { historyTimeout: timeout });
+                desktop.assertCurrent(connection);
+                await observeThread(connection, thread, context, { historyTimeout: timeout });
             } catch (error) {
                 host.historyError = errorText(error);
             }
         }
         const errors = [...host.currentActive].filter(
             (threadId) =>
-                this.historyReads.get(cardId({ hostId: connection.hostId, threadId }))?.error,
+                runtime.historyReads.get(cardId({ hostId: connection.hostId, threadId }))?.error,
         ).length;
         if (errors) host.historyError = `${errors} 个会话的历史暂不可读`;
     }
 
     async function observeThread(
-        this: Runtime,
         connection: HostConnection,
         thread: Thread,
         context: SidebarContext,
         options: { historyTimeout?: number } = {},
     ): Promise<void> {
         const id = cardId({ hostId: connection.hostId, threadId: thread.id });
-        if (this.editing.has(id)) {
-            if (options.historyTimeout === undefined) this.notice(connection.hostId, thread.id);
+        if (runtime.editing.has(id)) {
+            if (options.historyTimeout === undefined) notice(connection.hostId, thread.id);
             return;
         }
-        this.editing.add(id);
+        runtime.editing.add(id);
         let queuedTitle: boolean;
         try {
-            queuedTitle = await this.storeObservation(
+            queuedTitle = await storeObservation(
                 connection,
                 thread,
                 context,
@@ -787,56 +749,52 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
                 options.historyTimeout,
             );
         } finally {
-            this.editing.delete(id);
+            runtime.editing.delete(id);
         }
-        if (queuedTitle) void this.retryTitle(connection, thread.id);
+        if (queuedTitle) void runtime.retryTitle(connection, thread.id);
     }
 
     async function storeObservation(
-        this: Runtime,
         connection: HostConnection,
         thread: Thread,
         context: SidebarContext,
         id: string,
         historyTimeout?: number,
     ): Promise<boolean> {
-        const latest = await this.readObservedTurn(connection, thread.id, id, historyTimeout);
-        const current = this.records[id] ?? emptyRecord;
+        const latest = await readObservedTurn(connection, thread.id, id, historyTimeout);
+        const current = runtime.records[id] ?? emptyRecord;
         const phase = historyTimeout === undefined ? runtimePhase(thread.status, latest) : null;
         const observation = observedRecord(current, latest, phase);
         if (!observation) return false;
         const { next, phaseChanged } = observation;
         const change =
-            phase && isNewPhase(phase, current, this.observationSince)
-                ? await this.applyPhase(connection, thread, context, phase, next)
+            phase && isNewPhase(phase, current, runtime.observationSince)
+                ? await applyPhase(connection, thread, context, phase, next)
                 : undefined;
         if (phaseChanged) delete next.pendingPhaseKey;
-        await this.commitRecord(context, id, current.version, next, change);
+        await runtime.commitRecord(context, id, current.version, next, change);
         return next.title !== undefined && next.title !== current.title;
     }
 
     async function readObservedTurn(
-        this: Runtime,
         connection: HostConnection,
         threadId: ThreadId,
         id: string,
         timeout?: number,
     ) {
-        const sequence = ++this.historySequence;
+        const sequence = ++runtime.historySequence;
         try {
-            const latest = (
-                await this.desktop.turns(connection, threadId, "summary", null, timeout)
-            ).data[0];
-            this.historyReads.set(id, { sequence });
+            const latest = (await desktop.turns(connection, threadId, "summary", null, timeout))
+                .data[0];
+            runtime.historyReads.set(id, { sequence });
             return latest;
         } catch (error) {
-            this.historyReads.set(id, { sequence, error: errorText(error) });
+            runtime.historyReads.set(id, { sequence, error: errorText(error) });
             throw error;
         }
     }
 
     async function applyPhase(
-        this: Runtime,
         connection: HostConnection,
         thread: Thread,
         context: SidebarContext,
@@ -845,11 +803,11 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     ): Promise<RecordChange | undefined> {
         const position = placement(context, connection.hostId, thread);
         if (!position.managed) return;
-        const current = await this.desktop.read(connection, thread.id, false);
+        const current = await desktop.read(connection, thread.id, false);
         if (placement(context, connection.hostId, current).version !== position.version) return;
         const id = cardId({ hostId: connection.hostId, threadId: thread.id });
-        await this.freshContext(context);
-        this.desktop.assertCurrent(connection);
+        await runtime.freshContext(context);
+        desktop.assertCurrent(connection);
         const account = accountKey(context);
         const pending = {
             account,
@@ -857,22 +815,24 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             expected: next.version - 1,
             phaseKey: phase.key,
         };
-        if (!(await this.ports.preparePhase(pending)))
-            throw new Error("自动阶段已过期，请刷新后重试");
-        this.desktop.assertCurrent(connection);
-        this.requireAccount(account);
-        this.records[id] = { ...(this.records[id] ?? emptyRecord), pendingPhaseKey: phase.key };
-        const after = await this.moveCard(phase.state, connection, context, current);
+        if (!(await ports.preparePhase(pending))) throw new Error("自动阶段已过期，请刷新后重试");
+        desktop.assertCurrent(connection);
+        runtime.requireAccount(account);
+        runtime.records[id] = {
+            ...(runtime.records[id] ?? emptyRecord),
+            pendingPhaseKey: phase.key,
+        };
+        const after = await runtime.moveCard(phase.state, connection, context, current);
         next.manual = false;
         next.reason = phase.reason;
         const afterActivation =
             !phase.terminal ||
             (phase.at !== null &&
-                this.titleStartedAt !== undefined &&
-                phase.at >= Math.floor(this.titleStartedAt));
-        if (this.settings.syncTitles && (afterActivation || next.title))
+                runtime.titleStartedAt !== undefined &&
+                phase.at >= Math.floor(runtime.titleStartedAt));
+        if (runtime.settings.syncTitles && (afterActivation || next.title))
             next.title = { state: phase.state };
-        this.publishThread(connection.hostId, after);
+        runtime.publishThread(connection.hostId, after);
         return { kind: "automatic", state: phase.state };
     }
 
@@ -1798,7 +1758,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         let connection: HostConnection;
         try {
             connection = this.desktop.capture(hostId);
-            await this.readPages(connection, true, archived);
+            await readPages(connection, true, archived);
         } catch (error) {
             throw new ArchiveReadUnavailable(errorText(error));
         }
@@ -1963,7 +1923,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     }
 
     async function refreshSnapshot(this: Runtime, account?: string) {
-        await this.refresh();
+        await refresh();
         if (account !== undefined) this.requireAccount(account);
         return this.snapshot();
     }
@@ -1981,8 +1941,8 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     }
 
     return {
-        refresh: runtime.refresh.bind(runtime),
-        notice: runtime.notice.bind(runtime),
+        refresh,
+        notice,
         snapshot: runtime.snapshot.bind(runtime),
         update: runtime.update.bind(runtime),
         request: runtime.request.bind(runtime),

@@ -17,10 +17,6 @@ or {
             and {
                 $filename <: r"(?:^|.*[/\\])src[/\\]extensions[/\\]archive\.ts$",
                 $name <: r"^(?:ArchivePreconditionError|ArchiveReadUnavailable|NewInputError)$"
-            },
-            and {
-                $filename <: r"(?:^|.*[/\\])src[/\\]extensions[/\\]service\.ts$",
-                $name <: r"^BoardService$"
             }
         }
     }

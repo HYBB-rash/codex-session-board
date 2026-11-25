@@ -135,7 +135,7 @@ function desktopBoard(mountBoard: MountBoard): void {
         mountPage(id, panel, close) {
             if (id !== "session-board") return;
             closePage = close;
-            const unmount = mountBoard(panel, board.request.bind(board), close);
+            const unmount = mountBoard(panel, board.request, close);
             return () => {
                 closePage = undefined;
                 unmount();
