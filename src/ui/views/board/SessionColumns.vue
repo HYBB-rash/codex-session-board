@@ -1,11 +1,3 @@
-<script setup lang="ts">
-import ColumnSort from "./ColumnSort.vue";
-import type { BoardControls, BoardModel } from "./columns";
-import SessionCard from "./session-card";
-
-defineProps<{ model: BoardModel; dependencies: BoardControls; unplaced?: boolean }>();
-</script>
-
 <template>
     <template v-if="unplaced">
         <SessionCard
@@ -111,3 +103,11 @@ defineProps<{ model: BoardModel; dependencies: BoardControls; unplaced?: boolean
         </section>
     </section>
 </template>
+
+<script setup lang="ts">
+import ColumnSort from "./ColumnSort.vue";
+import type { BoardControls, BoardModel } from "./columns";
+import SessionCard from "./session-card";
+
+defineProps<{ model: BoardModel; dependencies: BoardControls; unplaced?: boolean }>();
+</script>

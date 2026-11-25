@@ -1,3 +1,51 @@
+<template>
+    <button
+        ref="trigger"
+        type="button"
+        class="column-sort"
+        aria-haspopup="menu"
+        :aria-expanded="expanded"
+        :aria-controls="`sort-${state}`"
+        :aria-label="`${label}排序，按更新时间${labels[preference.direction]}`"
+        title="按会话更新时间排列；点击选择顺序，拖入本列后也遵循此顺序"
+        :value="preference.direction"
+        :disabled="disabled || submitting"
+        @click="expanded ? close() : open()"
+        @keydown.up.prevent="open"
+        @keydown.down.prevent="open"
+    >
+        <span class="sort-label">更新 {{ preference.direction === "asc" ? "↑" : "↓" }}</span
+        ><span class="sort-caret" aria-hidden="true">▾</span>
+    </button>
+    <div
+        ref="menu"
+        :id="`sort-${state}`"
+        popover="auto"
+        role="menu"
+        class="sort-menu"
+        :aria-label="`${label}排序`"
+        @beforetoggle="toggle"
+        @keydown="navigate"
+        @focusout="focusOut"
+    >
+        <div class="sort-menu-title">按更新时间</div>
+        <button
+            v-for="direction in directions"
+            :key="direction"
+            ref="options"
+            type="button"
+            class="sort-option"
+            tabindex="-1"
+            role="menuitemradio"
+            :data-direction="direction"
+            :aria-checked="direction === preference.direction"
+            @click="choose(direction)"
+        >
+            {{ labels[direction] }}
+        </button>
+    </div>
+</template>
+
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onUpdated, ref, useTemplateRef } from "vue";
 import type { Direction, SortMenuProps, SortPreference } from "./sorting";
@@ -103,51 +151,3 @@ async function choose(direction: Direction) {
     }
 }
 </script>
-
-<template>
-    <button
-        ref="trigger"
-        type="button"
-        class="column-sort"
-        aria-haspopup="menu"
-        :aria-expanded="expanded"
-        :aria-controls="`sort-${state}`"
-        :aria-label="`${label}排序，按更新时间${labels[preference.direction]}`"
-        title="按会话更新时间排列；点击选择顺序，拖入本列后也遵循此顺序"
-        :value="preference.direction"
-        :disabled="disabled || submitting"
-        @click="expanded ? close() : open()"
-        @keydown.up.prevent="open"
-        @keydown.down.prevent="open"
-    >
-        <span class="sort-label">更新 {{ preference.direction === "asc" ? "↑" : "↓" }}</span
-        ><span class="sort-caret" aria-hidden="true">▾</span>
-    </button>
-    <div
-        ref="menu"
-        :id="`sort-${state}`"
-        popover="auto"
-        role="menu"
-        class="sort-menu"
-        :aria-label="`${label}排序`"
-        @beforetoggle="toggle"
-        @keydown="navigate"
-        @focusout="focusOut"
-    >
-        <div class="sort-menu-title">按更新时间</div>
-        <button
-            v-for="direction in directions"
-            :key="direction"
-            ref="options"
-            type="button"
-            class="sort-option"
-            tabindex="-1"
-            role="menuitemradio"
-            :data-direction="direction"
-            :aria-checked="direction === preference.direction"
-            @click="choose(direction)"
-        >
-            {{ labels[direction] }}
-        </button>
-    </div>
-</template>

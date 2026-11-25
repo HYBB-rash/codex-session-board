@@ -51,7 +51,7 @@
             },
             "nursery": {
                 "useVueBlockOrder": {
-                    "level": "info",
+                    "level": "error",
                     "options": {
                         "order": ["template", "script", "style"]
                     }

@@ -1,3 +1,38 @@
+<template>
+    <div id="reply-scrim" aria-hidden="true" :hidden="!reading"></div>
+    <aside
+        id="reply-reader"
+        ref="reader"
+        aria-labelledby="reply-title"
+        :hidden="!reading"
+        :style="{ '--reply-board-top': top }"
+    >
+        <header class="reply-heading">
+            <div class="reply-label">
+                <span>回复预览</span
+                ><button id="reply-close" class="quiet" type="button" @click="close()">关闭</button>
+            </div>
+            <h2 id="reply-title" :title="reading?.session.title">{{ reading?.session.title }}</h2>
+            <p id="reply-meta" :title="metadata">{{ metadata }}</p>
+        </header>
+        <div id="reply-state">
+            <p id="reply-status" role="status" :class="{ error: reading?.error }">
+                {{ reading?.status }}
+            </p>
+            <ReplyRefresh :action="reading?.action || ''" @activate="refresh" />
+        </div>
+        <section
+            id="reply-body"
+            ref="body"
+            aria-label="助手回复正文"
+            :aria-busy="Boolean(reading?.busy)"
+        >
+            <div id="reply-text" v-html="reading?.html || ''"></div>
+        </section>
+        <ReplyOpen :can-open="reading?.session.canOpen !== false" @activate="enterSession" />
+    </aside>
+</template>
+
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, shallowRef } from "vue";
 import { ReplyOpen, ReplyRefresh } from "../../../shared/reply-actions";
@@ -198,38 +233,3 @@ onBeforeUnmount(() => {
 });
 defineExpose({ selectedId, open, update });
 </script>
-
-<template>
-    <div id="reply-scrim" aria-hidden="true" :hidden="!reading"></div>
-    <aside
-        id="reply-reader"
-        ref="reader"
-        aria-labelledby="reply-title"
-        :hidden="!reading"
-        :style="{ '--reply-board-top': top }"
-    >
-        <header class="reply-heading">
-            <div class="reply-label">
-                <span>回复预览</span
-                ><button id="reply-close" class="quiet" type="button" @click="close()">关闭</button>
-            </div>
-            <h2 id="reply-title" :title="reading?.session.title">{{ reading?.session.title }}</h2>
-            <p id="reply-meta" :title="metadata">{{ metadata }}</p>
-        </header>
-        <div id="reply-state">
-            <p id="reply-status" role="status" :class="{ error: reading?.error }">
-                {{ reading?.status }}
-            </p>
-            <ReplyRefresh :action="reading?.action || ''" @activate="refresh" />
-        </div>
-        <section
-            id="reply-body"
-            ref="body"
-            aria-label="助手回复正文"
-            :aria-busy="Boolean(reading?.busy)"
-        >
-            <div id="reply-text" v-html="reading?.html || ''"></div>
-        </section>
-        <ReplyOpen :can-open="reading?.session.canOpen !== false" @activate="enterSession" />
-    </aside>
-</template>

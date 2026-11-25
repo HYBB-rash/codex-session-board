@@ -1,3 +1,47 @@
+<template>
+    <dialog
+        ref="dialog"
+        id="editor"
+        aria-labelledby="editor-heading"
+        :closedby="busy ? 'none' : 'closerequest'"
+        @keydown.esc="busy && $event.preventDefault()"
+        @cancel.prevent="cancel"
+        @close="closed"
+    >
+        <form ref="form" id="edit-form" @submit.prevent="save">
+            <h2 id="editor-heading">调整工作状态</h2>
+            <div id="dialog-title" class="dialog-title">
+                {{ session?.title }}{{ session?.remote ? ` · ${session.hostLabel}` : "" }}
+            </div>
+            <EditFields
+                :states="states"
+                :state="state"
+                :unplaced="session?.state === null"
+                :note="note"
+                :busy="busy"
+                @state="state = $event"
+                @note="changeNote"
+            />
+            <div id="reason" class="reason">{{ session?.placementReason || session?.reason }}</div>
+            <div id="notice" class="notice" role="alert">{{ notice }}</div>
+            <div class="dialog-actions">
+                <button v-if="failed" type="button" :disabled="busy" @click="refresh">
+                    重新核对
+                </button>
+                <button id="cancel" type="button" :disabled="busy" @click="cancel">取消</button>
+                <button
+                    id="save"
+                    type="submit"
+                    class="primary"
+                    :disabled="busy"
+                    @click.prevent="form?.reportValidity() && save()"
+                >
+                    保存状态
+                </button>
+            </div>
+        </form>
+    </dialog>
+</template>
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, shallowRef } from "vue";
 import EditFields from "../../../shared/board-edit-fields";
@@ -118,47 +162,3 @@ onBeforeUnmount(() => {
     session.value = undefined;
 });
 </script>
-<template>
-    <dialog
-        ref="dialog"
-        id="editor"
-        aria-labelledby="editor-heading"
-        :closedby="busy ? 'none' : 'closerequest'"
-        @keydown.esc="busy && $event.preventDefault()"
-        @cancel.prevent="cancel"
-        @close="closed"
-    >
-        <form ref="form" id="edit-form" @submit.prevent="save">
-            <h2 id="editor-heading">调整工作状态</h2>
-            <div id="dialog-title" class="dialog-title">
-                {{ session?.title }}{{ session?.remote ? ` · ${session.hostLabel}` : "" }}
-            </div>
-            <EditFields
-                :states="states"
-                :state="state"
-                :unplaced="session?.state === null"
-                :note="note"
-                :busy="busy"
-                @state="state = $event"
-                @note="changeNote"
-            />
-            <div id="reason" class="reason">{{ session?.placementReason || session?.reason }}</div>
-            <div id="notice" class="notice" role="alert">{{ notice }}</div>
-            <div class="dialog-actions">
-                <button v-if="failed" type="button" :disabled="busy" @click="refresh">
-                    重新核对
-                </button>
-                <button id="cancel" type="button" :disabled="busy" @click="cancel">取消</button>
-                <button
-                    id="save"
-                    type="submit"
-                    class="primary"
-                    :disabled="busy"
-                    @click.prevent="form?.reportValidity() && save()"
-                >
-                    保存状态
-                </button>
-            </div>
-        </form>
-    </dialog>
-</template>

@@ -1,31 +1,3 @@
-<script setup lang="ts">
-import { onBeforeUnmount, onMounted, useTemplateRef } from "vue";
-import moveDragon from "../../assets/move-dragon.webp?inline";
-import { type BoardRequest, type BoardSnapshot, startBoardPage } from "./controller";
-import type { BoardInstall } from "./install";
-
-const props = defineProps<{
-    request: BoardRequest;
-    replaceAccount(snapshot: BoardSnapshot): void;
-    snapshot?: BoardSnapshot;
-    close?: () => void;
-    install?: BoardInstall;
-}>();
-const page = useTemplateRef("page");
-let unmount: (() => void) | undefined;
-
-onMounted(() => {
-    if (!page.value) throw new Error("缺少看板页面");
-    unmount = startBoardPage(
-        page.value,
-        props.request,
-        props.replaceAccount,
-        props.snapshot,
-    ).unmount;
-});
-onBeforeUnmount(() => unmount?.());
-</script>
-
 <template>
     <div class="board-page" ref="page">
         <main class="shell">
@@ -256,3 +228,31 @@ onBeforeUnmount(() => unmount?.());
         </dialog>
     </div>
 </template>
+
+<script setup lang="ts">
+import { onBeforeUnmount, onMounted, useTemplateRef } from "vue";
+import moveDragon from "../../assets/move-dragon.webp?inline";
+import { type BoardRequest, type BoardSnapshot, startBoardPage } from "./controller";
+import type { BoardInstall } from "./install";
+
+const props = defineProps<{
+    request: BoardRequest;
+    replaceAccount(snapshot: BoardSnapshot): void;
+    snapshot?: BoardSnapshot;
+    close?: () => void;
+    install?: BoardInstall;
+}>();
+const page = useTemplateRef("page");
+let unmount: (() => void) | undefined;
+
+onMounted(() => {
+    if (!page.value) throw new Error("缺少看板页面");
+    unmount = startBoardPage(
+        page.value,
+        props.request,
+        props.replaceAccount,
+        props.snapshot,
+    ).unmount;
+});
+onBeforeUnmount(() => unmount?.());
+</script>
