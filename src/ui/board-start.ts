@@ -6,13 +6,13 @@ import { type BoardHealth, createBoardHealthReports } from "./board-health-repor
 import { mountMoveFeedback } from "./board-move-feedback";
 import { mountBoardNewSession } from "./board-new-session";
 import { mountBoardNewTarget } from "./board-new-target";
-import { mountPluginUpdate } from "./board-plugin-update";
 import { mountProjectAssignment } from "./board-project-assignment";
 import { mountBoardRefresh } from "./board-refresh";
 import { mountBoardSessionReader } from "./board-session-reader";
 import { createColumnSortSave, type SortPreference } from "./board-sorting";
 import { mountBoardSshSetup } from "./board-ssh-setup";
 import { type BoardModel, type BoardSession, mountBoard } from "./board-view";
+import { mountPluginUpdate } from "./views/board/plugin-update";
 
 export interface BoardSnapshot {
     accountScope?: string;
