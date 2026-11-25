@@ -14,6 +14,7 @@ export default [
         rules: {
             "vue/html-closing-bracket-newline": ["error", { multiline: "never" }],
             "vue/html-indent": ["error", 4, { baseIndent: 0 }],
+            "vue/mustache-interpolation-spacing": ["error", "never"],
         },
     },
 ];

@@ -10,7 +10,7 @@
     <form ref="form" id="edit-form" @submit.prevent="save">
         <h2 id="editor-heading">调整工作状态</h2>
         <div id="dialog-title" class="dialog-title">
-            {{ session?.title }}{{ session?.remote ? ` · ${session.hostLabel}` : "" }}
+            {{session?.title}}{{session?.remote ? ` · ${session.hostLabel}` : ""}}
         </div>
         <EditFields
             :states="states"
@@ -20,8 +20,8 @@
             :busy="busy"
             @state="state = $event"
             @note="changeNote"/>
-        <div id="reason" class="reason">{{ session?.placementReason || session?.reason }}</div>
-        <div id="notice" class="notice" role="alert">{{ notice }}</div>
+        <div id="reason" class="reason">{{session?.placementReason || session?.reason}}</div>
+        <div id="notice" class="notice" role="alert">{{notice}}</div>
         <div class="dialog-actions">
             <button v-if="failed" type="button" :disabled="busy" @click="refresh">
                 重新核对

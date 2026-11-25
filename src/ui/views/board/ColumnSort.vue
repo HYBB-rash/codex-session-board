@@ -13,7 +13,7 @@
     @click="expanded ? close() : open()"
     @keydown.up.prevent="open"
     @keydown.down.prevent="open">
-    <span class="sort-label">更新 {{ preference.direction === "asc" ? "↑" : "↓" }}</span><span class="sort-caret" aria-hidden="true">▾</span>
+    <span class="sort-label">更新 {{preference.direction === "asc" ? "↑" : "↓"}}</span><span class="sort-caret" aria-hidden="true">▾</span>
 </button>
 <div
     ref="menu"
@@ -37,7 +37,7 @@
         :data-direction="direction"
         :aria-checked="direction === preference.direction"
         @click="choose(direction)">
-        {{ labels[direction] }}
+        {{labels[direction]}}
     </button>
 </div>
 </template>
