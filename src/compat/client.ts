@@ -3,14 +3,14 @@ import { basename, dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { BoardRequest } from "./operations.js";
 import { object } from "./operations.js";
-import { type Receipt, readActiveReceipt, readReceipt } from "./receipt.js";
 import { HostUnavailableError } from "./server.js";
 import {
     expectedServiceBuild,
     readServiceIdentity,
     sameServiceIdentity,
     serviceConfiguration,
-} from "./service-identity.js";
+} from "./service/identity.js";
+import { type Receipt, readActiveReceipt, readReceipt } from "./service/receipt.js";
 
 interface StopResult {
     running: false;

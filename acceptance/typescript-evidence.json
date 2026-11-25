@@ -212,7 +212,7 @@
         },
         "DATA-001": {
             "sources": [
-                "src/compat/cli-config.ts",
+                "src/compat/cli/config.ts",
                 "src/installer/paths.ts",
                 "src/installer/release/store.test.ts"
             ],
@@ -229,7 +229,7 @@
         },
         "SERVICE-001": {
             "sources": [
-                "src/compat/receipt.ts",
+                "src/compat/service/receipt.ts",
                 "src/compat/server.ts",
                 "src/compat/entrypoints.test.ts",
                 "src/runtime/board-broker.ts"

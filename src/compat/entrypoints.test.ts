@@ -20,8 +20,8 @@ import { promisify } from "node:util";
 import { connectBoard } from "./client.js";
 import { createMcpHandler, resourceUri } from "./mcp.js";
 import { assetsDirectory, type BoardRequest, loadOperations } from "./operations.js";
-import { readReceipt, writeReceipt } from "./receipt.js";
 import { HostUnavailableError, startBoardServer } from "./server.js";
+import { readReceipt, writeReceipt } from "./service/receipt.js";
 
 const exec = promisify(execFile);
 const version = "test";

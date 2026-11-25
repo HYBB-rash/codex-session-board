@@ -176,15 +176,15 @@
             "test": "migration rollback removes projected histories and keeps later manual changes"
         },
         "service-build-identity": {
-            "file": "src/compat/service-identity.test.ts",
+            "file": "src/compat/service/identity.test.ts",
             "test": "CLI reuses the selected build and rejects a same-version update until the host restarts"
         },
         "service-config-identity": {
-            "file": "src/compat/service-identity.test.ts",
+            "file": "src/compat/service/identity.test.ts",
             "test": "CLI refuses a changed board configuration or port and can still stop the former service"
         },
         "service-directory-identity": {
-            "file": "src/compat/service-identity.test.ts",
+            "file": "src/compat/service/identity.test.ts",
             "test": "CLI rejects a copied receipt across data directories and public info omits its identity"
         },
         "service-live-owner": {
@@ -549,7 +549,7 @@
             "implementation": [
                 "src/installer/paths.ts",
                 "src/installer/launch.ts",
-                "src/compat/cli-config.ts",
+                "src/compat/cli/config.ts",
                 "src/installer/release/store.ts"
             ],
             "evidence": [
@@ -577,9 +577,9 @@
         "SERVICE-001": {
             "status": "fixture",
             "implementation": [
-                "src/compat/receipt.ts",
+                "src/compat/service/receipt.ts",
                 "src/compat/client.ts",
-                "src/compat/service-identity.ts",
+                "src/compat/service/identity.ts",
                 "src/runtime/board-broker.ts"
             ],
             "evidence": [

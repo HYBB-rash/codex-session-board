@@ -5,16 +5,16 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type TestContext, test } from "node:test";
 import { promisify } from "node:util";
-import { sha256File } from "../installer/asar.js";
+import { sha256File } from "../../installer/asar.js";
 import {
     releaseManifestName,
     releasePlatform,
     versionManifest,
-} from "../installer/release/manifest.js";
-import { activateRelease } from "../installer/release/store.js";
-import { assetsDirectory } from "./operations.js";
+} from "../../installer/release/manifest.js";
+import { activateRelease } from "../../installer/release/store.js";
+import { assetsDirectory } from "../operations.js";
+import { startBoardServer } from "../server.js";
 import { readReceipt, writeReceipt } from "./receipt.js";
-import { startBoardServer } from "./server.js";
 
 const output = dirname(assetsDirectory);
 const execute = promisify(execFile);
@@ -42,7 +42,10 @@ function activateFixture(directory: string, store: string, changed: boolean) {
     writeFileSync(manifest, JSON.stringify(versionManifest(runtime, version, releasePlatform())));
     activateRelease(directory, store);
     const server = join(store, sha256File(manifest), "dist", "compat", "server.js");
-    const runtimeModule = require(server) as Pick<typeof import("./server.js"), "startBoardServer">;
+    const runtimeModule = require(server) as Pick<
+        typeof import("../server.js"),
+        "startBoardServer"
+    >;
     return runtimeModule.startBoardServer;
 }
 

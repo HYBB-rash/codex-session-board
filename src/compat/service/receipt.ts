@@ -11,8 +11,8 @@ import {
     writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { processStartIdentity, processStartTime } from "./process-start.js";
-import { readServiceIdentity, type ServiceIdentity } from "./service-identity.js";
+import { readServiceIdentity, type ServiceIdentity } from "./identity.js";
+import { processStartIdentity, processStartTime } from "./process.js";
 
 export interface Receipt {
     readonly app: "codex-session-board";

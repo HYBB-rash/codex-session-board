@@ -3,7 +3,7 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { loadCliConfig, migrateSections } from "../compat/cli-config.js";
+import { loadCliConfig, migrateSections } from "../compat/cli/config.js";
 import { connectBoard, stopBoard } from "../compat/client.js";
 import { serveMcp } from "../compat/mcp.js";
 import { assetsDirectory, object } from "../compat/operations.js";

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { object } from "./operations.js";
+import { object } from "../operations.js";
 
 export function loadCliConfig(path: string | undefined) {
     if (!path) return {};

@@ -10,9 +10,14 @@ import {
     loadOperations,
     type Operation,
 } from "./operations.js";
-import { processStartIdentity } from "./process-start.js";
-import { type Receipt, releaseReceipt, requireInactiveReceipt, writeReceipt } from "./receipt.js";
-import { type ServiceIdentity, serviceBuild, serviceConfiguration } from "./service-identity.js";
+import { type ServiceIdentity, serviceBuild, serviceConfiguration } from "./service/identity.js";
+import { processStartIdentity } from "./service/process.js";
+import {
+    type Receipt,
+    releaseReceipt,
+    requireInactiveReceipt,
+    writeReceipt,
+} from "./service/receipt.js";
 
 export class HostUnavailableError extends Error {
     constructor() {
