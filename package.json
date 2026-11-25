@@ -15,10 +15,10 @@
         "uninstall": "npm run build --silent && node dist/bin/codex-enhancer.js uninstall",
         "status": "npm run build --silent && node dist/bin/codex-enhancer.js status",
         "launch": "npm run build --silent && node dist/bin/codex-enhancer.js launch",
-        "lint": "biome check --error-on-warnings . && npm run --silent lint:vue && node scripts/check-comments.mjs",
+        "lint": "biome check --error-on-warnings . && npm run --silent lint:vue && node scripts/check-comments.mjs && node scripts/check-tsx-render.mjs",
         "lint:vue": "eslint \"src/**/*.vue\"",
         "format": "biome check --write . && npm run --silent lint:vue -- --fix",
-        "test": "([ -f release.json ] || npm run build --silent) && node --test \"dist/**/*.test.js\""
+        "test": "([ -f release.json ] || npm run build --silent) && node --test \"dist/**/*.test.js\" scripts/check-tsx-render.test.mjs"
     },
     "devDependencies": {
         "@biomejs/biome": "^2.6.9",

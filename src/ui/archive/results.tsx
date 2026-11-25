@@ -196,37 +196,38 @@ function renderBatches(view: ResultsView, date: Actions["date"]) {
     );
 }
 
-function renderResults(view: ResultsView, controls: HTMLElement, date: Actions["date"]) {
-    const legacy = view.board.value.legacyMode === true;
-    return (
-        <>
-            <Teleport to={controls}>
-                <button
-                    ref={view.toggle}
-                    id="archive-results-toggle"
-                    class="quiet"
-                    type="button"
-                    hidden={legacy}
-                    aria-controls="archive-result-list"
-                    aria-expanded={view.expanded.value}
-                    onClick={view.toggleDetails}>
-                    归档结果
-                </button>
-            </Teleport>
-            <section class="archive-results" aria-label="手动归档结果" hidden={legacy}>
-                {renderSummary(view)}
-                {renderBatches(view, date)}
-            </section>
-        </>
-    );
-}
-
 export function mountArchiveResults(host: HTMLElement, actions: Actions) {
     const root = host.getRootNode() as Document | ShadowRoot;
     const controls = root.getElementById("archive-results-control");
     if (!controls) throw new Error("缺少归档结果按钮容器");
     const view = createResultsView(actions);
-    const app = createApp({ setup: () => () => renderResults(view, controls, actions.date) });
+    const app = createApp({
+        setup: () => () => {
+            const { date } = actions;
+            const legacy = view.board.value.legacyMode === true;
+            return (
+                <>
+                    <Teleport to={controls}>
+                        <button
+                            ref={view.toggle}
+                            id="archive-results-toggle"
+                            class="quiet"
+                            type="button"
+                            hidden={legacy}
+                            aria-controls="archive-result-list"
+                            aria-expanded={view.expanded.value}
+                            onClick={view.toggleDetails}>
+                            归档结果
+                        </button>
+                    </Teleport>
+                    <section class="archive-results" aria-label="手动归档结果" hidden={legacy}>
+                        {renderSummary(view)}
+                        {renderBatches(view, date)}
+                    </section>
+                </>
+            );
+        },
+    });
     app.mount(host);
     return {
         restore: view.archive.restore,

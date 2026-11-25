@@ -105,50 +105,6 @@ function cardFooter(
     );
 }
 
-function renderCard(
-    session: BoardSession,
-    model: BoardModel,
-    dependencies: BoardControls,
-    article: (node: unknown) => void,
-) {
-    const pending = model.moving?.id === session.id;
-    const locked = model.saving || model.creating || pending;
-    const actions = dependencies.actions(session);
-    return (
-        <article
-            ref={article}
-            class={[
-                "card",
-                {
-                    "move-pending": pending,
-                    offline: session.canOpen === false,
-                    "drag-source": dependencies.drag.source?.id === session.id,
-                },
-            ]}
-            data-id={session.id}
-            aria-label={session.title}
-            aria-busy={pending ? "true" : undefined}
-            draggable={actions.canAdjust}
-            onDragstart={(event) => dependencies.drag.start(session, event)}
-            onDragend={dependencies.drag.cancel}>
-            <button
-                class="title card-title"
-                type="button"
-                data-action="preview"
-                disabled={pending}
-                title={`预览回复：${session.title}`}
-                aria-controls="reply-reader"
-                aria-expanded={model.selectedId === session.id}
-                onClick={(event) => dependencies.preview(session, event.detail === 0)}>
-                {session.title}
-            </button>
-            <CardProject project={dependencies.project(session)} />
-            {cardStatus(session, model, actions, pending)}
-            {cardFooter(session, dependencies, actions, locked)}
-        </article>
-    );
-}
-
 export default defineComponent({
     props: {
         session: { type: Object as PropType<BoardSession>, required: true },
@@ -168,6 +124,44 @@ export default defineComponent({
         }
         onMounted(() => article.value?.addEventListener("click", previewBackground));
         onBeforeUnmount(() => article.value?.removeEventListener("click", previewBackground));
-        return () => renderCard(props.session, props.model, props.dependencies, setArticle);
+        return () => {
+            const { session, model, dependencies } = props;
+            const pending = model.moving?.id === session.id;
+            const locked = model.saving || model.creating || pending;
+            const actions = dependencies.actions(session);
+            return (
+                <article
+                    ref={setArticle}
+                    class={[
+                        "card",
+                        {
+                            "move-pending": pending,
+                            offline: session.canOpen === false,
+                            "drag-source": dependencies.drag.source?.id === session.id,
+                        },
+                    ]}
+                    data-id={session.id}
+                    aria-label={session.title}
+                    aria-busy={pending ? "true" : undefined}
+                    draggable={actions.canAdjust}
+                    onDragstart={(event) => dependencies.drag.start(session, event)}
+                    onDragend={dependencies.drag.cancel}>
+                    <button
+                        class="title card-title"
+                        type="button"
+                        data-action="preview"
+                        disabled={pending}
+                        title={`预览回复：${session.title}`}
+                        aria-controls="reply-reader"
+                        aria-expanded={model.selectedId === session.id}
+                        onClick={(event) => dependencies.preview(session, event.detail === 0)}>
+                        {session.title}
+                    </button>
+                    <CardProject project={dependencies.project(session)} />
+                    {cardStatus(session, model, actions, pending)}
+                    {cardFooter(session, dependencies, actions, locked)}
+                </article>
+            );
+        };
     },
 });
