@@ -330,10 +330,7 @@
         },
         "AUTO-001": {
             "status": "partial",
-            "implementation": [
-                "src/extensions/activity.ts",
-                "src/extensions/session-board/service.ts"
-            ],
+            "implementation": ["src/extensions/activity.ts", "src/extensions/service.ts"],
             "evidence": ["fedora-desktop", "runtime-real-stages"],
             "remaining": "Fedora 本机已读回真实开始。仍需批准后实际恢复和 macOS 现场凭证。"
         },
@@ -356,10 +353,7 @@
         },
         "AUTO-005": {
             "status": "fixture",
-            "implementation": [
-                "src/extensions/activity.ts",
-                "src/extensions/session-board/service.ts"
-            ],
+            "implementation": ["src/extensions/activity.ts", "src/extensions/service.ts"],
             "evidence": ["runtime-manual-selection", "runtime-real-stages", "runtime-pending-move"]
         },
         "AUTO-006": {
@@ -367,16 +361,13 @@
             "implementation": [
                 "src/extensions/activity.ts",
                 "src/extensions/desktop/connection.ts",
-                "src/extensions/session-board/service.ts"
+                "src/extensions/service.ts"
             ],
             "evidence": ["history-rotation", "history-review-suggestion", "retired-connection"]
         },
         "MANUAL-001": {
             "status": "fixture",
-            "implementation": [
-                "src/extensions/session-board/service.ts",
-                "src/extensions/session-board/records.ts"
-            ],
+            "implementation": ["src/extensions/service.ts", "src/extensions/records.ts"],
             "evidence": [
                 "native-move",
                 "migration-projection",
@@ -386,25 +377,19 @@
         },
         "MANUAL-002": {
             "status": "partial",
-            "implementation": ["src/extensions/session-board/service.ts"],
+            "implementation": ["src/extensions/service.ts"],
             "evidence": ["native-move", "mcp-stdio", "first-input-revision"],
             "remaining": "覆盖第二入口竞争保存与编辑期间收到新用户输入，核对状态版本、输入版本及提示保留。"
         },
         "MANUAL-003": {
             "status": "partial",
-            "implementation": [
-                "src/extensions/activity.ts",
-                "src/extensions/session-board/service.ts"
-            ],
+            "implementation": ["src/extensions/activity.ts", "src/extensions/service.ts"],
             "evidence": ["migration-projection"],
             "remaining": "迁移测试能核对导入的输入版本；当前宿主需验证同轮新增输入、跨轮输入、重启和显式清除。"
         },
         "TITLE-001": {
             "status": "partial",
-            "implementation": [
-                "src/extensions/activity.ts",
-                "src/extensions/session-board/service.ts"
-            ],
+            "implementation": ["src/extensions/activity.ts", "src/extensions/service.ts"],
             "evidence": [
                 "fedora-signed-package",
                 "fedora-desktop",
@@ -420,10 +405,7 @@
         },
         "TITLE-003": {
             "status": "partial",
-            "implementation": [
-                "src/extensions/session-board/service.ts",
-                "src/extensions/session-board/records.ts"
-            ],
+            "implementation": ["src/extensions/service.ts", "src/extensions/records.ts"],
             "evidence": [
                 "title-restart",
                 "title-retry-after-restart",
@@ -435,23 +417,17 @@
         },
         "TITLE-004": {
             "status": "fixture",
-            "implementation": ["src/extensions/session-board/service.ts"],
+            "implementation": ["src/extensions/service.ts"],
             "evidence": ["title-concurrency", "title-restart", "title-fair-retry"]
         },
         "TITLE-005": {
             "status": "fixture",
-            "implementation": [
-                "src/extensions/session-board/service.ts",
-                "src/extensions/session-board/records.ts"
-            ],
+            "implementation": ["src/extensions/service.ts", "src/extensions/records.ts"],
             "evidence": ["title-epoch", "title-restart"]
         },
         "DISCOVERY-001": {
             "status": "partial",
-            "implementation": [
-                "src/extensions/desktop/connection.ts",
-                "src/extensions/session-board/service.ts"
-            ],
+            "implementation": ["src/extensions/desktop/connection.ts", "src/extensions/service.ts"],
             "evidence": [
                 "native-move",
                 "discovery-coverage",
@@ -462,7 +438,7 @@
         },
         "DISCOVERY-002": {
             "status": "fixture",
-            "implementation": ["src/extensions/session-board/service.ts", "src/compat/cache.ts"],
+            "implementation": ["src/extensions/service.ts", "src/compat/cache.ts"],
             "evidence": [
                 "offline-cache",
                 "discovery-limit",
@@ -586,7 +562,7 @@
         "BOUNDARY-001": {
             "status": "fixture",
             "implementation": [
-                "src/extensions/session-board/service.ts",
+                "src/extensions/service.ts",
                 "src/extensions/desktop/connection.ts",
                 "src/extensions/desktop/world.ts",
                 "src/compat/operations.ts"
@@ -605,16 +581,13 @@
             "implementation": [
                 "src/compat/server.ts",
                 "src/runtime/ipc/guard.ts",
-                "src/extensions/session-board/service.ts"
+                "src/extensions/service.ts"
             ],
             "evidence": ["http-security", "ipc-frame", "navigation-exact-thread"]
         },
         "HEALTH-001": {
             "status": "partial",
-            "implementation": [
-                "src/extensions/session-board/service.ts",
-                "src/ui/health/banner.ts"
-            ],
+            "implementation": ["src/extensions/service.ts", "src/ui/health/banner.ts"],
             "evidence": ["offline-cache"],
             "remaining": "真实界面分别验证发现不完整、局部历史错误、运行连接断开和标题重试。"
         },

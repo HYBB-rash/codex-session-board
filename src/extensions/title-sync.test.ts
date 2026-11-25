@@ -13,10 +13,10 @@ import {
     type Thread,
     type ThreadId,
 } from "./desktop/connection.js";
+import { BoardRecords, TitleEpochs } from "./records.js";
+import { BoardService } from "./service.js";
 import { emptyLedger } from "./session-board/archive.js";
-import { BoardRecords, TitleEpochs } from "./session-board/records.js";
-import { BoardService } from "./session-board/service.js";
-import { defaults } from "./session-board/settings.js";
+import { defaults } from "./settings.js";
 
 const first = "00000000-0000-4000-8000-000000000001" as ThreadId;
 const second = "00000000-0000-4000-8000-000000000002" as ThreadId;

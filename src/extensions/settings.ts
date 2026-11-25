@@ -1,4 +1,4 @@
-import type { BoardMode } from "../placement.js";
+import type { BoardMode } from "./placement.js";
 
 export interface BoardSettings {
     mode: BoardMode;

@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DesktopConnection } from "../dist/extensions/desktop/connection.js";
-import { BoardLedgers, BoardRecords } from "../dist/extensions/session-board/records.js";
-import { BoardService } from "../dist/extensions/session-board/service.js";
-import { defaults } from "../dist/extensions/session-board/settings.js";
+import { BoardLedgers, BoardRecords } from "../dist/extensions/records.js";
+import { BoardService } from "../dist/extensions/service.js";
+import { defaults } from "../dist/extensions/settings.js";
 
 const threadId = "00000000-0000-4000-8000-000000000001";
 const host = "local";

@@ -5,7 +5,7 @@ import {
     projectedTitle,
     runtimePhase,
     turnInput,
-} from "../activity.js";
+} from "./activity.js";
 import {
     cardId,
     cardThread,
@@ -19,7 +19,7 @@ import {
     type SidebarContext,
     type Thread,
     type ThreadId,
-} from "../desktop/connection.js";
+} from "./desktop/connection.js";
 import {
     type BoardState,
     type Placement,
@@ -28,8 +28,17 @@ import {
     sectionBindings,
     sectionFor,
     visibleStates,
-} from "../placement.js";
-import { previewReply } from "../preview.js";
+} from "./placement.js";
+import { previewReply } from "./preview.js";
+import type {
+    CardRecord,
+    LegacyCachedCard,
+    LoadedBoardRecords,
+    PhaseIntent,
+    RecordChange,
+    RecordWrite,
+    TitleResolution,
+} from "./records.js";
 import {
     Archive,
     type ArchiveItem,
@@ -40,17 +49,13 @@ import {
     emptyLedger,
     NewInputError,
     type SortPreference,
-} from "./archive.js";
-import { type DraftInput, type DraftRecord, stageDraft, unresolvedDrafts } from "./drafts.js";
-import type {
-    CardRecord,
-    LegacyCachedCard,
-    LoadedBoardRecords,
-    PhaseIntent,
-    RecordChange,
-    RecordWrite,
-    TitleResolution,
-} from "./records.js";
+} from "./session-board/archive.js";
+import {
+    type DraftInput,
+    type DraftRecord,
+    stageDraft,
+    unresolvedDrafts,
+} from "./session-board/drafts.js";
 import { type BoardSettings, defaults } from "./settings.js";
 
 interface BoardPorts {

@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import type { ThreadRef } from "../desktop/connection.js";
-import { type BoardState, labels } from "../placement.js";
-import { type BoardLedger, emptyLedger } from "./archive.js";
-import type { DraftRecord } from "./drafts.js";
+import type { ThreadRef } from "./desktop/connection.js";
+import { type BoardState, labels } from "./placement.js";
+import { type BoardLedger, emptyLedger } from "./session-board/archive.js";
+import type { DraftRecord } from "./session-board/drafts.js";
 
 export interface CardRecord {
     note: string;

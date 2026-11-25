@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
 import { hostId } from "../extensions/desktop/connection.js";
-import type { CardRecord } from "../extensions/session-board/records.js";
+import type { CardRecord } from "../extensions/records.js";
 import { databaseName } from "./database.js";
 import { readRegular } from "./files.js";
 import { type LegacyMigration, readLegacyMigration, verifyLegacyMigration } from "./legacy.js";

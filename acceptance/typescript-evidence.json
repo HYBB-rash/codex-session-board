@@ -11,7 +11,7 @@
             "missing": "还需覆盖退役分区和远端缓存的不同模式投影，以及依赖变更的原生分区形式模型。"
         },
         "AUTO-001": {
-            "sources": ["src/extensions/activity.ts", "src/extensions/session-board/service.ts"],
+            "sources": ["src/extensions/activity.ts", "src/extensions/service.ts"],
             "checks": [
                 "runtime_evidence_table_frozen_summary",
                 "runtime_evidence_table_with_native_identity",
@@ -20,7 +20,7 @@
             "missing": "还需在真实本机和远端验证开始、批准后仍等待、确实恢复三个时间点。"
         },
         "AUTO-002": {
-            "sources": ["src/extensions/activity.ts", "src/extensions/session-board/service.ts"],
+            "sources": ["src/extensions/activity.ts", "src/extensions/service.ts"],
             "checks": [
                 "runtime_evidence_table_frozen_summary",
                 "runtime_evidence_table_with_native_identity",
@@ -37,7 +37,7 @@
             "missing": "还需在真实宿主验证公开讨论、澄清以及没有最终消息的正常结束。"
         },
         "AUTO-004": {
-            "sources": ["src/extensions/activity.ts", "src/extensions/session-board/service.ts"],
+            "sources": ["src/extensions/activity.ts", "src/extensions/service.ts"],
             "checks": [
                 "runtime_evidence_without_terminal_confirmation",
                 "model_view_and_restart_do_not_write"
@@ -45,32 +45,23 @@
             "missing": "查看和重启已纳入重放，尚缺队列输入、只变 ID 和纯自然语言结论的服务层操作夹具。"
         },
         "AUTO-005": {
-            "sources": [
-                "src/extensions/session-board/service.ts",
-                "src/extensions/session-board/records.ts"
-            ],
+            "sources": ["src/extensions/service.ts", "src/extensions/records.ts"],
             "checks": ["all_abstract_state_edges_match_the_typescript_service"],
             "missing": "隔离重放仍复现同轮人工调整后的新批准、输入等待和系统异常被旧轮次开始时间挡住。还需对比重复批准、延迟回执、重新连接与人工选择的先后顺序。"
         },
         "AUTO-006": {
-            "sources": ["src/extensions/activity.ts", "src/extensions/session-board/service.ts"],
+            "sources": ["src/extensions/activity.ts", "src/extensions/service.ts"],
             "checks": ["runtime_evidence_without_terminal_confirmation"],
             "missing": "尚缺历史或连接错误、观察首次启用和旧正常终态的同数据对照；会话及备注必须保持可见。"
         },
         "MANUAL-001": {
-            "sources": [
-                "src/extensions/session-board/records.ts",
-                "src/extensions/session-board/service.ts"
-            ],
+            "sources": ["src/extensions/records.ts", "src/extensions/service.ts"],
             "checks": ["all_abstract_state_edges_match_the_typescript_service"],
             "evidence": "Fedora 原生移卡实测保留了本机和远端专用卡原备注。见 docs/session-board-native-checkpoint.md。",
             "missing": "还需确认全部模式相应的人工选项，以及可回读的变更历史持久保存。"
         },
         "MANUAL-002": {
-            "sources": [
-                "src/extensions/session-board/service.ts",
-                "src/extensions/session-board/records.ts"
-            ],
+            "sources": ["src/extensions/service.ts", "src/extensions/records.ts"],
             "checks": ["input_ids_ignore_order_and_assistant_updates"],
             "evidence": "Fedora 本机及远端旧表单均在原生侧栏异动后拒绝并保留草稿。见 docs/session-board-native-checkpoint.md。",
             "missing": "还需同轮新增输入夺取旧表单版本、两个同时提交及同一 ID 跨账号主机的自动对照。"
@@ -78,7 +69,7 @@
         "MANUAL-003": {
             "sources": [
                 "src/extensions/activity.ts",
-                "src/extensions/session-board/service.ts",
+                "src/extensions/service.ts",
                 "src/migration/projection.ts"
             ],
             "checks": ["input_ids_ignore_order_and_assistant_updates"],
@@ -86,12 +77,12 @@
             "missing": "还需服务级重放：提示跨多个自动阶段、重启、人工确认，且收到不完整轮次时不误清除。"
         },
         "TITLE-001": {
-            "sources": ["src/extensions/activity.ts", "src/extensions/session-board/service.ts"],
+            "sources": ["src/extensions/activity.ts", "src/extensions/service.ts"],
             "checks": ["title_prefix_replacement_and_idempotence"],
             "missing": "还需现场记录手动和自动入列后，何时读取完整原标题、提交并读回。"
         },
         "TITLE-002": {
-            "sources": ["src/extensions/activity.ts", "src/extensions/session-board/service.ts"],
+            "sources": ["src/extensions/activity.ts", "src/extensions/service.ts"],
             "checks": [
                 "title_prefix_replacement_and_idempotence",
                 "title_projection_rejects_an_invalid_state"
@@ -100,42 +91,30 @@
             "missing": "还需对服务层计数，确认原生标题已匹配时不会再次重命名。"
         },
         "TITLE-003": {
-            "sources": [
-                "src/extensions/session-board/service.ts",
-                "src/extensions/session-board/records.ts"
-            ],
+            "sources": ["src/extensions/service.ts", "src/extensions/records.ts"],
             "missing": "尚缺重启前后续传、三秒原生同步上限和失败期间用户仍能保存其他卡片的证据。"
         },
         "TITLE-004": {
-            "sources": [
-                "src/extensions/session-board/service.ts",
-                "src/extensions/session-board/records.ts"
-            ],
+            "sources": ["src/extensions/service.ts", "src/extensions/records.ts"],
             "missing": "尚缺旧回执、新版本、写入成功但失联的矩阵及失败项队列公平性。"
         },
         "TITLE-005": {
-            "sources": [
-                "src/extensions/session-board/service.ts",
-                "src/extensions/session-board/settings.ts"
-            ],
+            "sources": ["src/extensions/service.ts", "src/extensions/settings.ts"],
             "missing": "还需确认标题同步首次启用的持久边界、首次发现不改历史标题、旧任务重启后继续。"
         },
         "DISCOVERY-001": {
-            "sources": [
-                "src/extensions/desktop/connection.ts",
-                "src/extensions/session-board/service.ts"
-            ],
+            "sources": ["src/extensions/desktop/connection.ts", "src/extensions/service.ts"],
             "evidence": "Fedora 窗口已读到本机及 MacBook Pro 的专用会话。见 docs/session-board-native-checkpoint.md。",
             "missing": "尚缺 cli、vscode、appServer 各来源及模型提供方，重复或无尽分页和非交互排除的端到端证据。"
         },
         "DISCOVERY-002": {
-            "sources": ["src/extensions/session-board/service.ts", "src/compat/cache.ts"],
+            "sources": ["src/extensions/service.ts", "src/compat/cache.ts"],
             "missing": "尚缺一条读取失败、完整扫描缺席、离线后重启和后续恢复的逐条数据对照。"
         },
         "NAV-001": {
             "sources": [
                 "src/extensions/preview.ts",
-                "src/extensions/session-board/service.ts",
+                "src/extensions/service.ts",
                 "src/ui/preview/reader.ts",
                 "src/ui/drag.ts"
             ],
@@ -152,11 +131,7 @@
             "missing": "尚缺正式发行产物在两个桌面宿主直接点击入口、MCP/备用网页同账号共享状态的实测。"
         },
         "UI-001": {
-            "sources": [
-                "src/ui/drag.ts",
-                "src/ui/SessionColumns.vue",
-                "src/extensions/session-board/service.ts"
-            ],
+            "sources": ["src/ui/drag.ts", "src/ui/SessionColumns.vue", "src/extensions/service.ts"],
             "evidence": "Fedora 的本机和远端专用卡都经过真实拖拽、原生侧栏和独立分区读回，备注保留。见 docs/session-board-native-checkpoint.md。",
             "missing": "同列、拖出看板、横向及边缘自动滚动以及 macOS 桌面尚未取证。"
         },
@@ -165,7 +140,7 @@
                 "src/ui/edit/mount.ts",
                 "src/ui/edit/SessionEditor.vue",
                 "src/ui/edit/edits.ts",
-                "src/extensions/session-board/service.ts"
+                "src/extensions/service.ts"
             ],
             "missing": "还需分别演练空白、纯空白、取消、填入、清空、过期失败，核对备注、自动原因及草稿。"
         },
@@ -230,7 +205,7 @@
         },
         "HEALTH-001": {
             "sources": [
-                "src/extensions/session-board/service.ts",
+                "src/extensions/service.ts",
                 "src/ui/health/banner.ts",
                 "src/ui/health/report.ts"
             ],

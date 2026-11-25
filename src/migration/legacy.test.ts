@@ -21,8 +21,8 @@ import {
     type SidebarContext,
     type Thread,
 } from "../extensions/desktop/connection.js";
-import { BoardLedgers, BoardRecords } from "../extensions/session-board/records.js";
-import { BoardService } from "../extensions/session-board/service.js";
+import { BoardLedgers, BoardRecords } from "../extensions/records.js";
+import { BoardService } from "../extensions/service.js";
 import {
     migrateLegacyBoard,
     readLegacyMigration,

@@ -8,9 +8,9 @@ import {
     type ThreadId,
 } from "./desktop/connection.js";
 import type { DesktopCommand } from "./desktop/world.js";
+import { BoardService } from "./service.js";
 import { type BoardLedger, emptyLedger } from "./session-board/archive.js";
-import { BoardService } from "./session-board/service.js";
-import { defaults } from "./session-board/settings.js";
+import { defaults } from "./settings.js";
 
 const remote = hostId("remote-ssh-discovered:fixture");
 assert.ok(remote);
