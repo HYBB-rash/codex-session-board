@@ -45,10 +45,6 @@ or {
             and {
                 $filename <: r"(?:^|.*[/\\])src[/\\]runtime[/\\]board[/\\]broker\.ts$",
                 $name <: r"^BoardBroker$"
-            },
-            and {
-                $filename <: r"(?:^|.*[/\\])src[/\\]runtime[/\\]registry\.ts$",
-                $name <: r"^SidebarRegistry$"
             }
         }
     }

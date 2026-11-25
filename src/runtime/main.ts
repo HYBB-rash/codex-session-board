@@ -19,7 +19,7 @@ import { LegacyBoardRuntime } from "../migration/runtime.js";
 import type { ExtensionApi, ExtensionModule, SidebarItemInput } from "./api.js";
 import { BoardBroker, boardFrame } from "./board/broker.js";
 import { trustedAppFrame } from "./ipc/guard.js";
-import { type OwnedSidebarItem, SidebarRegistry } from "./registry.js";
+import { createSidebarRegistry, type OwnedSidebarItem, type SidebarRegistry } from "./registry.js";
 
 const requireFromHere = createRequire(__filename);
 const runtimeDirectory = __dirname;
@@ -410,7 +410,7 @@ function start(): void {
     log("loader-entered", { pid: process.pid, execPath: process.execPath });
     const { app, session, ipcMain, BrowserWindow } = loadElectron();
     const info = readAppInfo(app);
-    const registry = new SidebarRegistry();
+    const registry = createSidebarRegistry();
     const appContents = new Set<WebContents>();
     const publish = (): void => broadcast(registry, appContents);
     const extensions = loadExtensions(registry, publish);

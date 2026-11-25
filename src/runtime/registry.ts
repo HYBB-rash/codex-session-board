@@ -87,22 +87,22 @@ export function parseUiPayload(value: unknown): UiState {
     };
 }
 
-export class SidebarRegistry {
-    private readonly items = new Map<string, OwnedSidebarItem>();
+export type SidebarRegistry = ReturnType<typeof createSidebarRegistry>;
 
-    register(extensionId: string, value: unknown): () => void {
+export function createSidebarRegistry() {
+    const items = new Map<string, OwnedSidebarItem>();
+
+    function register(extensionId: string, value: unknown): () => void {
         const item = sidebarItem(value);
-        if (this.items.has(item.id)) {
+        if (items.has(item.id)) {
             throw new Error(`sidebar item id already registered: ${item.id}`);
         }
-        this.items.set(item.id, { ...item, extensionId });
+        items.set(item.id, { ...item, extensionId });
         return () => {
-            const current = this.items.get(item.id);
-            if (current?.extensionId === extensionId) this.items.delete(item.id);
+            const current = items.get(item.id);
+            if (current?.extensionId === extensionId) items.delete(item.id);
         };
     }
 
-    list(): OwnedSidebarItem[] {
-        return [...this.items.values()];
-    }
+    return { register, list: () => [...items.values()] };
 }

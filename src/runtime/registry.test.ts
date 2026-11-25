@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { trustedAppFrame } from "./ipc/guard.js";
-import { parseUiPayload, SidebarRegistry } from "./registry.js";
+import { createSidebarRegistry, parseUiPayload } from "./registry.js";
 
 const page = { title: "Session Board", body: "Codex Enhancer UI integration successful." };
 
 test("sidebar registration rejects a duplicate id and dispose removes only that item", () => {
-    const registry = new SidebarRegistry();
+    const registry = createSidebarRegistry();
     const remove = registry.register("session-board", {
         id: "session-board",
         title: "Session Board",
@@ -30,7 +30,7 @@ test("sidebar registration rejects a duplicate id and dispose removes only that 
 });
 
 test("sidebar registration rejects ids and routes that cannot be used as stable keys", () => {
-    const registry = new SidebarRegistry();
+    const registry = createSidebarRegistry();
     assert.throws(
         () => registry.register("ext", { id: "../x", title: "X", route: "/x", page }),
         /id is invalid/,
