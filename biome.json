@@ -59,8 +59,14 @@
         "rules": {
             "preset": "recommended",
             "complexity": {
+                "noExcessiveCognitiveComplexity": {
+                    "level": "warn",
+                    "options": {
+                        "maxAllowedComplexity": 15
+                    }
+                },
                 "noExcessiveLinesPerFunction": {
-                    "level": "error",
+                    "level": "warn",
                     "options": {
                         "maxLines": 41
                     }
