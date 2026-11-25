@@ -18,8 +18,7 @@ export default defineComponent({
                     value={props.state}
                     required
                     disabled={props.busy}
-                    onChange={(event) => emit("state", (event.target as HTMLSelectElement).value)}
-                >
+                    onChange={(event) => emit("state", (event.target as HTMLSelectElement).value)}>
                     {props.unplaced && (
                         <option value="" disabled>
                             选择状态

@@ -72,8 +72,7 @@ function cardFooter(
                     title={adjustTitle}
                     aria-label={adjustTitle}
                     disabled={!actions.canAdjust}
-                    onClick={() => dependencies.edit(session.id)}
-                >
+                    onClick={() => dependencies.edit(session.id)}>
                     {session.state === null ? "归列" : "调整"}
                 </button>
                 {dependencies.canAssign(session) && (
@@ -82,8 +81,7 @@ function cardFooter(
                         class="row-action"
                         data-action="assign-project"
                         disabled={locked}
-                        onClick={() => dependencies.assign(session)}
-                    >
+                        onClick={() => dependencies.assign(session)}>
                         归入项目
                     </button>
                 )}
@@ -98,8 +96,7 @@ function cardFooter(
                                 ? "请先打开会话核对输入；确认仅保存待归档状态，不执行归档"
                                 : "直接归档此 Codex 会话"
                         }
-                        onClick={() => dependencies.archive(session)}
-                    >
+                        onClick={() => dependencies.archive(session)}>
                         {actions.archive === "confirm" ? "确认待归档" : "归档"}
                     </button>
                 )}
@@ -133,8 +130,7 @@ function renderCard(
             aria-busy={pending ? "true" : undefined}
             draggable={actions.canAdjust}
             onDragstart={(event) => dependencies.drag.start(session, event)}
-            onDragend={dependencies.drag.cancel}
-        >
+            onDragend={dependencies.drag.cancel}>
             <button
                 class="title card-title"
                 type="button"
@@ -143,8 +139,7 @@ function renderCard(
                 title={`预览回复：${session.title}`}
                 aria-controls="reply-reader"
                 aria-expanded={model.selectedId === session.id}
-                onClick={(event) => dependencies.preview(session, event.detail === 0)}
-            >
+                onClick={(event) => dependencies.preview(session, event.detail === 0)}>
                 {session.title}
             </button>
             <CardProject project={dependencies.project(session)} />

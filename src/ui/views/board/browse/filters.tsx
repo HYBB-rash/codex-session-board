@@ -211,8 +211,7 @@ class BoardFilters {
                 key={item.value}
                 value={item.value}
                 title={item.path}
-                data-host-id={item.hostId}
-            >
+                data-host-id={item.hostId}>
                 {item.label}
             </option>
         ));
@@ -231,8 +230,7 @@ class BoardFilters {
                         aria-label="选择主机"
                         value={state.host}
                         disabled={view.locked}
-                        onChange={(event) => this.select("host", event)}
-                    >
+                        onChange={(event) => this.select("host", event)}>
                         {this.options(view.hosts)}
                     </select>
                 </label>
@@ -247,8 +245,7 @@ class BoardFilters {
                         hidden={state.search}
                         value={state.project}
                         disabled={view.locked || view.projectUnavailable}
-                        onChange={(event) => this.select("project", event)}
-                    >
+                        onChange={(event) => this.select("project", event)}>
                         {this.projectNodes.value}
                     </select>
                 </div>
@@ -259,8 +256,7 @@ class BoardFilters {
                         aria-label="选择会话范围"
                         value={state.history}
                         disabled={view.locked}
-                        onChange={(event) => this.select("history", event)}
-                    >
+                        onChange={(event) => this.select("history", event)}>
                         {this.options(histories)}
                     </select>
                 </label>
@@ -296,14 +292,12 @@ class BoardFilters {
                     aria-controls="project-filter search"
                     aria-pressed={state.search}
                     disabled={view.locked}
-                    onClick={this.toggle}
-                >
+                    onClick={this.toggle}>
                     {state.search ? "选择项目" : "搜索会话"}
                 </button>
                 <span
                     id="count"
-                    class="count"
-                >{`显示 ${view.visible.length} / 当前主机范围共 ${view.total} 条`}</span>
+                    class="count">{`显示 ${view.visible.length} / 当前主机范围共 ${view.total} 条`}</span>
                 <Teleport to={scope}>{view.scope}</Teleport>
             </>
         );

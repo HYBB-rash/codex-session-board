@@ -134,8 +134,7 @@ function renderSummary(view: ResultsView) {
         <div
             id="archive-summary"
             class="archive-summary"
-            hidden={!progress && !counts && !state.notice && !state.readError}
-        >
+            hidden={!progress && !counts && !state.notice && !state.readError}>
             {renderSummaryText(view, counts, progress)}
             <div id="archive-summary-actions">
                 {!!toCheck.value.length && !progress && (
@@ -144,8 +143,7 @@ function renderSummary(view: ResultsView) {
                             type="button"
                             class="row-action"
                             disabled={state.checking || !!run}
-                            onClick={view.manualCheck}
-                        >
+                            onClick={view.manualCheck}>
                             {state.checking ? "正在核对…" : "核对结果"}
                         </button>{" "}
                         仅查询归档状态
@@ -211,8 +209,7 @@ function renderResults(view: ResultsView, controls: HTMLElement, date: Actions["
                     hidden={legacy}
                     aria-controls="archive-result-list"
                     aria-expanded={view.expanded.value}
-                    onClick={view.toggleDetails}
-                >
+                    onClick={view.toggleDetails}>
                     归档结果
                 </button>
             </Teleport>

@@ -11,8 +11,7 @@ export const ReplyRefresh = defineComponent({
                 id="reply-refresh"
                 type="button"
                 hidden={!props.action}
-                onClick={() => emit("activate")}
-            >
+                onClick={() => emit("activate")}>
                 {props.action}
             </button>
         );
@@ -30,8 +29,7 @@ export const ReplyOpen = defineComponent({
                     class="primary"
                     type="button"
                     disabled={!props.canOpen}
-                    onClick={() => emit("activate")}
-                >
+                    onClick={() => emit("activate")}>
                     进入原会话 ↗
                 </button>
             </footer>

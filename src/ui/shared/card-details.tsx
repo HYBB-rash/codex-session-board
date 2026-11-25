@@ -15,8 +15,7 @@ export const CardProject = defineComponent({
             <details class={["project-tag", { pending: props.project.pending }]}>
                 <summary
                     title={`${props.project.summary}，点击查看项目详情`}
-                    aria-label={`${props.project.summary}，点击查看项目详情`}
-                >
+                    aria-label={`${props.project.summary}，点击查看项目详情`}>
                     {props.project.summary}
                 </summary>
                 <div class="project-info">{props.project.info.join("\n")}</div>

@@ -44,6 +44,14 @@
                     "enabled": false
                 }
             }
+        },
+        {
+            "includes": ["**/*.tsx"],
+            "javascript": {
+                "formatter": {
+                    "bracketSameLine": true
+                }
+            }
         }
     ],
     "linter": {
