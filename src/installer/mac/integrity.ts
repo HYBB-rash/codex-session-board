@@ -2,8 +2,8 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { sha256ArchiveHeader } from "./asar.js";
-import { type Detection, readFuses } from "./detect.js";
+import { sha256ArchiveHeader } from "../asar.js";
+import { type Detection, readFuses } from "../detect.js";
 
 export const sentinel = Buffer.from("AGbevlPCksUGKNL8TSn7wGmJEuJsXb2A");
 const slotLength = sentinel.length + 2 + 32;

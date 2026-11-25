@@ -1,12 +1,12 @@
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { sha256File } from "./asar.js";
-import { assertIsolatedPath, assertSeparateFromSource } from "./copy.js";
-import type { InstallState } from "./install.js";
-import { verifyMacSignature, verifyOfficialCopy } from "./mac-signing.js";
-import * as paths from "./paths.js";
-import { withDirectoryLock } from "./releases.js";
+import { sha256File } from "../asar.js";
+import { assertIsolatedPath, assertSeparateFromSource } from "../copy.js";
+import type { InstallState } from "../install.js";
+import * as paths from "../paths.js";
+import { withDirectoryLock } from "../releases.js";
+import { verifyMacSignature, verifyOfficialCopy } from "./signing.js";
 
 export const macWorkspace = path.join(paths.stateDir, ".mac-copy");
 export const macCandidate = path.join(macWorkspace, "candidate.app");

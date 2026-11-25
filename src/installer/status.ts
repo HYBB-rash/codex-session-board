@@ -4,7 +4,7 @@ import { entryIncludes, sha256File } from "./asar.js";
 import { SENTINEL } from "./constants.js";
 import { type Detection, detect, findSystemApp } from "./detect.js";
 import { type InstallState, readState } from "./install.js";
-import { verifyBundleState } from "./mac-copy.js";
+import { verifyBundleState } from "./mac/copy.js";
 
 export interface Assessment {
     result: "not-installed" | "patch-stale" | "removed" | "installed";

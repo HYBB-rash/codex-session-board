@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { sha256File } from "./asar.js";
+import { sha256File } from "../asar.js";
 
 const codesign = "/usr/bin/codesign";
 const officialRequirement =

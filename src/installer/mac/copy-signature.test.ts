@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import test, { type TestContext } from "node:test";
-import { createArchive, sha256File } from "./asar.js";
+import { createArchive, sha256File } from "../asar.js";
 
 const executable = path.join("Contents", "MacOS", "Fixture");
 const archive = path.join("Contents", "Resources", "app.asar");
@@ -57,10 +57,10 @@ function fixture(context: TestContext) {
     });
     createBundle(stock);
     const compiled = path.join(root, "dist", "installer");
-    fs.cpSync(__dirname, compiled, { recursive: true });
+    fs.cpSync(path.dirname(__dirname), compiled, { recursive: true });
     const load = createRequire(__filename);
-    const install = load(path.join(compiled, "install.js")) as typeof import("./install.js");
-    const restore = load(path.join(compiled, "restore.js")) as typeof import("./restore.js");
+    const install = load(path.join(compiled, "install.js")) as typeof import("../install.js");
+    const restore = load(path.join(compiled, "restore.js")) as typeof import("../restore.js");
     const fsModule = load("node:fs") as typeof fs;
     return {
         install,

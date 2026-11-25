@@ -16,7 +16,7 @@ import {
     embeddedFramework,
     integrityDigest,
     sentinel,
-} from "./mac-integrity.js";
+} from "./integrity.js";
 
 test("framework detection finds one enabled digest across a read boundary", (context) => {
     const bundle = mkdtempSync(path.join(tmpdir(), "enhancer-mac-integrity-"));

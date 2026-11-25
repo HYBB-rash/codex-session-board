@@ -13,7 +13,7 @@ import {
     withRecoveredMacCopy,
     writeState,
 } from "./install.js";
-import { verifyBundleState } from "./mac-copy.js";
+import { verifyBundleState } from "./mac/copy.js";
 import * as paths from "./paths.js";
 
 function deploymentId(): string {

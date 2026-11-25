@@ -28,13 +28,13 @@ import {
     recoverMacCopy,
     verifyBundleState,
     withMacCopyLock,
-} from "./mac-copy.js";
+} from "./mac/copy.js";
 import {
     embeddedFramework,
     updateEmbeddedIntegrity,
     verifyEmbeddedIntegrity,
-} from "./mac-integrity.js";
-import { signEmbeddedCopy, verifyOfficialCopy } from "./mac-signing.js";
+} from "./mac/integrity.js";
+import { signEmbeddedCopy, verifyOfficialCopy } from "./mac/signing.js";
 import * as paths from "./paths.js";
 import { activateRelease } from "./releases.js";
 
