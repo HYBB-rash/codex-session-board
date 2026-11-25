@@ -1,7 +1,7 @@
 {
     "compilerOptions": {
         "target": "ES2023",
-        "lib": ["ES2023"],
+        "lib": ["ES2023", "DOM", "DOM.Iterable"],
         "module": "nodenext",
         "moduleResolution": "nodenext",
         "rootDir": "src",
@@ -18,13 +18,13 @@
         "noUnusedLocals": true,
         "noUnusedParameters": true,
         "isolatedModules": true,
-        "types": ["node"],
+        "types": ["node", "vite/client"],
         "esModuleInterop": true,
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,
-        "noEmitOnError": true,
-        "sourceMap": false
+        "noEmit": true,
+        "jsx": "preserve",
+        "jsxImportSource": "vue"
     },
-    "include": ["src"],
-    "exclude": ["src/ui"]
+    "include": ["src"]
 }

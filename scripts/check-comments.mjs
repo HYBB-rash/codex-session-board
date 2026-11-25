@@ -18,7 +18,7 @@ function language(filename) {
     const extension = extname(filename);
     if (extension === ".tsx") return "tsx";
     if (extension === ".jsx") return "jsx";
-    return extension === ".ts" ? "ts" : "js";
+    return extension.endsWith("ts") ? "ts" : "js";
 }
 
 function lineOf(source, offset) {

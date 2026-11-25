@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import vue from "@vitejs/plugin-vue";
 import vueJsx from "@vitejs/plugin-vue-jsx";
 import { defineConfig } from "vite";
@@ -26,4 +27,3 @@ export default defineConfig({
         rollupOptions: { external: ["electron"] },
     },
 });
-import { existsSync, readFileSync } from "node:fs";

@@ -23,4 +23,4 @@ const transport: BoardRequest = async (path, body) => {
 };
 
 startBoard(transport);
-void import("./board-pwa");
+void import("./board-pwa.js");

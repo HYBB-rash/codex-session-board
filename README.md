@@ -103,7 +103,7 @@ node dist/bin/codex-session-board.js migrate --rollback MIGRATION_ID
 
 ```bash
 npm ci
-npm run typecheck:ui
+npm run typecheck
 npm test
 npm run lint
 python3 acceptance/verify-typescript.py --model-only

@@ -537,7 +537,7 @@
             "implementation": [
                 ".mcp.json",
                 "src/compat/mcp.ts",
-                "src/ui/standalone.vite.config.ts"
+                "src/ui/standalone.vite.config.mts"
             ],
             "evidence": ["mcp-stdio", "operation-routing", "native-mcp-and-remote-new"]
         },

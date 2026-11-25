@@ -8,7 +8,8 @@
     },
     "scripts": {
         "build": "bash scripts/build.sh",
-        "typecheck:ui": "vue-tsc --noEmit -p src/ui/tsconfig.json",
+        "typecheck": "vue-tsc -p tsconfig.json",
+        "typecheck:ui": "npm run --silent typecheck",
         "detect": "npm run build --silent && node dist/bin/codex-enhancer.js detect",
         "install": "if [ \"${npm_command:-}\" = run-script ]; then npm run build --silent && node dist/bin/codex-enhancer.js install; fi",
         "uninstall": "npm run build --silent && node dist/bin/codex-enhancer.js uninstall",
@@ -23,7 +24,6 @@
         "@modelcontextprotocol/ext-apps": "^2.0.4",
         "@types/markdown-it": "^14.1.2",
         "@types/node": "^26.6.6",
-        "@typescript/native": "npm:typescript@^7.0.2",
         "@vitejs/plugin-vue": "^6.0.11",
         "@vitejs/plugin-vue-jsx": "^5.1.6",
         "esbuild": "^0.28.2",
