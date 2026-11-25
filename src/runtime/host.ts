@@ -186,6 +186,17 @@ function opaqueColor(start: Element | null): string {
     return "Canvas";
 }
 
+function isSidebarInWorkspace(rect: DOMRect, workspace: DOMRect): boolean {
+    return !(
+        rect.width < 8 ||
+        rect.height < 40 ||
+        rect.width > workspace.width * 0.7 ||
+        rect.right <= workspace.left + 1 ||
+        rect.left >= workspace.right - 1 ||
+        rect.left > workspace.left + workspace.width * 0.75
+    );
+}
+
 function contentBox(): DOMRect | null {
     const workspace = document.querySelector(WORKSPACE);
     if (!isHtmlElement(workspace)) return null;
@@ -195,11 +206,7 @@ function contentBox(): DOMRect | null {
         const element = document.querySelector(selector);
         if (!isHtmlElement(element)) continue;
         const rect = element.getBoundingClientRect();
-        if (rect.width < 8 || rect.height < 40) continue;
-        if (rect.width > bounds.width * 0.7) continue;
-        if (rect.right <= bounds.left + 1 || rect.left >= bounds.right - 1) continue;
-        if (rect.left > bounds.left + bounds.width * 0.75) continue;
-        left = Math.max(left, rect.right);
+        if (isSidebarInWorkspace(rect, bounds)) left = Math.max(left, rect.right);
     }
     const width = bounds.right - left;
     if (width < 80 || bounds.height < 80) return null;

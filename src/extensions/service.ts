@@ -30,6 +30,7 @@ import {
     type SidebarContext,
     type Thread,
     type ThreadId,
+    type Turn,
 } from "./desktop/connection.js";
 import { type DraftInput, type DraftRecord, stageDraft, unresolvedDrafts } from "./drafts.js";
 import {
@@ -146,6 +147,7 @@ const emptyRecord: CardRecord = { note: "", version: 0, inputVersion: 0 };
 const titleRpcBudgetMs = 3000;
 const titleRetryDelayMs = 30000;
 const historyPollBudgetMs = 3000;
+const unsupportedOperation = "当前看板尚未接入这项操作";
 const emptyHost = (): HostSnapshot => ({
     active: new Map(),
     archived: new Map(),
@@ -197,6 +199,25 @@ function projectKeyHost(project: string): HostId | null {
 
 function changedInput(current: CardRecord, input: string | null): input is string {
     return input !== null && input !== current.inputKey;
+}
+
+function observedRecord(current: CardRecord, turn: Turn | undefined, phase: Phase | null) {
+    const input = turnInput(turn);
+    const inputChanged = changedInput(current, input);
+    const phaseChanged =
+        phase !== null &&
+        (current.phaseKey !== phase.key || phaseIsFromTurn(current.pendingPhaseKey, phase.turnId));
+    const answer = turn && finalAnswer(turn) ? turn.id : undefined;
+    if (!inputChanged && !phaseChanged && (!answer || answer === current.previewTurnId)) return;
+    const next: CardRecord = {
+        ...current,
+        ...(input !== null ? { inputKey: input } : {}),
+        version: current.version + 1,
+        inputVersion: current.inputVersion + Number(inputChanged),
+        ...(phase ? { phaseKey: phase.key } : {}),
+        ...(answer ? { previewTurnId: answer } : {}),
+    };
+    return { next, phaseChanged };
 }
 
 function remainingTitleTime(deadline: number): number {
@@ -557,25 +578,11 @@ export class BoardService {
                 options.historyTimeout,
             );
             const current = this.records[id] ?? emptyRecord;
-            const input = turnInput(latest);
             const phase =
                 options.historyTimeout === undefined ? runtimePhase(thread.status, latest) : null;
-            const inputChanged = changedInput(current, input);
-            const phaseChanged =
-                phase !== null &&
-                (current.phaseKey !== phase.key ||
-                    phaseIsFromTurn(current.pendingPhaseKey, phase.turnId));
-            const answer = latest && finalAnswer(latest) ? latest.id : undefined;
-            if (!inputChanged && !phaseChanged && (!answer || answer === current.previewTurnId))
-                return;
-            const next = {
-                ...current,
-                ...(input !== null ? { inputKey: input } : {}),
-                version: current.version + 1,
-                inputVersion: current.inputVersion + Number(inputChanged),
-                ...(phase ? { phaseKey: phase.key } : {}),
-                ...(answer ? { previewTurnId: answer } : {}),
-            };
+            const observation = observedRecord(current, latest, phase);
+            if (!observation) return;
+            const { next, phaseChanged } = observation;
             const change =
                 phase && isNewPhase(phase, current, this.observationSince)
                     ? await this.applyPhase(connection, thread, context, phase, next)
@@ -1140,14 +1147,13 @@ export class BoardService {
         }
     }
 
-    private async resolveTitle(
+    private async syncTitleWithinBudget(
         connection: HostConnection,
         threadId: ThreadId,
         id: string,
         record: CardRecord,
-        title: NonNullable<CardRecord["title"]>,
-    ): Promise<void> {
-        const account = accountKey(this.requiredContext());
+        state: BoardState | null,
+    ) {
         const deadline = performance.now() + titleRpcBudgetMs;
         let timer: number | undefined;
         let updated: Thread | undefined;
@@ -1160,7 +1166,7 @@ export class BoardService {
                 );
             });
             updated = await Promise.race([
-                this.syncTitle(connection, threadId, id, record, title.state, deadline),
+                this.syncTitle(connection, threadId, id, record, state, deadline),
                 timeout,
             ]);
             if (!updated) return;
@@ -1170,14 +1176,34 @@ export class BoardService {
         } finally {
             window.clearTimeout(timer);
         }
+        return { updated, failure };
+    }
+
+    private scheduleTitleRetry(id: string, version: number, failure: string | undefined) {
+        if (failure) this.nextTitleAttempt.set(id, { version, at: Date.now() + titleRetryDelayMs });
+        else this.nextTitleAttempt.delete(id);
+    }
+
+    private async resolveTitle(
+        connection: HostConnection,
+        threadId: ThreadId,
+        id: string,
+        record: CardRecord,
+        title: NonNullable<CardRecord["title"]>,
+    ): Promise<void> {
+        const account = accountKey(this.requiredContext());
+        const sync = await this.syncTitleWithinBudget(
+            connection,
+            threadId,
+            id,
+            record,
+            title.state,
+        );
+        if (!sync) return;
+        const { updated, failure } = sync;
         if (!this.context || accountKey(this.context) !== account || this.records[id] !== record)
             return;
-        if (failure)
-            this.nextTitleAttempt.set(id, {
-                version: record.version,
-                at: Date.now() + titleRetryDelayMs,
-            });
-        else this.nextTitleAttempt.delete(id);
+        this.scheduleTitleRetry(id, record.version, failure);
         if (failure === undefined || failure !== title.error) {
             const changed = await this.ports.settleTitle({
                 account,
@@ -1616,40 +1642,66 @@ export class BoardService {
         throw new Error("归档请求不完整");
     }
 
+    private async openConnectionSettings() {
+        const owner = await this.freshContext();
+        await this.desktop.navigate({
+            kind: "settings",
+            accountId: owner.accountId,
+            userId: owner.userId,
+        });
+        this.requireAccount(accountKey(owner));
+        this.ports.closePage();
+    }
+
+    private requestExistingSession(
+        path: "/api/open" | "/api/preview-reply" | "/api/project/assign",
+        input: (DraftInput & { id?: string }) | undefined,
+    ) {
+        if (path === "/api/project/assign") {
+            if (input?.confirmed && input.id && input.projectId)
+                return this.assign(input.id, input.projectId);
+        } else if (input?.id) {
+            return path === "/api/open" ? this.open(input.id) : this.preview(input.id);
+        }
+        throw new Error(unsupportedOperation);
+    }
+
     async request(path: string, body?: object, account?: string): Promise<unknown> {
         if (account !== undefined) this.requireAccount(account);
-        if (path === "/api/sessions" || path === "/api/refresh") {
-            await this.refresh();
-            if (account !== undefined) this.requireAccount(account);
-            return this.snapshot();
-        }
-        if (path === "/api/state" && body) return this.update(body as Edit);
         if (path.startsWith("/api/archive")) return this.requestArchive(path, body);
-        if (path === "/api/column-sort" && body) {
-            const sort = body as SortPreference & { state: string };
-            return this.sort(sort.state, sort);
-        }
         const input = body as (DraftInput & { id?: string }) | undefined;
-        if (path === "/api/open" && input?.id) return this.open(input.id);
-        if (path === "/api/preview-reply" && input?.id) return this.preview(input.id);
-        if (path === "/api/new") return this.create(input ?? {});
-        if (path === "/api/new/reset" && input) return this.resetDraft(input);
-        if (path === "/api/project/assign" && input?.confirmed && input.id && input.projectId)
-            return this.assign(input.id, input.projectId);
-        if (["/api/connect", "/api/ssh-setup"].includes(path)) {
-            const owner = await this.freshContext();
-            await this.desktop.navigate({
-                kind: "settings",
-                accountId: owner.accountId,
-                userId: owner.userId,
-            });
-            this.requireAccount(accountKey(owner));
-            this.ports.closePage();
-            if (path === "/api/ssh-setup")
+        switch (path) {
+            case "/api/sessions":
+            case "/api/refresh":
+                await this.refresh();
+                if (account !== undefined) this.requireAccount(account);
+                return this.snapshot();
+            case "/api/state":
+                if (body) return this.update(body as Edit);
+                break;
+            case "/api/column-sort": {
+                if (!body) break;
+                const sort = body as SortPreference & { state: string };
+                return this.sort(sort.state, sort);
+            }
+            case "/api/open":
+            case "/api/preview-reply":
+            case "/api/project/assign":
+                return this.requestExistingSession(path, input);
+            case "/api/new":
+                return this.create(input ?? {});
+            case "/api/new/reset":
+                if (input) return this.resetDraft(input);
+                break;
+            case "/api/connect":
+                await this.openConnectionSettings();
+                return { ok: true };
+            case "/api/ssh-setup":
+                await this.openConnectionSettings();
                 return { ok: true, state: "applied", message: "已打开 Codex 远程连接设置" };
-            return { ok: true };
+            case "/api/plugin-update":
+                return this.ports.updateStatus(body !== undefined);
         }
-        if (path === "/api/plugin-update") return this.ports.updateStatus(body !== undefined);
-        throw new Error("当前看板尚未接入这项操作");
+        throw new Error(unsupportedOperation);
     }
 }
