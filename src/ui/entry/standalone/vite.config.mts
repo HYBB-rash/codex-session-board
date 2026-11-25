@@ -20,7 +20,7 @@ function standaloneAssets(): Plugin {
                 .find((entry) => entry.type === "chunk")?.code;
             if (!code) throw new Error("无法生成 MCP App");
             const script = code.replace(/<\/script/gi, "<\\/script");
-            const html = readFileSync("src/ui/standalone/index.html", "utf8");
+            const html = readFileSync("src/ui/entry/standalone/index.html", "utf8");
             this.emitFile({ type: "asset", fileName: "index.html", source: html });
             this.emitFile({
                 type: "asset",
@@ -45,7 +45,7 @@ function standaloneAssets(): Plugin {
                 source: readFileSync("src/ui/shared/board/operations.json"),
             });
             const worker = await build({
-                entryPoints: ["src/ui/standalone/sw.ts"],
+                entryPoints: ["src/ui/entry/standalone/sw.ts"],
                 bundle: true,
                 write: false,
                 minify: true,
@@ -87,7 +87,7 @@ function settings(name: string, entry: string, write: boolean) {
             emptyOutDir: true,
             lib: {
                 name: "SessionBoard",
-                entry: `src/ui/standalone/${entry}`,
+                entry: `src/ui/entry/standalone/${entry}`,
                 formats: ["iife"],
                 fileName: () => `${name}.js`,
             },
