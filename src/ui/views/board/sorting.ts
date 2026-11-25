@@ -1,4 +1,4 @@
-import type { BoardSnapshot } from "./controller";
+import type { BoardSnapshot } from "../../controller";
 import type { BoardSession } from "./session";
 
 export type Direction = "asc" | "desc";

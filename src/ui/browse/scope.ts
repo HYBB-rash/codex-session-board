@@ -1,6 +1,6 @@
+import type { BoardSnapshot } from "../controller";
 import type { BoardSession } from "../session";
 import type { ProjectTag } from "../shared/card/details";
-import type { BoardSnapshot } from "../views/board/controller";
 import { mountBoardFilters } from "./filters";
 
 export interface HostIdentity {

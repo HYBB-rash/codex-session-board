@@ -1,4 +1,4 @@
-import type { BoardSnapshot } from "./views/board/controller";
+import type { BoardSnapshot } from "./controller";
 
 interface RefreshPorts {
     request(path: "/api/sessions" | "/api/refresh", body?: object): Promise<unknown>;

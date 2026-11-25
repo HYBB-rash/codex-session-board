@@ -1,8 +1,8 @@
 import { h, render } from "vue";
 import BoardPage from "./BoardPage.vue";
 import type { BoardRequest, BoardSnapshot } from "./controller";
-import type { BoardInstall } from "./install";
-import styles from "./page.css?inline";
+import type { BoardInstall } from "./views/board/install";
+import styles from "./views/board/page.css?inline";
 
 export function mountBoardPage(
     root: HTMLElement | ShadowRoot,

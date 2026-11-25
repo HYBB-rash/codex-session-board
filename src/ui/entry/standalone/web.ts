@@ -1,4 +1,4 @@
-import type { BoardRequest } from "../../views/board/controller";
+import type { BoardRequest } from "../../controller";
 import { setupPwa } from "../../views/board/install";
 import { startBoard } from "./page";
 
