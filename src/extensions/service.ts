@@ -234,6 +234,28 @@ function isNewPhase(phase: Phase, current: CardRecord, since: number): boolean {
     return sameTurn || (phase.at !== null && phase.at >= Math.floor(since));
 }
 
+function phaseForObservation(thread: Thread, latest: Turn | undefined, historyTimeout?: number) {
+    return historyTimeout === undefined ? runtimePhase(thread.status, latest) : null;
+}
+
+function titleSettlement(
+    account: string,
+    id: string,
+    expected: number,
+    failure: string | undefined,
+): TitleResolution {
+    return { account, id, expected, ...(failure === undefined ? {} : { failure }) };
+}
+
+function settledTitleRecord(
+    record: CardRecord,
+    title: NonNullable<CardRecord["title"]>,
+    failure: string | undefined,
+): CardRecord {
+    const { title: _pending, ...rest } = record;
+    return failure ? { ...rest, title: { ...title, error: failure } } : rest;
+}
+
 function addUnseenThreads(rows: Map<ThreadId, Thread>, threads: readonly Thread[]): void {
     for (const thread of threads) {
         if (interactiveThread(thread) && !rows.has(thread.id)) rows.set(thread.id, thread);
@@ -391,17 +413,6 @@ type TrackedDraftResult =
 export type BoardService = ReturnType<typeof createBoardService>;
 
 export function createBoardService(desktop: DesktopConnection, ports: BoardPorts) {
-    const archive = createArchive({
-        scope: () => accountKey(requiredContext()),
-        ledger: () => runtime.ledger,
-        write: (next) => writeLedger(next),
-        nativeVersion: (version) => nativeSectionVersion(version),
-        verify: async (item) => {
-            await verifyArchive(item);
-        },
-        isArchived: (id) => isArchived(id),
-        archive: (item) => archiveThread(item),
-    });
     const runtime = {
         hosts: new Map<HostId, HostSnapshot>(),
         context: undefined as SidebarContext | undefined,
@@ -410,7 +421,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         legacyCachedCards: [] as LegacyCachedCard[],
         refreshing: undefined as Promise<void> | undefined,
         editing: new Set<string>(),
-        settings: defaults as BoardSettings,
+        settings: defaults,
         titleStartedAt: undefined as number | undefined,
         observationSince: Date.now() / 1000,
         runtimeDirty: new Map<HostId, { epoch: number; ids: Set<ThreadId> }>(),
@@ -420,7 +431,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         nextTitleAttempt: new Map<string, { version: number; at: number }>(),
         changed: new Map<string, number>(),
         changes: 0,
-        ledger: emptyLedger() as BoardLedger,
+        ledger: emptyLedger(),
         openingDrafts: new Map<
             string,
             { projectId: string; result: Promise<TrackedDraftResult> }
@@ -428,6 +439,17 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         archiveDeadlines: new Map<HostId, number>(),
         archiveRuns: new Map<HostId, AutoArchiveRun>(),
     };
+    const archive = createArchive({
+        scope: () => accountKey(requiredContext()),
+        ledger: () => runtime.ledger,
+        write: writeLedger,
+        nativeVersion: nativeSectionVersion,
+        verify: async (item) => {
+            await verifyArchive(item);
+        },
+        isArchived,
+        archive: archiveThread,
+    });
 
     async function refresh(): Promise<void> {
         runtime.refreshing ??= readBoard()
@@ -672,46 +694,41 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         options: { historyTimeout?: number } = {},
     ): Promise<void> {
         const id = cardId({ hostId: connection.hostId, threadId: thread.id });
-        if (runtime.editing.has(id)) {
-            if (options.historyTimeout === undefined) notice(connection.hostId, thread.id);
-            return;
-        }
-        runtime.editing.add(id);
-        let queuedTitle: boolean;
+        const historyTimeout = options.historyTimeout;
+        if (!claimObservation(id, connection.hostId, thread.id, historyTimeout)) return;
+        let queuedTitle = false;
         try {
-            queuedTitle = await storeObservation(
-                connection,
-                thread,
-                context,
-                id,
-                options.historyTimeout,
-            );
+            const latest = await readObservedTurn(connection, thread.id, id, historyTimeout);
+            const current = runtime.records[id] ?? emptyRecord;
+            const phase = phaseForObservation(thread, latest, historyTimeout);
+            const observation = observedRecord(current, latest, phase);
+            if (!observation) return;
+            const { next, phaseChanged } = observation;
+            const change =
+                phase && isNewPhase(phase, current, runtime.observationSince)
+                    ? await applyPhase(connection, thread, context, phase, next)
+                    : undefined;
+            if (phaseChanged) delete next.pendingPhaseKey;
+            await commitRecord(context, id, current.version, next, change);
+            queuedTitle = next.title !== undefined && next.title !== current.title;
         } finally {
             runtime.editing.delete(id);
         }
         if (queuedTitle) void retryTitle(connection, thread.id);
     }
 
-    async function storeObservation(
-        connection: HostConnection,
-        thread: Thread,
-        context: SidebarContext,
+    function claimObservation(
         id: string,
+        hostId: HostId,
+        threadId: ThreadId,
         historyTimeout?: number,
-    ): Promise<boolean> {
-        const latest = await readObservedTurn(connection, thread.id, id, historyTimeout);
-        const current = runtime.records[id] ?? emptyRecord;
-        const phase = historyTimeout === undefined ? runtimePhase(thread.status, latest) : null;
-        const observation = observedRecord(current, latest, phase);
-        if (!observation) return false;
-        const { next, phaseChanged } = observation;
-        const change =
-            phase && isNewPhase(phase, current, runtime.observationSince)
-                ? await applyPhase(connection, thread, context, phase, next)
-                : undefined;
-        if (phaseChanged) delete next.pendingPhaseKey;
-        await commitRecord(context, id, current.version, next, change);
-        return next.title !== undefined && next.title !== current.title;
+    ): boolean {
+        if (runtime.editing.has(id)) {
+            if (historyTimeout === undefined) notice(hostId, threadId);
+            return false;
+        }
+        runtime.editing.add(id);
+        return true;
     }
 
     async function readObservedTurn(
@@ -1288,37 +1305,25 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         const sync = await syncTitleWithinBudget(connection, threadId, id, record, title.state);
         if (!sync) return;
         const { updated, failure } = sync;
-        if (
-            !runtime.context ||
-            accountKey(runtime.context) !== account ||
-            runtime.records[id] !== record
-        )
-            return;
+        if (!isCurrentTitleRecord(account, id, record)) return;
         scheduleTitleRetry(id, record.version, failure);
         if (failure === undefined || failure !== title.error) {
-            if (!(await settleObservedTitle(account, id, record, title, failure))) return;
+            const changed = await ports.settleTitle(
+                titleSettlement(account, id, record.version, failure),
+            );
+            if (!changed || runtime.records[id] !== record) return;
+            runtime.records[id] = settledTitleRecord(record, title, failure);
         }
         if (updated && !failure && !runtime.editing.has(id))
             publishThread(connection.hostId, updated);
     }
 
-    async function settleObservedTitle(
-        account: string,
-        id: string,
-        record: CardRecord,
-        title: NonNullable<CardRecord["title"]>,
-        failure: string | undefined,
-    ): Promise<boolean> {
-        const changed = await ports.settleTitle({
-            account,
-            id,
-            expected: record.version,
-            ...(failure === undefined ? {} : { failure }),
-        });
-        if (!changed || runtime.records[id] !== record) return false;
-        const { title: _pending, ...rest } = record;
-        runtime.records[id] = failure ? { ...rest, title: { ...title, error: failure } } : rest;
-        return true;
+    function isCurrentTitleRecord(account: string, id: string, record: CardRecord): boolean {
+        return (
+            runtime.context !== undefined &&
+            accountKey(runtime.context) === account &&
+            runtime.records[id] === record
+        );
     }
 
     async function moveCard(
