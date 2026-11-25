@@ -1,7 +1,7 @@
-import { mountCardEditor } from "./board-editor";
-import type { mountMoveFeedback } from "./board-move-feedback";
-import type { BoardSnapshot } from "./board-start";
-import type { BoardSession } from "./board-view";
+import type { BoardSnapshot } from "../../../board-start";
+import type { BoardSession } from "../../../board-view";
+import { mountCardEditor } from "./mount-editor";
+import type { mountMoveFeedback } from "./move-feedback";
 
 interface EditsPorts {
     snapshot(): BoardSnapshot;

@@ -1,7 +1,12 @@
-import type { CatalogProject, HostCatalog, HostIdentity, HostOption } from "./board-browse";
 import type { BoardSnapshot } from "./board-start";
 import type { BoardSession } from "./board-view";
 import type { AutoArchiveHealth } from "./views/board/archive/archive";
+import type {
+    CatalogProject,
+    HostCatalog,
+    HostIdentity,
+    HostOption,
+} from "./views/board/browse/browse";
 
 interface HostHealth extends AutoArchiveHealth {
     error?: string | null;

@@ -1,7 +1,7 @@
 import { computed, createApp, nextTick, shallowReactive, Teleport } from "vue";
-import type { CatalogProject, HostCatalog, HostOption } from "./board-browse";
-import type { BoardSnapshot } from "./board-start";
-import type { BoardSession } from "./board-view";
+import type { BoardSnapshot } from "../../../board-start";
+import type { BoardSession } from "../../../board-view";
+import type { CatalogProject, HostCatalog, HostOption } from "./browse";
 
 interface FilterOption {
     value: string;

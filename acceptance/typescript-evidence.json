@@ -183,16 +183,16 @@
         },
         "UI-002": {
             "sources": [
-                "src/ui/board-editor.ts",
-                "src/ui/board-editor.vue",
-                "src/ui/board-edits.ts",
+                "src/ui/views/board/edit/mount-editor.ts",
+                "src/ui/views/board/edit/SessionEditor.vue",
+                "src/ui/views/board/edit/edits.ts",
                 "src/extensions/session-board/board-service.ts"
             ],
             "missing": "还需分别演练空白、纯空白、取消、填入、清空、过期失败，核对备注、自动原因及草稿。"
         },
         "UI-003": {
             "sources": [
-                "src/ui/board-filters.tsx",
+                "src/ui/views/board/browse/filters.tsx",
                 "src/ui/board-refresh.ts",
                 "src/ui/board-columns.vue"
             ],

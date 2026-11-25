@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, shallowRef } from "vue";
-import type { EditorPorts } from "./board-editor";
-import { readDraft, writeDraft } from "./board-note-drafts";
-import type { BoardSession } from "./board-view";
-import EditFields from "./shared/board-edit-fields";
+import type { BoardSession } from "../../../board-view";
+import EditFields from "../../../shared/board-edit-fields";
+import type { EditorPorts } from "./mount-editor";
+import { readDraft, writeDraft } from "./note-drafts";
 
 const { ports } = defineProps<{ ports: EditorPorts }>();
 const dialog = ref<HTMLDialogElement>();

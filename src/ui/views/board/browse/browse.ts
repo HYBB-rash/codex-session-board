@@ -1,6 +1,6 @@
-import { mountBoardFilters } from "./board-filters";
-import type { BoardSnapshot } from "./board-start";
-import type { BoardSession, ProjectTag } from "./board-view";
+import type { BoardSnapshot } from "../../../board-start";
+import type { BoardSession, ProjectTag } from "../../../board-view";
+import { mountBoardFilters } from "./filters";
 
 export interface HostIdentity {
     hostId?: string;

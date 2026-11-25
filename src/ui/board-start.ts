@@ -1,8 +1,5 @@
-import { type CatalogProject, type HostIdentity, mountBoardBrowse } from "./board-browse";
-import { mountBoardEdits } from "./board-edits";
 import { mountBoardHealth } from "./board-health";
 import { type BoardHealth, createBoardHealthReports } from "./board-health-report";
-import { mountMoveFeedback } from "./board-move-feedback";
 import { mountBoardNewSession } from "./board-new-session";
 import { mountBoardNewTarget } from "./board-new-target";
 import { mountProjectAssignment } from "./board-project-assignment";
@@ -12,6 +9,13 @@ import { createColumnSortSave, type SortPreference } from "./board-sorting";
 import { mountBoardSshSetup } from "./board-ssh-setup";
 import { type BoardModel, type BoardSession, mountBoard } from "./board-view";
 import { mountBoardArchive } from "./views/board/archive/archive";
+import {
+    type CatalogProject,
+    type HostIdentity,
+    mountBoardBrowse,
+} from "./views/board/browse/browse";
+import { mountBoardEdits } from "./views/board/edit/edits";
+import { mountMoveFeedback } from "./views/board/edit/move-feedback";
 import { mountPluginUpdate } from "./views/board/plugin-update";
 
 export interface BoardSnapshot {

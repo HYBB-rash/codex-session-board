@@ -1,6 +1,6 @@
 import { createApp } from "vue";
-import CardEditor from "./board-editor.vue";
-import type { BoardSession } from "./board-view";
+import type { BoardSession } from "../../../board-view";
+import CardEditor from "./SessionEditor.vue";
 
 export interface EditorPorts {
     save: (session: BoardSession, state: string | null, note: string) => Promise<void>;

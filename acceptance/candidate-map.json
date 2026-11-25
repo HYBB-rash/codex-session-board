@@ -516,8 +516,8 @@
         "UI-002": {
             "status": "partial",
             "implementation": [
-                "src/ui/board-editor.ts",
-                "src/ui/board-editor.vue",
+                "src/ui/views/board/edit/mount-editor.ts",
+                "src/ui/views/board/edit/SessionEditor.vue",
                 "src/ui/board-drag.ts"
             ],
             "evidence": ["native-move", "http-security"],
@@ -526,9 +526,9 @@
         "UI-003": {
             "status": "pending",
             "implementation": [
-                "src/ui/board-filters.tsx",
+                "src/ui/views/board/browse/filters.tsx",
                 "src/ui/board-refresh.ts",
-                "src/ui/board-editor.vue"
+                "src/ui/views/board/edit/SessionEditor.vue"
             ],
             "remaining": "真实验证标题/项目搜索、空列接收拖放、表单键盘操作、暂停重绘和列内滚动位置。"
         },
