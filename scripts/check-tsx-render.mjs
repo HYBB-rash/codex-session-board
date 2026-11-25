@@ -70,26 +70,29 @@ function exportedDeclarations(source, checker) {
     );
 }
 
+function recordReference(node, checker, references) {
+    const symbol = ts.isShorthandPropertyAssignment(node.parent)
+        ? checker.getShorthandAssignmentValueSymbol(node.parent)
+        : checker.getSymbolAtLocation(node);
+    if (symbol && symbol.valueDeclaration?.name !== node)
+        references.set(symbol, (references.get(symbol) ?? 0) + 1);
+}
+
+function recordForwardedCalls(node, checker, calls) {
+    const setup = vueSetup(node, checker);
+    if (!setup || !ts.isFunctionLike(setup)) return;
+    for (const expression of returnedExpressions(setup.body)) {
+        const call = forwardedCall(expression);
+        if (call) calls.push(call);
+    }
+}
+
 export function findForwardedRenders(source, checker) {
     const references = new Map();
     const calls = [];
     function visit(node) {
-        if (ts.isIdentifier(node)) {
-            const symbol = ts.isShorthandPropertyAssignment(node.parent)
-                ? checker.getShorthandAssignmentValueSymbol(node.parent)
-                : checker.getSymbolAtLocation(node);
-            if (symbol && symbol.valueDeclaration?.name !== node) {
-                references.set(symbol, (references.get(symbol) ?? 0) + 1);
-            }
-        } else if (ts.isCallExpression(node)) {
-            const setup = vueSetup(node, checker);
-            if (setup && ts.isFunctionLike(setup)) {
-                for (const expression of returnedExpressions(setup.body)) {
-                    const call = forwardedCall(expression);
-                    if (call) calls.push(call);
-                }
-            }
-        }
+        if (ts.isIdentifier(node)) recordReference(node, checker, references);
+        else if (ts.isCallExpression(node)) recordForwardedCalls(node, checker, calls);
         ts.forEachChild(node, visit);
     }
     visit(source);

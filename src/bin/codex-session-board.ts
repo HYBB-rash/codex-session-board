@@ -67,9 +67,27 @@ function reply(result: unknown) {
     console.log(JSON.stringify(result));
 }
 
-async function execute(
-    args: ReturnType<typeof parseArgs<{ options: typeof options; allowPositionals: true }>>,
-) {
+type BoardArgs = ReturnType<typeof parseArgs<{ options: typeof options; allowPositionals: true }>>;
+
+async function migrate(values: BoardArgs["values"], stateDir: string) {
+    const location = join(stateDir, "session-board");
+    const destination = resolve(values.output ?? join(location, "legacy-migration"));
+    if (values.rollback) {
+        if (values["source-config"]) throw new Error("迁移回退与源导入必须分开执行");
+        reply({ backup: rollbackLegacyMigration(destination, values.rollback) });
+        return;
+    }
+    if (!values["source-config"]) throw new Error("migrate 要求 --source-config");
+    mkdirSync(location, { recursive: true, mode: 0o700 });
+    reply(
+        await migrateLegacyBoard({
+            sourceConfig: resolve(values["source-config"]),
+            destination,
+        }),
+    );
+}
+
+async function execute(args: BoardArgs) {
     const { positionals, values } = args;
     const command = positionals[0] ?? "serve";
     const { CODEX_SESSION_BOARD_CONFIG, CODEX_ENHANCER_STATE_DIR } = process.env;
@@ -79,24 +97,7 @@ async function execute(
     const stateDir = resolve(
         values["state-dir"] ?? configured.stateDir ?? CODEX_ENHANCER_STATE_DIR ?? defaultStateDir,
     );
-    if (command === "migrate") {
-        const location = join(stateDir, "session-board");
-        const destination = resolve(values.output ?? join(location, "legacy-migration"));
-        if (values.rollback) {
-            if (values["source-config"]) throw new Error("迁移回退与源导入必须分开执行");
-            reply({ backup: rollbackLegacyMigration(destination, values.rollback) });
-            return;
-        }
-        if (!values["source-config"]) throw new Error("migrate 要求 --source-config");
-        mkdirSync(location, { recursive: true, mode: 0o700 });
-        reply(
-            await migrateLegacyBoard({
-                sourceConfig: resolve(values["source-config"]),
-                destination,
-            }),
-        );
-        return;
-    }
+    if (command === "migrate") return migrate(values, stateDir);
     if (command === "migrate-sections") {
         if (!configFile || !values.output)
             throw new Error("migrate-sections 要求 --config 和 --output");

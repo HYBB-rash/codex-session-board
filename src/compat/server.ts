@@ -190,6 +190,20 @@ async function respondAsset(
     return true;
 }
 
+async function respondStop(runtime: Runtime, request: IncomingMessage, response: ServerResponse) {
+    const match = (await body(request, 1024)) as Partial<Receipt>;
+    if (
+        match?.instance !== runtime.receipt.instance ||
+        (match.pid !== undefined && match.pid !== runtime.receipt.pid)
+    ) {
+        throw new RequestError(409, "看板服务实例已变更");
+    }
+    response.once("finish", () => {
+        void runtime.stop().catch(runtime.options.cacheError ?? console.error);
+    });
+    json(response, 202, { stopping: true, instance: runtime.receipt.instance });
+}
+
 async function respond(runtime: Runtime, request: IncomingMessage, response: ServerResponse) {
     headers(response, runtime.receipt.instance);
     const client = enforceOrigin(request, runtime);
@@ -203,20 +217,8 @@ async function respond(runtime: Runtime, request: IncomingMessage, response: Ser
     ) {
         throw new RequestError(403, "看板请求令牌已失效，请重新打开页面");
     }
-    if (path === "/api/service/stop" && request.method === "POST" && client) {
-        const match = (await body(request, 1024)) as Partial<Receipt>;
-        if (
-            match?.instance !== runtime.receipt.instance ||
-            (match.pid !== undefined && match.pid !== runtime.receipt.pid)
-        ) {
-            throw new RequestError(409, "看板服务实例已变更");
-        }
-        response.once("finish", () => {
-            void runtime.stop().catch(runtime.options.cacheError ?? console.error);
-        });
-        json(response, 202, { stopping: true, instance: runtime.receipt.instance });
-        return;
-    }
+    if (path === "/api/service/stop" && request.method === "POST" && client)
+        return respondStop(runtime, request, response);
     const operation = runtime.operations.find(
         (item) => item.path === path && item.method === request.method,
     );
