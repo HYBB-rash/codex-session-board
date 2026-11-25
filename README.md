@@ -86,7 +86,7 @@ node dist/bin/codex-session-board.js mcp
 
 MCP 配置见 [.mcp.json](.mcp.json)。从另一目录调用时可以指定 `--state-dir`，或把 `CODEX_ENHANCER_STATE_DIR` 指向 Enhancer 的 `state/`。`stop` 核对实例后关闭网页服务。重新启动 Enhancer 副本可恢复服务。
 
-已在 Codex 登记随包插件时，可在插件详情用「打开插件」进入原生看板。也可选「固定到侧栏」，然后从最左侧固定图标直达看板。Codex 将固定项保存到当前 ChatGPT 账号，两种入口在 Fedora 均已实测。 [入口验收记录](docs/session-board-typescript-acceptance.md#033-候选)
+在 Codex 桌面端，从 Enhancer 侧栏的「会话看板」打开页面。
 
 ## 设置与迁移
 

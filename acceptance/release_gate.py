@@ -39,7 +39,6 @@ INSTALLATION_ASSERTIONS = {
 }
 ACCEPTANCE_TEST_FILES = {
     "acceptance/public-operations.test.mjs": {
-        "mcp-global-board": "the installed MCP plugin declares one global entrypoint for the complete board page",
         "mcp-shared-board-state": "MCP App and the web page read each other's saved board state",
         "mcp-real-revisions": "MCP saves use the live state and input revisions across HTTP",
         "mcp-inline-app-resources": "the MCP resource bundles its SDK and styles without linked scripts or frames",

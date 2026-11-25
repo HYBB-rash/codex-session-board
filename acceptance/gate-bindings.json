@@ -93,7 +93,7 @@
             ["navigation-exact-thread", "preview-previous-complete"],
             ["title-drag-control-isolation"]
         ],
-        "APP-001": [["mcp-global-board"], ["mcp-shared-board-state"], ["mcp-global-board"]],
+        "APP-001": [[], ["mcp-shared-board-state"], []],
         "UI-001": [[], [], []],
         "UI-002": [
             ["blocked-editor-explicit-save"],

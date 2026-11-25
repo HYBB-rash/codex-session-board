@@ -154,20 +154,21 @@ function packageMcp(directory) {
     };
 }
 
-test("the installed MCP plugin declares one global entrypoint for the complete board page", async (context) => {
+test("the MCP plugin serves the board page without a global entrypoint", async (context) => {
     const { board, directory, url } = await liveBoard(context);
     const mcp = packageMcp(directory);
     const [tools, listed] = await mcp.call([["tools/list"], ["resources/list"]]);
-    const global = tools.tools.filter((tool) =>
-        tool._meta?.["openai/ui"]?.entrypoints?.some(({ type }) => type === "global"),
+    assert.equal(
+        tools.tools.some((tool) =>
+            tool._meta?.["openai/ui"]?.entrypoints?.some(({ type }) => type === "global"),
+        ),
+        false,
     );
-    assert.equal(global.length, 1);
-    const [view] = global;
-    assert.equal(view.name, "board_view");
+    const view = tools.tools.find(({ name }) => name === "board_view");
+    assert.ok(view);
     assert.equal(view.title, "会话看板");
     assert.equal(view.annotations.readOnlyHint, true);
     assert.deepEqual(view._meta.ui.visibility, ["app", "model"]);
-    assert.deepEqual(view._meta["openai/ui"].entrypoints, [{ type: "global" }]);
     assert.deepEqual(view.icons[0], {
         src: `data:image/svg+xml;base64,${mcp.icon}`,
         mimeType: "image/svg+xml",

@@ -14,7 +14,6 @@ export const resourceUri = "ui://session-board/index.html";
 const mimeType = "text/html;profile=mcp-app";
 const publisher = "board_view";
 const description = "会话看板。通过当前 Codex 窗口的已连接主机读取和管理会话。";
-const globalUi = { entrypoints: [{ type: "global" }] };
 const legacyHidden = new Set([
     "Archive",
     "ArchiveBatches",
@@ -45,7 +44,7 @@ function toolDescriptions(operations: Operation[], icon: string, legacy: boolean
             icons,
             inputSchema: { type: "object", additionalProperties: false },
             annotations: { readOnlyHint: true },
-            _meta: { ui: { resourceUri, visibility: ["app", "model"] }, "openai/ui": globalUi },
+            _meta: { ui: { resourceUri, visibility: ["app", "model"] } },
         },
         ...entries.map(({ action, tool, title, readOnly, schema }) => ({
             name: tool,
