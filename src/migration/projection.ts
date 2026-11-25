@@ -245,14 +245,11 @@ const tables = [
 ] as const;
 type OldTable = (typeof tables)[number];
 
-class OldDatabase {
-    constructor(
-        private readonly database: DatabaseSync,
-        private readonly relative: string,
-    ) {}
+type OldDatabase = ReturnType<typeof readLegacyTables>;
 
-    rows(table: OldTable): OldRow[] {
-        const found = this.database
+function readLegacyTables(database: DatabaseSync, relative: string) {
+    function rows(table: OldTable): OldRow[] {
+        const found = database
             .prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?")
             .get(table);
         if (!found) return [];
@@ -260,12 +257,12 @@ class OldDatabase {
             table === "changes"
                 ? "rowid AS source_sequence, * FROM changes ORDER BY rowid"
                 : `* FROM ${table}`;
-        return this.database.prepare(`SELECT ${select}`).all();
+        return database.prepare(`SELECT ${select}`).all();
     }
 
-    changeHistory(): Map<string, LegacyCardChange[]> {
+    function changeHistory(): Map<string, LegacyCardChange[]> {
         const history = new Map<string, LegacyCardChange[]>();
-        for (const row of this.rows("changes")) {
+        for (const row of rows("changes")) {
             const id = text(row.thread_id);
             const changedAt = finite(row.changed_at);
             const note = text(row.note);
@@ -276,12 +273,13 @@ class OldDatabase {
                 changedAt,
                 state: text(row.state),
                 note,
-                source: { database: this.relative, sequence },
+                source: { database: relative, sequence },
             });
             history.set(id, changes);
         }
         return history;
     }
+    return { rows, changeHistory };
 }
 
 function representCard(
@@ -404,7 +402,7 @@ function readDatabase(
     const database = new DatabaseSync(join(migration.directory, relative), { readOnly: true });
     try {
         database.exec("PRAGMA trusted_schema=OFF");
-        action(new OldDatabase(database, relative));
+        action(readLegacyTables(database, relative));
     } finally {
         database.close();
     }

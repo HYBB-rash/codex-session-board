@@ -33,14 +33,6 @@ or {
             and {
                 $filename <: r"(?:^|.*[/\\])src[/\\]extensions[/\\]service\.ts$",
                 $name <: r"^BoardService$"
-            },
-            and {
-                $filename <: r"(?:^|.*[/\\])src[/\\]migration[/\\]projection\.ts$",
-                $name <: r"^OldDatabase$"
-            },
-            and {
-                $filename <: r"(?:^|.*[/\\])src[/\\]migration[/\\]runtime\.ts$",
-                $name <: r"^LegacyBoardRuntime$"
             }
         }
     }

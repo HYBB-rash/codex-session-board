@@ -15,7 +15,7 @@ import {
 } from "../extensions/records.js";
 import { inPlaceRuntime, logs, outputDir, stateDir } from "../installer/paths.js";
 import { runningVersion } from "../installer/release/store.js";
-import { LegacyBoardRuntime } from "../migration/runtime.js";
+import { createLegacyBoardRuntime, type LegacyBoardRuntime } from "../migration/runtime.js";
 import type { ExtensionApi, ExtensionModule, SidebarItemInput } from "./api.js";
 import { boardFrame, createBoardBroker } from "./board/broker.js";
 import { trustedAppFrame } from "./ipc/guard.js";
@@ -327,7 +327,7 @@ function registerBoardStorage(ipcMain: IpcMain): void {
     const boardRecords = createBoardRecords(path.join(directory, "records.json"));
     const ledgers = createBoardLedgers(path.join(directory, "ledger.json"));
     const titleEpochFile = path.join(directory, "title-activation.json");
-    const legacy = new LegacyBoardRuntime(directory);
+    const legacy = createLegacyBoardRuntime(directory);
     ipcMain.handle("codex-enhancer:board-ledger", (event, account, value) => {
         if (!boardFrame(event) || typeof account !== "string")
             throw new Error("enhancer IPC rejected");

@@ -30,7 +30,7 @@ import {
     verifyLegacyMigration,
 } from "./legacy.js";
 import { readMigratedBoard } from "./projection.js";
-import { LegacyBoardRuntime } from "./runtime.js";
+import { createLegacyBoardRuntime } from "./runtime.js";
 
 const accountId = "workspace";
 const userId = "user";
@@ -362,7 +362,7 @@ function runtimeFixture(fixture: ReturnType<typeof scopeFixture>) {
         destination,
         recordsFile,
         ledgersFile,
-        migration: new LegacyBoardRuntime(directory),
+        migration: createLegacyBoardRuntime(directory),
         records: createBoardRecords(recordsFile),
         ledgers: createBoardLedgers(ledgersFile),
         writeBinding: (hosts: Record<string, string>) =>
@@ -410,7 +410,7 @@ test("migration rollback removes projected histories and keeps later manual chan
             );
         }
         rollbackLegacyMigration(destination, imported.receipt.id);
-        assert.equal(new LegacyBoardRuntime(directory).forAccount(storedAccount), undefined);
+        assert.equal(createLegacyBoardRuntime(directory).forAccount(storedAccount), undefined);
         assert.equal(migration.forAccount(storedAccount), undefined);
         assert.equal(readFileSync(recordsFile, "utf8"), saved);
         const current = createBoardRecords(recordsFile).account(storedAccount);
@@ -503,7 +503,7 @@ test("runtime overlays explicitly bound records, preferences and batches without
             [sourceRemote]: installedRemote,
             [sourceOffline]: installedOffline,
         });
-        const widened = new LegacyBoardRuntime(directory).forAccount(storedAccount);
+        const widened = createLegacyBoardRuntime(directory).forAccount(storedAccount);
         assert.ok(widened);
         const reopened = createBoardRecords(recordsFile).account(
             storedAccount,

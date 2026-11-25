@@ -62,61 +62,62 @@ function projectCachedCards(board: MigratedBoard): LegacyCachedCard[] {
     });
 }
 
-export class LegacyBoardRuntime {
-    private cached: CachedImport | undefined;
+export type LegacyBoardRuntime = ReturnType<typeof createLegacyBoardRuntime>;
 
-    constructor(private readonly directory: string) {}
+export function createLegacyBoardRuntime(directory: string) {
+    let cached: CachedImport | undefined;
 
-    forAccount(account: string): Import | undefined {
-        const bindingFile = join(this.directory, "legacy-binding.json");
+    function forAccount(account: string): Import | undefined {
+        const bindingFile = join(directory, "legacy-binding.json");
         if (!regularFile(bindingFile)) return undefined;
         const bytes = readRegular(bindingFile).toString("utf8");
         const binding = bindingOf(bytes);
         if (account !== JSON.stringify([binding.accountId, binding.userId])) return undefined;
-        const destination = join(this.directory, "legacy-migration");
+        const destination = join(directory, "legacy-migration");
         const receipt = join(destination, "snapshot", "migration.json");
         if (!regularFile(receipt)) return undefined;
         const identity = JSON.stringify([bytes, readRegular(receipt).toString("utf8")]);
-        if (this.cached?.identity === identity) return this.cached;
+        if (cached?.identity === identity) return cached;
         const { readMigratedBoard } = requireHere(
             "./projection.js",
         ) as typeof import("./projection.js");
         const board = readMigratedBoard(destination, binding);
-        this.cached = {
+        cached = {
             identity,
             board,
             ledger: projectLedger(board, binding),
             cachedCards: projectCachedCards(board),
         };
-        return this.cached;
+        return cached;
     }
 
-    loadRecords(account: string, records: BoardRecords): LoadedBoardRecords {
-        const imported = this.forAccount(account);
+    function loadRecords(account: string, records: BoardRecords): LoadedBoardRecords {
+        const imported = forAccount(account);
         return {
             records: records.account(account, imported?.board.cards),
             legacyCachedCards: imported?.cachedCards ?? [],
         };
     }
 
-    settings(account: string | undefined, config: unknown): BoardSettings {
+    function settings(account: string | undefined, config: unknown): BoardSettings {
         if (
             config !== undefined &&
             (!config || typeof config !== "object" || Array.isArray(config))
         ) {
             return readSettings(config);
         }
-        const preferences = account && this.forAccount(account)?.board.preferences;
+        const preferences = account && forAccount(account)?.board.preferences;
         return readSettings({
             ...preferences,
             ...config,
         });
     }
 
-    titleEpoch(account: string): number | undefined {
-        const epochs = this.forAccount(account)
+    function titleEpoch(account: string): number | undefined {
+        const epochs = forAccount(account)
             ?.board.databases.map(({ settings: { title_sync_started_at: epoch } }) => Number(epoch))
             .filter((epoch) => Number.isFinite(epoch) && epoch > 0);
         return epochs?.length ? Math.min(...epochs) : undefined;
     }
+    return { forAccount, loadRecords, settings, titleEpoch };
 }
