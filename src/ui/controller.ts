@@ -48,97 +48,50 @@ function date(value?: number) {
         : "尚未读取";
 }
 
-class BoardPage {
-    private readonly lifetime = new AbortController();
-    private data: BoardSnapshot = {
+export function startBoardPage(
+    root: HTMLElement,
+    transport: BoardRequest,
+    replaceAccount: (snapshot: BoardSnapshot) => void,
+    initial?: BoardSnapshot,
+) {
+    const lifetime = new AbortController();
+    let data: BoardSnapshot = {
         states: {},
         sessions: [],
         health: {},
         projectCatalog: { loaded: false, items: [] },
     };
-    private saving = false;
-    private creating = false;
-    private readonly browse: ReturnType<typeof mountBoardBrowse>;
-    private readonly reader: ReturnType<typeof mountBoardSessionReader>;
-    private readonly reports: ReturnType<typeof createBoardHealthReports>;
-    private readonly health: ReturnType<typeof mountBoardHealth>;
-    private readonly sshSetup: ReturnType<typeof mountBoardSshSetup>;
-    private readonly archive: ReturnType<typeof mountBoardArchive>;
-    private readonly edits: ReturnType<typeof mountBoardEdits>;
-    private readonly movePanel: ReturnType<typeof mountMoveFeedback>;
-    private readonly newSession: ReturnType<typeof mountBoardNewSession>;
-    private readonly newTarget: ReturnType<typeof mountBoardNewTarget>;
-    private readonly assignment: ReturnType<typeof mountProjectAssignment>;
-    private readonly board: ReturnType<typeof mountBoard>;
-    private readonly refresh: ReturnType<typeof mountBoardRefresh>;
-    private readonly stopPluginUpdate: () => void;
-    private readonly poll: number;
+    let saving = false;
+    let creating = false;
 
-    constructor(
-        private readonly root: HTMLElement,
-        private readonly transport: BoardRequest,
-        replaceAccount: (snapshot: BoardSnapshot) => void,
-        initial?: BoardSnapshot,
-    ) {
-        this.browse = this.mountBrowse();
-        this.reader = this.mountReader();
-        this.reports = this.createReports();
-        this.health = this.mountHealth();
-        this.sshSetup = this.mountSshSetup();
-        this.archive = this.mountArchive();
-        this.edits = this.mountEdits();
-        this.movePanel = this.mountMovePanel();
-        this.newSession = this.mountNewSession();
-        this.newTarget = this.mountNewTarget();
-        this.assignment = this.mountAssignment();
-        this.board = this.mountColumns();
-        this.stopPluginUpdate = mountPluginUpdate(
-            this.byId("plugin-update"),
-            this.byId("plugin-update-status"),
-            this.request,
-        );
-        this.refresh = this.mountRefresh(replaceAccount, initial !== undefined);
-        this.browse.filters.update(this.data);
-        this.poll = window.setInterval(this.load, 4000);
-        if (initial) {
-            this.applySnapshot(initial);
-            void this.archive.restore();
-        } else {
-            void this.load().then(() =>
-                this.lifetime.signal.aborted ? undefined : this.archive.restore(),
-            );
-        }
-    }
-
-    private readonly byId = <Element extends HTMLElement>(id: string): Element => {
-        const element = this.root.querySelector(`#${id}`);
+    function byId<Element extends HTMLElement>(id: string): Element {
+        const element = root.querySelector(`#${id}`);
         if (!element) throw new Error(`缺少看板元素 ${id}`);
         return element as Element;
-    };
+    }
 
-    private readonly snapshot = () => this.data;
-    private readonly savingNow = () => this.saving;
-    private readonly creatingNow = () => this.creating;
-    private readonly setSaving = (value: boolean) => {
-        this.saving = value;
+    const snapshot = () => data;
+    const savingNow = () => saving;
+    const creatingNow = () => creating;
+    const setSaving = (value: boolean) => {
+        saving = value;
     };
-    private readonly busy = () => this.saving || this.creating;
-    private readonly editorOpen = () => this.byId<HTMLDialogElement>("editor").open;
-    private readonly dragActive = () => Boolean(this.board.drag.source);
-    private readonly movingId = () => this.movePanel.moving?.id;
-    private readonly invalidateSnapshot = () => {
-        this.refresh.invalidate();
+    const busy = () => saving || creating;
+    const editorOpen = () => byId<HTMLDialogElement>("editor").open;
+    const dragActive = (): boolean => Boolean(board.drag.source);
+    const movingId = () => movePanel.moving?.id;
+    const invalidateSnapshot = () => {
+        refresh.invalidate();
     };
-    private readonly request: BoardRequest = async (path, body) => {
-        this.lifetime.signal.throwIfAborted();
-        if (body !== undefined) this.updateFilterLock();
-        const result = await this.transport(path, body);
-        this.lifetime.signal.throwIfAborted();
+    const request: BoardRequest = async (path, body) => {
+        lifetime.signal.throwIfAborted();
+        if (body !== undefined) updateFilterLock();
+        const result = await transport(path, body);
+        lifetime.signal.throwIfAborted();
         return result;
     };
 
-    private mountBrowse() {
-        const { byId, snapshot, filtersLocked, render, announce } = this;
+    function mountBrowse() {
         return mountBoardBrowse(byId("board-filters"), byId("filter-scope"), {
             snapshot,
             locked: filtersLocked,
@@ -147,22 +100,20 @@ class BoardPage {
         });
     }
 
-    private mountReader() {
-        const { byId, request, announce, creatingNow, movingId } = this;
+    function mountReader() {
         return mountBoardSessionReader(byId("reply-preview"), {
-            sessions: () => this.data.sessions,
+            sessions: () => data.sessions,
             request,
             announce,
-            dragSuppressesClick: () => this.board.drag.suppressesClick,
-            savingWithoutMove: () => this.saving && !this.movePanel.moving,
+            dragSuppressesClick: () => board.drag.suppressesClick,
+            savingWithoutMove: () => saving && !movePanel.moving,
             creating: creatingNow,
             movingId,
         });
     }
 
-    private createReports() {
-        const { snapshot } = this;
-        const { filters, hostOptions, hostSessions, hostProjects, hostName } = this.browse;
+    function createReports() {
+        const { filters, hostOptions, hostSessions, hostProjects, hostName } = browse;
         return createBoardHealthReports({
             snapshot,
             selectedHost: () => filters.state.host,
@@ -172,12 +123,11 @@ class BoardPage {
             hostProjects,
             hostName,
             date,
-            readError: () => this.refresh.error,
+            readError: () => refresh.error,
         });
     }
 
-    private mountHealth() {
-        const { byId, request, load, announce } = this;
+    function mountHealth() {
         return mountBoardHealth(
             {
                 banner: byId("health"),
@@ -194,9 +144,9 @@ class BoardPage {
                 recoveryRecheck: byId("connection-recheck"),
             },
             {
-                reports: this.reports.healthReports,
-                selectedHost: () => this.browse.filters.state.host,
-                readState: () => this.refresh,
+                reports: reports.healthReports,
+                selectedHost: () => browse.filters.state.host,
+                readState: () => refresh,
                 date,
                 request,
                 load,
@@ -205,40 +155,24 @@ class BoardPage {
         );
     }
 
-    private mountSshSetup() {
-        const { byId, request, filtersLocked, updateFilterLock, announce, load } = this;
+    function mountSshSetup() {
         return mountBoardSshSetup(byId("ssh-settings"), byId("ssh-setup"), {
             request,
             locked: filtersLocked,
             available: () =>
-                this.data.health.nativeConnections === true ||
-                this.data.health.sshAliasSetup === true,
-            native: () => this.data.health.nativeConnections === true,
+                data.health.nativeConnections === true || data.health.sshAliasSetup === true,
+            native: () => data.health.nativeConnections === true,
             updateFilterLock,
             announce,
             load,
         });
     }
 
-    private mountArchive() {
-        const {
-            byId,
-            snapshot,
-            request,
-            announce,
-            render,
-            load,
-            busy,
-            movingId,
-            dragActive,
-            editorOpen,
-            setSaving,
-            invalidateSnapshot,
-        } = this;
+    function mountArchive(): ReturnType<typeof mountBoardArchive> {
         return mountBoardArchive(byId("archive-results"), byId("archive-status"), {
             snapshot,
             request,
-            open: this.reader.openSession,
+            open: reader.openSession,
             date,
             announce,
             render,
@@ -249,38 +183,26 @@ class BoardPage {
             editorOpen,
             setSaving,
             invalidateSnapshot,
-            persist: (session, state, note) => this.edits.persist(session, state, note),
+            persist: (session, state, note) => edits.persist(session, state, note),
         });
     }
 
-    private mountEdits() {
-        const {
-            byId,
-            snapshot,
-            invalidateSnapshot,
-            request,
-            setSaving,
-            busy,
-            announce,
-            render,
-            load,
-        } = this;
+    function mountEdits() {
         return mountBoardEdits(byId("card-editor"), () => byId("host-filter"), {
             snapshot,
             invalidateSnapshot,
             request,
-            movePanel: () => this.movePanel,
+            movePanel: () => movePanel,
             setSaving,
             busy,
-            canAdjust: (session) => this.archive.cardActions(session).canAdjust,
+            canAdjust: (session) => archive.cardActions(session).canAdjust,
             announce,
             render,
             load,
         });
     }
 
-    private mountMovePanel() {
-        const { byId, announce, render, lifetime } = this;
+    function mountMovePanel() {
         return mountMoveFeedback(
             {
                 editor: byId("editor"),
@@ -293,7 +215,7 @@ class BoardPage {
                 image: byId("move-dragon"),
             },
             {
-                states: () => this.data.states,
+                states: () => data.states,
                 announce,
                 render,
                 signal: lifetime.signal,
@@ -301,21 +223,7 @@ class BoardPage {
         );
     }
 
-    private mountNewSession() {
-        const {
-            byId,
-            snapshot,
-            request,
-            announce,
-            render,
-            load,
-            updateFilterLock,
-            invalidateSnapshot,
-            savingNow,
-            creatingNow,
-            dragActive,
-            editorOpen,
-        } = this;
+    function mountNewSession() {
         return mountBoardNewSession(
             {
                 button: byId("new-session"),
@@ -341,7 +249,7 @@ class BoardPage {
                 saving: savingNow,
                 creating: creatingNow,
                 setCreating: (value) => {
-                    this.creating = value;
+                    creating = value;
                 },
                 dragActive,
                 editorOpen,
@@ -349,18 +257,8 @@ class BoardPage {
         );
     }
 
-    private mountNewTarget() {
-        const {
-            byId,
-            snapshot,
-            filtersLocked,
-            savingNow,
-            creatingNow,
-            updateFilterLock,
-            announce,
-            load,
-        } = this;
-        const { filters, hostOptions, hostProjects, hostName, projectLabel } = this.browse;
+    function mountNewTarget() {
+        const { filters, hostOptions, hostProjects, hostName, projectLabel } = browse;
         return mountBoardNewTarget(
             {
                 button: byId("new-session"),
@@ -382,8 +280,8 @@ class BoardPage {
                 locked: filtersLocked,
                 saving: savingNow,
                 creating: creatingNow,
-                canCreateProject: this.newSession.canCreateProject,
-                create: this.newSession.create,
+                canCreateProject: newSession.canCreateProject,
+                create: newSession.create,
                 updateFilterLock,
                 announce,
                 load,
@@ -391,19 +289,7 @@ class BoardPage {
         );
     }
 
-    private mountAssignment() {
-        const {
-            byId,
-            filtersLocked,
-            savingNow,
-            creatingNow,
-            setSaving,
-            updateFilterLock,
-            invalidateSnapshot,
-            request,
-            announce,
-            load,
-        } = this;
+    function mountAssignment() {
         return mountProjectAssignment(
             {
                 dialog: byId("project-assignment"),
@@ -415,8 +301,8 @@ class BoardPage {
                 save: byId("assignment-save"),
             },
             {
-                projects: () => this.data.projectCatalog.items,
-                projectLabel: this.browse.projectLabel,
+                projects: () => data.projectCatalog.items,
+                projectLabel: browse.projectLabel,
                 locked: filtersLocked,
                 saving: savingNow,
                 creating: creatingNow,
@@ -430,19 +316,7 @@ class BoardPage {
         );
     }
 
-    private mountColumns() {
-        const {
-            canChangeColumnSort,
-            snapshot,
-            invalidateSnapshot,
-            setSaving,
-            request,
-            announce,
-            render,
-            load,
-            byId,
-            editorOpen,
-        } = this;
+    function mountColumns(): ReturnType<typeof mountBoard> {
         const saveSort = createColumnSortSave({
             canChange: canChangeColumnSort,
             snapshot,
@@ -462,52 +336,47 @@ class BoardPage {
             },
             {
                 date,
-                project: this.browse.projectPresentation,
-                actions: this.archive.cardActions,
+                project: browse.projectPresentation,
+                actions: archive.cardActions,
                 canSort: canChangeColumnSort,
                 saveSort,
-                canAssign: this.assignment.canAssign,
-                preview: this.reader.openReply,
-                edit: this.edits.open,
-                assign: this.assignment.open,
-                archive: this.archive.submitCard,
-                archiveAll: this.archive.submit,
+                canAssign: assignment.canAssign,
+                preview: reader.openReply,
+                edit: edits.open,
+                assign: assignment.open,
+                archive: archive.submitCard,
+                archiveAll: archive.submit,
                 editorOpen,
                 announce,
-                move: this.edits.move,
+                move: edits.move,
                 refresh: render,
             },
         );
     }
 
-    private readonly announce = (message: string, error = false) => {
-        if (this.lifetime.signal.aborted) return;
-        const feedback = this.byId("feedback");
+    const announce = (message: string, error = false) => {
+        if (lifetime.signal.aborted) return;
+        const feedback = byId("feedback");
         feedback.textContent = message;
         feedback.className = error ? "feedback error" : "feedback";
     };
-
-    private readonly canChangeColumnSort = () =>
-        !this.busy() && !this.dragActive() && !this.editorOpen();
-
-    private readonly filtersLocked = () =>
+    const canChangeColumnSort = () => !busy() && !dragActive() && !editorOpen();
+    const filtersLocked = (): boolean =>
         Boolean(
-            this.dragActive() ||
-                (this.saving && !this.movePanel.moving) ||
-                this.creating ||
-                this.editorOpen() ||
-                this.newTarget.openDialog ||
-                this.newSession.openDialog ||
-                this.assignment.openDialog ||
-                this.sshSetup.openDialog,
+            dragActive() ||
+                (saving && !movePanel.moving) ||
+                creating ||
+                editorOpen() ||
+                newTarget.openDialog ||
+                newSession.openDialog ||
+                assignment.openDialog ||
+                sshSetup.openDialog,
         );
-
-    private readonly updateFilterLock = () => {
-        if (!this.lifetime.signal.aborted) this.browse.filters.updateLock();
+    const updateFilterLock = () => {
+        if (!lifetime.signal.aborted) browse.filters.updateLock();
     };
 
-    private columns(visible: BoardSession[]): BoardModel["columns"] {
-        const { browse, reports, board, archive, data } = this;
+    function columns(visible: BoardSession[]): BoardModel["columns"] {
         const selectedHost = browse.filters.state.host;
         const unread =
             !browse.hostSessions().length &&
@@ -534,8 +403,7 @@ class BoardPage {
         });
     }
 
-    private boardModel(): BoardModel {
-        const { movePanel, browse, reader, board, data, edits, archive, saving, creating } = this;
+    function boardModel(): BoardModel {
         const moving = movePanel.moving;
         const visible = browse
             .visibleSessions()
@@ -551,7 +419,7 @@ class BoardPage {
         const preview = reader.preview;
         return {
             states: data.states,
-            columns: this.columns(visible),
+            columns: columns(visible),
             unplaced,
             scope: browse.filters.view.scope,
             legacyMode: data.legacyMode === true,
@@ -566,24 +434,22 @@ class BoardPage {
         };
     }
 
-    private readonly render = (resetState: string | null = null) => {
-        if (this.lifetime.signal.aborted || this.dragActive() || this.editorOpen()) return;
-        this.browse.filters.update(this.data);
-        this.newTarget.update();
-        this.board.update(this.boardModel(), resetState);
-        if (this.data.legacyMode)
-            this.byId("foot").textContent =
+    const render = (resetState: string | null = null) => {
+        if (lifetime.signal.aborted || dragActive() || editorOpen()) return;
+        browse.filters.update(data);
+        newTarget.update();
+        board.update(boardModel(), resetState);
+        if (data.legacyMode)
+            byId("foot").textContent =
                 "拖动卡片修改状态，备注随会话保存。“待归档”和“已完成”均为人工状态。新建会话仅打开输入页。";
-        this.archive.updateStatus();
-        this.health.render();
+        archive.updateStatus();
+        health.render();
     };
+    const load = (): Promise<void> =>
+        lifetime.signal.aborted ? Promise.resolve() : refresh.load();
 
-    private readonly load = (): Promise<void> =>
-        this.lifetime.signal.aborted ? Promise.resolve() : this.refresh.load();
-
-    private applySnapshot(next: BoardSnapshot) {
-        const { archive, sshSetup, reader, edits, newSession, render } = this;
-        this.data = next;
+    function applySnapshot(next: BoardSnapshot) {
+        data = next;
         archive.updateBoard(next);
         sshSetup.update();
         reader.preview.update(next.sessions, false);
@@ -592,33 +458,30 @@ class BoardPage {
         render();
     }
 
-    private mountRefresh(replaceAccount: (snapshot: BoardSnapshot) => void, loaded: boolean) {
-        const { byId, request, filtersLocked, announce, render, lifetime } = this;
+    function mountRefresh(replaceAccount: (snapshot: BoardSnapshot) => void, loaded: boolean) {
         return mountBoardRefresh(
             byId("refresh"),
             {
                 request,
-                locked: () => this.saving || filtersLocked(),
-                moving: () => Boolean(this.movePanel.moving),
+                locked: () => saving || filtersLocked(),
+                moving: () => Boolean(movePanel.moving),
                 announce,
                 render,
                 renderHealth: () => {
-                    if (!lifetime.signal.aborted) this.health.render();
+                    if (!lifetime.signal.aborted) health.render();
                 },
-                currentScope: () => this.data.accountScope,
+                currentScope: () => data.accountScope,
                 received: (next, accountChanged) => {
                     if (lifetime.signal.aborted) return;
                     if (accountChanged) replaceAccount(next);
-                    else this.applySnapshot(next);
+                    else applySnapshot(next);
                 },
             },
             loaded,
         );
     }
 
-    readonly unmount = () => {
-        const { lifetime, refresh, poll, board, stopPluginUpdate, reader, archive, edits, browse } =
-            this;
+    const unmount = () => {
         lifetime.abort();
         refresh.invalidate();
         window.clearInterval(poll);
@@ -630,13 +493,33 @@ class BoardPage {
         board.unmount();
         browse.filters.unmount();
     };
-}
 
-export function startBoardPage(
-    root: HTMLElement,
-    transport: BoardRequest,
-    replaceAccount: (snapshot: BoardSnapshot) => void,
-    initial?: BoardSnapshot,
-) {
-    return new BoardPage(root, transport, replaceAccount, initial);
+    const browse = mountBrowse();
+    const reader = mountReader();
+    const reports = createReports();
+    const health = mountHealth();
+    const sshSetup = mountSshSetup();
+    const archive = mountArchive();
+    const edits = mountEdits();
+    const movePanel = mountMovePanel();
+    const newSession = mountNewSession();
+    const newTarget = mountNewTarget();
+    const assignment = mountAssignment();
+    const board = mountColumns();
+    const stopPluginUpdate = mountPluginUpdate(
+        byId("plugin-update"),
+        byId("plugin-update-status"),
+        request,
+    );
+    const refresh = mountRefresh(replaceAccount, initial !== undefined);
+    browse.filters.update(data);
+    const poll = window.setInterval(load, 4000);
+    if (initial) {
+        applySnapshot(initial);
+        void archive.restore();
+    } else {
+        void load().then(() => (lifetime.signal.aborted ? undefined : archive.restore()));
+    }
+
+    return { unmount };
 }
