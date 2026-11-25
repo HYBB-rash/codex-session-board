@@ -1,4 +1,4 @@
-import { h, render } from "vue";
+import { render } from "vue";
 import BoardPage from "./BoardPage.vue";
 import type { BoardRequest, BoardSnapshot } from "./controller";
 import type { BoardInstall } from "./install";
@@ -17,13 +17,13 @@ export function mountBoardPage(
 
     function mount(snapshot?: BoardSnapshot) {
         render(
-            h(BoardPage, {
-                ...options,
-                key: snapshot?.accountScope ?? 0,
-                request,
-                replaceAccount: mount,
-                ...(snapshot ? { snapshot } : {}),
-            }),
+            <BoardPage
+                {...options}
+                key={snapshot?.accountScope ?? 0}
+                request={request}
+                replaceAccount={mount}
+                {...(snapshot ? { snapshot } : {})}
+            />,
             container,
         );
     }
