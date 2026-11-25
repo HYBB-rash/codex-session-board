@@ -18,7 +18,7 @@
         "lint": "biome check --error-on-warnings . && npm run --silent lint:vue && node scripts/check-comments.mjs",
         "lint:vue": "eslint \"src/**/*.vue\"",
         "format": "biome check --write . && npm run --silent lint:vue -- --fix",
-        "test": "([ -f release.json ] || npm run build --silent) && node --test dist/compat/*.test.js dist/extensions/session-board/*.test.js dist/installer/*.test.js dist/migration/*.test.js dist/runtime/*.test.js"
+        "test": "([ -f release.json ] || npm run build --silent) && node --test \"dist/**/*.test.js\""
     },
     "devDependencies": {
         "@biomejs/biome": "^2.6.9",
