@@ -41,10 +41,6 @@ or {
             and {
                 $filename <: r"(?:^|.*[/\\])src[/\\]migration[/\\]runtime\.ts$",
                 $name <: r"^LegacyBoardRuntime$"
-            },
-            and {
-                $filename <: r"(?:^|.*[/\\])src[/\\]runtime[/\\]board[/\\]broker\.ts$",
-                $name <: r"^BoardBroker$"
             }
         }
     }

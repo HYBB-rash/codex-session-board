@@ -17,7 +17,7 @@ import { inPlaceRuntime, logs, outputDir, stateDir } from "../installer/paths.js
 import { runningVersion } from "../installer/release/store.js";
 import { LegacyBoardRuntime } from "../migration/runtime.js";
 import type { ExtensionApi, ExtensionModule, SidebarItemInput } from "./api.js";
-import { BoardBroker, boardFrame } from "./board/broker.js";
+import { boardFrame, createBoardBroker } from "./board/broker.js";
 import { trustedAppFrame } from "./ipc/guard.js";
 import { createSidebarRegistry, type OwnedSidebarItem, type SidebarRegistry } from "./registry.js";
 
@@ -424,7 +424,7 @@ function start(): void {
     app.on("session-created", (ses) => installPreload(ses, "session-created", registered));
     watchContents(app, appContents, publish);
     registerIpc(ipcMain, registry, BrowserWindow);
-    const board = new BoardBroker();
+    const board = createBoardBroker();
     board.register(ipcMain);
     void board
         .listen(log)
