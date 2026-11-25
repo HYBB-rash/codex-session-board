@@ -1,10 +1,10 @@
 import { h, render } from "vue";
-import type { mountBoardArchive } from "./board-archive";
 import BoardColumns from "./board-columns.vue";
 import { createCardDrag } from "./board-drag";
 import { type BoardElements, createBoardLayout } from "./board-layout";
 import { type SortMenuProps, type SortPreference, sortColumn } from "./board-sorting";
 import type { PreviewSession } from "./reply-preview";
+import type { mountBoardArchive } from "./views/board/archive/archive";
 
 export interface BoardSession extends PreviewSession {
     accountScope?: string;

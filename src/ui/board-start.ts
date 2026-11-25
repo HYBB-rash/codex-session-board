@@ -1,4 +1,3 @@
-import { mountBoardArchive } from "./board-archive";
 import { type CatalogProject, type HostIdentity, mountBoardBrowse } from "./board-browse";
 import { mountBoardEdits } from "./board-edits";
 import { mountBoardHealth } from "./board-health";
@@ -12,6 +11,7 @@ import { mountBoardSessionReader } from "./board-session-reader";
 import { createColumnSortSave, type SortPreference } from "./board-sorting";
 import { mountBoardSshSetup } from "./board-ssh-setup";
 import { type BoardModel, type BoardSession, mountBoard } from "./board-view";
+import { mountBoardArchive } from "./views/board/archive/archive";
 import { mountPluginUpdate } from "./views/board/plugin-update";
 
 export interface BoardSnapshot {

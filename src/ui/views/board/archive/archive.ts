@@ -1,7 +1,7 @@
-import type { ArchiveRequests, ArchiveTarget } from "./board-archive-batches";
-import { mountArchiveResults } from "./board-archive-results";
-import type { BoardSnapshot } from "./board-start";
-import type { BoardSession } from "./board-view";
+import type { BoardSnapshot } from "../../../board-start";
+import type { BoardSession } from "../../../board-view";
+import type { ArchiveRequests, ArchiveTarget } from "./batches";
+import { mountArchiveResults } from "./results";
 
 export interface AutoArchiveHealth {
     autoArchiveSeconds?: number;

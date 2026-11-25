@@ -1,5 +1,5 @@
 import { computed, createApp, nextTick, ref, shallowRef, Teleport } from "vue";
-import { type ArchiveRequests, archiveBatches } from "./board-archive-batches";
+import { type ArchiveRequests, archiveBatches } from "./batches";
 
 const labels = {
     awaiting: "尚无提交记录",
