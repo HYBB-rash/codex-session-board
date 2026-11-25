@@ -34,108 +34,103 @@ interface FeedbackPorts {
     signal: AbortSignal;
 }
 
-export function mountMoveFeedback(elements: FeedbackElements, ports: FeedbackPorts) {
-    return new MoveFeedback(elements, ports);
+function feedbackText(
+    operation: MoveOperation,
+    label: string | undefined,
+    waiting: boolean,
+    slow: boolean,
+) {
+    if (waiting)
+        return {
+            heading: slow ? "还在等确认，龙娘陪你等" : "龙娘抱着卡片，等保存确认",
+            detail: `${label} · 等待${operation.host}确认\n${operation.title}`,
+        };
+    if (operation.result === "saved")
+        return {
+            heading: "保存好了！",
+            detail: label === undefined ? "状态已保存，当前未归列" : `已移到${label}`,
+        };
+    return {
+        heading: "这次保存还需要核对",
+        detail: "未收到保存确认，先显示上次已知位置。请核对后再操作。",
+    };
 }
 
-class MoveFeedback {
-    moving: MoveOperation | null = null;
-    feedback: MoveOperation | null = null;
-    artReady = false;
+export function mountMoveFeedback(elements: FeedbackElements, ports: FeedbackPorts) {
+    let moving: MoveOperation | null = null;
+    let activeFeedback: MoveOperation | null = null;
+    let artReady = false;
 
-    constructor(
-        private readonly elements: FeedbackElements,
-        private readonly ports: FeedbackPorts,
-    ) {
-        elements.dismiss.onclick = this.dismiss;
-        elements.image.decode().then(this.artLoaded, () => {
-            elements.image.hidden = true;
-            this.artLoaded();
-        });
-        const signal = ports.signal;
-        document.addEventListener("visibilitychange", () => this.visibilityChanged(), { signal });
-        window.addEventListener("beforeunload", (event) => this.confirmUnload(event), { signal });
-        signal.addEventListener("abort", this.dismiss, { once: true });
+    function dismiss() {
+        const feedback = activeFeedback;
+        if (feedback) {
+            feedback.dismissed = true;
+            for (const timer of feedback.timers) window.clearTimeout(timer);
+            window.clearTimeout(feedback.hideTimer);
+        }
+        activeFeedback = null;
+        elements.panel.hidden = true;
     }
 
-    private update(operation = this.feedback) {
+    function artLoaded() {
+        artReady = true;
+        update();
+    }
+
+    function update(operation = activeFeedback) {
         if (
             !operation ||
-            operation !== this.feedback ||
+            operation !== activeFeedback ||
             operation.dismissed ||
             document.hidden ||
-            !this.artReady
+            !artReady
         )
             return;
         const elapsed = performance.now() - operation.started;
         const waiting = operation.result === undefined;
         if (waiting && elapsed < delays.character) return;
         operation.shownAt ??= performance.now();
-        this.show(operation, waiting, elapsed >= delays.slow);
+        show(operation, waiting, elapsed >= delays.slow);
         if (operation.result !== "saved") return;
         operation.visibleSince ??= performance.now();
         window.clearTimeout(operation.hideTimer);
         operation.hideTimer = window.setTimeout(
             () => {
-                if (this.feedback === operation && !document.hidden) this.dismiss();
+                if (activeFeedback === operation && !document.hidden) dismiss();
             },
             Math.max(0, operation.remaining - (performance.now() - operation.visibleSince)),
         );
     }
 
-    private show(operation: MoveOperation, waiting: boolean, slow: boolean) {
-        const { panel, heading, detail } = this.elements;
-        const saved = operation.result === "saved";
-        const states = this.ports.states();
+    function show(operation: MoveOperation, waiting: boolean, slow: boolean) {
+        const { panel, heading, detail } = elements;
+        const states = ports.states();
         const label =
             operation.state !== null && Object.hasOwn(states, operation.state)
                 ? states[operation.state]
                 : undefined;
+        const text = feedbackText(operation, label, waiting, slow);
         panel.hidden = false;
         panel.className = `move-feedback ${operation.result ?? "waiting"}`;
-        heading.textContent = waiting
-            ? slow
-                ? "还在等确认，龙娘陪你等"
-                : "龙娘抱着卡片，等保存确认"
-            : saved
-              ? "保存好了！"
-              : "这次保存还需要核对";
-        detail.textContent = waiting
-            ? `${label} · 等待${operation.host}确认\n${operation.title}`
-            : saved
-              ? label === undefined
-                  ? "状态已保存，当前未归列"
-                  : `已移到${label}`
-              : "未收到保存确认，先显示上次已知位置。请核对后再操作。";
+        heading.textContent = text.heading;
+        detail.textContent = text.detail;
         detail.title = operation.title;
         if (waiting && slow && !operation.slow) {
             operation.slow = true;
-            this.ports.announce("这次响应较慢，仍在等待保存确认。");
+            ports.announce("这次响应较慢，仍在等待保存确认。");
         }
     }
 
-    private readonly dismiss = () => {
-        const { feedback } = this;
-        if (feedback) {
-            feedback.dismissed = true;
-            for (const timer of feedback.timers) window.clearTimeout(timer);
-            window.clearTimeout(feedback.hideTimer);
-        }
-        this.feedback = null;
-        this.elements.panel.hidden = true;
-    };
-
-    resetEditor() {
-        const { editor, slot, panel } = this.elements;
-        if (this.moving || !editor.contains(panel)) return;
-        this.dismiss();
+    function resetEditor() {
+        const { editor, slot, panel } = elements;
+        if (moving || !editor.contains(panel)) return;
+        dismiss();
         slot.append(panel);
     }
 
-    start(session: BoardSession, state: string | null) {
-        const { ports } = this;
-        const { editor, form, slot, panel } = this.elements;
-        this.dismiss();
+    function start(session: BoardSession, state: string | null) {
+        const { editor, form, slot, panel } = elements;
+        dismiss();
         const host = session.remote ? session.hostLabel || session.hostId || "远端" : "本机";
         const operation: MoveOperation = {
             ...session,
@@ -147,14 +142,14 @@ class MoveFeedback {
             timers: [],
             remaining: delays.success,
         };
-        this.moving = operation;
-        this.feedback = operation;
+        moving = operation;
+        activeFeedback = operation;
         (editor.open ? form : slot).append(panel);
         panel.hidden = true;
         panel.className = "move-feedback waiting";
         operation.timers = [
-            window.setTimeout(() => this.update(operation), delays.character),
-            window.setTimeout(() => this.update(operation), delays.slow),
+            window.setTimeout(() => update(operation), delays.character),
+            window.setTimeout(() => update(operation), delays.slow),
         ];
         ports.announce(
             `正在移到${state === null ? undefined : ports.states()[state]}，等待${host}确认。`,
@@ -163,33 +158,28 @@ class MoveFeedback {
         return operation;
     }
 
-    finish(operation: MoveOperation, saved: boolean) {
+    function finish(operation: MoveOperation, saved: boolean) {
         for (const timer of operation.timers) window.clearTimeout(timer);
-        if (this.moving === operation) this.moving = null;
-        if (this.feedback !== operation || operation.dismissed) return;
+        if (moving === operation) moving = null;
+        if (activeFeedback !== operation || operation.dismissed) return;
         if (
             operation.shownAt === undefined &&
             performance.now() - operation.started < delays.character
         ) {
-            this.dismiss();
+            dismiss();
             return;
         }
         operation.result = saved ? "saved" : "unconfirmed";
-        if (saved) this.elements.slot.append(this.elements.panel);
-        this.update(operation);
+        if (saved) elements.slot.append(elements.panel);
+        update(operation);
     }
 
-    private readonly artLoaded = () => {
-        this.artReady = true;
-        this.update();
-    };
-
-    private visibilityChanged() {
+    function visibilityChanged() {
         if (!document.hidden) {
-            this.update();
+            update();
             return;
         }
-        const operation = this.feedback;
+        const operation = activeFeedback;
         if (operation?.visibleSince === undefined) return;
         operation.remaining = Math.max(
             0,
@@ -199,9 +189,28 @@ class MoveFeedback {
         window.clearTimeout(operation.hideTimer);
     }
 
-    private confirmUnload(event: BeforeUnloadEvent) {
-        if (!this.moving) return;
+    function confirmUnload(event: BeforeUnloadEvent) {
+        if (!moving) return;
         event.preventDefault();
         event.returnValue = "";
     }
+
+    elements.dismiss.onclick = dismiss;
+    elements.image.decode().then(artLoaded, () => {
+        elements.image.hidden = true;
+        artLoaded();
+    });
+    const signal = ports.signal;
+    document.addEventListener("visibilitychange", visibilityChanged, { signal });
+    window.addEventListener("beforeunload", confirmUnload, { signal });
+    signal.addEventListener("abort", dismiss, { once: true });
+
+    return {
+        get moving() {
+            return moving;
+        },
+        resetEditor,
+        start,
+        finish,
+    };
 }

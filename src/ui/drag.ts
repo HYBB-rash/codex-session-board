@@ -2,67 +2,57 @@ import { ref, shallowRef } from "vue";
 import type { BoardDependencies } from "./columns";
 import type { BoardSession } from "./session";
 
-export function createCardDrag(viewport: HTMLElement, dependencies: BoardDependencies) {
-    return new CardDrag(viewport, dependencies);
+function scrollAtPoint(viewport: HTMLElement, point: { x: number; y: number }) {
+    const bounds = viewport.getBoundingClientRect();
+    if (!(point.y >= bounds.top && point.y <= bounds.bottom)) return;
+    if (point.x > bounds.right - 45) viewport.scrollLeft += 12;
+    else if (point.x < bounds.left + 45) viewport.scrollLeft -= 12;
+    for (const list of viewport.querySelectorAll<HTMLElement>(".cards")) {
+        const rect = list.getBoundingClientRect();
+        if (point.x < rect.left || point.x > rect.right) continue;
+        if (point.y < rect.top + 45) list.scrollTop -= 10;
+        else if (point.y > rect.bottom - 45) list.scrollTop += 10;
+    }
 }
 
-class CardDrag {
-    private readonly dragged = shallowRef<BoardSession | null>(null);
-    private readonly destination = ref<string | null>(null);
-    private point: { x: number; y: number } | null = null;
-    private frame = 0;
-    private suppressClickUntil = 0;
+export function createCardDrag(viewport: HTMLElement, dependencies: BoardDependencies) {
+    const dragged = shallowRef<BoardSession | null>(null);
+    const destination = ref<string | null>(null);
+    let dragPoint: { x: number; y: number } | null = null;
+    let frame = 0;
+    let suppressClickUntil = 0;
 
-    constructor(
-        private readonly viewport: HTMLElement,
-        private readonly dependencies: BoardDependencies,
-    ) {}
-
-    readonly track = (event: DragEvent) => {
-        if (this.source) this.point = { x: event.clientX, y: event.clientY };
-    };
-
-    private readonly scroll = () => {
-        if (!this.source) return;
-        this.frame = requestAnimationFrame(this.scroll);
-        const { point, viewport } = this;
-        if (!point) return;
-        const bounds = viewport.getBoundingClientRect();
-        if (point.y >= bounds.top && point.y <= bounds.bottom) {
-            if (point.x > bounds.right - 45) viewport.scrollLeft += 12;
-            else if (point.x < bounds.left + 45) viewport.scrollLeft -= 12;
-            for (const list of viewport.querySelectorAll<HTMLElement>(".cards")) {
-                const rect = list.getBoundingClientRect();
-                if (point.x < rect.left || point.x > rect.right) continue;
-                if (point.y < rect.top + 45) list.scrollTop -= 10;
-                else if (point.y > rect.bottom - 45) list.scrollTop += 10;
-            }
-        }
-    };
-
-    private end() {
-        if (!this.source) return;
-        this.suppressClickUntil = performance.now() + 400;
-        this.dragged.value = null;
-        this.destination.value = null;
-        this.point = null;
-        cancelAnimationFrame(this.frame);
+    function track(event: DragEvent) {
+        if (dragged.value) dragPoint = { x: event.clientX, y: event.clientY };
     }
 
-    get source() {
-        return this.dragged.value;
+    function scroll() {
+        if (!dragged.value) return;
+        frame = requestAnimationFrame(scroll);
+        if (dragPoint) scrollAtPoint(viewport, dragPoint);
     }
 
-    get target() {
-        return this.destination.value;
+    function leaveBoard(event: DragEvent) {
+        if (!(event.relatedTarget instanceof Node && viewport.contains(event.relatedTarget)))
+            dragPoint = null;
     }
 
-    get suppressesClick() {
-        return !!this.source || performance.now() < this.suppressClickUntil;
+    function cancel() {
+        if (!dragged.value) return;
+        end();
+        dependencies.refresh();
     }
 
-    start(session: BoardSession, event: DragEvent) {
-        const { dependencies } = this;
+    function end() {
+        if (!dragged.value) return;
+        suppressClickUntil = performance.now() + 400;
+        dragged.value = null;
+        destination.value = null;
+        dragPoint = null;
+        cancelAnimationFrame(frame);
+    }
+
+    function start(session: BoardSession, event: DragEvent) {
         if (
             !dependencies.actions(session).canAdjust ||
             dependencies.editorOpen() ||
@@ -72,35 +62,35 @@ class CardDrag {
             event.preventDefault();
             return;
         }
-        this.dragged.value = { ...session };
+        dragged.value = { ...session };
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("text/plain", session.id);
-        this.track(event);
-        this.frame = requestAnimationFrame(this.scroll);
+        track(event);
+        frame = requestAnimationFrame(scroll);
         dependencies.announce("拖到目标状态列后松开鼠标。");
     }
 
-    over(state: string, event: DragEvent) {
-        if (!this.source || !event.dataTransfer) return;
+    function over(state: string, event: DragEvent) {
+        if (!dragged.value || !event.dataTransfer) return;
         event.preventDefault();
-        const accepts = this.source.state !== state || state === "blocked";
-        this.destination.value = accepts ? state : null;
+        const accepts = dragged.value.state !== state || state === "blocked";
+        destination.value = accepts ? state : null;
         event.dataTransfer.dropEffect = accepts ? "move" : "none";
     }
 
-    leave(state: string, event: DragEvent) {
+    function leave(state: string, event: DragEvent) {
         if (
-            this.target === state &&
+            destination.value === state &&
             !(event.currentTarget as Element).contains(event.relatedTarget as Node | null)
         )
-            this.destination.value = null;
+            destination.value = null;
     }
 
-    drop(state: string, event: DragEvent) {
-        const { source: session, dependencies } = this;
+    function drop(state: string, event: DragEvent) {
+        const session = dragged.value;
         if (!session) return;
         event.preventDefault();
-        this.end();
+        end();
         if (!dependencies.actions(session).canAdjust) return;
         if (state === "blocked") {
             dependencies.edit(session.id, state, session);
@@ -111,14 +101,22 @@ class CardDrag {
         } else dependencies.move(session, state);
     }
 
-    readonly leaveBoard = (event: DragEvent) => {
-        if (!(event.relatedTarget instanceof Node && this.viewport.contains(event.relatedTarget)))
-            this.point = null;
-    };
-
-    readonly cancel = () => {
-        if (!this.source) return;
-        this.end();
-        this.dependencies.refresh();
+    return {
+        track,
+        get source() {
+            return dragged.value;
+        },
+        get target() {
+            return destination.value;
+        },
+        get suppressesClick() {
+            return !!dragged.value || performance.now() < suppressClickUntil;
+        },
+        start,
+        over,
+        leave,
+        drop,
+        leaveBoard,
+        cancel,
     };
 }
