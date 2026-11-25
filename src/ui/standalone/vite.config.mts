@@ -36,7 +36,7 @@ function standaloneAssets(): Plugin {
                 this.emitFile({
                     type: "asset",
                     fileName,
-                    source: readFileSync(`src/ui/assets/${fileName}`),
+                    source: readFileSync(`src/ui/views/board/assets/${fileName}`),
                 });
             }
             this.emitFile({

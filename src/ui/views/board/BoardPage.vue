@@ -210,7 +210,7 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, useTemplateRef } from "vue";
-import moveDragon from "../../assets/move-dragon.webp?inline";
+import moveDragon from "./assets/move-dragon.webp?inline";
 import { type BoardRequest, type BoardSnapshot, startBoardPage } from "./controller";
 import type { BoardInstall } from "./install";
 
