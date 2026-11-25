@@ -285,6 +285,105 @@ function validateProjectAssignment(card: Card, hostId: HostId, project: HostProj
     }
 }
 
+function failedHostScan(
+    desktop: DesktopConnection,
+    available: HostSnapshot,
+    error: unknown,
+): HostSnapshot {
+    return {
+        ...emptyHost(),
+        active: available.active,
+        archived: available.archived,
+        projects: available.projects,
+        ...(isLive(desktop, available) && available.connection
+            ? { connection: available.connection }
+            : {}),
+        ...(available.lastRead === undefined ? {} : { lastRead: available.lastRead }),
+        scanComplete: false,
+        error: errorText(error),
+    };
+}
+
+function retainMissing(previous: Map<ThreadId, Thread>, result: Map<ThreadId, Thread>): void {
+    for (const [id, thread] of previous) if (!result.has(id)) result.set(id, thread);
+}
+
+function mergeLateWrites(
+    changed: ReadonlyMap<string, number>,
+    hostId: HostId,
+    old: HostSnapshot,
+    next: HostSnapshot,
+    version: number,
+): void {
+    for (const thread of old.active.values()) {
+        const id = cardId({ hostId, threadId: thread.id });
+        if ((changed.get(id) ?? 0) > version) {
+            next.active.set(thread.id, thread);
+            next.currentActive.add(thread.id);
+        }
+    }
+}
+
+function mergeArchives(host: HostSnapshot, archived: Map<ThreadId, Thread>): void {
+    host.currentArchived = new Set(archived.keys());
+    for (const id of host.currentActive) {
+        archived.delete(id);
+        host.currentArchived.delete(id);
+    }
+    for (const id of host.currentArchived) host.active.delete(id);
+    for (const [id, thread] of host.archived) {
+        if (!host.currentActive.has(thread.id) && !archived.has(id)) archived.set(id, thread);
+    }
+    host.archived = archived;
+}
+
+function isLive(desktop: DesktopConnection, host: HostSnapshot): boolean {
+    if (!host.connection) return false;
+    try {
+        desktop.assertCurrent(host.connection);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function canWrite(settings: BoardSettings, threadId: ThreadId): boolean {
+    return settings.writableThreadIds?.includes(threadId) ?? true;
+}
+
+function cardObservation(
+    historyReads: ReadonlyMap<string, HistoryRead>,
+    id: string,
+    record: CardRecord,
+    position?: Placement,
+) {
+    const observationError = historyReads.get(id)?.error;
+    return {
+        ...(position && record.previewTurnId ? { previewTurnId: record.previewTurnId } : {}),
+        ...(record.reason ? { reason: record.reason } : {}),
+        ...(record.title ? { titleSyncPending: true } : {}),
+        ...(record.title?.error ? { titleSyncError: record.title.error } : {}),
+        ...(observationError ? { observationError } : {}),
+        ...(position?.sectionId === null &&
+        position.managed &&
+        record.manual !== true &&
+        record.previewTurnId !== undefined
+            ? { observationWarning: "历史轮次已有最终回复，可归入待审阅" }
+            : {}),
+    };
+}
+
+function archiveInterval(settings: BoardSettings, hostId: string) {
+    if (settings.mode === "legacy") return null;
+    return hostId === "local" ? settings.autoArchiveSeconds : settings.remoteAutoArchiveSeconds;
+}
+
+function draftHost(desktop: DesktopConnection, requested?: string, selected?: HostId): HostId {
+    const host = selected ?? desktop.knownHosts().find((hostId) => hostId === localHostId);
+    if (!host || (requested && requested !== host)) throw new Error("选定的 Codex 连接不可用");
+    return host;
+}
+
 export class BoardService {
     private readonly hosts = new Map<HostId, HostSnapshot>();
     private context: SidebarContext | undefined;
@@ -357,7 +456,7 @@ export class BoardService {
             : undefined;
         if (switched) await this.loadAccount(account);
         for (const hostId of this.archiveDeadlines.keys()) {
-            if (this.archiveInterval(hostId) !== this.archiveInterval(hostId, settings))
+            if (archiveInterval(this.settings, hostId) !== archiveInterval(settings, hostId))
                 this.archiveDeadlines.delete(hostId);
         }
         this.settings = settings;
@@ -429,8 +528,8 @@ export class BoardService {
             next.currentActive = new Set(next.active.keys());
             const archiveEpochMatches = last.connection?.epoch === connection.epoch;
             if (archiveEpochMatches) next.currentArchived = new Set(last.currentArchived);
-            this.retainMissing(last.active, next.active);
-            this.mergeLateWrites(hostId, last, next, scanVersion);
+            retainMissing(last.active, next.active);
+            mergeLateWrites(this.changed, hostId, last, next, scanVersion);
             next.connection = connection;
             const lastRead = next.scanComplete ? Date.now() / 1000 : last.lastRead;
             if (lastRead !== undefined) next.lastRead = lastRead;
@@ -442,23 +541,8 @@ export class BoardService {
             ]);
         } catch (error) {
             const available = this.hosts.get(hostId) ?? last;
-            this.hosts.set(hostId, this.failedHostScan(available, error));
+            this.hosts.set(hostId, failedHostScan(this.desktop, available, error));
         }
-    }
-
-    private failedHostScan(available: HostSnapshot, error: unknown): HostSnapshot {
-        return {
-            ...emptyHost(),
-            active: available.active,
-            archived: available.archived,
-            projects: available.projects,
-            ...(this.isLive(available) && available.connection
-                ? { connection: available.connection }
-                : {}),
-            ...(available.lastRead === undefined ? {} : { lastRead: available.lastRead }),
-            scanComplete: false,
-            error: errorText(error),
-        };
     }
 
     private async readActive(connection: HostConnection, host: HostSnapshot): Promise<void> {
@@ -471,49 +555,17 @@ export class BoardService {
         }
     }
 
-    private retainMissing(previous: Map<ThreadId, Thread>, result: Map<ThreadId, Thread>): void {
-        for (const [id, thread] of previous) if (!result.has(id)) result.set(id, thread);
-    }
-
-    private mergeLateWrites(
-        hostId: HostId,
-        old: HostSnapshot,
-        next: HostSnapshot,
-        version: number,
-    ): void {
-        for (const thread of old.active.values()) {
-            const id = cardId({ hostId, threadId: thread.id });
-            if ((this.changed.get(id) ?? 0) > version) {
-                next.active.set(thread.id, thread);
-                next.currentActive.add(thread.id);
-            }
-        }
-    }
-
     private async refreshArchives(connection: HostConnection, host: HostSnapshot): Promise<void> {
         try {
             const archived = new Map<ThreadId, Thread>();
             await this.readPages(connection, true, archived);
             await this.freshContext();
             this.desktop.assertCurrent(connection);
-            this.mergeArchives(host, archived);
+            mergeArchives(host, archived);
         } catch (error) {
             host.currentArchived = new Set();
             host.archiveError = errorText(error);
         }
-    }
-
-    private mergeArchives(host: HostSnapshot, archived: Map<ThreadId, Thread>): void {
-        host.currentArchived = new Set(archived.keys());
-        for (const id of host.currentActive) {
-            archived.delete(id);
-            host.currentArchived.delete(id);
-        }
-        for (const id of host.currentArchived) host.active.delete(id);
-        for (const [id, thread] of host.archived) {
-            if (!host.currentActive.has(thread.id) && !archived.has(id)) archived.set(id, thread);
-        }
-        host.archived = archived;
     }
 
     private async refreshProjects(connection: HostConnection, host: HostSnapshot): Promise<void> {
@@ -559,7 +611,7 @@ export class BoardService {
         const dirty = pending?.epoch === connection.epoch ? pending.ids : new Set<ThreadId>();
         this.runtimeDirty.delete(connection.hostId);
         const threads = [...host.active.values()].filter(
-            (thread) => host.currentActive.has(thread.id) && this.canWrite(thread.id),
+            (thread) => host.currentActive.has(thread.id) && canWrite(this.settings, thread.id),
         );
         const realtime = threads.filter(
             (thread, index) =>
@@ -747,24 +799,10 @@ export class BoardService {
     private canRetryHostTitle(host: HostSnapshot, id: string, threadId: ThreadId): boolean {
         return (
             host.currentActive.has(threadId) &&
-            this.canWrite(threadId) &&
+            canWrite(this.settings, threadId) &&
             !this.editing.has(id) &&
             !this.titleInFlight.has(this.titleKey(id))
         );
-    }
-
-    private isLive(host: HostSnapshot): boolean {
-        if (!host.connection) return false;
-        try {
-            this.desktop.assertCurrent(host.connection);
-            return true;
-        } catch {
-            return false;
-        }
-    }
-
-    private canWrite(threadId: ThreadId): boolean {
-        return this.settings.writableThreadIds?.includes(threadId) ?? true;
     }
 
     private card(
@@ -797,7 +835,7 @@ export class BoardService {
             remote: hostId !== "local",
             ordinary: true,
             canOpen: live,
-            readOnly: !live || !position.managed || archived || !this.canWrite(thread.id),
+            readOnly: !live || !position.managed || archived || !canWrite(this.settings, thread.id),
             archived,
             presence: live ? "present" : "cachedUnknown",
             catalogCurrent: live,
@@ -812,9 +850,9 @@ export class BoardService {
                 position.managed &&
                 !archived &&
                 this.mode !== "legacy" &&
-                this.canWrite(thread.id),
+                canWrite(this.settings, thread.id),
             archivePending: this.archive.pending(id),
-            ...this.cardObservation(id, record, position),
+            ...cardObservation(this.historyReads, id, record, position),
         };
     }
 
@@ -851,24 +889,7 @@ export class BoardService {
             followUp,
             canArchive: false,
             archivePending: this.archive.pending(id),
-            ...this.cardObservation(id, record),
-        };
-    }
-
-    private cardObservation(id: string, record: CardRecord, position?: Placement) {
-        const observationError = this.historyReads.get(id)?.error;
-        return {
-            ...(position && record.previewTurnId ? { previewTurnId: record.previewTurnId } : {}),
-            ...(record.reason ? { reason: record.reason } : {}),
-            ...(record.title ? { titleSyncPending: true } : {}),
-            ...(record.title?.error ? { titleSyncError: record.title.error } : {}),
-            ...(observationError ? { observationError } : {}),
-            ...(position?.sectionId === null &&
-            position.managed &&
-            record.manual !== true &&
-            record.previewTurnId !== undefined
-                ? { observationWarning: "历史轮次已有最终回复，可归入待审阅" }
-                : {}),
+            ...cardObservation(this.historyReads, id, record),
         };
     }
 
@@ -877,13 +898,8 @@ export class BoardService {
         return this.context;
     }
 
-    private archiveInterval(hostId: string, settings = this.settings) {
-        if (settings.mode === "legacy") return null;
-        return hostId === "local" ? settings.autoArchiveSeconds : settings.remoteAutoArchiveSeconds;
-    }
-
     private health(hostId: HostId, host: HostSnapshot | undefined) {
-        const connected = host !== undefined && this.isLive(host);
+        const connected = host !== undefined && isLive(this.desktop, host);
         const run = this.archiveRuns.get(hostId);
         const bindings =
             connected && this.context ? sectionBindings(this.context, hostId, this.mode) : [];
@@ -905,7 +921,7 @@ export class BoardService {
                     : undefined,
             runtimeVerified: connected && host?.runtimeVerified === true,
             runtimeError: host?.runtimeError,
-            autoArchiveSeconds: this.archiveInterval(hostId),
+            autoArchiveSeconds: archiveInterval(this.settings, hostId),
             autoArchiveNextAt: this.archiveDeadlines.get(hostId),
             autoArchiveLastRun: run,
             autoArchiveError: run?.error,
@@ -952,7 +968,7 @@ export class BoardService {
                 items: this.projectCatalog(),
                 remoteHosts,
                 error: local?.projectError,
-                cached: local?.projectRead !== true || !this.isLive(local),
+                cached: local?.projectRead !== true || !isLive(this.desktop, local),
             },
             fourColumns: this.mode === "four",
             legacyMode: this.mode === "legacy",
@@ -975,7 +991,7 @@ export class BoardService {
     }
 
     private hostCards(hostId: HostId, host: HostSnapshot, context: SidebarContext): Card[] {
-        const connected = this.isLive(host);
+        const connected = isLive(this.desktop, host);
         return [
             ...[...host.active.values()].map((thread) =>
                 this.card(hostId, thread, context, connected && host.currentActive.has(thread.id)),
@@ -1003,8 +1019,8 @@ export class BoardService {
                 remote: hostId !== "local",
                 label: project.name,
                 paths: project.roots.map(({ path }) => path),
-                cached: host.projectRead !== true || !this.isLive(host),
-                canCreate: host.projectRead === true && this.isLive(host),
+                cached: host.projectRead !== true || !isLive(this.desktop, host),
+                canCreate: host.projectRead === true && isLive(this.desktop, host),
                 ...(hostId === "local" ? {} : { origin: "targetServer" }),
             })),
         );
@@ -1204,7 +1220,7 @@ export class BoardService {
     }
 
     private async retryTitle(connection: HostConnection, threadId: ThreadId): Promise<void> {
-        if (!this.settings.syncTitles || !this.canWrite(threadId)) return;
+        if (!this.settings.syncTitles || !canWrite(this.settings, threadId)) return;
         const id = cardId({ hostId: connection.hostId, threadId });
         const record = this.records[id];
         const key = this.titleKey(id);
@@ -1367,7 +1383,7 @@ export class BoardService {
         for (const [hostId, host] of this.hosts) {
             for (const project of host.projects.values()) {
                 if (projectKey(hostId, project.id) !== id) continue;
-                if (!host.projectRead || !this.isLive(host))
+                if (!host.projectRead || !isLive(this.desktop, host))
                     throw new Error("项目当前仅有缓存，请重新发现");
                 return { hostId, project };
             }
@@ -1411,7 +1427,7 @@ export class BoardService {
         const { projectId } = input;
         const { accountId, userId } = await this.freshContext(owner);
         const selected = projectId ? this.findProject(projectId) : null;
-        const host = this.draftHost(input.hostId, selected?.hostId);
+        const host = draftHost(this.desktop, input.hostId, selected?.hostId);
         const connection = this.desktop.capture(host);
         const result = await this.desktop.navigate({
             kind: "new",
@@ -1433,12 +1449,6 @@ export class BoardService {
             registration: result === "registration",
             ...(input.operationId ? { operationId: input.operationId } : {}),
         };
-    }
-
-    private draftHost(requested?: string, selected?: HostId): HostId {
-        const host = selected ?? this.desktop.knownHosts().find((hostId) => hostId === localHostId);
-        if (!host || (requested && requested !== host)) throw new Error("选定的 Codex 连接不可用");
-        return host;
     }
 
     private async createTrackedDraft(input: DraftInput, owner: SidebarContext, draft: DraftRecord) {
@@ -1649,7 +1659,7 @@ export class BoardService {
         const host = this.hosts.get(hostId);
         if (host) {
             if (verified) host.currentActive.delete(threadId);
-            this.mergeArchives(host, archived);
+            mergeArchives(host, archived);
         }
         return verified;
     }
@@ -1657,8 +1667,8 @@ export class BoardService {
     private autoArchive(context: SidebarContext): void {
         const now = Date.now() / 1000;
         for (const [hostId, host] of this.hosts) {
-            const seconds = this.archiveInterval(hostId);
-            if (!seconds || !this.isLive(host)) continue;
+            const seconds = archiveInterval(this.settings, hostId);
+            if (!seconds || !isLive(this.desktop, host)) continue;
             const next = (Math.floor(now / seconds) + 1) * seconds;
             const deadline = this.archiveDeadlines.get(hostId) ?? next;
             this.archiveDeadlines.set(hostId, deadline > now ? deadline : next);
