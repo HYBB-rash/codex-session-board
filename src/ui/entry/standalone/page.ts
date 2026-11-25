@@ -1,6 +1,6 @@
 import type { BoardRequest } from "../../controller";
+import type { BoardInstall } from "../../install";
 import { mountBoardPage } from "../../mount";
-import type { BoardInstall } from "../../views/board/install";
 
 export function startBoard(transport: BoardRequest, install?: BoardInstall): void {
     const unmount = mountBoardPage(document.body, transport, install ? { install } : {});

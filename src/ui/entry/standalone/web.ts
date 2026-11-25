@@ -1,5 +1,5 @@
 import type { BoardRequest } from "../../controller";
-import { setupPwa } from "../../views/board/install";
+import { setupPwa } from "../../install";
 import { startBoard } from "./page";
 
 async function requestToken(): Promise<string> {
