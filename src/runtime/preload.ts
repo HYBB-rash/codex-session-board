@@ -2,13 +2,13 @@
 
 import { ipcRenderer } from "electron";
 import type { BoardLedger } from "../extensions/session-board/archive.js";
-import { BoardService } from "../extensions/session-board/board-service.js";
 import {
     DesktopConnection,
     hostId,
     type ThreadId,
 } from "../extensions/session-board/desktop-connection.js";
 import type { LoadedBoardRecords } from "../extensions/session-board/records.js";
+import { BoardService } from "../extensions/session-board/service.js";
 import { readSettings } from "../extensions/session-board/settings.js";
 import type { BoardRelayRequest } from "./board/broker.js";
 import { startUiHost } from "./host.js";

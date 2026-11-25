@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { type TestContext, test } from "node:test";
 import { setImmediate as nextTick } from "node:timers/promises";
 import { emptyLedger } from "./archive.js";
-import { BoardService } from "./board-service.js";
 import {
     DesktopConnection,
     type HostSectionId,
@@ -16,6 +15,7 @@ import {
     type ThreadId,
 } from "./desktop-connection.js";
 import { BoardRecords, TitleEpochs } from "./records.js";
+import { BoardService } from "./service.js";
 import { defaults } from "./settings.js";
 
 const first = "00000000-0000-4000-8000-000000000001" as ThreadId;

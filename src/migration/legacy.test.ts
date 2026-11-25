@@ -16,13 +16,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test, { type TestContext } from "node:test";
-import { BoardService } from "../extensions/session-board/board-service.js";
 import {
     DesktopConnection,
     type SidebarContext,
     type Thread,
 } from "../extensions/session-board/desktop-connection.js";
 import { BoardLedgers, BoardRecords } from "../extensions/session-board/records.js";
+import { BoardService } from "../extensions/session-board/service.js";
 import {
     migrateLegacyBoard,
     readLegacyMigration,

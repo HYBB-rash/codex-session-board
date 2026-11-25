@@ -31,7 +31,7 @@ ignored_file() {
             esac
             actual="$(git show ":$file" 2>/dev/null | sha256sum)"
             test "${actual%% *}" = "$expected" ;;
-        src/extensions/session-board/board-service.ts|src/migration/projection.ts|src/migration/legacy.test.ts|acceptance/candidate-map.json)
+        src/migration/projection.ts|src/migration/legacy.test.ts|acceptance/candidate-map.json)
             if git cat-file -e "HEAD:$file" 2>/dev/null; then return 1; fi
             local staged
             IFS= read -r staged < <(git diff --cached --name-only)

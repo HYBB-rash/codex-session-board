@@ -16,7 +16,7 @@
         "AUTO-001": {
             "sources": [
                 "src/extensions/session-board/activity.ts",
-                "src/extensions/session-board/board-service.ts"
+                "src/extensions/session-board/service.ts"
             ],
             "checks": [
                 "runtime_evidence_table_frozen_summary",
@@ -28,7 +28,7 @@
         "AUTO-002": {
             "sources": [
                 "src/extensions/session-board/activity.ts",
-                "src/extensions/session-board/board-service.ts"
+                "src/extensions/session-board/service.ts"
             ],
             "checks": [
                 "runtime_evidence_table_frozen_summary",
@@ -51,7 +51,7 @@
         "AUTO-004": {
             "sources": [
                 "src/extensions/session-board/activity.ts",
-                "src/extensions/session-board/board-service.ts"
+                "src/extensions/session-board/service.ts"
             ],
             "checks": [
                 "runtime_evidence_without_terminal_confirmation",
@@ -61,7 +61,7 @@
         },
         "AUTO-005": {
             "sources": [
-                "src/extensions/session-board/board-service.ts",
+                "src/extensions/session-board/service.ts",
                 "src/extensions/session-board/records.ts"
             ],
             "checks": ["all_abstract_state_edges_match_the_typescript_service"],
@@ -70,7 +70,7 @@
         "AUTO-006": {
             "sources": [
                 "src/extensions/session-board/activity.ts",
-                "src/extensions/session-board/board-service.ts"
+                "src/extensions/session-board/service.ts"
             ],
             "checks": ["runtime_evidence_without_terminal_confirmation"],
             "missing": "尚缺历史或连接错误、观察首次启用和旧正常终态的同数据对照；会话及备注必须保持可见。"
@@ -78,7 +78,7 @@
         "MANUAL-001": {
             "sources": [
                 "src/extensions/session-board/records.ts",
-                "src/extensions/session-board/board-service.ts"
+                "src/extensions/session-board/service.ts"
             ],
             "checks": ["all_abstract_state_edges_match_the_typescript_service"],
             "evidence": "Fedora 原生移卡实测保留了本机和远端专用卡原备注。见 docs/session-board-native-checkpoint.md。",
@@ -86,7 +86,7 @@
         },
         "MANUAL-002": {
             "sources": [
-                "src/extensions/session-board/board-service.ts",
+                "src/extensions/session-board/service.ts",
                 "src/extensions/session-board/records.ts"
             ],
             "checks": ["input_ids_ignore_order_and_assistant_updates"],
@@ -96,7 +96,7 @@
         "MANUAL-003": {
             "sources": [
                 "src/extensions/session-board/activity.ts",
-                "src/extensions/session-board/board-service.ts",
+                "src/extensions/session-board/service.ts",
                 "src/migration/projection.ts"
             ],
             "checks": ["input_ids_ignore_order_and_assistant_updates"],
@@ -106,7 +106,7 @@
         "TITLE-001": {
             "sources": [
                 "src/extensions/session-board/activity.ts",
-                "src/extensions/session-board/board-service.ts"
+                "src/extensions/session-board/service.ts"
             ],
             "checks": ["title_prefix_replacement_and_idempotence"],
             "missing": "还需现场记录手动和自动入列后，何时读取完整原标题、提交并读回。"
@@ -114,7 +114,7 @@
         "TITLE-002": {
             "sources": [
                 "src/extensions/session-board/activity.ts",
-                "src/extensions/session-board/board-service.ts"
+                "src/extensions/session-board/service.ts"
             ],
             "checks": [
                 "title_prefix_replacement_and_idempotence",
@@ -125,21 +125,21 @@
         },
         "TITLE-003": {
             "sources": [
-                "src/extensions/session-board/board-service.ts",
+                "src/extensions/session-board/service.ts",
                 "src/extensions/session-board/records.ts"
             ],
             "missing": "尚缺重启前后续传、三秒原生同步上限和失败期间用户仍能保存其他卡片的证据。"
         },
         "TITLE-004": {
             "sources": [
-                "src/extensions/session-board/board-service.ts",
+                "src/extensions/session-board/service.ts",
                 "src/extensions/session-board/records.ts"
             ],
             "missing": "尚缺旧回执、新版本、写入成功但失联的矩阵及失败项队列公平性。"
         },
         "TITLE-005": {
             "sources": [
-                "src/extensions/session-board/board-service.ts",
+                "src/extensions/session-board/service.ts",
                 "src/extensions/session-board/settings.ts"
             ],
             "missing": "还需确认标题同步首次启用的持久边界、首次发现不改历史标题、旧任务重启后继续。"
@@ -147,19 +147,19 @@
         "DISCOVERY-001": {
             "sources": [
                 "src/extensions/session-board/desktop-connection.ts",
-                "src/extensions/session-board/board-service.ts"
+                "src/extensions/session-board/service.ts"
             ],
             "evidence": "Fedora 窗口已读到本机及 MacBook Pro 的专用会话。见 docs/session-board-native-checkpoint.md。",
             "missing": "尚缺 cli、vscode、appServer 各来源及模型提供方，重复或无尽分页和非交互排除的端到端证据。"
         },
         "DISCOVERY-002": {
-            "sources": ["src/extensions/session-board/board-service.ts", "src/compat/cache.ts"],
+            "sources": ["src/extensions/session-board/service.ts", "src/compat/cache.ts"],
             "missing": "尚缺一条读取失败、完整扫描缺席、离线后重启和后续恢复的逐条数据对照。"
         },
         "NAV-001": {
             "sources": [
                 "src/extensions/session-board/preview.ts",
-                "src/extensions/session-board/board-service.ts",
+                "src/extensions/session-board/service.ts",
                 "src/ui/views/board/preview/reader.ts",
                 "src/ui/views/board/drag.ts"
             ],
@@ -179,7 +179,7 @@
             "sources": [
                 "src/ui/views/board/drag.ts",
                 "src/ui/views/board/SessionColumns.vue",
-                "src/extensions/session-board/board-service.ts"
+                "src/extensions/session-board/service.ts"
             ],
             "evidence": "Fedora 的本机和远端专用卡都经过真实拖拽、原生侧栏和独立分区读回，备注保留。见 docs/session-board-native-checkpoint.md。",
             "missing": "同列、拖出看板、横向及边缘自动滚动以及 macOS 桌面尚未取证。"
@@ -189,7 +189,7 @@
                 "src/ui/views/board/edit/mount.ts",
                 "src/ui/views/board/edit/SessionEditor.vue",
                 "src/ui/views/board/edit/edits.ts",
-                "src/extensions/session-board/board-service.ts"
+                "src/extensions/session-board/service.ts"
             ],
             "missing": "还需分别演练空白、纯空白、取消、填入、清空、过期失败，核对备注、自动原因及草稿。"
         },
@@ -254,7 +254,7 @@
         },
         "HEALTH-001": {
             "sources": [
-                "src/extensions/session-board/board-service.ts",
+                "src/extensions/session-board/service.ts",
                 "src/ui/views/board/health/banner.ts",
                 "src/ui/views/board/health/report.ts"
             ],
