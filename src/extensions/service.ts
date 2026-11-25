@@ -234,6 +234,57 @@ function isNewPhase(phase: Phase, current: CardRecord, since: number): boolean {
     return sameTurn || (phase.at !== null && phase.at >= Math.floor(since));
 }
 
+function addUnseenThreads(rows: Map<ThreadId, Thread>, threads: readonly Thread[]): void {
+    for (const thread of threads) {
+        if (interactiveThread(thread) && !rows.has(thread.id)) rows.set(thread.id, thread);
+    }
+}
+
+function moveDestination(
+    context: SidebarContext,
+    state: BoardState | null,
+    mode: BoardSettings["mode"],
+) {
+    const destination = state && sectionFor(context, state);
+    if (!destination || !Object.hasOwn(visibleStates(mode), state ?? "")) {
+        throw new Error("当前 Codex 侧栏缺少唯一的目标状态分区");
+    }
+    return destination;
+}
+
+function moveProof(
+    hostId: HostId,
+    before: Thread,
+    after: Thread,
+    fresh: SidebarContext,
+    destination: string,
+) {
+    const expected = fresh.sections.find(({ id }) => id === destination)?.hostSectionIds?.[hostId];
+    return {
+        hostId,
+        threadId: before.id,
+        from: before.section?.id ?? null,
+        to: expected ?? null,
+        readBack: after.section?.id ?? null,
+        confirmed: expected !== undefined && after.section?.id === expected,
+    };
+}
+
+function unconfirmed(failure: unknown, message: string): string {
+    return failure ? errorText(failure) : message;
+}
+
+function validateProjectAssignment(card: Card, hostId: HostId, project: HostProject): void {
+    if (
+        hostId !== card.hostId ||
+        card.readOnly ||
+        project.roots.length !== 1 ||
+        project.roots[0]?.path !== card.cwd
+    ) {
+        throw new Error("目标项目与会话主机或工作目录不一致");
+    }
+}
+
 export class BoardService {
     private readonly hosts = new Map<HostId, HostSnapshot>();
     private context: SidebarContext | undefined;
@@ -304,26 +355,7 @@ export class BoardService {
         const titleStartedAt = settings.syncTitles
             ? await this.ports.titleEpoch(account)
             : undefined;
-        if (switched) {
-            const [{ records, legacyCachedCards }, ledger, accountScope] = await Promise.all([
-                this.ports.load(account),
-                this.ports.loadLedger(account),
-                scopeDigest(account),
-            ]);
-            if (account !== accountKey(await this.desktop.context()))
-                throw new Error("Codex 账号已变更");
-            this.hosts.clear();
-            this.changed.clear();
-            this.runtimeDirty.clear();
-            this.historyReads.clear();
-            this.nextTitleAttempt.clear();
-            this.records = records;
-            this.legacyCachedCards = legacyCachedCards;
-            this.ledger = ledger;
-            this.accountScope = accountScope;
-            this.archiveDeadlines.clear();
-            this.archiveRuns.clear();
-        }
+        if (switched) await this.loadAccount(account);
         for (const hostId of this.archiveDeadlines.keys()) {
             if (this.archiveInterval(hostId) !== this.archiveInterval(hostId, settings))
                 this.archiveDeadlines.delete(hostId);
@@ -335,6 +367,27 @@ export class BoardService {
         await Promise.all(this.desktop.knownHosts().map((host) => this.refreshHost(host, context)));
         this.requireAccount(account);
         this.autoArchive(context);
+    }
+
+    private async loadAccount(account: string): Promise<void> {
+        const [{ records, legacyCachedCards }, ledger, accountScope] = await Promise.all([
+            this.ports.load(account),
+            this.ports.loadLedger(account),
+            scopeDigest(account),
+        ]);
+        if (account !== accountKey(await this.desktop.context()))
+            throw new Error("Codex 账号已变更");
+        this.hosts.clear();
+        this.changed.clear();
+        this.runtimeDirty.clear();
+        this.historyReads.clear();
+        this.nextTitleAttempt.clear();
+        this.records = records;
+        this.legacyCachedCards = legacyCachedCards;
+        this.ledger = ledger;
+        this.accountScope = accountScope;
+        this.archiveDeadlines.clear();
+        this.archiveRuns.clear();
     }
 
     private async readPages(
@@ -351,9 +404,7 @@ export class BoardService {
                 cursor,
                 this.settings.pageSize,
             );
-            for (const thread of page.data) {
-                if (interactiveThread(thread) && !rows.has(thread.id)) rows.set(thread.id, thread);
-            }
+            addUnseenThreads(rows, page.data);
             cursor = page.nextCursor;
             if (!cursor) return;
             if (cursors.has(cursor)) throw new Error("Codex 返回了重复的分页游标");
@@ -372,13 +423,7 @@ export class BoardService {
         const scanVersion = this.changes;
         try {
             const connection = this.desktop.capture(hostId);
-            try {
-                await this.readPages(connection, false, next.active);
-                next.scanComplete = true;
-            } catch (error) {
-                if (!next.active.size) throw error;
-                next.error = errorText(error);
-            }
+            await this.readActive(connection, next);
             await this.freshContext(context);
             this.desktop.assertCurrent(connection);
             next.currentActive = new Set(next.active.keys());
@@ -397,18 +442,32 @@ export class BoardService {
             ]);
         } catch (error) {
             const available = this.hosts.get(hostId) ?? last;
-            this.hosts.set(hostId, {
-                ...emptyHost(),
-                active: available.active,
-                archived: available.archived,
-                projects: available.projects,
-                ...(this.isLive(available) && available.connection
-                    ? { connection: available.connection }
-                    : {}),
-                ...(available.lastRead === undefined ? {} : { lastRead: available.lastRead }),
-                scanComplete: false,
-                error: errorText(error),
-            });
+            this.hosts.set(hostId, this.failedHostScan(available, error));
+        }
+    }
+
+    private failedHostScan(available: HostSnapshot, error: unknown): HostSnapshot {
+        return {
+            ...emptyHost(),
+            active: available.active,
+            archived: available.archived,
+            projects: available.projects,
+            ...(this.isLive(available) && available.connection
+                ? { connection: available.connection }
+                : {}),
+            ...(available.lastRead === undefined ? {} : { lastRead: available.lastRead }),
+            scanComplete: false,
+            error: errorText(error),
+        };
+    }
+
+    private async readActive(connection: HostConnection, host: HostSnapshot): Promise<void> {
+        try {
+            await this.readPages(connection, false, host.active);
+            host.scanComplete = true;
+        } catch (error) {
+            if (!host.active.size) throw error;
+            host.error = errorText(error);
         }
     }
 
@@ -569,31 +628,41 @@ export class BoardService {
             return;
         }
         this.editing.add(id);
-        let queuedTitle = false;
+        let queuedTitle: boolean;
         try {
-            const latest = await this.readObservedTurn(
+            queuedTitle = await this.storeObservation(
                 connection,
-                thread.id,
+                thread,
+                context,
                 id,
                 options.historyTimeout,
             );
-            const current = this.records[id] ?? emptyRecord;
-            const phase =
-                options.historyTimeout === undefined ? runtimePhase(thread.status, latest) : null;
-            const observation = observedRecord(current, latest, phase);
-            if (!observation) return;
-            const { next, phaseChanged } = observation;
-            const change =
-                phase && isNewPhase(phase, current, this.observationSince)
-                    ? await this.applyPhase(connection, thread, context, phase, next)
-                    : undefined;
-            if (phaseChanged) delete next.pendingPhaseKey;
-            await this.commitRecord(context, id, current.version, next, change);
-            queuedTitle = next.title !== undefined && next.title !== current.title;
         } finally {
             this.editing.delete(id);
         }
         if (queuedTitle) void this.retryTitle(connection, thread.id);
+    }
+
+    private async storeObservation(
+        connection: HostConnection,
+        thread: Thread,
+        context: SidebarContext,
+        id: string,
+        historyTimeout?: number,
+    ): Promise<boolean> {
+        const latest = await this.readObservedTurn(connection, thread.id, id, historyTimeout);
+        const current = this.records[id] ?? emptyRecord;
+        const phase = historyTimeout === undefined ? runtimePhase(thread.status, latest) : null;
+        const observation = observedRecord(current, latest, phase);
+        if (!observation) return false;
+        const { next, phaseChanged } = observation;
+        const change =
+            phase && isNewPhase(phase, current, this.observationSince)
+                ? await this.applyPhase(connection, thread, context, phase, next)
+                : undefined;
+        if (phaseChanged) delete next.pendingPhaseKey;
+        await this.commitRecord(context, id, current.version, next, change);
+        return next.title !== undefined && next.title !== current.title;
     }
 
     private async readObservedTurn(
@@ -658,23 +727,30 @@ export class BoardService {
     private async retryHostTitle(connection: HostConnection, host: HostSnapshot): Promise<void> {
         if (!this.settings.syncTitles) return;
         const now = Date.now();
+        const oldest = this.oldestTitleRetry(connection.hostId, host, now);
+        if (oldest) await this.retryTitle(connection, oldest.threadId);
+    }
+
+    private oldestTitleRetry(hostId: HostId, host: HostSnapshot, now: number) {
         let oldest: { threadId: ThreadId; at: number } | undefined;
         for (const thread of host.active.values()) {
-            const id = cardId({ hostId: connection.hostId, threadId: thread.id });
+            const id = cardId({ hostId, threadId: thread.id });
             const record = this.records[id];
-            if (
-                !host.currentActive.has(thread.id) ||
-                !record?.title ||
-                !this.canWrite(thread.id) ||
-                this.editing.has(id) ||
-                this.titleInFlight.has(this.titleKey(id))
-            )
-                continue;
+            if (!record?.title || !this.canRetryHostTitle(host, id, thread.id)) continue;
             const retry = this.nextTitleAttempt.get(id);
             const at = retry?.version === record.version ? retry.at : 0;
             if (at <= now && (!oldest || at < oldest.at)) oldest = { threadId: thread.id, at };
         }
-        if (oldest) await this.retryTitle(connection, oldest.threadId);
+        return oldest;
+    }
+
+    private canRetryHostTitle(host: HostSnapshot, id: string, threadId: ThreadId): boolean {
+        return (
+            host.currentActive.has(threadId) &&
+            this.canWrite(threadId) &&
+            !this.editing.has(id) &&
+            !this.titleInFlight.has(this.titleKey(id))
+        );
     }
 
     private isLive(host: HostSnapshot): boolean {
@@ -1205,18 +1281,29 @@ export class BoardService {
             return;
         this.scheduleTitleRetry(id, record.version, failure);
         if (failure === undefined || failure !== title.error) {
-            const changed = await this.ports.settleTitle({
-                account,
-                id,
-                expected: record.version,
-                ...(failure === undefined ? {} : { failure }),
-            });
-            if (!changed || this.records[id] !== record) return;
-            const { title: _pending, ...rest } = record;
-            this.records[id] = failure ? { ...rest, title: { ...title, error: failure } } : rest;
+            if (!(await this.settleObservedTitle(account, id, record, title, failure))) return;
         }
         if (updated && !failure && !this.editing.has(id))
             this.publishThread(connection.hostId, updated);
+    }
+
+    private async settleObservedTitle(
+        account: string,
+        id: string,
+        record: CardRecord,
+        title: NonNullable<CardRecord["title"]>,
+        failure: string | undefined,
+    ): Promise<boolean> {
+        const changed = await this.ports.settleTitle({
+            account,
+            id,
+            expected: record.version,
+            ...(failure === undefined ? {} : { failure }),
+        });
+        if (!changed || this.records[id] !== record) return false;
+        const { title: _pending, ...rest } = record;
+        this.records[id] = failure ? { ...rest, title: { ...title, error: failure } } : rest;
+        return true;
     }
 
     private async moveCard(
@@ -1227,10 +1314,7 @@ export class BoardService {
     ): Promise<Thread> {
         const source = placement(context, connection.hostId, before);
         if (presentState(context, source, this.mode) === state) return before;
-        const destination = state && sectionFor(context, state);
-        if (!destination || !Object.hasOwn(visibleStates(this.mode), state ?? "")) {
-            throw new Error("当前 Codex 侧栏缺少唯一的目标状态分区");
-        }
+        const destination = moveDestination(context, state, this.mode);
         let failure: unknown;
         try {
             await this.desktop.move(
@@ -1245,18 +1329,9 @@ export class BoardService {
         }
         const after = await this.desktop.read(connection, before.id, false);
         const fresh = await this.freshContext(context);
-        const expectedReplica = fresh.sections.find(({ id }) => id === destination)
-            ?.hostSectionIds?.[connection.hostId];
-        const confirmed = expectedReplica !== undefined && after.section?.id === expectedReplica;
-        this.ports.proof("board-native-move", {
-            hostId: connection.hostId,
-            threadId: before.id,
-            from: before.section?.id ?? null,
-            to: expectedReplica ?? null,
-            readBack: after.section?.id ?? null,
-            confirmed,
-        });
-        if (!confirmed) throw new Error(failure ? errorText(failure) : "Codex 尚未确认原生位置");
+        const proof = moveProof(connection.hostId, before, after, fresh, destination);
+        this.ports.proof("board-native-move", proof);
+        if (!proof.confirmed) throw new Error(unconfirmed(failure, "Codex 尚未确认原生位置"));
         this.context = fresh;
         return after;
     }
@@ -1336,10 +1411,7 @@ export class BoardService {
         const { projectId } = input;
         const { accountId, userId } = await this.freshContext(owner);
         const selected = projectId ? this.findProject(projectId) : null;
-        const host =
-            selected?.hostId ?? this.desktop.knownHosts().find((hostId) => hostId === "local");
-        if (!host || (input.hostId && input.hostId !== host))
-            throw new Error("选定的 Codex 连接不可用");
+        const host = this.draftHost(input.hostId, selected?.hostId);
         const connection = this.desktop.capture(host);
         const result = await this.desktop.navigate({
             kind: "new",
@@ -1361,6 +1433,12 @@ export class BoardService {
             registration: result === "registration",
             ...(input.operationId ? { operationId: input.operationId } : {}),
         };
+    }
+
+    private draftHost(requested?: string, selected?: HostId): HostId {
+        const host = selected ?? this.desktop.knownHosts().find((hostId) => hostId === localHostId);
+        if (!host || (requested && requested !== host)) throw new Error("选定的 Codex 连接不可用");
+        return host;
     }
 
     private async createTrackedDraft(input: DraftInput, owner: SidebarContext, draft: DraftRecord) {
@@ -1386,10 +1464,28 @@ export class BoardService {
         if (draft) return this.resumeDraft(input, draft);
         if (input.requestId) throw new Error("旧新建请求已结束，请重新选择目标");
         if (!operationId) return this.launchDraft(input, owner);
+        return this.openTrackedDraft(input, owner, projectId, operationId);
+    }
+
+    private async openTrackedDraft(
+        input: DraftInput,
+        owner: SidebarContext,
+        projectId: string | undefined,
+        operationId: string,
+    ) {
         if (!projectId || !/^[0-9a-f-]{36}$/i.test(operationId))
             throw new Error("新建操作 ID 无效");
         if (input.hostId && projectKeyHost(projectId) !== input.hostId)
             throw new Error("选定的 Codex 连接不可用");
+        return this.trackDraft(input, owner, projectId, operationId);
+    }
+
+    private async trackDraft(
+        input: DraftInput,
+        owner: SidebarContext,
+        projectId: string,
+        operationId: string,
+    ) {
         const key = JSON.stringify([accountKey(owner), operationId]);
         const opening = this.openingDrafts.get(key);
         if (opening) {
@@ -1420,14 +1516,7 @@ export class BoardService {
     private async assign(id: string, projectId: string): Promise<{ ok: true }> {
         const { card, connection } = this.target(id);
         const { hostId, project } = this.findProject(projectId);
-        if (
-            hostId !== card.hostId ||
-            card.readOnly ||
-            project.roots.length !== 1 ||
-            project.roots[0]?.path !== card.cwd
-        ) {
-            throw new Error("目标项目与会话主机或工作目录不一致");
-        }
+        validateProjectAssignment(card, hostId, project);
         const context = await this.freshContext();
         const before = await this.desktop.read(connection, card.threadId, false);
         if (
@@ -1451,7 +1540,7 @@ export class BoardService {
         await this.freshContext(context);
         this.desktop.assertCurrent(connection);
         if (actual.projectId !== project.id || actual.cwd !== card.cwd)
-            throw new Error(failure ? errorText(failure) : "Codex 尚未确认项目归属");
+            throw new Error(unconfirmed(failure, "Codex 尚未确认项目归属"));
         this.publishThread(hostId, actual);
         return { ok: true };
     }
@@ -1624,22 +1713,26 @@ export class BoardService {
         if (path === "/api/archive-batches" && !body) return { batches: this.archive.batches() };
         if (this.mode === "legacy") throw new Error("旧六状态模式不支持归档");
         if (!args?.id) throw new Error("缺少归档批次或会话 ID");
-        if (path === "/api/archive-batches" && Array.isArray(args.items))
-            return { batch: await this.archive.start(args.id, args.items) };
-        if (path === "/api/archive-batches/finish")
-            return { batch: await this.archive.finish(args.id) };
-        if (path === "/api/archive-batches/check")
-            return { batch: await this.archive.check(args.id) };
-        if (path === "/api/archive") {
-            const candidate = {
-                ...(args as ArchiveTarget),
-                sectionVersion: args.sectionVersion ?? null,
-            };
-            if (args.batchId) return { item: await this.archive.submit(args.batchId, candidate) };
-            const { card } = this.target(candidate.id);
-            return { item: await this.archive.single({ ...candidate, title: card.title }) };
+        switch (path) {
+            case "/api/archive-batches":
+                if (Array.isArray(args.items))
+                    return { batch: await this.archive.start(args.id, args.items) };
+                break;
+            case "/api/archive-batches/finish":
+                return { batch: await this.archive.finish(args.id) };
+            case "/api/archive-batches/check":
+                return { batch: await this.archive.check(args.id) };
+            case "/api/archive":
+                return { item: await this.submitArchive(args as ArchiveTarget, args.batchId) };
         }
         throw new Error("归档请求不完整");
+    }
+
+    private submitArchive(args: ArchiveTarget, batchId?: string) {
+        const candidate = { ...args, sectionVersion: args.sectionVersion ?? null };
+        if (batchId) return this.archive.submit(batchId, candidate);
+        const { card } = this.target(candidate.id);
+        return this.archive.single({ ...candidate, title: card.title });
     }
 
     private async openConnectionSettings() {
@@ -1673,26 +1766,17 @@ export class BoardService {
         switch (path) {
             case "/api/sessions":
             case "/api/refresh":
-                await this.refresh();
-                if (account !== undefined) this.requireAccount(account);
-                return this.snapshot();
+                return this.refreshSnapshot(account);
             case "/api/state":
-                if (body) return this.update(body as Edit);
-                break;
-            case "/api/column-sort": {
-                if (!body) break;
-                const sort = body as SortPreference & { state: string };
-                return this.sort(sort.state, sort);
-            }
+            case "/api/column-sort":
+            case "/api/new/reset":
+                return this.requestChange(path, body);
             case "/api/open":
             case "/api/preview-reply":
             case "/api/project/assign":
                 return this.requestExistingSession(path, input);
             case "/api/new":
                 return this.create(input ?? {});
-            case "/api/new/reset":
-                if (input) return this.resetDraft(input);
-                break;
             case "/api/connect":
                 await this.openConnectionSettings();
                 return { ok: true };
@@ -1703,5 +1787,22 @@ export class BoardService {
                 return this.ports.updateStatus(body !== undefined);
         }
         throw new Error(unsupportedOperation);
+    }
+
+    private async refreshSnapshot(account?: string) {
+        await this.refresh();
+        if (account !== undefined) this.requireAccount(account);
+        return this.snapshot();
+    }
+
+    private requestChange(
+        path: "/api/state" | "/api/column-sort" | "/api/new/reset",
+        body?: object,
+    ) {
+        if (!body) throw new Error(unsupportedOperation);
+        if (path === "/api/state") return this.update(body as Edit);
+        if (path === "/api/new/reset") return this.resetDraft(body as DraftInput);
+        const sort = body as SortPreference & { state: string };
+        return this.sort(sort.state, sort);
     }
 }
