@@ -6,7 +6,7 @@ import {
     type LogicalSectionId,
     localHostId,
     type SidebarContext,
-} from "./desktop/connection-relocation.js";
+} from "./desktop/connection.js";
 import { sectionBindings } from "./session-board/placement.js";
 
 test("section preflight only accepts unique replicas on the queried host", () => {

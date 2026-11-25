@@ -12,7 +12,7 @@ import {
     type SidebarContext,
     type Thread,
     type ThreadId,
-} from "./desktop/connection-relocation.js";
+} from "./desktop/connection.js";
 import { emptyLedger } from "./session-board/archive.js";
 import { BoardRecords, TitleEpochs } from "./session-board/records.js";
 import { BoardService } from "./session-board/service.js";

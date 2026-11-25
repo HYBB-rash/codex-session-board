@@ -2,8 +2,8 @@ import * as fs from "node:fs";
 import { createRequire } from "node:module";
 import * as path from "node:path";
 import type { App, IpcMain, IpcMainEvent, Session, WebContents } from "electron";
+import { boardDesktopRequest } from "../extensions/desktop/main.js";
 import type { BoardLedger } from "../extensions/session-board/archive.js";
-import { boardDesktopRequest } from "../extensions/session-board/desktop/main.js";
 import {
     BoardLedgers,
     BoardRecords,

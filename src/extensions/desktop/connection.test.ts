@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DesktopConnection, hostId, localHostId, type ThreadId } from "./connection-relocation.js";
+import { DesktopConnection, hostId, localHostId, type ThreadId } from "./connection.js";
 
 const remoteName = "remote-ssh-discovered:fixture";
 const thread = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" as ThreadId;

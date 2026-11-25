@@ -8,9 +8,9 @@ import {
     type Thread,
     type ThreadId,
     type Turn,
-} from "./desktop/connection-relocation.js";
+} from "./desktop/connection.js";
+import type { DesktopCommand } from "./desktop/world.js";
 import { type BoardLedger, emptyLedger } from "./session-board/archive.js";
-import type { DesktopCommand } from "./session-board/desktop/world.js";
 import type { CardRecord } from "./session-board/records.js";
 import { BoardService } from "./session-board/service.js";
 import { defaults } from "./session-board/settings.js";

@@ -591,7 +591,7 @@
             "implementation": [
                 "src/extensions/session-board/service.ts",
                 "src/extensions/desktop/connection.ts",
-                "src/extensions/session-board/desktop/world.ts",
+                "src/extensions/desktop/world.ts",
                 "src/compat/operations.ts"
             ],
             "evidence": [

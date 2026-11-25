@@ -6,9 +6,9 @@ import {
     hostId,
     localHostId,
     type ThreadId,
-} from "./desktop/connection-relocation.js";
+} from "./desktop/connection.js";
+import type { DesktopCommand } from "./desktop/world.js";
 import { type BoardLedger, emptyLedger } from "./session-board/archive.js";
-import type { DesktopCommand } from "./session-board/desktop/world.js";
 import { BoardService } from "./session-board/service.js";
 import { defaults } from "./session-board/settings.js";
 

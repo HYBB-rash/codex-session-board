@@ -236,7 +236,7 @@
         "BOUNDARY-001": {
             "sources": [
                 "src/extensions/desktop/connection.ts",
-                "src/extensions/session-board/desktop/world.ts",
+                "src/extensions/desktop/world.ts",
                 "src/compat/operations.ts"
             ],
             "missing": "冻结契约写的是旧版独立只读连接。新目标明确允许原生分区及显式归档。须针对新版允许操作证明状态标记、预览和导航不会发送或执行任务，并留存所有入口的完整调用记录。"
