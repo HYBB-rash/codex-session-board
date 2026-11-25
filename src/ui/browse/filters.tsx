@@ -1,4 +1,4 @@
-import { computed, createApp, nextTick, shallowReactive, Teleport } from "vue";
+import { createApp, nextTick, shallowReactive, Teleport } from "vue";
 import type { BoardSnapshot } from "../controller";
 import type { BoardSession } from "../session";
 import type { CatalogProject, HostCatalog, HostOption } from "./scope";
@@ -43,6 +43,20 @@ function projectScopeLabel(search: boolean, allHosts: boolean, project?: FilterO
     if (search) return "全部项目 · 搜索";
     if (allHosts) return "全部会话";
     return project?.label ?? "全部项目";
+}
+
+function FilterOptions({ items }: { items: FilterOption[] }) {
+    return (
+        <>{items.map((item) => (
+            <option
+                key={item.value}
+                value={item.value}
+                title={item.path}
+                data-host-id={item.hostId}>
+                {item.label}
+            </option>
+        ))}</>
+    );
 }
 
 export function mountBoardFilters(container: HTMLElement, scope: HTMLElement, sources: Sources) {
@@ -204,21 +218,7 @@ export function mountBoardFilters(container: HTMLElement, scope: HTMLElement, so
         (state.search ? searchInput : projectMenu)?.focus();
     }
 
-    function options(items: FilterOption[]) {
-        return items.map((item) => (
-            <option
-                key={item.value}
-                value={item.value}
-                title={item.path}
-                data-host-id={item.hostId}>
-                {item.label}
-            </option>
-        ));
-    }
-
-    const projectNodes = computed(() => options(view.projects));
-
-    function renderMenus() {
+    function FilterMenus() {
         return (
             <>
                 <label class="filter-field">
@@ -229,7 +229,7 @@ export function mountBoardFilters(container: HTMLElement, scope: HTMLElement, so
                         value={state.host}
                         disabled={view.locked}
                         onChange={(event) => select("host", event)}>
-                        {options(view.hosts)}
+                        <FilterOptions items={view.hosts} />
                     </select>
                 </label>
                 <div class="filter-field">
@@ -244,7 +244,7 @@ export function mountBoardFilters(container: HTMLElement, scope: HTMLElement, so
                         value={state.project}
                         disabled={view.locked || view.projectUnavailable}
                         onChange={(event) => select("project", event)}>
-                        {projectNodes.value}
+                        <FilterOptions items={view.projects} />
                     </select>
                 </div>
                 <label class="filter-field">
@@ -255,7 +255,7 @@ export function mountBoardFilters(container: HTMLElement, scope: HTMLElement, so
                         value={state.history}
                         disabled={view.locked}
                         onChange={(event) => select("history", event)}>
-                        {options(histories)}
+                        <FilterOptions items={histories} />
                     </select>
                 </label>
             </>
@@ -265,7 +265,7 @@ export function mountBoardFilters(container: HTMLElement, scope: HTMLElement, so
     function render() {
         return (
             <>
-                {renderMenus()}
+                <FilterMenus />
                 <input
                     id="search"
                     type="search"

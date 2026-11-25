@@ -31,11 +31,6 @@ function createResultsView(actions: Actions) {
     );
     const canOpen = (item: { id: string }) =>
         board.value.sessions.find((session) => session.id === item.id)?.canOpen !== false;
-    const openButton = (item: { id: string }) => (
-        <button type="button" class="row-action" onClick={() => actions.open(item.id)}>
-            打开会话
-        </button>
-    );
     async function toggleDetails() {
         expanded.value = !expanded.value;
         if (expanded.value && !state.run && !state.checking) await read();
@@ -58,13 +53,21 @@ function createResultsView(actions: Actions) {
         toggle,
         current,
         canOpen,
-        openButton,
+        open: (id: string) => actions.open(id),
         toggleDetails,
         manualCheck,
     };
 }
 
 type ResultsView = ReturnType<typeof createResultsView>;
+
+function OpenSessionButton({ id, open }: { id: string; open: Actions["open"] }) {
+    return (
+        <button type="button" class="row-action" onClick={() => open(id)}>
+            打开会话
+        </button>
+    );
+}
 
 function archiveCounts(statuses: string[]) {
     const count = (value: string) => statuses.filter((entry) => entry === value).length;
@@ -82,7 +85,15 @@ function archiveCounts(statuses: string[]) {
     return `已确认归档 ${count("archived") + count("verified")} / ${statuses.length} 条${remaining}`;
 }
 
-function renderSummaryText(view: ResultsView, counts: string, progress: string) {
+function ArchiveSummaryText({
+    view,
+    counts,
+    progress,
+}: {
+    view: ResultsView;
+    counts: string;
+    progress: string;
+}) {
     const { state, toCheck, read } = view.archive;
     const batch = view.current.value;
     return (
@@ -118,7 +129,7 @@ function renderSummaryText(view: ResultsView, counts: string, progress: string) 
     );
 }
 
-function renderSummary(view: ResultsView) {
+function ArchiveSummary({ view }: { view: ResultsView }) {
     const { state, status, toCheck } = view.archive;
     const batch = view.current.value;
     const run = state.run;
@@ -135,7 +146,7 @@ function renderSummary(view: ResultsView) {
             id="archive-summary"
             class="archive-summary"
             hidden={!progress && !counts && !state.notice && !state.readError}>
-            {renderSummaryText(view, counts, progress)}
+            <ArchiveSummaryText view={view} counts={counts} progress={progress} />
             <div id="archive-summary-actions">
                 {!!toCheck.value.length && !progress && (
                     <>
@@ -149,13 +160,15 @@ function renderSummary(view: ResultsView) {
                         仅查询归档状态
                     </>
                 )}
-                {openable.length === 1 && openable[0] && view.openButton(openable[0])}
+                {openable.length === 1 && openable[0] && (
+                    <OpenSessionButton id={openable[0].id} open={view.open} />
+                )}
             </div>
         </div>
     );
 }
 
-function renderBatches(view: ResultsView, date: Actions["date"]) {
+function ArchiveBatchList({ view, date }: { view: ResultsView; date: Actions["date"] }) {
     const { state, status } = view.archive;
     return (
         <div id="archive-result-list" hidden={!view.expanded.value}>
@@ -170,9 +183,9 @@ function renderBatches(view: ResultsView, date: Actions["date"]) {
                                 <li key={item.id}>
                                     <div>
                                         {item.title}
-                                        {item.status === "newInput" &&
-                                            view.canOpen(item) &&
-                                            view.openButton(item)}
+                                        {item.status === "newInput" && view.canOpen(item) && (
+                                            <OpenSessionButton id={item.id} open={view.open} />
+                                        )}
                                         {item.message && <p>{item.message}</p>}
                                     </div>
                                     <span class="archive-item-status">
@@ -221,8 +234,8 @@ export function mountArchiveResults(host: HTMLElement, actions: Actions) {
                         </button>
                     </Teleport>
                     <section class="archive-results" aria-label="手动归档结果" hidden={legacy}>
-                        {renderSummary(view)}
-                        {renderBatches(view, date)}
+                        <ArchiveSummary view={view} />
+                        <ArchiveBatchList view={view} date={date} />
                     </section>
                 </>
             );

@@ -52,10 +52,48 @@ function returnsJsx(declaration) {
         ? declaration.initializer && ts.skipParentheses(declaration.initializer)
         : declaration;
     if (!implementation || !ts.isFunctionLike(implementation)) return false;
-    return returnedExpressions(implementation.body).some(
-        (node) =>
-            ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node),
+    return returnedExpressions(implementation.body).some(isJsxOutput);
+}
+
+function isJsxOutput(expression) {
+    const node = ts.skipParentheses(expression);
+    if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node))
+        return true;
+    if (ts.isConditionalExpression(node))
+        return isJsxOutput(node.whenTrue) || isJsxOutput(node.whenFalse);
+    if (ts.isBinaryExpression(node)) {
+        const operators = [
+            ts.SyntaxKind.AmpersandAmpersandToken,
+            ts.SyntaxKind.BarBarToken,
+            ts.SyntaxKind.QuestionQuestionToken,
+        ];
+        return (
+            operators.includes(node.operatorToken.kind) &&
+            (isJsxOutput(node.left) || isJsxOutput(node.right))
+        );
+    }
+    if (ts.isArrayLiteralExpression(node)) return node.elements.some(isJsxOutput);
+    if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return false;
+    const [callback] = node.arguments;
+    return (
+        node.expression.name.text === "map" &&
+        callback !== undefined &&
+        ts.isFunctionLike(callback) &&
+        returnedExpressions(callback.body).some(isJsxOutput)
     );
+}
+
+export function findCalledJsxRenderers(source, checker) {
+    const calls = [];
+    function visit(node) {
+        if (ts.isCallExpression(node)) {
+            const declaration = checker.getResolvedSignature(node)?.declaration;
+            if (declaration && returnsJsx(declaration)) calls.push(node);
+        }
+        ts.forEachChild(node, visit);
+    }
+    visit(source);
+    return calls;
 }
 
 function exportedDeclarations(source, checker) {
@@ -114,18 +152,23 @@ function main() {
     const files = ts.sys.readDirectory(join(root, "src", "ui"), [".tsx"]).sort();
     const program = ts.createProgram(files, {
         jsx: ts.JsxEmit.Preserve,
-        noLib: true,
-        noResolve: true,
+        module: ts.ModuleKind.ESNext,
+        moduleResolution: ts.ModuleResolutionKind.Bundler,
         types: [],
     });
     const checker = program.getTypeChecker();
-    for (const source of program.getSourceFiles()) {
-        for (const call of findForwardedRenders(source, checker)) {
+    for (const file of files) {
+        const source = program.getSourceFile(file);
+        const forwarded = new Set(findForwardedRenders(source, checker));
+        const calls = new Set([...forwarded, ...findCalledJsxRenderers(source, checker)]);
+        for (const call of calls) {
             const { line, character } = source.getLineAndCharacterOfPosition(call.getStart(source));
             const location = `${relative(root, source.fileName)}:${line + 1}:${character + 1}`;
-            console.error(
-                `${location}: Inline ${call.expression.text} in the render function returned by setup().`,
-            );
+            const name = call.expression.getText(source);
+            const message = forwarded.has(call)
+                ? `Inline ${name} in the render function returned by setup().`
+                : `Render ${name} as a JSX component instead of calling it directly.`;
+            console.error(`${location}: ${message}`);
             process.exitCode = 1;
         }
     }

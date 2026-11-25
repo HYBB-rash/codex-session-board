@@ -5,7 +5,7 @@ import { CardNote, CardProject } from "./shared/card/details";
 
 type CardActions = ReturnType<BoardControls["actions"]>;
 
-function cardNotices(session: BoardSession, actions: CardActions) {
+function CardNotices({ session, actions }: { session: BoardSession; actions: CardActions }) {
     const titleSync = session.titleSyncError
         ? `状态已保存，标题同步待重试：${session.titleSyncError}`
         : "状态已保存，标题正在同步";
@@ -22,12 +22,17 @@ function cardNotices(session: BoardSession, actions: CardActions) {
     );
 }
 
-function cardStatus(
-    session: BoardSession,
-    model: BoardModel,
-    actions: CardActions,
-    pending: boolean,
-) {
+function CardStatus({
+    session,
+    model,
+    actions,
+    pending,
+}: {
+    session: BoardSession;
+    model: BoardModel;
+    actions: CardActions;
+    pending: boolean;
+}) {
     const cached = session.catalogCurrent
         ? "上次目录快照，当前状态待确认"
         : "历史缓存，当前目录未确认此会话";
@@ -48,17 +53,22 @@ function cardStatus(
             {!session.manual && session.state === "blocked" && (
                 <div class="card-note">{session.reason}</div>
             )}
-            {cardNotices(session, actions)}
+            <CardNotices session={session} actions={actions} />
         </>
     );
 }
 
-function cardFooter(
-    session: BoardSession,
-    dependencies: BoardControls,
-    actions: CardActions,
-    locked: boolean,
-) {
+function CardFooter({
+    session,
+    dependencies,
+    actions,
+    locked,
+}: {
+    session: BoardSession;
+    dependencies: BoardControls;
+    actions: CardActions;
+    locked: boolean;
+}) {
     const adjustTitle = `${session.state === null ? "归列：" : "调整状态或备注："}${session.title}`;
     const updatedAt = dependencies.date(session.updatedAt);
     return (
@@ -158,8 +168,18 @@ export default defineComponent({
                         {session.title}
                     </button>
                     <CardProject project={dependencies.project(session)} />
-                    {cardStatus(session, model, actions, pending)}
-                    {cardFooter(session, dependencies, actions, locked)}
+                    <CardStatus
+                        session={session}
+                        model={model}
+                        actions={actions}
+                        pending={pending}
+                    />
+                    <CardFooter
+                        session={session}
+                        dependencies={dependencies}
+                        actions={actions}
+                        locked={locked}
+                    />
                 </article>
             );
         };
