@@ -1,4 +1,4 @@
-import { h, render } from "vue";
+import { render } from "vue";
 import type { mountBoardArchive } from "./archive/controls";
 import { createCardDrag } from "./drag";
 import { type BoardElements, createBoardLayout } from "./layout";
@@ -73,9 +73,9 @@ export function mountBoard(elements: BoardElements, dependencies: BoardDependenc
                 () => {
                     const focusedSort =
                         viewport.querySelector<HTMLButtonElement>(".column-sort:focus");
-                    render(h(BoardColumns, { model, dependencies: controls }), viewport);
+                    render(<BoardColumns model={model} dependencies={controls} />, viewport);
                     render(
-                        h(BoardColumns, { model, dependencies: controls, unplaced: true }),
+                        <BoardColumns model={model} dependencies={controls} unplaced />,
                         layout.unplacedCards,
                     );
                     if (focusedSort?.isConnected && document.activeElement === document.body)
