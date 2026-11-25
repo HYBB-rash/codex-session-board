@@ -86,7 +86,7 @@ function verifyFrozenContracts(candidate, requirements, registry) {
     assert.equal(candidate.schema_version, 1);
     assert.equal(candidate.upstream_commit, upstream);
     assert.equal(
-        sha256("src/ui/shared/board-operations.json"),
+        sha256("src/ui/shared/board/operations.json"),
         candidate.operation_registry_sha256,
     );
     assert.equal(requirements.size, 31, "baseline requirements");
@@ -121,7 +121,7 @@ function main() {
     const candidate = json("acceptance/candidate-map.json");
     const baseline = json("acceptance/requirements.json").requirements;
     const requirements = new Map(baseline.map((entry) => [entry.id, entry]));
-    const registry = json("src/ui/shared/board-operations.json");
+    const registry = json("src/ui/shared/board/operations.json");
     verifyFrozenContracts(candidate, requirements, registry);
     verifyEvidence(candidate.evidence);
     verifyEntries(candidate.requirements, candidate.evidence, "requirements", requirements);

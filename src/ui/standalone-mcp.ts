@@ -1,5 +1,5 @@
 import { App, applyDocumentTheme, type McpUiHostContext } from "@modelcontextprotocol/ext-apps";
-import operations from "./shared/board-operations.json";
+import operations from "./shared/board/operations.json";
 import { startBoard } from "./standalone-page";
 
 const app = new App(

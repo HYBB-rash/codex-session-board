@@ -1,5 +1,5 @@
 import { h, render } from "vue";
-import type { ProjectTag } from "../../shared/card-details";
+import type { ProjectTag } from "../../shared/card/details";
 import type { mountBoardArchive } from "./archive/controls";
 import { createCardDrag } from "./drag";
 import { type BoardElements, createBoardLayout } from "./layout";

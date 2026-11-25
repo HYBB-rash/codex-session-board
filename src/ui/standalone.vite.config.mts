@@ -42,7 +42,7 @@ function standaloneAssets(): Plugin {
             this.emitFile({
                 type: "asset",
                 fileName: "board-operations.json",
-                source: readFileSync("src/ui/shared/board-operations.json"),
+                source: readFileSync("src/ui/shared/board/operations.json"),
             });
             const worker = await build({
                 entryPoints: ["src/ui/standalone-sw.ts"],
