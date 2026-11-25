@@ -58,61 +58,78 @@ export function emptyLedger(): BoardLedger {
     return { batches: [], columnSorts: {} };
 }
 
-export class Archive {
-    private readonly submitted = new Set<string>();
-    private tail: Promise<unknown> = Promise.resolve();
+function archiveItemStatus(
+    current: ArchiveItem,
+    from: "awaiting" | "pending",
+    status: ArchiveState,
+    checkedAt: number,
+    message?: string,
+) {
+    const next = { ...current, status, ...(message ? { message } : {}) };
+    if (from === "pending" || status !== "pending") next.checkedAt = checkedAt;
+    if (!message) delete next.message;
+    return next;
+}
 
-    constructor(private readonly ports: ArchivePorts) {}
+function rejectedStatus(error: unknown): "newInput" | "rejected" {
+    return error instanceof NewInputError ? "newInput" : "rejected";
+}
 
-    batches(): ArchiveBatch[] {
-        return this.ports.ledger().batches;
+export function createArchive(ports: ArchivePorts) {
+    const submitted = new Set<string>();
+    let tail: Promise<unknown> = Promise.resolve();
+
+    function batches(): ArchiveBatch[] {
+        return ports.ledger().batches;
     }
 
-    private enqueue<T>(work: () => Promise<T>): Promise<T> {
-        const operation = this.tail.then(work);
-        this.tail = operation.then(
+    function enqueue<T>(work: () => Promise<T>): Promise<T> {
+        const operation = tail.then(work);
+        tail = operation.then(
             () => undefined,
             () => undefined,
         );
         return operation;
     }
 
-    async change<T>(transform: (old: BoardLedger) => { next: BoardLedger; result: T }): Promise<T> {
-        const scope = this.ports.scope();
-        return this.enqueue(async () => {
-            this.requireScope(scope);
-            const { next, result } = transform(this.ports.ledger());
-            await this.ports.write(next);
-            this.requireScope(scope);
+    async function change<T>(
+        transform: (old: BoardLedger) => { next: BoardLedger; result: T },
+    ): Promise<T> {
+        const scope = ports.scope();
+        return enqueue(async () => {
+            requireScope(scope);
+            const { next, result } = transform(ports.ledger());
+            await ports.write(next);
+            requireScope(scope);
             return result;
         });
     }
 
-    private requireScope(scope: string): void {
-        if (scope !== this.ports.scope()) throw new Error("归档期间 Codex 账号已变更");
+    function requireScope(scope: string): void {
+        if (scope !== ports.scope()) throw new Error("归档期间 Codex 账号已变更");
     }
 
-    private requireBatch(id: string): ArchiveBatch {
-        const batch = this.batches().find((entry) => entry.id === id);
+    function requireBatch(id: string): ArchiveBatch {
+        const batch = batches().find((entry) => entry.id === id);
         if (!batch) throw new Error("找不到归档批次");
         return batch;
     }
 
-    start(id: string, items: ArchiveTarget[], single?: true): Promise<ArchiveBatch> {
+    function start(id: string, items: ArchiveTarget[], single?: true): Promise<ArchiveBatch> {
         if (
             !/^[\da-f-]{36}$/i.test(id) ||
             items.length === 0 ||
             items.length !== new Set(items.map((item) => item.id)).size
         )
             throw new Error("归档批次不合法");
-        return this.change((old) => {
+        return change((old) => {
             const previous = old.batches.find((entry) => entry.id === id);
             const targets = items.map(({ sectionVersion, ...item }, index) => ({
                 ...item,
                 sectionVersion:
                     previous?.items[index]?.sectionVersion === sectionVersion
                         ? sectionVersion
-                        : this.ports.nativeVersion(sectionVersion),
+                        : ports.nativeVersion(sectionVersion),
             }));
             if (previous) {
                 if (
@@ -133,12 +150,12 @@ export class Archive {
         });
     }
 
-    private patch(
+    function patch(
         id: string,
         transform: (batch: ArchiveBatch) => ArchiveBatch,
     ): Promise<ArchiveBatch> {
-        return this.change((old) => {
-            const batch = transform(this.requireBatch(id));
+        return change((old) => {
+            const batch = transform(requireBatch(id));
             return {
                 next: { ...old, batches: old.batches.map((row) => (row.id === id ? batch : row)) },
                 result: batch,
@@ -146,29 +163,27 @@ export class Archive {
         });
     }
 
-    finish(id: string): Promise<ArchiveBatch> {
-        return this.patch(id, (batch) => ({
+    function finish(id: string): Promise<ArchiveBatch> {
+        return patch(id, (batch) => ({
             ...batch,
             finishedAt: batch.finishedAt ?? Date.now() / 1000,
         }));
     }
 
-    private set(
+    function set(
         id: string,
         item: ArchiveItem,
         from: "awaiting" | "pending",
         status: ArchiveState,
         message?: string,
     ): Promise<{ item: ArchiveItem; changed: boolean }> {
-        return this.change<{ item: ArchiveItem; changed: boolean }>((old) => {
-            const batch = this.requireBatch(id);
+        return change<{ item: ArchiveItem; changed: boolean }>((old) => {
+            const batch = requireBatch(id);
             const current = batch.items.find((row) => row.id === item.id);
             if (!current) throw new Error("会话不在此归档批次");
             if (current.status !== from || (from === "awaiting" && batch.finishedAt !== null))
                 return { next: old, result: { item: current, changed: false } };
-            const next = { ...current, status, ...(message ? { message } : {}) };
-            if (from === "pending" || status !== "pending") next.checkedAt = Date.now() / 1000;
-            if (!message) delete next.message;
+            const next = archiveItemStatus(current, from, status, Date.now() / 1000, message);
             const updated = {
                 ...batch,
                 items: batch.items.map((row) => (row.id === item.id ? next : row)),
@@ -183,35 +198,39 @@ export class Archive {
         });
     }
 
-    pending(id: string): boolean {
-        return this.batches().some((batch) =>
+    function pending(id: string): boolean {
+        return batches().some((batch) =>
             batch.items.some((item) => item.id === id && item.status === "pending"),
         );
     }
 
-    async check(id: string): Promise<ArchiveBatch> {
-        const scope = this.ports.scope();
-        for (const item of this.requireBatch(id).items) {
-            if (item.status !== "pending" || this.submitted.has(item.id)) continue;
-            let archived: boolean;
-            try {
-                archived = await this.ports.isArchived(item.id);
-            } catch (error) {
-                this.requireScope(scope);
-                if (error instanceof ArchiveReadUnavailable) continue;
-                throw error;
-            }
-            this.requireScope(scope);
-            if (archived) await this.set(id, item, "pending", "verified");
+    async function checkPendingItem(batch: string, item: ArchiveItem, scope: string) {
+        let archived: boolean;
+        try {
+            archived = await ports.isArchived(item.id);
+        } catch (error) {
+            requireScope(scope);
+            if (error instanceof ArchiveReadUnavailable) return;
+            throw error;
         }
-        this.requireScope(scope);
-        return this.requireBatch(id);
+        requireScope(scope);
+        if (archived) await set(batch, item, "pending", "verified");
     }
 
-    async single(candidate: ArchiveTarget): Promise<ArchiveItem> {
-        const scope = this.ports.scope();
-        const version = this.ports.nativeVersion(candidate.sectionVersion);
-        const existing = this.batches().find(({ single, items }) => {
+    async function check(id: string): Promise<ArchiveBatch> {
+        const scope = ports.scope();
+        for (const item of requireBatch(id).items) {
+            if (item.status !== "pending" || submitted.has(item.id)) continue;
+            await checkPendingItem(id, item, scope);
+        }
+        requireScope(scope);
+        return requireBatch(id);
+    }
+
+    async function single(candidate: ArchiveTarget): Promise<ArchiveItem> {
+        const scope = ports.scope();
+        const version = ports.nativeVersion(candidate.sectionVersion);
+        const existing = batches().find(({ single, items }) => {
             const item = items[0];
             return (
                 single &&
@@ -221,84 +240,90 @@ export class Archive {
                 item.sectionVersion === version
             );
         });
-        const batch = existing ?? (await this.start(crypto.randomUUID(), [candidate], true));
-        this.requireScope(scope);
-        const item = await this.submit(batch.id, candidate);
-        this.requireScope(scope);
-        await this.finish(batch.id);
+        const batch = existing ?? (await start(crypto.randomUUID(), [candidate], true));
+        requireScope(scope);
+        const item = await submit(batch.id, candidate);
+        requireScope(scope);
+        await finish(batch.id);
         return item;
     }
 
-    async submit(batchId: string, candidate: ArchiveTarget): Promise<ArchiveItem> {
-        const batch = this.requireBatch(batchId);
+    async function submit(batchId: string, candidate: ArchiveTarget): Promise<ArchiveItem> {
+        const batch = requireBatch(batchId);
         const item = batch.items.find((row) => row.id === candidate.id);
         if (
             !item ||
             item.version !== candidate.version ||
             item.inputVersion !== candidate.inputVersion ||
             (item.sectionVersion !== candidate.sectionVersion &&
-                item.sectionVersion !== this.ports.nativeVersion(candidate.sectionVersion))
+                item.sectionVersion !== ports.nativeVersion(candidate.sectionVersion))
         )
             throw new Error("归档请求版本与批次登记不符");
         if (item.status !== "awaiting") return item;
-        if (batch.finishedAt !== null || this.submitted.has(item.id) || this.pending(item.id)) {
+        if (batch.finishedAt !== null || submitted.has(item.id) || pending(item.id)) {
             throw new Error("这条会话已有归档记录，请先核对");
         }
-        this.submitted.add(item.id);
+        submitted.add(item.id);
         try {
-            return await this.submitItem(batchId, item);
+            return await submitItem(batchId, item);
         } finally {
-            this.submitted.delete(item.id);
+            submitted.delete(item.id);
         }
     }
 
-    private async submitItem(batch: string, item: ArchiveItem): Promise<ArchiveItem> {
-        const scope = this.ports.scope();
+    async function submitItem(batch: string, item: ArchiveItem): Promise<ArchiveItem> {
+        const scope = ports.scope();
         try {
-            await this.ports.verify(item);
+            await ports.verify(item);
         } catch (error) {
-            this.requireScope(scope);
-            const rejected = await this.set(
+            requireScope(scope);
+            const rejected = await set(
                 batch,
                 item,
                 "awaiting",
-                error instanceof NewInputError ? "newInput" : "rejected",
+                rejectedStatus(error),
                 String(error),
             );
             return rejected.item;
         }
-        this.requireScope(scope);
-        const claimed = await this.set(batch, item, "awaiting", "pending");
+        requireScope(scope);
+        const claimed = await set(batch, item, "awaiting", "pending");
         if (!claimed.changed) return claimed.item;
         let pending = claimed.item;
         try {
-            this.requireScope(scope);
-            await this.ports.archive(item);
+            requireScope(scope);
+            await ports.archive(item);
         } catch (error) {
-            this.requireScope(scope);
+            requireScope(scope);
             if (error instanceof ArchivePreconditionError) {
-                const rejected = await this.set(
+                const rejected = await set(
                     batch,
                     item,
                     "pending",
-                    error instanceof NewInputError ? "newInput" : "rejected",
+                    rejectedStatus(error),
                     String(error),
                 );
                 return rejected.item;
             }
-            pending = (await this.set(batch, pending, "pending", "pending", String(error))).item;
+            pending = (await set(batch, pending, "pending", "pending", String(error))).item;
         }
-        try {
-            this.requireScope(scope);
-            const archived = await this.ports.isArchived(item.id);
-            this.requireScope(scope);
-            if (archived) return (await this.set(batch, pending, "pending", "archived")).item;
-        } catch (error) {
-            this.requireScope(scope);
-            return (await this.set(batch, pending, "pending", "pending", String(error))).item;
-        }
-        return pending;
+        return confirmSubmission(batch, pending, scope);
     }
+
+    async function confirmSubmission(batch: string, item: ArchiveItem, scope: string) {
+        try {
+            requireScope(scope);
+            const archived = await ports.isArchived(item.id);
+            requireScope(scope);
+            if (archived) return (await set(batch, item, "pending", "archived")).item;
+        } catch (error) {
+            requireScope(scope);
+            return (await set(batch, item, "pending", "pending", String(error))).item;
+        }
+        return item;
+    }
+
+    return { batches, change, start, finish, pending, check, single, submit };
 }
 
 function sameArchiveTarget(item: ArchiveTarget, other: ArchiveTarget | undefined): boolean {

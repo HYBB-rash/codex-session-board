@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-    Archive,
     ArchivePreconditionError,
     ArchiveReadUnavailable,
     type ArchiveTarget,
     type BoardLedger,
+    createArchive,
     emptyLedger,
 } from "./archive.js";
 
@@ -22,7 +22,7 @@ function harness(
     const checked: string[] = [];
     const archived = new Set<string>();
     const create = () =>
-        new Archive({
+        createArchive({
             scope: () => scope,
             ledger: () => ledger,
             nativeVersion: (version) => version ?? "",

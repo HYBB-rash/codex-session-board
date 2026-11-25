@@ -7,12 +7,12 @@ import {
     turnInput,
 } from "./activity.js";
 import {
-    Archive,
     type ArchiveItem,
     ArchivePreconditionError,
     ArchiveReadUnavailable,
     type ArchiveTarget,
     type BoardLedger,
+    createArchive,
     emptyLedger,
     NewInputError,
     type SortPreference,
@@ -257,7 +257,7 @@ export class BoardService {
         string,
         { projectId: string; result: ReturnType<BoardService["createTrackedDraft"]> }
     >();
-    private readonly archive = new Archive({
+    private readonly archive = createArchive({
         scope: () => accountKey(this.requiredContext()),
         ledger: () => this.ledger,
         write: (next) => this.writeLedger(next),
