@@ -12,6 +12,7 @@
         "typecheck:ui": "npm run --silent typecheck",
         "detect": "npm run build --silent && node dist/bin/codex-enhancer.js detect",
         "install": "if [ \"${npm_command:-}\" = run-script ]; then npm run build --silent && node dist/bin/codex-enhancer.js install; fi",
+        "install:copy": "bash scripts/install-copy.sh",
         "install:in-place": "bash scripts/install-in-place.sh",
         "uninstall": "npm run build --silent && node dist/bin/codex-enhancer.js uninstall",
         "status": "npm run build --silent && node dist/bin/codex-enhancer.js status",

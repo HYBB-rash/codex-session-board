@@ -100,23 +100,25 @@ export function ensureTestCopy(source: Detection): void {
     }
 }
 
-function linuxCopyPids(): string[] {
+function linuxCopyPids(testApp: string): string[] {
+    const reaper = path.join(testApp, ".codex-linux", "node-repl-reaper.sh");
     return fs.readdirSync("/proc").filter((entry) => {
         if (!/^\d+$/.test(entry) || entry === String(process.pid)) return false;
         try {
             const args = fs.readFileSync(`/proc/${entry}/cmdline`, "utf8").split("\0");
-            return args.some((argument) => argument.startsWith(`${paths.testApp}/`));
+            if (args[1] === reaper && args[2] === testApp && args[3] === "watch") return false;
+            return args.some((argument) => argument.startsWith(`${testApp}/`));
         } catch {
             return false;
         }
     });
 }
 
-function macCopyPids(): string[] {
+function macCopyPids(testApp: string): string[] {
     const processes = execFileSync("/bin/ps", ["-ax", "-o", "pid=,comm="], { encoding: "utf8" });
-    const canonical = resolvedExisting(paths.testApp);
+    const canonical = resolvedExisting(testApp);
     const alias = canonical.replace(/^\/private(?=\/(?:tmp|var|etc)\/)/, "");
-    const prefixes = [paths.testApp, canonical, alias].map((directory) => `${directory}/`);
+    const prefixes = [testApp, canonical, alias].map((directory) => `${directory}/`);
     return processes.split("\n").flatMap((line) => {
         const match = /^\s*(\d+)\s+(.*)$/.exec(line);
         return match?.[1] && prefixes.some((prefix) => match[2]?.startsWith(prefix))
@@ -125,8 +127,8 @@ function macCopyPids(): string[] {
     });
 }
 
-export function assertTestCopyStopped(): void {
-    const pids = process.platform === "darwin" ? macCopyPids() : linuxCopyPids();
+export function assertTestCopyStopped(testApp = paths.testApp): void {
+    const pids = process.platform === "darwin" ? macCopyPids(testApp) : linuxCopyPids(testApp);
     if (pids.length > 0)
         throw new Error(`quit the Enhancer copy before changing it (pids ${pids.join(", ")})`);
 }

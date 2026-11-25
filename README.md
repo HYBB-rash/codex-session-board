@@ -4,6 +4,10 @@
 
 ## 安装和打开
 
+在 Linux x86_64 上试用当前工作区时，先用 Node.js 22 或更新版本运行 `npm ci` 安装依赖，再执行 `npm run install:copy`。命令打包、校验并启动独立副本，默认安装在 `~/.local/share/codex-enhancer/preview/`，也会遵循 `XDG_DATA_HOME`。更新前请完全退出测试副本，再执行同一条命令。副本的桌面配置和看板数据独立保存，日用 Codex 继续通过原图标打开。
+
+如果日用 Codex 将登录缓存写在 `CODEX_HOME/auth.json`，且副本还没有自己的缓存，该命令会让副本引用同一份登录缓存。日用 `CODEX_HOME` 默认为 `~/.codex`。两个窗口使用同一份登录凭据，账号退出或切换可能影响另一个窗口。
+
 本轮交付 `0.3.33`。Fedora 44 x86_64 的 Codex `26.1111.71704` 已通过副本和原地模式的安装、启动、更新、回退和卸载验收。macOS arm64 另有对照用副本候选，剩余验收暂缓。 [下载与校验文件](docs/session-board-typescript-acceptance.md#033-候选) · [macOS 暂缓项](docs/session-board-typescript-acceptance.md#本轮交付范围)
 
 在 Linux 候选包所在目录校验归档，再进入解压目录运行 Node.js 22 或更新版本。
