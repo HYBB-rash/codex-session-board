@@ -139,12 +139,20 @@ function desktopBoard(mountBoard: MountBoard): void {
         mountPage(id, panel, close, showConversation) {
             if (id !== "session-board") return;
             closePage = close;
-            const unmount = mountBoard(panel, board.request, close, {
-                async open(id) {
-                    await board.openBesideBoard(id);
+            const unmount = mountBoard(
+                panel,
+                (path, body) =>
+                    path === "/api/new"
+                        ? board.createBesideBoard(body, () => showConversation(true, "draft"))
+                        : board.request(path, body),
+                close,
+                {
+                    async open(id) {
+                        await board.openBesideBoard(id);
+                    },
+                    setVisible: showConversation,
                 },
-                setVisible: showConversation,
-            });
+            );
             return () => {
                 closePage = undefined;
                 unmount();

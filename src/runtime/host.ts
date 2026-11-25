@@ -14,7 +14,7 @@ export interface UiHostOptions {
         id: string,
         panel: HTMLElement,
         close: () => void,
-        showConversation: (visible: boolean) => void,
+        showConversation: (visible: boolean, mode?: "draft") => void,
     ): (() => void) | undefined;
 }
 
@@ -340,7 +340,7 @@ function closeConversation(host: HostState, restoreFocus = false): void {
     if (restoreFocus) drawer.previousFocus?.focus({ preventScroll: true });
 }
 
-function showConversation(host: HostState, visible: boolean): void {
+function showConversation(host: HostState, visible: boolean, mode?: "draft"): void {
     if (!visible) {
         closeConversation(host);
         return;
@@ -351,7 +351,10 @@ function showConversation(host: HostState, visible: boolean): void {
     if (!isHtmlElement(surface) || !contentBox())
         throw new Error("当前 Codex 窗口未提供会话区域。");
     const content = panel.firstElementChild;
-    const active = content?.shadowRoot?.activeElement ?? document.activeElement;
+    const returnFocus =
+        mode === "draft"
+            ? content?.shadowRoot?.getElementById("new-session")
+            : (content?.shadowRoot?.activeElement ?? document.activeElement);
     const background = isHtmlElement(content) && !content.inert ? content : null;
     const scrim = document.createElement("button");
     scrim.type = "button";
@@ -370,13 +373,19 @@ function showConversation(host: HostState, visible: boolean): void {
         scrim,
         titlebar: null,
         background,
-        previousFocus: isHtmlElement(active) ? active : null,
+        previousFocus: isHtmlElement(returnFocus) ? returnFocus : null,
     };
     if (background) background.inert = true;
     document.head.append(style);
     panel.append(scrim);
     place(host);
-    surface.focus({ preventScroll: true });
+    const editor =
+        mode === "draft"
+            ? [
+                  ...surface.querySelectorAll<HTMLElement>('.ProseMirror[contenteditable="true"]'),
+              ].find((element) => element.getClientRects().length > 0)
+            : undefined;
+    (editor ?? surface).focus({ preventScroll: true });
 }
 
 function dismissOnEscape(host: HostState, event: KeyboardEvent): void {
@@ -441,8 +450,8 @@ function openPage(host: HostState, item: SidebarItemRegistration): void {
         item.id,
         panel,
         () => closePage(host),
-        (visible) => {
-            if (host.panel === panel) showConversation(host, visible);
+        (visible, mode) => {
+            if (host.panel === panel) showConversation(host, visible, mode);
         },
     );
     if (!host.unmount) panel.append(pageContent(host, item));

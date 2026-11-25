@@ -125,10 +125,7 @@ function transportFixture(
     return { desktop, writes, readIds };
 }
 
-function assignmentFixture(
-    { desktop, writes, readIds } = transportFixture(),
-    closePage: () => void = () => assert.fail("Assignment must not navigate"),
-) {
+function assignmentFixture({ desktop, writes, readIds } = transportFixture()) {
     const service = createBoardService(desktop, {
         load: async () => ({ records: {}, legacyCachedCards: [] }),
         save: async () => assert.fail("Assignment must not change card records"),
@@ -138,7 +135,7 @@ function assignmentFixture(
         writeLedger: async () => assert.fail("Assignment must not change archive data"),
         settings: async () => defaults,
         titleEpoch: async () => assert.fail("Assignment must not enable title synchronization"),
-        closePage,
+        closePage: () => assert.fail("The board must stay open"),
         authority: () => {},
         updateStatus: async () => assert.fail("Assignment must not update the board"),
         proof: () => {},
@@ -185,7 +182,7 @@ test("local new sessions repair only the bound draft with no existing assignment
         ];
         for (const { bound, expected, existingProject, workingDirectory } of cases) {
             const binding = deferred<ThreadId | null>();
-            let closed = false;
+            let draftsShown = 0;
             const transport = transportFixture(
                 async (command) => {
                     assert.equal(command.hostId, localHostId);
@@ -198,15 +195,15 @@ test("local new sessions repair only the bound draft with no existing assignment
                     ...(workingDirectory ? { workingDirectory } : {}),
                 },
             );
-            const { service, writes, readIds } = assignmentFixture(transport, () => {
-                closed = true;
-            });
+            const { service, writes, readIds } = assignmentFixture(transport);
             await service.refresh();
-            assert.deepEqual(await service.request("/api/new", { projectId: "local-project" }), {
-                ok: true,
-                registration: false,
-            });
-            assert.equal(closed, true);
+            assert.deepEqual(
+                await service.createBesideBoard({ projectId: "local-project" }, () => {
+                    draftsShown++;
+                }),
+                { ok: true, registration: false },
+            );
+            assert.equal(draftsShown, 1);
             assert.deepEqual(writes, []);
             const readsBeforeBinding = readIds.length;
             binding.resolve(bound);
@@ -335,6 +332,42 @@ test("overlapping requests share one native draft open and can resume after regi
         assert.deepEqual(stages, ["starting", "starting", "opened"]);
         assert.deepEqual(writes, []);
         assert.equal(closed(), 2);
+    } finally {
+        Reflect.set(globalThis, "window", original);
+    }
+});
+
+test("a remote draft opens beside the board after native project registration", async () => {
+    const original = Reflect.get(globalThis, "window");
+    Reflect.set(globalThis, "window", globalThis);
+    try {
+        const { service, stages, gates, writes, closed } = draftFixture();
+        const [registration, composer] = gates;
+        assert.ok(registration && composer);
+        await service.refresh();
+        const target = service
+            .snapshot()
+            .projectCatalog.items.find(({ hostId }) => hostId === remote);
+        assert.ok(target);
+        const operationId = "00000000-0000-4000-8000-000000000026";
+        let draftsShown = 0;
+        const request = () =>
+            service.createBesideBoard({ projectId: target.id, operationId }, () => {
+                draftsShown++;
+            });
+
+        registration.outcome.resolve("registration");
+        assert.deepEqual(await request(), { ok: true, registration: true, operationId });
+        assert.equal(closed(), 1);
+        assert.equal(draftsShown, 0);
+
+        composer.outcome.resolve("composer");
+        assert.deepEqual(await request(), { ok: true, registration: false, operationId });
+        assert.deepEqual(await request(), { ok: true, operationId });
+        assert.equal(closed(), 1);
+        assert.equal(draftsShown, 1);
+        assert.deepEqual(stages, ["starting", "starting", "opened"]);
+        assert.deepEqual(writes, []);
     } finally {
         Reflect.set(globalThis, "window", original);
     }
