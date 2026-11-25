@@ -29,15 +29,31 @@ const histories = [
     { value: "cached", label: "历史缓存" },
 ];
 
-class BoardFilters {
-    readonly state = shallowReactive({
+function projectCatalogUnavailable(
+    local: boolean,
+    remote: HostCatalog | undefined,
+    { projectCatalog, health }: BoardSnapshot,
+) {
+    if (local) return projectCatalog.error || !projectCatalog.loaded;
+    if (remote) return remote.error || remote.cached || !remote.complete;
+    return health.remoteError;
+}
+
+function projectScopeLabel(search: boolean, allHosts: boolean, project?: FilterOption) {
+    if (search) return "全部项目 · 搜索";
+    if (allHosts) return "全部会话";
+    return project?.label ?? "全部项目";
+}
+
+export function mountBoardFilters(container: HTMLElement, scope: HTMLElement, sources: Sources) {
+    const state = shallowReactive({
         host: "local",
         project: "all",
         history: "active",
         search: false,
         query: "",
     });
-    readonly view = shallowReactive({
+    const view = shallowReactive({
         hosts: [] as FilterOption[],
         projects: [] as FilterOption[],
         hostLabel: "本机",
@@ -47,20 +63,15 @@ class BoardFilters {
         locked: false,
         projectUnavailable: true,
     });
-    private searchInput: HTMLInputElement | null = null;
-    private projectMenu: HTMLSelectElement | null = null;
-    private catalogKey = "";
-    private catalogOptions: FilterOption[] = [];
+    let searchInput: HTMLInputElement | null = null;
+    let projectMenu: HTMLSelectElement | null = null;
+    let catalogKey = "";
+    let catalogOptions: FilterOption[] = [];
 
-    constructor(
-        private readonly sources: Sources,
-        private readonly scope: HTMLElement,
-    ) {}
-
-    private projectOptions(host: string) {
-        const items = this.sources.hostProjects(host);
+    function projectOptions(host: string) {
+        const items = sources.hostProjects(host);
         const key = JSON.stringify([host, items]);
-        if (key === this.catalogKey) return this.catalogOptions;
+        if (key === catalogKey) return catalogOptions;
         const all = host === "all";
         const options: FilterOption[] = [
             { value: "all", label: all ? "先选择一台主机" : "全部项目" },
@@ -69,18 +80,17 @@ class BoardFilters {
         for (const item of items) {
             options.push({
                 value: `project:${item.id}`,
-                label: this.sources.projectLabel(item),
+                label: sources.projectLabel(item),
                 path: item.paths.join(" · "),
                 hostId: item.remote ? item.hostId : undefined,
             });
         }
-        this.catalogKey = key;
-        this.catalogOptions = options;
+        catalogKey = key;
+        catalogOptions = options;
         return options;
     }
 
-    private updateHosts() {
-        const { state, view, sources } = this;
+    function updateHosts() {
         const hosts: FilterOption[] = [
             { value: "all", label: "全部主机" },
             ...sources.hosts().map((host) => ({
@@ -95,21 +105,16 @@ class BoardFilters {
         view.hosts = hosts;
     }
 
-    private updateProjects({ projectCatalog, health }: BoardSnapshot) {
-        const { state, view, sources } = this;
+    function updateProjects(snapshot: BoardSnapshot) {
         const allHosts = state.host === "all",
             local = state.host === "local";
         const remote = sources.hostCatalog(state.host);
-        view.projectUnavailable = allHosts || (!projectCatalog.loaded && (local || !remote));
-        let projects = this.projectOptions(state.host);
+        view.projectUnavailable =
+            allHosts || (!snapshot.projectCatalog.loaded && (local || !remote));
+        let projects = projectOptions(state.host);
         let project = projects.find((option) => option.value === state.project);
         if (!project) {
-            const failed = local
-                ? projectCatalog.error || !projectCatalog.loaded
-                : remote
-                  ? remote.error || remote.cached || !remote.complete
-                  : health.remoteError;
-            if (failed) {
+            if (projectCatalogUnavailable(local, remote, snapshot)) {
                 const previous =
                     view.projects.find((option) => option.value === state.project)?.label ||
                     "上次选择的项目";
@@ -126,16 +131,11 @@ class BoardFilters {
         }
         view.projects = projects;
         const history = histories.find((option) => option.value === state.history)?.label ?? "活动";
-        const projectScope = state.search
-            ? "全部项目 · 搜索"
-            : allHosts
-              ? "全部会话"
-              : (project?.label ?? "全部项目");
+        const projectScope = projectScopeLabel(state.search, allHosts, project);
         view.scope = `${view.hostLabel} · ${projectScope} · ${history}`;
     }
 
-    private updateSessions({ projectCatalog }: BoardSnapshot) {
-        const { state, view, sources } = this;
+    function updateSessions({ projectCatalog }: BoardSnapshot) {
         const sessions = sources.hostSessions(state.host).filter((session) => {
             if (state.history === "cached") return session.presence === "cachedUnknown";
             if (session.presence === "cachedUnknown" && !session.catalogCurrent) return false;
@@ -170,19 +170,18 @@ class BoardFilters {
         });
     }
 
-    readonly update = (snapshot: BoardSnapshot) => {
-        this.updateHosts();
-        this.updateProjects(snapshot);
-        this.updateSessions(snapshot);
-        this.updateLock();
-    };
+    function update(snapshot: BoardSnapshot) {
+        updateHosts();
+        updateProjects(snapshot);
+        updateSessions(snapshot);
+        updateLock();
+    }
 
-    readonly updateLock = () => {
-        this.view.locked = this.sources.locked();
-    };
+    function updateLock() {
+        view.locked = sources.locked();
+    }
 
-    private select(field: "host" | "project" | "history", event: Event) {
-        const { state, view, sources } = this;
+    function select(field: "host" | "project" | "history", event: Event) {
         const menu = event.currentTarget as HTMLSelectElement;
         if (sources.locked() || (field === "project" && view.projectUnavailable)) {
             menu.value = state[field];
@@ -196,16 +195,16 @@ class BoardFilters {
         }
         sources.changed();
     }
-    private readonly toggle = async () => {
-        const { state, sources } = this;
+
+    async function toggle() {
         if (sources.locked()) return;
         state.search = !state.search;
         sources.changed();
         await nextTick();
-        (state.search ? this.searchInput : this.projectMenu)?.focus();
-    };
+        (state.search ? searchInput : projectMenu)?.focus();
+    }
 
-    private options(items: FilterOption[]) {
+    function options(items: FilterOption[]) {
         return items.map((item) => (
             <option
                 key={item.value}
@@ -217,10 +216,9 @@ class BoardFilters {
         ));
     }
 
-    private readonly projectNodes = computed(() => this.options(this.view.projects));
+    const projectNodes = computed(() => options(view.projects));
 
-    private renderMenus() {
-        const { state, view } = this;
+    function renderMenus() {
         return (
             <>
                 <label class="filter-field">
@@ -230,8 +228,8 @@ class BoardFilters {
                         aria-label="选择主机"
                         value={state.host}
                         disabled={view.locked}
-                        onChange={(event) => this.select("host", event)}>
-                        {this.options(view.hosts)}
+                        onChange={(event) => select("host", event)}>
+                        {options(view.hosts)}
                     </select>
                 </label>
                 <div class="filter-field">
@@ -240,13 +238,13 @@ class BoardFilters {
                         id="project-filter"
                         aria-label="选择项目"
                         ref={(node) => {
-                            this.projectMenu = node as HTMLSelectElement | null;
+                            projectMenu = node as HTMLSelectElement | null;
                         }}
                         hidden={state.search}
                         value={state.project}
                         disabled={view.locked || view.projectUnavailable}
-                        onChange={(event) => this.select("project", event)}>
-                        {this.projectNodes.value}
+                        onChange={(event) => select("project", event)}>
+                        {projectNodes.value}
                     </select>
                 </div>
                 <label class="filter-field">
@@ -256,26 +254,25 @@ class BoardFilters {
                         aria-label="选择会话范围"
                         value={state.history}
                         disabled={view.locked}
-                        onChange={(event) => this.select("history", event)}>
-                        {this.options(histories)}
+                        onChange={(event) => select("history", event)}>
+                        {options(histories)}
                     </select>
                 </label>
             </>
         );
     }
 
-    readonly render = () => {
-        const { state, view, sources, scope } = this;
+    function render() {
         return (
             <>
-                {this.renderMenus()}
+                {renderMenus()}
                 <input
                     id="search"
                     type="search"
                     placeholder={`搜索${view.hostLabel}上的会话…`}
                     aria-label="搜索会话、项目名称或路径"
                     ref={(node) => {
-                        this.searchInput = node as HTMLInputElement | null;
+                        searchInput = node as HTMLInputElement | null;
                     }}
                     value={state.query}
                     hidden={!state.search}
@@ -292,7 +289,7 @@ class BoardFilters {
                     aria-controls="project-filter search"
                     aria-pressed={state.search}
                     disabled={view.locked}
-                    onClick={this.toggle}>
+                    onClick={toggle}>
                     {state.search ? "选择项目" : "搜索会话"}
                 </button>
                 <span
@@ -301,18 +298,9 @@ class BoardFilters {
                 <Teleport to={scope}>{view.scope}</Teleport>
             </>
         );
-    };
-}
+    }
 
-export function mountBoardFilters(container: HTMLElement, scope: HTMLElement, sources: Sources) {
-    const filters = new BoardFilters(sources, scope);
-    const app = createApp({ setup: () => filters.render });
+    const app = createApp({ setup: () => render });
     app.mount(container);
-    return {
-        state: filters.state,
-        view: filters.view,
-        update: filters.update,
-        unmount: () => app.unmount(),
-        updateLock: filters.updateLock,
-    };
+    return { state, view, update, unmount: () => app.unmount(), updateLock };
 }
