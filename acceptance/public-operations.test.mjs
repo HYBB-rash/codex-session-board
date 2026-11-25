@@ -458,11 +458,18 @@ test("the client launcher passes the argument array without a shell", (context) 
     const detection = require("../dist/installer/detect.js");
     const paths = require("../dist/installer/paths.js");
     const startScript = join(directory, "start client");
+    const resourcesDir = join(directory, "resources");
     const target = { path: directory };
+    setEnvironment(context, "CODEX_CLI_PATH", undefined);
     setEnvironment(context, "CODEX_ENHANCER_BRIDGE_SOCKET", join(directory, "fixture.sock"));
     setEnvironment(context, "CODEX_ENHANCER_LOG_STDOUT", "0");
     context.mock.method(installation, "readState", () => ({ status: "installed", target }));
-    context.mock.method(detection, "locateApp", () => ({ startScript }));
+    context.mock.method(detection, "locateApp", () => ({
+        appDir: directory,
+        startScript,
+        binary: join(directory, "ChatGPT"),
+        resourcesDir,
+    }));
     context.mock.method(fs, "existsSync", () => true);
     context.mock.method(fs, "mkdirSync", () => undefined);
     const spawn = context.mock.method(childProcess, "spawn", () => ({ pid: 91, unref() {} }));
@@ -475,11 +482,15 @@ test("the client launcher passes the argument array without a shell", (context) 
     assert.deepEqual(args, [`--user-data-dir=${paths.userData}`, ...argumentsToPreserve]);
     assert.equal(options.cwd, directory);
     assert.ok(options.shell === false || options.shell === undefined);
+    if (process.platform === "linux") {
+        assert.equal(options.env.CODEX_CLI_PATH, join(resourcesDir, "codex"));
+    }
 });
 
 function setEnvironment(context, name, value) {
     const previous = process.env[name];
-    process.env[name] = value;
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
     context.after(() => {
         if (previous === undefined) delete process.env[name];
         else process.env[name] = previous;
