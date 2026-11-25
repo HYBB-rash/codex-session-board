@@ -5,8 +5,8 @@ import * as path from "node:path";
 import { entryIncludes, sha256ArchiveHeader, sha256File } from "./asar.js";
 import { IN_PLACE_APP, IN_PLACE_ARCHIVE, LINK_NAME, SENTINEL } from "./constants.js";
 import { type Detection, findSystemApp } from "./detect.js";
-import { inPlaceTransaction, readInPlaceInstallation } from "./in-place-receipt.js";
-import { assertSystemPath } from "./in-place-target.js";
+import { inPlaceTransaction, readInPlaceInstallation } from "./in-place/receipt.js";
+import { assertSystemPath } from "./in-place/target.js";
 import * as paths from "./paths.js";
 
 export function copyFile(source: string, destination: string): void {

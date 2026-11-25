@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import { IN_PLACE_ROOT } from "./constants.js";
-import { inPlaceUserDirectory } from "./in-place-receipt.js";
+import { inPlaceUserDirectory } from "./in-place/receipt.js";
 
 export const outputDir = path.resolve(__dirname, "..");
 const releaseRoot = path.resolve(outputDir, "..");

@@ -19,7 +19,7 @@ function fail(error: unknown): void {
 }
 
 async function runInPlace(): Promise<void> {
-    const installer = await import("../installer/in-place.js");
+    const installer = await import("../installer/in-place/index.js");
     const candidate = process.argv[4];
     const standalone = command === "in-place-check" || command === "purge-in-place-data";
     const expectedLength = standalone ? 3 : command === "update" ? 5 : 4;

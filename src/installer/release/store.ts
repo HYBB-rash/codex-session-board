@@ -16,8 +16,8 @@ import {
 } from "node:fs";
 import * as path from "node:path";
 import { sha256File } from "../asar.js";
-import { inPlaceReleaseStore } from "../in-place-receipt.js";
-import { assertSystemPath } from "../in-place-target.js";
+import { inPlaceReleaseStore } from "../in-place/receipt.js";
+import { assertSystemPath } from "../in-place/target.js";
 import * as paths from "../paths.js";
 import {
     type ReleaseManifest,

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
-import { inPlaceReleaseStore, inPlaceUserDirectory } from "../installer/in-place-receipt.js";
+import { inPlaceReleaseStore, inPlaceUserDirectory } from "../installer/in-place/receipt.js";
 import { releaseFiles, releaseManifestName, verifyRelease } from "../installer/release/manifest.js";
 import { activeRelease } from "../installer/release/store.js";
 import { assetsDirectory, object } from "./operations.js";

@@ -1,11 +1,11 @@
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { IN_PLACE_APP, IN_PLACE_ARCHIVE, IN_PLACE_ROOT } from "./constants.js";
-import { presentFile, syncDirectory } from "./in-place-archive.js";
-import { assertSystemPath } from "./in-place-target.js";
-import { systemWatcherFiles, systemWatcherLinks } from "./in-place-watcher.js";
-import { releaseManifestName, verifyInPlaceRelease } from "./release/manifest.js";
+import { IN_PLACE_APP, IN_PLACE_ARCHIVE, IN_PLACE_ROOT } from "../constants.js";
+import { releaseManifestName, verifyInPlaceRelease } from "../release/manifest.js";
+import { presentFile, syncDirectory } from "./archive.js";
+import { assertSystemPath } from "./target.js";
+import { systemWatcherFiles, systemWatcherLinks } from "./watcher.js";
 
 const control = path.join(IN_PLACE_ROOT, "control");
 const stagedControl = path.join(IN_PLACE_ROOT, ".control-stage");

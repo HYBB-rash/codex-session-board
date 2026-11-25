@@ -3,16 +3,16 @@ import * as fs from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import test, { type TestContext } from "node:test";
-import { createArchive, entryIncludes, sha256File } from "./asar.js";
-import { SENTINEL } from "./constants.js";
+import { createArchive, entryIncludes, sha256File } from "../asar.js";
+import { SENTINEL } from "../constants.js";
 import {
     archivePosition,
     commitArchive,
     prepareArchive,
     restoreArchive,
     writeInstallationReceipt,
-} from "./in-place-archive.js";
-import { fileProof } from "./in-place-target.js";
+} from "./archive.js";
+import { fileProof } from "./target.js";
 
 function fixture(context: TestContext) {
     const directory = fs.mkdtempSync(path.join(tmpdir(), "enhancer-in-place-"));

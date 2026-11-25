@@ -1,6 +1,6 @@
 import { readFileSync, rmSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { atomicWrite } from "../extensions/session-board/records.js";
+import { atomicWrite } from "../../extensions/session-board/records.js";
 
 const systemUserUnits = "/etc/systemd/user";
 const serviceName = "codex-enhancer-upgrade-check.service";

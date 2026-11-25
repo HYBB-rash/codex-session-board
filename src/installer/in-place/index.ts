@@ -2,8 +2,9 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { IN_PLACE_APP, IN_PLACE_ROOT, inPlaceLoader } from "./constants.js";
-import { notifyInPlace, readRuntimeFile } from "./in-place/bootstrap.js";
+import { IN_PLACE_APP, IN_PLACE_ROOT, inPlaceLoader } from "../constants.js";
+import { verifyInPlaceRelease } from "../release/manifest.js";
+import { activateRelease, activeRelease, rollbackRelease } from "../release/store.js";
 import {
     archivePosition,
     cleanArchiveStage,
@@ -13,7 +14,8 @@ import {
     restoreArchive,
     syncDirectory,
     writeInstallationReceipt,
-} from "./in-place-archive.js";
+} from "./archive.js";
+import { notifyInPlace, readRuntimeFile } from "./bootstrap.js";
 import {
     type InPlaceInstallation,
     inPlaceReleaseStore,
@@ -21,13 +23,13 @@ import {
     inPlaceUserDirectory,
     newInstallation,
     readInPlaceInstallation,
-} from "./in-place-receipt.js";
+} from "./receipt.js";
 import {
     assertSystemRegistrationClear,
     configureWatcher,
     installControl,
     reloadUserWatchers,
-} from "./in-place-registration.js";
+} from "./registration.js";
 import {
     assertCompatibleExecutables,
     assertOriginalRpmRecorded,
@@ -35,10 +37,8 @@ import {
     inspectStockArchive,
     readInPlaceBuildVersion,
     requireCompatibleRpm,
-} from "./in-place-target.js";
-import { checkInPlaceUpgrade, type InPlaceWatchStatus } from "./in-place-watcher.js";
-import { verifyInPlaceRelease } from "./release/manifest.js";
-import { activateRelease, activeRelease, rollbackRelease } from "./release/store.js";
+} from "./target.js";
+import { checkInPlaceUpgrade, type InPlaceWatchStatus } from "./watcher.js";
 
 const rpmLock = "/usr/lib/sysimage/rpm/.rpm.lock";
 const receiptStage = /^\.receipt-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;

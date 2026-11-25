@@ -5,19 +5,15 @@ import * as path from "node:path";
 import type { App } from "electron";
 import { sha256File } from "../asar.js";
 import { IN_PLACE_APP, IN_PLACE_ARCHIVE } from "../constants.js";
-import {
-    inPlaceReleaseStore,
-    inPlaceUserDirectory,
-    readInPlaceInstallation,
-} from "../in-place-receipt.js";
+import { verifyInPlaceRelease } from "../release/manifest.js";
+import { releasePointer } from "../release/store.js";
+import { inPlaceReleaseStore, inPlaceUserDirectory, readInPlaceInstallation } from "./receipt.js";
 import {
     assertCompatibleExecutables,
     assertSystemPath,
     readInPlaceBuildVersion,
-} from "../in-place-target.js";
-import { checkInPlaceUpgrade } from "../in-place-watcher.js";
-import { verifyInPlaceRelease } from "../release/manifest.js";
-import { releasePointer } from "../release/store.js";
+} from "./target.js";
+import { checkInPlaceUpgrade } from "./watcher.js";
 
 function archiveDigest(file: string): string {
     const original = require("original-fs") as typeof fs;

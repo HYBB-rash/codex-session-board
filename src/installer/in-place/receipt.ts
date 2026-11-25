@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import { homedir } from "node:os";
 import * as path from "node:path";
-import { IN_PLACE_APP, IN_PLACE_ARCHIVE, IN_PLACE_RECEIPT, IN_PLACE_ROOT } from "./constants.js";
-import type { ArchiveTransaction } from "./in-place-archive.js";
-import { assertSystemPath, type FileProof } from "./in-place-target.js";
+import { IN_PLACE_APP, IN_PLACE_ARCHIVE, IN_PLACE_RECEIPT, IN_PLACE_ROOT } from "../constants.js";
+import type { ArchiveTransaction } from "./archive.js";
+import { assertSystemPath, type FileProof } from "./target.js";
 
 interface OriginalInstallation {
     schema: 1;

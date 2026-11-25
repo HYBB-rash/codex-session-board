@@ -8,7 +8,7 @@ import {
     type InPlaceWatchStatus,
     systemWatcherFiles,
     systemWatcherLinks,
-} from "./in-place-watcher.js";
+} from "./watcher.js";
 
 test("enabling the user watcher monitors the archive directory and probes on login", () => {
     const units = systemWatcherFiles({

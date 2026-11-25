@@ -2,9 +2,9 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { entryIncludes, patchEntry, sha256File } from "./asar.js";
-import { SENTINEL } from "./constants.js";
-import { type FileProof, fileProof, sameFileProof } from "./in-place-target.js";
+import { entryIncludes, patchEntry, sha256File } from "../asar.js";
+import { SENTINEL } from "../constants.js";
+import { type FileProof, fileProof, sameFileProof } from "./target.js";
 
 export interface ArchiveTransaction {
     archive: string;

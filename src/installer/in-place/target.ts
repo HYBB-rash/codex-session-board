@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { entryIncludes, sha256File } from "./asar.js";
-import { IN_PLACE_APP, IN_PLACE_ARCHIVE, SENTINEL } from "./constants.js";
-import { type Detection, detect, findStartupArchive } from "./detect.js";
+import { entryIncludes, sha256File } from "../asar.js";
+import { IN_PLACE_APP, IN_PLACE_ARCHIVE, SENTINEL } from "../constants.js";
+import { type Detection, detect, findStartupArchive } from "../detect.js";
 
 const compatibleBuild = {
     version: "26.1111.71704",
