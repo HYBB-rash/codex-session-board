@@ -7,7 +7,7 @@
         :model="model"
         :dependencies="dependencies"/>
     <div v-if="model.moving?.from === null" class="move-origin">
-        移往{{model.moving.state === null ? "" : model.states[model.moving.state]}} · 等待确认
+        移往{{ model.moving.state === null ? "" : model.states[model.moving.state] }} · 等待确认
     </div>
 </template>
 <section
@@ -37,7 +37,7 @@
         @dragleave="dependencies.drag.leave(column.state, $event)"
         @drop="dependencies.drag.drop(column.state, $event)">
         <div class="column-heading">
-            <h2>{{column.label}}</h2>
+            <h2>{{ column.label }}</h2>
             <span
                 class="column-count"
                 :aria-label="
@@ -45,9 +45,9 @@
                         ? `${column.sessions.length - 1} 条已确认，1 条待确认`
                         : `${column.sessions.length} 条会话`
                 ">
-                {{column.sessions.some((session) => session.id === model.moving?.id)
+                {{ column.sessions.some((session) => session.id === model.moving?.id)
                     ? `${column.sessions.length - 1} + 1`
-                    : String(column.sessions.length)}}
+                    : String(column.sessions.length) }}
             </span>
             <ColumnSort
                 :state="column.state"
@@ -64,7 +64,7 @@
                 :disabled="!column.archiveCount"
                 :title="`${model.scope}；只归档本列可归档的会话`"
                 @click="dependencies.archiveAll(column.sessions)">
-                归档 {{column.archiveCount}} 条
+                归档 {{ column.archiveCount }} 条
             </button>
         </div>
         <div class="cards">
@@ -75,17 +75,17 @@
                 :model="model"
                 :dependencies="dependencies"/>
             <div v-if="model.moving?.from === column.state" class="move-origin">
-                移往{{model.moving.state === null ? "" : model.states[model.moving.state]}} ·
+                移往{{ model.moving.state === null ? "" : model.states[model.moving.state] }} ·
                 等待确认
             </div>
             <div
                 v-if="!column.sessions.length && model.moving?.from !== column.state"
                 class="empty-column">
-                {{column.unread
+                {{ column.unread
                     ? "尚未读取会话，可查看连接详情"
                     : column.state === "to_archive" && model.archivePending.length
                         ? "暂无匹配的会话。归档结果待核对，见「归档结果」。"
-                        : "暂无匹配的会话"}}
+                        : "暂无匹配的会话" }}
             </div>
         </div>
     </section>

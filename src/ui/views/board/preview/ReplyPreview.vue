@@ -10,12 +10,12 @@
         <div class="reply-label">
             <span>回复预览</span><button id="reply-close" class="quiet" type="button" @click="close()">关闭</button>
         </div>
-        <h2 id="reply-title" :title="reading?.session.title">{{reading?.session.title}}</h2>
-        <p id="reply-meta" :title="metadata">{{metadata}}</p>
+        <h2 id="reply-title" :title="reading?.session.title">{{ reading?.session.title }}</h2>
+        <p id="reply-meta" :title="metadata">{{ metadata }}</p>
     </header>
     <div id="reply-state">
         <p id="reply-status" role="status" :class="{ error: reading?.error }">
-            {{reading?.status}}
+            {{ reading?.status }}
         </p>
         <ReplyRefresh :action="reading?.action || ''" @activate="refresh" />
     </div>
