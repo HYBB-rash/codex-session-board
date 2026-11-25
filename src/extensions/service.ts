@@ -434,17 +434,6 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         get mode() {
             return this.settings.mode;
         },
-        open,
-        preview,
-        findProject,
-        persistDraft,
-        resetDraft,
-        resumeDraft,
-        launchDraft,
-        createTrackedDraft,
-        create,
-        openTrackedDraft,
-        trackDraft,
         writeLedger,
         sort,
         verifyArchive,
@@ -454,8 +443,6 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         autoArchiveHost,
         requestArchive,
         submitArchive,
-        openConnectionSettings,
-        requestExistingSession,
         request,
         refreshSnapshot,
         requestChange,
@@ -1383,13 +1370,13 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         return after;
     }
 
-    async function open(this: Runtime, id: string): Promise<{ ok: true }> {
+    async function open(id: string): Promise<{ ok: true }> {
         const { card, connection } = target(id);
         const context = await freshContext();
-        await this.desktop.read(connection, card.threadId, false);
+        await desktop.read(connection, card.threadId, false);
         await freshContext(context);
-        this.desktop.assertCurrent(connection);
-        await this.desktop.navigate({
+        desktop.assertCurrent(connection);
+        await desktop.navigate({
             kind: "open",
             accountId: context.accountId,
             userId: context.userId,
@@ -1397,24 +1384,24 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             threadId: card.threadId,
         });
         requireAccount(accountKey(context));
-        this.ports.closePage();
+        ports.closePage();
         return { ok: true };
     }
 
-    async function preview(this: Runtime, id: string) {
+    async function preview(id: string) {
         const { card, connection } = target(id);
         const context = await freshContext();
-        const result = await previewReply(this.desktop, connection, card.threadId);
+        const result = await previewReply(desktop, connection, card.threadId);
         await freshContext(context);
-        this.desktop.assertCurrent(connection);
+        desktop.assertCurrent(connection);
         return result;
     }
 
-    function findProject(this: Runtime, id: string) {
-        for (const [hostId, host] of this.hosts) {
+    function findProject(id: string) {
+        for (const [hostId, host] of runtime.hosts) {
             for (const project of host.projects.values()) {
                 if (projectKey(hostId, project.id) !== id) continue;
-                if (!host.projectRead || !isLive(this.desktop, host))
+                if (!host.projectRead || !isLive(desktop, host))
                     throw new Error("项目当前仅有缓存，请重新发现");
                 return { hostId, project };
             }
@@ -1422,50 +1409,45 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         throw new Error("项目已变更，请刷新后选择");
     }
 
-    function persistDraft(this: Runtime, record: DraftRecord): Promise<DraftRecord> {
-        return this.archive.change((old) => ({ next: stageDraft(old, record), result: record }));
+    function persistDraft(record: DraftRecord): Promise<DraftRecord> {
+        return archive.change((old) => ({ next: stageDraft(old, record), result: record }));
     }
 
-    function resetDraft(this: Runtime, input: DraftInput) {
-        const draft = unresolvedDrafts(this.ledger).find(
+    function resetDraft(input: DraftInput) {
+        const draft = unresolvedDrafts(runtime.ledger).find(
             ({ project, requestId }) =>
                 project === input.projectId && requestId === input.requestId,
         );
         if (!input.confirmed || !draft) throw new Error("请确认并核对待恢复的新建请求");
-        return this.persistDraft({ ...draft, stage: "abandoned" }).then(() => ({ ok: true }));
+        return persistDraft({ ...draft, stage: "abandoned" }).then(() => ({ ok: true }));
     }
 
-    async function resumeDraft(this: Runtime, input: DraftInput, draft: DraftRecord) {
+    async function resumeDraft(input: DraftInput, draft: DraftRecord) {
         const owner = requiredContext();
         const requestId = draft.requestId;
         const pending = { ok: false, pending: true, requestId };
         if (input.requestId !== requestId || !draft.threadId) {
             return { ...pending, error: "请先在 Codex 核对这个旧新建请求的结果" };
         }
-        const { hostId } = this.findProject(draft.project);
+        const { hostId } = findProject(draft.project);
         if (input.hostId && input.hostId !== hostId) throw new Error("选定的 Codex 连接不可用");
         const card = snapshot().sessions.find(
             (row) => row.hostId === hostId && row.threadId === draft.threadId,
         );
         if (!card) return { ...pending, error: "原会话尚未读回，请核对连接后刷新" };
-        await this.open(card.id);
+        await open(card.id);
         await freshContext(owner);
-        await this.persistDraft({ ...draft, stage: "opened" });
+        await persistDraft({ ...draft, stage: "opened" });
         return { ok: true, requestId };
     }
 
-    async function launchDraft(
-        this: Runtime,
-        input: DraftInput,
-        owner: SidebarContext,
-        record?: DraftRecord,
-    ) {
+    async function launchDraft(input: DraftInput, owner: SidebarContext, record?: DraftRecord) {
         const { projectId } = input;
         const { accountId, userId } = await freshContext(owner);
-        const selected = projectId ? this.findProject(projectId) : null;
-        const host = draftHost(this.desktop, input.hostId, selected?.hostId);
-        const connection = this.desktop.capture(host);
-        const result = await this.desktop.navigate({
+        const selected = projectId ? findProject(projectId) : null;
+        const host = draftHost(desktop, input.hostId, selected?.hostId);
+        const connection = desktop.capture(host);
+        const result = await desktop.navigate({
             kind: "new",
             accountId,
             userId,
@@ -1474,12 +1456,11 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             roots: selected?.project.roots.map(({ path }) => path) ?? [],
         });
         await freshContext(owner);
-        this.desktop.assertCurrent(connection);
+        desktop.assertCurrent(connection);
         if (result !== "registration" && result !== "composer")
             throw new Error("Codex 未确认输入页");
-        if (record && result === "composer")
-            await this.persistDraft({ ...record, stage: "opened" });
-        this.ports.closePage();
+        if (record && result === "composer") await persistDraft({ ...record, stage: "opened" });
+        ports.closePage();
         return {
             ok: true,
             registration: result === "registration",
@@ -1488,14 +1469,13 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     }
 
     async function createTrackedDraft(
-        this: Runtime,
         input: DraftInput,
         owner: SidebarContext,
         draft: DraftRecord,
     ) {
-        const record = await this.persistDraft(draft);
+        const record = await persistDraft(draft);
         try {
-            return await this.launchDraft(input, owner, record);
+            return await launchDraft(input, owner, record);
         } catch (error) {
             return {
                 ok: false,
@@ -1506,20 +1486,19 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         }
     }
 
-    async function create(this: Runtime, input: DraftInput) {
+    async function create(input: DraftInput) {
         const owner = requiredContext();
         const { projectId, operationId } = input;
-        const draft = unresolvedDrafts(this.ledger).find(
+        const draft = unresolvedDrafts(runtime.ledger).find(
             ({ project, source }) => project === projectId && source === "legacy",
         );
-        if (draft) return this.resumeDraft(input, draft);
+        if (draft) return resumeDraft(input, draft);
         if (input.requestId) throw new Error("旧新建请求已结束，请重新选择目标");
-        if (!operationId) return this.launchDraft(input, owner);
-        return this.openTrackedDraft(input, owner, projectId, operationId);
+        if (!operationId) return launchDraft(input, owner);
+        return openTrackedDraft(input, owner, projectId, operationId);
     }
 
     async function openTrackedDraft(
-        this: Runtime,
         input: DraftInput,
         owner: SidebarContext,
         projectId: string | undefined,
@@ -1529,46 +1508,45 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             throw new Error("新建操作 ID 无效");
         if (input.hostId && projectKeyHost(projectId) !== input.hostId)
             throw new Error("选定的 Codex 连接不可用");
-        return this.trackDraft(input, owner, projectId, operationId);
+        return trackDraft(input, owner, projectId, operationId);
     }
 
     async function trackDraft(
-        this: Runtime,
         input: DraftInput,
         owner: SidebarContext,
         projectId: string,
         operationId: string,
     ) {
         const key = JSON.stringify([accountKey(owner), operationId]);
-        const opening = this.openingDrafts.get(key);
+        const opening = runtime.openingDrafts.get(key);
         if (opening) {
             if (opening.projectId !== projectId) throw new Error("新建操作已用于其他项目");
             return opening.result;
         }
-        const existing = this.ledger.pendingDrafts?.find(
+        const existing = runtime.ledger.pendingDrafts?.find(
             ({ requestId }) => requestId === operationId,
         );
         if (existing?.project !== undefined && existing.project !== projectId)
             throw new Error("新建操作已用于其他项目");
         if (existing?.stage === "opened") return { ok: true, operationId };
-        const result = this.createTrackedDraft(input, owner, {
+        const result = createTrackedDraft(input, owner, {
             project: projectId,
             requestId: operationId,
             stage: "starting",
             threadId: null,
             source: "native",
         });
-        this.openingDrafts.set(key, { projectId, result });
+        runtime.openingDrafts.set(key, { projectId, result });
         try {
             return await result;
         } finally {
-            this.openingDrafts.delete(key);
+            runtime.openingDrafts.delete(key);
         }
     }
 
     async function assign(id: string, projectId: string): Promise<{ ok: true }> {
         const { card, connection } = target(id);
-        const { hostId, project } = runtime.findProject(projectId);
+        const { hostId, project } = findProject(projectId);
         validateProjectAssignment(card, hostId, project);
         const context = await freshContext();
         const before = await desktop.read(connection, card.threadId, false);
@@ -1792,19 +1770,18 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         return this.archive.single({ ...candidate, title: card.title });
     }
 
-    async function openConnectionSettings(this: Runtime) {
+    async function openConnectionSettings() {
         const owner = await freshContext();
-        await this.desktop.navigate({
+        await desktop.navigate({
             kind: "settings",
             accountId: owner.accountId,
             userId: owner.userId,
         });
         requireAccount(accountKey(owner));
-        this.ports.closePage();
+        ports.closePage();
     }
 
     function requestExistingSession(
-        this: Runtime,
         path: "/api/open" | "/api/preview-reply" | "/api/project/assign",
         input: (DraftInput & { id?: string }) | undefined,
     ) {
@@ -1812,7 +1789,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             if (input?.confirmed && input.id && input.projectId)
                 return assign(input.id, input.projectId);
         } else if (input?.id) {
-            return path === "/api/open" ? this.open(input.id) : this.preview(input.id);
+            return path === "/api/open" ? open(input.id) : preview(input.id);
         }
         throw new Error(unsupportedOperation);
     }
@@ -1837,14 +1814,14 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             case "/api/open":
             case "/api/preview-reply":
             case "/api/project/assign":
-                return this.requestExistingSession(path, input);
+                return requestExistingSession(path, input);
             case "/api/new":
-                return this.create(input ?? {});
+                return create(input ?? {});
             case "/api/connect":
-                await this.openConnectionSettings();
+                await openConnectionSettings();
                 return { ok: true };
             case "/api/ssh-setup":
-                await this.openConnectionSettings();
+                await openConnectionSettings();
                 return { ok: true, state: "applied", message: "已打开 Codex 远程连接设置" };
             case "/api/plugin-update":
                 return this.ports.updateStatus(body !== undefined);
@@ -1865,7 +1842,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     ) {
         if (!body) throw new Error(unsupportedOperation);
         if (path === "/api/state") return updateSession(body as Edit);
-        if (path === "/api/new/reset") return this.resetDraft(body as DraftInput);
+        if (path === "/api/new/reset") return resetDraft(body as DraftInput);
         const sort = body as SortPreference & { state: string };
         return this.sort(sort.state, sort);
     }
