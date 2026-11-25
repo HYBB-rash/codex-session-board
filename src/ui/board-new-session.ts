@@ -17,7 +17,7 @@ interface NewSessionElements {
 
 interface DraftRequest {
   projectId: string;
-  requestId?: string;
+  requestId?: string | undefined;
   operationId?: string;
 }
 
@@ -62,7 +62,7 @@ export function mountBoardNewSession(elements: NewSessionElements, ports: NewSes
   const draftRequests = new Map<string, string>();
   const nativeOperations = new Map<string, string>();
   let recovering: DraftRequest | undefined;
-  let consent: { projectId: string | null; operationId?: string; requestId?: string; token: string } | undefined;
+  let consent: { projectId: string | null; operationId: string | undefined; requestId: string | undefined; token: string } | undefined;
 
   function canCreateProject(project?: CatalogProject) {
     if (!project || project.canCreate === false || project.pendingDeletion === true) return false;

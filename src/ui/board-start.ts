@@ -234,6 +234,6 @@ const poll = window.setInterval(load, 4000);
 if (initial) {
   applySnapshot(initial);
   void archive.restore();
-} else void load().then(() => { if (!lifetime.signal.aborted) return archive.restore(); });
+} else void load().then(() => lifetime.signal.aborted ? undefined : archive.restore());
 return boardPage;
 }

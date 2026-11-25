@@ -35,6 +35,7 @@ export function mountBoardSessionReader(container: HTMLElement, ports: ReaderPor
       return true;
     } catch (error) {
       ports.announce(error instanceof Error ? error.message : String(error), true);
+      return undefined;
     } finally {
       opening = false;
     }

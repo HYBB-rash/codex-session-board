@@ -52,7 +52,7 @@ export interface BoardModel {
   legacyMode: boolean;
   saving: boolean;
   creating: boolean;
-  selectedId?: string;
+  selectedId: string | undefined;
   moving?: { id: string; state: string | null; from: string | null } | null;
   unconfirmed: string[];
   archivePending: string[];

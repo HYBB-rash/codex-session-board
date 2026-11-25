@@ -110,7 +110,7 @@ export function mountBoardEdits(host: HTMLElement, fallback: () => HTMLElement, 
       render();
       void load();
       const root = host.getRootNode() as ShadowRoot | Document;
-      const row = Array.from(root.querySelectorAll<HTMLElement>(".card")).find(node => node.dataset.id === session.id);
+      const row = Array.from(root.querySelectorAll<HTMLElement>(".card")).find(node => node.dataset["id"] === session.id);
       const button = row?.querySelector<HTMLButtonElement>('[data-action="adjust"]:not(:disabled)');
       (button || fallback()).focus({ preventScroll: true });
     },

@@ -38,7 +38,7 @@ function toggle(event: ToggleEvent) {
 }
 
 function focusOption(direction: Direction) {
-  options.value?.find(option => option.dataset.direction === direction)?.focus({ preventScroll: true });
+  options.value?.find(option => option.dataset["direction"] === direction)?.focus({ preventScroll: true });
 }
 
 function open() {
@@ -72,7 +72,8 @@ function navigate(event: KeyboardEvent) {
     event.preventDefault();
     const index = directions.findIndex(direction => active()?.getAttribute("data-direction") === direction);
     const next = event.key === "Home" ? 0 : event.key === "End" ? 1 : (index + 1) % directions.length;
-    focusOption(directions[next]);
+    const direction = directions[next];
+    if (direction) focusOption(direction);
   }
 }
 

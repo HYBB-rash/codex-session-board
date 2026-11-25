@@ -32,8 +32,8 @@ function describeUpdate(result: UpdateStatus): string {
   };
   const phase = result.phase ?? "";
   if (Object.hasOwn(pendingStages, phase)) return `${pendingStages[phase]}${version}…`;
-  if (Object.hasOwn(stages, phase)) return stages[phase];
-  return result.busy ? "已有安装任务正在运行…" : "";
+  const stage = Object.hasOwn(stages, phase) ? stages[phase] : undefined;
+  return stage ?? (result.busy ? "已有安装任务正在运行…" : "");
 }
 
 export function mountPluginUpdate(button: HTMLButtonElement, status: HTMLElement,

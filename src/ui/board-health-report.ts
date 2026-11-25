@@ -42,13 +42,13 @@ export interface HealthReport {
   key: string;
   label: string;
   status: string;
-  ready?: boolean;
+  ready?: boolean | undefined;
   attention: boolean;
   effects: string[];
   diagnostics: Diagnostic[];
-  lastRead?: number | null;
+  lastRead?: number | null | undefined;
   canConnect?: boolean;
-  hostId?: string;
+  hostId?: string | undefined;
 }
 
 interface HealthSources {

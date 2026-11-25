@@ -12,13 +12,13 @@ function captureScroll(cards: HTMLElement) {
   const bounds = cards.getBoundingClientRect();
   const anchor = top > 0 ? [...cards.querySelectorAll<HTMLElement>(".card")].find(card =>
     card.getBoundingClientRect().bottom > bounds.top) : undefined;
-  return { top, id: anchor?.dataset.id, offset: anchor ? anchor.getBoundingClientRect().top - bounds.top : 0 };
+  return { top, id: anchor?.dataset["id"], offset: anchor ? anchor.getBoundingClientRect().top - bounds.top : 0 };
 }
 
 function restoreScroll(cards: HTMLElement, position?: ReturnType<typeof captureScroll>) {
   cards.scrollTop = position?.top ?? 0;
   if (!position?.id) return;
-  const anchor = [...cards.querySelectorAll<HTMLElement>(".card")].find(card => card.dataset.id === position.id);
+  const anchor = [...cards.querySelectorAll<HTMLElement>(".card")].find(card => card.dataset["id"] === position.id);
   if (anchor) cards.scrollTop += anchor.getBoundingClientRect().top - cards.getBoundingClientRect().top - position.offset;
 }
 
@@ -37,8 +37,8 @@ export function createBoardLayout({ viewport, unplaced, jump, filters }: BoardEl
   function updateJumps(nextColumns: HTMLElement[]) {
     const buttons = [...jump.querySelectorAll<HTMLButtonElement>("button")];
     const next = nextColumns.map(column => {
-      const button = buttons.find(item => item.dataset.state === column.dataset.state) ?? document.createElement("button");
-      button.dataset.state = column.dataset.state;
+      const button = buttons.find(item => item.dataset["state"] === column.dataset["state"]) ?? document.createElement("button");
+      button.dataset["state"] = column.dataset["state"];
       const label = `${column.getAttribute("aria-label")} ${column.querySelector(".column-count")!.textContent}`;
       if (button.textContent !== label) button.textContent = label;
       button.onclick = () => {
@@ -54,15 +54,15 @@ export function createBoardLayout({ viewport, unplaced, jump, filters }: BoardEl
 
   function update(model: BoardModel, render: () => void, resetState?: string | null) {
     const scroll = new Map(columns().map(column =>
-      [column.dataset.state, column.dataset.state === resetState ? undefined : captureScroll(columnCards(column))]));
+      [column.dataset["state"], column.dataset["state"] === resetState ? undefined : captureScroll(columnCards(column))]));
     const unplacedScroll = captureScroll(unplacedCards);
     const active = root.activeElement instanceof HTMLElement ? root.activeElement : undefined;
     const focused = active?.closest<HTMLElement>(".card");
     const focus = active && focused && {
-      id: focused.dataset.id, state: focused.closest<HTMLElement>(".column")?.dataset.state,
-      action: active.dataset.action || (active.closest(".project-tag") ? "project" : "preview"),
+      id: focused.dataset["id"], state: focused.closest<HTMLElement>(".column")?.dataset["state"],
+      action: active.dataset["action"] || (active.closest(".project-tag") ? "project" : "preview"),
     };
-    const expanded = new Map(cards().map(card => [card.dataset.id, {
+    const expanded = new Map(cards().map(card => [card.dataset["id"], {
       project: card.querySelector<HTMLDetailsElement>(".project-tag")!.open,
       note: Boolean(card.querySelector(".note-details[open]")),
     }]));
@@ -74,7 +74,7 @@ export function createBoardLayout({ viewport, unplaced, jump, filters }: BoardEl
     updateJumps(nextColumns);
     const nextCards = cards();
     for (const card of nextCards) {
-      const previous = expanded.get(card.dataset.id);
+      const previous = expanded.get(card.dataset["id"]);
       if (!previous) continue;
       card.querySelector<HTMLDetailsElement>(".project-tag")!.open = previous.project;
       const note = card.querySelector<HTMLDetailsElement>(".note-details");
@@ -84,15 +84,15 @@ export function createBoardLayout({ viewport, unplaced, jump, filters }: BoardEl
       }
     }
     if (focus && (active !== root.activeElement || isDisabled(active))) {
-      const card = nextCards.find(item => item.dataset.id === focus.id);
+      const card = nextCards.find(item => item.dataset["id"] === focus.id);
       const selector = focus.action === "project" ? ".project-tag summary" : `[data-action="${focus.action}"]`;
       const target = card?.querySelector<HTMLElement>(selector);
-      const previousColumn = nextColumns.find(column => column.dataset.state === focus.state);
+      const previousColumn = nextColumns.find(column => column.dataset["state"] === focus.state);
       const fallback = previousColumn?.querySelector<HTMLElement>(".column-sort") ??
         (unplaced.hidden ? filters.querySelector<HTMLElement>("#host-filter")! : unplacedSummary);
       (target && !isDisabled(target) ? target : fallback).focus({ preventScroll: true });
     }
-    for (const column of nextColumns) restoreScroll(columnCards(column), scroll.get(column.dataset.state));
+    for (const column of nextColumns) restoreScroll(columnCards(column), scroll.get(column.dataset["state"]));
   }
 
   return { update, unplacedCards };

@@ -6,7 +6,7 @@ import type { PreviewDependencies, PreviewSession } from "./reply-preview";
 const props = defineProps<{ dependencies: PreviewDependencies, root: ShadowRoot | Document }>();
 interface Reading {
   session: PreviewSession;
-  observedTurnId?: string;
+  observedTurnId: string | undefined;
   turnId?: string | null;
   html: string;
   busy: boolean;
@@ -46,8 +46,8 @@ function update(sessions: PreviewSession[], failed: boolean) {
 function validReply(value: unknown): value is { turnId: string | null; html: string | null; inProgress: boolean } {
   if (!value || typeof value !== "object") return false;
   const result = value as Record<string, unknown>;
-  return typeof result.inProgress === "boolean" && (result.turnId === null && result.html === null ||
-    typeof result.turnId === "string" && typeof result.html === "string");
+  return typeof result["inProgress"] === "boolean" && (result["turnId"] === null && result["html"] === null ||
+    typeof result["turnId"] === "string" && typeof result["html"] === "string");
 }
 async function open(session: PreviewSession, focus = false) {
   if (!props.dependencies.canRead(session.id)) return;
@@ -86,7 +86,7 @@ function close(restoreFocus = false) {
   reading.value = undefined;
   if (!restore) return;
   const title = [...props.root.querySelectorAll<HTMLButtonElement>(".card-title")].find(node =>
-    node.closest<HTMLElement>(".card")?.dataset.id === current.session.id);
+    node.closest<HTMLElement>(".card")?.dataset["id"] === current.session.id);
   const target = title && !title.disabled && title.checkVisibility() ? title : props.root.getElementById("host-filter");
   target?.focus({ preventScroll: true });
 }

@@ -64,7 +64,7 @@ export function mountArchiveResults(host: HTMLElement, actions: Actions) {
           <div id="archive-summary-actions">
             {!!toCheck.value.length && !progress && <><button type="button" class="row-action"
               disabled={state.checking || !!run} onClick={manualCheck}>{state.checking ? "正在核对…" : "核对结果"}</button> 仅查询归档状态</>}
-            {openable.length === 1 && openButton(openable[0])}
+            {openable.length === 1 && openable[0] && openButton(openable[0])}
           </div>
         </div>
         <div id="archive-result-list" hidden={!expanded.value}>

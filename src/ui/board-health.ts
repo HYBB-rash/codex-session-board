@@ -40,7 +40,7 @@ export function mountBoardHealth(ui: HealthElements, ports: HealthPorts) {
   function connectButton(key: string, hostId: string) {
     const button = element("button", "连接这台主机");
     button.type = "button";
-    button.dataset.focus = "connect:" + key;
+    button.dataset["focus"] = "connect:" + key;
     button.disabled = connecting.has(hostId);
     button.onclick = async () => {
       if (connecting.has(hostId)) return;
@@ -62,17 +62,17 @@ export function mountBoardHealth(ui: HealthElements, ports: HealthPorts) {
   function renderDetails(reports = ports.reports()) {
     const selectedHost = ports.selectedHost();
     const first = !list.children.length;
-    const expanded = new Set([...list.querySelectorAll<HTMLDetailsElement>("details[open]")].map(node => node.dataset.key));
+    const expanded = new Set([...list.querySelectorAll<HTMLDetailsElement>("details[open]")].map(node => node.dataset["key"]));
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
-    const focus = active?.dataset.focus;
-    const focusedHost = active?.closest<HTMLElement>(".health-host")?.dataset.key;
+    const focus = active?.dataset["focus"];
+    const focusedHost = active?.closest<HTMLElement>(".health-host")?.dataset["key"];
     const oldRecord = ports.readState().error ? "上次记录 · " : "";
     const nodes = [...reports].sort((first, second) => Number(second.key === selectedHost) - Number(first.key === selectedHost)).map(host => {
       const item = element("details", undefined, "health-host");
-      item.dataset.key = host.key;
+      item.dataset["key"] = host.key;
       item.open = expanded.has(host.key) || first && (host.key === selectedHost || selectedHost === "all" && host.attention);
       const summary = element("summary", host.label + "：" + oldRecord + host.status);
-      summary.dataset.focus = host.key;
+      summary.dataset["focus"] = host.key;
       item.append(summary, element("p", host.effects.join("\n")));
       item.append(element("p", host.lastRead ? "上次成功读取：" + ports.date(host.lastRead) : "缓存时间未提供，不能确认资料是否最新。", "reason"));
       const steps = host.canConnect ? "此主机未启用连接。点击下方连接按钮后，再查看读取结果。" :
@@ -84,10 +84,10 @@ export function mountBoardHealth(ui: HealthElements, ports: HealthPorts) {
       if (host.diagnostics.length) {
         const diagnostics = element("details", undefined, "diagnostics");
         const key = "diagnostics:" + host.key;
-        diagnostics.dataset.key = key;
+        diagnostics.dataset["key"] = key;
         diagnostics.open = expanded.has(key);
         const title = element("summary", "技术诊断");
-        title.dataset.focus = key;
+        title.dataset["focus"] = key;
         diagnostics.append(title, element("p", host.diagnostics.map(([label, error]) => label + "：" + error).join("\n")));
         item.append(diagnostics);
       }
@@ -96,7 +96,7 @@ export function mountBoardHealth(ui: HealthElements, ports: HealthPorts) {
     list.replaceChildren(...nodes);
     const targets = [...list.querySelectorAll<HTMLElement>("[data-focus]")];
     if (focus)
-      (targets.find(node => node.dataset.focus === focus) || targets.find(node => node.dataset.focus === focusedHost))?.focus({ preventScroll: true });
+      (targets.find(node => node.dataset["focus"] === focus) || targets.find(node => node.dataset["focus"] === focusedHost))?.focus({ preventScroll: true });
   }
 
   function render() {
@@ -132,8 +132,8 @@ export function mountBoardHealth(ui: HealthElements, ports: HealthPorts) {
   }
   ui.more.onclick = () => {
     const selectedHost = ports.selectedHost();
-    if (list.dataset.scope !== selectedHost) list.replaceChildren();
-    list.dataset.scope = selectedHost;
+    if (list.dataset["scope"] !== selectedHost) list.replaceChildren();
+    list.dataset["scope"] = selectedHost;
     renderDetails();
     detail.showModal();
   };

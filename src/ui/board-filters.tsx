@@ -7,7 +7,7 @@ interface FilterOption {
   value: string;
   label: string;
   path?: string;
-  hostId?: string;
+  hostId?: string | undefined;
 }
 
 interface Sources {
@@ -81,7 +81,7 @@ export function mountBoardFilters(container: HTMLElement, scope: HTMLElement, so
     }
     view.projects = projects;
     const history = histories.find(option => option.value === state.history)!;
-    const projectScope = state.search ? "全部项目 · 搜索" : allHosts ? "全部会话" : project.label;
+    const projectScope = state.search ? "全部项目 · 搜索" : allHosts ? "全部会话" : project?.label ?? "全部项目";
     view.scope = `${view.hostLabel} · ${projectScope} · ${history.label}`;
     const sessions = sources.hostSessions(state.host).filter(session => {
       if (state.history === "cached") return session.presence === "cachedUnknown";
