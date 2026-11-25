@@ -104,7 +104,7 @@ Fedora 原装客户端的固定按钮在 ChatGPT 登录模式下写入账号侧�
 
 ## 0.3.30 候选
 
-2026 年 11 月 23 日从提交 `2137b7e` 构建。跟踪的新建请求先核对项目所属主机，再登记或重放。双平台归档内容及 SHA-256 校验通过，78 项门槛自动检查通过。40 条现场断言中，Fedora 通过 39 条，macOS 通过 10 条。31 条冻结需求中 21 条达到本版双平台门槛。Fedora 剩余最左侧原生固定图标直达。 [新建回归](../src/extensions/session-board/project-assignment.test.ts) · [本版门槛](../state/acceptance/release-gate-0.3.30.json) · [本版双平台证据索引](../state/acceptance/live-0.3.30.json)
+2026 年 11 月 23 日从提交 `2137b7e` 构建。跟踪的新建请求先核对项目所属主机，再登记或重放。双平台归档内容及 SHA-256 校验通过，78 项门槛自动检查通过。40 条现场断言中，Fedora 通过 39 条，macOS 通过 10 条。31 条冻结需求中 21 条达到本版双平台门槛。Fedora 剩余最左侧原生固定图标直达。 [新建回归](../src/extensions/project-assignment.test.ts) · [本版门槛](../state/acceptance/release-gate-0.3.30.json) · [本版双平台证据索引](../state/acceptance/live-0.3.30.json)
 
 | 场景 | 现场观察 |
 | --- | --- |
@@ -310,7 +310,7 @@ Fedora 冻结需求仍待实测旧六状态的全列互移、批准后实际恢�
 
 | 项目 | 结果 |
 | --- | --- |
-| 归档批次 | 重放登记要求目标顺序、会话 ID、标题和三个版本一致。已经登记的旧分区版本仍可重放。批次结束后仍在预检的卡片保持未提交，已经提交的卡片可以继续收取原生回执。[归档回归](../src/extensions/session-board/archive.test.ts) · [旧版批次回归](../src/extensions/session-board/discovery.test.ts) |
+| 归档批次 | 重放登记要求目标顺序、会话 ID、标题和三个版本一致。已经登记的旧分区版本仍可重放。批次结束后仍在预检的卡片保持未提交，已经提交的卡片可以继续收取原生回执。[归档回归](../src/extensions/archive.test.ts) · [旧版批次回归](../src/extensions/discovery.test.ts) |
 | Fedora 原生归档 | 从已登录 Enhancer 将筛选后的单张本机专用卡批量归档，独立原生列表读回已归档，备注保留，关页重开后结果仍在。先前结束的专用批次保留未提交状态，冲突登记和继续提交均被拒，独立原生列表仍读回活动卡。验收后从宿主取消归档，原分区、标题、备注和输入版本读回一致。[原生归档回执](../state/acceptance/fedora-archive-batch-0.3.20-1795375127265.jsonl) |
 | Fedora 原生 MCP App | 从已安装插件详情打开 App，核对 iframe 内容摘要。远端专用卡跨列后，原生分区、App 刷新及备用网页均读回目标位置和原备注。反向拖放恢复原标题和分区。同列和拖出松手均无保存，缩窄视口后边缘横滚 296 像素。重启隔离副本时本机和远端连接分别恢复。账号最左侧图标待验。[手势回执](../state/acceptance/fedora-mcp-gestures-live-0.3.20-1795375210040.json) · [重启回执](../state/acceptance/fedora-native-relaunch-connections-0.3.20.json) · [隔离配置恢复](../state/acceptance/fedora-native-mcp-window-restored-0.3.20.json) |
 | Fedora 同窗口断线重连 | 中断仅归隔离副本所有的本机 SSH 传输后，远端专用卡转为只读且不可打开。本机连接保持可用。Codex 在同一窗口自动建立新传输，远端扫描恢复，专用卡恢复可打开。独立 `thread/read` 及看板均读回原位置，备注和版本保持一致。日用窗口的独立传输保持连接。[断线重连回执](../state/acceptance/fedora-reconnect-0.3.20-1795375570702.jsonl) |
@@ -328,7 +328,7 @@ Fedora 冻结需求仍待实测旧六状态的全列互移、批准后实际恢�
 
 | 项目 | 结果 |
 | --- | --- |
-| 远端新建 | 0.3.18 对同一个仍在等待导航的新建操作发出了两次原生打开请求。0.3.19 合并同账号、同操作 ID 和同项目的同时请求。重复请求只打开一次，新建登记完成后可用原操作 ID 继续打开输入页。项目或主机不匹配会拒绝。已用安装版相同的 `BoardService` 请求入口复验。[新建回归](../src/extensions/session-board/project-assignment.test.ts) |
+| 远端新建 | 0.3.18 对同一个仍在等待导航的新建操作发出了两次原生打开请求。0.3.19 合并同账号、同操作 ID 和同项目的同时请求。重复请求只打开一次，新建登记完成后可用原操作 ID 继续打开输入页。项目或主机不匹配会拒绝。已用安装版相同的 `BoardService` 请求入口复验。[新建回归](../src/extensions/project-assignment.test.ts) |
 | 安装失败恢复 | 首次安装或升级 Loader 时，注入安装回执写入失败，客户端副本分别恢复原始归档或上一版归档、链接和回执。恢复后可以重试。Fedora 和 MacBook Pro 的合成夹具都通过。进程被强制终止或断电的恢复尚未验证。[安装回归](../src/installer/install.test.ts) · [MacBook Pro 回执](../state/acceptance/packages/macos-0.3.19-preflight.txt) |
 | Fedora 原生标题重试 | 仅在隔离本机数据库中拒绝专用卡的目标标题。原生分区先保存，旧标题、备注和已保存版本保持有效，Enhancer 显示标题同步待重试。重启隔离副本仍有同一待办。撤除约束后，观察器自动写入并独立读回原生标题，待办清除。测试后恢复专用卡原分区和标题，两份配置与系统归档校验一致。[原生标题重试](../state/acceptance/fedora-title-retry-0.3.19-e9bb5acb2.jsonl) |
 | Fedora 安装生命周期 | 另起回环网络隔离的 Fedora 副本，从已安装备用网页点击更新，重启依次读回 `0.3.18 → 0.3.19 → 0.3.18`。卸载恢复原始归档，持久夹具和系统归档校验一致。已登录隔离副本也加载了 `0.3.19`。[网页更新和回退](../state/acceptance/fedora-installed-0.3.19.txt) · [已登录副本](../state/acceptance/fedora-signed-start-0.3.19.txt) |

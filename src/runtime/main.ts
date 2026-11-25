@@ -129,12 +129,18 @@ function loadExtensions(registry: SidebarRegistry, publish: () => void): string[
     const directory = path.join(outputDir, "extensions");
     const ids: string[] = [];
     if (!fs.existsSync(directory)) return ids;
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        const file = path.join(directory, entry.name, "extension.js");
+    const directories = [
+        directory,
+        ...fs
+            .readdirSync(directory, { withFileTypes: true })
+            .filter((entry) => entry.isDirectory())
+            .map((entry) => path.join(directory, entry.name)),
+    ];
+    for (const location of directories) {
+        const file = path.join(location, "extension.js");
         if (!fs.existsSync(file)) continue;
         const extension = loadExtension(file);
-        const extensionId = extension.id || entry.name;
+        const extensionId = extension.id || path.basename(location);
         if (typeof extension.setup === "function") {
             const api: ExtensionApi = {
                 log,

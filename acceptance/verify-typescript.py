@@ -156,7 +156,7 @@ def main():
             "src", "scripts", "acceptance", ".codex-plugin", ".mcp.json",
             "README.md", "package.json", "package-lock.json", "tsconfig.json",
         ))
-        runtime_fingerprint = fingerprint_of(("dist/extensions/session-board",))
+        runtime_fingerprint = fingerprint_of(("dist/extensions",))
         validate_model_bindings(contract, results)
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(json.dumps({"releaseReady": False, "error": str(error)}, ensure_ascii=False))

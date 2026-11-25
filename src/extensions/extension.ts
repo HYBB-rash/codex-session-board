@@ -1,4 +1,4 @@
-import type { ExtensionApi } from "../../runtime/api.js";
+import type { ExtensionApi } from "../runtime/api.js";
 
 function setup(api: ExtensionApi): void {
     api.ui.registerSidebarItem({

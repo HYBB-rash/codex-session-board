@@ -7,8 +7,8 @@ import {
     type Thread,
     type ThreadId,
     type Turn,
-} from "./desktop/connection.js";
-import { previewReply } from "./preview.js";
+} from "./desktop/connection-relocation.js";
+import { previewReply } from "./session-board/preview.js";
 
 const identifier = "00000000-0000-4000-8000-000000000001" as ThreadId;
 const remoteHost = "remote-ssh-discovered:preview";

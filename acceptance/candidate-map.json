@@ -44,83 +44,83 @@
             "coverage": "冻结断言逐项执行，双平台归档和原始附件绑定源码及有效期；回归测试覆盖失效和真实齐全时放行。"
         },
         "project-assignment-receipt": {
-            "file": "src/extensions/session-board/project-assignment.test.ts",
+            "file": "src/extensions/project-assignment.test.ts",
             "test": "project assignment verifies a lost native acknowledgment and rejects the wrong host"
         },
         "archive-receipt": {
-            "file": "src/extensions/session-board/archive.test.ts",
+            "file": "src/extensions/archive.test.ts",
             "test": "reopening an incomplete archive batch checks submitted items and never resends them"
         },
         "archive-registration-replay": {
-            "file": "src/extensions/session-board/archive.test.ts",
+            "file": "src/extensions/archive.test.ts",
             "test": "a repeated batch registration accepts only the original ordered targets"
         },
         "archive-finish-before-claim": {
-            "file": "src/extensions/session-board/archive.test.ts",
+            "file": "src/extensions/archive.test.ts",
             "test": "finishing a batch during preflight leaves the item unsubmitted"
         },
         "archive-finish-after-failed-preflight": {
-            "file": "src/extensions/session-board/archive.test.ts",
+            "file": "src/extensions/archive.test.ts",
             "test": "a failed preflight cannot change an item after its batch finishes"
         },
         "archive-finish-after-claim": {
-            "file": "src/extensions/session-board/archive.test.ts",
+            "file": "src/extensions/archive.test.ts",
             "test": "an item claimed before its batch finishes still records the native result"
         },
         "archive-schedule-settings": {
-            "file": "src/extensions/session-board/discovery.test.ts",
+            "file": "src/extensions/discovery.test.ts",
             "test": "archive deadlines follow the current host settings and configured time boundaries"
         },
         "legacy-archive-section-version": {
-            "file": "src/extensions/session-board/discovery.test.ts",
+            "file": "src/extensions/discovery.test.ts",
             "test": "a previously registered unscoped archive batch keeps its pending and unsent semantics"
         },
         "retired-connection": {
-            "file": "src/extensions/session-board/desktop/connection.test.ts",
+            "file": "src/extensions/desktop/connection.test.ts",
             "test": "a disconnected catalog host retires pending reads and prior connection epochs"
         },
         "native-method-scope": {
-            "file": "src/extensions/session-board/desktop/connection.test.ts",
+            "file": "src/extensions/desktop/connection.test.ts",
             "test": "native discovery and title calls use the existing connection with specific methods"
         },
         "discovery-coverage": {
-            "file": "src/extensions/session-board/discovery.test.ts",
+            "file": "src/extensions/discovery.test.ts",
             "test": "discovery pages interactive sources across all providers and keeps the newest duplicate"
         },
         "discovery-limit": {
-            "file": "src/extensions/session-board/discovery.test.ts",
+            "file": "src/extensions/discovery.test.ts",
             "test": "an incomplete discovery retains partial discoveries and leaves missing cards read-only"
         },
         "discovery-repeated-cursor": {
-            "file": "src/extensions/session-board/discovery.test.ts",
+            "file": "src/extensions/discovery.test.ts",
             "test": "a repeated discovery cursor preserves read cards and reports the scan as incomplete"
         },
         "discovery-reconnect": {
-            "file": "src/extensions/session-board/discovery.test.ts",
+            "file": "src/extensions/discovery.test.ts",
             "test": "remote cache survives removal, a failed scan, reconnect, and a confirmed archive"
         },
         "navigation-exact-thread": {
-            "file": "src/extensions/session-board/discovery.test.ts",
+            "file": "src/extensions/discovery.test.ts",
             "test": "opening rejects invalid, undiscovered and mismatched threads and uses the verified host"
         },
         "stale-account-edit": {
-            "file": "src/extensions/session-board/discovery.test.ts",
+            "file": "src/extensions/discovery.test.ts",
             "test": "an in-flight same-column edit cannot persist after the active Codex account switches"
         },
         "stale-account-card": {
-            "file": "src/extensions/session-board/discovery.test.ts",
+            "file": "src/extensions/discovery.test.ts",
             "test": "a stale card cannot save or register an archive after a switch to identical native revisions"
         },
         "preview-previous-complete": {
-            "file": "src/extensions/session-board/preview.test.ts",
+            "file": "src/extensions/preview.test.ts",
             "test": "preview reads the previous complete answer from the verified remote while a turn runs"
         },
         "preview-confirm-latest": {
-            "file": "src/extensions/session-board/preview.test.ts",
+            "file": "src/extensions/preview.test.ts",
             "test": "preview discards an obsolete response and retries after the current turn changes"
         },
         "preview-errors": {
-            "file": "src/extensions/session-board/preview.test.ts",
+            "file": "src/extensions/preview.test.ts",
             "test": "preview distinguishes an empty history from malformed pages and runtime read failures"
         },
         "launcher-deployment-paths": {
@@ -132,39 +132,39 @@
             "test": "the installer and launcher resolve configured source, command and socket paths"
         },
         "history-rotation": {
-            "file": "src/extensions/session-board/discovery.test.ts",
+            "file": "src/extensions/discovery.test.ts",
             "test": "historical read failures rotate and old interrupted turns do not change native placement"
         },
         "history-review-suggestion": {
-            "file": "src/extensions/session-board/discovery.test.ts",
+            "file": "src/extensions/discovery.test.ts",
             "test": "an old final reply suggests review without issuing a move or changing the current state"
         },
         "runtime-real-stages": {
-            "file": "src/extensions/session-board/title-sync.test.ts",
+            "file": "src/extensions/title-sync.test.ts",
             "test": "automatic pause, resume and completion follow native evidence and preserve the manual note"
         },
         "runtime-pending-move": {
-            "file": "src/extensions/session-board/title-sync.test.ts",
+            "file": "src/extensions/title-sync.test.ts",
             "test": "a durable pending phase is recovered after restart without repeating an applied move"
         },
         "runtime-passive-input": {
-            "file": "src/extensions/session-board/title-sync.test.ts",
+            "file": "src/extensions/title-sync.test.ts",
             "test": "passive history and queued text cannot start or finish a turn"
         },
         "first-input-revision": {
-            "file": "src/extensions/session-board/title-sync.test.ts",
+            "file": "src/extensions/title-sync.test.ts",
             "test": "first native input advances the same revision before a save or a history scan"
         },
         "archive-independent-readback": {
-            "file": "src/extensions/session-board/discovery.test.ts",
+            "file": "src/extensions/discovery.test.ts",
             "test": "a reopened batch reconciles uncached submitted cards on connected hosts independently"
         },
         "runtime-manual-selection": {
-            "file": "src/extensions/session-board/title-sync.test.ts",
+            "file": "src/extensions/title-sync.test.ts",
             "test": "manual placement survives same-turn output and restart until the stage changes"
         },
         "runtime-confirmed-errors": {
-            "file": "src/extensions/session-board/title-sync.test.ts",
+            "file": "src/extensions/title-sync.test.ts",
             "test": "only confirmed failures and interruptions move a running turn to blocked"
         },
         "legacy-change-history": {
@@ -200,39 +200,39 @@
             "test": "a client bound to a stopped instance cannot close its replacement"
         },
         "title-deadline": {
-            "file": "src/extensions/session-board/desktop/connection.test.ts",
+            "file": "src/extensions/desktop/connection.test.ts",
             "test": "a bounded native call ignores a reply received after its deadline"
         },
         "title-manual-projection": {
-            "file": "src/extensions/session-board/title-sync.test.ts",
+            "file": "src/extensions/title-sync.test.ts",
             "test": "manual saves sync the latest full title and strip only leading state prefixes"
         },
         "title-epoch": {
-            "file": "src/extensions/session-board/title-sync.test.ts",
+            "file": "src/extensions/title-sync.test.ts",
             "test": "enabling and reopening do not rename historical activity; new automatic states sync"
         },
         "title-concurrency": {
-            "file": "src/extensions/session-board/title-sync.test.ts",
+            "file": "src/extensions/title-sync.test.ts",
             "test": "foreground save supersedes a running title job without waiting for its reply"
         },
         "title-restart": {
-            "file": "src/extensions/session-board/title-sync.test.ts",
+            "file": "src/extensions/title-sync.test.ts",
             "test": "restart reconciles a lost rename receipt without repeating an applied write"
         },
         "title-retry-after-restart": {
-            "file": "src/extensions/session-board/title-sync.test.ts",
+            "file": "src/extensions/title-sync.test.ts",
             "test": "a rejected native rename preserves the saved card and is retried after reopening"
         },
         "title-fair-retry": {
-            "file": "src/extensions/session-board/title-sync.test.ts",
+            "file": "src/extensions/title-sync.test.ts",
             "test": "a frequently failing title retries behind other pending cards"
         },
         "title-shared-budget": {
-            "file": "src/extensions/session-board/title-sync.test.ts",
+            "file": "src/extensions/title-sync.test.ts",
             "test": "a hanging native context respects the shared three-second title budget"
         },
         "section-replicas": {
-            "file": "src/extensions/session-board/placement.test.ts",
+            "file": "src/extensions/placement.test.ts",
             "test": "section preflight only accepts unique replicas on the queried host"
         },
         "frozen-cross-replay": {
@@ -309,7 +309,7 @@
             "test": "a failed loader upgrade restores the prior patched archive, link and receipt"
         },
         "native-draft-concurrency": {
-            "file": "src/extensions/session-board/project-assignment.test.ts",
+            "file": "src/extensions/project-assignment.test.ts",
             "test": "overlapping requests share one native draft open and can resume after registration"
         },
         "release-rejection": {
@@ -492,7 +492,7 @@
         "APP-001": {
             "status": "partial",
             "implementation": [
-                "src/extensions/session-board/extension.ts",
+                "src/extensions/extension.ts",
                 ".mcp.json",
                 "src/runtime/board/broker.ts"
             ],

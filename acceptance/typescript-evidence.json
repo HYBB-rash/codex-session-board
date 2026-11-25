@@ -164,7 +164,7 @@
         },
         "APP-001": {
             "sources": [
-                "src/extensions/session-board/extension.ts",
+                "src/extensions/extension.ts",
                 "src/runtime/board/broker.ts",
                 "src/compat/server.ts",
                 "src/compat/mcp.ts"

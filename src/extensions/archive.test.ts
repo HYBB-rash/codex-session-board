@@ -7,7 +7,7 @@ import {
     type ArchiveTarget,
     type BoardLedger,
     emptyLedger,
-} from "./archive.js";
+} from "./session-board/archive.js";
 
 function harness(
     verify: () => Promise<void> = async () => {},
