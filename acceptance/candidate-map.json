@@ -629,7 +629,7 @@
         },
         "DELIVERY-001": {
             "status": "partial",
-            "implementation": ["src/installer/package-release.ts", "scripts/package.sh"],
+            "implementation": ["src/installer/release/package.ts", "scripts/package.sh"],
             "evidence": [
                 "release-rejection",
                 "release-rollback",

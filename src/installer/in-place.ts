@@ -37,7 +37,7 @@ import {
     requireCompatibleRpm,
 } from "./in-place-target.js";
 import { checkInPlaceUpgrade, type InPlaceWatchStatus } from "./in-place-watcher.js";
-import { verifyInPlaceRelease } from "./release-manifest.js";
+import { verifyInPlaceRelease } from "./release/manifest.js";
 import { activateRelease, activeRelease, rollbackRelease } from "./releases.js";
 
 const rpmLock = "/usr/lib/sysimage/rpm/.rpm.lock";

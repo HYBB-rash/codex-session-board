@@ -21,7 +21,7 @@ import {
     verifyInPlaceRelease,
     verifyRelease,
     versionManifest,
-} from "./release-manifest.js";
+} from "./release/manifest.js";
 import { activateRelease, activeRelease, rollbackRelease } from "./releases.js";
 
 const load = createRequire(__filename);

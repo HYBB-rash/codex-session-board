@@ -263,7 +263,7 @@
         "DELIVERY-001": {
             "sources": [
                 "scripts/package.sh",
-                "src/installer/package-release.ts",
+                "src/installer/release/package.ts",
                 "src/installer/releases.test.ts"
             ],
             "missing": "还需对最终 Linux 和 macOS 产物独立解包验收，记录哈希、离线运行、系统安装、更新和回退。"

@@ -5,7 +5,7 @@ import { IN_PLACE_APP, IN_PLACE_ARCHIVE, IN_PLACE_ROOT } from "./constants.js";
 import { presentFile, syncDirectory } from "./in-place-archive.js";
 import { assertSystemPath } from "./in-place-target.js";
 import { systemWatcherFiles, systemWatcherLinks } from "./in-place-watcher.js";
-import { releaseManifestName, verifyInPlaceRelease } from "./release-manifest.js";
+import { releaseManifestName, verifyInPlaceRelease } from "./release/manifest.js";
 
 const control = path.join(IN_PLACE_ROOT, "control");
 const stagedControl = path.join(IN_PLACE_ROOT, ".control-stage");

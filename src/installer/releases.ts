@@ -26,7 +26,7 @@ import {
     releasePlatform,
     verifyInPlaceRelease,
     verifyRelease,
-} from "./release-manifest.js";
+} from "./release/manifest.js";
 
 interface ReleasePointer {
     current: string;

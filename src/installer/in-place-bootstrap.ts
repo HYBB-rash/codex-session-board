@@ -16,7 +16,7 @@ import {
     readInPlaceBuildVersion,
 } from "./in-place-target.js";
 import { checkInPlaceUpgrade } from "./in-place-watcher.js";
-import { verifyInPlaceRelease } from "./release-manifest.js";
+import { verifyInPlaceRelease } from "./release/manifest.js";
 import { releasePointer } from "./releases.js";
 
 function archiveDigest(file: string): string {

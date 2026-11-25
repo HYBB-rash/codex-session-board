@@ -11,8 +11,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
-import { sha256File } from "./asar.js";
-import { outputDir, root } from "./paths.js";
+import { sha256File } from "../asar.js";
+import { outputDir, root } from "../paths.js";
 import {
     inPlaceReleaseProtocol,
     type ReleasePlatform,
@@ -20,7 +20,7 @@ import {
     releasePlatform,
     requireReleaseVersion,
     versionManifest,
-} from "./release-manifest.js";
+} from "./manifest.js";
 
 const acceptanceFiles = [
     "README.md",

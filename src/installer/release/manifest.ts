@@ -1,6 +1,6 @@
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import * as path from "node:path";
-import { sha256File } from "./asar.js";
+import { sha256File } from "../asar.js";
 
 export const releaseManifestName = "release.json";
 export const releasePlatforms = ["linux-x86_64", "macos-arm64"] as const;

@@ -10,7 +10,7 @@ import {
     releaseManifestName,
     releasePlatform,
     versionManifest,
-} from "../installer/release-manifest.js";
+} from "../installer/release/manifest.js";
 import { activateRelease } from "../installer/releases.js";
 import { assetsDirectory } from "./operations.js";
 import { readReceipt, writeReceipt } from "./receipt.js";
