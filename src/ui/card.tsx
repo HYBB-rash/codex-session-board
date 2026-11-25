@@ -126,19 +126,20 @@ export default defineComponent({
         function setArticle(node: unknown) {
             article.value = node instanceof HTMLElement ? node : undefined;
         }
-        function previewBackground(event: MouseEvent) {
+        function openFromBackground(event: MouseEvent) {
             const { session, model, dependencies } = props;
             if (model.moving?.id === session.id || !(event.target instanceof Element)) return;
             const control = event.target.closest("button,a,input,select,textarea,details");
-            if (!control || !article.value?.contains(control)) dependencies.preview(session);
+            if (!control || !article.value?.contains(control)) dependencies.openCard(session);
         }
-        onMounted(() => article.value?.addEventListener("click", previewBackground));
-        onBeforeUnmount(() => article.value?.removeEventListener("click", previewBackground));
+        onMounted(() => article.value?.addEventListener("click", openFromBackground));
+        onBeforeUnmount(() => article.value?.removeEventListener("click", openFromBackground));
         return () => {
             const { session, model, dependencies } = props;
             const pending = model.moving?.id === session.id;
             const locked = model.saving || model.creating || pending;
             const actions = dependencies.actions(session);
+            const preview = !dependencies.nativeConversation;
             return (
                 <article
                     ref={setArticle}
@@ -159,12 +160,12 @@ export default defineComponent({
                     <button
                         class="title card-title"
                         type="button"
-                        data-action="preview"
+                        data-action={preview ? "preview" : "open-conversation"}
                         disabled={pending}
-                        title={`预览回复：${session.title}`}
-                        aria-controls="reply-reader"
-                        aria-expanded={model.selectedId === session.id}
-                        onClick={(event) => dependencies.preview(session, event.detail === 0)}>
+                        title={`${preview ? "预览回复" : "打开会话"}：${session.title}`}
+                        aria-controls={preview ? "reply-reader" : undefined}
+                        aria-expanded={preview ? model.selectedId === session.id : undefined}
+                        onClick={(event) => dependencies.openCard(session, event.detail === 0)}>
                         {session.title}
                     </button>
                     <CardProject project={dependencies.project(session)} />

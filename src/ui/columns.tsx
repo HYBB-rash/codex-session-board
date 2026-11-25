@@ -35,7 +35,8 @@ export interface BoardDependencies {
     project: (session: BoardSession) => ProjectTag;
     actions: ReturnType<typeof mountBoardArchive>["cardActions"];
     canAssign: (session: BoardSession) => boolean;
-    preview: (session: BoardSession, focus?: boolean) => void;
+    nativeConversation: boolean;
+    openCard: (session: BoardSession, focus?: boolean) => void;
     edit: (id: string, state?: string, session?: BoardSession) => void;
     assign: (session: BoardSession) => void;
     archive: (session: BoardSession) => void;

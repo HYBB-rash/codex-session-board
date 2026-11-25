@@ -58,6 +58,7 @@ interface NativeFixture {
     history?: (id: ThreadId) => Turn[];
     read?: (host: string, id: ThreadId) => Thread | Promise<Thread>;
     open?: (command: Extract<DesktopCommand, { kind: "open" }>) => void;
+    closePage?: () => void;
 }
 
 async function readFixture(native: NativeFixture, host: string, method: string, params: ListArgs) {
@@ -136,7 +137,7 @@ function fixture(testContext: TestContext, maxPages = 3) {
         },
         settings: async () => ({ ...settings }),
         titleEpoch: async () => assert.fail("Titles disabled"),
-        closePage: () => assert.ok(native.open, "Discovery must not navigate"),
+        closePage: () => (native.closePage ?? (() => assert.ok(native.open)))(),
         authority: () => {},
         proof: () => {},
         updateStatus: async () => assert.fail("Discovery must not change release"),
@@ -429,6 +430,8 @@ test("archive deadlines follow the current host settings and configured time bou
 
 test("opening rejects invalid, undiscovered and mismatched threads and uses the verified host", async (testContext) => {
     const { native, service } = fixture(testContext);
+    const closePage = testContext.mock.fn();
+    native.closePage = closePage;
     const invalid = "../settings" as ThreadId;
     const remote = hostId(remoteName);
     assert.ok(remote);
@@ -457,9 +460,19 @@ test("opening rejects invalid, undiscovered and mismatched threads and uses the 
     };
     assert.deepEqual(await service.request("/api/open", { id }), { ok: true });
     assert.deepEqual(reads, [remote, remote]);
-    assert.deepEqual(dispatched, [
-        { accountId: "account", userId: "user", hostId: remote, threadId: first, kind: "open" },
-    ]);
+    const command = {
+        accountId: "account",
+        userId: "user",
+        hostId: remote,
+        threadId: first,
+        kind: "open",
+    };
+    assert.deepEqual(dispatched, [command]);
+    assert.equal(closePage.mock.callCount(), 1);
+    assert.deepEqual(await service.openBesideBoard(id), { ok: true });
+    assert.deepEqual(dispatched[1], { ...command, besideBoard: true });
+    assert.deepEqual(reads, [remote, remote, remote]);
+    assert.equal(closePage.mock.callCount(), 1);
 });
 
 test("discovery pages interactive sources across all providers and keeps the newest duplicate", async (testContext) => {

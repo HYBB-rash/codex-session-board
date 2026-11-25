@@ -20,6 +20,7 @@ function parseDesktopCommand(value: unknown): DesktopCommand {
         kind?: unknown;
         projectId?: unknown;
         roots?: unknown;
+        besideBoard?: unknown;
     };
     if (command.kind === "context") return { kind: "context" };
     const { accountId, userId, hostId, threadId, from, to } = command;
@@ -32,7 +33,14 @@ function parseDesktopCommand(value: unknown): DesktopCommand {
         command.kind === "new" ? parseNewTarget(command.projectId, command.roots) : undefined;
     if (target) return { kind: "new", ...account, hostId, ...target };
     if (!validThreadId(threadId)) throw new Error("Invalid thread ID");
-    if (command.kind === "open") return { kind: "open", ...account, hostId, threadId };
+    if (command.kind === "open")
+        return {
+            kind: "open",
+            ...account,
+            hostId,
+            threadId,
+            besideBoard: command.besideBoard === true,
+        };
     if (
         command.kind !== "move" ||
         (from !== null && typeof from !== "string") ||

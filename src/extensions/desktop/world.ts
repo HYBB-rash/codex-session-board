@@ -15,7 +15,7 @@ export type DesktopCommand =
     | SectionMove
     | (DesktopAccount &
           (
-              | { kind: "open"; hostId: string; threadId: string }
+              | { kind: "open"; hostId: string; threadId: string; besideBoard?: boolean }
               | { kind: "new"; hostId: string; projectId: string | null; roots: string[] }
               | { kind: "settings" }
           ));
@@ -229,22 +229,23 @@ async function navigate(
         return null;
     }
     if (command.kind === "open") {
-        const row = [
-            ...document.querySelectorAll<HTMLElement>("[data-app-action-sidebar-thread-row]"),
-        ].find(
-            (candidate) =>
-                candidate.getAttribute("data-app-action-sidebar-thread-host-id") ===
-                    command.hostId &&
-                candidate.getAttribute("data-app-action-sidebar-thread-id") ===
-                    `local:${command.threadId}`,
-        );
-        if (row) row.click();
-        else {
-            const query = new URLSearchParams({ hostId: command.hostId });
-            await desktopRouter().navigate(
-                `/local/${encodeURIComponent(command.threadId)}?${query}`,
+        if (!command.besideBoard) {
+            const row = [
+                ...document.querySelectorAll<HTMLElement>("[data-app-action-sidebar-thread-row]"),
+            ].find(
+                (candidate) =>
+                    candidate.getAttribute("data-app-action-sidebar-thread-host-id") ===
+                        command.hostId &&
+                    candidate.getAttribute("data-app-action-sidebar-thread-id") ===
+                        `local:${command.threadId}`,
             );
+            if (row) {
+                row.click();
+                return null;
+            }
         }
+        const query = new URLSearchParams({ hostId: command.hostId });
+        await desktopRouter().navigate(`/local/${encodeURIComponent(command.threadId)}?${query}`);
         return null;
     }
     return openComposer(command, modules, scope);

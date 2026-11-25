@@ -22,6 +22,10 @@ export type MountBoard = (
     panel: HTMLElement,
     request: (path: string, body?: object) => Promise<unknown>,
     close: () => void,
+    conversation: {
+        open(id: string): Promise<void>;
+        setVisible(visible: boolean): void;
+    },
 ) => () => void;
 
 function observeDesktop(desktop: DesktopConnection, board: BoardService): void {
@@ -132,10 +136,15 @@ function desktopBoard(mountBoard: MountBoard): void {
             ipcRenderer.on("codex-enhancer:ui-items", (_event, payload) => listener(payload));
         },
         proof,
-        mountPage(id, panel, close) {
+        mountPage(id, panel, close, showConversation) {
             if (id !== "session-board") return;
             closePage = close;
-            const unmount = mountBoard(panel, board.request, close);
+            const unmount = mountBoard(panel, board.request, close, {
+                async open(id) {
+                    await board.openBesideBoard(id);
+                },
+                setVisible: showConversation,
+            });
             return () => {
                 closePage = undefined;
                 unmount();

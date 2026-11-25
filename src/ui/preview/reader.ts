@@ -22,7 +22,10 @@ export function mountBoardSessionReader(container: HTMLElement, ports: ReaderPor
     const blocked = (id: string) =>
         ports.dragSuppressesClick() || ports.savingWithoutMove() || ports.movingId() === id;
 
-    async function openSession(id: string): Promise<true | undefined> {
+    async function openSession(
+        id: string,
+        open: (id: string) => Promise<unknown> = (id) => ports.request("/api/open", { id }),
+    ): Promise<true | undefined> {
         if (blocked(id) || opening) return;
         if (sessionById(id)?.canOpen === false) {
             ports.announce("主机暂不可用，无法打开会话。", true);
@@ -31,7 +34,7 @@ export function mountBoardSessionReader(container: HTMLElement, ports: ReaderPor
         opening = true;
         ports.announce("正在打开 Codex 会话…");
         try {
-            await ports.request("/api/open", { id });
+            await open(id);
             ports.announce("已发送会话跳转请求。");
             return true;
         } catch (error) {

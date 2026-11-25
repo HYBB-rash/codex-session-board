@@ -37,6 +37,11 @@ export interface BoardSnapshot {
 
 export type BoardRequest = (path: string, body?: object) => Promise<unknown>;
 
+export interface BoardConversation {
+    open(id: string): Promise<void>;
+    setVisible(visible: boolean): void;
+}
+
 function date(value?: number) {
     return value
         ? new Date(value * 1000).toLocaleString("zh-CN", {
@@ -53,6 +58,7 @@ export function startBoardPage(
     transport: BoardRequest,
     replaceAccount: (snapshot: BoardSnapshot) => void,
     initial?: BoardSnapshot,
+    openConversation?: BoardConversation["open"],
 ) {
     const lifetime = new AbortController();
     let data: BoardSnapshot = {
@@ -341,7 +347,12 @@ export function startBoardPage(
                 canSort: canChangeColumnSort,
                 saveSort,
                 canAssign: assignment.canAssign,
-                preview: reader.openReply,
+                nativeConversation: openConversation !== undefined,
+                openCard: openConversation
+                    ? (session) => {
+                          if (!creating) void reader.openSession(session.id, openConversation);
+                      }
+                    : reader.openReply,
                 edit: edits.open,
                 assign: assignment.open,
                 archive: archive.submitCard,

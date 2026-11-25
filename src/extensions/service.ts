@@ -1356,7 +1356,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         return after;
     }
 
-    async function open(id: string): Promise<{ ok: true }> {
+    async function open(id: string, besideBoard = false): Promise<{ ok: true }> {
         const { card, connection } = target(id);
         const context = await freshContext();
         await desktop.read(connection, card.threadId, false);
@@ -1368,9 +1368,10 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             userId: context.userId,
             hostId: card.hostId,
             threadId: card.threadId,
+            ...(besideBoard ? { besideBoard: true } : {}),
         });
         requireAccount(accountKey(context));
-        ports.closePage();
+        if (!besideBoard) ports.closePage();
         return { ok: true };
     }
 
@@ -1829,5 +1830,6 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         snapshot,
         update: updateSession,
         request,
+        openBesideBoard: (id: string) => open(id, true),
     };
 }
