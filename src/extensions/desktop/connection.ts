@@ -371,7 +371,7 @@ export function createDesktopConnection(transport: DesktopTransport) {
     }
 
     async function navigate(
-        command: Extract<DesktopCommand, { kind: "open" | "new" | "settings" }>,
+        command: Extract<DesktopCommand, { kind: "open" | "new" | "settings" | "draft" }>,
     ): Promise<unknown> {
         return transport.sidebar(command);
     }

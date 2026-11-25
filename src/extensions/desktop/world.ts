@@ -17,6 +17,7 @@ export type DesktopCommand =
           (
               | { kind: "open"; hostId: string; threadId: string; besideBoard?: boolean }
               | { kind: "new"; hostId: string; projectId: string | null; roots: string[] }
+              | { kind: "draft"; draftId: string }
               | { kind: "settings" }
           ));
 
@@ -33,7 +34,8 @@ interface DesktopSection {
 }
 
 interface DesktopScope {
-    get<T>(atom: DesktopAtom<T>): T;
+    get<T>(atom: DesktopAtom<T>, key?: string): T;
+    watch?(observer: (reader: Pick<DesktopScope, "get">) => void): () => void;
     set: unknown;
     scope?: { __scopeBrand?: string };
 }
@@ -57,7 +59,20 @@ type LocalProjects = Record<string, { rootPaths: string[] }>;
 
 interface WorkspaceModule {
     Gv?: DesktopAtom<LocalProjects>;
+    Gt?: DesktopAtom<{ type: string; projectId: string } | null>;
     n8?: DesktopAtom<{ id: string; hostId: string; remotePath: string }[]>;
+}
+
+interface DraftModule {
+    RH?: DesktopAtom<string>;
+    Tl?: DesktopAtom<string | null>;
+}
+
+interface ObservedDraft {
+    id: string;
+    scope: DesktopScope;
+    result: Promise<string | null>;
+    cancel(): void;
 }
 
 interface ComposerModule {
@@ -160,18 +175,21 @@ export function resolveLocalProjectId(projects: LocalProjects, projectId: string
     return matches[0]?.[0];
 }
 
-function composerProject(
-    command: Extract<DesktopCommand, { kind: "new" }>,
-    modules: DesktopModules,
-    scope: DesktopScope,
-) {
-    if (command.projectId === null && command.hostId === "local") return null;
-    const workspace: WorkspaceModule = exported(modules, [
+function workspaceModule(modules: DesktopModules): WorkspaceModule {
+    return exported(modules, [
         "THREAD_PROJECT_ASSIGNMENTS",
         "LOCAL_PROJECTS",
         "REMOTE_PROJECTS",
         "n8:()=>",
     ]);
+}
+
+function composerProject(
+    command: Extract<DesktopCommand, { kind: "new" }>,
+    workspace: WorkspaceModule,
+    scope: DesktopScope,
+) {
+    if (command.projectId === null && command.hostId === "local") return null;
     const { hostId, projectId, roots } = command;
     if (hostId === "local" && workspace.Gv && projectId !== null) {
         const nativeId = resolveLocalProjectId(scope.get(workspace.Gv), projectId, roots);
@@ -213,12 +231,62 @@ function registerRemoteProject(
     return "registration";
 }
 
+async function observeDraft(
+    scope: DesktopScope,
+    drafts: DraftModule,
+    selection: WorkspaceModule["Gt"],
+    projectId: string,
+    previous: string | undefined,
+) {
+    const { RH, Tl } = drafts;
+    if (!scope.watch || !RH || !Tl || !selection) return;
+    let id: string;
+    for (let attempt = 0; ; attempt++) {
+        id = scope.get(RH, "new-conversation");
+        const selected = scope.get(selection);
+        if (
+            id.startsWith("client-new-thread:") &&
+            id !== previous &&
+            selected?.type === "local" &&
+            selected.projectId === projectId
+        )
+            break;
+        if (attempt === 10) return;
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
+    }
+
+    const key = Symbol.for("codex-enhancer.local-project-draft");
+    (Reflect.get(window, key) as ObservedDraft | undefined)?.cancel();
+    let stop: (() => void) | undefined;
+    let complete: (threadId: string | null) => void = () => {};
+    const result = new Promise<string | null>((resolve) => {
+        complete = resolve;
+    });
+    const finish = (threadId: string | null) => {
+        complete(threadId);
+        queueMicrotask(() => stop?.());
+    };
+    const cancel = () => finish(null);
+    const draft: ObservedDraft = { id, scope, result, cancel };
+    Reflect.set(window, key, draft);
+    stop = scope.watch(({ get }) => {
+        const active = get(selection);
+        if (active?.type !== "local" || active.projectId !== projectId) return cancel();
+        const threadId = get(Tl, id);
+        if (threadId) return finish(threadId);
+        if (get(RH, "new-conversation") !== id) cancel();
+    });
+    return { draftId: id };
+}
+
 async function openComposer(
     command: Extract<DesktopCommand, { kind: "new" }>,
     modules: DesktopModules,
     scope: DesktopScope,
 ) {
-    const activeProject = composerProject(command, modules, scope);
+    const workspace =
+        command.projectId === null && command.hostId === "local" ? {} : workspaceModule(modules);
+    const activeProject = composerProject(command, workspace, scope);
     if (activeProject === undefined) return registerRemoteProject(command, modules);
     const composer: ComposerModule = exported(modules, [
         "startNewConversation:",
@@ -227,6 +295,15 @@ async function openComposer(
     ]);
     const start = composer.startNewConversation;
     if (!start) throw new Error("当前 Codex 版本未提供原生输入页入口");
+    const drafts: DraftModule =
+        activeProject?.projectKind === "local"
+            ? exported(
+                  modules,
+                  ["draft-thread-identities-v1", "getThreadScopeRouteId:", "Tl:()=>"],
+                  false,
+              )
+            : {};
+    const previous = drafts.RH && scope.get(drafts.RH, "new-conversation");
     await start(scope, {
         activeProject,
         codexAppMode: "codex",
@@ -234,11 +311,17 @@ async function openComposer(
         prefillComposerMode: "local",
         ...(command.hostId === "local" ? {} : { prefillRemoteExecutionHostId: command.hostId }),
     });
+    if (activeProject?.projectKind === "local") {
+        return (
+            (await observeDraft(scope, drafts, workspace.Gt, activeProject.projectId, previous)) ??
+            "composer"
+        );
+    }
     return "composer";
 }
 
 async function navigate(
-    command: Exclude<DesktopCommand, { kind: "context" | "move" }>,
+    command: Exclude<DesktopCommand, { kind: "context" | "move" | "draft" }>,
     modules: DesktopModules,
     scope: DesktopScope,
 ) {
@@ -335,6 +418,17 @@ function sidebarContext(modules: DesktopModules, scope: DesktopScope) {
     return { accountId, userId, sections: current, move: sidebar.f2 };
 }
 
+async function boundDraft(scope: DesktopScope, draftId: string) {
+    const key = Symbol.for("codex-enhancer.local-project-draft");
+    const draft = Reflect.get(window, key) as ObservedDraft | undefined;
+    if (draft?.id !== draftId || draft.scope !== scope) return null;
+    try {
+        return await draft.result;
+    } finally {
+        if (Reflect.get(window, key) === draft) Reflect.deleteProperty(window, key);
+    }
+}
+
 async function desktopWorld(command: DesktopCommand): Promise<unknown> {
     if (
         window.top !== window ||
@@ -351,6 +445,7 @@ async function desktopWorld(command: DesktopCommand): Promise<unknown> {
     if (accountId !== command.accountId || userId !== command.userId || scope !== appScope()) {
         throw new Error("Codex account retired");
     }
+    if (command.kind === "draft") return boundDraft(scope, command.draftId);
     if (command.kind !== "move") return navigate(command, modules, scope);
     const itemKey = `codex:thread:local:${command.threadId}`;
     const sidebarPosition = sections.find((section) => section.itemKeys.includes(itemKey));
@@ -369,14 +464,17 @@ export function desktopWorldSource(command: DesktopCommand): string {
         appScope,
         desktopRouter,
         resolveLocalProjectId,
+        workspaceModule,
         composerProject,
         registerRemoteProject,
+        observeDraft,
         openComposer,
         navigate,
         loadedModules,
         exported,
         remoteHostNames,
         sidebarContext,
+        boundDraft,
         desktopWorld,
     ].map((fn) => fn.toString());
     return `(()=>{${functions.join("\n")}\nreturn desktopWorld(${JSON.stringify(command)});})()`;

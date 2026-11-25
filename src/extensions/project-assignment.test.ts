@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { setImmediate } from "node:timers/promises";
 import { type BoardLedger, emptyLedger } from "./archive.js";
 import {
     cardId,
@@ -18,10 +19,15 @@ assert.ok(remote);
 const threadId = "00000000-0000-4000-8000-000000000001" as ThreadId;
 const cwd = "/fixture/project";
 const project = { id: "remote-project", name: "Fixture", roots: [{ path: cwd }] };
+const nativeDraftId = "client-new-thread:00000000-0000-4000-8000-000000000002";
 
 interface Packet {
     hostId: string;
-    request: { id: string; method: string; params: { archived?: boolean; projectId?: string } };
+    request: {
+        id: string;
+        method: string;
+        params: { archived?: boolean; projectId?: string; threadId?: ThreadId };
+    };
 }
 
 function initialThread() {
@@ -53,19 +59,34 @@ function deferred<Value>() {
 function transportFixture(
     open: (command: Extract<DesktopCommand, { kind: "new" }>) => Promise<unknown> = async () =>
         assert.fail("Assignment must not navigate"),
+    localDraft?: {
+        binding: Promise<ThreadId | null>;
+        existingProject?: string;
+        workingDirectory?: string;
+    },
 ) {
     const thread = initialThread();
+    const threadHost = localDraft ? localHostId : remote;
+    thread.projectId = localDraft?.existingProject ?? null;
+    thread.cwd = localDraft?.workingDirectory ?? cwd;
     const writes: string[] = [];
+    const readIds: (ThreadId | undefined)[] = [];
     const desktop = createDesktopConnection({
         bootstrap: () => ({ catalogHostIds: [localHostId, remote] }),
         async sidebar(command) {
             if (command.kind === "new") return open(command);
+            if (command.kind === "draft") {
+                assert.equal(command.draftId, nativeDraftId);
+                assert.ok(localDraft);
+                return localDraft.binding;
+            }
             assert.equal(command.kind, "context");
             return { accountId: "account", userId: "user", sections: [] };
         },
         async send(payload) {
             const packet = payload as Packet;
             const { method, params } = packet.request;
+            if (method === "thread/read") readIds.push(params.threadId);
             const message =
                 method === "thread/metadata/update"
                     ? update(packet.hostId, params.projectId)
@@ -78,7 +99,7 @@ function transportFixture(
         },
     });
     function update(host: string, id: string | undefined) {
-        assert.equal(host, remote);
+        assert.equal(host, threadHost);
         if (!id) return assert.fail("Missing project ID");
         writes.push(id);
         thread.projectId = id;
@@ -88,21 +109,26 @@ function transportFixture(
         const page = (data: unknown[]) => ({ data, nextCursor: null });
         switch (method) {
             case "thread/list":
-                return page(host === remote && !archived ? [structuredClone(thread)] : []);
+                return page(host === threadHost && !archived ? [structuredClone(thread)] : []);
             case "project/list":
                 return page([host === remote ? project : { ...project, id: "local-project" }]);
             case "thread/read":
-                assert.equal(host, remote);
+                assert.equal(host, threadHost);
                 return { thread: structuredClone(thread) };
+            case "thread/turns/list":
+                assert.equal(host, localHostId);
+                return page([{ id: "first-turn", status: "inProgress", items: [] }]);
             default:
                 return assert.fail(`Unexpected fixture call ${method}`);
         }
     }
-    return { desktop, writes };
+    return { desktop, writes, readIds };
 }
 
-function assignmentFixture() {
-    const { desktop, writes } = transportFixture();
+function assignmentFixture(
+    { desktop, writes, readIds } = transportFixture(),
+    closePage: () => void = () => assert.fail("Assignment must not navigate"),
+) {
     const service = createBoardService(desktop, {
         load: async () => ({ records: {}, legacyCachedCards: [] }),
         save: async () => assert.fail("Assignment must not change card records"),
@@ -112,12 +138,12 @@ function assignmentFixture() {
         writeLedger: async () => assert.fail("Assignment must not change archive data"),
         settings: async () => defaults,
         titleEpoch: async () => assert.fail("Assignment must not enable title synchronization"),
-        closePage: () => assert.fail("Assignment must not navigate"),
+        closePage,
         authority: () => {},
         updateStatus: async () => assert.fail("Assignment must not update the board"),
         proof: () => {},
     });
-    return { service, writes };
+    return { service, writes, readIds };
 }
 
 test("project assignment verifies a lost native acknowledgment and rejects the wrong host", async () => {
@@ -142,6 +168,57 @@ test("project assignment verifies a lost native acknowledgment and rejects the w
             service.snapshot().sessions.find((card) => card.id === id)?.projectId,
             target.id,
         );
+    } finally {
+        Reflect.set(globalThis, "window", original);
+    }
+});
+
+test("local new sessions repair only the bound draft with no existing assignment", async () => {
+    const original = Reflect.get(globalThis, "window");
+    Reflect.set(globalThis, "window", globalThis);
+    try {
+        const cases = [
+            { bound: threadId, expected: ["local-project"] },
+            { bound: null, expected: [] },
+            { bound: threadId, existingProject: "already-assigned", expected: [] },
+            { bound: threadId, workingDirectory: "/another/project", expected: [] },
+        ];
+        for (const { bound, expected, existingProject, workingDirectory } of cases) {
+            const binding = deferred<ThreadId | null>();
+            let closed = false;
+            const transport = transportFixture(
+                async (command) => {
+                    assert.equal(command.hostId, localHostId);
+                    assert.equal(command.projectId, "local-project");
+                    return { draftId: nativeDraftId };
+                },
+                {
+                    binding: binding.promise,
+                    ...(existingProject ? { existingProject } : {}),
+                    ...(workingDirectory ? { workingDirectory } : {}),
+                },
+            );
+            const { service, writes, readIds } = assignmentFixture(transport, () => {
+                closed = true;
+            });
+            await service.refresh();
+            assert.deepEqual(await service.request("/api/new", { projectId: "local-project" }), {
+                ok: true,
+                registration: false,
+            });
+            assert.equal(closed, true);
+            assert.deepEqual(writes, []);
+            const readsBeforeBinding = readIds.length;
+            binding.resolve(bound);
+            await setImmediate();
+            assert.deepEqual(writes, expected);
+            if (bound) {
+                assert.ok(readIds.length > readsBeforeBinding);
+                assert.ok(readIds.slice(readsBeforeBinding).every((id) => id === bound));
+            } else {
+                assert.equal(readIds.length, readsBeforeBinding);
+            }
+        }
     } finally {
         Reflect.set(globalThis, "window", original);
     }

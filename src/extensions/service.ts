@@ -293,6 +293,12 @@ function unconfirmed(failure: unknown, message: string): string {
     return failure ? errorText(failure) : message;
 }
 
+function localDraftId(host: HostId, result: unknown): string | undefined {
+    if (host !== localHostId || !result || typeof result !== "object") return;
+    const { draftId } = result as { draftId?: unknown };
+    return typeof draftId === "string" ? draftId : undefined;
+}
+
 function validateProjectAssignment(card: Card, hostId: HostId, project: HostProject): void {
     if (
         hostId !== card.hostId ||
@@ -1446,15 +1452,72 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         });
         await freshContext(owner);
         desktop.assertCurrent(connection);
-        if (result !== "registration" && result !== "composer")
+        const draftId = localDraftId(host, result);
+        if (result !== "registration" && result !== "composer" && !draftId)
             throw new Error("Codex 未确认输入页");
-        if (record && result === "composer") await persistDraft({ ...record, stage: "opened" });
+        if (record && result !== "registration") await persistDraft({ ...record, stage: "opened" });
+        if (selected && draftId) {
+            void assignNewLocalThread(owner, connection, draftId, selected.project.id).catch(
+                (error: unknown) => {
+                    ports.proof("board-new-project-assignment-failed", { error: errorText(error) });
+                },
+            );
+        }
         ports.closePage();
         return {
             ok: true,
             registration: result === "registration",
             ...(input.operationId ? { operationId: input.operationId } : {}),
         };
+    }
+
+    async function assignNewLocalThread(
+        owner: SidebarContext,
+        connection: HostConnection,
+        draftId: string,
+        projectId: string,
+    ) {
+        const result = await desktop.navigate({
+            kind: "draft",
+            accountId: owner.accountId,
+            userId: owner.userId,
+            draftId,
+        });
+        if (result === null) return;
+        if (typeof result !== "string") throw new Error("Codex 草稿回执无效");
+        const { hostId, threadId } = cardThread(result);
+        if (hostId !== connection.hostId) throw new Error("Codex 草稿回执主机不一致");
+        const before = await waitForUnassignedThread(owner, connection, threadId);
+        if (!before) return;
+        const { project } = findProject(projectId);
+        if (!project.roots.some(({ path }) => path === before.cwd)) return;
+        await freshContext(owner);
+        const latest = await desktop.read(connection, threadId, false);
+        if (latest.projectId !== null || latest.cwd !== before.cwd) return;
+        const after = await confirmProject(connection, latest, project.id);
+        await freshContext(owner);
+        desktop.assertCurrent(connection);
+        publishThread(hostId, after);
+    }
+
+    async function waitForUnassignedThread(
+        owner: SidebarContext,
+        connection: HostConnection,
+        threadId: ThreadId,
+    ) {
+        for (let attempt = 0; attempt < 20; attempt++) {
+            await freshContext(owner);
+            const before = await desktop.read(connection, threadId, false);
+            if (
+                !interactiveThread(before) ||
+                !canWrite(runtime.settings, threadId) ||
+                before.projectId !== null
+            )
+                return;
+            if ((await desktop.turns(connection, threadId, "summary")).data.length) return before;
+            await new Promise<void>((resolve) => window.setTimeout(resolve, 250));
+        }
+        throw new Error("尚未读到新会话的首条消息");
     }
 
     async function createTrackedDraft(
@@ -1545,24 +1608,29 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         )
             throw new Error("项目归属已变更，请刷新后重试");
         await freshContext(context);
+        const actual = await confirmProject(connection, before, project.id);
+        await freshContext(context);
+        desktop.assertCurrent(connection);
+        publishThread(hostId, actual);
+        return { ok: true };
+    }
+
+    async function confirmProject(connection: HostConnection, before: Thread, projectId: string) {
         let failure: unknown;
-        if (before.projectId !== project.id) {
+        if (before.projectId !== projectId) {
             try {
-                await desktop.assignProject(connection, card.threadId, project.id);
+                await desktop.assignProject(connection, before.id, projectId);
             } catch (error) {
                 failure = error;
             }
         }
         const actual =
-            before.projectId === project.id
+            before.projectId === projectId
                 ? before
-                : await desktop.read(connection, card.threadId, false);
-        await freshContext(context);
-        desktop.assertCurrent(connection);
-        if (actual.projectId !== project.id || actual.cwd !== card.cwd)
+                : await desktop.read(connection, before.id, false);
+        if (actual.projectId !== projectId || actual.cwd !== before.cwd)
             throw new Error(unconfirmed(failure, "Codex 尚未确认项目归属"));
-        publishThread(hostId, actual);
-        return { ok: true };
+        return actual;
     }
 
     async function writeLedger(next: BoardLedger): Promise<void> {
