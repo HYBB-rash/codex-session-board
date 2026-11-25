@@ -112,22 +112,23 @@ function labelForProject(item: CatalogProject, snapshot: BoardSnapshot) {
     return `${label} · ${paths}${identical.length > 1 ? ` · ${item.id}` : ""}`;
 }
 
-function presentProject(session: BoardSession, snapshot: BoardSnapshot, host: string): ProjectTag {
-    const catalog = snapshot.projectCatalog;
-    const item = catalog.items.find((candidate) => candidate.id === session.projectId);
-    const pending = Boolean(
-        session.projectIssue ||
-            (session.projectId && !item) ||
-            (!session.remote && !catalog.loaded),
-    );
-    const cached = Boolean(item && (item.cached || (!session.remote && catalog.error)));
-    const label = item
-        ? labelForProject(item, snapshot)
-        : pending
-          ? "项目待确认"
-          : `默认工作区${session.remote ? ` · ${hostLabel(session)}` : ""}`;
-    const hostSuffix = session.remote && host === "all" ? ` · ${hostLabel(session)}` : "";
-    const summaryLabel = hostSuffix && !label.includes(hostSuffix) ? label + hostSuffix : label;
+function sessionProjectLabel(
+    session: BoardSession,
+    snapshot: BoardSnapshot,
+    pending: boolean,
+    item?: CatalogProject,
+) {
+    if (item) return labelForProject(item, snapshot);
+    if (pending) return "项目待确认";
+    return session.remote ? `默认工作区 · ${hostLabel(session)}` : "默认工作区";
+}
+
+function projectDetails(
+    session: BoardSession,
+    label: string,
+    attention: boolean,
+    item?: CatalogProject,
+) {
     const info = [label];
     if (item) info.push(`项目目录：${item.paths.join(" · ")}`);
     info.push(`工作目录：${session.cwd || "未记录"}`);
@@ -139,13 +140,28 @@ function presentProject(session: BoardSession, snapshot: BoardSnapshot, host: st
               : "历史状态";
     info.push(`状态来源：${session.manual ? "人工确认" : source}`);
     if (session.remote) info.push(`主机：${hostLabel(session)}`);
-    if (pending || cached)
+    if (attention)
         info.push(session.projectIssue || "项目资料尚未确认更新，当前显示上次可用信息。");
+    return info;
+}
+
+function presentProject(session: BoardSession, snapshot: BoardSnapshot, host: string): ProjectTag {
+    const catalog = snapshot.projectCatalog;
+    const item = catalog.items.find((candidate) => candidate.id === session.projectId);
+    const pending = Boolean(
+        session.projectIssue ||
+            (session.projectId && !item) ||
+            (!session.remote && !catalog.loaded),
+    );
+    const cached = Boolean(item && (item.cached || (!session.remote && catalog.error)));
+    const label = sessionProjectLabel(session, snapshot, pending, item);
+    const hostSuffix = session.remote && host === "all" ? ` · ${hostLabel(session)}` : "";
+    const summaryLabel = label.includes(hostSuffix) ? label : label + hostSuffix;
     return {
         label,
         summary: summaryLabel + (pending && item ? " · 归属待确认" : cached ? " · 缓存" : ""),
         pending: pending || cached,
-        info,
+        info: projectDetails(session, label, pending || cached, item),
     };
 }
 

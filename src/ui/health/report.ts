@@ -152,31 +152,58 @@ function summarizeDiagnostics(reading: HostReading) {
 
 type HostDiagnostics = ReturnType<typeof summarizeDiagnostics>;
 
+function sessionReadStatus(current: HostHealth, hasSessions: boolean) {
+    if (!current.lastSuccessAt)
+        return hasSessions ? "显示已有会话，更新时间待确认" : "正在等待读取会话";
+    if (!current.scanComplete) return "会话列表尚未读取完整";
+    if (!current.runtimeVerified) return "自动状态尚未连接";
+    if (current.nativeSections && !current.nativeVerified) return "状态分组尚未确认";
+    return "会话列表已读取 · 自动状态已连接";
+}
+
 function sessionStatus(reading: HostReading, diagnostic: HostDiagnostics) {
     const { current, rows, projectError, partial, blocked, readonly, listError } = reading;
-    const { pendingProject } = diagnostic;
-    let status = !current.lastSuccessAt
-        ? rows.length
-            ? "显示已有会话，更新时间待确认"
-            : "正在等待读取会话"
-        : !current.scanComplete
-          ? "会话列表尚未读取完整"
-          : !current.runtimeVerified
-            ? "自动状态尚未连接"
-            : current.nativeSections && !current.nativeVerified
-              ? "状态分组尚未确认"
-              : "会话列表已读取 · 自动状态已连接";
-    if (current.autoArchiveError) status = "本轮后台自动归档未完成";
-    if (current.historyError) status = "部分会话历史暂不可读，保留已有记录";
-    if (pendingProject) status = "部分会话的项目归属待确认";
-    if (projectError) status = "项目列表暂不可读，保留上次分类";
-    if (current.nativeError) status = "状态分组暂不可读，保留上次位置";
-    if (partial) status = "部分自动状态更新未完成";
-    if (blocked || readonly)
-        status = blocked ? "可以查看会话，暂时不能修改" : "部分会话暂时不能修改";
     if (listError)
-        status = rows.length ? "会话列表暂时无法更新，显示已有记录" : "尚未读取会话，请检查连接";
-    return status;
+        return rows.length ? "会话列表暂时无法更新，显示已有记录" : "尚未读取会话，请检查连接";
+    if (blocked) return "可以查看会话，暂时不能修改";
+    if (readonly) return "部分会话暂时不能修改";
+    if (partial) return "部分自动状态更新未完成";
+    if (current.nativeError) return "状态分组暂不可读，保留上次位置";
+    if (projectError) return "项目列表暂不可读，保留上次分类";
+    if (diagnostic.pendingProject) return "部分会话的项目归属待确认";
+    if (current.historyError) return "部分会话历史暂不可读，保留已有记录";
+    if (current.autoArchiveError) return "本轮后台自动归档未完成";
+    return sessionReadStatus(current, rows.length > 0);
+}
+
+function projectReadStatus(catalog: BoardSnapshot["projectCatalog"]) {
+    if (!catalog.loaded) return "项目列表尚未读取";
+    if (catalog.pending) return "正在更新项目列表";
+    if (catalog.incomplete) return "项目列表尚未读取完整";
+    if (catalog.cached) return "显示上次项目列表";
+    return undefined;
+}
+
+function catalogReadStatus(catalog: HostCatalog) {
+    if (catalog.pending) return "正在更新主机目录";
+    if (catalog.cached && catalog.capturedAt) return "显示上次主机目录快照";
+    if (!catalog.complete) return "主机目录尚未读取完整";
+    return "主机目录已读取完整";
+}
+
+function primaryHostStatus(reading: HostReading, diagnostic: HostDiagnostics): string {
+    const { host, local, idle, rows, catalog, projectCatalog, listError, blocked, readonly } =
+        reading;
+    if (idle)
+        return `${host.enabled === false ? "尚未连接" : "主机已移除"}${rows.length ? " · 显示缓存" : " · 尚未读取会话"}`;
+    const canUseCatalog = !diagnostic.faults && !blocked && !readonly;
+    if (local && canUseCatalog) {
+        const project = projectReadStatus(projectCatalog);
+        if (project) return project;
+    }
+    if (catalog?.error) return "主机目录暂时无法更新，保留上次结果";
+    if (catalog && canUseCatalog && !listError) return catalogReadStatus(catalog);
+    return sessionStatus(reading, diagnostic);
 }
 
 function hostStatus(
@@ -184,61 +211,38 @@ function hostStatus(
     diagnostic: HostDiagnostics,
     date: HealthSources["date"],
 ) {
-    const { host, local, idle, rows, catalog, projectCatalog, listError, blocked, readonly } =
-        reading;
-    const { faults } = diagnostic;
-    let status = sessionStatus(reading, diagnostic);
-    if (catalog && !listError && !blocked && !readonly && !faults)
-        status = catalog.error
-            ? "主机目录暂时无法更新，保留上次结果"
-            : catalog.pending
-              ? "正在更新主机目录"
-              : catalog.cached && catalog.capturedAt
-                ? "显示上次主机目录快照"
-                : !catalog.complete
-                  ? "主机目录尚未读取完整"
-                  : "主机目录已读取完整";
-    if (catalog?.error) status = "主机目录暂时无法更新，保留上次结果";
-    if (local && !faults && !blocked && !readonly) {
-        if (!projectCatalog.loaded) status = "项目列表尚未读取";
-        else if (projectCatalog.pending) status = "正在更新项目列表";
-        else if (projectCatalog.incomplete) status = "项目列表尚未读取完整";
-        else if (projectCatalog.cached) status = "显示上次项目列表";
-    }
-    if (idle)
-        status = `${host.enabled === false ? "尚未连接" : "主机已移除"}${rows.length ? " · 显示缓存" : " · 尚未读取会话"}`;
-    if (catalog?.cached) status += ` · 缓存时间：${date(catalog.capturedAt)}`;
-    return status;
+    const { catalog } = reading;
+    const status = primaryHostStatus(reading, diagnostic);
+    return catalog?.cached ? `${status} · 缓存时间：${date(catalog.capturedAt)}` : status;
+}
+
+function sessionListEffect({ idle, listError, current }: HostReading) {
+    if (idle) return "只显示缓存，尚未确认更新";
+    if (listError) return "暂时无法更新，保留已有记录";
+    if (!current.lastSuccessAt) return "最近读取情况尚未确认";
+    return current.scanComplete ? "已读取" : "尚未读取完整";
+}
+
+function sectionReadEffect({ idle, current }: HostReading) {
+    if (!current.nativeSections) return "不使用原生分组";
+    if (current.nativeError || !current.nativeVerified || idle) return "尚未确认更新，保留上次位置";
+    return "已读回";
 }
 
 function readingEffects(reading: HostReading) {
-    const { idle, listError, current, partial, blocked, readonly } = reading;
-    const sessionList = idle
-        ? "只显示缓存，尚未确认更新"
-        : listError
-          ? "暂时无法更新，保留已有记录"
-          : current.lastSuccessAt
-            ? current.scanComplete
-                ? "已读取"
-                : "尚未读取完整"
-            : "最近读取情况尚未确认";
+    const { idle, current, partial, blocked, readonly } = reading;
     const runtime =
         idle || !current.runtimeVerified
             ? "尚未连接，保留原状态"
             : partial
               ? "部分更新未完成"
               : "已连接";
-    const sections = current.nativeSections
-        ? current.nativeError || !current.nativeVerified || idle
-            ? "尚未确认更新，保留上次位置"
-            : "已读回"
-        : "不使用原生分组";
     const changes =
         idle || blocked ? "暂不可用" : readonly ? "部分会话只读" : "请以卡片上可用的操作为准";
     return [
-        `会话列表：${sessionList}`,
+        `会话列表：${sessionListEffect(reading)}`,
         `自动状态：${runtime}`,
-        `状态分组：${sections}`,
+        `状态分组：${sectionReadEffect(reading)}`,
         `修改与归档：${changes}`,
     ];
 }

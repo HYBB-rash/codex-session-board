@@ -20,6 +20,17 @@ function validTime(value: number) {
     return Number.isFinite(value) && value > 0 && value <= 8640000000000;
 }
 
+function compareUpdatedAt(first: BoardSession, second: BoardSession, direction: Direction) {
+    const left = validTime(first.updatedAt),
+        right = validTime(second.updatedAt);
+    if (left !== right) return left ? -1 : 1;
+    if (left && first.updatedAt !== second.updatedAt)
+        return direction === "asc"
+            ? first.updatedAt - second.updatedAt
+            : second.updatedAt - first.updatedAt;
+    return first.id < second.id ? -1 : first.id > second.id ? 1 : 0;
+}
+
 export function sortColumn(
     state: string | null,
     sessions: BoardSession[],
@@ -31,16 +42,7 @@ export function sortColumn(
         version: 0,
     };
     if (preference.field !== "updated_at") throw new Error("不支持的排序字段，请刷新看板。");
-    sessions.sort((first, second) => {
-        const left = validTime(first.updatedAt),
-            right = validTime(second.updatedAt);
-        if (left !== right) return left ? -1 : 1;
-        if (left && first.updatedAt !== second.updatedAt)
-            return preference.direction === "asc"
-                ? first.updatedAt - second.updatedAt
-                : second.updatedAt - first.updatedAt;
-        return first.id < second.id ? -1 : first.id > second.id ? 1 : 0;
-    });
+    sessions.sort((first, second) => compareUpdatedAt(first, second, preference.direction));
     return { sessions, preference };
 }
 

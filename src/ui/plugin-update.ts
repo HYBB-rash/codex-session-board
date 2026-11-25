@@ -52,6 +52,13 @@ export function mountPluginUpdate(
         status.hidden = !message;
     }
 
+    function showReadError(error: unknown, requested: number, start: boolean) {
+        if (requested !== generation || !(available || start)) return;
+        const detail = error instanceof Error ? error.message : String(error);
+        show(`暂时无法确认更新状态。请重新打开看板后核对结果。 ${detail}`);
+        button.disabled = false;
+    }
+
     async function read(start = false) {
         if (starting || available === false || (!start && reading)) return;
         if (start) {
@@ -71,11 +78,7 @@ export function mountPluginUpdate(
             button.disabled = result.busy === true;
             show(describeUpdate(result));
         } catch (error) {
-            if (requested === generation && (available || start)) {
-                const detail = error instanceof Error ? error.message : String(error);
-                show(`暂时无法确认更新状态。请重新打开看板后核对结果。 ${detail}`);
-                button.disabled = false;
-            }
+            showReadError(error, requested, start);
         } finally {
             if (start) starting = false;
             else reading = false;
