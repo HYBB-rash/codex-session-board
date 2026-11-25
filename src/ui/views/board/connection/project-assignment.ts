@@ -1,4 +1,4 @@
-import type { CatalogProject } from "../browse/browse";
+import type { CatalogProject } from "../browse/scope";
 import type { BoardSession } from "../session";
 
 interface AssignmentElements {

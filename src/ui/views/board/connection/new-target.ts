@@ -1,4 +1,4 @@
-import type { CatalogProject, HostOption } from "../browse/browse";
+import type { CatalogProject, HostOption } from "../browse/scope";
 import type { BoardSnapshot } from "../controller";
 
 interface TargetElements {

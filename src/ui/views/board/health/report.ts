@@ -1,5 +1,5 @@
-import type { AutoArchiveHealth } from "../archive/archive";
-import type { CatalogProject, HostCatalog, HostIdentity, HostOption } from "../browse/browse";
+import type { AutoArchiveHealth } from "../archive/controls";
+import type { CatalogProject, HostCatalog, HostIdentity, HostOption } from "../browse/scope";
 import type { BoardSnapshot } from "../controller";
 import type { BoardSession } from "../session";
 
