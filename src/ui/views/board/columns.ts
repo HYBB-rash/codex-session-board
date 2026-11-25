@@ -1,19 +1,11 @@
 import { h, render } from "vue";
-import type { mountBoardArchive } from "./views/board/archive/archive";
-import { createCardDrag } from "./views/board/drag";
-import { type BoardElements, createBoardLayout } from "./views/board/layout";
-import BoardColumns from "./views/board/SessionColumns.vue";
-import type { BoardSession } from "./views/board/session";
-import { type SortMenuProps, type SortPreference, sortColumn } from "./views/board/sorting";
-
-export type { BoardSession } from "./views/board/session";
-
-export interface ProjectTag {
-    label: string;
-    summary: string;
-    pending: boolean;
-    info: string[];
-}
+import type { ProjectTag } from "../../shared/card-details";
+import type { mountBoardArchive } from "./archive/archive";
+import { createCardDrag } from "./drag";
+import { type BoardElements, createBoardLayout } from "./layout";
+import BoardColumns from "./SessionColumns.vue";
+import type { BoardSession } from "./session";
+import { type SortMenuProps, type SortPreference, sortColumn } from "./sorting";
 
 export interface BoardModel {
     states: Record<string, string>;

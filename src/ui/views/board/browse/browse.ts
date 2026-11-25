@@ -1,4 +1,4 @@
-import type { ProjectTag } from "../../../board-view";
+import type { ProjectTag } from "../../../shared/card-details";
 import type { BoardSnapshot } from "../controller";
 import type { BoardSession } from "../session";
 import { mountBoardFilters } from "./filters";

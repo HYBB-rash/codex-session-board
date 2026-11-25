@@ -1,5 +1,6 @@
 import { ref, shallowRef } from "vue";
-import type { BoardDependencies, BoardSession } from "../../board-view";
+import type { BoardDependencies } from "./columns";
+import type { BoardSession } from "./session";
 
 export function createCardDrag(viewport: HTMLElement, dependencies: BoardDependencies) {
     return new CardDrag(viewport, dependencies);

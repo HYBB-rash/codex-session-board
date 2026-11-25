@@ -1,6 +1,6 @@
-import { type BoardModel, type BoardSession, mountBoard } from "../../board-view";
 import { mountBoardArchive } from "./archive/archive";
 import { type CatalogProject, type HostIdentity, mountBoardBrowse } from "./browse/browse";
+import { type BoardModel, mountBoard } from "./columns";
 import { mountBoardNewSession } from "./connection/new-session";
 import { mountBoardNewTarget } from "./connection/new-target";
 import { mountProjectAssignment } from "./connection/project-assignment";
@@ -12,6 +12,7 @@ import { type BoardHealth, createBoardHealthReports } from "./health/report";
 import { mountPluginUpdate } from "./plugin-update";
 import { mountBoardSessionReader } from "./preview/session-reader";
 import { mountBoardRefresh } from "./refresh";
+import type { BoardSession } from "./session";
 import { createColumnSortSave, type SortPreference } from "./sorting";
 
 export interface BoardSnapshot {

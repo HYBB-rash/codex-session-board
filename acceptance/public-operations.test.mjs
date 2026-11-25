@@ -194,7 +194,7 @@ test("the installed MCP plugin declares one global entrypoint for the complete b
     assert.equal(script.status, 200);
     const webPage = await script.text();
     for (const content of [page.text, webPage]) {
-        for (const landmark of ["board-viewport", "reply-reader", "board-editor"]) {
+        for (const landmark of ["board-viewport", "reply-reader", "edit-form"]) {
             assert.ok(content.includes(landmark), landmark);
         }
     }

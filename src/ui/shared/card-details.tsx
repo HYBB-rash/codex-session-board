@@ -1,6 +1,12 @@
 import type { PropType } from "vue";
 import { defineComponent, onBeforeUnmount, onMounted, onUnmounted, onUpdated, ref } from "vue";
-import type { ProjectTag } from "./board-view";
+
+export interface ProjectTag {
+    label: string;
+    summary: string;
+    pending: boolean;
+    info: string[];
+}
 
 export const CardProject = defineComponent({
     props: { project: { type: Object as PropType<ProjectTag>, required: true } },

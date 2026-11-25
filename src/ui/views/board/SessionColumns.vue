@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { BoardControls, BoardModel } from "../../board-view";
 import ColumnSort from "./ColumnSort.vue";
+import type { BoardControls, BoardModel } from "./columns";
 import SessionCard from "./session-card";
 
 defineProps<{ model: BoardModel; dependencies: BoardControls; unplaced?: boolean }>();
