@@ -507,20 +507,21 @@ class BoardPage {
     };
 
     private columns(visible: BoardSession[]): BoardModel["columns"] {
-        const selectedHost = this.browse.filters.state.host;
+        const { browse, reports, board, archive, data } = this;
+        const selectedHost = browse.filters.state.host;
         const unread =
-            !this.browse.hostSessions().length &&
-            this.reports
+            !browse.hostSessions().length &&
+            reports
                 .healthReports()
                 .some(
                     (host) =>
                         (selectedHost === "all" || host.key === selectedHost) && !host.lastRead,
                 );
-        return Object.entries(this.data.states).map(([state, label]) => {
-            const { sessions, preference } = this.board.sortColumn(
+        return Object.entries(data.states).map(([state, label]) => {
+            const { sessions, preference } = board.sortColumn(
                 state,
                 visible.filter((session) => session.state === state),
-                this.data.columnSorts,
+                data.columnSorts,
             );
             return {
                 state,
@@ -528,39 +529,40 @@ class BoardPage {
                 unread,
                 sessions,
                 preference,
-                archiveCount: this.archive.count(sessions),
+                archiveCount: archive.count(sessions),
             };
         });
     }
 
     private boardModel(): BoardModel {
-        const moving = this.movePanel.moving;
-        const visible = this.browse
+        const { movePanel, browse, reader, board, data, edits, archive, saving, creating } = this;
+        const moving = movePanel.moving;
+        const visible = browse
             .visibleSessions()
             .map((session) =>
                 moving?.id === session.id ? { ...session, state: moving.state } : session,
             );
-        const unplaced = this.data.fourColumns
-            ? this.board.sortColumn(
+        const unplaced = data.fourColumns
+            ? board.sortColumn(
                   null,
                   visible.filter((session) => session.state === null),
               ).sessions
             : [];
-        const preview = this.reader.preview;
+        const preview = reader.preview;
         return {
-            states: this.data.states,
+            states: data.states,
             columns: this.columns(visible),
             unplaced,
-            scope: this.browse.filters.view.scope,
-            legacyMode: this.data.legacyMode === true,
-            saving: this.saving,
-            creating: this.creating,
+            scope: browse.filters.view.scope,
+            legacyMode: data.legacyMode === true,
+            saving,
+            creating,
             get selectedId() {
                 return preview.selectedId;
             },
             moving: visible.some((session) => session.id === moving?.id) ? moving : null,
-            unconfirmed: [...this.edits.unconfirmed.keys()],
-            archivePending: [...this.archive.pending],
+            unconfirmed: [...edits.unconfirmed.keys()],
+            archivePending: [...archive.pending],
         };
     }
 
@@ -580,13 +582,13 @@ class BoardPage {
         this.lifetime.signal.aborted ? Promise.resolve() : this.refresh.load();
 
     private applySnapshot(next: BoardSnapshot) {
-        const { render } = this;
+        const { archive, sshSetup, reader, edits, newSession, render } = this;
         this.data = next;
-        this.archive.updateBoard(next);
-        this.sshSetup.update();
-        this.reader.preview.update(next.sessions, false);
-        this.edits.reconcile(next.sessions);
-        this.newSession.update(next);
+        archive.updateBoard(next);
+        sshSetup.update();
+        reader.preview.update(next.sessions, false);
+        edits.reconcile(next.sessions);
+        newSession.update(next);
         render();
     }
 
@@ -615,16 +617,18 @@ class BoardPage {
     }
 
     readonly unmount = () => {
-        this.lifetime.abort();
-        this.refresh.invalidate();
-        window.clearInterval(this.poll);
-        this.board.drag.cancel();
-        this.stopPluginUpdate();
-        this.reader.preview.unmount();
-        this.archive.unmount();
-        this.edits.unmount();
-        this.board.unmount();
-        this.browse.filters.unmount();
+        const { lifetime, refresh, poll, board, stopPluginUpdate, reader, archive, edits, browse } =
+            this;
+        lifetime.abort();
+        refresh.invalidate();
+        window.clearInterval(poll);
+        board.drag.cancel();
+        stopPluginUpdate();
+        reader.preview.unmount();
+        archive.unmount();
+        edits.unmount();
+        board.unmount();
+        browse.filters.unmount();
     };
 }
 
