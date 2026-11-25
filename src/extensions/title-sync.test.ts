@@ -6,7 +6,7 @@ import { type TestContext, test } from "node:test";
 import { setImmediate as nextTick } from "node:timers/promises";
 import { emptyLedger } from "./archive.js";
 import {
-    DesktopConnection,
+    createDesktopConnection,
     type HostSectionId,
     type LogicalSectionId,
     localHostId,
@@ -81,7 +81,7 @@ function desktopFixture(
         return {};
     }
 
-    const desktop = new DesktopConnection({
+    const desktop = createDesktopConnection({
         bootstrap: () => ({ catalogHostIds: [localHostId] }),
         async sidebar(command) {
             if (command.kind === "context") return readContext();

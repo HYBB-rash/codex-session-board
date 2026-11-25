@@ -138,75 +138,76 @@ export function interactiveThread(thread: Thread): boolean {
     );
 }
 
-export class DesktopConnection {
-    private readonly hosts = new Map<
-        HostId,
-        { epoch: number; connected: boolean; catalog: boolean }
-    >();
-    private readonly pending = new Map<string, Pending>();
+export type DesktopConnection = ReturnType<typeof createDesktopConnection>;
 
-    constructor(private readonly transport: DesktopTransport) {}
+export function createDesktopConnection(transport: DesktopTransport) {
+    const hosts = new Map<HostId, { epoch: number; connected: boolean; catalog: boolean }>();
+    const requests = new Map<string, Pending>();
 
-    knownHosts(): HostId[] {
-        const bootstrap = this.transport.bootstrap() as { catalogHostIds?: string[] } | null;
-        if (!Array.isArray(bootstrap?.catalogHostIds)) return [...this.hosts.keys()];
+    function knownHosts(): HostId[] {
+        const bootstrap = transport.bootstrap() as { catalogHostIds?: string[] } | null;
+        if (!Array.isArray(bootstrap?.catalogHostIds)) return [...hosts.keys()];
         const catalog = new Set(
             bootstrap.catalogHostIds.map(hostId).filter((value) => value !== null),
         );
-        for (const key of catalog) {
-            if (!this.hosts.has(key)) {
-                this.hosts.set(key, { epoch: 0, connected: true, catalog: true });
-            }
-        }
-        for (const [key, state] of this.hosts) {
-            if (state.catalog && !catalog.has(key)) this.setConnection(key, false, false);
-            if (!state.catalog && catalog.has(key)) this.setConnection(key, true, true);
-        }
-        return [...this.hosts.keys()];
+        synchronizeCatalog(catalog);
+        return [...hosts.keys()];
     }
 
-    capture(key: HostId): HostConnection {
-        const state = this.hosts.get(key);
+    function synchronizeCatalog(catalog: ReadonlySet<HostId>) {
+        for (const key of catalog) {
+            if (!hosts.has(key)) {
+                hosts.set(key, { epoch: 0, connected: true, catalog: true });
+            }
+        }
+        for (const [key, state] of hosts) {
+            if (state.catalog && !catalog.has(key)) setConnection(key, false, false);
+            if (!state.catalog && catalog.has(key)) setConnection(key, true, true);
+        }
+    }
+
+    function capture(key: HostId): HostConnection {
+        const state = hosts.get(key);
         if (!state?.connected) throw new Error(`Codex 连接已断开 (${key})`);
         return { hostId: key, epoch: state.epoch };
     }
 
-    assertCurrent(connection: HostConnection): void {
-        if (this.capture(connection.hostId).epoch !== connection.epoch) {
+    function assertCurrent(connection: HostConnection): void {
+        if (capture(connection.hostId).epoch !== connection.epoch) {
             throw new Error("Codex 连接已变更，请刷新后重试");
         }
     }
 
-    receive(value: unknown): NativePacket | undefined {
+    function receive(value: unknown): NativePacket | undefined {
         if (typeof value !== "object" || value === null) return;
         const packet = value as NativePacket;
         const key = typeof packet.hostId === "string" && hostId(packet.hostId);
         if (!key) return;
         if (packet.type === "codex-app-server-connection-changed") {
-            this.setConnection(key, packet.state === "connected");
+            setConnection(key, packet.state === "connected");
         }
         if (packet.type === "mcp-response" && typeof packet.message?.id === "string") {
-            this.receiveReply(key, packet.message.id, packet.message);
+            receiveReply(key, packet.message.id, packet.message);
         }
         return packet;
     }
 
-    private setConnection(key: HostId, connected: boolean, catalog?: boolean): void {
-        const previous = this.hosts.get(key);
+    function setConnection(key: HostId, connected: boolean, catalog?: boolean): void {
+        const previous = hosts.get(key);
         const present = catalog ?? previous?.catalog ?? false;
         if (previous?.connected === connected && previous.catalog === present) return;
-        this.hosts.set(key, { epoch: (previous?.epoch ?? 0) + 1, connected, catalog: present });
-        for (const [id, pending] of this.pending) {
-            if (pending.connection.hostId === key) this.fail(id, "Codex 连接已变更");
+        hosts.set(key, { epoch: (previous?.epoch ?? 0) + 1, connected, catalog: present });
+        for (const [id, pending] of requests) {
+            if (pending.connection.hostId === key) fail(id, "Codex 连接已变更");
         }
     }
 
-    private receiveReply(
+    function receiveReply(
         key: HostId,
         id: string,
         reply: NonNullable<NativePacket["message"]>,
     ): void {
-        const pending = this.pending.get(id);
+        const pending = requests.get(id);
         if (!pending) return;
         const error =
             pending.connection.hostId !== key
@@ -215,53 +216,53 @@ export class DesktopConnection {
                   ? (reply.error.message ?? "Codex 请求失败")
                   : null;
         if (error) {
-            this.fail(id, error);
+            fail(id, error);
             return;
         }
         window.clearTimeout(pending.timeout);
-        this.pending.delete(id);
+        requests.delete(id);
         pending.resolve(reply.result);
     }
 
-    private fail(id: string, message: string): void {
-        const pending = this.pending.get(id);
+    function fail(id: string, message: string): void {
+        const pending = requests.get(id);
         if (!pending) return;
         window.clearTimeout(pending.timeout);
-        this.pending.delete(id);
+        requests.delete(id);
         pending.reject(new Error(message));
     }
 
-    private request(
+    function request(
         connection: HostConnection,
         method: NativeMethod,
         params: object,
         timeoutMs = 15000,
     ): Promise<unknown> {
-        this.assertCurrent(connection);
+        assertCurrent(connection);
         const id = crypto.randomUUID();
         return new Promise((resolve, reject) => {
             const timeout = window.setTimeout(
-                () => this.fail(id, `Codex ${method} 请求超时`),
+                () => fail(id, `Codex ${method} 请求超时`),
                 timeoutMs,
             );
-            this.pending.set(id, { connection, timeout, resolve, reject });
-            void this.transport
+            requests.set(id, { connection, timeout, resolve, reject });
+            void transport
                 .send({
                     type: "mcp-request",
                     hostId: connection.hostId,
                     request: { id, method, params },
                 })
-                .catch((error: unknown) => this.fail(id, String(error)));
+                .catch((error: unknown) => fail(id, String(error)));
         });
     }
 
-    private async page<T>(
+    async function page<T>(
         connection: HostConnection,
         method: PageMethod,
         params: object,
         timeoutMs?: number,
     ): Promise<Page<T>> {
-        const reply = (await this.request(connection, method, params, timeoutMs)) as Partial<
+        const reply = (await request(connection, method, params, timeoutMs)) as Partial<
             Page<T>
         > | null;
         if (
@@ -273,13 +274,13 @@ export class DesktopConnection {
         return { data: reply.data, nextCursor: reply.nextCursor ?? null };
     }
 
-    async list(
+    async function list(
         connection: HostConnection,
         archived: boolean,
         cursor: string | null,
         limit: number,
     ): Promise<Page<Thread>> {
-        return this.page(connection, "thread/list", {
+        return page(connection, "thread/list", {
             cursor,
             limit,
             archived,
@@ -291,18 +292,21 @@ export class DesktopConnection {
         });
     }
 
-    projects(connection: HostConnection, cursor: string | null): Promise<Page<HostProject>> {
-        return this.page(connection, "project/list", { cursor, limit: 100 });
+    function projects(
+        connection: HostConnection,
+        cursor: string | null,
+    ): Promise<Page<HostProject>> {
+        return page(connection, "project/list", { cursor, limit: 100 });
     }
 
-    turns(
+    function turns(
         connection: HostConnection,
         threadId: ThreadId,
         itemsView: "summary" | "notLoaded",
         cursor: string | null = null,
         timeoutMs?: number,
     ): Promise<Page<Turn>> {
-        return this.page(
+        return page(
             connection,
             "thread/turns/list",
             {
@@ -316,40 +320,40 @@ export class DesktopConnection {
         );
     }
 
-    async rename(
+    async function rename(
         connection: HostConnection,
         threadId: ThreadId,
         name: string,
         timeoutMs?: number,
     ): Promise<void> {
-        await this.request(connection, "thread/name/set", { threadId, name }, timeoutMs);
+        await request(connection, "thread/name/set", { threadId, name }, timeoutMs);
     }
 
-    async assignProject(
+    async function assignProject(
         connection: HostConnection,
         threadId: ThreadId,
         projectId: string,
     ): Promise<void> {
-        await this.request(connection, "thread/metadata/update", { threadId, projectId });
+        await request(connection, "thread/metadata/update", { threadId, projectId });
     }
 
-    async setArchived(
+    async function setArchived(
         connection: HostConnection,
         threadId: ThreadId,
         archived: boolean,
     ): Promise<void> {
-        await this.request(connection, archived ? "thread/archive" : "thread/unarchive", {
+        await request(connection, archived ? "thread/archive" : "thread/unarchive", {
             threadId,
         });
     }
 
-    async read(
+    async function read(
         connection: HostConnection,
         threadId: ThreadId,
         includeTurns: boolean,
         timeoutMs?: number,
     ): Promise<Thread> {
-        const reply = (await this.request(
+        const reply = (await request(
             connection,
             "thread/read",
             { threadId, includeTurns },
@@ -361,25 +365,25 @@ export class DesktopConnection {
         return reply.thread;
     }
 
-    async context(): Promise<SidebarContext> {
-        return (await this.transport.sidebar({ kind: "context" })) as SidebarContext;
+    async function context(): Promise<SidebarContext> {
+        return (await transport.sidebar({ kind: "context" })) as SidebarContext;
     }
 
-    async navigate(
+    async function navigate(
         command: Extract<DesktopCommand, { kind: "open" | "new" | "settings" }>,
     ): Promise<unknown> {
-        return this.transport.sidebar(command);
+        return transport.sidebar(command);
     }
 
-    async move(
+    async function move(
         connection: HostConnection,
         identity: Pick<SidebarContext, "accountId" | "userId">,
         threadId: ThreadId,
         from: LogicalSectionId | null,
         to: LogicalSectionId,
     ): Promise<void> {
-        this.assertCurrent(connection);
-        await this.transport.sidebar({
+        assertCurrent(connection);
+        await transport.sidebar({
             kind: "move",
             ...identity,
             hostId: connection.hostId,
@@ -387,6 +391,23 @@ export class DesktopConnection {
             from,
             to,
         });
-        this.assertCurrent(connection);
+        assertCurrent(connection);
     }
+
+    return {
+        knownHosts,
+        capture,
+        assertCurrent,
+        receive,
+        list,
+        projects,
+        turns,
+        rename,
+        assignProject,
+        setArchived,
+        read,
+        context,
+        navigate,
+        move,
+    };
 }

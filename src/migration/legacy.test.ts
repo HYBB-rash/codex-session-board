@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test, { type TestContext } from "node:test";
 import {
-    DesktopConnection,
+    createDesktopConnection,
     type SidebarContext,
     type Thread,
 } from "../extensions/desktop/connection.js";
@@ -561,7 +561,7 @@ function boardForMigration(runtime: ReturnType<typeof runtimeFixture>) {
     const hosts = ["local"];
     const nativeCalls: string[] = [];
     const available = new Set(["local"]);
-    const desktop = new DesktopConnection({
+    const desktop = createDesktopConnection({
         bootstrap: () => ({ catalogHostIds: hosts }),
         sidebar: async (command) => {
             assert.equal(command.kind, "context");

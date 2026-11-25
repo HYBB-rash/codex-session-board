@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DesktopConnection, hostId, localHostId, type ThreadId } from "./connection.js";
+import { createDesktopConnection, hostId, localHostId, type ThreadId } from "./connection.js";
 
 const remoteName = "remote-ssh-discovered:fixture";
 const thread = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" as ThreadId;
@@ -9,7 +9,7 @@ test("identical thread IDs on different hosts require matching native response h
     const original = Reflect.get(globalThis, "window");
     Reflect.set(globalThis, "window", globalThis);
     const frames: Array<{ hostId: string; request: { id: string } }> = [];
-    const desktop = new DesktopConnection({
+    const desktop = createDesktopConnection({
         bootstrap: () => ({ catalogHostIds: [localHostId, remoteName] }),
         async send(frame) {
             frames.push(frame as (typeof frames)[number]);
@@ -47,7 +47,7 @@ test("a disconnected catalog host retires pending reads and prior connection epo
     const original = Reflect.get(globalThis, "window");
     Reflect.set(globalThis, "window", globalThis);
     let catalog = [localHostId, remoteName];
-    const desktop = new DesktopConnection({
+    const desktop = createDesktopConnection({
         bootstrap: () => ({ catalogHostIds: catalog }),
         async send() {},
         async sidebar() {},
@@ -75,7 +75,7 @@ test("a bounded native call ignores a reply received after its deadline", async 
     const original = Reflect.get(globalThis, "window");
     Reflect.set(globalThis, "window", globalThis);
     let lateReply: string | undefined;
-    const desktop = new DesktopConnection({
+    const desktop = createDesktopConnection({
         bootstrap: () => ({ catalogHostIds: [localHostId] }),
         async send(frame) {
             lateReply = (frame as { request: { id: string } }).request.id;
@@ -102,7 +102,7 @@ test("native discovery and title calls use the existing connection with specific
     Reflect.set(globalThis, "window", globalThis);
     context.after(() => Reflect.set(globalThis, "window", original));
     const methods: string[] = [];
-    const desktop = new DesktopConnection({
+    const desktop = createDesktopConnection({
         bootstrap: () => ({ catalogHostIds: [localHostId] }),
         async send(packet) {
             const { hostId, request } = packet as {

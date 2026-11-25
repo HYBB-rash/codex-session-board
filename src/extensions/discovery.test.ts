@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { type TestContext, test } from "node:test";
 import { type BoardLedger, emptyLedger } from "./archive.js";
 import {
-    DesktopConnection,
+    createDesktopConnection,
     hostId,
     localHostId,
     type SidebarContext,
@@ -103,7 +103,7 @@ function fixture(testContext: TestContext, maxPages = 3) {
         hosts: [localHostId],
         list: () => ({ data: [], nextCursor: null }),
     };
-    const desktop = new DesktopConnection({
+    const desktop = createDesktopConnection({
         bootstrap: () => ({ catalogHostIds: native.hosts }),
         sidebar: async (command) => discoverySidebar(native, command),
         async send(payload) {

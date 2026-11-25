@@ -3,7 +3,8 @@ import { test } from "node:test";
 import { type BoardLedger, emptyLedger } from "./archive.js";
 import {
     cardId,
-    DesktopConnection,
+    createDesktopConnection,
+    type DesktopConnection,
     hostId,
     localHostId,
     type ThreadId,
@@ -55,7 +56,7 @@ function transportFixture(
 ) {
     const thread = initialThread();
     const writes: string[] = [];
-    const desktop = new DesktopConnection({
+    const desktop = createDesktopConnection({
         bootstrap: () => ({ catalogHostIds: [localHostId, remote] }),
         async sidebar(command) {
             if (command.kind === "new") return open(command);

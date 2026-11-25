@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { type TestContext, test } from "node:test";
 import {
-    DesktopConnection,
+    createDesktopConnection,
     hostId,
     localHostId,
     type Thread,
@@ -24,7 +24,7 @@ function fixture(context: TestContext, reply: (request: Request) => unknown) {
     context.after(() => Reflect.set(globalThis, "window", previous));
     const remote = hostId(remoteHost);
     assert.ok(remote);
-    const desktop = new DesktopConnection({
+    const desktop = createDesktopConnection({
         bootstrap: () => ({ catalogHostIds: [localHostId, remote] }),
         sidebar: async () => assert.fail("预览不得导航或移动会话"),
         async send(value) {

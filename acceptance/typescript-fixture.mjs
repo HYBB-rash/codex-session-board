@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DesktopConnection } from "../dist/extensions/desktop/connection.js";
+import { createDesktopConnection } from "../dist/extensions/desktop/connection.js";
 import { createBoardLedgers, createBoardRecords } from "../dist/extensions/records.js";
 import { BoardService } from "../dist/extensions/service.js";
 import { defaults } from "../dist/extensions/settings.js";
@@ -79,7 +79,7 @@ export class BoardFixture {
     reopen() {
         const records = createBoardRecords(this.#recordsFile);
         const ledgers = createBoardLedgers(this.#ledgerFile);
-        const desktop = new DesktopConnection({
+        const desktop = createDesktopConnection({
             bootstrap: () => ({ catalogHostIds: [host] }),
             send: async (request) => this.transport(request, desktop),
             sidebar: async (command) => this.sidebar(command),

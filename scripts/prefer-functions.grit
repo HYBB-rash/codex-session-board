@@ -27,10 +27,6 @@ or {
                 $name <: r"^(?:ArchivePreconditionError|ArchiveReadUnavailable|NewInputError)$"
             },
             and {
-                $filename <: r"(?:^|.*[/\\])src[/\\]extensions[/\\]desktop[/\\]connection\.ts$",
-                $name <: r"^DesktopConnection$"
-            },
-            and {
                 $filename <: r"(?:^|.*[/\\])src[/\\]extensions[/\\]service\.ts$",
                 $name <: r"^BoardService$"
             }

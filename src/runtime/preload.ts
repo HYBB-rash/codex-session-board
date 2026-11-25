@@ -2,7 +2,12 @@
 
 import { ipcRenderer } from "electron";
 import type { BoardLedger } from "../extensions/archive.js";
-import { DesktopConnection, hostId, type ThreadId } from "../extensions/desktop/connection.js";
+import {
+    createDesktopConnection,
+    type DesktopConnection,
+    hostId,
+    type ThreadId,
+} from "../extensions/desktop/connection.js";
 import type { LoadedBoardRecords } from "../extensions/records.js";
 import { BoardService } from "../extensions/service.js";
 import { readSettings } from "../extensions/settings.js";
@@ -112,7 +117,7 @@ function relay(board: BoardService): void {
 }
 
 function desktopBoard(mountBoard: MountBoard): void {
-    const desktop = new DesktopConnection({
+    const desktop = createDesktopConnection({
         bootstrap: () => ipcRenderer.sendSync("codex_desktop:get-initial-sidebar-bootstrap"),
         send: (packet) => ipcRenderer.invoke("codex_desktop:message-from-view", packet),
         sidebar: (command) => ipcRenderer.invoke("codex-enhancer:board-desktop", command),
