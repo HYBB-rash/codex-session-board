@@ -1,7 +1,11 @@
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { BoardLedger } from "../extensions/session-board/archive.js";
-import { hostId, localHostId, type ThreadId } from "../extensions/session-board/connection.js";
+import {
+    hostId,
+    localHostId,
+    type ThreadId,
+} from "../extensions/session-board/desktop/connection.js";
 import type {
     BoardRecords,
     LegacyCachedCard,

@@ -30,7 +30,7 @@ import {
     type SidebarContext,
     type Thread,
     type ThreadId,
-} from "./connection.js";
+} from "./desktop/connection.js";
 import { type DraftInput, type DraftRecord, stageDraft, unresolvedDrafts } from "./drafts.js";
 import {
     type BoardState,

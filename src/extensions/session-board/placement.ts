@@ -1,4 +1,4 @@
-import type { HostId, LogicalSectionId, SidebarContext, Thread } from "./connection.js";
+import type { HostId, LogicalSectionId, SidebarContext, Thread } from "./desktop/connection.js";
 
 export const labels = {
     unknown: "待判断",
