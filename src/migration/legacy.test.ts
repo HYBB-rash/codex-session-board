@@ -21,7 +21,7 @@ import {
     type SidebarContext,
     type Thread,
 } from "../extensions/desktop/connection.js";
-import { BoardLedgers, BoardRecords } from "../extensions/records.js";
+import { createBoardLedgers, createBoardRecords } from "../extensions/records.js";
 import { BoardService } from "../extensions/service.js";
 import {
     migrateLegacyBoard,
@@ -363,8 +363,8 @@ function runtimeFixture(fixture: ReturnType<typeof scopeFixture>) {
         recordsFile,
         ledgersFile,
         migration: new LegacyBoardRuntime(directory),
-        records: new BoardRecords(recordsFile),
-        ledgers: new BoardLedgers(ledgersFile),
+        records: createBoardRecords(recordsFile),
+        ledgers: createBoardLedgers(ledgersFile),
         writeBinding: (hosts: Record<string, string>) =>
             writeFileSync(bindingFile, JSON.stringify({ accountId, userId, hosts })),
     };
@@ -413,7 +413,7 @@ test("migration rollback removes projected histories and keeps later manual chan
         assert.equal(new LegacyBoardRuntime(directory).forAccount(storedAccount), undefined);
         assert.equal(migration.forAccount(storedAccount), undefined);
         assert.equal(readFileSync(recordsFile, "utf8"), saved);
-        const current = new BoardRecords(recordsFile).account(storedAccount);
+        const current = createBoardRecords(recordsFile).account(storedAccount);
         for (const [id, note] of authored) assert.equal(current[id]?.note, note);
     } finally {
         fixture.close();
@@ -505,10 +505,13 @@ test("runtime overlays explicitly bound records, preferences and batches without
         });
         const widened = new LegacyBoardRuntime(directory).forAccount(storedAccount);
         assert.ok(widened);
-        const reopened = new BoardRecords(recordsFile).account(storedAccount, widened.board.cards);
+        const reopened = createBoardRecords(recordsFile).account(
+            storedAccount,
+            widened.board.cards,
+        );
         assert.equal(reopened[threadId]?.note, "new");
         assert.equal(reopened[offlineId]?.note, `${sourceOffline} WAL note`);
-        const updatedLedger = new BoardLedgers(ledgersFile).load(storedAccount, widened.ledger);
+        const updatedLedger = createBoardLedgers(ledgersFile).load(storedAccount, widened.ledger);
         assert.equal(updatedLedger.batches.length, 3);
         assert.equal(updatedLedger.columnSorts[archiveColumn]?.version, 5);
         assert.equal(

@@ -7,7 +7,7 @@ python3 -B acceptance/verify-typescript.py --model-only
 
 模型模式输出源文件和受测运行模块的指纹、全部模型对照结果。任何对照失败时退出 `2`。完整 31 项要求由[发布门槛](release-gate.md)核验。
 
-模型对照沿用上游 `tests/board_contract.rs` 的 40 个可达起点、13 种事件、520 条边及 1,417 次操作，含重开、查看各 40 次。每步比较状态、人工选择、备注及版本。重开和查看额外比较记录文件、归档账本和原生写入次数。夹具只模拟 Codex 请求回执和侧栏分区，调用生产 `BoardService`、`DesktopConnection`、`BoardRecords` 和 `BoardLedgers`，持久化写入位于回收的临时目录。
+模型对照沿用上游 `tests/board_contract.rs` 的 40 个可达起点、13 种事件、520 条边及 1,417 次操作，含重开、查看各 40 次。每步比较状态、人工选择、备注及版本。重开和查看额外比较记录文件、归档账本和原生写入次数。夹具只模拟 Codex 请求回执和侧栏分区，调用生产 `BoardService`、`DesktopConnection`、`createBoardRecords` 和 `createBoardLedgers`，持久化写入位于回收的临时目录。
 
 运行证据用生产 `runtimeState` 测试上游原始的缺 ID、缺时间输入，再用 `runtimePhase` 验证补齐原生身份的同项结果。后者要求有效轮次 ID，判断结束时还要求有效完成时间。标题沿用上游 `tests/board_io.rs` 的前缀、幂等、空正文和非法状态断言。输入版本对照检查同轮用户项顺序变化、助手输出和未加载项。
 

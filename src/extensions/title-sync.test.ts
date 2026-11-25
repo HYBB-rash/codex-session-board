@@ -14,7 +14,7 @@ import {
     type Thread,
     type ThreadId,
 } from "./desktop/connection.js";
-import { BoardRecords, TitleEpochs } from "./records.js";
+import { type BoardRecords, createBoardRecords, startTitleEpoch } from "./records.js";
 import { BoardService } from "./service.js";
 import { defaults } from "./settings.js";
 
@@ -118,9 +118,9 @@ function testRecords(testContext: TestContext) {
         rmSync(directory, { recursive: true, force: true });
     });
     const file = join(directory, "records.json");
-    const records = new BoardRecords(file);
+    const records = createBoardRecords(file);
     const titleEpoch = (key: string) =>
-        new TitleEpochs(join(directory, "title-activation.json")).start(key);
+        startTitleEpoch(join(directory, "title-activation.json"), key);
     return { records, titleEpoch, file };
 }
 
@@ -152,7 +152,7 @@ function fixture(testContext: TestContext) {
     };
 
     function reopen() {
-        const store = new BoardRecords(file);
+        const store = createBoardRecords(file);
         const desktop = desktopFixture(
             threads,
             () => native.context(),

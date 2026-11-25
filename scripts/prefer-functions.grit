@@ -31,10 +31,6 @@ or {
                 $name <: r"^DesktopConnection$"
             },
             and {
-                $filename <: r"(?:^|.*[/\\])src[/\\]extensions[/\\]records\.ts$",
-                $name <: r"^(?:BoardLedgers|BoardRecords|TitleEpochs)$"
-            },
-            and {
                 $filename <: r"(?:^|.*[/\\])src[/\\]extensions[/\\]service\.ts$",
                 $name <: r"^BoardService$"
             },

@@ -129,11 +129,9 @@ function changedLedger(ledger: BoardLedger, imported: BoardLedger): BoardLedger 
     };
 }
 
-export class BoardLedgers {
-    constructor(private readonly file: string) {}
-
-    load(account: string, imported = emptyLedger()): BoardLedger {
-        const saved = readRecord<BoardLedger>(this.file)[account];
+export function createBoardLedgers(file: string) {
+    function load(account: string, imported = emptyLedger()): BoardLedger {
+        const saved = readRecord<BoardLedger>(file)[account];
         if (!saved) return imported;
         const originals = new Map(imported.batches.map((batch) => [batch.id, batch]));
         for (const batch of saved.batches) {
@@ -152,23 +150,35 @@ export class BoardLedgers {
         };
     }
 
-    save(account: string, ledger: BoardLedger, imported = emptyLedger()): void {
-        atomicWrite(this.file, {
-            ...readRecord<BoardLedger>(this.file),
+    function save(account: string, ledger: BoardLedger, imported = emptyLedger()): void {
+        atomicWrite(file, {
+            ...readRecord<BoardLedger>(file),
             [account]: changedLedger(ledger, imported),
         });
     }
+
+    return { load, save };
 }
 
-export class BoardRecords {
-    constructor(private readonly file: string) {}
+export type BoardRecords = ReturnType<typeof createBoardRecords>;
 
-    private read(): Record<string, Record<string, StoredCardRecord>> {
-        return readRecord<Record<string, StoredCardRecord>>(this.file);
+function storeCard(record: CardRecord, previous?: StoredCardRecord, event?: RecordChange) {
+    const { changes: _changes, ...card } = record as StoredCardRecord;
+    const changes = previous?.changes ?? [];
+    if (event) return { ...card, changes: [...changes, savedChange(event, card)] };
+    return changes.length ? { ...card, changes } : card;
+}
+
+export function createBoardRecords(file: string) {
+    function read(): Record<string, Record<string, StoredCardRecord>> {
+        return readRecord<Record<string, StoredCardRecord>>(file);
     }
 
-    account(key: string, imported: Record<string, CardRecord> = {}): Record<string, CardRecord> {
-        const accounts = this.read();
+    function account(
+        key: string,
+        imported: Record<string, CardRecord> = {},
+    ): Record<string, CardRecord> {
+        const accounts = read();
         const saved = Object.hasOwn(accounts, key) ? accounts[key] : undefined;
         const cards = Object.entries(saved ?? {}).map(([id, { changes: _changes, ...record }]) => [
             id,
@@ -177,14 +187,17 @@ export class BoardRecords {
         return { ...imported, ...Object.fromEntries(cards) };
     }
 
-    write(update: RecordWrite, imported: Record<string, CardRecord> = {}): void {
+    function write(update: RecordWrite, imported: Record<string, CardRecord> = {}): void {
         if (!validRecordChange(update.change, update.record)) throw new Error("无效的看板变更记录");
-        if (!this.change(update, imported, () => update.record, update.change))
+        if (!change(update, imported, () => update.record, update.change))
             throw new Error("卡片已更新，请刷新后重试");
     }
 
-    settleTitle(update: TitleResolution, imported: Record<string, CardRecord> = {}): boolean {
-        return this.change(update, imported, (current) => {
+    function settleTitle(
+        update: TitleResolution,
+        imported: Record<string, CardRecord> = {},
+    ): boolean {
+        return change(update, imported, (current) => {
             if (!current?.title) return;
             const { title, ...record } = current;
             return update.failure
@@ -193,46 +206,40 @@ export class BoardRecords {
         });
     }
 
-    preparePhase(update: PhaseIntent, imported: Record<string, CardRecord> = {}): boolean {
-        return this.change(update, imported, (current) => ({
+    function preparePhase(update: PhaseIntent, imported: Record<string, CardRecord> = {}): boolean {
+        return change(update, imported, (current) => ({
             ...(current ?? { note: "", version: 0, inputVersion: 0 }),
             pendingPhaseKey: update.phaseKey,
         }));
     }
 
-    private change(
+    function change(
         { account, id, expected }: RecordRevision,
         imported: Record<string, CardRecord>,
         apply: (current: CardRecord | undefined) => CardRecord | undefined,
         event?: RecordChange,
     ): boolean {
-        const accounts = this.read();
+        const accounts = read();
         const rows = Object.hasOwn(accounts, account) ? (accounts[account] ?? {}) : {};
         const saved = Object.hasOwn(rows, id) ? rows[id] : undefined;
         const current = saved ?? (Object.hasOwn(imported, id) ? imported[id] : undefined);
         if ((current?.version ?? 0) !== expected) return false;
         const record = apply(current);
         if (!record) return false;
-        const { changes: _changes, ...card } = record as StoredCardRecord;
-        const changes = saved?.changes ?? [];
-        if (event) changes.push(savedChange(event, card));
-        const stored = changes.length ? { ...card, changes } : card;
-        atomicWrite(this.file, { ...accounts, [account]: { ...rows, [id]: stored } });
+        const stored = storeCard(record, saved, event);
+        atomicWrite(file, { ...accounts, [account]: { ...rows, [id]: stored } });
         return true;
     }
+    return { account, write, settleTitle, preparePhase };
 }
 
-export class TitleEpochs {
-    constructor(private readonly file: string) {}
-
-    start(account: string, imported?: number): number {
-        const epochs = readRecord<number>(this.file);
-        if (Object.hasOwn(epochs, account) && Number.isFinite(epochs[account]))
-            return epochs[account] as number;
-        const epoch = imported ?? Date.now() / 1000;
-        atomicWrite(this.file, { ...epochs, [account]: epoch });
-        return epoch;
-    }
+export function startTitleEpoch(file: string, account: string, imported?: number): number {
+    const epochs = readRecord<number>(file);
+    if (Object.hasOwn(epochs, account) && Number.isFinite(epochs[account]))
+        return epochs[account] as number;
+    const epoch = imported ?? Date.now() / 1000;
+    atomicWrite(file, { ...epochs, [account]: epoch });
+    return epoch;
 }
 
 export function atomicWrite(target: string, value: unknown): void {

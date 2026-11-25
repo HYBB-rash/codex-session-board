@@ -5,11 +5,12 @@ import type { App, IpcMain, IpcMainEvent, Session, WebContents } from "electron"
 import type { BoardLedger } from "../extensions/archive.js";
 import { boardDesktopRequest } from "../extensions/desktop/main.js";
 import {
-    BoardLedgers,
-    BoardRecords,
+    type BoardRecords,
+    createBoardLedgers,
+    createBoardRecords,
     type PhaseIntent,
     type RecordWrite,
-    TitleEpochs,
+    startTitleEpoch,
     type TitleResolution,
 } from "../extensions/records.js";
 import { inPlaceRuntime, logs, outputDir, stateDir } from "../installer/paths.js";
@@ -323,9 +324,9 @@ function registerIpc(
 
 function registerBoardStorage(ipcMain: IpcMain): void {
     const directory = path.join(stateDir, "session-board");
-    const boardRecords = new BoardRecords(path.join(directory, "records.json"));
-    const ledgers = new BoardLedgers(path.join(directory, "ledger.json"));
-    const titleEpochs = new TitleEpochs(path.join(directory, "title-activation.json"));
+    const boardRecords = createBoardRecords(path.join(directory, "records.json"));
+    const ledgers = createBoardLedgers(path.join(directory, "ledger.json"));
+    const titleEpochFile = path.join(directory, "title-activation.json");
     const legacy = new LegacyBoardRuntime(directory);
     ipcMain.handle("codex-enhancer:board-ledger", (event, account, value) => {
         if (!boardFrame(event) || typeof account !== "string")
@@ -351,7 +352,7 @@ function registerBoardStorage(ipcMain: IpcMain): void {
     ipcMain.handle("codex-enhancer:board-title-epoch", (event, account) => {
         if (!boardFrame(event) || typeof account !== "string")
             throw new Error("enhancer IPC rejected");
-        return titleEpochs.start(account, legacy.titleEpoch(account));
+        return startTitleEpoch(titleEpochFile, account, legacy.titleEpoch(account));
     });
     registerBoardRecords(ipcMain, boardRecords, legacy);
 }
