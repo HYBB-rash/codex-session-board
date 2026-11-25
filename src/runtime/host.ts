@@ -10,16 +10,26 @@ export interface UiHostOptions {
     fetchState(): Promise<unknown>;
     subscribe(listener: (payload: unknown) => void): void;
     proof(stage: string, extra?: Record<string, unknown>): void;
-    mountPage?(id: string, panel: HTMLElement, close: () => void): (() => void) | undefined;
+    mountPage?(
+        id: string,
+        panel: HTMLElement,
+        close: () => void,
+        showConversation: (visible: boolean) => void,
+    ): (() => void) | undefined;
 }
 
 const RAIL = "nav[data-app-navigation-rail]";
 const DESTINATION = "[data-sidebar-destination]";
 const WORKSPACE = "[data-app-shell-workspace]";
+const MAIN_SURFACE = "[data-app-shell-main-surface]";
+const ACTIVE_MAIN = `${WORKSPACE} ${MAIN_SURFACE}:not(${MAIN_SURFACE} *, [data-app-shell-active-page="false"] *)`;
+const TITLEBAR = '[data-app-shell-titlebar]:not([data-app-shell-active-page="false"] *)';
+const DRAWER_TITLEBAR = "data-codex-enhancer-conversation-titlebar";
 const PAGE_SIDEBAR = "[data-app-shell-page-sidebar]";
 const SIDEBAR_SCROLL = "[data-app-action-sidebar-scroll]";
 const ITEM = "data-codex-enhancer-item";
 const PAGE = "data-codex-enhancer-page";
+const SCRIM = "data-codex-enhancer-conversation-scrim";
 const NAVIGATION = `${RAIL}, ${DESTINATION}`;
 
 interface Mount {
@@ -35,6 +45,13 @@ interface HostState {
     autoOpened: boolean;
     activeId: string | null;
     panel: HTMLElement | null;
+    drawer: {
+        style: HTMLStyleElement;
+        scrim: HTMLButtonElement;
+        titlebar: HTMLElement | null;
+        background: HTMLElement | null;
+        previousFocus: HTMLElement | null;
+    } | null;
     unmount: (() => void) | undefined;
     applying: boolean;
     sawMount: boolean;
@@ -213,7 +230,82 @@ function contentBox(): DOMRect | null {
     return new DOMRect(left, bounds.top, width, bounds.height);
 }
 
-function place(element: HTMLElement): void {
+function drawerTitlebar(drawer: NonNullable<HostState["drawer"]>): number {
+    const surface = document.querySelector(ACTIVE_MAIN);
+    const frame = surface?.closest("[data-app-shell-frame]") ?? document;
+    const header = [...frame.querySelectorAll(TITLEBAR)].find(visible);
+    const titlebar = surface && isHtmlElement(header) && !surface.contains(header) ? header : null;
+    if (drawer.titlebar !== titlebar) {
+        drawer.titlebar?.removeAttribute(DRAWER_TITLEBAR);
+        titlebar?.setAttribute(DRAWER_TITLEBAR, "");
+        drawer.titlebar = titlebar;
+    }
+    return titlebar?.getBoundingClientRect().height ?? 0;
+}
+
+function placeDrawer(
+    box: DOMRect,
+    panel: HTMLElement,
+    drawer: NonNullable<HostState["drawer"]>,
+): void {
+    const inset = Math.min(16, Math.floor(box.width / 12));
+    const availableWidth = box.width - inset * 2;
+    const width = Math.min(availableWidth, Math.max(400, Math.ceil(availableWidth * 0.87)));
+    const left = box.width - width - inset;
+    const top = 40;
+    const bottom = box.height - 12;
+    const right = left + width;
+    const radius = 10;
+    const titlebarHeight = Math.min(drawerTitlebar(drawer), Math.max(0, bottom - top - 1));
+    const drawerLeft = box.x + left;
+    const rules = `
+        ${ACTIVE_MAIN}, [${DRAWER_TITLEBAR}] {
+            position: fixed !important;
+            margin: 0 !important;
+            width: ${width}px !important;
+            box-sizing: border-box;
+            background: var(--color-surface, Canvas) !important;
+        }
+        ${ACTIVE_MAIN} {
+            inset: ${box.y + top + titlebarHeight}px auto auto ${drawerLeft}px !important;
+            height: ${bottom - top - titlebarHeight}px !important;
+            border-radius: ${titlebarHeight ? 0 : radius}px ${titlebarHeight ? 0 : radius}px ${radius}px ${radius}px;
+            overflow: hidden;
+        }
+        ${ACTIVE_MAIN} [data-app-shell-main-content-layout] > :only-child {
+            width: 100% !important;
+        }
+        [${DRAWER_TITLEBAR}] {
+            inset: ${box.y + top}px auto auto ${drawerLeft}px !important;
+            height: ${titlebarHeight}px !important;
+            z-index: 31;
+            border-radius: ${radius}px ${radius}px 0 0;
+            -webkit-app-region: no-drag;
+        }
+        [${DRAWER_TITLEBAR}] [data-app-shell-header-slot="start"] {
+            width: max-content !important;
+        }
+        [${SCRIM}]::before {
+            content: "";
+            position: absolute;
+            inset: ${top}px ${inset}px 12px ${left}px;
+            border-radius: ${radius}px;
+            box-shadow: 0 8px 30px light-dark(#252b3a48, #0009);
+        }
+    `;
+    if (drawer.style.textContent !== rules) drawer.style.textContent = rules;
+    const outline = `M0 0H${box.width}V${box.height}H0Z`;
+    const opening =
+        `M${left + radius} ${top}H${right - radius}q${radius} 0 ${radius} ${radius}` +
+        `V${bottom - radius}q0 ${radius} -${radius} ${radius}` +
+        `H${left + radius}q-${radius} 0 -${radius} -${radius}` +
+        `V${top + radius}q0 -${radius} ${radius} -${radius}Z`;
+    panel.style.clipPath = `path(evenodd, "${outline} ${opening}")`;
+}
+
+function place(host: HostState): void {
+    const element = host.panel;
+    if (element == null) return;
     const box = contentBox();
     const workspace = document.querySelector(WORKSPACE);
     element.style.position = "fixed";
@@ -226,15 +318,73 @@ function place(element: HTMLElement): void {
         element.style.color = style.color;
         element.style.font = style.font;
     }
-    if (box == null) {
-        element.style.inset = "48px";
+    element.style.inset = box ? `${box.y}px auto auto ${box.x}px` : "48px";
+    element.style.width = box ? `${box.width}px` : "auto";
+    element.style.height = box ? `${box.height}px` : "auto";
+    if (box && host.drawer) placeDrawer(box, element, host.drawer);
+    else {
+        if (host.drawer?.style.textContent) host.drawer.style.textContent = "";
+        element.style.clipPath = "";
+    }
+}
+
+function closeConversation(host: HostState, restoreFocus = false): void {
+    const drawer = host.drawer;
+    if (drawer == null) return;
+    host.drawer = null;
+    drawer.style.remove();
+    drawer.titlebar?.removeAttribute(DRAWER_TITLEBAR);
+    drawer.scrim.remove();
+    if (drawer.background) drawer.background.inert = false;
+    place(host);
+    if (restoreFocus) drawer.previousFocus?.focus({ preventScroll: true });
+}
+
+function showConversation(host: HostState, visible: boolean): void {
+    if (!visible) {
+        closeConversation(host);
         return;
     }
-    element.style.inset = "auto";
-    element.style.left = `${box.x}px`;
-    element.style.top = `${box.y}px`;
-    element.style.width = `${box.width}px`;
-    element.style.height = `${box.height}px`;
+    const panel = host.panel;
+    const surface = document.querySelector(ACTIVE_MAIN);
+    if (host.drawer || !panel) return;
+    if (!isHtmlElement(surface) || !contentBox())
+        throw new Error("当前 Codex 窗口未提供会话区域。");
+    const content = panel.firstElementChild;
+    const active = content?.shadowRoot?.activeElement ?? document.activeElement;
+    const background = isHtmlElement(content) && !content.inert ? content : null;
+    const scrim = document.createElement("button");
+    scrim.type = "button";
+    scrim.setAttribute(SCRIM, "");
+    scrim.style.cssText =
+        "position:absolute;inset:0;z-index:1;border:0;cursor:pointer;background:light-dark(#262d431b,#0b0c1070);color:inherit;font:inherit;-webkit-app-region:no-drag;";
+    const label = document.createElement("span");
+    label.textContent = "关闭会话";
+    label.style.cssText =
+        "position:absolute;top:6px;right:16px;padding:3px 10px;border:1px solid color-mix(in srgb,currentColor 18%,transparent);border-radius:8px;background:Canvas;";
+    scrim.append(label);
+    scrim.addEventListener("click", () => closeConversation(host, true));
+    const style = document.createElement("style");
+    host.drawer = {
+        style,
+        scrim,
+        titlebar: null,
+        background,
+        previousFocus: isHtmlElement(active) ? active : null,
+    };
+    if (background) background.inert = true;
+    document.head.append(style);
+    panel.append(scrim);
+    place(host);
+    surface.focus({ preventScroll: true });
+}
+
+function dismissOnEscape(host: HostState, event: KeyboardEvent): void {
+    if (event.key !== "Escape" || event.defaultPrevented || !host.drawer) return;
+    if (isElement(event.target) && event.target.closest("dialog, [role=dialog], [role=menu]"))
+        return;
+    event.preventDefault();
+    closeConversation(host, true);
 }
 
 function nativeButtonClass(): string {
@@ -280,14 +430,23 @@ function openPage(host: HostState, item: SidebarItemRegistration): void {
     host.activeId = item.id;
     if (host.panel == null) {
         host.panel = document.createElement("section");
-        host.panel.setAttribute(PAGE, item.id);
         (document.body ?? document.documentElement).append(host.panel);
     }
+    const panel = host.panel;
+    panel.setAttribute(PAGE, item.id);
     host.unmount?.();
-    host.panel.replaceChildren();
-    host.unmount = host.options.mountPage?.(item.id, host.panel, () => closePage(host));
-    if (!host.unmount) host.panel.append(pageContent(host, item));
-    place(host.panel);
+    closeConversation(host);
+    panel.replaceChildren();
+    host.unmount = host.options.mountPage?.(
+        item.id,
+        panel,
+        () => closePage(host),
+        (visible) => {
+            if (host.panel === panel) showConversation(host, visible);
+        },
+    );
+    if (!host.unmount) panel.append(pageContent(host, item));
+    place(host);
     const box = contentBox();
     proof(host, "page-rendered", {
         id: item.id,
@@ -305,6 +464,7 @@ function openPage(host: HostState, item: SidebarItemRegistration): void {
 function closePage(host: HostState): void {
     const wasOpen = host.panel != null || host.activeId != null;
     host.activeId = null;
+    closeConversation(host);
     host.unmount?.();
     host.unmount = undefined;
     host.panel?.remove();
@@ -370,13 +530,13 @@ function render(host: HostState): void {
         if (mount == null) {
             removeAllItems();
             reportMissing(host);
-            if (host.panel != null) place(host.panel);
+            place(host);
             return;
         }
         pruneItems(host, mount);
         for (const item of host.items) ensureItem(host, item, mount);
         reportMounted(host, mount);
-        if (host.panel != null) place(host.panel);
+        place(host);
     } finally {
         host.applying = false;
     }
@@ -425,6 +585,7 @@ export function startUiHost(options: UiHostOptions): UiHost {
         activeId: null,
         unmount: undefined,
         panel: null,
+        drawer: null,
         applying: false,
         sawMount: false,
         reportedMissing: false,
@@ -439,8 +600,11 @@ export function startUiHost(options: UiHostOptions): UiHost {
         watch();
     }
     document.addEventListener("click", (event) => handleClick(host, event), true);
+    const keydown = (event: KeyboardEvent): void => dismissOnEscape(host, event);
+    window.addEventListener("keydown", keydown);
     const resize = (): void => render(host);
     const stopWatching = (): void => {
+        window.removeEventListener("keydown", keydown);
         window.removeEventListener("resize", resize);
         stop(host, observer);
     };
