@@ -1,5 +1,5 @@
 import { createApp } from "vue";
-import ReplyPreview from "./reply-preview.vue";
+import ReplyPreview from "./ReplyPreview.vue";
 
 export interface PreviewSession {
     id: string;

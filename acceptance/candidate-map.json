@@ -480,7 +480,7 @@
             "status": "partial",
             "implementation": [
                 "src/extensions/session-board/preview.ts",
-                "src/ui/reply-preview.ts",
+                "src/ui/views/board/preview/mount-preview.ts",
                 "src/ui/views/board/session-card.tsx"
             ],
             "evidence": [

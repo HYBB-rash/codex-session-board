@@ -1,8 +1,8 @@
 import { h, render } from "vue";
-import type { PreviewSession } from "./reply-preview";
 import type { mountBoardArchive } from "./views/board/archive/archive";
 import { createCardDrag } from "./views/board/drag";
 import { type BoardElements, createBoardLayout } from "./views/board/layout";
+import type { PreviewSession } from "./views/board/preview/mount-preview";
 import BoardColumns from "./views/board/SessionColumns.vue";
 import { type SortMenuProps, type SortPreference, sortColumn } from "./views/board/sorting";
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, shallowRef } from "vue";
-import type { PreviewDependencies, PreviewSession } from "./reply-preview";
-import { ReplyOpen, ReplyRefresh } from "./shared/reply-actions";
+import { ReplyOpen, ReplyRefresh } from "../../../shared/reply-actions";
+import type { PreviewDependencies, PreviewSession } from "./mount-preview";
 
 const props = defineProps<{ dependencies: PreviewDependencies; root: ShadowRoot | Document }>();
 interface Reading {

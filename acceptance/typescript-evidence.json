@@ -160,7 +160,7 @@
             "sources": [
                 "src/extensions/session-board/preview.ts",
                 "src/extensions/session-board/board-service.ts",
-                "src/ui/board-session-reader.ts",
+                "src/ui/views/board/preview/session-reader.ts",
                 "src/ui/views/board/drag.ts"
             ],
             "missing": "还需现场验证本机和远端同名卡的来源、上一条回复与迟到结果，检查点击和拖动两种实际手势。"

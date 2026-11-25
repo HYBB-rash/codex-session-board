@@ -1,4 +1,3 @@
-import { mountBoardSessionReader } from "../../board-session-reader";
 import { type BoardModel, type BoardSession, mountBoard } from "../../board-view";
 import { mountBoardArchive } from "./archive/archive";
 import { type CatalogProject, type HostIdentity, mountBoardBrowse } from "./browse/browse";
@@ -11,6 +10,7 @@ import { mountMoveFeedback } from "./edit/move-feedback";
 import { mountBoardHealth } from "./health/health";
 import { type BoardHealth, createBoardHealthReports } from "./health/report";
 import { mountPluginUpdate } from "./plugin-update";
+import { mountBoardSessionReader } from "./preview/session-reader";
 import { mountBoardRefresh } from "./refresh";
 import { createColumnSortSave, type SortPreference } from "./sorting";
 

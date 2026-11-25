@@ -1,4 +1,4 @@
-import { mountReplyPreview, type PreviewSession } from "./reply-preview";
+import { mountReplyPreview, type PreviewSession } from "./mount-preview";
 
 interface ReaderPorts {
     sessions(): PreviewSession[];
