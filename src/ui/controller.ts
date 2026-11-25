@@ -1,4 +1,6 @@
+import { mountBoardArchive } from "./archive/controls";
 import { type CatalogProject, type HostIdentity, mountBoardBrowse } from "./browse/scope";
+import { type BoardModel, mountBoard } from "./columns";
 import { mountBoardNewSession } from "./connection/new/session";
 import { mountBoardNewTarget } from "./connection/new/target";
 import { mountProjectAssignment } from "./connection/project-assignment";
@@ -11,9 +13,7 @@ import { mountPluginUpdate } from "./plugin-update";
 import { mountBoardSessionReader } from "./preview/reader";
 import { mountBoardRefresh } from "./refresh";
 import type { BoardSession } from "./session";
-import { mountBoardArchive } from "./views/board/archive/controls";
-import { type BoardModel, mountBoard } from "./views/board/columns";
-import { createColumnSortSave, type SortPreference } from "./views/board/sorting";
+import { createColumnSortSave, type SortPreference } from "./sorting";
 
 export interface BoardSnapshot {
     accountScope?: string;

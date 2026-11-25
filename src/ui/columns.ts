@@ -1,10 +1,10 @@
 import { h, render } from "vue";
-import type { ProjectTag } from "../../shared/card/details";
 import type { mountBoardArchive } from "./archive/controls";
 import { createCardDrag } from "./drag";
 import { type BoardElements, createBoardLayout } from "./layout";
 import BoardColumns from "./SessionColumns.vue";
 import type { BoardSession } from "./session";
+import type { ProjectTag } from "./shared/card/details";
 import { type SortMenuProps, type SortPreference, sortColumn } from "./sorting";
 
 export interface BoardModel {

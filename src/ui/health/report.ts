@@ -1,7 +1,7 @@
+import type { AutoArchiveHealth } from "../archive/controls";
 import type { CatalogProject, HostCatalog, HostIdentity, HostOption } from "../browse/scope";
 import type { BoardSnapshot } from "../controller";
 import type { BoardSession } from "../session";
-import type { AutoArchiveHealth } from "../views/board/archive/controls";
 
 interface HostHealth extends AutoArchiveHealth {
     error?: string | null;

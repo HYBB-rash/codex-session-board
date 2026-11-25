@@ -2,10 +2,7 @@
     "baseline": "2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc",
     "requirements": {
         "STATE-001": {
-            "sources": [
-                "src/extensions/session-board/placement.ts",
-                "src/ui/views/board/SessionColumns.vue"
-            ],
+            "sources": ["src/extensions/session-board/placement.ts", "src/ui/SessionColumns.vue"],
             "checks": [
                 "frozen_requirements_and_model",
                 "state_names_and_display_order",
@@ -161,7 +158,7 @@
                 "src/extensions/session-board/preview.ts",
                 "src/extensions/session-board/service.ts",
                 "src/ui/preview/reader.ts",
-                "src/ui/views/board/drag.ts"
+                "src/ui/drag.ts"
             ],
             "missing": "还需现场验证本机和远端同名卡的来源、上一条回复与迟到结果，检查点击和拖动两种实际手势。"
         },
@@ -177,8 +174,8 @@
         },
         "UI-001": {
             "sources": [
-                "src/ui/views/board/drag.ts",
-                "src/ui/views/board/SessionColumns.vue",
+                "src/ui/drag.ts",
+                "src/ui/SessionColumns.vue",
                 "src/extensions/session-board/service.ts"
             ],
             "evidence": "Fedora 的本机和远端专用卡都经过真实拖拽、原生侧栏和独立分区读回，备注保留。见 docs/session-board-native-checkpoint.md。",
@@ -197,7 +194,7 @@
             "sources": [
                 "src/ui/browse/filters.tsx",
                 "src/ui/refresh.ts",
-                "src/ui/views/board/SessionColumns.vue"
+                "src/ui/SessionColumns.vue"
             ],
             "missing": "还需真实键盘与指针操作中的刷新、空列、搜索、焦点、列滚动保持检查。"
         },
