@@ -394,18 +394,15 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     const archive = createArchive({
         scope: () => accountKey(requiredContext()),
         ledger: () => runtime.ledger,
-        write: (next) => runtime.writeLedger(next),
+        write: (next) => writeLedger(next),
         nativeVersion: (version) => nativeSectionVersion(version),
         verify: async (item) => {
-            await runtime.verifyArchive(item);
+            await verifyArchive(item);
         },
-        isArchived: (id) => runtime.archived(id),
-        archive: (item) => runtime.archiveThread(item),
+        isArchived: (id) => isArchived(id),
+        archive: (item) => archiveThread(item),
     });
-    type Runtime = typeof runtime;
     const runtime = {
-        desktop,
-        ports,
         hosts: new Map<HostId, HostSnapshot>(),
         context: undefined as SidebarContext | undefined,
         accountScope: null as string | null,
@@ -428,24 +425,8 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             string,
             { projectId: string; result: Promise<TrackedDraftResult> }
         >(),
-        archive,
         archiveDeadlines: new Map<HostId, number>(),
         archiveRuns: new Map<HostId, AutoArchiveRun>(),
-        get mode() {
-            return this.settings.mode;
-        },
-        writeLedger,
-        sort,
-        verifyArchive,
-        archiveThread,
-        archived,
-        autoArchive,
-        autoArchiveHost,
-        requestArchive,
-        submitArchive,
-        request,
-        refreshSnapshot,
-        requestChange,
     };
 
     async function refresh(): Promise<void> {
@@ -482,7 +463,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         ports.authority(account);
         await Promise.all(desktop.knownHosts().map((host) => refreshHost(host, context)));
         requireAccount(account);
-        runtime.autoArchive(context);
+        autoArchive(context);
     }
 
     async function loadAccount(account: string): Promise<void> {
@@ -1576,22 +1557,22 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         return { ok: true };
     }
 
-    async function writeLedger(this: Runtime, next: BoardLedger): Promise<void> {
+    async function writeLedger(next: BoardLedger): Promise<void> {
         const context = await freshContext();
         const account = accountKey(context);
-        await this.ports.writeLedger(account, next);
+        await ports.writeLedger(account, next);
         requireAccount(account);
-        this.ledger = next;
+        runtime.ledger = next;
     }
 
-    function sort(this: Runtime, state: string, requested: SortPreference) {
+    function sortColumn(state: string, requested: SortPreference) {
         if (
-            !Object.hasOwn(visibleStates(this.mode), state) ||
+            !Object.hasOwn(visibleStates(runtime.settings.mode), state) ||
             requested.field !== "updated_at" ||
             !["asc", "desc"].includes(requested.direction)
         )
             throw new Error("排序不合法");
-        return this.archive.change((old) => {
+        return archive.change((old) => {
             const current = old.columnSorts[state];
             if (requested.version !== (current?.version ?? 0))
                 throw new Error("排序已变更，请刷新");
@@ -1607,17 +1588,17 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         });
     }
 
-    async function verifyArchive(this: Runtime, item: ArchiveItem) {
+    async function verifyArchive(item: ArchiveItem) {
         const { card, connection } = target(item.id);
-        if (!card.canArchive || card.state !== "to_archive" || this.editing.has(item.id)) {
+        if (!card.canArchive || card.state !== "to_archive" || runtime.editing.has(item.id)) {
             throw new Error("当前状态不能归档");
         }
         const context = await freshContext();
-        const before = await this.desktop.read(connection, card.threadId, false);
-        const latest = (await this.desktop.turns(connection, card.threadId, "summary")).data[0];
+        const before = await desktop.read(connection, card.threadId, false);
+        const latest = (await desktop.turns(connection, card.threadId, "summary")).data[0];
         requireAccount(accountKey(context));
         const position = placement(context, card.hostId, before);
-        const record = this.records[item.id] ?? emptyRecord;
+        const record = runtime.records[item.id] ?? emptyRecord;
         const input = turnInput(latest);
         if (
             (record.confirmedInputKey && input !== record.confirmedInputKey) ||
@@ -1632,11 +1613,11 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             item.version !== record.version ||
             item.sectionVersion !== position.version ||
             !position.managed ||
-            presentState(context, position, this.mode) !== "to_archive"
+            presentState(context, position, runtime.settings.mode) !== "to_archive"
         ) {
             throw new Error("归档状态或位置已变更");
         }
-        const after = await this.desktop.read(connection, card.threadId, false);
+        const after = await desktop.read(connection, card.threadId, false);
         if (
             after.status.type !== before.status.type ||
             placement(context, card.hostId, after).version !== position.version
@@ -1644,40 +1625,40 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             throw new Error("归档核对期间会话发生了变化");
         }
         await freshContext(context);
-        this.desktop.assertCurrent(connection);
+        desktop.assertCurrent(connection);
         return { connection, context, threadId: after.id };
     }
 
-    async function archiveThread(this: Runtime, item: ArchiveItem): Promise<void> {
-        const { connection, context, threadId } = await this.verifyArchive(item).catch(
+    async function archiveThread(item: ArchiveItem): Promise<void> {
+        const { connection, context, threadId } = await verifyArchive(item).catch(
             (error: unknown) => {
                 if (error instanceof NewInputError) throw error;
                 throw new ArchivePreconditionError(errorText(error));
             },
         );
-        await this.desktop.setArchived(connection, threadId, true);
+        await desktop.setArchived(connection, threadId, true);
         await freshContext(context);
     }
 
-    async function archived(this: Runtime, id: string): Promise<boolean> {
+    async function isArchived(id: string): Promise<boolean> {
         const owner = requiredContext();
         const { hostId, threadId } = cardThread(id);
         const archived = new Map<ThreadId, Thread>();
         let connection: HostConnection;
         try {
-            connection = this.desktop.capture(hostId);
+            connection = desktop.capture(hostId);
             await readPages(connection, true, archived);
         } catch (error) {
             throw new ArchiveReadUnavailable(errorText(error));
         }
         await freshContext(owner);
         try {
-            this.desktop.assertCurrent(connection);
+            desktop.assertCurrent(connection);
         } catch (error) {
             throw new ArchiveReadUnavailable(errorText(error));
         }
         const verified = archived.has(threadId);
-        const host = this.hosts.get(hostId);
+        const host = runtime.hosts.get(hostId);
         if (host) {
             if (verified) host.currentActive.delete(threadId);
             mergeArchives(host, archived);
@@ -1685,23 +1666,19 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         return verified;
     }
 
-    function autoArchive(this: Runtime, context: SidebarContext): void {
+    function autoArchive(context: SidebarContext): void {
         const now = Date.now() / 1000;
-        for (const [hostId, host] of this.hosts) {
-            const seconds = archiveInterval(this.settings, hostId);
-            if (!seconds || !isLive(this.desktop, host)) continue;
+        for (const [hostId, host] of runtime.hosts) {
+            const seconds = archiveInterval(runtime.settings, hostId);
+            if (!seconds || !isLive(desktop, host)) continue;
             const next = (Math.floor(now / seconds) + 1) * seconds;
-            const deadline = this.archiveDeadlines.get(hostId) ?? next;
-            this.archiveDeadlines.set(hostId, deadline > now ? deadline : next);
-            if (deadline <= now) void this.autoArchiveHost(hostId, context);
+            const deadline = runtime.archiveDeadlines.get(hostId) ?? next;
+            runtime.archiveDeadlines.set(hostId, deadline > now ? deadline : next);
+            if (deadline <= now) void autoArchiveHost(hostId, context);
         }
     }
 
-    async function autoArchiveHost(
-        this: Runtime,
-        hostId: HostId,
-        context: SidebarContext,
-    ): Promise<void> {
+    async function autoArchiveHost(hostId: HostId, context: SidebarContext): Promise<void> {
         const items = snapshot().sessions.filter(
             (card) =>
                 card.hostId === hostId &&
@@ -1712,7 +1689,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         );
         const run: AutoArchiveRun = { at: Date.now() / 1000, archived: [], deferred: [] };
         if (!items.length) {
-            this.archiveRuns.set(hostId, run);
+            runtime.archiveRuns.set(hostId, run);
             return;
         }
         const id = crypto.randomUUID();
@@ -1724,50 +1701,50 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
                 inputVersion,
                 sectionVersion,
             }));
-            await this.archive.start(id, targets);
+            await archive.start(id, targets);
             for (const item of targets) {
                 if (accountKey(context) !== accountKey(requiredContext())) return;
-                const result = await this.archive.submit(id, item);
+                const result = await archive.submit(id, item);
                 if (result.status === "archived" || result.status === "verified")
                     run.archived.push(item.id);
                 else run.deferred.push({ id: item.id, reason: result.message ?? result.status });
             }
-            await this.archive.finish(id);
+            await archive.finish(id);
         } catch (error) {
             run.error = errorText(error);
         }
         if (accountKey(context) === accountKey(requiredContext()))
-            this.archiveRuns.set(hostId, run);
+            runtime.archiveRuns.set(hostId, run);
     }
 
-    async function requestArchive(this: Runtime, path: string, body: object | undefined) {
+    async function requestArchive(path: string, body: object | undefined) {
         await freshContext();
         const args = body as
             | (Partial<ArchiveTarget> & { batchId?: string; items?: ArchiveTarget[] })
             | undefined;
-        if (path === "/api/archive-batches" && !body) return { batches: this.archive.batches() };
-        if (this.mode === "legacy") throw new Error("旧六状态模式不支持归档");
+        if (path === "/api/archive-batches" && !body) return { batches: archive.batches() };
+        if (runtime.settings.mode === "legacy") throw new Error("旧六状态模式不支持归档");
         if (!args?.id) throw new Error("缺少归档批次或会话 ID");
         switch (path) {
             case "/api/archive-batches":
                 if (Array.isArray(args.items))
-                    return { batch: await this.archive.start(args.id, args.items) };
+                    return { batch: await archive.start(args.id, args.items) };
                 break;
             case "/api/archive-batches/finish":
-                return { batch: await this.archive.finish(args.id) };
+                return { batch: await archive.finish(args.id) };
             case "/api/archive-batches/check":
-                return { batch: await this.archive.check(args.id) };
+                return { batch: await archive.check(args.id) };
             case "/api/archive":
-                return { item: await this.submitArchive(args as ArchiveTarget, args.batchId) };
+                return { item: await submitArchive(args as ArchiveTarget, args.batchId) };
         }
         throw new Error("归档请求不完整");
     }
 
-    function submitArchive(this: Runtime, args: ArchiveTarget, batchId?: string) {
+    function submitArchive(args: ArchiveTarget, batchId?: string) {
         const candidate = { ...args, sectionVersion: args.sectionVersion ?? null };
-        if (batchId) return this.archive.submit(batchId, candidate);
+        if (batchId) return archive.submit(batchId, candidate);
         const { card } = target(candidate.id);
-        return this.archive.single({ ...candidate, title: card.title });
+        return archive.single({ ...candidate, title: card.title });
     }
 
     async function openConnectionSettings() {
@@ -1794,23 +1771,18 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         throw new Error(unsupportedOperation);
     }
 
-    async function request(
-        this: Runtime,
-        path: string,
-        body?: object,
-        account?: string,
-    ): Promise<unknown> {
+    async function request(path: string, body?: object, account?: string): Promise<unknown> {
         if (account !== undefined) requireAccount(account);
-        if (path.startsWith("/api/archive")) return this.requestArchive(path, body);
+        if (path.startsWith("/api/archive")) return requestArchive(path, body);
         const input = body as (DraftInput & { id?: string }) | undefined;
         switch (path) {
             case "/api/sessions":
             case "/api/refresh":
-                return this.refreshSnapshot(account);
+                return refreshSnapshot(account);
             case "/api/state":
             case "/api/column-sort":
             case "/api/new/reset":
-                return this.requestChange(path, body);
+                return requestChange(path, body);
             case "/api/open":
             case "/api/preview-reply":
             case "/api/project/assign":
@@ -1824,19 +1796,18 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
                 await openConnectionSettings();
                 return { ok: true, state: "applied", message: "已打开 Codex 远程连接设置" };
             case "/api/plugin-update":
-                return this.ports.updateStatus(body !== undefined);
+                return ports.updateStatus(body !== undefined);
         }
         throw new Error(unsupportedOperation);
     }
 
-    async function refreshSnapshot(this: Runtime, account?: string) {
+    async function refreshSnapshot(account?: string) {
         await refresh();
         if (account !== undefined) requireAccount(account);
         return snapshot();
     }
 
     function requestChange(
-        this: Runtime,
         path: "/api/state" | "/api/column-sort" | "/api/new/reset",
         body?: object,
     ) {
@@ -1844,7 +1815,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         if (path === "/api/state") return updateSession(body as Edit);
         if (path === "/api/new/reset") return resetDraft(body as DraftInput);
         const sort = body as SortPreference & { state: string };
-        return this.sort(sort.state, sort);
+        return sortColumn(sort.state, sort);
     }
 
     return {
@@ -1852,6 +1823,6 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         notice,
         snapshot,
         update: updateSession,
-        request: runtime.request.bind(runtime),
+        request,
     };
 }
