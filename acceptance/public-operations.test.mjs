@@ -79,6 +79,7 @@ function createPublicBoardFixture(directory, states) {
         get service() {
             return board.service;
         },
+        reopen: board.reopen,
         step: board.step,
         card: board.card,
         persisted: board.persisted,

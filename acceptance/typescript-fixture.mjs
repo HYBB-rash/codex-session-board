@@ -192,6 +192,7 @@ export function createBoardFixture(directory, states, hooks = {}) {
         get service() {
             return service;
         },
+        reopen,
         step,
         card,
         flow,
