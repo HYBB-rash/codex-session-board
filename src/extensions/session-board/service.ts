@@ -1,4 +1,18 @@
 import {
+    cardId,
+    cardThread,
+    type DesktopConnection,
+    type HostConnection,
+    type HostId,
+    type HostProject,
+    interactiveThread,
+    localHostId,
+    hostId as nativeHostId,
+    type SidebarContext,
+    type Thread,
+    type ThreadId,
+} from "../desktop/connection.js";
+import {
     finalAnswer,
     type Phase,
     phaseIsFromTurn,
@@ -17,20 +31,6 @@ import {
     NewInputError,
     type SortPreference,
 } from "./archive.js";
-import {
-    cardId,
-    cardThread,
-    type DesktopConnection,
-    type HostConnection,
-    type HostId,
-    type HostProject,
-    interactiveThread,
-    localHostId,
-    hostId as nativeHostId,
-    type SidebarContext,
-    type Thread,
-    type ThreadId,
-} from "./desktop/connection.js";
 import { type DraftInput, type DraftRecord, stageDraft, unresolvedDrafts } from "./drafts.js";
 import {
     type BoardState,

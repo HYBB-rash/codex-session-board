@@ -369,7 +369,7 @@
             "status": "fixture",
             "implementation": [
                 "src/extensions/session-board/activity.ts",
-                "src/extensions/session-board/desktop/connection.ts",
+                "src/extensions/desktop/connection.ts",
                 "src/extensions/session-board/service.ts"
             ],
             "evidence": ["history-rotation", "history-review-suggestion", "retired-connection"]
@@ -452,7 +452,7 @@
         "DISCOVERY-001": {
             "status": "partial",
             "implementation": [
-                "src/extensions/session-board/desktop/connection.ts",
+                "src/extensions/desktop/connection.ts",
                 "src/extensions/session-board/service.ts"
             ],
             "evidence": [
@@ -590,7 +590,7 @@
             "status": "fixture",
             "implementation": [
                 "src/extensions/session-board/service.ts",
-                "src/extensions/session-board/desktop/connection.ts",
+                "src/extensions/desktop/connection.ts",
                 "src/extensions/session-board/desktop/world.ts",
                 "src/compat/operations.ts"
             ],

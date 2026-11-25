@@ -143,7 +143,7 @@
         },
         "DISCOVERY-001": {
             "sources": [
-                "src/extensions/session-board/desktop/connection.ts",
+                "src/extensions/desktop/connection.ts",
                 "src/extensions/session-board/service.ts"
             ],
             "evidence": "Fedora 窗口已读到本机及 MacBook Pro 的专用会话。见 docs/session-board-native-checkpoint.md。",
@@ -235,7 +235,7 @@
         },
         "BOUNDARY-001": {
             "sources": [
-                "src/extensions/session-board/desktop/connection.ts",
+                "src/extensions/desktop/connection.ts",
                 "src/extensions/session-board/desktop/world.ts",
                 "src/compat/operations.ts"
             ],

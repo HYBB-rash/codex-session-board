@@ -1,1 +1,1 @@
-export * from "../session-board/desktop/connection.js";
+export * from "./connection.js";
