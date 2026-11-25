@@ -174,9 +174,6 @@ function scopedSectionVersion(position: Placement, scope: string): string {
     return position.version.slice(0, -1) + sectionScopeSuffix(scope);
 }
 
-const hostLabel = (host: HostId): string =>
-    host === "local" ? "本机" : (host.split(":").pop() ?? host);
-
 function projectKey(hostId: HostId, id: string): string {
     return hostId === "local" ? id : `target:${JSON.stringify([hostId, "targetServer", id])}`;
 }
@@ -450,6 +447,11 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         isArchived,
         archive: archiveThread,
     });
+
+    function hostLabel(host: HostId): string {
+        if (host === localHostId) return "本机";
+        return runtime.context?.remoteHostNames?.[host] ?? host.slice(host.lastIndexOf(":") + 1);
+    }
 
     async function refresh(): Promise<void> {
         runtime.refreshing ??= readBoard()

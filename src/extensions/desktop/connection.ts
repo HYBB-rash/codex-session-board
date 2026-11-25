@@ -54,6 +54,7 @@ export interface HostConnection {
 export interface SidebarContext {
     accountId: string;
     userId: string;
+    remoteHostNames?: Readonly<Record<string, string>>;
     sections: {
         id: LogicalSectionId;
         name: string;

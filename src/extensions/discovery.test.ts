@@ -52,6 +52,7 @@ interface ListArgs {
 interface NativeFixture {
     hosts: string[];
     accountId?: string;
+    remoteHostNames?: SidebarContext["remoteHostNames"];
     sections?: SidebarContext["sections"];
     archive?: (id: ThreadId) => void;
     list(host: string, args: ListArgs): { data: Thread[]; nextCursor: string | null };
@@ -87,6 +88,7 @@ function discoverySidebar(native: NativeFixture, command: DesktopCommand) {
             accountId: native.accountId ?? "account",
             userId: "user",
             sections: native.sections ?? [],
+            ...(native.remoteHostNames ? { remoteHostNames: native.remoteHostNames } : {}),
         };
     assert.equal(command.kind, "open");
     assert.ok(native.open);
@@ -386,6 +388,34 @@ test("a reopened batch reconciles uncached submitted cards on connected hosts in
     assert.deepEqual(reads, [remoteName]);
     assert.deepEqual(statuses(), ["verified", "verified", "awaiting"]);
     assert.deepEqual(writes, []);
+});
+
+test("remote host labels follow the native names without changing host or card identity", async (testContext) => {
+    const { native, service } = fixture(testContext);
+    const managedHost = "remote-ssh-codex-managed:00000000-0000-4000-8000-000000000021";
+    native.hosts = [localHostId, managedHost, remoteName];
+    native.remoteHostNames = { [managedHost]: "MacBook Pro" };
+    native.list = (host, { archived }) => ({
+        data: !archived && host === managedHost ? [row(first)] : [],
+        nextCursor: null,
+    });
+
+    await service.refresh();
+    const snapshot = service.snapshot();
+    const card = snapshot.sessions[0];
+    assert.equal(card?.hostLabel, "MacBook Pro");
+    assert.equal(card?.hostId, managedHost);
+    assert.deepEqual(snapshot.projectCatalog.remoteHosts, [
+        { hostId: managedHost, hostLabel: "MacBook Pro" },
+        { hostId: remoteName, hostLabel: "fixture" },
+    ]);
+
+    native.remoteHostNames = { [managedHost]: "Work Mac" };
+    await service.refresh();
+    const updated = service.snapshot();
+    assert.equal(updated.sessions[0]?.id, card?.id);
+    assert.equal(updated.sessions[0]?.hostLabel, "Work Mac");
+    assert.equal(updated.health.remoteRegistry[0]?.hostLabel, "Work Mac");
 });
 
 test("archive deadlines follow the current host settings and configured time boundaries", async (testContext) => {

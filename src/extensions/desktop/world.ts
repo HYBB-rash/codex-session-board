@@ -110,6 +110,10 @@ interface SidebarModule {
     ): unknown;
 }
 
+interface RemoteConnectionsModule {
+    u8?: DesktopAtom<{ hostId: string; displayName?: string }[] | undefined>;
+}
+
 function shellFibers(): Fiber | undefined {
     const shell = document.querySelector("[data-app-shell-workspace]");
     const key = shell && Object.keys(shell).find((name) => name.startsWith("__reactFiber$"));
@@ -262,15 +266,36 @@ async function loadedModules(): Promise<DesktopModules> {
     throw new Error("Codex desktop module loader is unavailable");
 }
 
-function exported(modules: DesktopModules, markers: string[]): Record<string, unknown> {
+function exported(
+    modules: DesktopModules,
+    markers: string[],
+    required = true,
+): Record<string, unknown> {
     const keys = Object.keys(modules.m).filter((key) => {
         const source = modules.m[key]?.toString() ?? "";
         return markers.every((marker) => source.includes(marker));
     });
     if (keys.length !== 1 || keys[0] === undefined) {
+        if (!required) return {};
         throw new Error("This desktop build does not expose the required sidebar operation");
     }
     return modules(keys[0]);
+}
+
+function remoteHostNames(modules: DesktopModules, scope: DesktopScope): Record<string, string> {
+    const connections: RemoteConnectionsModule = exported(
+        modules,
+        ["remoteSshConnections:", "remoteWslConnections:", "oneToOnePairingInAppEnabled:", "u8:"],
+        false,
+    );
+    return Object.fromEntries(
+        (connections.u8 ? (scope.get(connections.u8) ?? []) : []).flatMap(
+            ({ hostId, displayName }) => {
+                const name = displayName?.trim();
+                return name ? [[hostId, name]] : [];
+            },
+        ),
+    );
 }
 
 function sidebarContext(modules: DesktopModules, scope: DesktopScope) {
@@ -307,7 +332,8 @@ async function desktopWorld(command: DesktopCommand): Promise<unknown> {
     const modules = await loadedModules();
     const scope = appScope();
     const { accountId, userId, sections, move } = sidebarContext(modules, scope);
-    if (command.kind === "context") return { accountId, userId, sections };
+    if (command.kind === "context")
+        return { accountId, userId, sections, remoteHostNames: remoteHostNames(modules, scope) };
     if (accountId !== command.accountId || userId !== command.userId || scope !== appScope()) {
         throw new Error("Codex account retired");
     }
@@ -334,6 +360,7 @@ export function desktopWorldSource(command: DesktopCommand): string {
         navigate,
         loadedModules,
         exported,
+        remoteHostNames,
         sidebarContext,
         desktopWorld,
     ].map((fn) => fn.toString());
