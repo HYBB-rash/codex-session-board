@@ -38,19 +38,20 @@ function validTime(value: number | null | undefined): value is number {
     return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
+function activeTurn(flags: string[], status: Turn["status"]): RuntimeDecision | null {
+    if (status !== "inProgress") return null;
+    if (flags.includes("waitingOnApproval"))
+        return { state: "blocked", reason: "等待你批准后继续执行。" };
+    if (flags.includes("waitingOnUserInput"))
+        return { state: "blocked", reason: "执行暂停，等待你回答交互问题。" };
+    return { state: "in_progress", reason: "AI 正在执行本轮任务。" };
+}
+
 export function runtimeState(
     status: Thread["status"],
     turn: Pick<Turn, "status" | "completedAt">,
 ): RuntimeDecision | null {
-    if (status.type === "active") {
-        if (turn.status !== "inProgress") return null;
-        const flags = status.activeFlags ?? [];
-        if (flags.includes("waitingOnApproval"))
-            return { state: "blocked", reason: "等待你批准后继续执行。" };
-        if (flags.includes("waitingOnUserInput"))
-            return { state: "blocked", reason: "执行暂停，等待你回答交互问题。" };
-        return { state: "in_progress", reason: "AI 正在执行本轮任务。" };
-    }
+    if (status.type === "active") return activeTurn(status.activeFlags ?? [], turn.status);
     if (status.type === "systemError")
         return { state: "blocked", reason: "执行遇到系统异常，需要处理后继续。" };
     const observedTerminal =

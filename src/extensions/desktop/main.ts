@@ -2,6 +2,17 @@ import type { IpcMainEvent } from "electron";
 import { hostId as parseHostId } from "./connection.js";
 import { type DesktopCommand, desktopWorldSource } from "./world.js";
 
+function parseNewTarget(projectId: unknown, roots: unknown) {
+    if (projectId !== null && typeof projectId !== "string") return;
+    if (!Array.isArray(roots) || !roots.every((root): root is string => typeof root === "string"))
+        return;
+    return { projectId, roots };
+}
+
+function validThreadId(value: unknown): value is string {
+    return typeof value === "string" && /^[\da-f-]{36}$/i.test(value);
+}
+
 function parseDesktopCommand(value: unknown): DesktopCommand {
     if (typeof value !== "object" || value === null)
         throw new Error("Invalid board desktop request");
@@ -17,22 +28,10 @@ function parseDesktopCommand(value: unknown): DesktopCommand {
     const account = { accountId, userId };
     if (command.kind === "settings") return { kind: "settings", ...account };
     if (typeof hostId !== "string" || !parseHostId(hostId)) throw new Error("Invalid board host");
-    if (
-        command.kind === "new" &&
-        (command.projectId === null || typeof command.projectId === "string") &&
-        Array.isArray(command.roots) &&
-        command.roots.every((root): root is string => typeof root === "string")
-    ) {
-        return {
-            kind: "new",
-            ...account,
-            hostId,
-            projectId: command.projectId,
-            roots: command.roots,
-        };
-    }
-    if (typeof threadId !== "string" || !/^[\da-f-]{36}$/i.test(threadId))
-        throw new Error("Invalid thread ID");
+    const target =
+        command.kind === "new" ? parseNewTarget(command.projectId, command.roots) : undefined;
+    if (target) return { kind: "new", ...account, hostId, ...target };
+    if (!validThreadId(threadId)) throw new Error("Invalid thread ID");
     if (command.kind === "open") return { kind: "open", ...account, hostId, threadId };
     if (
         command.kind !== "move" ||

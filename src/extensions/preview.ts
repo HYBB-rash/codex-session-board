@@ -43,6 +43,28 @@ async function threadRunning(
     throw new Error("无法核对当前轮次状态");
 }
 
+async function latestAnswer(
+    desktop: DesktopConnection,
+    connection: HostConnection,
+    id: ThreadId,
+    initial: Awaited<ReturnType<DesktopConnection["turns"]>>,
+    latest: Turn | undefined,
+) {
+    let page = initial;
+    let turn = latest;
+    const cursors = new Set<string>();
+    while (turn) {
+        const text = finalAnswer(turn);
+        if (text) return { turnId: turn.id, html: markdown.render(text) };
+        if (!page.nextCursor) break;
+        if (cursors.has(page.nextCursor)) throw new Error("历史轮次游标重复");
+        cursors.add(page.nextCursor);
+        page = await desktop.turns(connection, id, "summary", page.nextCursor);
+        turn = verifiedTurn(page);
+    }
+    return null;
+}
+
 export async function previewReply(
     desktop: DesktopConnection,
     connection: HostConnection,
@@ -50,23 +72,9 @@ export async function previewReply(
 ) {
     for (let attempt = 0; attempt < 2; attempt++) {
         const running = await threadRunning(desktop, connection, id);
-        let page = await desktop.turns(connection, id, "summary");
+        const page = await desktop.turns(connection, id, "summary");
         const latest = verifiedTurn(page);
-        const cursors = new Set<string>();
-        let answer: { turnId: string; html: string } | null = null;
-        let turn = latest;
-        while (turn) {
-            const text = finalAnswer(turn);
-            if (text) {
-                answer = { turnId: turn.id, html: markdown.render(text) };
-                break;
-            }
-            if (!page.nextCursor) break;
-            if (cursors.has(page.nextCursor)) throw new Error("历史轮次游标重复");
-            cursors.add(page.nextCursor);
-            page = await desktop.turns(connection, id, "summary", page.nextCursor);
-            turn = verifiedTurn(page);
-        }
+        const answer = await latestAnswer(desktop, connection, id, page, latest);
         const check = verifiedTurn(await desktop.turns(connection, id, "notLoaded"));
         const after = await threadRunning(desktop, connection, id);
         if (signature(latest) === signature(check) && running === after) {
