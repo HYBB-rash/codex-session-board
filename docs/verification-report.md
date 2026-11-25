@@ -93,7 +93,8 @@ Owl 是否在别的版本把同一检查编进 Linux，这次不能外推。
 测试副本的启动入口被加上一段同步 Loader。  
 Loader 失败时只打印错误，后面的官方程序仍会执行。  
 Runtime 在主进程注册额外 preload，并用固定频道和页面通信。  
-扩展目录目前只有 `hello-world`，它提供按钮文字。  
+这次验证使用了 `hello-world` 示例扩展。
+
 以后可以继续往 `src/extensions/` 增加本地扩展，而不把扩展代码打进 `app.asar`。
 
 参考实现的公开设计来自 Codex++。  
