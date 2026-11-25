@@ -20,7 +20,7 @@ export default defineConfig({
         outDir: "dist/runtime",
         emptyOutDir: false,
         lib: {
-            entry: "src/ui/preload-entry.ts",
+            entry: "src/ui/desktop/preload.ts",
             formats: ["cjs"],
             fileName: () => "preload.js",
         },

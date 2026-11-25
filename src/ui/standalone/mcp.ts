@@ -1,6 +1,6 @@
 import { App, applyDocumentTheme, type McpUiHostContext } from "@modelcontextprotocol/ext-apps";
-import operations from "./shared/board/operations.json";
-import { startBoard } from "./standalone-page";
+import operations from "../shared/board/operations.json";
+import { startBoard } from "./page";
 
 const app = new App(
     { name: "Codex session board", version: __VERSION__ },

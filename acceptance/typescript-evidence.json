@@ -205,7 +205,7 @@
             "sources": [
                 "src/compat/mcp.ts",
                 "src/compat/entrypoints.test.ts",
-                "src/ui/standalone-mcp.ts",
+                "src/ui/standalone/mcp.ts",
                 ".mcp.json"
             ],
             "missing": "已有 stdio 资源和拒绝写入测试入口。尚缺解包后的自包含资源、宿主复用和无外部 Node.js 的独立验证。"

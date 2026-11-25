@@ -1,5 +1,5 @@
-import type { BoardRequest } from "./views/board/controller";
-import { mountBoardPage } from "./views/board/mount";
+import type { BoardRequest } from "../views/board/controller";
+import { mountBoardPage } from "../views/board/mount";
 
 export function mountEnhancerBoard(panel: HTMLElement, request: BoardRequest, close: () => void) {
     const container = document.createElement("div");
