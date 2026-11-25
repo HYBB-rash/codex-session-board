@@ -1,6 +1,6 @@
 import { defineComponent, onBeforeUnmount, onMounted, type PropType, shallowRef } from "vue";
-import { CardNote, CardProject } from "./board-details";
-import type { BoardControls, BoardModel, BoardSession } from "./board-view";
+import { CardNote, CardProject } from "../../board-details";
+import type { BoardControls, BoardModel, BoardSession } from "../../board-view";
 
 type CardActions = ReturnType<BoardControls["actions"]>;
 

@@ -1,5 +1,5 @@
-import type { BoardSession } from "./board-view";
-import type { BoardSnapshot } from "./views/board/controller";
+import type { BoardSession } from "../../board-view";
+import type { BoardSnapshot } from "./controller";
 
 export type Direction = "asc" | "desc";
 export interface SortPreference {

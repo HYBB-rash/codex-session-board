@@ -326,7 +326,7 @@
             "status": "partial",
             "implementation": [
                 "src/extensions/session-board/placement.ts",
-                "src/ui/board-columns.vue"
+                "src/ui/views/board/SessionColumns.vue"
             ],
             "evidence": ["native-move"],
             "remaining": "对照六状态模式的列、顶部导航及状态选择顺序，再核对四列与五列配置。"
@@ -481,7 +481,7 @@
             "implementation": [
                 "src/extensions/session-board/preview.ts",
                 "src/ui/reply-preview.ts",
-                "src/ui/board-card.tsx"
+                "src/ui/views/board/session-card.tsx"
             ],
             "evidence": [
                 "operation-routing",
@@ -509,7 +509,10 @@
         },
         "UI-001": {
             "status": "partial",
-            "implementation": ["src/ui/board-drag.ts", "src/ui/board-columns.vue"],
+            "implementation": [
+                "src/ui/views/board/drag.ts",
+                "src/ui/views/board/SessionColumns.vue"
+            ],
             "evidence": ["native-move", "native-mcp-and-remote-new"],
             "remaining": "补原生 MCP App 内的拖拽和刷新，并验证同列、拖出看板及横向自动滚动。"
         },
@@ -518,7 +521,7 @@
             "implementation": [
                 "src/ui/views/board/edit/mount-editor.ts",
                 "src/ui/views/board/edit/SessionEditor.vue",
-                "src/ui/board-drag.ts"
+                "src/ui/views/board/drag.ts"
             ],
             "evidence": ["native-move", "http-security"],
             "remaining": "覆盖拖入与在阻塞列内拖放、取消、纯空白、主动清空、保留遗漏备注、自动与人工原因和三种版本冲突。"
@@ -527,7 +530,7 @@
             "status": "pending",
             "implementation": [
                 "src/ui/views/board/browse/filters.tsx",
-                "src/ui/board-refresh.ts",
+                "src/ui/views/board/refresh.ts",
                 "src/ui/views/board/edit/SessionEditor.vue"
             ],
             "remaining": "真实验证标题/项目搜索、空列接收拖放、表单键盘操作、暂停重绘和列内滚动位置。"

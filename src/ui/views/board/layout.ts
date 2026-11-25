@@ -1,4 +1,4 @@
-import type { BoardModel } from "./board-view";
+import type { BoardModel } from "../../board-view";
 
 export interface BoardElements {
     viewport: HTMLElement;

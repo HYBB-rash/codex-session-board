@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onUpdated, ref, useTemplateRef } from "vue";
-import type { Direction, SortMenuProps, SortPreference } from "./board-sorting";
+import type { Direction, SortMenuProps, SortPreference } from "./sorting";
 
 const props = defineProps<SortMenuProps>();
 const trigger = useTemplateRef<HTMLButtonElement>("trigger");
