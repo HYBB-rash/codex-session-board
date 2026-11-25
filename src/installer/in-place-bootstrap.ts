@@ -17,7 +17,7 @@ import {
 } from "./in-place-target.js";
 import { checkInPlaceUpgrade } from "./in-place-watcher.js";
 import { verifyInPlaceRelease } from "./release/manifest.js";
-import { releasePointer } from "./releases.js";
+import { releasePointer } from "./release/store.js";
 
 function archiveDigest(file: string): string {
     const original = require("original-fs") as typeof fs;

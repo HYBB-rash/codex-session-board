@@ -11,7 +11,7 @@ import {
     releasePlatform,
     versionManifest,
 } from "../installer/release/manifest.js";
-import { activateRelease } from "../installer/releases.js";
+import { activateRelease } from "../installer/release/store.js";
 import { assetsDirectory } from "./operations.js";
 import { readReceipt, writeReceipt } from "./receipt.js";
 import { startBoardServer } from "./server.js";

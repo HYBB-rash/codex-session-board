@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { IpcMain, IpcMainEvent, WebContents } from "electron";
 import { HostUnavailableError, startBoardServer } from "../compat/server.js";
 import { stateDir } from "../installer/paths.js";
-import { boardUpdateStatus } from "../installer/releases.js";
+import { boardUpdateStatus } from "../installer/release/store.js";
 
 export interface BoardRelayRequest {
     id: string;

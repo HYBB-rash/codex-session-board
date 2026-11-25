@@ -7,7 +7,7 @@ import { launchAndConfirm } from "../installer/launch.js";
 import { outputDir } from "../installer/paths.js";
 import { releasePlatform, releasePlatforms } from "../installer/release/manifest.js";
 import { packageRelease } from "../installer/release/package.js";
-import { activateRelease, activeRelease, rollbackRelease } from "../installer/releases.js";
+import { activateRelease, activeRelease, rollbackRelease } from "../installer/release/store.js";
 import { restore } from "../installer/restore.js";
 import { formatStatus, status } from "../installer/status.js";
 

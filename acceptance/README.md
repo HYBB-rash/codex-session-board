@@ -6,7 +6,7 @@
 node acceptance/check-candidate.mjs --open
 npm run build
 node --test dist/compat/entrypoints.test.js dist/migration/legacy.test.js \
-  dist/installer/paths.test.js dist/installer/releases.test.js dist/runtime/registry.test.js
+  dist/installer/paths.test.js dist/installer/release/store.test.js dist/runtime/registry.test.js
 ```
 
 第一条命令检查冻结文件及操作登记的哈希、清单完整性、证据路径和测试名，并打印待核验项。真实宿主证据要从受测候选安装件复验并记录。Fedora 的原生移卡证据适用于记录中的检查点。

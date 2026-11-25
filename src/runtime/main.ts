@@ -13,7 +13,7 @@ import {
     type TitleResolution,
 } from "../extensions/session-board/records.js";
 import { inPlaceRuntime, logs, outputDir, stateDir } from "../installer/paths.js";
-import { runningVersion } from "../installer/releases.js";
+import { runningVersion } from "../installer/release/store.js";
 import { LegacyBoardRuntime } from "../migration/runtime.js";
 import type { ExtensionApi, ExtensionModule, SidebarItemInput } from "./api.js";
 import { BoardBroker, boardFrame } from "./board-broker.js";

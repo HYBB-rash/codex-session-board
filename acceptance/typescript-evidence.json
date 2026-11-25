@@ -214,7 +214,7 @@
             "sources": [
                 "src/compat/cli-config.ts",
                 "src/installer/paths.ts",
-                "src/installer/releases.test.ts"
+                "src/installer/release/store.test.ts"
             ],
             "missing": "已有隔离更新和回退测试入口，尚缺完整的显式配置和两平台安装路径、升级后状态留存核对。"
         },
@@ -264,7 +264,7 @@
             "sources": [
                 "scripts/package.sh",
                 "src/installer/release/package.ts",
-                "src/installer/releases.test.ts"
+                "src/installer/release/store.test.ts"
             ],
             "missing": "还需对最终 Linux 和 macOS 产物独立解包验收，记录哈希、离线运行、系统安装、更新和回退。"
         },

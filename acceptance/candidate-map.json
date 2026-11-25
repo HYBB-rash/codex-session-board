@@ -297,7 +297,7 @@
             "test": "compiled files sit in dist and runtime data stays in the repository"
         },
         "release-rollback": {
-            "file": "src/installer/releases.test.ts",
+            "file": "src/installer/release/store.test.ts",
             "test": "activation and rollback retain data and the previous immutable release"
         },
         "install-first-retry": {
@@ -313,7 +313,7 @@
             "test": "overlapping requests share one native draft open and can resume after registration"
         },
         "release-rejection": {
-            "file": "src/installer/releases.test.ts",
+            "file": "src/installer/release/store.test.ts",
             "test": "platform mismatch and symlink entries are rejected"
         },
         "ipc-frame": {
@@ -550,7 +550,7 @@
                 "src/installer/paths.ts",
                 "src/installer/launch.ts",
                 "src/compat/cli-config.ts",
-                "src/installer/releases.ts"
+                "src/installer/release/store.ts"
             ],
             "evidence": [
                 "launcher-deployment-paths",

@@ -5,7 +5,7 @@ import { sha256File } from "../asar.js";
 import { assertIsolatedPath, assertSeparateFromSource } from "../copy.js";
 import type { InstallState } from "../install.js";
 import * as paths from "../paths.js";
-import { withDirectoryLock } from "../releases.js";
+import { withDirectoryLock } from "../release/store.js";
 import { verifyMacSignature, verifyOfficialCopy } from "./signing.js";
 
 export const macWorkspace = path.join(paths.stateDir, ".mac-copy");

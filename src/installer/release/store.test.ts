@@ -12,7 +12,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import test, { type TestContext } from "node:test";
-import { sha256File } from "./asar.js";
+import { sha256File } from "../asar.js";
 import {
     inPlaceReleaseProtocol,
     type ReleasePlatform,
@@ -21,8 +21,8 @@ import {
     verifyInPlaceRelease,
     verifyRelease,
     versionManifest,
-} from "./release/manifest.js";
-import { activateRelease, activeRelease, rollbackRelease } from "./releases.js";
+} from "./manifest.js";
+import { activateRelease, activeRelease, rollbackRelease } from "./store.js";
 
 const load = createRequire(__filename);
 
@@ -120,8 +120,8 @@ test("in-place verification requires a supported Linux protocol", (context) => {
 test("in-place activation and rollback reject copy-only releases before switching", (context) => {
     const directory = scratch(context);
     const store = path.join(directory, "releases");
-    const receipt = load("./in-place-receipt.js") as typeof import("./in-place-receipt.js");
-    const target = load("./in-place-target.js") as typeof import("./in-place-target.js");
+    const receipt = load("../in-place-receipt.js") as typeof import("../in-place-receipt.js");
+    const target = load("../in-place-target.js") as typeof import("../in-place-target.js");
     context.mock.method(receipt, "inPlaceReleaseStore", () => store);
     const stageCheck = context.mock.method(target, "assertSystemPath", () => {});
     const legacy = fixture(directory, "0.3.23", { platform: "linux-x86_64" });

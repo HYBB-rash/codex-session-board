@@ -15,10 +15,10 @@ import {
     writeFileSync,
 } from "node:fs";
 import * as path from "node:path";
-import { sha256File } from "./asar.js";
-import { inPlaceReleaseStore } from "./in-place-receipt.js";
-import { assertSystemPath } from "./in-place-target.js";
-import * as paths from "./paths.js";
+import { sha256File } from "../asar.js";
+import { inPlaceReleaseStore } from "../in-place-receipt.js";
+import { assertSystemPath } from "../in-place-target.js";
+import * as paths from "../paths.js";
 import {
     type ReleaseManifest,
     readReleaseManifest,
@@ -26,7 +26,7 @@ import {
     releasePlatform,
     verifyInPlaceRelease,
     verifyRelease,
-} from "./release/manifest.js";
+} from "./manifest.js";
 
 interface ReleasePointer {
     current: string;

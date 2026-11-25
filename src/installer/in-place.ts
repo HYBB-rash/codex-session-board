@@ -38,7 +38,7 @@ import {
 } from "./in-place-target.js";
 import { checkInPlaceUpgrade, type InPlaceWatchStatus } from "./in-place-watcher.js";
 import { verifyInPlaceRelease } from "./release/manifest.js";
-import { activateRelease, activeRelease, rollbackRelease } from "./releases.js";
+import { activateRelease, activeRelease, rollbackRelease } from "./release/store.js";
 
 const rpmLock = "/usr/lib/sysimage/rpm/.rpm.lock";
 const receiptStage = /^\.receipt-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
