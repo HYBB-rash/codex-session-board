@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { type BoardLedger, emptyLedger } from "./archive.js";
 import {
     cardId,
     DesktopConnection,
@@ -9,7 +10,6 @@ import {
 } from "./desktop/connection.js";
 import type { DesktopCommand } from "./desktop/world.js";
 import { BoardService } from "./service.js";
-import { type BoardLedger, emptyLedger } from "./session-board/archive.js";
 import { defaults } from "./settings.js";
 
 const remote = hostId("remote-ssh-discovered:fixture");

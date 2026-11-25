@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import { createRequire } from "node:module";
 import * as path from "node:path";
 import type { App, IpcMain, IpcMainEvent, Session, WebContents } from "electron";
+import type { BoardLedger } from "../extensions/archive.js";
 import { boardDesktopRequest } from "../extensions/desktop/main.js";
 import {
     BoardLedgers,
@@ -11,7 +12,6 @@ import {
     TitleEpochs,
     type TitleResolution,
 } from "../extensions/records.js";
-import type { BoardLedger } from "../extensions/session-board/archive.js";
 import { inPlaceRuntime, logs, outputDir, stateDir } from "../installer/paths.js";
 import { runningVersion } from "../installer/release/store.js";
 import { LegacyBoardRuntime } from "../migration/runtime.js";

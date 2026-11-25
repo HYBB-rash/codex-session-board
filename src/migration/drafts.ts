@@ -1,4 +1,4 @@
-import type { DraftRecord } from "../extensions/session-board/drafts.js";
+import type { DraftRecord } from "../extensions/drafts.js";
 import type { LegacyAccountBinding, LegacyImportDatabase } from "./projection.js";
 
 function fieldsOf(prefix: string, project: string): unknown[] | null {

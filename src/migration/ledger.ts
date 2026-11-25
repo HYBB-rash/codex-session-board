@@ -1,8 +1,4 @@
-import type {
-    ArchiveItem,
-    ArchiveState,
-    BoardLedger,
-} from "../extensions/session-board/archive.js";
+import type { ArchiveItem, ArchiveState, BoardLedger } from "../extensions/archive.js";
 import { projectPendingDrafts } from "./drafts.js";
 import type {
     LegacyAccountBinding,

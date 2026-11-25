@@ -1,8 +1,8 @@
 import { createRequire } from "node:module";
 import { join } from "node:path";
+import type { BoardLedger } from "../extensions/archive.js";
 import { hostId, localHostId, type ThreadId } from "../extensions/desktop/connection.js";
 import type { BoardRecords, LegacyCachedCard, LoadedBoardRecords } from "../extensions/records.js";
-import type { BoardLedger } from "../extensions/session-board/archive.js";
 import { type BoardSettings, readSettings } from "../extensions/settings.js";
 import { readRegular, regularFile } from "./files.js";
 import { projectLedger } from "./ledger.js";

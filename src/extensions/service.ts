@@ -7,6 +7,17 @@ import {
     turnInput,
 } from "./activity.js";
 import {
+    Archive,
+    type ArchiveItem,
+    ArchivePreconditionError,
+    ArchiveReadUnavailable,
+    type ArchiveTarget,
+    type BoardLedger,
+    emptyLedger,
+    NewInputError,
+    type SortPreference,
+} from "./archive.js";
+import {
     cardId,
     cardThread,
     type DesktopConnection,
@@ -20,6 +31,7 @@ import {
     type Thread,
     type ThreadId,
 } from "./desktop/connection.js";
+import { type DraftInput, type DraftRecord, stageDraft, unresolvedDrafts } from "./drafts.js";
 import {
     type BoardState,
     type Placement,
@@ -39,23 +51,6 @@ import type {
     RecordWrite,
     TitleResolution,
 } from "./records.js";
-import {
-    Archive,
-    type ArchiveItem,
-    ArchivePreconditionError,
-    ArchiveReadUnavailable,
-    type ArchiveTarget,
-    type BoardLedger,
-    emptyLedger,
-    NewInputError,
-    type SortPreference,
-} from "./session-board/archive.js";
-import {
-    type DraftInput,
-    type DraftRecord,
-    stageDraft,
-    unresolvedDrafts,
-} from "./session-board/drafts.js";
 import { type BoardSettings, defaults } from "./settings.js";
 
 interface BoardPorts {
