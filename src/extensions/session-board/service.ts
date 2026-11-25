@@ -1,4 +1,12 @@
 import {
+    finalAnswer,
+    type Phase,
+    phaseIsFromTurn,
+    projectedTitle,
+    runtimePhase,
+    turnInput,
+} from "../activity.js";
+import {
     cardId,
     cardThread,
     type DesktopConnection,
@@ -13,13 +21,15 @@ import {
     type ThreadId,
 } from "../desktop/connection.js";
 import {
-    finalAnswer,
-    type Phase,
-    phaseIsFromTurn,
-    projectedTitle,
-    runtimePhase,
-    turnInput,
-} from "./activity.js";
+    type BoardState,
+    type Placement,
+    placement,
+    presentState,
+    sectionBindings,
+    sectionFor,
+    visibleStates,
+} from "../placement.js";
+import { previewReply } from "../preview.js";
 import {
     Archive,
     type ArchiveItem,
@@ -32,16 +42,6 @@ import {
     type SortPreference,
 } from "./archive.js";
 import { type DraftInput, type DraftRecord, stageDraft, unresolvedDrafts } from "./drafts.js";
-import {
-    type BoardState,
-    type Placement,
-    placement,
-    presentState,
-    sectionBindings,
-    sectionFor,
-    visibleStates,
-} from "./placement.js";
-import { previewReply } from "./preview.js";
 import type {
     CardRecord,
     LegacyCachedCard,

@@ -1,6 +1,6 @@
 import MarkdownIt from "markdown-it";
-import type { DesktopConnection, HostConnection, ThreadId, Turn } from "../desktop/connection.js";
 import { finalAnswer } from "./activity.js";
+import type { DesktopConnection, HostConnection, ThreadId, Turn } from "./desktop/connection.js";
 
 const markdown = new MarkdownIt({ html: false }).disable("image");
 markdown.validateLink = (input) => {

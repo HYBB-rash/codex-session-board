@@ -9,7 +9,7 @@ import { Script } from "node:vm";
 import { connectBoard } from "../dist/compat/client.js";
 import { createMcpHandler } from "../dist/compat/mcp.js";
 import { startBoardServer } from "../dist/compat/server.js";
-import { labels } from "../dist/extensions/session-board/placement.js";
+import { labels } from "../dist/extensions/placement.js";
 import { BoardFixture } from "./typescript-fixture.mjs";
 
 const require = createRequire(import.meta.url);

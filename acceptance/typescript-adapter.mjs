@@ -8,8 +8,8 @@ import {
     runtimePhase,
     runtimeState,
     turnInput,
-} from "../dist/extensions/session-board/activity.js";
-import { labels, visibleStates } from "../dist/extensions/session-board/placement.js";
+} from "../dist/extensions/activity.js";
+import { labels, visibleStates } from "../dist/extensions/placement.js";
 import { BoardFixture } from "./typescript-fixture.mjs";
 
 const input = JSON.parse(await readFile(fileURLToPath(process.argv[2]), "utf8"));

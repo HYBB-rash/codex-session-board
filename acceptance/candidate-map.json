@@ -324,17 +324,14 @@
     "requirements": {
         "STATE-001": {
             "status": "partial",
-            "implementation": [
-                "src/extensions/session-board/placement.ts",
-                "src/ui/SessionColumns.vue"
-            ],
+            "implementation": ["src/extensions/placement.ts", "src/ui/SessionColumns.vue"],
             "evidence": ["native-move"],
             "remaining": "对照六状态模式的列、顶部导航及状态选择顺序，再核对四列与五列配置。"
         },
         "AUTO-001": {
             "status": "partial",
             "implementation": [
-                "src/extensions/session-board/activity.ts",
+                "src/extensions/activity.ts",
                 "src/extensions/session-board/service.ts"
             ],
             "evidence": ["fedora-desktop", "runtime-real-stages"],
@@ -342,25 +339,25 @@
         },
         "AUTO-002": {
             "status": "partial",
-            "implementation": ["src/extensions/session-board/activity.ts"],
+            "implementation": ["src/extensions/activity.ts"],
             "evidence": ["runtime-real-stages", "runtime-confirmed-errors"],
             "remaining": "Fedora 本机已独立读回真实中断及备注。补现场审批、交互输入、系统错误与 macOS 复验。"
         },
         "AUTO-003": {
             "status": "partial",
-            "implementation": ["src/extensions/session-board/activity.ts"],
+            "implementation": ["src/extensions/activity.ts"],
             "evidence": ["fedora-desktop", "runtime-real-stages"],
             "remaining": "Fedora 已读回本机澄清答复及远程正常结束。补 macOS 现场凭证。"
         },
         "AUTO-004": {
             "status": "fixture",
-            "implementation": ["src/extensions/session-board/activity.ts"],
+            "implementation": ["src/extensions/activity.ts"],
             "evidence": ["runtime-passive-input", "history-review-suggestion"]
         },
         "AUTO-005": {
             "status": "fixture",
             "implementation": [
-                "src/extensions/session-board/activity.ts",
+                "src/extensions/activity.ts",
                 "src/extensions/session-board/service.ts"
             ],
             "evidence": ["runtime-manual-selection", "runtime-real-stages", "runtime-pending-move"]
@@ -368,7 +365,7 @@
         "AUTO-006": {
             "status": "fixture",
             "implementation": [
-                "src/extensions/session-board/activity.ts",
+                "src/extensions/activity.ts",
                 "src/extensions/desktop/connection.ts",
                 "src/extensions/session-board/service.ts"
             ],
@@ -396,7 +393,7 @@
         "MANUAL-003": {
             "status": "partial",
             "implementation": [
-                "src/extensions/session-board/activity.ts",
+                "src/extensions/activity.ts",
                 "src/extensions/session-board/service.ts"
             ],
             "evidence": ["migration-projection"],
@@ -405,7 +402,7 @@
         "TITLE-001": {
             "status": "partial",
             "implementation": [
-                "src/extensions/session-board/activity.ts",
+                "src/extensions/activity.ts",
                 "src/extensions/session-board/service.ts"
             ],
             "evidence": [
@@ -418,7 +415,7 @@
         },
         "TITLE-002": {
             "status": "fixture",
-            "implementation": ["src/extensions/session-board/activity.ts"],
+            "implementation": ["src/extensions/activity.ts"],
             "evidence": ["title-manual-projection"]
         },
         "TITLE-003": {
@@ -476,7 +473,7 @@
         "NAV-001": {
             "status": "partial",
             "implementation": [
-                "src/extensions/session-board/preview.ts",
+                "src/extensions/preview.ts",
                 "src/ui/preview/mount.ts",
                 "src/ui/card.tsx"
             ],
