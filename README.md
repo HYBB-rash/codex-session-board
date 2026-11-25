@@ -52,6 +52,8 @@ macOS 副本卸载会恢复官方签名与完整的应用包。安装器保存�
 
 原地模式要求 Fedora x86_64、由 RPM 管理的 `/opt/codex-desktop`，以及 `/usr/bin/node` 22 或更新版本。当前源码支持指纹匹配的 Codex `26.1111.71704` 和 `26.1120.50957` RPM 构建。安装器还使用 Fedora 的 `rpm`、`flock`、`getfattr` 及桌面用户服务。选择与客户端构建兼容且带原地安装协议的 Linux 候选，校验 `.sha256` 后解压。退出原 Codex 的所有进程，再在解压目录执行。
 
+适配新的 Codex RPM 时，先运行 [Fedora RPM 本机会话验收](acceptance/README.md#fedora-rpm-兼容性)。
+
 ```bash
 sudo /usr/bin/node dist/bin/codex-enhancer.js install --in-place
 /usr/bin/node dist/bin/codex-enhancer.js status --in-place

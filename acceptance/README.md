@@ -13,6 +13,24 @@ node --test dist/compat/entrypoints.test.js dist/migration/legacy.test.js \
 
 `live/` 存放工作区的真机验收工具。用 `python3 -B acceptance/live/board-accept.py --help` 查看 Mac 副本验收入口，运行记录和日志写入 `state/acceptance/cli-runs/`。
 
+## Fedora RPM 兼容性
+
+适配新的 Codex RPM 时，先用打包后的看板运行本机会话验收，通过后再安装到日用客户端。准备一个与目标宿主同版本的 Fedora Podman 测试镜像，镜像需要有非 root 用户 `tester`、Codex RPM 的运行依赖、Xvfb、D-Bus、Node.js 22、`curl`、`jq` 和原地安装所用的系统工具。
+
+将目标 RPM、看板归档及同名 `.sha256` 放在同一目录。以下命令使用当前工作区的验收脚本，在断网容器及全新的临时用户目录中安装并启动指定版本。
+
+```bash
+podman run --rm --pull=never --network=none --user 0:0 \
+  --security-opt label=disable --security-opt seccomp=unconfined \
+  --volume "$PWD/acceptance/live:/suite:ro" \
+  --volume "$ARTIFACTS:/artifacts:ro" \
+  --entrypoint /usr/bin/bash "$FEDORA_TEST_IMAGE" \
+  /suite/fedora-rpm-smoke.sh "/artifacts/$RPM_FILE" "$CODEX_BUILD" \
+  "/artifacts/$BOARD_ARCHIVE" "$BOARD_VERSION"
+```
+
+脚本给隔离窗口提供合成账号上下文和本机连接通知。会话列表由候选包的 preload 向实际 RPM 的 App Server 请求，通过看板的 `/api/sessions` 核对结果。脚本核对运行中的两个版本，并要求本机会话扫描完成、有当次启动后的成功时间且无读取错误。空白配置返回零条会话可以通过。窗口虽能打开但请求超时、只读到离线快照或一直未能读取都会以非零状态退出。真实登录、远程会话和写入操作仍由相应现场用例验证。
+
 ## 候选与现场证据
 
 ```sh
