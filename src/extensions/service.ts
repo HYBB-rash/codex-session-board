@@ -434,9 +434,6 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         get mode() {
             return this.settings.mode;
         },
-        retryHostTitle,
-        oldestTitleRetry,
-        canRetryHostTitle,
         card,
         cachedLegacyCard,
         requiredContext,
@@ -455,13 +452,6 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         updateCard,
         commitRecord,
         publishThread,
-        syncTitle,
-        titleKey,
-        retryTitle,
-        syncTitleWithinBudget,
-        scheduleTitleRetry,
-        resolveTitle,
-        settleObservedTitle,
         moveCard,
         open,
         preview,
@@ -689,7 +679,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             }
         }
         host.runtimeVerified = host.scanComplete === true && host.runtimeError === undefined;
-        await runtime.retryHostTitle(connection, host);
+        await retryHostTitle(connection, host);
         const checked = new Set(realtime.map(({ id }) => id));
         await readHistory(
             connection,
@@ -751,7 +741,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         } finally {
             runtime.editing.delete(id);
         }
-        if (queuedTitle) void runtime.retryTitle(connection, thread.id);
+        if (queuedTitle) void retryTitle(connection, thread.id);
     }
 
     async function storeObservation(
@@ -836,41 +826,32 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         return { kind: "automatic", state: phase.state };
     }
 
-    async function retryHostTitle(
-        this: Runtime,
-        connection: HostConnection,
-        host: HostSnapshot,
-    ): Promise<void> {
-        if (!this.settings.syncTitles) return;
+    async function retryHostTitle(connection: HostConnection, host: HostSnapshot): Promise<void> {
+        if (!runtime.settings.syncTitles) return;
         const now = Date.now();
-        const oldest = this.oldestTitleRetry(connection.hostId, host, now);
-        if (oldest) await this.retryTitle(connection, oldest.threadId);
+        const oldest = oldestTitleRetry(connection.hostId, host, now);
+        if (oldest) await retryTitle(connection, oldest.threadId);
     }
 
-    function oldestTitleRetry(this: Runtime, hostId: HostId, host: HostSnapshot, now: number) {
+    function oldestTitleRetry(hostId: HostId, host: HostSnapshot, now: number) {
         let oldest: { threadId: ThreadId; at: number } | undefined;
         for (const thread of host.active.values()) {
             const id = cardId({ hostId, threadId: thread.id });
-            const record = this.records[id];
-            if (!record?.title || !this.canRetryHostTitle(host, id, thread.id)) continue;
-            const retry = this.nextTitleAttempt.get(id);
+            const record = runtime.records[id];
+            if (!record?.title || !canRetryHostTitle(host, id, thread.id)) continue;
+            const retry = runtime.nextTitleAttempt.get(id);
             const at = retry?.version === record.version ? retry.at : 0;
             if (at <= now && (!oldest || at < oldest.at)) oldest = { threadId: thread.id, at };
         }
         return oldest;
     }
 
-    function canRetryHostTitle(
-        this: Runtime,
-        host: HostSnapshot,
-        id: string,
-        threadId: ThreadId,
-    ): boolean {
+    function canRetryHostTitle(host: HostSnapshot, id: string, threadId: ThreadId): boolean {
         return (
             host.currentActive.has(threadId) &&
-            canWrite(this.settings, threadId) &&
-            !this.editing.has(id) &&
-            !this.titleInFlight.has(this.titleKey(id))
+            canWrite(runtime.settings, threadId) &&
+            !runtime.editing.has(id) &&
+            !runtime.titleInFlight.has(titleKey(id))
         );
     }
 
@@ -1158,7 +1139,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             accountKey(this.requiredContext()) === account &&
             this.records[edit.id]?.version === settled.version
         )
-            await this.retryTitle(connection, settled.threadId);
+            await retryTitle(connection, settled.threadId);
         this.requireAccount(account);
         const context = this.requiredContext();
         const current =
@@ -1266,7 +1247,6 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     }
 
     async function syncTitle(
-        this: Runtime,
         connection: HostConnection,
         threadId: ThreadId,
         id: string,
@@ -1274,65 +1254,59 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         state: BoardState | null,
         deadline: number,
     ): Promise<Thread | undefined> {
-        const owner = await this.freshContext();
-        const before = await this.desktop.read(
+        const owner = await runtime.freshContext();
+        const before = await desktop.read(
             connection,
             threadId,
             false,
             remainingTitleTime(deadline),
         );
-        if (this.records[id] !== record || this.editing.has(id)) return;
+        if (runtime.records[id] !== record || runtime.editing.has(id)) return;
         const current = before.name || before.preview.split("\n")[0] || threadId;
         const title = projectedTitle(current, state);
         if (title === current) return before;
-        const context = await this.freshContext(owner);
-        if (this.records[id] !== record || this.editing.has(id) || !this.settings.syncTitles)
+        const context = await runtime.freshContext(owner);
+        if (
+            runtime.records[id] !== record ||
+            runtime.editing.has(id) ||
+            !runtime.settings.syncTitles
+        )
             return;
         const position = placement(context, connection.hostId, before);
-        if (!position.managed || presentState(context, position, this.mode) !== state)
+        if (!position.managed || presentState(context, position, runtime.settings.mode) !== state)
             return before;
-        await this.desktop.rename(connection, threadId, title, remainingTitleTime(deadline));
-        const after = await this.desktop.read(
-            connection,
-            threadId,
-            false,
-            remainingTitleTime(deadline),
-        );
-        await this.freshContext(owner);
+        await desktop.rename(connection, threadId, title, remainingTitleTime(deadline));
+        const after = await desktop.read(connection, threadId, false, remainingTitleTime(deadline));
+        await runtime.freshContext(owner);
         if (after.name !== title) throw new Error("Codex 尚未读回更新后的标题");
         return after;
     }
 
-    function titleKey(this: Runtime, id: string): string {
-        return JSON.stringify([accountKey(this.requiredContext()), id]);
+    function titleKey(id: string): string {
+        return JSON.stringify([accountKey(runtime.requiredContext()), id]);
     }
 
-    async function retryTitle(
-        this: Runtime,
-        connection: HostConnection,
-        threadId: ThreadId,
-    ): Promise<void> {
-        if (!this.settings.syncTitles || !canWrite(this.settings, threadId)) return;
+    async function retryTitle(connection: HostConnection, threadId: ThreadId): Promise<void> {
+        if (!runtime.settings.syncTitles || !canWrite(runtime.settings, threadId)) return;
         const id = cardId({ hostId: connection.hostId, threadId });
-        const record = this.records[id];
-        const key = this.titleKey(id);
-        if (!record?.title || this.titleInFlight.has(key) || this.editing.has(id)) return;
-        this.titleInFlight.add(key);
+        const record = runtime.records[id];
+        const key = titleKey(id);
+        if (!record?.title || runtime.titleInFlight.has(key) || runtime.editing.has(id)) return;
+        runtime.titleInFlight.add(key);
         try {
-            await this.resolveTitle(connection, threadId, id, record, record.title);
+            await resolveTitle(connection, threadId, id, record, record.title);
         } catch (error) {
-            this.ports.proof("board-title-settlement-failed", {
+            ports.proof("board-title-settlement-failed", {
                 hostId: connection.hostId,
                 threadId,
                 error: errorText(error),
             });
         } finally {
-            this.titleInFlight.delete(key);
+            runtime.titleInFlight.delete(key);
         }
     }
 
     async function syncTitleWithinBudget(
-        this: Runtime,
         connection: HostConnection,
         threadId: ThreadId,
         id: string,
@@ -1351,11 +1325,11 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
                 );
             });
             updated = await Promise.race([
-                this.syncTitle(connection, threadId, id, record, state, deadline),
+                syncTitle(connection, threadId, id, record, state, deadline),
                 timeout,
             ]);
             if (!updated) return;
-            this.desktop.assertCurrent(connection);
+            desktop.assertCurrent(connection);
         } catch (error) {
             failure = errorText(error);
         } finally {
@@ -1364,61 +1338,53 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         return { updated, failure };
     }
 
-    function scheduleTitleRetry(
-        this: Runtime,
-        id: string,
-        version: number,
-        failure: string | undefined,
-    ) {
-        if (failure) this.nextTitleAttempt.set(id, { version, at: Date.now() + titleRetryDelayMs });
-        else this.nextTitleAttempt.delete(id);
+    function scheduleTitleRetry(id: string, version: number, failure: string | undefined) {
+        if (failure)
+            runtime.nextTitleAttempt.set(id, { version, at: Date.now() + titleRetryDelayMs });
+        else runtime.nextTitleAttempt.delete(id);
     }
 
     async function resolveTitle(
-        this: Runtime,
         connection: HostConnection,
         threadId: ThreadId,
         id: string,
         record: CardRecord,
         title: NonNullable<CardRecord["title"]>,
     ): Promise<void> {
-        const account = accountKey(this.requiredContext());
-        const sync = await this.syncTitleWithinBudget(
-            connection,
-            threadId,
-            id,
-            record,
-            title.state,
-        );
+        const account = accountKey(runtime.requiredContext());
+        const sync = await syncTitleWithinBudget(connection, threadId, id, record, title.state);
         if (!sync) return;
         const { updated, failure } = sync;
-        if (!this.context || accountKey(this.context) !== account || this.records[id] !== record)
+        if (
+            !runtime.context ||
+            accountKey(runtime.context) !== account ||
+            runtime.records[id] !== record
+        )
             return;
-        this.scheduleTitleRetry(id, record.version, failure);
+        scheduleTitleRetry(id, record.version, failure);
         if (failure === undefined || failure !== title.error) {
-            if (!(await this.settleObservedTitle(account, id, record, title, failure))) return;
+            if (!(await settleObservedTitle(account, id, record, title, failure))) return;
         }
-        if (updated && !failure && !this.editing.has(id))
-            this.publishThread(connection.hostId, updated);
+        if (updated && !failure && !runtime.editing.has(id))
+            runtime.publishThread(connection.hostId, updated);
     }
 
     async function settleObservedTitle(
-        this: Runtime,
         account: string,
         id: string,
         record: CardRecord,
         title: NonNullable<CardRecord["title"]>,
         failure: string | undefined,
     ): Promise<boolean> {
-        const changed = await this.ports.settleTitle({
+        const changed = await ports.settleTitle({
             account,
             id,
             expected: record.version,
             ...(failure === undefined ? {} : { failure }),
         });
-        if (!changed || this.records[id] !== record) return false;
+        if (!changed || runtime.records[id] !== record) return false;
         const { title: _pending, ...rest } = record;
-        this.records[id] = failure ? { ...rest, title: { ...title, error: failure } } : rest;
+        runtime.records[id] = failure ? { ...rest, title: { ...title, error: failure } } : rest;
         return true;
     }
 
