@@ -392,10 +392,10 @@ export type BoardService = ReturnType<typeof createBoardService>;
 
 export function createBoardService(desktop: DesktopConnection, ports: BoardPorts) {
     const archive = createArchive({
-        scope: () => accountKey(runtime.requiredContext()),
+        scope: () => accountKey(requiredContext()),
         ledger: () => runtime.ledger,
         write: (next) => runtime.writeLedger(next),
-        nativeVersion: (version) => runtime.nativeSectionVersion(version),
+        nativeVersion: (version) => nativeSectionVersion(version),
         verify: async (item) => {
             await runtime.verifyArchive(item);
         },
@@ -434,19 +434,6 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         get mode() {
             return this.settings.mode;
         },
-        card,
-        cachedLegacyCard,
-        requiredContext,
-        health,
-        snapshot,
-        sessions,
-        hostCards,
-        projectCatalog,
-        target,
-        requireAccount,
-        requiredScope,
-        nativeSectionVersion,
-        freshContext,
         update,
         resolveEdit,
         updateCard,
@@ -514,7 +501,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         runtime.context = context;
         ports.authority(account);
         await Promise.all(desktop.knownHosts().map((host) => refreshHost(host, context)));
-        runtime.requireAccount(account);
+        requireAccount(account);
         runtime.autoArchive(context);
     }
 
@@ -572,7 +559,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         try {
             const connection = desktop.capture(hostId);
             await readActive(connection, next);
-            await runtime.freshContext(context);
+            await freshContext(context);
             desktop.assertCurrent(connection);
             next.currentActive = new Set(next.active.keys());
             const archiveEpochMatches = last.connection?.epoch === connection.epoch;
@@ -608,7 +595,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         try {
             const archived = new Map<ThreadId, Thread>();
             await readPages(connection, true, archived);
-            await runtime.freshContext();
+            await freshContext();
             desktop.assertCurrent(connection);
             mergeArchives(host, archived);
         } catch (error) {
@@ -629,7 +616,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
                 if (cursor && cursors.has(cursor)) throw new Error("项目分页游标重复");
                 if (cursor) cursors.add(cursor);
             } while (cursor);
-            await runtime.freshContext();
+            await freshContext();
             desktop.assertCurrent(connection);
             host.projects = projects;
             host.projectRead = true;
@@ -796,7 +783,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         const current = await desktop.read(connection, thread.id, false);
         if (placement(context, connection.hostId, current).version !== position.version) return;
         const id = cardId({ hostId: connection.hostId, threadId: thread.id });
-        await runtime.freshContext(context);
+        await freshContext(context);
         desktop.assertCurrent(connection);
         const account = accountKey(context);
         const pending = {
@@ -807,7 +794,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         };
         if (!(await ports.preparePhase(pending))) throw new Error("自动阶段已过期，请刷新后重试");
         desktop.assertCurrent(connection);
-        runtime.requireAccount(account);
+        requireAccount(account);
         runtime.records[id] = {
             ...(runtime.records[id] ?? emptyRecord),
             pendingPhaseKey: phase.key,
@@ -855,8 +842,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         );
     }
 
-    function card(
-        this: Runtime,
+    function buildCard(
         hostId: HostId,
         thread: Thread,
         context: SidebarContext,
@@ -864,10 +850,10 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         archived = false,
     ): Card {
         const id = cardId({ hostId, threadId: thread.id });
-        const record = this.records[id] ?? emptyRecord;
+        const record = runtime.records[id] ?? emptyRecord;
         const position = placement(context, hostId, thread);
-        const state = presentState(context, position, this.mode);
-        const scope = this.requiredScope();
+        const state = presentState(context, position, runtime.settings.mode);
+        const scope = requiredScope();
         return {
             id,
             accountScope: scope,
@@ -886,7 +872,8 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             remote: hostId !== "local",
             ordinary: true,
             canOpen: live,
-            readOnly: !live || !position.managed || archived || !canWrite(this.settings, thread.id),
+            readOnly:
+                !live || !position.managed || archived || !canWrite(runtime.settings, thread.id),
             archived,
             presence: live ? "present" : "cachedUnknown",
             catalogCurrent: live,
@@ -900,26 +887,22 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
                 live &&
                 position.managed &&
                 !archived &&
-                this.mode !== "legacy" &&
-                canWrite(this.settings, thread.id),
-            archivePending: this.archive.pending(id),
-            ...cardObservation(this.historyReads, id, record, position),
+                runtime.settings.mode !== "legacy" &&
+                canWrite(runtime.settings, thread.id),
+            archivePending: archive.pending(id),
+            ...cardObservation(runtime.historyReads, id, record, position),
         };
     }
 
-    function cachedLegacyCard(
-        this: Runtime,
-        cached: LegacyCachedCard,
-        states: Record<string, string>,
-    ): Card {
+    function cachedLegacyCard(cached: LegacyCachedCard, states: Record<string, string>): Card {
         const { hostId, threadId, title, cwd, updatedAt, archived, followUp } = cached;
         const id = cardId({ hostId, threadId });
-        const record = this.records[id] ?? emptyRecord;
-        const fallback = this.mode === "four" ? null : "unknown";
+        const record = runtime.records[id] ?? emptyRecord;
+        const fallback = runtime.settings.mode === "four" ? null : "unknown";
         const state = cached.state && Object.hasOwn(states, cached.state) ? cached.state : fallback;
         return {
             id,
-            accountScope: this.requiredScope(),
+            accountScope: requiredScope(),
             hostId,
             threadId,
             title: title || "未命名会话",
@@ -943,22 +926,24 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             hostLabel: hostLabel(hostId),
             followUp,
             canArchive: false,
-            archivePending: this.archive.pending(id),
-            ...cardObservation(this.historyReads, id, record),
+            archivePending: archive.pending(id),
+            ...cardObservation(runtime.historyReads, id, record),
         };
     }
 
-    function requiredContext(this: Runtime): SidebarContext {
-        if (!this.context) throw new Error("看板尚未读取当前账号");
-        return this.context;
+    function requiredContext(): SidebarContext {
+        if (!runtime.context) throw new Error("看板尚未读取当前账号");
+        return runtime.context;
     }
 
-    function health(this: Runtime, hostId: HostId, host: HostSnapshot | undefined) {
-        const connected = host !== undefined && isLive(this.desktop, host);
-        const run = this.archiveRuns.get(hostId);
+    function health(hostId: HostId, host: HostSnapshot | undefined) {
+        const connected = host !== undefined && isLive(desktop, host);
+        const run = runtime.archiveRuns.get(hostId);
         const bindings =
-            connected && this.context ? sectionBindings(this.context, hostId, this.mode) : [];
-        const missingSections = Object.entries(visibleStates(this.mode))
+            connected && runtime.context
+                ? sectionBindings(runtime.context, hostId, runtime.settings.mode)
+                : [];
+        const missingSections = Object.entries(visibleStates(runtime.settings.mode))
             .filter(([state]) => !bindings.some((binding) => binding.state === state))
             .map(([, label]) => label);
         return {
@@ -976,8 +961,8 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
                     : undefined,
             runtimeVerified: connected && host?.runtimeVerified === true,
             runtimeError: host?.runtimeError,
-            autoArchiveSeconds: archiveInterval(this.settings, hostId),
-            autoArchiveNextAt: this.archiveDeadlines.get(hostId),
+            autoArchiveSeconds: archiveInterval(runtime.settings, hostId),
+            autoArchiveNextAt: runtime.archiveDeadlines.get(hostId),
             autoArchiveLastRun: run,
             autoArchiveError: run?.error,
             archiveReadError: host?.archiveError,
@@ -991,79 +976,70 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         };
     }
 
-    function snapshot(this: Runtime) {
-        const context = this.requiredContext();
-        const local = this.hosts.get(localHostId);
-        const states = visibleStates(this.mode);
+    function snapshot() {
+        const context = requiredContext();
+        const local = runtime.hosts.get(localHostId);
+        const states = visibleStates(runtime.settings.mode);
         const remoteIds = new Set([
-            ...this.hosts.keys(),
-            ...this.legacyCachedCards.map(({ hostId }) => hostId),
+            ...runtime.hosts.keys(),
+            ...runtime.legacyCachedCards.map(({ hostId }) => hostId),
         ]);
         const remoteHosts = [...remoteIds]
             .filter((key) => key !== "local")
             .map((key) => ({ hostId: key, hostLabel: hostLabel(key) }));
         return {
-            accountScope: this.requiredScope(),
+            accountScope: requiredScope(),
             states,
-            sessions: this.sessions(context, states),
+            sessions: sessions(context, states),
             health: {
-                ...this.health(localHostId, local),
+                ...health(localHostId, local),
                 nativeConnections: true,
                 remoteRegistry: remoteHosts,
                 remoteHosts,
                 remoteConnections: remoteHosts.map((host) => ({
                     ...host,
-                    ...this.health(host.hostId, this.hosts.get(host.hostId)),
+                    ...health(host.hostId, runtime.hosts.get(host.hostId)),
                 })),
             },
             projectCatalog: {
-                loaded: [...this.hosts.values()].some(
+                loaded: [...runtime.hosts.values()].some(
                     (host) => host.projectRead || host.projects.size,
                 ),
-                items: this.projectCatalog(),
+                items: projectCatalog(),
                 remoteHosts,
                 error: local?.projectError,
-                cached: local?.projectRead !== true || !isLive(this.desktop, local),
+                cached: local?.projectRead !== true || !isLive(desktop, local),
             },
-            fourColumns: this.mode === "four",
-            legacyMode: this.mode === "legacy",
-            columnSorts: this.ledger.columnSorts,
-            pendingDrafts: unresolvedDrafts(this.ledger).filter(
+            fourColumns: runtime.settings.mode === "four",
+            legacyMode: runtime.settings.mode === "legacy",
+            columnSorts: runtime.ledger.columnSorts,
+            pendingDrafts: unresolvedDrafts(runtime.ledger).filter(
                 ({ source }) => source === "legacy",
             ),
         };
     }
 
-    function sessions(
-        this: Runtime,
-        context: SidebarContext,
-        states: Record<string, string>,
-    ): Card[] {
-        const native = [...this.hosts].flatMap(([hostId, host]) =>
-            this.hostCards(hostId, host, context),
+    function sessions(context: SidebarContext, states: Record<string, string>): Card[] {
+        const native = [...runtime.hosts].flatMap(([hostId, host]) =>
+            hostCards(hostId, host, context),
         );
         const discovered = new Set(native.map(({ id }) => id));
-        const cached = this.legacyCachedCards
+        const cached = runtime.legacyCachedCards
             .filter((card) => !discovered.has(cardId(card)))
-            .map((card) => this.cachedLegacyCard(card, states));
+            .map((card) => cachedLegacyCard(card, states));
         return [...native, ...cached];
     }
 
-    function hostCards(
-        this: Runtime,
-        hostId: HostId,
-        host: HostSnapshot,
-        context: SidebarContext,
-    ): Card[] {
-        const connected = isLive(this.desktop, host);
+    function hostCards(hostId: HostId, host: HostSnapshot, context: SidebarContext): Card[] {
+        const connected = isLive(desktop, host);
         return [
             ...[...host.active.values()].map((thread) =>
-                this.card(hostId, thread, context, connected && host.currentActive.has(thread.id)),
+                buildCard(hostId, thread, context, connected && host.currentActive.has(thread.id)),
             ),
             ...[...host.archived.values()]
                 .filter((thread) => !host.active.has(thread.id))
                 .map((thread) =>
-                    this.card(
+                    buildCard(
                         hostId,
                         thread,
                         context,
@@ -1074,8 +1050,8 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         ];
     }
 
-    function projectCatalog(this: Runtime) {
-        return [...this.hosts].flatMap(([hostId, host]) =>
+    function projectCatalog() {
+        return [...runtime.hosts].flatMap(([hostId, host]) =>
             [...host.projects.values()].map((project) => ({
                 id: projectKey(hostId, project.id),
                 hostId,
@@ -1083,43 +1059,40 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
                 remote: hostId !== "local",
                 label: project.name,
                 paths: project.roots.map(({ path }) => path),
-                cached: host.projectRead !== true || !isLive(this.desktop, host),
-                canCreate: host.projectRead === true && isLive(this.desktop, host),
+                cached: host.projectRead !== true || !isLive(desktop, host),
+                canCreate: host.projectRead === true && isLive(desktop, host),
                 ...(hostId === "local" ? {} : { origin: "targetServer" }),
             })),
         );
     }
 
-    function target(this: Runtime, id: string) {
-        const card = this.snapshot().sessions.find((row) => row.id === id);
+    function target(id: string) {
+        const card = snapshot().sessions.find((row) => row.id === id);
         if (!card) throw new Error("看板找不到该会话");
         if (!card.canOpen) throw new Error("会话目前只显示缓存，请重新发现");
-        return { card, connection: this.desktop.capture(card.hostId) };
+        return { card, connection: desktop.capture(card.hostId) };
     }
 
-    function requireAccount(this: Runtime, account: string): void {
-        if (!this.context || account !== accountKey(this.context))
+    function requireAccount(account: string): void {
+        if (!runtime.context || account !== accountKey(runtime.context))
             throw new Error("Codex 账号已变更");
     }
 
-    function requiredScope(this: Runtime): string {
-        if (this.accountScope === null) throw new Error("看板尚未读取当前账号");
-        return this.accountScope;
+    function requiredScope(): string {
+        if (runtime.accountScope === null) throw new Error("看板尚未读取当前账号");
+        return runtime.accountScope;
     }
 
-    function nativeSectionVersion(this: Runtime, version: string | null): string {
-        const suffix = sectionScopeSuffix(this.requiredScope());
+    function nativeSectionVersion(version: string | null): string {
+        const suffix = sectionScopeSuffix(requiredScope());
         if (version?.endsWith(suffix)) return `${version.slice(0, -suffix.length)}]`;
         throw new Error("卡片位置或输入已更新，请刷新后重试");
     }
 
-    async function freshContext(
-        this: Runtime,
-        expected = this.requiredContext(),
-    ): Promise<SidebarContext> {
+    async function freshContext(expected = requiredContext()): Promise<SidebarContext> {
         const account = accountKey(expected);
-        const context = await this.desktop.context();
-        this.requireAccount(account);
+        const context = await desktop.context();
+        requireAccount(account);
         if (account !== accountKey(context)) throw new Error("Codex 账号已变更");
         return context;
     }
@@ -1136,17 +1109,17 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         const { connection, account, settled, titleEnabled } = saved;
         if (
             settled.titleSyncPending &&
-            accountKey(this.requiredContext()) === account &&
+            accountKey(requiredContext()) === account &&
             this.records[edit.id]?.version === settled.version
         )
             await retryTitle(connection, settled.threadId);
-        this.requireAccount(account);
-        const context = this.requiredContext();
+        requireAccount(account);
+        const context = requiredContext();
         const current =
             this.records[edit.id]?.version === settled.version
                 ? this.hosts.get(settled.hostId)?.active.get(settled.threadId)
                 : undefined;
-        const session = current ? this.card(settled.hostId, current, context, true) : settled;
+        const session = current ? buildCard(settled.hostId, current, context, true) : settled;
         return {
             ok: true as const,
             session,
@@ -1157,13 +1130,13 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     }
 
     async function resolveEdit(this: Runtime, edit: Edit) {
-        const { card, connection } = this.target(edit.id);
+        const { card, connection } = target(edit.id);
         if (card.readOnly) throw new Error("此会话目前只读");
-        const submittedSection = this.nativeSectionVersion(edit.sectionVersion);
-        const context = await this.freshContext();
+        const submittedSection = nativeSectionVersion(edit.sectionVersion);
+        const context = await freshContext();
         const before = await this.desktop.read(connection, card.threadId, false);
         const latest = (await this.desktop.turns(connection, card.threadId, "summary")).data[0];
-        await this.freshContext(context);
+        await freshContext(context);
         this.desktop.assertCurrent(connection);
         const from = placement(context, card.hostId, before);
         const current = this.records[edit.id] ?? emptyRecord;
@@ -1194,7 +1167,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             await this.resolveEdit(edit);
         const after = await this.moveCard(edit.state, connection, context, before);
         this.desktop.assertCurrent(connection);
-        const nextContext = await this.freshContext(context);
+        const nextContext = await freshContext(context);
         const record = {
             note: edit.note?.trim() ?? current.note,
             version: current.version + 1,
@@ -1215,7 +1188,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         return {
             connection,
             account: accountKey(context),
-            settled: this.card(card.hostId, after, nextContext, true),
+            settled: buildCard(card.hostId, after, nextContext, true),
             titleEnabled: this.settings.syncTitles,
         };
     }
@@ -1228,7 +1201,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         record: CardRecord,
         change?: RecordChange,
     ): Promise<void> {
-        await this.freshContext(context);
+        await freshContext(context);
         const account = accountKey(context);
         await this.ports.save({
             account,
@@ -1237,7 +1210,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             record,
             ...(change ? { change } : {}),
         });
-        this.requireAccount(account);
+        requireAccount(account);
         this.records[id] = record;
     }
 
@@ -1254,7 +1227,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         state: BoardState | null,
         deadline: number,
     ): Promise<Thread | undefined> {
-        const owner = await runtime.freshContext();
+        const owner = await freshContext();
         const before = await desktop.read(
             connection,
             threadId,
@@ -1265,7 +1238,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         const current = before.name || before.preview.split("\n")[0] || threadId;
         const title = projectedTitle(current, state);
         if (title === current) return before;
-        const context = await runtime.freshContext(owner);
+        const context = await freshContext(owner);
         if (
             runtime.records[id] !== record ||
             runtime.editing.has(id) ||
@@ -1277,13 +1250,13 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             return before;
         await desktop.rename(connection, threadId, title, remainingTitleTime(deadline));
         const after = await desktop.read(connection, threadId, false, remainingTitleTime(deadline));
-        await runtime.freshContext(owner);
+        await freshContext(owner);
         if (after.name !== title) throw new Error("Codex 尚未读回更新后的标题");
         return after;
     }
 
     function titleKey(id: string): string {
-        return JSON.stringify([accountKey(runtime.requiredContext()), id]);
+        return JSON.stringify([accountKey(requiredContext()), id]);
     }
 
     async function retryTitle(connection: HostConnection, threadId: ThreadId): Promise<void> {
@@ -1351,7 +1324,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         record: CardRecord,
         title: NonNullable<CardRecord["title"]>,
     ): Promise<void> {
-        const account = accountKey(runtime.requiredContext());
+        const account = accountKey(requiredContext());
         const sync = await syncTitleWithinBudget(connection, threadId, id, record, title.state);
         if (!sync) return;
         const { updated, failure } = sync;
@@ -1411,7 +1384,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             failure = error;
         }
         const after = await this.desktop.read(connection, before.id, false);
-        const fresh = await this.freshContext(context);
+        const fresh = await freshContext(context);
         const proof = moveProof(connection.hostId, before, after, fresh, destination);
         this.ports.proof("board-native-move", proof);
         if (!proof.confirmed) throw new Error(unconfirmed(failure, "Codex 尚未确认原生位置"));
@@ -1420,10 +1393,10 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     }
 
     async function open(this: Runtime, id: string): Promise<{ ok: true }> {
-        const { card, connection } = this.target(id);
-        const context = await this.freshContext();
+        const { card, connection } = target(id);
+        const context = await freshContext();
         await this.desktop.read(connection, card.threadId, false);
-        await this.freshContext(context);
+        await freshContext(context);
         this.desktop.assertCurrent(connection);
         await this.desktop.navigate({
             kind: "open",
@@ -1432,16 +1405,16 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             hostId: card.hostId,
             threadId: card.threadId,
         });
-        this.requireAccount(accountKey(context));
+        requireAccount(accountKey(context));
         this.ports.closePage();
         return { ok: true };
     }
 
     async function preview(this: Runtime, id: string) {
-        const { card, connection } = this.target(id);
-        const context = await this.freshContext();
+        const { card, connection } = target(id);
+        const context = await freshContext();
         const result = await previewReply(this.desktop, connection, card.threadId);
-        await this.freshContext(context);
+        await freshContext(context);
         this.desktop.assertCurrent(connection);
         return result;
     }
@@ -1472,7 +1445,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     }
 
     async function resumeDraft(this: Runtime, input: DraftInput, draft: DraftRecord) {
-        const owner = this.requiredContext();
+        const owner = requiredContext();
         const requestId = draft.requestId;
         const pending = { ok: false, pending: true, requestId };
         if (input.requestId !== requestId || !draft.threadId) {
@@ -1480,12 +1453,12 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         }
         const { hostId } = this.findProject(draft.project);
         if (input.hostId && input.hostId !== hostId) throw new Error("选定的 Codex 连接不可用");
-        const card = this.snapshot().sessions.find(
+        const card = snapshot().sessions.find(
             (row) => row.hostId === hostId && row.threadId === draft.threadId,
         );
         if (!card) return { ...pending, error: "原会话尚未读回，请核对连接后刷新" };
         await this.open(card.id);
-        await this.freshContext(owner);
+        await freshContext(owner);
         await this.persistDraft({ ...draft, stage: "opened" });
         return { ok: true, requestId };
     }
@@ -1497,7 +1470,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         record?: DraftRecord,
     ) {
         const { projectId } = input;
-        const { accountId, userId } = await this.freshContext(owner);
+        const { accountId, userId } = await freshContext(owner);
         const selected = projectId ? this.findProject(projectId) : null;
         const host = draftHost(this.desktop, input.hostId, selected?.hostId);
         const connection = this.desktop.capture(host);
@@ -1509,7 +1482,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             projectId: selected?.project.id ?? null,
             roots: selected?.project.roots.map(({ path }) => path) ?? [],
         });
-        await this.freshContext(owner);
+        await freshContext(owner);
         this.desktop.assertCurrent(connection);
         if (result !== "registration" && result !== "composer")
             throw new Error("Codex 未确认输入页");
@@ -1543,7 +1516,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     }
 
     async function create(this: Runtime, input: DraftInput) {
-        const owner = this.requiredContext();
+        const owner = requiredContext();
         const { projectId, operationId } = input;
         const draft = unresolvedDrafts(this.ledger).find(
             ({ project, source }) => project === projectId && source === "legacy",
@@ -1603,17 +1576,17 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     }
 
     async function assign(this: Runtime, id: string, projectId: string): Promise<{ ok: true }> {
-        const { card, connection } = this.target(id);
+        const { card, connection } = target(id);
         const { hostId, project } = this.findProject(projectId);
         validateProjectAssignment(card, hostId, project);
-        const context = await this.freshContext();
+        const context = await freshContext();
         const before = await this.desktop.read(connection, card.threadId, false);
         if (
             before.cwd !== card.cwd ||
             (before.projectId !== null && before.projectId !== project.id)
         )
             throw new Error("项目归属已变更，请刷新后重试");
-        await this.freshContext(context);
+        await freshContext(context);
         let failure: unknown;
         if (before.projectId !== project.id) {
             try {
@@ -1626,7 +1599,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             before.projectId === project.id
                 ? before
                 : await this.desktop.read(connection, card.threadId, false);
-        await this.freshContext(context);
+        await freshContext(context);
         this.desktop.assertCurrent(connection);
         if (actual.projectId !== project.id || actual.cwd !== card.cwd)
             throw new Error(unconfirmed(failure, "Codex 尚未确认项目归属"));
@@ -1635,10 +1608,10 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     }
 
     async function writeLedger(this: Runtime, next: BoardLedger): Promise<void> {
-        const context = await this.freshContext();
+        const context = await freshContext();
         const account = accountKey(context);
         await this.ports.writeLedger(account, next);
-        this.requireAccount(account);
+        requireAccount(account);
         this.ledger = next;
     }
 
@@ -1666,14 +1639,14 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     }
 
     async function verifyArchive(this: Runtime, item: ArchiveItem) {
-        const { card, connection } = this.target(item.id);
+        const { card, connection } = target(item.id);
         if (!card.canArchive || card.state !== "to_archive" || this.editing.has(item.id)) {
             throw new Error("当前状态不能归档");
         }
-        const context = await this.freshContext();
+        const context = await freshContext();
         const before = await this.desktop.read(connection, card.threadId, false);
         const latest = (await this.desktop.turns(connection, card.threadId, "summary")).data[0];
-        this.requireAccount(accountKey(context));
+        requireAccount(accountKey(context));
         const position = placement(context, card.hostId, before);
         const record = this.records[item.id] ?? emptyRecord;
         const input = turnInput(latest);
@@ -1701,7 +1674,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         ) {
             throw new Error("归档核对期间会话发生了变化");
         }
-        await this.freshContext(context);
+        await freshContext(context);
         this.desktop.assertCurrent(connection);
         return { connection, context, threadId: after.id };
     }
@@ -1714,11 +1687,11 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             },
         );
         await this.desktop.setArchived(connection, threadId, true);
-        await this.freshContext(context);
+        await freshContext(context);
     }
 
     async function archived(this: Runtime, id: string): Promise<boolean> {
-        const owner = this.requiredContext();
+        const owner = requiredContext();
         const { hostId, threadId } = cardThread(id);
         const archived = new Map<ThreadId, Thread>();
         let connection: HostConnection;
@@ -1728,7 +1701,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         } catch (error) {
             throw new ArchiveReadUnavailable(errorText(error));
         }
-        await this.freshContext(owner);
+        await freshContext(owner);
         try {
             this.desktop.assertCurrent(connection);
         } catch (error) {
@@ -1760,7 +1733,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         hostId: HostId,
         context: SidebarContext,
     ): Promise<void> {
-        const items = this.snapshot().sessions.filter(
+        const items = snapshot().sessions.filter(
             (card) =>
                 card.hostId === hostId &&
                 card.state === "to_archive" &&
@@ -1784,7 +1757,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             }));
             await this.archive.start(id, targets);
             for (const item of targets) {
-                if (accountKey(context) !== accountKey(this.requiredContext())) return;
+                if (accountKey(context) !== accountKey(requiredContext())) return;
                 const result = await this.archive.submit(id, item);
                 if (result.status === "archived" || result.status === "verified")
                     run.archived.push(item.id);
@@ -1794,12 +1767,12 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         } catch (error) {
             run.error = errorText(error);
         }
-        if (accountKey(context) === accountKey(this.requiredContext()))
+        if (accountKey(context) === accountKey(requiredContext()))
             this.archiveRuns.set(hostId, run);
     }
 
     async function requestArchive(this: Runtime, path: string, body: object | undefined) {
-        await this.freshContext();
+        await freshContext();
         const args = body as
             | (Partial<ArchiveTarget> & { batchId?: string; items?: ArchiveTarget[] })
             | undefined;
@@ -1824,18 +1797,18 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     function submitArchive(this: Runtime, args: ArchiveTarget, batchId?: string) {
         const candidate = { ...args, sectionVersion: args.sectionVersion ?? null };
         if (batchId) return this.archive.submit(batchId, candidate);
-        const { card } = this.target(candidate.id);
+        const { card } = target(candidate.id);
         return this.archive.single({ ...candidate, title: card.title });
     }
 
     async function openConnectionSettings(this: Runtime) {
-        const owner = await this.freshContext();
+        const owner = await freshContext();
         await this.desktop.navigate({
             kind: "settings",
             accountId: owner.accountId,
             userId: owner.userId,
         });
-        this.requireAccount(accountKey(owner));
+        requireAccount(accountKey(owner));
         this.ports.closePage();
     }
 
@@ -1859,7 +1832,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         body?: object,
         account?: string,
     ): Promise<unknown> {
-        if (account !== undefined) this.requireAccount(account);
+        if (account !== undefined) requireAccount(account);
         if (path.startsWith("/api/archive")) return this.requestArchive(path, body);
         const input = body as (DraftInput & { id?: string }) | undefined;
         switch (path) {
@@ -1890,8 +1863,8 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
 
     async function refreshSnapshot(this: Runtime, account?: string) {
         await refresh();
-        if (account !== undefined) this.requireAccount(account);
-        return this.snapshot();
+        if (account !== undefined) requireAccount(account);
+        return snapshot();
     }
 
     function requestChange(
@@ -1909,7 +1882,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     return {
         refresh,
         notice,
-        snapshot: runtime.snapshot.bind(runtime),
+        snapshot,
         update: runtime.update.bind(runtime),
         request: runtime.request.bind(runtime),
     };
