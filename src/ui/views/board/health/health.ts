@@ -1,4 +1,4 @@
-import type { HealthReport } from "./board-health-report";
+import type { HealthReport } from "./report";
 
 interface HealthElements {
     banner: HTMLElement;

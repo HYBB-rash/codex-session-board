@@ -1,17 +1,17 @@
-import { mountBoardHealth } from "../../board-health";
-import { type BoardHealth, createBoardHealthReports } from "../../board-health-report";
-import { mountBoardNewSession } from "../../board-new-session";
-import { mountBoardNewTarget } from "../../board-new-target";
-import { mountProjectAssignment } from "../../board-project-assignment";
 import { mountBoardRefresh } from "../../board-refresh";
 import { mountBoardSessionReader } from "../../board-session-reader";
 import { createColumnSortSave, type SortPreference } from "../../board-sorting";
-import { mountBoardSshSetup } from "../../board-ssh-setup";
 import { type BoardModel, type BoardSession, mountBoard } from "../../board-view";
 import { mountBoardArchive } from "./archive/archive";
 import { type CatalogProject, type HostIdentity, mountBoardBrowse } from "./browse/browse";
+import { mountBoardNewSession } from "./connection/new-session";
+import { mountBoardNewTarget } from "./connection/new-target";
+import { mountProjectAssignment } from "./connection/project-assignment";
+import { mountBoardSshSetup } from "./connection/ssh-setup";
 import { mountBoardEdits } from "./edit/edits";
 import { mountMoveFeedback } from "./edit/move-feedback";
+import { mountBoardHealth } from "./health/health";
+import { type BoardHealth, createBoardHealthReports } from "./health/report";
 import { mountPluginUpdate } from "./plugin-update";
 
 export interface BoardSnapshot {

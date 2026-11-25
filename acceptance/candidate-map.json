@@ -619,7 +619,7 @@
             "status": "partial",
             "implementation": [
                 "src/extensions/session-board/board-service.ts",
-                "src/ui/board-health.ts"
+                "src/ui/views/board/health/health.ts"
             ],
             "evidence": ["offline-cache"],
             "remaining": "真实界面分别验证发现不完整、局部历史错误、运行连接断开和标题重试。"

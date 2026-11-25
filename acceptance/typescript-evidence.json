@@ -252,8 +252,8 @@
         "HEALTH-001": {
             "sources": [
                 "src/extensions/session-board/board-service.ts",
-                "src/ui/board-health.ts",
-                "src/ui/board-health-report.ts"
+                "src/ui/views/board/health/health.ts",
+                "src/ui/views/board/health/report.ts"
             ],
             "missing": "还需从真实看板经历断开、部分分页失败、标题同步失败与恢复，并核对每个警示。"
         },

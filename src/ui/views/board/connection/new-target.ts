@@ -1,5 +1,5 @@
-import type { CatalogProject, HostOption } from "./views/board/browse/browse";
-import type { BoardSnapshot } from "./views/board/controller";
+import type { CatalogProject, HostOption } from "../browse/browse";
+import type { BoardSnapshot } from "../controller";
 
 interface TargetElements {
     button: HTMLButtonElement;
