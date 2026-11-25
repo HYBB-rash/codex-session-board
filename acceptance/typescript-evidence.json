@@ -2,7 +2,7 @@
     "baseline": "2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc",
     "requirements": {
         "STATE-001": {
-            "sources": ["src/extensions/session-board/placement.ts", "ui/board-columns.vue"],
+            "sources": ["src/extensions/session-board/placement.ts", "src/ui/board-columns.vue"],
             "checks": [
                 "frozen_requirements_and_model",
                 "state_names_and_display_order",
@@ -157,8 +157,8 @@
             "sources": [
                 "src/extensions/session-board/preview.ts",
                 "src/extensions/session-board/board-service.ts",
-                "ui/board-session-reader.ts",
-                "ui/board-drag.ts"
+                "src/ui/board-session-reader.ts",
+                "src/ui/board-drag.ts"
             ],
             "missing": "还需现场验证本机和远端同名卡的来源、上一条回复与迟到结果，检查点击和拖动两种实际手势。"
         },
@@ -174,8 +174,8 @@
         },
         "UI-001": {
             "sources": [
-                "ui/board-drag.ts",
-                "ui/board-columns.vue",
+                "src/ui/board-drag.ts",
+                "src/ui/board-columns.vue",
                 "src/extensions/session-board/board-service.ts"
             ],
             "evidence": "Fedora 的本机和远端专用卡都经过真实拖拽、原生侧栏和独立分区读回，备注保留。见 docs/session-board-native-checkpoint.md。",
@@ -183,22 +183,26 @@
         },
         "UI-002": {
             "sources": [
-                "ui/board-editor.ts",
-                "ui/board-editor.vue",
-                "ui/board-edits.ts",
+                "src/ui/board-editor.ts",
+                "src/ui/board-editor.vue",
+                "src/ui/board-edits.ts",
                 "src/extensions/session-board/board-service.ts"
             ],
             "missing": "还需分别演练空白、纯空白、取消、填入、清空、过期失败，核对备注、自动原因及草稿。"
         },
         "UI-003": {
-            "sources": ["ui/board-filters.tsx", "ui/board-refresh.ts", "ui/board-columns.vue"],
+            "sources": [
+                "src/ui/board-filters.tsx",
+                "src/ui/board-refresh.ts",
+                "src/ui/board-columns.vue"
+            ],
             "missing": "还需真实键盘与指针操作中的刷新、空列、搜索、焦点、列滚动保持检查。"
         },
         "MCP-001": {
             "sources": [
                 "src/compat/mcp.ts",
                 "src/compat/entrypoints.test.ts",
-                "ui/standalone-mcp.ts",
+                "src/ui/standalone-mcp.ts",
                 ".mcp.json"
             ],
             "missing": "已有 stdio 资源和拒绝写入测试入口。尚缺解包后的自包含资源、宿主复用和无外部 Node.js 的独立验证。"
@@ -248,8 +252,8 @@
         "HEALTH-001": {
             "sources": [
                 "src/extensions/session-board/board-service.ts",
-                "ui/board-health.ts",
-                "ui/board-health-report.ts"
+                "src/ui/board-health.ts",
+                "src/ui/board-health-report.ts"
             ],
             "missing": "还需从真实看板经历断开、部分分页失败、标题同步失败与恢复，并核对每个警示。"
         },

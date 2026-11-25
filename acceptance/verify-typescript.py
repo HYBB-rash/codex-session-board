@@ -153,7 +153,7 @@ def main():
         contract = verify_lock()
         results = run_adapter(export_model(), args.node)
         source_fingerprint = fingerprint_of((
-            "src", "ui", "scripts", "acceptance", ".codex-plugin", ".mcp.json",
+            "src", "scripts", "acceptance", ".codex-plugin", ".mcp.json",
             "README.md", "package.json", "package-lock.json", "tsconfig.json",
         ))
         runtime_fingerprint = fingerprint_of(("dist/extensions/session-board",))

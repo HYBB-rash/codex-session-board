@@ -324,7 +324,10 @@
     "requirements": {
         "STATE-001": {
             "status": "partial",
-            "implementation": ["src/extensions/session-board/placement.ts", "ui/board-columns.vue"],
+            "implementation": [
+                "src/extensions/session-board/placement.ts",
+                "src/ui/board-columns.vue"
+            ],
             "evidence": ["native-move"],
             "remaining": "对照六状态模式的列、顶部导航及状态选择顺序，再核对四列与五列配置。"
         },
@@ -477,8 +480,8 @@
             "status": "partial",
             "implementation": [
                 "src/extensions/session-board/preview.ts",
-                "ui/reply-preview.ts",
-                "ui/board-card.tsx"
+                "src/ui/reply-preview.ts",
+                "src/ui/board-card.tsx"
             ],
             "evidence": [
                 "operation-routing",
@@ -506,28 +509,36 @@
         },
         "UI-001": {
             "status": "partial",
-            "implementation": ["ui/board-drag.ts", "ui/board-columns.vue"],
+            "implementation": ["src/ui/board-drag.ts", "src/ui/board-columns.vue"],
             "evidence": ["native-move", "native-mcp-and-remote-new"],
             "remaining": "补原生 MCP App 内的拖拽和刷新，并验证同列、拖出看板及横向自动滚动。"
         },
         "UI-002": {
             "status": "partial",
-            "implementation": ["ui/board-editor.ts", "ui/board-editor.vue", "ui/board-drag.ts"],
+            "implementation": [
+                "src/ui/board-editor.ts",
+                "src/ui/board-editor.vue",
+                "src/ui/board-drag.ts"
+            ],
             "evidence": ["native-move", "http-security"],
             "remaining": "覆盖拖入与在阻塞列内拖放、取消、纯空白、主动清空、保留遗漏备注、自动与人工原因和三种版本冲突。"
         },
         "UI-003": {
             "status": "pending",
             "implementation": [
-                "ui/board-filters.tsx",
-                "ui/board-refresh.ts",
-                "ui/board-editor.vue"
+                "src/ui/board-filters.tsx",
+                "src/ui/board-refresh.ts",
+                "src/ui/board-editor.vue"
             ],
             "remaining": "真实验证标题/项目搜索、空列接收拖放、表单键盘操作、暂停重绘和列内滚动位置。"
         },
         "MCP-001": {
             "status": "fixture",
-            "implementation": [".mcp.json", "src/compat/mcp.ts", "ui/standalone.vite.config.ts"],
+            "implementation": [
+                ".mcp.json",
+                "src/compat/mcp.ts",
+                "src/ui/standalone.vite.config.ts"
+            ],
             "evidence": ["mcp-stdio", "operation-routing", "native-mcp-and-remote-new"]
         },
         "DATA-001": {
@@ -608,7 +619,7 @@
             "status": "partial",
             "implementation": [
                 "src/extensions/session-board/board-service.ts",
-                "ui/board-health.ts"
+                "src/ui/board-health.ts"
             ],
             "evidence": ["offline-cache"],
             "remaining": "真实界面分别验证发现不完整、局部历史错误、运行连接断开和标题重试。"

@@ -30,7 +30,6 @@ const acceptanceFiles = [
     "biome.json",
     "acceptance",
     "src",
-    "ui",
     "scripts",
     "docs/session-board-native-checkpoint.md",
     "docs/session-board-typescript-acceptance.md",

@@ -44,7 +44,7 @@ def unexpected_entry(name):
         return True
     if len(parts) == 1:
         return name not in {
-            "acceptance", "scripts", "src", "ui", "dist", "docs", ".codex-plugin", ".mcp.json",
+            "acceptance", "scripts", "src", "dist", "docs", ".codex-plugin", ".mcp.json",
             "README.md", "INSTALL.md", "release.json", "package.json", "package-lock.json",
             "tsconfig.json", "biome.json",
         }
@@ -52,7 +52,7 @@ def unexpected_entry(name):
         return name != ".codex-plugin/plugin.json"
     if parts[0] == "docs":
         return len(parts) != 2 or parts[1] not in EVIDENCE_DOCS
-    return parts[0] not in {"acceptance", "scripts", "src", "ui", "dist"} or any(
+    return parts[0] not in {"acceptance", "scripts", "src", "dist"} or any(
         part.startswith(".") for part in parts[1:]
     )
 

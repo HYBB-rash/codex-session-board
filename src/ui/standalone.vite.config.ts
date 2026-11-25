@@ -16,14 +16,14 @@ function standaloneAssets(): Plugin {
                 .find((entry) => entry.type === "chunk")?.code;
             if (!code) throw new Error("无法生成 MCP App");
             const script = code.replace(/<\/script/gi, "<\\/script");
-            const html = readFileSync("ui/standalone-index.html", "utf8");
+            const html = readFileSync("src/ui/standalone-index.html", "utf8");
             this.emitFile({ type: "asset", fileName: "index.html", source: html });
             this.emitFile({ type: "asset", fileName: "version.txt", source: `${packageInfo.version}\n` });
             this.emitFile({ type: "asset", fileName: "mcp.html", source: `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>会话看板</title></head><body><script>${script}</script></body></html>` });
             for (const fileName of ["board.svg", "manifest.webmanifest", "board-operations.json"]) {
-                this.emitFile({ type: "asset", fileName, source: readFileSync(`ui/${fileName}`) });
+                this.emitFile({ type: "asset", fileName, source: readFileSync(`src/ui/${fileName}`) });
             }
-            const worker = await build({ entryPoints: ["ui/standalone-sw.ts"], bundle: true, write: false, minify: true, target: "es2022" });
+            const worker = await build({ entryPoints: ["src/ui/standalone-sw.ts"], bundle: true, write: false, minify: true, target: "es2022" });
             const sw = worker.outputFiles[0];
             if (!sw) throw new Error("无法生成 PWA 服务组件");
             this.emitFile({ type: "asset", fileName: "sw.js", source: sw.contents });
@@ -50,7 +50,7 @@ function settings(name: string, entry: string, write: boolean) {
         ],
         build: {
             write, target: "es2022", outDir: "dist/board-assets", emptyOutDir: true,
-            lib: { name: "SessionBoard", entry: `ui/${entry}`, formats: ["iife"], fileName: () => `${name}.js` },
+            lib: { name: "SessionBoard", entry: `src/ui/${entry}`, formats: ["iife"], fileName: () => `${name}.js` },
         },
     });
 }

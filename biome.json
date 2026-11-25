@@ -12,7 +12,7 @@
             "!package-lock.json",
             "!!**/dist",
             "!!**/node_modules",
-            "!!ui",
+            "!!src/ui",
             "!acceptance/contract.lock.json",
             "!acceptance/requirements.json",
             "!!**/state",

@@ -12,5 +12,5 @@
         "jsxImportSource": "vue",
         "allowImportingTsExtensions": true
     },
-    "include": ["**/*.ts", "**/*.tsx", "**/*.vue", "../src/runtime/electron.d.ts"]
+    "include": ["**/*.ts", "**/*.tsx", "**/*.vue", "../runtime/electron.d.ts"]
 }

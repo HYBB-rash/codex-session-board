@@ -310,7 +310,7 @@ class DeliveryChecksTests(unittest.TestCase):
     def test_injected_data_paths_and_missing_or_corrupt_checksum_are_rejected(self):
         added = {
             "node_modules/dependency", "dist/board-assets/config.json", "dist/db/status.sqlite3-wal",
-            "state/session-board/records.json", "ui/previous.png", "docs/fixture.jsonl",
+            "state/session-board/records.json", "src/ui/previous.png", "docs/fixture.jsonl",
             "dist/cache", "acceptance/__pycache__", "acceptance/.untracked/snapshot", "unexpected.txt",
         }
         self.receipt.write_text(f"{'b' * 64}  {self.archive.name}\n")

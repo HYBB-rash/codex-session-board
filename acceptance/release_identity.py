@@ -13,7 +13,7 @@ FROZEN = {
     "model.py": "afc587078c415ccb631fed4efdcef304269096fbfece812e680a6d4e195738d7",
 }
 PLATFORMS = {"linux-x86_64": ("linux", "x86_64"), "macos-arm64": ("darwin", "arm64")}
-SOURCE_DIRECTORIES = {"acceptance", "scripts", "src", "ui"}
+SOURCE_DIRECTORIES = {"acceptance", "scripts", "src"}
 PLUGIN_MANIFEST = ".codex-plugin/plugin.json"
 SOURCE_FILES = {
     "README.md", "package.json", "package-lock.json", "tsconfig.json", "biome.json",

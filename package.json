@@ -8,7 +8,7 @@
     },
     "scripts": {
         "build": "bash scripts/build.sh",
-        "typecheck:ui": "vue-tsc --noEmit -p ui/tsconfig.json",
+        "typecheck:ui": "vue-tsc --noEmit -p src/ui/tsconfig.json",
         "detect": "npm run build --silent && node dist/bin/codex-enhancer.js detect",
         "install": "if [ \"${npm_command:-}\" = run-script ]; then npm run build --silent && node dist/bin/codex-enhancer.js install; fi",
         "uninstall": "npm run build --silent && node dist/bin/codex-enhancer.js uninstall",
