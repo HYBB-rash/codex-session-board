@@ -77,6 +77,28 @@
             },
             "style": {
                 "noNonNullAssertion": "error",
+                "noRestrictedImports": {
+                    "level": "error",
+                    "options": {
+                        "paths": {
+                            "vue": {
+                                "importNames": [
+                                    "*",
+                                    "h",
+                                    "createVNode",
+                                    "createElementVNode",
+                                    "createBlock",
+                                    "createElementBlock",
+                                    "createTextVNode",
+                                    "createCommentVNode",
+                                    "createStaticVNode",
+                                    "cloneVNode"
+                                ],
+                                "message": "Use TSX or a Vue template to create Vue nodes. Use named imports for other Vue APIs."
+                            }
+                        }
+                    }
+                },
                 "useImportType": "error"
             },
             "suspicious": {
