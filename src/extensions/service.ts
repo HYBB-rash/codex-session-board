@@ -384,52 +384,129 @@ function draftHost(desktop: DesktopConnection, requested?: string, selected?: Ho
     return host;
 }
 
-export class BoardService {
-    private readonly hosts = new Map<HostId, HostSnapshot>();
-    private context: SidebarContext | undefined;
-    private accountScope: string | null = null;
-    private records: Record<string, CardRecord> = {};
-    private legacyCachedCards: LegacyCachedCard[] = [];
-    private refreshing: Promise<void> | undefined;
-    private readonly editing = new Set<string>();
-    private settings: BoardSettings = defaults;
-    private titleStartedAt: number | undefined;
-    private readonly observationSince = Date.now() / 1000;
-    private readonly runtimeDirty = new Map<HostId, { epoch: number; ids: Set<ThreadId> }>();
-    private readonly historyReads = new Map<string, HistoryRead>();
-    private historySequence = 0;
-    private readonly titleInFlight = new Set<string>();
-    private readonly nextTitleAttempt = new Map<string, { version: number; at: number }>();
-    private readonly changed = new Map<string, number>();
-    private changes = 0;
-    private ledger: BoardLedger = emptyLedger();
-    private readonly openingDrafts = new Map<
-        string,
-        { projectId: string; result: ReturnType<BoardService["createTrackedDraft"]> }
-    >();
-    private readonly archive = createArchive({
-        scope: () => accountKey(this.requiredContext()),
-        ledger: () => this.ledger,
-        write: (next) => this.writeLedger(next),
-        nativeVersion: (version) => this.nativeSectionVersion(version),
+type TrackedDraftResult =
+    | { ok: boolean; registration: boolean; operationId?: string }
+    | { ok: boolean; pending: boolean; operationId: string; error: string };
+
+export type BoardService = ReturnType<typeof createBoardService>;
+
+export function createBoardService(desktop: DesktopConnection, ports: BoardPorts) {
+    const archive = createArchive({
+        scope: () => accountKey(runtime.requiredContext()),
+        ledger: () => runtime.ledger,
+        write: (next) => runtime.writeLedger(next),
+        nativeVersion: (version) => runtime.nativeSectionVersion(version),
         verify: async (item) => {
-            await this.verifyArchive(item);
+            await runtime.verifyArchive(item);
         },
-        isArchived: (id) => this.archived(id),
-        archive: (item) => this.archiveThread(item),
+        isArchived: (id) => runtime.archived(id),
+        archive: (item) => runtime.archiveThread(item),
     });
-    private readonly archiveDeadlines = new Map<HostId, number>();
-    private readonly archiveRuns = new Map<HostId, AutoArchiveRun>();
-    private get mode() {
-        return this.settings.mode;
-    }
+    type Runtime = typeof runtime;
+    const runtime = {
+        desktop,
+        ports,
+        hosts: new Map<HostId, HostSnapshot>(),
+        context: undefined as SidebarContext | undefined,
+        accountScope: null as string | null,
+        records: {} as Record<string, CardRecord>,
+        legacyCachedCards: [] as LegacyCachedCard[],
+        refreshing: undefined as Promise<void> | undefined,
+        editing: new Set<string>(),
+        settings: defaults as BoardSettings,
+        titleStartedAt: undefined as number | undefined,
+        observationSince: Date.now() / 1000,
+        runtimeDirty: new Map<HostId, { epoch: number; ids: Set<ThreadId> }>(),
+        historyReads: new Map<string, HistoryRead>(),
+        historySequence: 0,
+        titleInFlight: new Set<string>(),
+        nextTitleAttempt: new Map<string, { version: number; at: number }>(),
+        changed: new Map<string, number>(),
+        changes: 0,
+        ledger: emptyLedger() as BoardLedger,
+        openingDrafts: new Map<
+            string,
+            { projectId: string; result: Promise<TrackedDraftResult> }
+        >(),
+        archive,
+        archiveDeadlines: new Map<HostId, number>(),
+        archiveRuns: new Map<HostId, AutoArchiveRun>(),
+        get mode() {
+            return this.settings.mode;
+        },
+        refresh,
+        readBoard,
+        loadAccount,
+        readPages,
+        refreshHost,
+        readActive,
+        refreshArchives,
+        refreshProjects,
+        notice,
+        observeHost,
+        readHistory,
+        observeThread,
+        storeObservation,
+        readObservedTurn,
+        applyPhase,
+        retryHostTitle,
+        oldestTitleRetry,
+        canRetryHostTitle,
+        card,
+        cachedLegacyCard,
+        requiredContext,
+        health,
+        snapshot,
+        sessions,
+        hostCards,
+        projectCatalog,
+        target,
+        requireAccount,
+        requiredScope,
+        nativeSectionVersion,
+        freshContext,
+        update,
+        resolveEdit,
+        updateCard,
+        commitRecord,
+        publishThread,
+        syncTitle,
+        titleKey,
+        retryTitle,
+        syncTitleWithinBudget,
+        scheduleTitleRetry,
+        resolveTitle,
+        settleObservedTitle,
+        moveCard,
+        open,
+        preview,
+        findProject,
+        persistDraft,
+        resetDraft,
+        resumeDraft,
+        launchDraft,
+        createTrackedDraft,
+        create,
+        openTrackedDraft,
+        trackDraft,
+        assign,
+        writeLedger,
+        sort,
+        verifyArchive,
+        archiveThread,
+        archived,
+        autoArchive,
+        autoArchiveHost,
+        requestArchive,
+        submitArchive,
+        openConnectionSettings,
+        requestExistingSession,
+        request,
+        refreshSnapshot,
+        requestChange,
+    };
 
-    constructor(
-        private readonly desktop: DesktopConnection,
-        private readonly ports: BoardPorts,
-    ) {}
-
-    async refresh(): Promise<void> {
+    async function refresh(this: Runtime): Promise<void> {
         this.refreshing ??= this.readBoard()
             .catch((error: unknown) => {
                 this.ports.authority(undefined);
@@ -441,7 +518,7 @@ export class BoardService {
         await this.refreshing;
     }
 
-    private async readBoard(): Promise<void> {
+    async function readBoard(this: Runtime): Promise<void> {
         const context = await this.desktop.context();
         const account = accountKey(context);
         const switched = this.context === undefined || account !== accountKey(this.context);
@@ -468,7 +545,7 @@ export class BoardService {
         this.autoArchive(context);
     }
 
-    private async loadAccount(account: string): Promise<void> {
+    async function loadAccount(this: Runtime, account: string): Promise<void> {
         const [{ records, legacyCachedCards }, ledger, accountScope] = await Promise.all([
             this.ports.load(account),
             this.ports.loadLedger(account),
@@ -489,7 +566,8 @@ export class BoardService {
         this.archiveRuns.clear();
     }
 
-    private async readPages(
+    async function readPages(
+        this: Runtime,
         connection: HostConnection,
         archived: boolean,
         rows: Map<ThreadId, Thread>,
@@ -512,7 +590,11 @@ export class BoardService {
         throw new Error(`会话列表达到分页上限（${this.settings.maxPages} 页）`);
     }
 
-    private async refreshHost(hostId: HostId, context: SidebarContext): Promise<void> {
+    async function refreshHost(
+        this: Runtime,
+        hostId: HostId,
+        context: SidebarContext,
+    ): Promise<void> {
         const last = this.hosts.get(hostId) ?? emptyHost();
         const next: HostSnapshot = {
             ...emptyHost(),
@@ -545,7 +627,11 @@ export class BoardService {
         }
     }
 
-    private async readActive(connection: HostConnection, host: HostSnapshot): Promise<void> {
+    async function readActive(
+        this: Runtime,
+        connection: HostConnection,
+        host: HostSnapshot,
+    ): Promise<void> {
         try {
             await this.readPages(connection, false, host.active);
             host.scanComplete = true;
@@ -555,7 +641,11 @@ export class BoardService {
         }
     }
 
-    private async refreshArchives(connection: HostConnection, host: HostSnapshot): Promise<void> {
+    async function refreshArchives(
+        this: Runtime,
+        connection: HostConnection,
+        host: HostSnapshot,
+    ): Promise<void> {
         try {
             const archived = new Map<ThreadId, Thread>();
             await this.readPages(connection, true, archived);
@@ -568,7 +658,11 @@ export class BoardService {
         }
     }
 
-    private async refreshProjects(connection: HostConnection, host: HostSnapshot): Promise<void> {
+    async function refreshProjects(
+        this: Runtime,
+        connection: HostConnection,
+        host: HostSnapshot,
+    ): Promise<void> {
         try {
             const projects = new Map<string, HostProject>();
             const cursors = new Set<string>();
@@ -589,7 +683,7 @@ export class BoardService {
         }
     }
 
-    notice(hostId: HostId, threadId: ThreadId): void {
+    function notice(this: Runtime, hostId: HostId, threadId: ThreadId): void {
         let connection: HostConnection;
         try {
             connection = this.desktop.capture(hostId);
@@ -602,7 +696,8 @@ export class BoardService {
         this.runtimeDirty.set(hostId, { epoch: connection.epoch, ids });
     }
 
-    private async observeHost(
+    async function observeHost(
+        this: Runtime,
         connection: HostConnection,
         host: HostSnapshot,
         context: SidebarContext,
@@ -640,7 +735,8 @@ export class BoardService {
         );
     }
 
-    private async readHistory(
+    async function readHistory(
+        this: Runtime,
         connection: HostConnection,
         host: HostSnapshot,
         context: SidebarContext,
@@ -668,7 +764,8 @@ export class BoardService {
         if (errors) host.historyError = `${errors} 个会话的历史暂不可读`;
     }
 
-    private async observeThread(
+    async function observeThread(
+        this: Runtime,
         connection: HostConnection,
         thread: Thread,
         context: SidebarContext,
@@ -695,7 +792,8 @@ export class BoardService {
         if (queuedTitle) void this.retryTitle(connection, thread.id);
     }
 
-    private async storeObservation(
+    async function storeObservation(
+        this: Runtime,
         connection: HostConnection,
         thread: Thread,
         context: SidebarContext,
@@ -717,7 +815,8 @@ export class BoardService {
         return next.title !== undefined && next.title !== current.title;
     }
 
-    private async readObservedTurn(
+    async function readObservedTurn(
+        this: Runtime,
         connection: HostConnection,
         threadId: ThreadId,
         id: string,
@@ -736,7 +835,8 @@ export class BoardService {
         }
     }
 
-    private async applyPhase(
+    async function applyPhase(
+        this: Runtime,
         connection: HostConnection,
         thread: Thread,
         context: SidebarContext,
@@ -776,14 +876,18 @@ export class BoardService {
         return { kind: "automatic", state: phase.state };
     }
 
-    private async retryHostTitle(connection: HostConnection, host: HostSnapshot): Promise<void> {
+    async function retryHostTitle(
+        this: Runtime,
+        connection: HostConnection,
+        host: HostSnapshot,
+    ): Promise<void> {
         if (!this.settings.syncTitles) return;
         const now = Date.now();
         const oldest = this.oldestTitleRetry(connection.hostId, host, now);
         if (oldest) await this.retryTitle(connection, oldest.threadId);
     }
 
-    private oldestTitleRetry(hostId: HostId, host: HostSnapshot, now: number) {
+    function oldestTitleRetry(this: Runtime, hostId: HostId, host: HostSnapshot, now: number) {
         let oldest: { threadId: ThreadId; at: number } | undefined;
         for (const thread of host.active.values()) {
             const id = cardId({ hostId, threadId: thread.id });
@@ -796,7 +900,12 @@ export class BoardService {
         return oldest;
     }
 
-    private canRetryHostTitle(host: HostSnapshot, id: string, threadId: ThreadId): boolean {
+    function canRetryHostTitle(
+        this: Runtime,
+        host: HostSnapshot,
+        id: string,
+        threadId: ThreadId,
+    ): boolean {
         return (
             host.currentActive.has(threadId) &&
             canWrite(this.settings, threadId) &&
@@ -805,7 +914,8 @@ export class BoardService {
         );
     }
 
-    private card(
+    function card(
+        this: Runtime,
         hostId: HostId,
         thread: Thread,
         context: SidebarContext,
@@ -856,7 +966,11 @@ export class BoardService {
         };
     }
 
-    private cachedLegacyCard(cached: LegacyCachedCard, states: Record<string, string>): Card {
+    function cachedLegacyCard(
+        this: Runtime,
+        cached: LegacyCachedCard,
+        states: Record<string, string>,
+    ): Card {
         const { hostId, threadId, title, cwd, updatedAt, archived, followUp } = cached;
         const id = cardId({ hostId, threadId });
         const record = this.records[id] ?? emptyRecord;
@@ -893,12 +1007,12 @@ export class BoardService {
         };
     }
 
-    private requiredContext(): SidebarContext {
+    function requiredContext(this: Runtime): SidebarContext {
         if (!this.context) throw new Error("看板尚未读取当前账号");
         return this.context;
     }
 
-    private health(hostId: HostId, host: HostSnapshot | undefined) {
+    function health(this: Runtime, hostId: HostId, host: HostSnapshot | undefined) {
         const connected = host !== undefined && isLive(this.desktop, host);
         const run = this.archiveRuns.get(hostId);
         const bindings =
@@ -936,7 +1050,7 @@ export class BoardService {
         };
     }
 
-    snapshot() {
+    function snapshot(this: Runtime) {
         const context = this.requiredContext();
         const local = this.hosts.get(localHostId);
         const states = visibleStates(this.mode);
@@ -979,7 +1093,11 @@ export class BoardService {
         };
     }
 
-    private sessions(context: SidebarContext, states: Record<string, string>): Card[] {
+    function sessions(
+        this: Runtime,
+        context: SidebarContext,
+        states: Record<string, string>,
+    ): Card[] {
         const native = [...this.hosts].flatMap(([hostId, host]) =>
             this.hostCards(hostId, host, context),
         );
@@ -990,7 +1108,12 @@ export class BoardService {
         return [...native, ...cached];
     }
 
-    private hostCards(hostId: HostId, host: HostSnapshot, context: SidebarContext): Card[] {
+    function hostCards(
+        this: Runtime,
+        hostId: HostId,
+        host: HostSnapshot,
+        context: SidebarContext,
+    ): Card[] {
         const connected = isLive(this.desktop, host);
         return [
             ...[...host.active.values()].map((thread) =>
@@ -1010,7 +1133,7 @@ export class BoardService {
         ];
     }
 
-    private projectCatalog() {
+    function projectCatalog(this: Runtime) {
         return [...this.hosts].flatMap(([hostId, host]) =>
             [...host.projects.values()].map((project) => ({
                 id: projectKey(hostId, project.id),
@@ -1026,30 +1149,33 @@ export class BoardService {
         );
     }
 
-    private target(id: string) {
+    function target(this: Runtime, id: string) {
         const card = this.snapshot().sessions.find((row) => row.id === id);
         if (!card) throw new Error("看板找不到该会话");
         if (!card.canOpen) throw new Error("会话目前只显示缓存，请重新发现");
         return { card, connection: this.desktop.capture(card.hostId) };
     }
 
-    private requireAccount(account: string): void {
+    function requireAccount(this: Runtime, account: string): void {
         if (!this.context || account !== accountKey(this.context))
             throw new Error("Codex 账号已变更");
     }
 
-    private requiredScope(): string {
+    function requiredScope(this: Runtime): string {
         if (this.accountScope === null) throw new Error("看板尚未读取当前账号");
         return this.accountScope;
     }
 
-    private nativeSectionVersion(version: string | null): string {
+    function nativeSectionVersion(this: Runtime, version: string | null): string {
         const suffix = sectionScopeSuffix(this.requiredScope());
         if (version?.endsWith(suffix)) return `${version.slice(0, -suffix.length)}]`;
         throw new Error("卡片位置或输入已更新，请刷新后重试");
     }
 
-    private async freshContext(expected = this.requiredContext()): Promise<SidebarContext> {
+    async function freshContext(
+        this: Runtime,
+        expected = this.requiredContext(),
+    ): Promise<SidebarContext> {
         const account = accountKey(expected);
         const context = await this.desktop.context();
         this.requireAccount(account);
@@ -1057,10 +1183,10 @@ export class BoardService {
         return context;
     }
 
-    async update(edit: Edit) {
+    async function update(this: Runtime, edit: Edit) {
         if (this.editing.has(edit.id)) throw new Error("该卡片正在保存");
         this.editing.add(edit.id);
-        let saved: Awaited<ReturnType<BoardService["updateCard"]>>;
+        let saved: Awaited<ReturnType<typeof updateCard>>;
         try {
             saved = await this.updateCard(edit);
         } finally {
@@ -1089,7 +1215,7 @@ export class BoardService {
         };
     }
 
-    private async resolveEdit(edit: Edit) {
+    async function resolveEdit(this: Runtime, edit: Edit) {
         const { card, connection } = this.target(edit.id);
         if (card.readOnly) throw new Error("此会话目前只读");
         const submittedSection = this.nativeSectionVersion(edit.sectionVersion);
@@ -1122,7 +1248,7 @@ export class BoardService {
         return { card, connection, context, before, latest, current, inputKey };
     }
 
-    private async updateCard(edit: Edit) {
+    async function updateCard(this: Runtime, edit: Edit) {
         const { card, connection, context, before, latest, current, inputKey } =
             await this.resolveEdit(edit);
         const after = await this.moveCard(edit.state, connection, context, before);
@@ -1153,7 +1279,8 @@ export class BoardService {
         };
     }
 
-    private async commitRecord(
+    async function commitRecord(
+        this: Runtime,
         context: SidebarContext,
         id: string,
         expected: number,
@@ -1173,12 +1300,13 @@ export class BoardService {
         this.records[id] = record;
     }
 
-    private publishThread(hostId: HostId, thread: Thread): void {
+    function publishThread(this: Runtime, hostId: HostId, thread: Thread): void {
         this.changed.set(cardId({ hostId, threadId: thread.id }), ++this.changes);
         this.hosts.get(hostId)?.active.set(thread.id, thread);
     }
 
-    private async syncTitle(
+    async function syncTitle(
+        this: Runtime,
         connection: HostConnection,
         threadId: ThreadId,
         id: string,
@@ -1215,11 +1343,15 @@ export class BoardService {
         return after;
     }
 
-    private titleKey(id: string): string {
+    function titleKey(this: Runtime, id: string): string {
         return JSON.stringify([accountKey(this.requiredContext()), id]);
     }
 
-    private async retryTitle(connection: HostConnection, threadId: ThreadId): Promise<void> {
+    async function retryTitle(
+        this: Runtime,
+        connection: HostConnection,
+        threadId: ThreadId,
+    ): Promise<void> {
         if (!this.settings.syncTitles || !canWrite(this.settings, threadId)) return;
         const id = cardId({ hostId: connection.hostId, threadId });
         const record = this.records[id];
@@ -1239,7 +1371,8 @@ export class BoardService {
         }
     }
 
-    private async syncTitleWithinBudget(
+    async function syncTitleWithinBudget(
+        this: Runtime,
         connection: HostConnection,
         threadId: ThreadId,
         id: string,
@@ -1271,12 +1404,18 @@ export class BoardService {
         return { updated, failure };
     }
 
-    private scheduleTitleRetry(id: string, version: number, failure: string | undefined) {
+    function scheduleTitleRetry(
+        this: Runtime,
+        id: string,
+        version: number,
+        failure: string | undefined,
+    ) {
         if (failure) this.nextTitleAttempt.set(id, { version, at: Date.now() + titleRetryDelayMs });
         else this.nextTitleAttempt.delete(id);
     }
 
-    private async resolveTitle(
+    async function resolveTitle(
+        this: Runtime,
         connection: HostConnection,
         threadId: ThreadId,
         id: string,
@@ -1303,7 +1442,8 @@ export class BoardService {
             this.publishThread(connection.hostId, updated);
     }
 
-    private async settleObservedTitle(
+    async function settleObservedTitle(
+        this: Runtime,
         account: string,
         id: string,
         record: CardRecord,
@@ -1322,7 +1462,8 @@ export class BoardService {
         return true;
     }
 
-    private async moveCard(
+    async function moveCard(
+        this: Runtime,
         state: BoardState | null,
         connection: HostConnection,
         context: SidebarContext,
@@ -1352,7 +1493,7 @@ export class BoardService {
         return after;
     }
 
-    private async open(id: string): Promise<{ ok: true }> {
+    async function open(this: Runtime, id: string): Promise<{ ok: true }> {
         const { card, connection } = this.target(id);
         const context = await this.freshContext();
         await this.desktop.read(connection, card.threadId, false);
@@ -1370,7 +1511,7 @@ export class BoardService {
         return { ok: true };
     }
 
-    private async preview(id: string) {
+    async function preview(this: Runtime, id: string) {
         const { card, connection } = this.target(id);
         const context = await this.freshContext();
         const result = await previewReply(this.desktop, connection, card.threadId);
@@ -1379,7 +1520,7 @@ export class BoardService {
         return result;
     }
 
-    private findProject(id: string) {
+    function findProject(this: Runtime, id: string) {
         for (const [hostId, host] of this.hosts) {
             for (const project of host.projects.values()) {
                 if (projectKey(hostId, project.id) !== id) continue;
@@ -1391,11 +1532,11 @@ export class BoardService {
         throw new Error("项目已变更，请刷新后选择");
     }
 
-    private persistDraft(record: DraftRecord): Promise<DraftRecord> {
+    function persistDraft(this: Runtime, record: DraftRecord): Promise<DraftRecord> {
         return this.archive.change((old) => ({ next: stageDraft(old, record), result: record }));
     }
 
-    private resetDraft(input: DraftInput) {
+    function resetDraft(this: Runtime, input: DraftInput) {
         const draft = unresolvedDrafts(this.ledger).find(
             ({ project, requestId }) =>
                 project === input.projectId && requestId === input.requestId,
@@ -1404,7 +1545,7 @@ export class BoardService {
         return this.persistDraft({ ...draft, stage: "abandoned" }).then(() => ({ ok: true }));
     }
 
-    private async resumeDraft(input: DraftInput, draft: DraftRecord) {
+    async function resumeDraft(this: Runtime, input: DraftInput, draft: DraftRecord) {
         const owner = this.requiredContext();
         const requestId = draft.requestId;
         const pending = { ok: false, pending: true, requestId };
@@ -1423,7 +1564,12 @@ export class BoardService {
         return { ok: true, requestId };
     }
 
-    private async launchDraft(input: DraftInput, owner: SidebarContext, record?: DraftRecord) {
+    async function launchDraft(
+        this: Runtime,
+        input: DraftInput,
+        owner: SidebarContext,
+        record?: DraftRecord,
+    ) {
         const { projectId } = input;
         const { accountId, userId } = await this.freshContext(owner);
         const selected = projectId ? this.findProject(projectId) : null;
@@ -1451,7 +1597,12 @@ export class BoardService {
         };
     }
 
-    private async createTrackedDraft(input: DraftInput, owner: SidebarContext, draft: DraftRecord) {
+    async function createTrackedDraft(
+        this: Runtime,
+        input: DraftInput,
+        owner: SidebarContext,
+        draft: DraftRecord,
+    ) {
         const record = await this.persistDraft(draft);
         try {
             return await this.launchDraft(input, owner, record);
@@ -1465,7 +1616,7 @@ export class BoardService {
         }
     }
 
-    private async create(input: DraftInput) {
+    async function create(this: Runtime, input: DraftInput) {
         const owner = this.requiredContext();
         const { projectId, operationId } = input;
         const draft = unresolvedDrafts(this.ledger).find(
@@ -1477,7 +1628,8 @@ export class BoardService {
         return this.openTrackedDraft(input, owner, projectId, operationId);
     }
 
-    private async openTrackedDraft(
+    async function openTrackedDraft(
+        this: Runtime,
         input: DraftInput,
         owner: SidebarContext,
         projectId: string | undefined,
@@ -1490,7 +1642,8 @@ export class BoardService {
         return this.trackDraft(input, owner, projectId, operationId);
     }
 
-    private async trackDraft(
+    async function trackDraft(
+        this: Runtime,
         input: DraftInput,
         owner: SidebarContext,
         projectId: string,
@@ -1523,7 +1676,7 @@ export class BoardService {
         }
     }
 
-    private async assign(id: string, projectId: string): Promise<{ ok: true }> {
+    async function assign(this: Runtime, id: string, projectId: string): Promise<{ ok: true }> {
         const { card, connection } = this.target(id);
         const { hostId, project } = this.findProject(projectId);
         validateProjectAssignment(card, hostId, project);
@@ -1555,7 +1708,7 @@ export class BoardService {
         return { ok: true };
     }
 
-    private async writeLedger(next: BoardLedger): Promise<void> {
+    async function writeLedger(this: Runtime, next: BoardLedger): Promise<void> {
         const context = await this.freshContext();
         const account = accountKey(context);
         await this.ports.writeLedger(account, next);
@@ -1563,7 +1716,7 @@ export class BoardService {
         this.ledger = next;
     }
 
-    private sort(state: string, requested: SortPreference) {
+    function sort(this: Runtime, state: string, requested: SortPreference) {
         if (
             !Object.hasOwn(visibleStates(this.mode), state) ||
             requested.field !== "updated_at" ||
@@ -1586,7 +1739,7 @@ export class BoardService {
         });
     }
 
-    private async verifyArchive(item: ArchiveItem) {
+    async function verifyArchive(this: Runtime, item: ArchiveItem) {
         const { card, connection } = this.target(item.id);
         if (!card.canArchive || card.state !== "to_archive" || this.editing.has(item.id)) {
             throw new Error("当前状态不能归档");
@@ -1627,7 +1780,7 @@ export class BoardService {
         return { connection, context, threadId: after.id };
     }
 
-    private async archiveThread(item: ArchiveItem): Promise<void> {
+    async function archiveThread(this: Runtime, item: ArchiveItem): Promise<void> {
         const { connection, context, threadId } = await this.verifyArchive(item).catch(
             (error: unknown) => {
                 if (error instanceof NewInputError) throw error;
@@ -1638,7 +1791,7 @@ export class BoardService {
         await this.freshContext(context);
     }
 
-    private async archived(id: string): Promise<boolean> {
+    async function archived(this: Runtime, id: string): Promise<boolean> {
         const owner = this.requiredContext();
         const { hostId, threadId } = cardThread(id);
         const archived = new Map<ThreadId, Thread>();
@@ -1664,7 +1817,7 @@ export class BoardService {
         return verified;
     }
 
-    private autoArchive(context: SidebarContext): void {
+    function autoArchive(this: Runtime, context: SidebarContext): void {
         const now = Date.now() / 1000;
         for (const [hostId, host] of this.hosts) {
             const seconds = archiveInterval(this.settings, hostId);
@@ -1676,7 +1829,11 @@ export class BoardService {
         }
     }
 
-    private async autoArchiveHost(hostId: HostId, context: SidebarContext): Promise<void> {
+    async function autoArchiveHost(
+        this: Runtime,
+        hostId: HostId,
+        context: SidebarContext,
+    ): Promise<void> {
         const items = this.snapshot().sessions.filter(
             (card) =>
                 card.hostId === hostId &&
@@ -1715,7 +1872,7 @@ export class BoardService {
             this.archiveRuns.set(hostId, run);
     }
 
-    private async requestArchive(path: string, body: object | undefined) {
+    async function requestArchive(this: Runtime, path: string, body: object | undefined) {
         await this.freshContext();
         const args = body as
             | (Partial<ArchiveTarget> & { batchId?: string; items?: ArchiveTarget[] })
@@ -1738,14 +1895,14 @@ export class BoardService {
         throw new Error("归档请求不完整");
     }
 
-    private submitArchive(args: ArchiveTarget, batchId?: string) {
+    function submitArchive(this: Runtime, args: ArchiveTarget, batchId?: string) {
         const candidate = { ...args, sectionVersion: args.sectionVersion ?? null };
         if (batchId) return this.archive.submit(batchId, candidate);
         const { card } = this.target(candidate.id);
         return this.archive.single({ ...candidate, title: card.title });
     }
 
-    private async openConnectionSettings() {
+    async function openConnectionSettings(this: Runtime) {
         const owner = await this.freshContext();
         await this.desktop.navigate({
             kind: "settings",
@@ -1756,7 +1913,8 @@ export class BoardService {
         this.ports.closePage();
     }
 
-    private requestExistingSession(
+    function requestExistingSession(
+        this: Runtime,
         path: "/api/open" | "/api/preview-reply" | "/api/project/assign",
         input: (DraftInput & { id?: string }) | undefined,
     ) {
@@ -1769,7 +1927,12 @@ export class BoardService {
         throw new Error(unsupportedOperation);
     }
 
-    async request(path: string, body?: object, account?: string): Promise<unknown> {
+    async function request(
+        this: Runtime,
+        path: string,
+        body?: object,
+        account?: string,
+    ): Promise<unknown> {
         if (account !== undefined) this.requireAccount(account);
         if (path.startsWith("/api/archive")) return this.requestArchive(path, body);
         const input = body as (DraftInput & { id?: string }) | undefined;
@@ -1799,13 +1962,14 @@ export class BoardService {
         throw new Error(unsupportedOperation);
     }
 
-    private async refreshSnapshot(account?: string) {
+    async function refreshSnapshot(this: Runtime, account?: string) {
         await this.refresh();
         if (account !== undefined) this.requireAccount(account);
         return this.snapshot();
     }
 
-    private requestChange(
+    function requestChange(
+        this: Runtime,
         path: "/api/state" | "/api/column-sort" | "/api/new/reset",
         body?: object,
     ) {
@@ -1815,8 +1979,12 @@ export class BoardService {
         const sort = body as SortPreference & { state: string };
         return this.sort(sort.state, sort);
     }
-}
 
-export function createBoardService(desktop: DesktopConnection, ports: BoardPorts): BoardService {
-    return new BoardService(desktop, ports);
+    return {
+        refresh: runtime.refresh.bind(runtime),
+        notice: runtime.notice.bind(runtime),
+        snapshot: runtime.snapshot.bind(runtime),
+        update: runtime.update.bind(runtime),
+        request: runtime.request.bind(runtime),
+    };
 }
