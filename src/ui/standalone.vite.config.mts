@@ -32,13 +32,18 @@ function standaloneAssets(): Plugin {
                 fileName: "mcp.html",
                 source: `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>会话看板</title></head><body><script>${script}</script></body></html>`,
             });
-            for (const fileName of ["board.svg", "manifest.webmanifest", "board-operations.json"]) {
+            for (const fileName of ["board.svg", "manifest.webmanifest"]) {
                 this.emitFile({
                     type: "asset",
                     fileName,
-                    source: readFileSync(`src/ui/${fileName}`),
+                    source: readFileSync(`src/ui/assets/${fileName}`),
                 });
             }
+            this.emitFile({
+                type: "asset",
+                fileName: "board-operations.json",
+                source: readFileSync("src/ui/board-operations.json"),
+            });
             const worker = await build({
                 entryPoints: ["src/ui/standalone-sw.ts"],
                 bundle: true,
