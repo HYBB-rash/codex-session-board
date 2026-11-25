@@ -15,8 +15,9 @@
         "uninstall": "npm run build --silent && node dist/bin/codex-enhancer.js uninstall",
         "status": "npm run build --silent && node dist/bin/codex-enhancer.js status",
         "launch": "npm run build --silent && node dist/bin/codex-enhancer.js launch",
-        "lint": "biome check --error-on-warnings . && node scripts/check-comments.mjs",
-        "format": "biome check --write .",
+        "lint": "biome check --error-on-warnings . && npm run --silent lint:vue && node scripts/check-comments.mjs",
+        "lint:vue": "eslint \"src/**/*.vue\"",
+        "format": "biome check --write . && npm run --silent lint:vue -- --fix",
         "test": "([ -f release.json ] || npm run build --silent) && node --test dist/compat/*.test.js dist/extensions/session-board/*.test.js dist/installer/*.test.js dist/migration/*.test.js dist/runtime/*.test.js"
     },
     "devDependencies": {
@@ -27,11 +28,14 @@
         "@vitejs/plugin-vue": "^6.0.11",
         "@vitejs/plugin-vue-jsx": "^5.1.6",
         "esbuild": "^0.28.2",
+        "eslint": "^10.15.0",
+        "eslint-plugin-vue": "^10.12.1",
         "markdown-it": "^15.0.3",
         "oxc-parser": "^0.160.0",
         "typescript": "npm:@typescript/typescript6@^6.0.2",
         "vite": "^8.3.8",
         "vue": "^3.5.46",
+        "vue-eslint-parser": "^10.4.2",
         "vue-tsc": "^3.3.14"
     }
 }

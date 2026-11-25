@@ -36,6 +36,16 @@
             "enabled": true
         }
     },
+    "overrides": [
+        {
+            "includes": ["**/*.vue"],
+            "html": {
+                "formatter": {
+                    "enabled": false
+                }
+            }
+        }
+    ],
     "linter": {
         "enabled": true,
         "rules": {
