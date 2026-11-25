@@ -110,11 +110,11 @@ class BoardPage {
         }
     }
 
-    private byId<Element extends HTMLElement>(id: string): Element {
+    private readonly byId = <Element extends HTMLElement>(id: string): Element => {
         const element = this.root.querySelector(`#${id}`);
         if (!element) throw new Error(`缺少看板元素 ${id}`);
         return element as Element;
-    }
+    };
 
     private readonly snapshot = () => this.data;
     private readonly savingNow = () => this.saving;
@@ -138,30 +138,33 @@ class BoardPage {
     };
 
     private mountBrowse() {
-        return mountBoardBrowse(this.byId("board-filters"), this.byId("filter-scope"), {
-            snapshot: this.snapshot,
-            locked: this.filtersLocked,
-            changed: this.render,
-            announce: this.announce,
+        const { byId, snapshot, filtersLocked, render, announce } = this;
+        return mountBoardBrowse(byId("board-filters"), byId("filter-scope"), {
+            snapshot,
+            locked: filtersLocked,
+            changed: render,
+            announce,
         });
     }
 
     private mountReader() {
-        return mountBoardSessionReader(this.byId("reply-preview"), {
+        const { byId, request, announce, creatingNow, movingId } = this;
+        return mountBoardSessionReader(byId("reply-preview"), {
             sessions: () => this.data.sessions,
-            request: this.request,
-            announce: this.announce,
+            request,
+            announce,
             dragSuppressesClick: () => this.board.drag.suppressesClick,
             savingWithoutMove: () => this.saving && !this.movePanel.moving,
-            creating: this.creatingNow,
-            movingId: this.movingId,
+            creating: creatingNow,
+            movingId,
         });
     }
 
     private createReports() {
+        const { snapshot } = this;
         const { filters, hostOptions, hostSessions, hostProjects, hostName } = this.browse;
         return createBoardHealthReports({
-            snapshot: this.snapshot,
+            snapshot,
             selectedHost: () => filters.state.host,
             selectedHostLabel: () => filters.view.hostLabel,
             hostOptions,
@@ -174,218 +177,294 @@ class BoardPage {
     }
 
     private mountHealth() {
+        const { byId, request, load, announce } = this;
         return mountBoardHealth(
             {
-                banner: this.byId("health"),
-                summary: this.byId("health-summary"),
-                more: this.byId("health-more"),
-                detail: this.byId("health-details"),
-                list: this.byId("health-detail-list"),
-                close: this.byId("health-close"),
-                recheck: this.byId("health-recheck"),
-                detailHelp: this.byId("health-help"),
-                connectionHelp: this.byId("connection-help"),
-                recovery: this.byId("connection-recovery"),
-                recoveryClose: this.byId("connection-close"),
-                recoveryRecheck: this.byId("connection-recheck"),
+                banner: byId("health"),
+                summary: byId("health-summary"),
+                more: byId("health-more"),
+                detail: byId("health-details"),
+                list: byId("health-detail-list"),
+                close: byId("health-close"),
+                recheck: byId("health-recheck"),
+                detailHelp: byId("health-help"),
+                connectionHelp: byId("connection-help"),
+                recovery: byId("connection-recovery"),
+                recoveryClose: byId("connection-close"),
+                recoveryRecheck: byId("connection-recheck"),
             },
             {
                 reports: this.reports.healthReports,
                 selectedHost: () => this.browse.filters.state.host,
                 readState: () => this.refresh,
                 date,
-                request: this.request,
-                load: this.load,
-                announce: this.announce,
+                request,
+                load,
+                announce,
             },
         );
     }
 
     private mountSshSetup() {
-        return mountBoardSshSetup(this.byId("ssh-settings"), this.byId("ssh-setup"), {
-            request: this.request,
-            locked: this.filtersLocked,
+        const { byId, request, filtersLocked, updateFilterLock, announce, load } = this;
+        return mountBoardSshSetup(byId("ssh-settings"), byId("ssh-setup"), {
+            request,
+            locked: filtersLocked,
             available: () =>
                 this.data.health.nativeConnections === true ||
                 this.data.health.sshAliasSetup === true,
             native: () => this.data.health.nativeConnections === true,
-            updateFilterLock: this.updateFilterLock,
-            announce: this.announce,
-            load: this.load,
+            updateFilterLock,
+            announce,
+            load,
         });
     }
 
     private mountArchive() {
-        return mountBoardArchive(this.byId("archive-results"), this.byId("archive-status"), {
-            snapshot: this.snapshot,
-            request: this.request,
+        const {
+            byId,
+            snapshot,
+            request,
+            announce,
+            render,
+            load,
+            busy,
+            movingId,
+            dragActive,
+            editorOpen,
+            setSaving,
+            invalidateSnapshot,
+        } = this;
+        return mountBoardArchive(byId("archive-results"), byId("archive-status"), {
+            snapshot,
+            request,
             open: this.reader.openSession,
             date,
-            announce: this.announce,
-            render: this.render,
-            load: this.load,
-            busy: this.busy,
-            movingId: this.movingId,
-            dragActive: this.dragActive,
-            editorOpen: this.editorOpen,
-            setSaving: this.setSaving,
-            invalidateSnapshot: this.invalidateSnapshot,
+            announce,
+            render,
+            load,
+            busy,
+            movingId,
+            dragActive,
+            editorOpen,
+            setSaving,
+            invalidateSnapshot,
             persist: (session, state, note) => this.edits.persist(session, state, note),
         });
     }
 
     private mountEdits() {
-        return mountBoardEdits(this.byId("card-editor"), () => this.byId("host-filter"), {
-            snapshot: this.snapshot,
-            invalidateSnapshot: this.invalidateSnapshot,
-            request: this.request,
+        const {
+            byId,
+            snapshot,
+            invalidateSnapshot,
+            request,
+            setSaving,
+            busy,
+            announce,
+            render,
+            load,
+        } = this;
+        return mountBoardEdits(byId("card-editor"), () => byId("host-filter"), {
+            snapshot,
+            invalidateSnapshot,
+            request,
             movePanel: () => this.movePanel,
-            setSaving: this.setSaving,
-            busy: this.busy,
+            setSaving,
+            busy,
             canAdjust: (session) => this.archive.cardActions(session).canAdjust,
-            announce: this.announce,
-            render: this.render,
-            load: this.load,
+            announce,
+            render,
+            load,
         });
     }
 
     private mountMovePanel() {
+        const { byId, announce, render, lifetime } = this;
         return mountMoveFeedback(
             {
-                editor: this.byId("editor"),
-                form: this.byId("edit-form"),
-                slot: this.byId("move-slot"),
-                panel: this.byId("move-feedback"),
-                heading: this.byId("move-heading"),
-                detail: this.byId("move-detail"),
-                dismiss: this.byId("move-dismiss"),
-                image: this.byId("move-dragon"),
+                editor: byId("editor"),
+                form: byId("edit-form"),
+                slot: byId("move-slot"),
+                panel: byId("move-feedback"),
+                heading: byId("move-heading"),
+                detail: byId("move-detail"),
+                dismiss: byId("move-dismiss"),
+                image: byId("move-dragon"),
             },
             {
                 states: () => this.data.states,
-                announce: this.announce,
-                render: this.render,
-                signal: this.lifetime.signal,
+                announce,
+                render,
+                signal: lifetime.signal,
             },
         );
     }
 
     private mountNewSession() {
+        const {
+            byId,
+            snapshot,
+            request,
+            announce,
+            render,
+            load,
+            updateFilterLock,
+            invalidateSnapshot,
+            savingNow,
+            creatingNow,
+            dragActive,
+            editorOpen,
+        } = this;
         return mountBoardNewSession(
             {
-                button: this.byId("new-session"),
-                consentDialog: this.byId("native-consent"),
-                consentForm: this.byId("native-consent-form"),
-                consentTarget: this.byId("native-consent-target"),
-                consentChanges: this.byId("native-consent-changes"),
-                consentCancel: this.byId("native-consent-cancel"),
-                recoveryDialog: this.byId("draft-recovery"),
-                recoveryMessage: this.byId("draft-message"),
-                recoveryLater: this.byId("draft-later"),
-                recoveryRetry: this.byId("draft-retry"),
-                recoveryRestart: this.byId("draft-restart"),
+                button: byId("new-session"),
+                consentDialog: byId("native-consent"),
+                consentForm: byId("native-consent-form"),
+                consentTarget: byId("native-consent-target"),
+                consentChanges: byId("native-consent-changes"),
+                consentCancel: byId("native-consent-cancel"),
+                recoveryDialog: byId("draft-recovery"),
+                recoveryMessage: byId("draft-message"),
+                recoveryLater: byId("draft-later"),
+                recoveryRetry: byId("draft-retry"),
+                recoveryRestart: byId("draft-restart"),
             },
             {
-                snapshot: this.snapshot,
-                request: this.request,
-                announce: this.announce,
-                render: this.render,
-                load: this.load,
-                updateFilterLock: this.updateFilterLock,
-                invalidateSnapshot: this.invalidateSnapshot,
-                saving: this.savingNow,
-                creating: this.creatingNow,
+                snapshot,
+                request,
+                announce,
+                render,
+                load,
+                updateFilterLock,
+                invalidateSnapshot,
+                saving: savingNow,
+                creating: creatingNow,
                 setCreating: (value) => {
                     this.creating = value;
                 },
-                dragActive: this.dragActive,
-                editorOpen: this.editorOpen,
+                dragActive,
+                editorOpen,
             },
         );
     }
 
     private mountNewTarget() {
+        const {
+            byId,
+            snapshot,
+            filtersLocked,
+            savingNow,
+            creatingNow,
+            updateFilterLock,
+            announce,
+            load,
+        } = this;
         const { filters, hostOptions, hostProjects, hostName, projectLabel } = this.browse;
         return mountBoardNewTarget(
             {
-                button: this.byId("new-session"),
-                dialog: this.byId("new-target"),
-                form: this.byId("new-target-form"),
-                host: this.byId("new-host"),
-                project: this.byId("new-project"),
-                submit: this.byId("new-target-open"),
-                hint: this.byId("new-target-hint"),
-                cancel: this.byId("new-target-cancel"),
+                button: byId("new-session"),
+                dialog: byId("new-target"),
+                form: byId("new-target-form"),
+                host: byId("new-host"),
+                project: byId("new-project"),
+                submit: byId("new-target-open"),
+                hint: byId("new-target-hint"),
+                cancel: byId("new-target-cancel"),
             },
             {
-                snapshot: this.snapshot,
+                snapshot,
                 scope: () => filters.state,
                 hostOptions,
                 hostProjects,
                 hostName,
                 projectLabel,
-                locked: this.filtersLocked,
-                saving: this.savingNow,
-                creating: this.creatingNow,
+                locked: filtersLocked,
+                saving: savingNow,
+                creating: creatingNow,
                 canCreateProject: this.newSession.canCreateProject,
                 create: this.newSession.create,
-                updateFilterLock: this.updateFilterLock,
-                announce: this.announce,
-                load: this.load,
+                updateFilterLock,
+                announce,
+                load,
             },
         );
     }
 
     private mountAssignment() {
+        const {
+            byId,
+            filtersLocked,
+            savingNow,
+            creatingNow,
+            setSaving,
+            updateFilterLock,
+            invalidateSnapshot,
+            request,
+            announce,
+            load,
+        } = this;
         return mountProjectAssignment(
             {
-                dialog: this.byId("project-assignment"),
-                form: this.byId("assignment-form"),
-                thread: this.byId("assignment-thread"),
-                project: this.byId("assignment-project"),
-                error: this.byId("assignment-error"),
-                cancel: this.byId("assignment-cancel"),
-                save: this.byId("assignment-save"),
+                dialog: byId("project-assignment"),
+                form: byId("assignment-form"),
+                thread: byId("assignment-thread"),
+                project: byId("assignment-project"),
+                error: byId("assignment-error"),
+                cancel: byId("assignment-cancel"),
+                save: byId("assignment-save"),
             },
             {
                 projects: () => this.data.projectCatalog.items,
                 projectLabel: this.browse.projectLabel,
-                locked: this.filtersLocked,
-                saving: this.savingNow,
-                creating: this.creatingNow,
-                setSaving: this.setSaving,
-                updateFilterLock: this.updateFilterLock,
-                invalidateSnapshot: this.invalidateSnapshot,
-                request: this.request,
-                announce: this.announce,
-                load: this.load,
+                locked: filtersLocked,
+                saving: savingNow,
+                creating: creatingNow,
+                setSaving,
+                updateFilterLock,
+                invalidateSnapshot,
+                request,
+                announce,
+                load,
             },
         );
     }
 
     private mountColumns() {
+        const {
+            canChangeColumnSort,
+            snapshot,
+            invalidateSnapshot,
+            setSaving,
+            request,
+            announce,
+            render,
+            load,
+            byId,
+            editorOpen,
+        } = this;
         const saveSort = createColumnSortSave({
-            canChange: this.canChangeColumnSort,
-            snapshot: this.snapshot,
-            invalidateSnapshot: this.invalidateSnapshot,
-            setSaving: this.setSaving,
-            request: this.request,
-            announce: this.announce,
-            render: this.render,
-            load: this.load,
+            canChange: canChangeColumnSort,
+            snapshot,
+            invalidateSnapshot,
+            setSaving,
+            request,
+            announce,
+            render,
+            load,
         });
         return mountBoard(
             {
-                viewport: this.byId("board-viewport"),
-                unplaced: this.byId("unplaced"),
-                jump: this.byId("jump"),
-                filters: this.byId("board-filters"),
+                viewport: byId("board-viewport"),
+                unplaced: byId("unplaced"),
+                jump: byId("jump"),
+                filters: byId("board-filters"),
             },
             {
                 date,
                 project: this.browse.projectPresentation,
                 actions: this.archive.cardActions,
-                canSort: this.canChangeColumnSort,
+                canSort: canChangeColumnSort,
                 saveSort,
                 canAssign: this.assignment.canAssign,
                 preview: this.reader.openReply,
@@ -393,10 +472,10 @@ class BoardPage {
                 assign: this.assignment.open,
                 archive: this.archive.submitCard,
                 archiveAll: this.archive.submit,
-                editorOpen: this.editorOpen,
-                announce: this.announce,
+                editorOpen,
+                announce,
                 move: this.edits.move,
-                refresh: this.render,
+                refresh: render,
             },
         );
     }
@@ -501,30 +580,32 @@ class BoardPage {
         this.lifetime.signal.aborted ? Promise.resolve() : this.refresh.load();
 
     private applySnapshot(next: BoardSnapshot) {
+        const { render } = this;
         this.data = next;
         this.archive.updateBoard(next);
         this.sshSetup.update();
         this.reader.preview.update(next.sessions, false);
         this.edits.reconcile(next.sessions);
         this.newSession.update(next);
-        this.render();
+        render();
     }
 
     private mountRefresh(replaceAccount: (snapshot: BoardSnapshot) => void, loaded: boolean) {
+        const { byId, request, filtersLocked, announce, render, lifetime } = this;
         return mountBoardRefresh(
-            this.byId("refresh"),
+            byId("refresh"),
             {
-                request: this.request,
-                locked: () => this.saving || this.filtersLocked(),
+                request,
+                locked: () => this.saving || filtersLocked(),
                 moving: () => Boolean(this.movePanel.moving),
-                announce: this.announce,
-                render: this.render,
+                announce,
+                render,
                 renderHealth: () => {
-                    if (!this.lifetime.signal.aborted) this.health.render();
+                    if (!lifetime.signal.aborted) this.health.render();
                 },
                 currentScope: () => this.data.accountScope,
                 received: (next, accountChanged) => {
-                    if (this.lifetime.signal.aborted) return;
+                    if (lifetime.signal.aborted) return;
                     if (accountChanged) replaceAccount(next);
                     else this.applySnapshot(next);
                 },
