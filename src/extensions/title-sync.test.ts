@@ -15,7 +15,7 @@ import {
     type ThreadId,
 } from "./desktop/connection.js";
 import { type BoardRecords, createBoardRecords, startTitleEpoch } from "./records.js";
-import { BoardService } from "./service.js";
+import { type BoardService, createBoardService } from "./service.js";
 import { defaults } from "./settings.js";
 
 const first = "00000000-0000-4000-8000-000000000001" as ThreadId;
@@ -162,7 +162,7 @@ function fixture(testContext: TestContext) {
             },
             (row) => native.moved(row),
         );
-        return new BoardService(desktop, {
+        return createBoardService(desktop, {
             load: async (key) => ({ records: store.account(key), legacyCachedCards: [] }),
             save: async (update) => store.write(update),
             preparePhase: async (update) => native.preparePhase(update),

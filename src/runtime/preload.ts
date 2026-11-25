@@ -9,7 +9,7 @@ import {
     type ThreadId,
 } from "../extensions/desktop/connection.js";
 import type { LoadedBoardRecords } from "../extensions/records.js";
-import { BoardService } from "../extensions/service.js";
+import { type BoardService, createBoardService } from "../extensions/service.js";
 import { readSettings } from "../extensions/settings.js";
 import type { BoardRelayRequest } from "./board/broker.js";
 import { startUiHost } from "./host.js";
@@ -55,7 +55,7 @@ function observeDesktop(desktop: DesktopConnection, board: BoardService): void {
 }
 
 function connectBoard(desktop: DesktopConnection, closePage: () => void): BoardService {
-    return new BoardService(desktop, {
+    return createBoardService(desktop, {
         async load(account) {
             return (await ipcRenderer.invoke(
                 "codex-enhancer:board-records",

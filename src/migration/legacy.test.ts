@@ -22,7 +22,7 @@ import {
     type Thread,
 } from "../extensions/desktop/connection.js";
 import { createBoardLedgers, createBoardRecords } from "../extensions/records.js";
-import { BoardService } from "../extensions/service.js";
+import { type BoardService, createBoardService } from "../extensions/service.js";
 import {
     migrateLegacyBoard,
     readLegacyMigration,
@@ -588,7 +588,7 @@ function boardForMigration(runtime: ReturnType<typeof runtimeFixture>) {
             });
         },
     });
-    const service = new BoardService(desktop, {
+    const service = createBoardService(desktop, {
         load: async (key) => runtime.migration.loadRecords(key, runtime.records),
         loadLedger: async (key) =>
             runtime.ledgers.load(key, runtime.migration.forAccount(key)?.ledger),

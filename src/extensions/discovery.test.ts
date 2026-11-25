@@ -12,7 +12,7 @@ import {
 } from "./desktop/connection.js";
 import type { DesktopCommand } from "./desktop/world.js";
 import type { CardRecord } from "./records.js";
-import { BoardService } from "./service.js";
+import { createBoardService } from "./service.js";
 import { defaults } from "./settings.js";
 
 const remoteName = "remote-ssh-discovered:fixture";
@@ -120,7 +120,7 @@ function fixture(testContext: TestContext, maxPages = 3) {
             });
         },
     });
-    const service = new BoardService(desktop, {
+    const service = createBoardService(desktop, {
         load: async () => ({ records, legacyCachedCards: [] }),
         save: async ({ id, expected, record }) => {
             assert.ok(native.history);

@@ -10,7 +10,7 @@ import {
     type ThreadId,
 } from "./desktop/connection.js";
 import type { DesktopCommand } from "./desktop/world.js";
-import { BoardService } from "./service.js";
+import { type BoardService, createBoardService } from "./service.js";
 import { defaults } from "./settings.js";
 
 const remote = hostId("remote-ssh-discovered:fixture");
@@ -103,7 +103,7 @@ function transportFixture(
 
 function assignmentFixture() {
     const { desktop, writes } = transportFixture();
-    const service = new BoardService(desktop, {
+    const service = createBoardService(desktop, {
         load: async () => ({ records: {}, legacyCachedCards: [] }),
         save: async () => assert.fail("Assignment must not change card records"),
         settleTitle: async () => assert.fail("Assignment must not change titles"),
@@ -166,7 +166,7 @@ function draftFixture() {
     let ledger: BoardLedger = emptyLedger();
     const stages: string[] = [];
     let closeCount = 0;
-    const service = new BoardService(desktop, {
+    const service = createBoardService(desktop, {
         load: async () => ({ records: {}, legacyCachedCards: [] }),
         save: async () => assert.fail("New input page must not change card records"),
         settleTitle: async () => assert.fail("New input page must not change titles"),

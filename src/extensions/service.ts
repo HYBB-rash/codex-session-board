@@ -1806,3 +1806,7 @@ export class BoardService {
         return this.sort(sort.state, sort);
     }
 }
+
+export function createBoardService(desktop: DesktopConnection, ports: BoardPorts): BoardService {
+    return new BoardService(desktop, ports);
+}

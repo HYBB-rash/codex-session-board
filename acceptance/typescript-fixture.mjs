@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createDesktopConnection } from "../dist/extensions/desktop/connection.js";
 import { createBoardLedgers, createBoardRecords } from "../dist/extensions/records.js";
-import { BoardService } from "../dist/extensions/service.js";
+import { createBoardService } from "../dist/extensions/service.js";
 import { defaults } from "../dist/extensions/settings.js";
 
 const threadId = "00000000-0000-4000-8000-000000000001";
@@ -81,7 +81,7 @@ export function createBoardFixture(directory, states, hooks = {}) {
             send: async (request) => interceptTransport(request, desktop, transport),
             sidebar: async (command) => interceptSidebar(command, sidebar),
         });
-        service = new BoardService(desktop, {
+        service = createBoardService(desktop, {
             load: async (key) => ({ records: records.account(key), legacyCachedCards: [] }),
             save: async (update) => records.write(update),
             preparePhase: async (update) => records.preparePhase(update),
