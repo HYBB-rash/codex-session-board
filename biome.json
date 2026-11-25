@@ -53,6 +53,14 @@
                     "bracketSameLine": true
                 }
             }
+        },
+        {
+            "includes": ["src/**/*.tsx"],
+            "javascript": {
+                "formatter": {
+                    "enabled": false
+                }
+            }
         }
     ],
     "linter": {
