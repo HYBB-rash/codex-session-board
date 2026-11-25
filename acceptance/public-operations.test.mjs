@@ -277,10 +277,7 @@ test("the MCP resource bundles its SDK and styles without linked scripts or fram
     const external = /<(?:link|iframe|frame|object|embed)\b|<(?:script|img)\b[^>]*\bsrc=/i;
     assert.equal(external.test(document), false, "resource contains a linked asset or frame");
     const styles = [...resource.text.matchAll(/<style(?:\s[^>]*)?>([\s\S]+?)<\/style>/g)];
-    assert.ok(
-        styles.some(([, css]) => css.includes(":root")),
-        "offline stylesheet missing",
-    );
+    assert.match(script, /\.board-page\s*\{/u, "offline stylesheet missing");
     assert.ok(styles.every(([, css]) => !/@import\b|url\(\s*['"]?(?:https?:|\/\/)/i.test(css)));
     assert.doesNotThrow(() => new Script(script));
     for (const signal of ["ui/initialize", "ui/notifications/initialized", "postMessage"]) {

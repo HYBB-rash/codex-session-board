@@ -1,12 +1,15 @@
-import { mountScopedBoard } from "./board-page";
-import shell from "./board-shell.html?raw";
+import { mountBoardPage } from "./board-page";
+import type { BoardInstall } from "./board-pwa";
 import type { BoardRequest } from "./board-start";
 
-export function startBoard(transport: BoardRequest): void {
-    const unmount = mountScopedBoard(document.body, transport, () => {
-        const template = document.createElement("template");
-        template.innerHTML = shell;
-        return template.content;
-    });
-    window.addEventListener("pagehide", unmount, { once: true });
+export function startBoard(transport: BoardRequest, install?: BoardInstall): void {
+    const unmount = mountBoardPage(document.body, transport, install ? { install } : {});
+    window.addEventListener(
+        "pagehide",
+        () => {
+            unmount();
+            install?.dispose();
+        },
+        { once: true },
+    );
 }

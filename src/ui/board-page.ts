@@ -1,30 +1,37 @@
-import { type BoardRequest, type BoardSnapshot, mountBoardPage } from "./board-start";
+import { h, render } from "vue";
+import BoardPage from "./BoardPage.vue";
+import styles from "./board-page.css?inline";
+import type { BoardInstall } from "./board-pwa";
+import type { BoardRequest, BoardSnapshot } from "./board-start";
 
-export function mountScopedBoard(
+export function mountBoardPage(
     root: HTMLElement | ShadowRoot,
     request: BoardRequest,
-    createShell: () => DocumentFragment,
+    options: { close?: () => void; install?: BoardInstall } = {},
 ) {
-    let container: HTMLElement;
-    let unmount: () => void;
+    const stylesElement = document.createElement("style");
+    stylesElement.textContent = styles;
+    const container = document.createElement("div");
+    container.style.display = "contents";
+    root.append(stylesElement, container);
 
     function mount(snapshot?: BoardSnapshot) {
-        const next = document.createElement("div");
-        next.style.display = "contents";
-        next.append(createShell());
-        if (container) {
-            const install = container.querySelector("#install-app");
-            if (install) next.querySelector("#install-app")?.replaceWith(install);
-            unmount();
-            container.replaceWith(next);
-        } else root.append(next);
-        container = next;
-        unmount = mountBoardPage(container, request, mount, snapshot).unmount;
+        render(
+            h(BoardPage, {
+                ...options,
+                key: snapshot?.accountScope ?? 0,
+                request,
+                replaceAccount: mount,
+                ...(snapshot ? { snapshot } : {}),
+            }),
+            container,
+        );
     }
 
     mount();
     return () => {
-        unmount();
+        render(null, container);
         container.remove();
+        stylesElement.remove();
     };
 }

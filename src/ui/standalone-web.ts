@@ -1,3 +1,4 @@
+import { setupPwa } from "./board-pwa";
 import type { BoardRequest } from "./board-start";
 import { startBoard } from "./standalone-page";
 
@@ -30,5 +31,4 @@ const transport: BoardRequest = async (path, body) => {
     return value;
 };
 
-startBoard(transport);
-void import("./board-pwa.js");
+startBoard(transport, setupPwa());

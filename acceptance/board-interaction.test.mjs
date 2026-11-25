@@ -230,6 +230,12 @@ async function fixture(scope) {
     const controls = pageControls(frame);
     try {
         const title = await until(controls.title, "installed MCP card is absent");
+        const shell = controls.find(".shell");
+        const style = frame.contentWindow.getComputedStyle(shell);
+        requireInBrowser(
+            style.display === "flex" && style.getPropertyValue("--bg"),
+            "offline board styles are absent",
+        );
         controls.drag(title, "dragstart");
         requireInBrowser(
             controls.transfer.getData("text/plain") === host.current().id,

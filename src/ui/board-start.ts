@@ -546,7 +546,7 @@ class BoardPage {
     };
 }
 
-export function mountBoardPage(
+export function startBoardPage(
     root: HTMLElement,
     transport: BoardRequest,
     replaceAccount: (snapshot: BoardSnapshot) => void,
