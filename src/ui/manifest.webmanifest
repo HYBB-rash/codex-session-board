@@ -1,15 +1,15 @@
 {
-  "id": "/",
-  "name": "Codex 会话看板",
-  "short_name": "会话看板",
-  "description": "通过 Enhancer 整理本机与远程 Codex 会话",
-  "lang": "zh-CN",
-  "start_url": "/",
-  "scope": "/",
-  "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#ffffff",
-  "icons": [
-    {"src": "/assets/board.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}
-  ]
+    "id": "/",
+    "name": "Codex 会话看板",
+    "short_name": "会话看板",
+    "description": "通过 Enhancer 整理本机与远程 Codex 会话",
+    "lang": "zh-CN",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#ffffff",
+    "icons": [
+        { "src": "/assets/board.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+    ]
 }

@@ -1,71 +1,81 @@
 import type { BoardSnapshot } from "./board-start";
 
 interface RefreshPorts {
-  request(path: "/api/sessions" | "/api/refresh", body?: object): Promise<unknown>;
-  locked(): boolean;
-  moving(): boolean;
-  currentScope(): string | undefined;
-  received(snapshot: BoardSnapshot, accountChanged: boolean): void;
-  render(): void;
-  renderHealth(): void;
-  announce(message: string): void;
+    request(path: "/api/sessions" | "/api/refresh", body?: object): Promise<unknown>;
+    locked(): boolean;
+    moving(): boolean;
+    currentScope(): string | undefined;
+    received(snapshot: BoardSnapshot, accountChanged: boolean): void;
+    render(): void;
+    renderHealth(): void;
+    announce(message: string): void;
 }
 
 export function mountBoardRefresh(button: HTMLButtonElement, ports: RefreshPorts, loaded = false) {
-  let generation = 0;
-  let error: string | null = null;
-  let reading: { generation: number; promise: Promise<void> } | undefined;
+    const refresh = new BoardRefresh(ports, loaded);
+    button.onclick = () => refresh.requestRefresh();
+    return refresh;
+}
 
-  const invalidate = () => ++generation;
+class BoardRefresh {
+    generation = 0;
+    error: string | null = null;
+    private reading: { generation: number; promise: Promise<void> } | undefined;
 
-  function reportError(cause: unknown) {
-    error = cause instanceof Error ? cause.message : String(cause);
-  }
+    constructor(
+        private readonly ports: RefreshPorts,
+        public loaded: boolean,
+    ) {}
 
-  async function read(requested: number) {
-    try {
-      const snapshot = await ports.request("/api/sessions") as BoardSnapshot;
-      if (requested !== generation) return;
-      const scope = ports.currentScope();
-      const accountChanged = scope !== undefined && snapshot.accountScope !== undefined &&
-        scope !== snapshot.accountScope;
-      if (ports.locked() && !accountChanged) return;
-      loaded = true;
-      error = null;
-      ports.received(snapshot, accountChanged);
-    } catch (cause) {
-      if (requested !== generation || ports.locked()) return;
-      reportError(cause);
-      ports.render();
+    invalidate() {
+        return ++this.generation;
     }
-  }
 
-  function load() {
-    if (reading?.generation === generation) return reading.promise;
-    const requested = invalidate();
-    const promise = read(requested).finally(() => {
-      if (reading?.generation === requested) reading = undefined;
-    });
-    reading = { generation: requested, promise };
-    return promise;
-  }
-
-  button.onclick = async () => {
-    try {
-      await ports.request("/api/refresh", {});
-      if (ports.moving()) ports.announce("已请求刷新；当前保存确认后会更新卡片位置。");
-      invalidate();
-      await load();
-    } catch (cause) {
-      reportError(cause);
-      ports.renderHealth();
+    private reportError(cause: unknown) {
+        this.error = cause instanceof Error ? cause.message : String(cause);
     }
-  };
 
-  return {
-    load, invalidate,
-    get generation() { return generation; },
-    get loaded() { return loaded; },
-    get error() { return error; },
-  };
+    private async read(requested: number) {
+        const { ports } = this;
+        try {
+            const snapshot = (await ports.request("/api/sessions")) as BoardSnapshot;
+            if (requested !== this.generation) return;
+            const scope = ports.currentScope();
+            const accountChanged =
+                scope !== undefined &&
+                snapshot.accountScope !== undefined &&
+                scope !== snapshot.accountScope;
+            if (ports.locked() && !accountChanged) return;
+            this.loaded = true;
+            this.error = null;
+            ports.received(snapshot, accountChanged);
+        } catch (cause) {
+            if (requested !== this.generation || ports.locked()) return;
+            this.reportError(cause);
+            ports.render();
+        }
+    }
+
+    load() {
+        if (this.reading?.generation === this.generation) return this.reading.promise;
+        const requested = this.invalidate();
+        const promise = this.read(requested).finally(() => {
+            if (this.reading?.generation === requested) this.reading = undefined;
+        });
+        this.reading = { generation: requested, promise };
+        return promise;
+    }
+
+    async requestRefresh() {
+        const { ports } = this;
+        try {
+            await ports.request("/api/refresh", {});
+            if (ports.moving()) ports.announce("已请求刷新；当前保存确认后会更新卡片位置。");
+            this.invalidate();
+            await this.load();
+        } catch (cause) {
+            this.reportError(cause);
+            ports.renderHealth();
+        }
+    }
 }

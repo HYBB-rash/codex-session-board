@@ -31,12 +31,15 @@ window.boardOpenLink = async (url) => {
 
 startBoard(async (path, body) => {
     await connection;
-    const operation = operations.find((item) => item.path === path && item.method === (body === undefined ? "GET" : "POST"));
+    const operation = operations.find(
+        (item) => item.path === path && item.method === (body === undefined ? "GET" : "POST"),
+    );
     if (!operation) throw new Error("未知看板操作");
     const result = await app.callServerTool({ name: operation.tool, arguments: { ...body } });
     const text = result.content?.find((item) => item.type === "text")?.text;
     if (result.isError) throw new Error(text || "看板操作失败");
-    if (operation.action === "PreviewReply" && result._meta?.["previewReply"]) return result._meta["previewReply"];
+    const { previewReply } = result._meta ?? {};
+    if (operation.action === "PreviewReply" && previewReply) return previewReply;
     if (result.structuredContent) return result.structuredContent;
     if (text) return JSON.parse(text);
     throw new Error("看板返回了空结果");

@@ -9,7 +9,7 @@ export default defineConfig({
             script: {
                 fs: {
                     fileExists: existsSync,
-                    readFile: (path) => existsSync(path) ? readFileSync(path, "utf8") : undefined,
+                    readFile: (path) => (existsSync(path) ? readFileSync(path, "utf8") : undefined),
                 },
             },
         }),

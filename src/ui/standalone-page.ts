@@ -1,5 +1,5 @@
-import shell from "./board-shell.html?raw";
 import { mountScopedBoard } from "./board-page";
+import shell from "./board-shell.html?raw";
 import type { BoardRequest } from "./board-start";
 
 export function startBoard(transport: BoardRequest): void {

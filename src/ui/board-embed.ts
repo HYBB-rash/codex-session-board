@@ -1,5 +1,5 @@
-import shell from "./board-shell.html?raw";
 import { mountScopedBoard } from "./board-page";
+import shell from "./board-shell.html?raw";
 import type { BoardRequest } from "./board-start";
 
 export function mountEnhancerBoard(panel: HTMLElement, request: BoardRequest, close: () => void) {
@@ -12,8 +12,11 @@ export function mountEnhancerBoard(panel: HTMLElement, request: BoardRequest, cl
         template.innerHTML = shell;
         const style = template.content.querySelector("style");
         if (style?.textContent) {
-            style.textContent = style.textContent.replace(":root{", ":host{").replace("html,body{height:100%}", "")
-                .replace("body{margin:0", ":host{display:block;height:100%;margin:0").replace(".shell{height:100dvh", ".shell{height:100%");
+            style.textContent = style.textContent
+                .replace(/:root\b/g, ":host")
+                .replace(/html\s*,\s*body\s*\{\s*height:\s*100%\s*;?\s*\}/, "")
+                .replace(/(^|\n)body\s*\{/g, "$1:host { display: block; height: 100%;")
+                .replace(/(\.shell\s*\{\s*height:\s*)100dvh/, (_, rule: string) => `${rule}100%`);
         }
         const back = document.createElement("button");
         back.type = "button";

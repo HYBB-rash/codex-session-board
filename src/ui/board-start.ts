@@ -1,239 +1,556 @@
-import { mountBoard, type BoardSession } from "./board-view";
 import { mountBoardArchive } from "./board-archive";
-import { mountBoardBrowse, type CatalogProject, type HostIdentity } from "./board-browse";
-import { createBoardHealthReports, type BoardHealth } from "./board-health-report";
-import { mountBoardHealth } from "./board-health";
-import { mountPluginUpdate } from "./board-plugin-update";
-import { mountBoardSshSetup } from "./board-ssh-setup";
-import { mountBoardSessionReader } from "./board-session-reader";
-import { mountMoveFeedback } from "./board-move-feedback";
+import { type CatalogProject, type HostIdentity, mountBoardBrowse } from "./board-browse";
 import { mountBoardEdits } from "./board-edits";
-import { mountBoardRefresh } from "./board-refresh";
-import { mountProjectAssignment } from "./board-project-assignment";
+import { mountBoardHealth } from "./board-health";
+import { type BoardHealth, createBoardHealthReports } from "./board-health-report";
+import { mountMoveFeedback } from "./board-move-feedback";
 import { mountBoardNewSession } from "./board-new-session";
 import { mountBoardNewTarget } from "./board-new-target";
+import { mountPluginUpdate } from "./board-plugin-update";
+import { mountProjectAssignment } from "./board-project-assignment";
+import { mountBoardRefresh } from "./board-refresh";
+import { mountBoardSessionReader } from "./board-session-reader";
 import { createColumnSortSave, type SortPreference } from "./board-sorting";
+import { mountBoardSshSetup } from "./board-ssh-setup";
+import { type BoardModel, type BoardSession, mountBoard } from "./board-view";
 
 export interface BoardSnapshot {
-  accountScope?: string;
-  states: Record<string, string>;
-  sessions: BoardSession[];
-  health: BoardHealth;
-  projectCatalog: {
-    loaded: boolean; items: CatalogProject[]; error?: string | null; remoteHosts?: HostIdentity[];
-    cached?: boolean; incomplete?: boolean; pending?: boolean;
-  };
-  legacyMode?: boolean;
-  fourColumns?: boolean;
-  pendingDrafts?: { project: string; requestId: string }[];
-  columnSorts?: Record<string, SortPreference>;
+    accountScope?: string;
+    states: Record<string, string>;
+    sessions: BoardSession[];
+    health: BoardHealth;
+    projectCatalog: {
+        loaded: boolean;
+        items: CatalogProject[];
+        error?: string | null;
+        remoteHosts?: HostIdentity[];
+        cached?: boolean;
+        incomplete?: boolean;
+        pending?: boolean;
+    };
+    legacyMode?: boolean;
+    fourColumns?: boolean;
+    pendingDrafts?: { project: string; requestId: string }[];
+    columnSorts?: Record<string, SortPreference>;
 }
 
 export type BoardRequest = (path: string, body?: object) => Promise<unknown>;
 
+function date(value?: number) {
+    return value
+        ? new Date(value * 1000).toLocaleString("zh-CN", {
+              month: "numeric",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+          })
+        : "尚未读取";
+}
+
+class BoardPage {
+    private readonly lifetime = new AbortController();
+    private data: BoardSnapshot = {
+        states: {},
+        sessions: [],
+        health: {},
+        projectCatalog: { loaded: false, items: [] },
+    };
+    private saving = false;
+    private creating = false;
+    private readonly browse: ReturnType<typeof mountBoardBrowse>;
+    private readonly reader: ReturnType<typeof mountBoardSessionReader>;
+    private readonly reports: ReturnType<typeof createBoardHealthReports>;
+    private readonly health: ReturnType<typeof mountBoardHealth>;
+    private readonly sshSetup: ReturnType<typeof mountBoardSshSetup>;
+    private readonly archive: ReturnType<typeof mountBoardArchive>;
+    private readonly edits: ReturnType<typeof mountBoardEdits>;
+    private readonly movePanel: ReturnType<typeof mountMoveFeedback>;
+    private readonly newSession: ReturnType<typeof mountBoardNewSession>;
+    private readonly newTarget: ReturnType<typeof mountBoardNewTarget>;
+    private readonly assignment: ReturnType<typeof mountProjectAssignment>;
+    private readonly board: ReturnType<typeof mountBoard>;
+    private readonly refresh: ReturnType<typeof mountBoardRefresh>;
+    private readonly stopPluginUpdate: () => void;
+    private readonly poll: number;
+
+    constructor(
+        private readonly root: HTMLElement,
+        private readonly transport: BoardRequest,
+        replaceAccount: (snapshot: BoardSnapshot) => void,
+        initial?: BoardSnapshot,
+    ) {
+        this.browse = this.mountBrowse();
+        this.reader = this.mountReader();
+        this.reports = this.createReports();
+        this.health = this.mountHealth();
+        this.sshSetup = this.mountSshSetup();
+        this.archive = this.mountArchive();
+        this.edits = this.mountEdits();
+        this.movePanel = this.mountMovePanel();
+        this.newSession = this.mountNewSession();
+        this.newTarget = this.mountNewTarget();
+        this.assignment = this.mountAssignment();
+        this.board = this.mountColumns();
+        this.stopPluginUpdate = mountPluginUpdate(
+            this.byId("plugin-update"),
+            this.byId("plugin-update-status"),
+            this.request,
+        );
+        this.refresh = this.mountRefresh(replaceAccount, initial !== undefined);
+        this.browse.filters.update(this.data);
+        this.poll = window.setInterval(this.load, 4000);
+        if (initial) {
+            this.applySnapshot(initial);
+            void this.archive.restore();
+        } else {
+            void this.load().then(() =>
+                this.lifetime.signal.aborted ? undefined : this.archive.restore(),
+            );
+        }
+    }
+
+    private byId<Element extends HTMLElement>(id: string): Element {
+        const element = this.root.querySelector(`#${id}`);
+        if (!element) throw new Error(`缺少看板元素 ${id}`);
+        return element as Element;
+    }
+
+    private readonly snapshot = () => this.data;
+    private readonly savingNow = () => this.saving;
+    private readonly creatingNow = () => this.creating;
+    private readonly setSaving = (value: boolean) => {
+        this.saving = value;
+    };
+    private readonly busy = () => this.saving || this.creating;
+    private readonly editorOpen = () => this.byId<HTMLDialogElement>("editor").open;
+    private readonly dragActive = () => Boolean(this.board.drag.source);
+    private readonly movingId = () => this.movePanel.moving?.id;
+    private readonly invalidateSnapshot = () => {
+        this.refresh.invalidate();
+    };
+    private readonly request: BoardRequest = async (path, body) => {
+        this.lifetime.signal.throwIfAborted();
+        if (body !== undefined) this.updateFilterLock();
+        const result = await this.transport(path, body);
+        this.lifetime.signal.throwIfAborted();
+        return result;
+    };
+
+    private mountBrowse() {
+        return mountBoardBrowse(this.byId("board-filters"), this.byId("filter-scope"), {
+            snapshot: this.snapshot,
+            locked: this.filtersLocked,
+            changed: this.render,
+            announce: this.announce,
+        });
+    }
+
+    private mountReader() {
+        return mountBoardSessionReader(this.byId("reply-preview"), {
+            sessions: () => this.data.sessions,
+            request: this.request,
+            announce: this.announce,
+            dragSuppressesClick: () => this.board.drag.suppressesClick,
+            savingWithoutMove: () => this.saving && !this.movePanel.moving,
+            creating: this.creatingNow,
+            movingId: this.movingId,
+        });
+    }
+
+    private createReports() {
+        const { filters, hostOptions, hostSessions, hostProjects, hostName } = this.browse;
+        return createBoardHealthReports({
+            snapshot: this.snapshot,
+            selectedHost: () => filters.state.host,
+            selectedHostLabel: () => filters.view.hostLabel,
+            hostOptions,
+            hostSessions,
+            hostProjects,
+            hostName,
+            date,
+            readError: () => this.refresh.error,
+        });
+    }
+
+    private mountHealth() {
+        return mountBoardHealth(
+            {
+                banner: this.byId("health"),
+                summary: this.byId("health-summary"),
+                more: this.byId("health-more"),
+                detail: this.byId("health-details"),
+                list: this.byId("health-detail-list"),
+                close: this.byId("health-close"),
+                recheck: this.byId("health-recheck"),
+                detailHelp: this.byId("health-help"),
+                connectionHelp: this.byId("connection-help"),
+                recovery: this.byId("connection-recovery"),
+                recoveryClose: this.byId("connection-close"),
+                recoveryRecheck: this.byId("connection-recheck"),
+            },
+            {
+                reports: this.reports.healthReports,
+                selectedHost: () => this.browse.filters.state.host,
+                readState: () => this.refresh,
+                date,
+                request: this.request,
+                load: this.load,
+                announce: this.announce,
+            },
+        );
+    }
+
+    private mountSshSetup() {
+        return mountBoardSshSetup(this.byId("ssh-settings"), this.byId("ssh-setup"), {
+            request: this.request,
+            locked: this.filtersLocked,
+            available: () =>
+                this.data.health.nativeConnections === true ||
+                this.data.health.sshAliasSetup === true,
+            native: () => this.data.health.nativeConnections === true,
+            updateFilterLock: this.updateFilterLock,
+            announce: this.announce,
+            load: this.load,
+        });
+    }
+
+    private mountArchive() {
+        return mountBoardArchive(this.byId("archive-results"), this.byId("archive-status"), {
+            snapshot: this.snapshot,
+            request: this.request,
+            open: this.reader.openSession,
+            date,
+            announce: this.announce,
+            render: this.render,
+            load: this.load,
+            busy: this.busy,
+            movingId: this.movingId,
+            dragActive: this.dragActive,
+            editorOpen: this.editorOpen,
+            setSaving: this.setSaving,
+            invalidateSnapshot: this.invalidateSnapshot,
+            persist: (session, state, note) => this.edits.persist(session, state, note),
+        });
+    }
+
+    private mountEdits() {
+        return mountBoardEdits(this.byId("card-editor"), () => this.byId("host-filter"), {
+            snapshot: this.snapshot,
+            invalidateSnapshot: this.invalidateSnapshot,
+            request: this.request,
+            movePanel: () => this.movePanel,
+            setSaving: this.setSaving,
+            busy: this.busy,
+            canAdjust: (session) => this.archive.cardActions(session).canAdjust,
+            announce: this.announce,
+            render: this.render,
+            load: this.load,
+        });
+    }
+
+    private mountMovePanel() {
+        return mountMoveFeedback(
+            {
+                editor: this.byId("editor"),
+                form: this.byId("edit-form"),
+                slot: this.byId("move-slot"),
+                panel: this.byId("move-feedback"),
+                heading: this.byId("move-heading"),
+                detail: this.byId("move-detail"),
+                dismiss: this.byId("move-dismiss"),
+                image: this.byId("move-dragon"),
+            },
+            {
+                states: () => this.data.states,
+                announce: this.announce,
+                render: this.render,
+                signal: this.lifetime.signal,
+            },
+        );
+    }
+
+    private mountNewSession() {
+        return mountBoardNewSession(
+            {
+                button: this.byId("new-session"),
+                consentDialog: this.byId("native-consent"),
+                consentForm: this.byId("native-consent-form"),
+                consentTarget: this.byId("native-consent-target"),
+                consentChanges: this.byId("native-consent-changes"),
+                consentCancel: this.byId("native-consent-cancel"),
+                recoveryDialog: this.byId("draft-recovery"),
+                recoveryMessage: this.byId("draft-message"),
+                recoveryLater: this.byId("draft-later"),
+                recoveryRetry: this.byId("draft-retry"),
+                recoveryRestart: this.byId("draft-restart"),
+            },
+            {
+                snapshot: this.snapshot,
+                request: this.request,
+                announce: this.announce,
+                render: this.render,
+                load: this.load,
+                updateFilterLock: this.updateFilterLock,
+                invalidateSnapshot: this.invalidateSnapshot,
+                saving: this.savingNow,
+                creating: this.creatingNow,
+                setCreating: (value) => {
+                    this.creating = value;
+                },
+                dragActive: this.dragActive,
+                editorOpen: this.editorOpen,
+            },
+        );
+    }
+
+    private mountNewTarget() {
+        const { filters, hostOptions, hostProjects, hostName, projectLabel } = this.browse;
+        return mountBoardNewTarget(
+            {
+                button: this.byId("new-session"),
+                dialog: this.byId("new-target"),
+                form: this.byId("new-target-form"),
+                host: this.byId("new-host"),
+                project: this.byId("new-project"),
+                submit: this.byId("new-target-open"),
+                hint: this.byId("new-target-hint"),
+                cancel: this.byId("new-target-cancel"),
+            },
+            {
+                snapshot: this.snapshot,
+                scope: () => filters.state,
+                hostOptions,
+                hostProjects,
+                hostName,
+                projectLabel,
+                locked: this.filtersLocked,
+                saving: this.savingNow,
+                creating: this.creatingNow,
+                canCreateProject: this.newSession.canCreateProject,
+                create: this.newSession.create,
+                updateFilterLock: this.updateFilterLock,
+                announce: this.announce,
+                load: this.load,
+            },
+        );
+    }
+
+    private mountAssignment() {
+        return mountProjectAssignment(
+            {
+                dialog: this.byId("project-assignment"),
+                form: this.byId("assignment-form"),
+                thread: this.byId("assignment-thread"),
+                project: this.byId("assignment-project"),
+                error: this.byId("assignment-error"),
+                cancel: this.byId("assignment-cancel"),
+                save: this.byId("assignment-save"),
+            },
+            {
+                projects: () => this.data.projectCatalog.items,
+                projectLabel: this.browse.projectLabel,
+                locked: this.filtersLocked,
+                saving: this.savingNow,
+                creating: this.creatingNow,
+                setSaving: this.setSaving,
+                updateFilterLock: this.updateFilterLock,
+                invalidateSnapshot: this.invalidateSnapshot,
+                request: this.request,
+                announce: this.announce,
+                load: this.load,
+            },
+        );
+    }
+
+    private mountColumns() {
+        const saveSort = createColumnSortSave({
+            canChange: this.canChangeColumnSort,
+            snapshot: this.snapshot,
+            invalidateSnapshot: this.invalidateSnapshot,
+            setSaving: this.setSaving,
+            request: this.request,
+            announce: this.announce,
+            render: this.render,
+            load: this.load,
+        });
+        return mountBoard(
+            {
+                viewport: this.byId("board-viewport"),
+                unplaced: this.byId("unplaced"),
+                jump: this.byId("jump"),
+                filters: this.byId("board-filters"),
+            },
+            {
+                date,
+                project: this.browse.projectPresentation,
+                actions: this.archive.cardActions,
+                canSort: this.canChangeColumnSort,
+                saveSort,
+                canAssign: this.assignment.canAssign,
+                preview: this.reader.openReply,
+                edit: this.edits.open,
+                assign: this.assignment.open,
+                archive: this.archive.submitCard,
+                archiveAll: this.archive.submit,
+                editorOpen: this.editorOpen,
+                announce: this.announce,
+                move: this.edits.move,
+                refresh: this.render,
+            },
+        );
+    }
+
+    private readonly announce = (message: string, error = false) => {
+        if (this.lifetime.signal.aborted) return;
+        const feedback = this.byId("feedback");
+        feedback.textContent = message;
+        feedback.className = error ? "feedback error" : "feedback";
+    };
+
+    private readonly canChangeColumnSort = () =>
+        !this.busy() && !this.dragActive() && !this.editorOpen();
+
+    private readonly filtersLocked = () =>
+        Boolean(
+            this.dragActive() ||
+                (this.saving && !this.movePanel.moving) ||
+                this.creating ||
+                this.editorOpen() ||
+                this.newTarget.openDialog ||
+                this.newSession.openDialog ||
+                this.assignment.openDialog ||
+                this.sshSetup.openDialog,
+        );
+
+    private readonly updateFilterLock = () => {
+        if (!this.lifetime.signal.aborted) this.browse.filters.updateLock();
+    };
+
+    private columns(visible: BoardSession[]): BoardModel["columns"] {
+        const selectedHost = this.browse.filters.state.host;
+        const unread =
+            !this.browse.hostSessions().length &&
+            this.reports
+                .healthReports()
+                .some(
+                    (host) =>
+                        (selectedHost === "all" || host.key === selectedHost) && !host.lastRead,
+                );
+        return Object.entries(this.data.states).map(([state, label]) => {
+            const { sessions, preference } = this.board.sortColumn(
+                state,
+                visible.filter((session) => session.state === state),
+                this.data.columnSorts,
+            );
+            return {
+                state,
+                label,
+                unread,
+                sessions,
+                preference,
+                archiveCount: this.archive.count(sessions),
+            };
+        });
+    }
+
+    private boardModel(): BoardModel {
+        const moving = this.movePanel.moving;
+        const visible = this.browse
+            .visibleSessions()
+            .map((session) =>
+                moving?.id === session.id ? { ...session, state: moving.state } : session,
+            );
+        const unplaced = this.data.fourColumns
+            ? this.board.sortColumn(
+                  null,
+                  visible.filter((session) => session.state === null),
+              ).sessions
+            : [];
+        const preview = this.reader.preview;
+        return {
+            states: this.data.states,
+            columns: this.columns(visible),
+            unplaced,
+            scope: this.browse.filters.view.scope,
+            legacyMode: this.data.legacyMode === true,
+            saving: this.saving,
+            creating: this.creating,
+            get selectedId() {
+                return preview.selectedId;
+            },
+            moving: visible.some((session) => session.id === moving?.id) ? moving : null,
+            unconfirmed: [...this.edits.unconfirmed.keys()],
+            archivePending: [...this.archive.pending],
+        };
+    }
+
+    private readonly render = (resetState: string | null = null) => {
+        if (this.lifetime.signal.aborted || this.dragActive() || this.editorOpen()) return;
+        this.browse.filters.update(this.data);
+        this.newTarget.update();
+        this.board.update(this.boardModel(), resetState);
+        if (this.data.legacyMode)
+            this.byId("foot").textContent =
+                "拖动卡片修改状态，备注随会话保存。“待归档”和“已完成”均为人工状态。新建会话仅打开输入页。";
+        this.archive.updateStatus();
+        this.health.render();
+    };
+
+    private readonly load = (): Promise<void> =>
+        this.lifetime.signal.aborted ? Promise.resolve() : this.refresh.load();
+
+    private applySnapshot(next: BoardSnapshot) {
+        this.data = next;
+        this.archive.updateBoard(next);
+        this.sshSetup.update();
+        this.reader.preview.update(next.sessions, false);
+        this.edits.reconcile(next.sessions);
+        this.newSession.update(next);
+        this.render();
+    }
+
+    private mountRefresh(replaceAccount: (snapshot: BoardSnapshot) => void, loaded: boolean) {
+        return mountBoardRefresh(
+            this.byId("refresh"),
+            {
+                request: this.request,
+                locked: () => this.saving || this.filtersLocked(),
+                moving: () => Boolean(this.movePanel.moving),
+                announce: this.announce,
+                render: this.render,
+                renderHealth: () => {
+                    if (!this.lifetime.signal.aborted) this.health.render();
+                },
+                currentScope: () => this.data.accountScope,
+                received: (next, accountChanged) => {
+                    if (this.lifetime.signal.aborted) return;
+                    if (accountChanged) replaceAccount(next);
+                    else this.applySnapshot(next);
+                },
+            },
+            loaded,
+        );
+    }
+
+    readonly unmount = () => {
+        this.lifetime.abort();
+        this.refresh.invalidate();
+        window.clearInterval(this.poll);
+        this.board.drag.cancel();
+        this.stopPluginUpdate();
+        this.reader.preview.unmount();
+        this.archive.unmount();
+        this.edits.unmount();
+        this.board.unmount();
+        this.browse.filters.unmount();
+    };
+}
+
 export function mountBoardPage(
-  root: HTMLElement,
-  transport: BoardRequest,
-  replaceAccount: (snapshot: BoardSnapshot) => void,
-  initial?: BoardSnapshot,
+    root: HTMLElement,
+    transport: BoardRequest,
+    replaceAccount: (snapshot: BoardSnapshot) => void,
+    initial?: BoardSnapshot,
 ) {
-function byId<Element extends HTMLElement>(id: string): Element {
-  const element = root.querySelector(`#${id}`);
-  if (!element) throw new Error(`缺少看板元素 ${id}`);
-  return element as Element;
-}
-
-const lifetime = new AbortController();
-let data: BoardSnapshot = { states: {}, sessions: [], health: {}, projectCatalog: { loaded: false, items: [] } };
-let saving = false;
-let creating = false;
-const snapshot = () => data;
-const savingNow = () => saving;
-const creatingNow = () => creating;
-const setSaving = (value: boolean) => { saving = value; };
-const busy = () => saving || creating;
-const editorOpen = () => byId<HTMLDialogElement>("editor").open;
-const dragActive = (): boolean => Boolean(board.drag.source);
-const movingId = (): string | undefined => movePanel.moving?.id;
-const invalidateSnapshot = (): void => { refresh.invalidate(); };
-const request: BoardRequest = async (path, body) => {
-  lifetime.signal.throwIfAborted();
-  if (body !== undefined) updateFilterLock();
-  const result = await transport(path, body);
-  lifetime.signal.throwIfAborted();
-  return result;
-};
-const { filters, hostOptions, hostProjects, hostSessions, hostName, projectLabel, projectPresentation, visibleSessions } =
-  mountBoardBrowse(byId("board-filters"), byId("filter-scope"), { snapshot, locked: filtersLocked, changed: render, announce });
-const sessionReader = mountBoardSessionReader(byId("reply-preview"), {
-  sessions: () => data.sessions, request, announce, dragSuppressesClick: (): boolean => board.drag.suppressesClick,
-  savingWithoutMove: (): boolean => saving && !movePanel.moving, creating: creatingNow, movingId,
-});
-const { preview: replyPreview, openReply, openSession } = sessionReader;
-const date = (value?: number) => value ? new Date(value * 1000).toLocaleString("zh-CN",
-  { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "尚未读取";
-const { hostHealth, healthReports } = createBoardHealthReports({
-  snapshot, selectedHost: () => filters.state.host, selectedHostLabel: () => filters.view.hostLabel,
-  hostOptions, hostSessions, hostProjects, hostName, date, readError: (): string | null => refresh.error,
-});
-const connectionHealth = mountBoardHealth({
-  banner: byId("health"), summary: byId("health-summary"), more: byId("health-more"),
-  detail: byId("health-details"), list: byId("health-detail-list"), close: byId("health-close"),
-  recheck: byId("health-recheck"), detailHelp: byId("health-help"), connectionHelp: byId("connection-help"),
-  recovery: byId("connection-recovery"), recoveryClose: byId("connection-close"), recoveryRecheck: byId("connection-recheck"),
-}, {
-  reports: healthReports, selectedHost: () => filters.state.host, readState: (): ReturnType<typeof mountBoardRefresh> => refresh,
-  date, request, load, announce,
-});
-const sshSetup = mountBoardSshSetup(byId("ssh-settings"), byId("ssh-setup"), {
-  request, locked: filtersLocked, available: () => data.health.nativeConnections === true || data.health.sshAliasSetup === true,
-  native: () => data.health.nativeConnections === true, updateFilterLock, announce, load,
-});
-const archive = mountBoardArchive(byId("archive-results"), byId("archive-status"), {
-  snapshot, request, open: openSession, date, announce, render, load, busy, movingId, dragActive, editorOpen, setSaving,
-  invalidateSnapshot, persist: (session, state, note): Promise<unknown> => edits.persist(session, state, note),
-});
-const edits = mountBoardEdits(byId("card-editor"), () => byId("host-filter"), {
-  snapshot, invalidateSnapshot, request, movePanel: (): ReturnType<typeof mountMoveFeedback> => movePanel, setSaving, busy,
-  canAdjust: (session): boolean => archive.cardActions(session).canAdjust, announce, render, load,
-});
-const { open: openEditor, move: moveCard, unconfirmed: unconfirmedMoves } = edits;
-const movePanel = mountMoveFeedback({
-  editor: byId("editor"), form: byId("edit-form"), slot: byId("move-slot"), panel: byId("move-feedback"),
-  heading: byId("move-heading"), detail: byId("move-detail"), dismiss: byId("move-dismiss"), image: byId("move-dragon"),
-}, { states: () => data.states, announce, render, signal: lifetime.signal });
-const saveColumnSort = createColumnSortSave({
-  canChange: canChangeColumnSort, snapshot, invalidateSnapshot, setSaving, request, announce, render, load,
-});
-const newSession = mountBoardNewSession({
-  button: byId("new-session"), consentDialog: byId("native-consent"), consentForm: byId("native-consent-form"),
-  consentTarget: byId("native-consent-target"), consentChanges: byId("native-consent-changes"), consentCancel: byId("native-consent-cancel"),
-  recoveryDialog: byId("draft-recovery"), recoveryMessage: byId("draft-message"), recoveryLater: byId("draft-later"),
-  recoveryRetry: byId("draft-retry"), recoveryRestart: byId("draft-restart"),
-}, {
-  snapshot, request, announce, render, load, updateFilterLock, invalidateSnapshot, saving: savingNow, creating: creatingNow,
-  setCreating: value => { creating = value; }, dragActive, editorOpen,
-});
-const { create: createSession, canCreateProject } = newSession;
-const newTarget = mountBoardNewTarget({
-  button: byId("new-session"), dialog: byId("new-target"), form: byId("new-target-form"), host: byId("new-host"),
-  project: byId("new-project"), submit: byId("new-target-open"), hint: byId("new-target-hint"), cancel: byId("new-target-cancel"),
-}, {
-  snapshot, scope: () => filters.state, hostOptions, hostProjects, hostName, projectLabel, locked: filtersLocked,
-  saving: savingNow, creating: creatingNow, canCreateProject, create: createSession, updateFilterLock, announce, load,
-});
-const assignment = mountProjectAssignment({
-  dialog: byId("project-assignment"), form: byId("assignment-form"), thread: byId("assignment-thread"),
-  project: byId("assignment-project"), error: byId("assignment-error"), cancel: byId("assignment-cancel"), save: byId("assignment-save"),
-}, {
-  projects: () => data.projectCatalog.items, projectLabel, locked: filtersLocked, saving: savingNow, creating: creatingNow,
-  setSaving, updateFilterLock, invalidateSnapshot, request, announce, load,
-});
-const board = mountBoard({
-  viewport: byId("board-viewport"), unplaced: byId("unplaced"), jump: byId("jump"), filters: byId("board-filters"),
-}, {
-  date, project: projectPresentation, actions: archive.cardActions, canSort: canChangeColumnSort, saveSort: saveColumnSort,
-  canAssign: assignment.canAssign, preview: openReply, edit: openEditor, assign: assignment.open,
-  archive: archive.submitCard, archiveAll: archive.submit, editorOpen, announce, move: moveCard, refresh: render,
-});
-
-function announce(message: string, error = false) {
-  if (lifetime.signal.aborted) return;
-  const feedback = byId("feedback");
-  feedback.textContent = message;
-  feedback.className = error ? "feedback error" : "feedback";
-}
-
-function canChangeColumnSort() {
-  return !busy() && !dragActive() && !editorOpen();
-}
-
-function filtersLocked() {
-  return Boolean(dragActive() || saving && !movePanel.moving || creating || editorOpen() ||
-    newTarget.openDialog || newSession.openDialog || assignment.openDialog || sshSetup.openDialog);
-}
-
-function updateFilterLock() {
-  if (!lifetime.signal.aborted) filters.updateLock();
-}
-
-function render(resetState: string | null = null) {
-  if (lifetime.signal.aborted || dragActive() || editorOpen()) return;
-  filters.update(data);
-  newTarget.update();
-  const moving = movePanel.moving;
-  const visible = visibleSessions().map(session => moving?.id === session.id ? { ...session, state: moving.state } : session);
-  const unplaced = data.fourColumns ? board.sortColumn(null, visible.filter(session => session.state === null)).sessions : [];
-  const visibleMove = visible.some(session => session.id === moving?.id) ? moving : null;
-  const selectedHost = filters.state.host;
-  const unread = !hostSessions().length && healthReports().some(host => (selectedHost === "all" || host.key === selectedHost) && !host.lastRead);
-  const columns = Object.entries(data.states).map(([state, label]) => {
-    const { sessions, preference } = board.sortColumn(state, visible.filter(session => session.state === state), data.columnSorts);
-    return { state, label, unread, sessions, preference, archiveCount: archive.count(sessions) };
-  });
-  board.update({
-    states: data.states, columns, unplaced, scope: filters.view.scope, legacyMode: data.legacyMode === true, saving, creating,
-    get selectedId() { return replyPreview.selectedId; },
-    moving: visibleMove, unconfirmed: [...unconfirmedMoves.keys()], archivePending: [...archive.pending],
-  }, resetState);
-  if (data.legacyMode) byId("foot").textContent =
-    "拖动卡片修改状态，备注随会话保存。“待归档”和“已完成”均为人工状态。新建会话仅打开输入页。";
-  archive.updateStatus();
-  connectionHealth.render();
-}
-
-function load(): Promise<void> {
-  return lifetime.signal.aborted ? Promise.resolve() : refresh.load();
-}
-
-function applySnapshot(next: BoardSnapshot) {
-  data = next;
-  archive.updateBoard(data);
-  sshSetup.update();
-  replyPreview.update(data.sessions, false);
-  edits.reconcile(data.sessions);
-  newSession.update(data);
-  render();
-}
-
-const stopPluginUpdate = mountPluginUpdate(byId("plugin-update"), byId("plugin-update-status"), request);
-const refresh = mountBoardRefresh(byId("refresh"), {
-  request, locked: () => saving || filtersLocked(), moving: () => Boolean(movePanel.moving), announce, render,
-  renderHealth: () => { if (!lifetime.signal.aborted) connectionHealth.render(); },
-  currentScope: () => data.accountScope,
-  received(next, accountChanged) {
-    if (lifetime.signal.aborted) return;
-    if (accountChanged) replaceAccount(next);
-    else applySnapshot(next);
-  },
-}, initial !== undefined);
-
-const boardPage = {
-  request, load, refresh, filtersLocked, render, archive, openEditor, openSession, movePanel, moveCard, unconfirmedMoves,
-  visibleSessions, createSession, canCreateProject, projectLabel, hostHealth, hostOptions, connectionHealth, sessionReader, sshSetup,
-  board, newSession,
-  get data() { return data; }, set data(value: BoardSnapshot) { data = value; },
-  get saving() { return saving; }, set saving(value: boolean) { saving = value; },
-  get creating() { return creating; }, set creating(value: boolean) { creating = value; },
-  unmount() {
-    lifetime.abort();
-    refresh.invalidate();
-    window.clearInterval(poll);
-    board.drag.cancel();
-    stopPluginUpdate();
-    sessionReader.preview.unmount();
-    archive.unmount();
-    edits.unmount();
-    board.unmount();
-    filters.unmount();
-  },
-};
-
-filters.update(data);
-const poll = window.setInterval(load, 4000);
-if (initial) {
-  applySnapshot(initial);
-  void archive.restore();
-} else void load().then(() => lifetime.signal.aborted ? undefined : archive.restore());
-return boardPage;
+    return new BoardPage(root, transport, replaceAccount, initial);
 }

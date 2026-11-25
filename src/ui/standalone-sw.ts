@@ -14,13 +14,26 @@ self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim(
 self.addEventListener("fetch", (event) => {
     const request = event.request;
     const url = new URL(request.url);
-    if (request.method !== "GET" || request.mode !== "navigate" ||
-        url.origin !== self.location.origin || url.pathname !== "/") return;
-    event.respondWith(fetch(request, { cache: "no-store" }).catch(() => new Response(unavailable, {
-        status: 503,
-        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store",
-            "X-Content-Type-Options": "nosniff" },
-    })));
+    if (
+        request.method !== "GET" ||
+        request.mode !== "navigate" ||
+        url.origin !== self.location.origin ||
+        url.pathname !== "/"
+    )
+        return;
+    event.respondWith(
+        fetch(request, { cache: "no-store" }).catch(
+            () =>
+                new Response(unavailable, {
+                    status: 503,
+                    headers: {
+                        "Content-Type": "text/html; charset=utf-8",
+                        "Cache-Control": "no-store",
+                        "X-Content-Type-Options": "nosniff",
+                    },
+                }),
+        ),
+    );
 });
 
 export {};

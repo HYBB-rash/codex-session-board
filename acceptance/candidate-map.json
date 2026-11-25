@@ -1,7 +1,7 @@
 {
     "schema_version": 1,
     "upstream_commit": "2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc",
-    "operation_registry_sha256": "81a8af67ddb0988cf9e079bfaad7632a9aa0fc440184983e895251ada4a8dea4",
+    "operation_registry_sha256": "3329a6230a316a13f0d819e71a59e5e54845434a66d1fa368fdea5d9980d0671",
     "evidence": {
         "native-move": {
             "file": "docs/session-board-native-checkpoint.md",

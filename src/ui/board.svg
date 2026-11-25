@@ -1,21 +1,44 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <title>会话看板</title>
-  <defs>
-    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
-      <stop stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#f9fbff"/>
-    </linearGradient>
-    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
-      <stop stop-color="#4299ff"/>
-      <stop offset="1" stop-color="#2d85f4"/>
-    </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy=".6" stdDeviation=".55" flood-color="#4488c4" flood-opacity=".13"/>
-    </filter>
-  </defs>
-  <g fill="url(#paper)" stroke="url(#edge)" stroke-width="2" stroke-linejoin="round" filter="url(#shadow)">
-    <path d="M14.5 15.5H17.5Q20.5 15.5 20.5 18.5V44Q20.5 47 17.5 47H12.5L8.7 49.9Q7.5 50.8 7.5 49.3V45.2C4.5 43.4 3 40.3 3 36V27C3 20.6 8.1 15.5 14.5 15.5Z"/>
-    <rect x="25" y="15.5" width="14" height="31.5" rx="3"/>
-    <path d="M46.5 15.5H49.5C56 15.5 61 20.7 61 27V35.5C61 42 56 47 49.5 47H46.5Q43.5 47 43.5 44V18.5Q43.5 15.5 46.5 15.5Z"/>
-  </g>
+    <title>会话看板</title>
+    <defs>
+        <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+            <stop stop-color="#ffffff" />
+            <stop offset="1" stop-color="#f9fbff" />
+        </linearGradient>
+        <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+            <stop stop-color="#4299ff" />
+            <stop offset="1" stop-color="#2d85f4" />
+        </linearGradient>
+        <filter
+            id="shadow"
+            x="-20%"
+            y="-20%"
+            width="140%"
+            height="150%"
+            color-interpolation-filters="sRGB"
+        >
+            <feDropShadow
+                dx="0"
+                dy=".6"
+                stdDeviation=".55"
+                flood-color="#4488c4"
+                flood-opacity=".13"
+            />
+        </filter>
+    </defs>
+    <g
+        fill="url(#paper)"
+        stroke="url(#edge)"
+        stroke-width="2"
+        stroke-linejoin="round"
+        filter="url(#shadow)"
+    >
+        <path
+            d="M14.5 15.5H17.5Q20.5 15.5 20.5 18.5V44Q20.5 47 17.5 47H12.5L8.7 49.9Q7.5 50.8 7.5 49.3V45.2C4.5 43.4 3 40.3 3 36V27C3 20.6 8.1 15.5 14.5 15.5Z"
+        />
+        <rect x="25" y="15.5" width="14" height="31.5" rx="3" />
+        <path
+            d="M46.5 15.5H49.5C56 15.5 61 20.7 61 27V35.5C61 42 56 47 49.5 47H46.5Q43.5 47 43.5 44V18.5Q43.5 15.5 46.5 15.5Z"
+        />
+    </g>
 </svg>

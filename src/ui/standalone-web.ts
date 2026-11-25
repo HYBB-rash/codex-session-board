@@ -10,13 +10,21 @@ async function requestToken(): Promise<string> {
 }
 
 const transport: BoardRequest = async (path, body) => {
-    const response = await fetch(path, body === undefined ? { cache: "no-store", redirect: "error" } : {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRF-Token": await requestToken() },
-        body: JSON.stringify(body),
-        cache: "no-store",
-        redirect: "error",
-    });
+    const response = await fetch(
+        path,
+        body === undefined
+            ? { cache: "no-store", redirect: "error" }
+            : {
+                  method: "POST",
+                  headers: {
+                      "Content-Type": "application/json",
+                      "X-CSRF-Token": await requestToken(),
+                  },
+                  body: JSON.stringify(body),
+                  cache: "no-store",
+                  redirect: "error",
+              },
+    );
     const value = await response.json();
     if (!response.ok) throw new Error(value.error || "本地看板操作失败");
     return value;

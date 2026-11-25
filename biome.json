@@ -12,7 +12,6 @@
             "!package-lock.json",
             "!!**/dist",
             "!!**/node_modules",
-            "!!src/ui",
             "!acceptance/contract.lock.json",
             "!acceptance/requirements.json",
             "!!**/state",
@@ -29,6 +28,12 @@
         "formatter": {
             "quoteStyle": "double",
             "semicolons": "always"
+        }
+    },
+    "html": {
+        "experimentalFullSupportEnabled": true,
+        "formatter": {
+            "enabled": true
         }
     },
     "linter": {
