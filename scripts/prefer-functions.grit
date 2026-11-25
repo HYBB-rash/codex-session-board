@@ -7,14 +7,6 @@ or {
     JsClassDeclaration(id=$name) as $class where {
         not or {
             and {
-                $filename <: r"(?:^|.*[/\\])acceptance[/\\]public-operations\.test\.mjs$",
-                $name <: r"^PublicBoardFixture$"
-            },
-            and {
-                $filename <: r"(?:^|.*[/\\])acceptance[/\\]typescript-fixture\.mjs$",
-                $name <: r"^BoardFixture$"
-            },
-            and {
                 $filename <: r"(?:^|.*[/\\])src[/\\]compat[/\\]mcp\.ts$",
                 $name <: r"^RpcError$"
             },

@@ -10,7 +10,7 @@ import { connectBoard } from "../dist/compat/client.js";
 import { createMcpHandler } from "../dist/compat/mcp.js";
 import { startBoardServer } from "../dist/compat/server.js";
 import { labels } from "../dist/extensions/placement.js";
-import { BoardFixture } from "./typescript-fixture.mjs";
+import { createBoardFixture } from "./typescript-fixture.mjs";
 
 const require = createRequire(import.meta.url);
 globalThis.window = { setTimeout, clearTimeout };
@@ -21,61 +21,75 @@ function isolated(context) {
     return directory;
 }
 
-class PublicBoardFixture extends BoardFixture {
-    commands = [];
-    nativeMethods = [];
-    newInput = false;
-    incomplete = false;
-    laterTurn = false;
-    rejectMove = false;
+function fixtureTurn({ laterTurn, incomplete }) {
+    return {
+        id: laterTurn ? "round-two" : "round-one",
+        status: laterTurn ? "completed" : "inProgress",
+        itemsView: incomplete ? "notLoaded" : "summary",
+        startedAt: laterTurn ? Date.now() / 1000 + 1 : 1001,
+        items: incomplete
+            ? []
+            : [
+                  { id: "input-one", type: "userMessage" },
+                  { id: "input-two", type: "userMessage" },
+              ],
+    };
+}
 
-    transport(packet, desktop) {
+function createPublicBoardFixture(directory, states) {
+    const controls = {
+        commands: [],
+        nativeMethods: [],
+        newInput: false,
+        incomplete: false,
+        laterTurn: false,
+        rejectMove: false,
+    };
+
+    function transport(packet, desktop, forward) {
         const { hostId, request } = packet;
-        this.nativeMethods.push(request.method);
-        if ((this.newInput || this.incomplete) && request.method === "thread/turns/list") {
+        controls.nativeMethods.push(request.method);
+        if ((controls.newInput || controls.incomplete) && request.method === "thread/turns/list") {
             return desktop.receive({
                 type: "mcp-response",
                 hostId,
                 message: {
                     id: request.id,
-                    result: {
-                        data: [
-                            {
-                                id: this.laterTurn ? "round-two" : "round-one",
-                                status: this.laterTurn ? "completed" : "inProgress",
-                                itemsView: this.incomplete ? "notLoaded" : "summary",
-                                startedAt: this.laterTurn ? Date.now() / 1000 + 1 : 1001,
-                                items: this.incomplete
-                                    ? []
-                                    : [
-                                          { id: "input-one", type: "userMessage" },
-                                          { id: "input-two", type: "userMessage" },
-                                      ],
-                            },
-                        ],
-                        nextCursor: null,
-                    },
+                    result: { data: [fixtureTurn(controls)], nextCursor: null },
                 },
             });
         }
-        return super.transport(packet, desktop);
+        return forward(packet, desktop);
     }
 
-    sidebar(command) {
-        this.commands.push(command);
-        if (command.kind === "move" && this.rejectMove) throw new Error("fixture move rejected");
-        return super.sidebar(command);
+    function sidebar(command, forward) {
+        controls.commands.push(command);
+        if (command.kind === "move" && controls.rejectMove)
+            throw new Error("fixture move rejected");
+        return forward(command);
     }
 
-    edit(state, note) {
-        const { id, version, inputVersion, sectionVersion } = this.card();
+    function edit(state, note) {
+        const { id, version, inputVersion, sectionVersion } = board.card();
         return { id, state, note, version, inputVersion, sectionVersion };
     }
+
+    const board = createBoardFixture(directory, states, { transport, sidebar });
+    return {
+        get service() {
+            return board.service;
+        },
+        step: board.step,
+        card: board.card,
+        persisted: board.persisted,
+        controls,
+        edit,
+    };
 }
 
 async function liveBoard(context) {
     const directory = isolated(context);
-    const board = new PublicBoardFixture(directory, Object.entries(labels));
+    const board = createPublicBoardFixture(directory, Object.entries(labels));
     await board.step("running", 1000);
     const server = await startBoardServer({
         stateDir: directory,
@@ -298,7 +312,7 @@ test("MCP saves use the live state and input revisions across HTTP", async (cont
     assertRejected(await mcpUpdate(stale));
     assert.deepEqual(board.persisted(), before);
     const outdatedInput = board.edit("blocked", "would overwrite");
-    board.newInput = true;
+    board.controls.newInput = true;
     assertRejected(await mcpUpdate(outdatedInput));
     const after = board.card();
     assert.equal(after.version, outdatedInput.version + 1);
@@ -322,13 +336,13 @@ test("new-input notices survive incomplete observations and clear only on manual
         board.edit("to_archive", "keep my note"),
     );
     const fresh = board.edit("to_archive", "keep my note");
-    board.newInput = true;
-    board.laterTurn = true;
+    board.controls.newInput = true;
+    board.controls.laterTurn = true;
     await assert.rejects(client.request("/api/state", fresh), /卡片位置或输入已更新/);
     const pending = board.card();
     assert.equal(pending.inputVersion, session.inputVersion + 1);
     assert.equal(pending.followUp, true);
-    board.incomplete = true;
+    board.controls.incomplete = true;
     await board.service.refresh();
     board.reopen();
     await board.service.refresh();
@@ -337,7 +351,7 @@ test("new-input notices survive incomplete observations and clear only on manual
     assert.equal(board.card().manual, true);
     assert.equal(board.card().state, "to_archive");
     assert.equal(board.card().note, "keep my note");
-    board.incomplete = false;
+    board.controls.incomplete = false;
     const { session: confirmed } = await client.request("/api/state", board.edit("to_archive"));
     assert.equal(confirmed.inputVersion, pending.inputVersion);
     assert.equal(confirmed.followUp, false);
@@ -360,8 +374,8 @@ test("disabling title sync still saves state and never renames", async (context)
     assert.equal(moved.structuredContent.session.note, "keep my note");
     assert.equal(board.card().title, "验收会话");
     assert.equal(board.card().titleSyncPending, undefined);
-    assert.equal(board.nativeMethods.includes("thread/name/set"), false);
-    assert.equal(board.commands.filter(({ kind }) => kind === "move").length, 2);
+    assert.equal(board.controls.nativeMethods.includes("thread/name/set"), false);
+    assert.equal(board.controls.commands.filter(({ kind }) => kind === "move").length, 2);
 });
 
 test("manual confirmations append durable change records and rejected saves leave them alone", async (context) => {
@@ -387,7 +401,7 @@ test("manual confirmations append durable change records and rejected saves leav
     );
     const committed = changes(board);
     assertRejected(await mcpUpdate(stale));
-    board.rejectMove = true;
+    board.controls.rejectMove = true;
     await assert.rejects(
         client.request("/api/state", board.edit("review", "failed")),
         /fixture move rejected/,

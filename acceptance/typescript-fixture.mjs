@@ -56,35 +56,32 @@ function observation(phase, clock) {
     return { status: statuses[phase], turn };
 }
 
-export class BoardFixture {
-    #sections;
-    #thread = session("review", 1000);
-    #turn = firstTurn();
-    #writes = 0;
-    #recordsFile;
-    #ledgerFile;
+export function createBoardFixture(directory, states, hooks = {}) {
+    const sections = states.map(([state, label]) => ({
+        id: section(state),
+        name: label,
+        hostSectionIds: { [host]: replica(state) },
+        itemKeys: [],
+    }));
+    const thread = session("review", 1000);
+    let turn = firstTurn();
+    let writes = 0;
+    const recordsFile = join(directory, "records.json");
+    const ledgerFile = join(directory, "ledger.json");
+    let service;
+    const interceptTransport =
+        hooks.transport ?? ((packet, desktop, forward) => forward(packet, desktop));
+    const interceptSidebar = hooks.sidebar ?? ((command, forward) => forward(command));
 
-    constructor(directory, states) {
-        this.#sections = states.map(([state, label]) => ({
-            id: section(state),
-            name: label,
-            hostSectionIds: { [host]: replica(state) },
-            itemKeys: [],
-        }));
-        this.#recordsFile = join(directory, "records.json");
-        this.#ledgerFile = join(directory, "ledger.json");
-        this.reopen();
-    }
-
-    reopen() {
-        const records = createBoardRecords(this.#recordsFile);
-        const ledgers = createBoardLedgers(this.#ledgerFile);
+    function reopen() {
+        const records = createBoardRecords(recordsFile);
+        const ledgers = createBoardLedgers(ledgerFile);
         const desktop = createDesktopConnection({
             bootstrap: () => ({ catalogHostIds: [host] }),
-            send: async (request) => this.transport(request, desktop),
-            sidebar: async (command) => this.sidebar(command),
+            send: async (request) => interceptTransport(request, desktop, transport),
+            sidebar: async (command) => interceptSidebar(command, sidebar),
         });
-        this.service = new BoardService(desktop, {
+        service = new BoardService(desktop, {
             load: async (key) => ({ records: records.account(key), legacyCachedCards: [] }),
             save: async (update) => records.write(update),
             preparePhase: async (update) => records.preparePhase(update),
@@ -98,24 +95,24 @@ export class BoardFixture {
         });
     }
 
-    transport({ hostId, request }, desktop) {
+    function transport({ hostId, request }, desktop) {
         assert.equal(hostId, host);
         const page = (data) => ({ data: structuredClone(data), nextCursor: null });
         let result;
         switch (request.method) {
             case "thread/list":
-                result = page(request.params.archived ? [] : [this.#thread]);
+                result = page(request.params.archived ? [] : [thread]);
                 break;
             case "project/list":
                 result = page([]);
                 break;
             case "thread/turns/list":
                 assert.equal(request.params.threadId, threadId);
-                result = page([this.#turn]);
+                result = page([turn]);
                 break;
             case "thread/read":
                 assert.equal(request.params.threadId, threadId);
-                result = { thread: structuredClone(this.#thread) };
+                result = { thread: structuredClone(thread) };
                 break;
             default:
                 assert.fail(`模型路径意外发送 ${request.method}`);
@@ -123,33 +120,33 @@ export class BoardFixture {
         desktop.receive({ type: "mcp-response", hostId, message: { id: request.id, result } });
     }
 
-    sidebar(command) {
-        if (command.kind === "context") return { ...identity, sections: this.#sections };
+    function sidebar(command) {
+        if (command.kind === "context") return { ...identity, sections: sections };
         assert.equal(command.kind, "move");
         assert.equal(command.accountId, identity.accountId);
         assert.equal(command.userId, identity.userId);
         assert.equal(command.hostId, host);
         assert.equal(command.threadId, threadId);
-        const current = this.#sections.find(
-            ({ hostSectionIds }) => hostSectionIds[host] === this.#thread.section.id,
+        const current = sections.find(
+            ({ hostSectionIds }) => hostSectionIds[host] === thread.section.id,
         );
         assert.equal(command.from, current?.id);
-        const target = this.#sections.find(({ id }) => id === command.to);
+        const target = sections.find(({ id }) => id === command.to);
         assert.ok(target, "目标分区不存在");
-        this.#thread.section = { id: target.hostSectionIds[host], name: target.name };
-        this.#thread.sectionEnteredAt = Date.now() / 1000;
-        this.#writes += 1;
+        thread.section = { id: target.hostSectionIds[host], name: target.name };
+        thread.sectionEnteredAt = Date.now() / 1000;
+        writes += 1;
     }
 
-    async step(event, clock) {
+    async function step(event, clock) {
         if (event === "restart") {
-            this.reopen();
-            await this.service.refresh();
+            reopen();
+            await service.refresh();
         } else if (event === "view") {
-            this.service.snapshot();
+            service.snapshot();
         } else if (event.startsWith("manual:")) {
-            const { id, version, inputVersion, sectionVersion } = this.card();
-            const result = await this.service.update({
+            const { id, version, inputVersion, sectionVersion } = card();
+            const result = await service.update({
                 id,
                 version,
                 inputVersion,
@@ -158,19 +155,19 @@ export class BoardFixture {
                 note: "人工备注",
             });
             assert.equal(result.ok, true);
-            assert.deepEqual(result.session, this.card());
+            assert.deepEqual(result.session, card());
         } else {
-            const { status, turn } = observation(event, clock);
-            this.#thread.status = status;
-            this.#thread.updatedAt = clock;
-            this.#turn = turn;
-            this.service.notice(host, threadId);
-            await this.service.refresh();
+            const { status, turn: observedTurn } = observation(event, clock);
+            thread.status = status;
+            thread.updatedAt = clock;
+            turn = observedTurn;
+            service.notice(host, threadId);
+            await service.refresh();
         }
     }
 
-    card() {
-        const snapshot = this.service.snapshot();
+    function card() {
+        const snapshot = service.snapshot();
         assert.equal(snapshot.sessions.length, 1);
         const [card] = snapshot.sessions;
         assert.equal(card.threadId, threadId);
@@ -178,15 +175,26 @@ export class BoardFixture {
         return card;
     }
 
-    flow() {
-        const { state, manual, note, version } = this.card();
+    function flow() {
+        const { state, manual, note, version } = card();
         return { state, manual, note, version };
     }
 
-    persisted() {
-        const files = [this.#recordsFile, this.#ledgerFile].map((path) =>
+    function persisted() {
+        const files = [recordsFile, ledgerFile].map((path) =>
             existsSync(path) ? readFileSync(path, "utf8") : null,
         );
-        return { files, writes: this.#writes };
+        return { files, writes: writes };
     }
+
+    reopen();
+    return {
+        get service() {
+            return service;
+        },
+        step,
+        card,
+        flow,
+        persisted,
+    };
 }

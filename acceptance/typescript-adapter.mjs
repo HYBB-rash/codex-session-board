@@ -10,7 +10,7 @@ import {
     turnInput,
 } from "../dist/extensions/activity.js";
 import { labels, visibleStates } from "../dist/extensions/placement.js";
-import { BoardFixture } from "./typescript-fixture.mjs";
+import { createBoardFixture } from "./typescript-fixture.mjs";
 
 const input = JSON.parse(await readFile(fileURLToPath(process.argv[2]), "utf8"));
 const results = [];
@@ -116,7 +116,7 @@ function compare(mismatches, label, expected, actual) {
 
 async function replay(trace, directory, setClock) {
     setClock(1000);
-    const board = new BoardFixture(directory, input.states);
+    const board = createBoardFixture(directory, input.states);
     const mismatches = [];
     await board.step("running", 1000);
     compare(mismatches, "初始状态", input.initial, board.flow());
