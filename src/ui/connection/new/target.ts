@@ -32,28 +32,8 @@ interface TargetPorts {
 const removedHost = "这台主机已移除，不能在这里新建会话。";
 
 export function mountBoardNewTarget(elements: TargetElements, ports: TargetPorts) {
-    return new BoardNewTarget(elements, ports);
-}
-
-class BoardNewTarget {
-    constructor(
-        private readonly elements: TargetElements,
-        private readonly ports: TargetPorts,
-    ) {
-        const { button, dialog, form, host, cancel } = elements;
-        button.onclick = () => this.open();
-        host.onchange = () => this.optionsForHost();
-        dialog.addEventListener("close", () => {
-            ports.updateFilterLock();
-            void ports.load();
-        });
-        cancel.onclick = () => dialog.close();
-        form.onsubmit = (event) => this.submit(event);
-    }
-
-    private optionsForHost() {
-        const { ports } = this;
-        const { host, project, submit, hint } = this.elements;
+    function optionsForHost() {
+        const { host, project, submit, hint } = elements;
         const { hostProjects, projectLabel } = ports;
         const projects = hostProjects(host.value);
         const options = projects
@@ -70,10 +50,17 @@ class BoardNewTarget {
             : reason || "此主机没有支持新建会话的项目。已有项目与会话仍可查看。";
     }
 
-    private open() {
-        const { ports } = this;
-        const { dialog, host } = this.elements;
-        const { announce, create, hostProjects } = ports;
+    function openSelectedProject(value: string) {
+        const project = ports
+            .hostProjects()
+            .find((candidate) => `project:${candidate.id}` === value);
+        if (!project) ports.announce("项目暂不可用，请刷新后重新选择。", true);
+        else void ports.create(project.id);
+    }
+
+    function open() {
+        const { dialog, host } = elements;
+        const { announce, create } = ports;
         if (ports.saving() || ports.locked()) return;
         const scope = ports.scope();
         const registry = ports.snapshot().health.remoteRegistry ?? [];
@@ -84,11 +71,7 @@ class BoardNewTarget {
             return;
         }
         if (!scope.search && scope.project.startsWith("project:")) {
-            const item = hostProjects().find(
-                (candidate) => `project:${candidate.id}` === scope.project,
-            );
-            if (!item) announce("项目暂不可用，请刷新后重新选择。", true);
-            else void create(item.id);
+            openSelectedProject(scope.project);
             return;
         }
         if (scope.host === "local") {
@@ -110,14 +93,14 @@ class BoardNewTarget {
             announce(removedHost, true);
             return;
         }
-        this.optionsForHost();
+        optionsForHost();
         dialog.showModal();
         ports.updateFilterLock();
     }
 
-    private submit(event: SubmitEvent) {
-        const { dialog, project, submit, host } = this.elements;
-        const { announce, create, hostProjects } = this.ports;
+    function submit(event: SubmitEvent) {
+        const { dialog, project, submit, host } = elements;
+        const { announce, create, hostProjects } = ports;
         event.preventDefault();
         if (!dialog.open || submit.disabled || !project.reportValidity()) return;
         const selected = project.value;
@@ -130,14 +113,26 @@ class BoardNewTarget {
         void create(selected || null);
     }
 
-    get openDialog() {
-        return this.elements.dialog.open;
-    }
-
-    update() {
-        const { ports } = this;
-        const { button } = this.elements;
+    function update() {
+        const { button } = elements;
         button.disabled = ports.creating() || ports.saving();
         button.title = "打开新建会话页，不发送输入";
     }
+
+    const { button, dialog, form, host, cancel } = elements;
+    button.onclick = open;
+    host.onchange = optionsForHost;
+    dialog.addEventListener("close", () => {
+        ports.updateFilterLock();
+        void ports.load();
+    });
+    cancel.onclick = () => dialog.close();
+    form.onsubmit = submit;
+
+    return {
+        get openDialog() {
+            return elements.dialog.open;
+        },
+        update,
+    };
 }
