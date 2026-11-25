@@ -1,22 +1,18 @@
-import { mountBoardHealth } from "./board-health";
-import { type BoardHealth, createBoardHealthReports } from "./board-health-report";
-import { mountBoardNewSession } from "./board-new-session";
-import { mountBoardNewTarget } from "./board-new-target";
-import { mountProjectAssignment } from "./board-project-assignment";
-import { mountBoardRefresh } from "./board-refresh";
-import { mountBoardSessionReader } from "./board-session-reader";
-import { createColumnSortSave, type SortPreference } from "./board-sorting";
-import { mountBoardSshSetup } from "./board-ssh-setup";
-import { type BoardModel, type BoardSession, mountBoard } from "./board-view";
-import { mountBoardArchive } from "./views/board/archive/archive";
-import {
-    type CatalogProject,
-    type HostIdentity,
-    mountBoardBrowse,
-} from "./views/board/browse/browse";
-import { mountBoardEdits } from "./views/board/edit/edits";
-import { mountMoveFeedback } from "./views/board/edit/move-feedback";
-import { mountPluginUpdate } from "./views/board/plugin-update";
+import { mountBoardHealth } from "../../board-health";
+import { type BoardHealth, createBoardHealthReports } from "../../board-health-report";
+import { mountBoardNewSession } from "../../board-new-session";
+import { mountBoardNewTarget } from "../../board-new-target";
+import { mountProjectAssignment } from "../../board-project-assignment";
+import { mountBoardRefresh } from "../../board-refresh";
+import { mountBoardSessionReader } from "../../board-session-reader";
+import { createColumnSortSave, type SortPreference } from "../../board-sorting";
+import { mountBoardSshSetup } from "../../board-ssh-setup";
+import { type BoardModel, type BoardSession, mountBoard } from "../../board-view";
+import { mountBoardArchive } from "./archive/archive";
+import { type CatalogProject, type HostIdentity, mountBoardBrowse } from "./browse/browse";
+import { mountBoardEdits } from "./edit/edits";
+import { mountMoveFeedback } from "./edit/move-feedback";
+import { mountPluginUpdate } from "./plugin-update";
 
 export interface BoardSnapshot {
     accountScope?: string;

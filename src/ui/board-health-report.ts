@@ -1,4 +1,3 @@
-import type { BoardSnapshot } from "./board-start";
 import type { BoardSession } from "./board-view";
 import type { AutoArchiveHealth } from "./views/board/archive/archive";
 import type {
@@ -7,6 +6,7 @@ import type {
     HostIdentity,
     HostOption,
 } from "./views/board/browse/browse";
+import type { BoardSnapshot } from "./views/board/controller";
 
 interface HostHealth extends AutoArchiveHealth {
     error?: string | null;

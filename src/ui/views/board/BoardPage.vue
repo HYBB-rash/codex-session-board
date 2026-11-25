@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, useTemplateRef } from "vue";
 import moveDragon from "../../assets/move-dragon.webp?inline";
 import type { BoardInstall } from "../../board-pwa";
-import { type BoardRequest, type BoardSnapshot, startBoardPage } from "../../board-start";
+import { type BoardRequest, type BoardSnapshot, startBoardPage } from "./controller";
 
 const props = defineProps<{
     request: BoardRequest;

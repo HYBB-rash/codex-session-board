@@ -1,4 +1,4 @@
-import type { BoardRequest } from "./board-start";
+import type { BoardRequest } from "./views/board/controller";
 import { mountBoardPage } from "./views/board/mount";
 
 export function mountEnhancerBoard(panel: HTMLElement, request: BoardRequest, close: () => void) {

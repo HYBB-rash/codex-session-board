@@ -1,6 +1,6 @@
 import { setupPwa } from "./board-pwa";
-import type { BoardRequest } from "./board-start";
 import { startBoard } from "./standalone-page";
+import type { BoardRequest } from "./views/board/controller";
 
 async function requestToken(): Promise<string> {
     const response = await fetch("/api/info", { cache: "no-store", redirect: "error" });

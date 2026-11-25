@@ -1,5 +1,5 @@
-import type { BoardSnapshot } from "../../../board-start";
 import type { BoardSession, ProjectTag } from "../../../board-view";
+import type { BoardSnapshot } from "../controller";
 import { mountBoardFilters } from "./filters";
 
 export interface HostIdentity {
