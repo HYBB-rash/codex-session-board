@@ -24,6 +24,6 @@ export default defineConfig({
             formats: ["cjs"],
             fileName: () => "preload.js",
         },
-        rollupOptions: { external: ["electron"] },
+        rolldownOptions: { external: ["electron"] },
     },
 });
