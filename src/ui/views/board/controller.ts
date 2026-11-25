@@ -1,17 +1,17 @@
+import { type CatalogProject, type HostIdentity, mountBoardBrowse } from "../../browse/scope";
+import { mountBoardNewSession } from "../../connection/new/session";
+import { mountBoardNewTarget } from "../../connection/new/target";
+import { mountProjectAssignment } from "../../connection/project-assignment";
+import { mountBoardSshSetup } from "../../connection/ssh-setup";
 import { mountBoardEdits } from "../../edit/edits";
 import { mountMoveFeedback } from "../../edit/move-feedback";
+import { mountBoardHealth } from "../../health/banner";
+import { type BoardHealth, createBoardHealthReports } from "../../health/report";
+import { mountPluginUpdate } from "../../plugin-update";
 import { mountBoardSessionReader } from "../../preview/reader";
+import { mountBoardRefresh } from "../../refresh";
 import { mountBoardArchive } from "./archive/controls";
-import { type CatalogProject, type HostIdentity, mountBoardBrowse } from "./browse/scope";
 import { type BoardModel, mountBoard } from "./columns";
-import { mountBoardNewSession } from "./connection/new/session";
-import { mountBoardNewTarget } from "./connection/new/target";
-import { mountProjectAssignment } from "./connection/project-assignment";
-import { mountBoardSshSetup } from "./connection/ssh-setup";
-import { mountBoardHealth } from "./health/banner";
-import { type BoardHealth, createBoardHealthReports } from "./health/report";
-import { mountPluginUpdate } from "./plugin-update";
-import { mountBoardRefresh } from "./refresh";
 import type { BoardSession } from "./session";
 import { createColumnSortSave, type SortPreference } from "./sorting";
 

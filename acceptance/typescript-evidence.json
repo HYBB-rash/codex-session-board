@@ -195,8 +195,8 @@
         },
         "UI-003": {
             "sources": [
-                "src/ui/views/board/browse/filters.tsx",
-                "src/ui/views/board/refresh.ts",
+                "src/ui/browse/filters.tsx",
+                "src/ui/refresh.ts",
                 "src/ui/views/board/SessionColumns.vue"
             ],
             "missing": "还需真实键盘与指针操作中的刷新、空列、搜索、焦点、列滚动保持检查。"
@@ -255,8 +255,8 @@
         "HEALTH-001": {
             "sources": [
                 "src/extensions/session-board/service.ts",
-                "src/ui/views/board/health/banner.ts",
-                "src/ui/views/board/health/report.ts"
+                "src/ui/health/banner.ts",
+                "src/ui/health/report.ts"
             ],
             "missing": "还需从真实看板经历断开、部分分页失败、标题同步失败与恢复，并核对每个警示。"
         },

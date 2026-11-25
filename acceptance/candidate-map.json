@@ -526,8 +526,8 @@
         "UI-003": {
             "status": "pending",
             "implementation": [
-                "src/ui/views/board/browse/filters.tsx",
-                "src/ui/views/board/refresh.ts",
+                "src/ui/browse/filters.tsx",
+                "src/ui/refresh.ts",
                 "src/ui/edit/SessionEditor.vue"
             ],
             "remaining": "真实验证标题/项目搜索、空列接收拖放、表单键盘操作、暂停重绘和列内滚动位置。"
@@ -619,7 +619,7 @@
             "status": "partial",
             "implementation": [
                 "src/extensions/session-board/service.ts",
-                "src/ui/views/board/health/banner.ts"
+                "src/ui/health/banner.ts"
             ],
             "evidence": ["offline-cache"],
             "remaining": "真实界面分别验证发现不完整、局部历史错误、运行连接断开和标题重试。"
