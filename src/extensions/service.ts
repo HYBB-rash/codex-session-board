@@ -434,12 +434,6 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         get mode() {
             return this.settings.mode;
         },
-        update,
-        resolveEdit,
-        updateCard,
-        commitRecord,
-        publishThread,
-        moveCard,
         open,
         preview,
         findProject,
@@ -451,7 +445,6 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         create,
         openTrackedDraft,
         trackDraft,
-        assign,
         writeLedger,
         sort,
         verifyArchive,
@@ -749,7 +742,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
                 ? await applyPhase(connection, thread, context, phase, next)
                 : undefined;
         if (phaseChanged) delete next.pendingPhaseKey;
-        await runtime.commitRecord(context, id, current.version, next, change);
+        await commitRecord(context, id, current.version, next, change);
         return next.title !== undefined && next.title !== current.title;
     }
 
@@ -799,7 +792,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             ...(runtime.records[id] ?? emptyRecord),
             pendingPhaseKey: phase.key,
         };
-        const after = await runtime.moveCard(phase.state, connection, context, current);
+        const after = await moveCard(phase.state, connection, context, current);
         next.manual = false;
         next.reason = phase.reason;
         const afterActivation =
@@ -809,7 +802,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
                 phase.at >= Math.floor(runtime.titleStartedAt));
         if (runtime.settings.syncTitles && (afterActivation || next.title))
             next.title = { state: phase.state };
-        runtime.publishThread(connection.hostId, after);
+        publishThread(connection.hostId, after);
         return { kind: "automatic", state: phase.state };
     }
 
@@ -1097,27 +1090,27 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         return context;
     }
 
-    async function update(this: Runtime, edit: Edit) {
-        if (this.editing.has(edit.id)) throw new Error("该卡片正在保存");
-        this.editing.add(edit.id);
+    async function updateSession(edit: Edit) {
+        if (runtime.editing.has(edit.id)) throw new Error("该卡片正在保存");
+        runtime.editing.add(edit.id);
         let saved: Awaited<ReturnType<typeof updateCard>>;
         try {
-            saved = await this.updateCard(edit);
+            saved = await updateCard(edit);
         } finally {
-            this.editing.delete(edit.id);
+            runtime.editing.delete(edit.id);
         }
         const { connection, account, settled, titleEnabled } = saved;
         if (
             settled.titleSyncPending &&
             accountKey(requiredContext()) === account &&
-            this.records[edit.id]?.version === settled.version
+            runtime.records[edit.id]?.version === settled.version
         )
             await retryTitle(connection, settled.threadId);
         requireAccount(account);
         const context = requiredContext();
         const current =
-            this.records[edit.id]?.version === settled.version
-                ? this.hosts.get(settled.hostId)?.active.get(settled.threadId)
+            runtime.records[edit.id]?.version === settled.version
+                ? runtime.hosts.get(settled.hostId)?.active.get(settled.threadId)
                 : undefined;
         const session = current ? buildCard(settled.hostId, current, context, true) : settled;
         return {
@@ -1129,26 +1122,26 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         };
     }
 
-    async function resolveEdit(this: Runtime, edit: Edit) {
+    async function resolveEdit(edit: Edit) {
         const { card, connection } = target(edit.id);
         if (card.readOnly) throw new Error("此会话目前只读");
         const submittedSection = nativeSectionVersion(edit.sectionVersion);
         const context = await freshContext();
-        const before = await this.desktop.read(connection, card.threadId, false);
-        const latest = (await this.desktop.turns(connection, card.threadId, "summary")).data[0];
+        const before = await desktop.read(connection, card.threadId, false);
+        const latest = (await desktop.turns(connection, card.threadId, "summary")).data[0];
         await freshContext(context);
-        this.desktop.assertCurrent(connection);
+        desktop.assertCurrent(connection);
         const from = placement(context, card.hostId, before);
-        const current = this.records[edit.id] ?? emptyRecord;
+        const current = runtime.records[edit.id] ?? emptyRecord;
         const inputKey = turnInput(latest) ?? current.inputKey ?? null;
         if (changedInput(current, inputKey)) {
-            await this.commitRecord(context, card.id, current.version, {
+            await commitRecord(context, card.id, current.version, {
                 ...current,
                 inputKey,
                 version: current.version + 1,
                 inputVersion: current.inputVersion + 1,
             });
-            this.publishThread(card.hostId, before);
+            publishThread(card.hostId, before);
             throw new Error("卡片位置或输入已更新，请刷新后重试");
         }
         if (
@@ -1162,11 +1155,11 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         return { card, connection, context, before, latest, current, inputKey };
     }
 
-    async function updateCard(this: Runtime, edit: Edit) {
+    async function updateCard(edit: Edit) {
         const { card, connection, context, before, latest, current, inputKey } =
-            await this.resolveEdit(edit);
-        const after = await this.moveCard(edit.state, connection, context, before);
-        this.desktop.assertCurrent(connection);
+            await resolveEdit(edit);
+        const after = await moveCard(edit.state, connection, context, before);
+        desktop.assertCurrent(connection);
         const nextContext = await freshContext(context);
         const record = {
             note: edit.note?.trim() ?? current.note,
@@ -1177,24 +1170,23 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             ...(latest && finalAnswer(latest) ? { previewTurnId: latest.id } : {}),
             manual: true,
             selectedAt: Date.now() / 1000,
-            ...(this.settings.syncTitles ? { title: { state: edit.state } } : {}),
+            ...(runtime.settings.syncTitles ? { title: { state: edit.state } } : {}),
         };
-        await this.commitRecord(context, card.id, current.version, record, {
+        await commitRecord(context, card.id, current.version, record, {
             kind: "manual",
             state: edit.state,
         });
-        this.context = nextContext;
-        this.publishThread(card.hostId, after);
+        runtime.context = nextContext;
+        publishThread(card.hostId, after);
         return {
             connection,
             account: accountKey(context),
             settled: buildCard(card.hostId, after, nextContext, true),
-            titleEnabled: this.settings.syncTitles,
+            titleEnabled: runtime.settings.syncTitles,
         };
     }
 
     async function commitRecord(
-        this: Runtime,
         context: SidebarContext,
         id: string,
         expected: number,
@@ -1203,7 +1195,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     ): Promise<void> {
         await freshContext(context);
         const account = accountKey(context);
-        await this.ports.save({
+        await ports.save({
             account,
             id,
             expected,
@@ -1211,12 +1203,12 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             ...(change ? { change } : {}),
         });
         requireAccount(account);
-        this.records[id] = record;
+        runtime.records[id] = record;
     }
 
-    function publishThread(this: Runtime, hostId: HostId, thread: Thread): void {
-        this.changed.set(cardId({ hostId, threadId: thread.id }), ++this.changes);
-        this.hosts.get(hostId)?.active.set(thread.id, thread);
+    function publishThread(hostId: HostId, thread: Thread): void {
+        runtime.changed.set(cardId({ hostId, threadId: thread.id }), ++runtime.changes);
+        runtime.hosts.get(hostId)?.active.set(thread.id, thread);
     }
 
     async function syncTitle(
@@ -1339,7 +1331,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             if (!(await settleObservedTitle(account, id, record, title, failure))) return;
         }
         if (updated && !failure && !runtime.editing.has(id))
-            runtime.publishThread(connection.hostId, updated);
+            publishThread(connection.hostId, updated);
     }
 
     async function settleObservedTitle(
@@ -1362,18 +1354,17 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     }
 
     async function moveCard(
-        this: Runtime,
         state: BoardState | null,
         connection: HostConnection,
         context: SidebarContext,
         before: Thread,
     ): Promise<Thread> {
         const source = placement(context, connection.hostId, before);
-        if (presentState(context, source, this.mode) === state) return before;
-        const destination = moveDestination(context, state, this.mode);
+        if (presentState(context, source, runtime.settings.mode) === state) return before;
+        const destination = moveDestination(context, state, runtime.settings.mode);
         let failure: unknown;
         try {
-            await this.desktop.move(
+            await desktop.move(
                 connection,
                 { accountId: context.accountId, userId: context.userId },
                 before.id,
@@ -1383,12 +1374,12 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         } catch (error) {
             failure = error;
         }
-        const after = await this.desktop.read(connection, before.id, false);
+        const after = await desktop.read(connection, before.id, false);
         const fresh = await freshContext(context);
         const proof = moveProof(connection.hostId, before, after, fresh, destination);
-        this.ports.proof("board-native-move", proof);
+        ports.proof("board-native-move", proof);
         if (!proof.confirmed) throw new Error(unconfirmed(failure, "Codex 尚未确认原生位置"));
-        this.context = fresh;
+        runtime.context = fresh;
         return after;
     }
 
@@ -1575,12 +1566,12 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         }
     }
 
-    async function assign(this: Runtime, id: string, projectId: string): Promise<{ ok: true }> {
+    async function assign(id: string, projectId: string): Promise<{ ok: true }> {
         const { card, connection } = target(id);
-        const { hostId, project } = this.findProject(projectId);
+        const { hostId, project } = runtime.findProject(projectId);
         validateProjectAssignment(card, hostId, project);
         const context = await freshContext();
-        const before = await this.desktop.read(connection, card.threadId, false);
+        const before = await desktop.read(connection, card.threadId, false);
         if (
             before.cwd !== card.cwd ||
             (before.projectId !== null && before.projectId !== project.id)
@@ -1590,7 +1581,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         let failure: unknown;
         if (before.projectId !== project.id) {
             try {
-                await this.desktop.assignProject(connection, card.threadId, project.id);
+                await desktop.assignProject(connection, card.threadId, project.id);
             } catch (error) {
                 failure = error;
             }
@@ -1598,12 +1589,12 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         const actual =
             before.projectId === project.id
                 ? before
-                : await this.desktop.read(connection, card.threadId, false);
+                : await desktop.read(connection, card.threadId, false);
         await freshContext(context);
-        this.desktop.assertCurrent(connection);
+        desktop.assertCurrent(connection);
         if (actual.projectId !== project.id || actual.cwd !== card.cwd)
             throw new Error(unconfirmed(failure, "Codex 尚未确认项目归属"));
-        this.publishThread(hostId, actual);
+        publishThread(hostId, actual);
         return { ok: true };
     }
 
@@ -1819,7 +1810,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     ) {
         if (path === "/api/project/assign") {
             if (input?.confirmed && input.id && input.projectId)
-                return this.assign(input.id, input.projectId);
+                return assign(input.id, input.projectId);
         } else if (input?.id) {
             return path === "/api/open" ? this.open(input.id) : this.preview(input.id);
         }
@@ -1873,7 +1864,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         body?: object,
     ) {
         if (!body) throw new Error(unsupportedOperation);
-        if (path === "/api/state") return this.update(body as Edit);
+        if (path === "/api/state") return updateSession(body as Edit);
         if (path === "/api/new/reset") return this.resetDraft(body as DraftInput);
         const sort = body as SortPreference & { state: string };
         return this.sort(sort.state, sort);
@@ -1883,7 +1874,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         refresh,
         notice,
         snapshot,
-        update: runtime.update.bind(runtime),
+        update: updateSession,
         request: runtime.request.bind(runtime),
     };
 }
