@@ -76,23 +76,27 @@ function hasOwnedUnit(file: string, contents: string, link: boolean): boolean {
     return true;
 }
 
+function registerWatcherEntry(file: string, contents: string, link: boolean) {
+    const directory = path.dirname(file);
+    fs.mkdirSync(directory, { recursive: true, mode: 0o755 });
+    assertSystemPath(directory, true);
+    if (link) {
+        fs.symlinkSync(contents, file);
+        return;
+    }
+    const next = `${file}.codex-enhancer-stage`;
+    if (presentFile(next)) fs.unlinkSync(next);
+    fs.writeFileSync(next, contents, { flag: "wx", mode: 0o644, flush: true });
+    fs.renameSync(next, file);
+}
+
 export function configureWatcher(enabled: boolean): void {
     for (const [file, contents] of [...watcher, ...systemWatcherLinks()]) {
         const link = !watcher.has(file);
         if (hasOwnedUnit(file, contents, link)) {
             if (!enabled) fs.unlinkSync(file);
         } else if (enabled) {
-            const directory = path.dirname(file);
-            fs.mkdirSync(directory, { recursive: true, mode: 0o755 });
-            assertSystemPath(directory, true);
-            if (link) {
-                fs.symlinkSync(contents, file);
-            } else {
-                const next = `${file}.codex-enhancer-stage`;
-                if (presentFile(next)) fs.unlinkSync(next);
-                fs.writeFileSync(next, contents, { flag: "wx", mode: 0o644, flush: true });
-                fs.renameSync(next, file);
-            }
+            registerWatcherEntry(file, contents, link);
         } else if (!link && presentFile(`${file}.codex-enhancer-stage`)) {
             fs.unlinkSync(`${file}.codex-enhancer-stage`);
         }

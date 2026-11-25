@@ -141,6 +141,15 @@ async function restoreFailedBoot(state: InstallState): Promise<void> {
     });
 }
 
+function terminateFirstBoot(pid: number | undefined) {
+    if (pid === undefined) return;
+    try {
+        process.kill(-pid, "SIGTERM");
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    }
+}
+
 async function confirmFirstBoot(
     child: ChildProcess,
     state: InstallState,
@@ -154,13 +163,7 @@ async function confirmFirstBoot(
     while (Date.now() < deadline) {
         const status = bootStatus(offset, child.pid);
         if (status === "failed" && child.exitCode === null && child.signalCode === null) {
-            if (child.pid !== undefined) {
-                try {
-                    process.kill(-child.pid, "SIGTERM");
-                } catch (error) {
-                    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-                }
-            }
+            terminateFirstBoot(child.pid);
             await handleFailedBoot(state, `runtime startup failed; see ${runtimeLog}`);
         }
         if (spawnError || child.exitCode !== null || child.signalCode !== null) {

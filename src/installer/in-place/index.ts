@@ -6,6 +6,7 @@ import { IN_PLACE_APP, IN_PLACE_ROOT, inPlaceLoader } from "../constants.js";
 import { verifyInPlaceRelease } from "../release/manifest.js";
 import { activateRelease, activeRelease, rollbackRelease } from "../release/store.js";
 import {
+    type ArchiveTransaction,
     archivePosition,
     cleanArchiveStage,
     commitArchive,
@@ -163,6 +164,39 @@ function prepareInstaller(): InPlaceInstallation {
     return installation;
 }
 
+type PreparedInstallation = Exclude<InPlaceInstallation, { phase: "preparing" }>;
+
+function existingInstallationVersion(
+    transaction: ArchiveTransaction,
+    installation: PreparedInstallation,
+): string {
+    if (archivePosition(transaction, installation) !== "patched")
+        throw new Error("Codex 已变化，请先卸载旧登记，再安装兼容版");
+    const active = activeRelease(inPlaceReleaseStore());
+    if (!active) throw new Error("原地安装没有已激活的看板版本");
+    configureWatcher(true);
+    refreshWatchers(true);
+    return active.version;
+}
+
+function recoverInstallFailure(
+    transaction: ArchiveTransaction,
+    installation: InPlaceInstallation,
+    error: unknown,
+): never {
+    try {
+        if (installation.phase === "preparing") resetPreparation(installation);
+        else restoreArchive(transaction, installation, assertStopped);
+        cleanInstallation(installation);
+    } catch (recovery) {
+        throw new AggregateError(
+            [error, recovery],
+            `${String(error)}；恢复未完成：${String(recovery)}`,
+        );
+    }
+    throw error;
+}
+
 export function installInPlace(packageRoot: string): {
     action: "installed" | "unchanged";
     version: string;
@@ -173,15 +207,11 @@ export function installInPlace(packageRoot: string): {
         let installation = prior ?? prepareInstaller();
         const transaction = inPlaceTransaction(installation);
         if (installation.phase === "removing") throw new Error("请先完成上一次原地卸载");
-        if (installation.phase === "installed") {
-            if (archivePosition(transaction, installation) !== "patched")
-                throw new Error("Codex 已变化，请先卸载旧登记，再安装兼容版");
-            const active = activeRelease(inPlaceReleaseStore());
-            if (!active) throw new Error("原地安装没有已激活的看板版本");
-            configureWatcher(true);
-            refreshWatchers(true);
-            return { action: "unchanged", version: active.version };
-        }
+        if (installation.phase === "installed")
+            return {
+                action: "unchanged",
+                version: existingInstallationVersion(transaction, installation),
+            };
         try {
             if (installation.phase === "preparing") {
                 if (prior) resetPreparation(installation);
@@ -202,55 +232,47 @@ export function installInPlace(packageRoot: string): {
             refreshWatchers(true);
             return { action: "installed", version: manifest.version };
         } catch (error) {
-            try {
-                if (installation.phase === "preparing") resetPreparation(installation);
-                else restoreArchive(transaction, installation, assertStopped);
-                cleanInstallation(installation);
-            } catch (recovery) {
-                throw new AggregateError(
-                    [error, recovery],
-                    `${String(error)}；恢复未完成：${String(recovery)}`,
-                );
-            }
-            throw error;
+            return recoverInstallFailure(transaction, installation, error);
         }
     });
+}
+
+function removeUnregisteredReceiptStages() {
+    const remnants = unregisteredReceiptStages();
+    if (!fs.existsSync(IN_PLACE_ROOT)) return;
+    for (const file of remnants) fs.unlinkSync(file);
+    fs.rmdirSync(IN_PLACE_ROOT);
+    syncDirectory(path.dirname(IN_PLACE_ROOT));
+}
+
+function removePreparedInstallation(installation: PreparedInstallation) {
+    const transaction = inPlaceTransaction(installation);
+    const position = archivePosition(transaction, installation);
+    if (position === "patched") {
+        assertOriginalRpmRecorded(transaction.archive, installation.package, installation.original);
+        assertCompatibleExecutables(path.join(IN_PLACE_APP, "ChatGPT"), installation.version);
+    } else if (inspectStockArchive().kind !== "stock") {
+        throw new Error("启动归档的归属无法核对，已保留恢复材料");
+    }
+    writeInstallationReceipt(transaction.receipt, { ...installation, phase: "removing" });
+    if (position === "patched") restoreArchive(transaction, installation, assertStopped);
+    cleanInstallation(installation);
+    return position === "patched" ? "restored" : "kept-rpm";
 }
 
 export function uninstallInPlace(): { action: "restored" | "kept-rpm" | "not-installed" } {
     return withRpmLock(() => {
         const installation = readInPlaceInstallation();
         if (!installation) {
-            const remnants = unregisteredReceiptStages();
-            if (fs.existsSync(IN_PLACE_ROOT)) {
-                for (const file of remnants) fs.unlinkSync(file);
-                fs.rmdirSync(IN_PLACE_ROOT);
-                syncDirectory(path.dirname(IN_PLACE_ROOT));
-            }
+            removeUnregisteredReceiptStages();
             return { action: "not-installed" };
         }
-        const transaction = inPlaceTransaction(installation);
         if (installation.phase === "preparing") {
             resetPreparation(installation);
             cleanInstallation(installation);
             return { action: "restored" };
         }
-        const position = archivePosition(transaction, installation);
-        const observed = position !== "patched" ? inspectStockArchive() : undefined;
-        if (position !== "patched" && observed?.kind !== "stock")
-            throw new Error("启动归档的归属无法核对，已保留恢复材料");
-        if (position === "patched") {
-            assertOriginalRpmRecorded(
-                transaction.archive,
-                installation.package,
-                installation.original,
-            );
-            assertCompatibleExecutables(path.join(IN_PLACE_APP, "ChatGPT"), installation.version);
-        }
-        writeInstallationReceipt(transaction.receipt, { ...installation, phase: "removing" });
-        if (position === "patched") restoreArchive(transaction, installation, assertStopped);
-        cleanInstallation(installation);
-        return { action: position === "patched" ? "restored" : "kept-rpm" };
+        return { action: removePreparedInstallation(installation) };
     });
 }
 
