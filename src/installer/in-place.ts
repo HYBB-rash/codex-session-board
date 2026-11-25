@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { IN_PLACE_APP, IN_PLACE_ROOT, inPlaceLoader } from "./constants.js";
+import { notifyInPlace, readRuntimeFile } from "./in-place/bootstrap.js";
 import {
     archivePosition,
     cleanArchiveStage,
@@ -13,7 +14,6 @@ import {
     syncDirectory,
     writeInstallationReceipt,
 } from "./in-place-archive.js";
-import { notifyInPlace, readRuntimeFile } from "./in-place-bootstrap.js";
 import {
     type InPlaceInstallation,
     inPlaceReleaseStore,
