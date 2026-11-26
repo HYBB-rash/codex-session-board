@@ -26,8 +26,11 @@ import {
     type HostProject,
     hostManagementError,
     interactiveThread,
+    isDefiniteNativeWriteFailure,
+    type LogicalSectionId,
     localHostId,
     hostId as nativeHostId,
+    nativeRequestTimeoutMs,
     requireManagedHost,
     type SidebarContext,
     type Thread,
@@ -55,7 +58,7 @@ import type {
     TitleResolution,
 } from "./records.js";
 import { type BoardSettings, defaults } from "./settings.js";
-import { createTaskStore, isTaskConflict } from "./task-store.js";
+import { type ArchiveClaim, createTaskStore, isTaskConflict } from "./task-store.js";
 
 interface BoardPorts {
     load(account: string): Promise<LoadedBoardRecords>;
@@ -93,7 +96,7 @@ interface HostSnapshot {
     taskStore?: Awaited<ReturnType<ReturnType<typeof createTaskStore>["target"]>>;
     taskError?: string;
     taskConfirmedAt?: number;
-    archiveClaims?: Set<string>;
+    archiveClaims?: Map<string, ArchiveClaim>;
 }
 
 interface HistoryRead {
@@ -140,6 +143,14 @@ export interface Card {
     source: "codex";
     followUp: boolean;
     canArchive: boolean;
+    archiveReason?: string;
+    archiveChecking?: boolean;
+    archiveMessage?: string;
+    archiveTurnId?: string | null;
+    archiveInputKey?: string | null;
+    archiveRestorePending?: boolean;
+    canRestore?: boolean;
+    legacyArchivePlacement?: boolean;
     hostLabel: string;
     previewTurnId?: string;
     reason?: string;
@@ -430,6 +441,14 @@ function canWrite(settings: BoardSettings, threadId: ThreadId): boolean {
     return settings.writableThreadIds?.includes(threadId) ?? true;
 }
 
+function runtimeArchiveBlock(status: Thread["status"]): string | undefined {
+    if (status.activeFlags?.includes("waitingOnApproval")) return "会话正在等待批准";
+    if (status.activeFlags?.includes("waitingOnUserInput")) return "会话正在等待输入";
+    if (status.type === "active") return "会话正在执行";
+    if (["idle", "notLoaded", "systemError"].includes(status.type)) return;
+    return "宿主当前无法确认会话执行状态";
+}
+
 function cardObservation(
     historyReads: ReadonlyMap<string, HistoryRead>,
     id: string,
@@ -550,8 +569,12 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         ledger: () => runtime.ledger,
         write: writeLedger,
         nativeVersion: nativeSectionVersion,
-        verify: async (item) => {
-            await verifyArchive(item);
+        verify: async ({ id }) => {
+            const { card } = target(id);
+            if (!card.canArchive || runtime.editing.has(id))
+                throw new ArchivePreconditionError(
+                    card.archiveReason ?? "卡片正在更新，请稍后重试",
+                );
         },
         isArchived,
         archive: archiveThread,
@@ -794,6 +817,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             await freshContext();
             desktop.assertCurrent(connection);
             mergeArchives(host, archived);
+            await reconcileArchiveDirectory(connection, host);
         } catch (error) {
             host.currentArchived = new Set();
             host.archiveError = errorText(error);
@@ -839,7 +863,11 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         return (
             hostTasks() &&
             runtime.hosts.get(hostId)?.taskStore?.watchId === watchId &&
-            paths.some((path) => !path.split("/").at(-1)?.startsWith(".") && path.endsWith(".json"))
+            paths.some(
+                (path) =>
+                    !path.split("/").at(-1)?.startsWith(".") &&
+                    /\.(json|archive|settled)$/.test(path),
+            )
         );
     }
 
@@ -981,7 +1009,11 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         try {
             const latest = (await desktop.turns(connection, threadId, "summary", null, timeout))
                 .data[0];
-            runtime.historyReads.set(id, { sequence });
+            runtime.historyReads.set(id, {
+                sequence,
+                turnId: latest?.id ?? null,
+                inputKey: turnInput(latest),
+            });
             return latest;
         } catch (error) {
             runtime.historyReads.set(id, { sequence, error: errorText(error) });
@@ -1097,9 +1129,6 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         const taskReady = !hostTasks() || canEditHostTasks(host);
         const canDefer = hostTasks() ? taskReady : sectionFor(context, "deferred", hostId) !== null;
         const editable = canEditCard(thread.id, live && taskReady && position.managed, archived);
-        const archivePending = host?.archiveClaims?.has(
-            taskStore.archiveKey(thread.id, record.inputVersion),
-        );
         const confirmed = host?.taskConfirmedAt;
         return {
             id,
@@ -1129,9 +1158,60 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             source: "codex",
             hostLabel: hostLabel(hostId),
             followUp: needsInputConfirmation(record),
-            canArchive: editable && runtime.settings.mode !== "legacy",
-            archivePending: archive.pending(id) || (!archived && archivePending === true),
+            ...archiveCardFields(id, host, thread, { live, archived, taskReady }),
             ...cardObservation(runtime.historyReads, id, record, position),
+        };
+    }
+
+    function archiveCardFields(
+        id: string,
+        host: HostSnapshot | undefined,
+        thread: Thread,
+        { live, archived, taskReady }: { live: boolean; archived: boolean; taskReady: boolean },
+    ) {
+        const writable = taskReady && canWrite(runtime.settings, thread.id);
+        const archiveReason = archiveBlocked(thread, live, writable && !archived);
+        const baseline = runtime.historyReads.get(id);
+        return {
+            canArchive: archiveReason === undefined,
+            ...(archiveReason && { archiveReason }),
+            ...(baseline?.turnId !== undefined && { archiveTurnId: baseline.turnId }),
+            ...(baseline?.inputKey !== undefined && { archiveInputKey: baseline.inputKey }),
+            legacyArchivePlacement: thread.section?.name === oldArchiveSection,
+            canRestore: archived && live && writable,
+            archiveRestorePending: !archived && runtime.ledger.archiveRestores?.[id]?.sent === true,
+            ...archiveProgress(id, host, thread.id, archived),
+        };
+    }
+
+    function archiveBlocked(thread: Thread, live: boolean, editable: boolean) {
+        if (!live) return "主机离线或会话目录暂不可核对";
+        if (!editable) return "此会话当前只读";
+        return runtimeArchiveBlock(thread.status);
+    }
+
+    function archiveProgress(
+        id: string,
+        host: HostSnapshot | undefined,
+        thread: ThreadId,
+        archived: boolean,
+    ) {
+        const pending = archive.pendingItem(id);
+        const claim = archived ? undefined : host?.archiveClaims?.get(thread);
+        const submitting = archive.submitting(id);
+        const archivePending = submitting || Boolean(pending) || Boolean(claim && !claim.settled);
+        if (!archivePending) return { archivePending };
+        const checked = pending?.checkedAt ?? 0;
+        const archiveChecking = submitting || Date.now() - checked * 1000 < nativeRequestTimeoutMs;
+        const reason = host?.archiveError ?? host?.error ?? pending?.message;
+        return {
+            archivePending,
+            archiveChecking,
+            ...(!archiveChecking && {
+                archiveMessage: reason
+                    ? `归档结果仍无法核对：${reason}`
+                    : "宿主尚未确认归档，重开或重连后会继续核对",
+            }),
         };
     }
 
@@ -1193,7 +1273,8 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             hostLabel: hostLabel(hostId),
             followUp,
             canArchive: false,
-            archivePending: archive.pending(id),
+            archiveReason: "主机离线或会话目录暂不可核对",
+            ...archiveProgress(id, runtime.hosts.get(hostId), threadId, archived),
             ...cardObservation(runtime.historyReads, id, record),
         };
     }
@@ -2101,9 +2182,8 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
 
     async function verifyArchive(item: ArchiveItem) {
         const { card, connection } = target(item.id);
-        if (!card.canArchive || card.state !== "to_archive" || runtime.editing.has(item.id)) {
-            throw new Error("当前状态不能归档");
-        }
+        if (!card.canArchive || runtime.editing.has(item.id))
+            throw new ArchivePreconditionError(card.archiveReason ?? "卡片正在更新，请稍后重试");
         const context = await freshContext();
         const before = await desktop.read(connection, card.threadId, false);
         const latest = (await desktop.turns(connection, card.threadId, "summary")).data[0];
@@ -2111,42 +2191,45 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         const position = taskPlacement(context, card.hostId, before);
         const record = runtime.records[item.id] ?? emptyRecord;
         if (hostTasks()) await verifySharedVersion(connection, card.threadId, record.version);
-        verifyArchiveInput(item, record, before, latest);
-        if (
-            item.version !== record.version ||
-            item.sectionVersion !== position.version ||
-            !position.managed ||
-            taskState(context, card.hostId, before) !== "to_archive"
-        ) {
-            throw new Error("归档状态或位置已变更");
-        }
+        verifyArchiveVersion(item, record, position);
+        verifyArchiveInput(item, before, latest);
+        const confirmed = (await desktop.turns(connection, card.threadId, "notLoaded")).data[0];
+        if (confirmed?.id !== latest?.id || confirmed?.status !== latest?.status)
+            throw new NewInputError("归档核对期间最新轮次已变更");
         const after = await desktop.read(connection, card.threadId, false);
-        if (
-            after.status.type !== before.status.type ||
-            taskPlacement(context, card.hostId, after).version !== position.version
-        ) {
-            throw new Error("归档核对期间会话发生了变化");
-        }
+        verifyArchiveInput(item, after, latest);
+        if (after.updatedAt !== before.updatedAt)
+            throw new NewInputError("归档核对期间会话发生了变化，请核对后重试");
+        if (taskPlacement(context, card.hostId, after).version !== position.version)
+            throw new ArchivePreconditionError("归档核对期间会话位置已变更");
         await freshContext(context);
         desktop.assertCurrent(connection);
         return { connection, context, threadId: after.id };
     }
 
-    function verifyArchiveInput(
-        item: ArchiveItem,
-        record: CardRecord,
-        before: Thread,
-        latest: Turn | undefined,
-    ) {
-        const input = turnInput(latest);
+    function verifyArchiveVersion(item: ArchiveItem, record: CardRecord, position: Placement) {
         if (
-            (record.confirmedInputKey && input !== record.confirmedInputKey) ||
-            changedInput(record, input) ||
-            item.inputVersion !== record.inputVersion ||
-            before.status.type === "active" ||
-            latest?.status === "inProgress"
+            item.version !== record.version ||
+            item.sectionVersion !== position.version ||
+            item.inputVersion !== record.inputVersion
         )
-            throw new NewInputError("出现新输入或仍在执行，请重新核对");
+            throw new NewInputError("卡片状态、位置或输入已更新，请刷新后重试");
+    }
+
+    function verifyArchiveInput(item: ArchiveItem, before: Thread, latest: Turn | undefined) {
+        const blocked = runtimeArchiveBlock(before.status);
+        if (blocked) throw new ArchivePreconditionError(blocked);
+        if (latest?.status === "inProgress") throw new ArchivePreconditionError("最新轮次正在执行");
+        if (item.turnId !== undefined && item.turnId !== (latest?.id ?? null))
+            throw new NewInputError("出现了更新的轮次，请核对后再归档");
+        if (item.inputKey !== undefined && item.inputKey !== turnInput(latest))
+            throw new NewInputError("最新轮次增加或修改了输入，请核对后再归档");
+        if (
+            item.turnId === undefined &&
+            item.updatedAt !== undefined &&
+            (latest?.startedAt ?? 0) > item.updatedAt
+        )
+            throw new NewInputError("出现了更新的轮次，请核对后再归档");
     }
 
     async function verifySharedVersion(
@@ -2155,29 +2238,77 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         version: number,
     ) {
         const target = currentTaskTarget(connection);
-        if ((await taskStore.heads(target)).versions.get(threadId) !== version)
+        if (((await taskStore.heads(target)).versions.get(threadId) ?? 0) !== version)
             throw new Error("目标主机的任务状态已更新");
     }
 
     async function archiveThread(item: ArchiveItem): Promise<void> {
-        const { connection, context, threadId } = await verifyArchive(item).catch(
-            (error: unknown) => {
-                if (error instanceof NewInputError) throw error;
-                throw new ArchivePreconditionError(errorText(error));
-            },
+        const { connection, card } = archiveTarget(item.id);
+        const claim = await claimThreadArchive(connection, card.threadId).catch(
+            archivePrecondition,
         );
-        if (hostTasks()) {
-            const target = currentTaskTarget(connection);
-            const release = await taskStore.archiveClaim(target, threadId, item.inputVersion);
-            try {
-                await verifyArchive(item);
-            } catch (error) {
-                await release();
-                throw new ArchivePreconditionError(errorText(error));
+        try {
+            const verified = await verifyArchive(item).catch(archivePrecondition);
+            if (verified.connection.epoch !== connection.epoch)
+                throw new ArchivePreconditionError("归档核对期间连接已变更");
+            await desktop.setArchived(connection, card.threadId, true);
+            await freshContext(verified.context);
+        } catch (error) {
+            if (!definiteArchiveFailure(error)) throw error;
+            await claim?.settle();
+            archivePrecondition(error);
+        }
+    }
+
+    function archiveTarget(id: string) {
+        try {
+            return target(id);
+        } catch (error) {
+            return archivePrecondition(error);
+        }
+    }
+
+    async function claimThreadArchive(connection: HostConnection, threadId: ThreadId) {
+        if (!hostTasks()) return;
+        const store = currentTaskTarget(connection);
+        const claim = await taskStore.archiveClaim(store, threadId);
+        runtime.hosts.get(connection.hostId)?.archiveClaims?.set(threadId, claim);
+        return {
+            async settle() {
+                await taskStore.settleArchiveClaim(store, claim);
+                claim.settled = true;
+            },
+        };
+    }
+
+    function archivePrecondition(error: unknown): never {
+        if (error instanceof ArchivePreconditionError) throw error;
+        throw new ArchivePreconditionError(errorText(error));
+    }
+
+    function definiteArchiveFailure(error: unknown) {
+        return error instanceof ArchivePreconditionError || isDefiniteNativeWriteFailure(error);
+    }
+
+    async function reconcileArchiveDirectory(connection: HostConnection, host: HostSnapshot) {
+        const confirmed = new Set(
+            [...host.currentArchived].map((threadId) =>
+                cardId({ hostId: connection.hostId, threadId }),
+            ),
+        );
+        await archive.reconcile(confirmed);
+        if (!host.taskStore) return;
+        for (const threadId of host.currentArchived) {
+            const claim = host.archiveClaims?.get(threadId);
+            if (claim && !claim.settled) {
+                try {
+                    await taskStore.settleArchiveClaim(host.taskStore, claim);
+                    claim.settled = true;
+                } catch (error) {
+                    host.taskError = errorText(error);
+                }
             }
         }
-        await desktop.setArchived(connection, threadId, true);
-        await freshContext(context);
     }
 
     async function isArchived(id: string): Promise<boolean> {
@@ -2202,6 +2333,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         if (host) {
             if (verified) host.currentActive.delete(threadId);
             mergeArchives(host, archived);
+            if (verified) await reconcileArchiveDirectory(connection, host);
         }
         return verified;
     }
@@ -2454,8 +2586,34 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         return sortColumn(sort.state, sort);
     }
 
+    function queueArchiveRead() {
+        void Promise.resolve(runtime.refreshing)
+            .catch(() => undefined)
+            .then(refresh)
+            .catch((error: unknown) =>
+                ports.proof("board-archive-read-failed", { error: errorText(error) }),
+            );
+    }
+
+    function archiveHostReconnected(hostId: HostId) {
+        if (!runtime.context || hostManagementError(hostId)) return;
+        if (
+            runtime.ledger.archiveMigrationEnabled ||
+            archive
+                .batches()
+                .some(({ items }) =>
+                    items.some(
+                        ({ id, status }) =>
+                            status === "pending" && cardThread(id).hostId === hostId,
+                    ),
+                )
+        )
+            queueArchiveRead();
+    }
+
     return {
         refresh,
+        archiveHostReconnected,
         notice,
         taskChanged,
         subscribe(listener: (value: ReturnType<typeof snapshot>) => void) {

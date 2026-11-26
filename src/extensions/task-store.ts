@@ -4,12 +4,13 @@ import type {
     HostId,
     SidebarContext,
 } from "./desktop/connection.js";
-import { labels } from "./placement.js";
+import { labels, migrateArchiveRecord, migratedState } from "./placement.js";
 import type { CardRecord } from "./records.js";
 
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const revisionName = /^([0-9a-f-]{36})\.(\d+)\.json$/;
 const claimName = /^([0-9a-f-]{36})\.(\d+)\.archive$/;
+const settledClaimSuffix = ".settled";
 const ensurePrivateDirectory =
     'umask 077; if [ ! -e "$1" ]; then /bin/mkdir -m 700 "$1" || [ -d "$1" ] || exit; fi; ' +
     '[ ! -L "$1" ] && [ -d "$1" ] && [ -O "$1" ] && /bin/chmod 700 "$1"';
@@ -39,6 +40,13 @@ interface Revision {
     confirmedAt: number;
 }
 
+export interface ArchiveClaim {
+    threadId: string;
+    sequence: number;
+    name: string;
+    settled: boolean;
+}
+
 function revisionEntry(fileName: string) {
     const match = revisionName.exec(fileName);
     const threadId = match?.[1];
@@ -51,14 +59,14 @@ function revisionEntry(fileName: string) {
 function parseRevision(text: string, version: number): Revision {
     const value = JSON.parse(text) as Partial<Revision> | null;
     const record = value?.record;
+    const state = migratedState(record?.state);
     if (
         !record ||
         record.version !== version ||
         typeof record.note !== "string" ||
         !Number.isSafeInteger(record.inputVersion) ||
         record.inputVersion < 0 ||
-        (record.state !== null &&
-            (typeof record.state !== "string" || !Object.hasOwn(labels, record.state))) ||
+        (state !== null && (typeof state !== "string" || !Object.hasOwn(labels, state))) ||
         (record.deferred && typeof record.deferred.reason !== "string") ||
         typeof value?.operation !== "string" ||
         !uuid.test(value.operation) ||
@@ -66,7 +74,11 @@ function parseRevision(text: string, version: number): Revision {
         !Number.isFinite(value.confirmedAt)
     )
         throw new Error("目标主机的任务记录无效");
-    return { record, operation: value.operation, confirmedAt: value.confirmedAt };
+    return {
+        record: migrateArchiveRecord(record),
+        operation: value.operation,
+        confirmedAt: value.confirmedAt,
+    };
 }
 
 export function createTaskStore(desktop: DesktopConnection) {
@@ -149,10 +161,28 @@ export function createTaskStore(desktop: DesktopConnection) {
 
     async function heads({ connection, directory }: Target) {
         const versions = new Map<string, number>();
-        const claims = new Set<string>();
-        for (const { fileName, isFile } of await files.list(connection, directory)) {
-            if (!isFile) continue;
-            if (claimName.test(fileName)) claims.add(fileName);
+        const claims = new Map<string, ArchiveClaim>();
+        const names = new Set(
+            (await files.list(connection, directory))
+                .filter(({ isFile }) => isFile)
+                .map(({ fileName }) => fileName),
+        );
+        for (const fileName of names) {
+            const match = claimName.exec(fileName);
+            const sequence = Number(match?.[2]);
+            const threadId = match?.[1];
+            if (
+                threadId &&
+                Number.isSafeInteger(sequence) &&
+                sequence > (claims.get(threadId)?.sequence ?? -1)
+            ) {
+                claims.set(threadId, {
+                    threadId,
+                    sequence,
+                    name: fileName,
+                    settled: names.has(`${fileName}${settledClaimSuffix}`),
+                });
+            }
             const entry = revisionEntry(fileName);
             if (entry) {
                 const { threadId, version } = entry;
@@ -189,19 +219,28 @@ export function createTaskStore(desktop: DesktopConnection) {
         return committed;
     }
 
-    function archiveKey(thread: string, inputVersion: number) {
-        return `${thread}.${inputVersion}.archive`;
-    }
-
-    async function archiveClaim(current: Target, thread: string, inputVersion: number) {
-        if (!uuid.test(thread) || !Number.isSafeInteger(inputVersion) || inputVersion < 0)
-            throw new Error("归档任务版本无效");
+    async function archiveClaim(current: Target, threadId: string) {
+        if (!uuid.test(threadId)) throw new Error("归档任务标识无效");
+        const previous = (await heads(current)).claims.get(threadId);
+        if (previous && !previous.settled)
+            throw new Error("其他设备已提交归档意图，请核对实际结果");
         const operation = crypto.randomUUID();
-        const name = archiveKey(thread, inputVersion);
+        const sequence = (previous?.sequence ?? -1) + 1;
+        const name = `${threadId}.${sequence}.archive`;
         if ((await publish(current.connection, current.directory, name, operation)) !== operation)
             throw new Error("其他设备已提交归档意图，请核对实际结果");
-        return () => files.remove(current.connection, `${current.directory}/${name}`);
+        return { threadId, sequence, name, settled: false };
     }
 
-    return { target, heads, read, write, archiveClaim, archiveKey };
+    async function settleArchiveClaim(current: Target, claim: ArchiveClaim) {
+        if (claim.settled) return;
+        await publish(
+            current.connection,
+            current.directory,
+            `${claim.name}${settledClaimSuffix}`,
+            "settled",
+        );
+    }
+
+    return { target, heads, read, write, archiveClaim, settleArchiveClaim };
 }
