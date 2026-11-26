@@ -14,17 +14,7 @@ export const resourceUri = "ui://session-board/index.html";
 const mimeType = "text/html;profile=mcp-app";
 const publisher = "board_view";
 const description = "会话看板。通过当前 Codex 窗口的已连接主机读取和管理会话。";
-const legacyHidden = new Set([
-    "Archive",
-    "ArchiveBatches",
-    "ArchiveBatchStart",
-    "ArchiveBatchFinish",
-    "ArchiveBatchCheck",
-    "NewReset",
-    "Connect",
-    "ProjectAssign",
-    "SshSetup",
-]);
+const legacyHidden = new Set(["NewReset", "Connect", "ProjectAssign", "SshSetup"]);
 
 interface McpOptions {
     request: BoardRequest;
@@ -87,9 +77,11 @@ async function callTool(
             throw new Error("未知看板工具");
         const payload = argumentsFor(operation, parameters.arguments ?? {});
         const result = await options.request(operation.path, payload);
-        return operation.action === "PreviewReply"
-            ? { content: [], _meta: { previewReply: result } }
-            : toolResult(result);
+        if (operation.action === "PreviewReply")
+            return { content: [], _meta: { previewReply: result } };
+        if (operation.action === "ArchiveRead")
+            return { content: [], _meta: { archivedConversation: result } };
+        return toolResult(result);
     } catch (error) {
         return { isError: true, content: text(messageOf(error)) };
     }

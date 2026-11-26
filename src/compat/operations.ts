@@ -68,23 +68,19 @@ const schemas: Record<string, Schema> = {
         },
         ["state", "field", "direction", "version"],
     ),
-    Archive: fields({ ...cardVersion, batchId: text }, cardRequired),
-    ArchiveBatches: fields(),
-    ArchiveBatchStart: fields(
+    Archive: fields(
         {
-            id: text,
-            items: {
-                type: "array",
-                minItems: 1,
-                items: fields({ ...cardVersion, title: { ...text, maxLength: 500 } }, [
-                    ...cardRequired,
-                    "title",
-                ]),
-            },
+            ...cardVersion,
+            attemptId: text,
+            updatedAt: { type: "number" },
+            turnId: nullableText,
+            inputKey: nullableText,
         },
-        ["id", "items"],
+        [...cardRequired, "attemptId", "updatedAt"],
     ),
-    ArchiveBatchFinish: byId,
+    ArchiveBatches: fields(),
+    ArchiveRead: byId,
+    ArchiveRestore: byId,
     ArchiveBatchCheck: byId,
     Open: byId,
     PreviewReply: byId,

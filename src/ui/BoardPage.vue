@@ -26,7 +26,7 @@
                     aria-controls="plugin-update-status">
                     更新
                 </button>
-                <span id="archive-results-control" style="display: contents;"></span>
+                <span id="archive-history" style="display: contents;"></span>
                 <button id="ssh-settings" class="quiet" type="button" hidden>连接设置</button>
                 <button
                     v-if="install"
@@ -41,8 +41,6 @@
             </div>
         </header>
         <div id="plugin-update-status" class="health" role="status" hidden></div>
-        <div id="archive-status" class="health" role="status" hidden></div>
-        <div id="archive-results"></div>
         <div class="toolbar">
             <div class="filters" id="board-filters"></div>
         </div>
@@ -83,7 +81,7 @@
         <details class="board-help">
             <summary>使用说明与连接帮助</summary>
             <p class="foot" id="foot">
-                拖动卡片修改状态。“待归档”列的一键归档处理当前筛选下本机和远程主机中的可归档会话，也可以逐张归档。只读记录不会归档。新建会话只打开输入页，不发送输入。
+                拖动卡片修改状态。点卡片标题右侧的对钩归档会话。新建会话只打开输入页，不发送输入。
             </p>
             <button id="connection-help" class="quiet" type="button">连接帮助</button>
         </details>
@@ -91,7 +89,7 @@
     <dialog id="health-details" aria-labelledby="health-details-title">
         <h2 id="health-details-title">连接与会话读取</h2>
         <p class="reason">
-            先查看受影响的功能，再选择处理办法。选择主机只改变显示范围。后台定时归档仍按原配置运行。
+            先查看受影响的功能，再选择处理办法。选择主机只改变显示范围。
         </p>
         <div id="health-detail-list"></div>
         <div class="dialog-actions">

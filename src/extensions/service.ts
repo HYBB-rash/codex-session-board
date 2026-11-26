@@ -2573,22 +2573,18 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     async function requestArchive(path: string, body: object | undefined) {
         await freshContext();
         const args = body as
-            | (Partial<ArchiveTarget> & { batchId?: string; items?: ArchiveTarget[] })
+            | (Partial<ArchiveTarget> & { attemptId?: string; batchId?: unknown })
             | undefined;
-        if (path === "/api/archive-batches" && !body) return { batches: archive.batches() };
-        if (runtime.settings.mode === "legacy") throw new Error("旧六状态模式不支持归档");
+        if (path === "/api/archive-batches" && (!body || !Object.keys(body).length))
+            return { batches: archive.batches() };
         if (!args?.id) throw new Error("缺少归档批次或会话 ID");
         switch (path) {
-            case "/api/archive-batches":
-                if (Array.isArray(args.items))
-                    return { batch: await archive.start(args.id, args.items) };
-                break;
-            case "/api/archive-batches/finish":
-                return { batch: await archive.finish(args.id) };
             case "/api/archive-batches/check":
                 return { batch: await archive.check(args.id) };
             case "/api/archive":
-                return { item: await submitArchive(args as ArchiveTarget, args.batchId) };
+                if (args.batchId === undefined && args.attemptId && args.updatedAt !== undefined)
+                    return { item: await submitArchive(args as ArchiveTarget, args.attemptId) };
+                break;
             case "/api/archive-read":
                 return readArchived(args.id);
             case "/api/archive-restore":
@@ -2597,11 +2593,21 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         throw new Error("归档请求不完整");
     }
 
-    function submitArchive(args: ArchiveTarget, batchId?: string) {
+    async function submitArchive(args: ArchiveTarget, attemptId: string) {
+        const previous = archive.batches().find(({ id }) => id === attemptId);
+        if (previous?.single && previous.items[0]?.id === args.id) return previous.items[0];
         const candidate = { ...args, sectionVersion: args.sectionVersion ?? null };
-        if (batchId) return archive.submit(batchId, candidate);
         const { card } = target(candidate.id);
-        return archive.single({ ...candidate, title: card.title });
+        if (card.archivePending || card.archiveRestorePending)
+            throw new Error("会话已有操作待核对，请稍后再试");
+        try {
+            return await archive.single(
+                { ...candidate, state: card.state, title: card.title },
+                attemptId,
+            );
+        } finally {
+            publishSnapshot();
+        }
     }
 
     function archiveMoveIntent(id: string, move: ArchiveMove) {

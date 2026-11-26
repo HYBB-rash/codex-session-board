@@ -18,6 +18,15 @@ export interface BoardSession extends PreviewSession {
     archived?: boolean;
     canArchive?: boolean;
     archivePending?: boolean;
+    archiveChecking?: boolean;
+    archiveReason?: string;
+    archiveMessage?: string;
+    archiveTurnId?: string | null;
+    archiveInputKey?: string | null;
+    archiveRestorePending?: boolean;
+    canRestore?: boolean;
+    archivedAt?: number;
+    checkedAt?: number;
     taskStateConfirmedAt?: number;
     presence?: string;
     catalogCurrent?: boolean;

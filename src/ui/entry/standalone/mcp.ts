@@ -38,8 +38,9 @@ startBoard(async (path, body) => {
     const result = await app.callServerTool({ name: operation.tool, arguments: { ...body } });
     const text = result.content?.find((item) => item.type === "text")?.text;
     if (result.isError) throw new Error(text || "看板操作失败");
-    const { previewReply } = result._meta ?? {};
+    const { previewReply, archivedConversation } = result._meta ?? {};
     if (operation.action === "PreviewReply" && previewReply) return previewReply;
+    if (operation.action === "ArchiveRead" && archivedConversation) return archivedConversation;
     if (result.structuredContent) return result.structuredContent;
     if (text) return JSON.parse(text);
     throw new Error("看板返回了空结果");

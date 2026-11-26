@@ -19,6 +19,7 @@ export interface BoardSnapshot {
     accountScope?: string;
     states: Record<string, string>;
     sessions: BoardSession[];
+    archivedSessions?: BoardSession[];
     health: BoardHealth;
     projectCatalog: {
         loaded: boolean;
@@ -175,10 +176,10 @@ export function startBoardPage(
     }
 
     function mountArchive(): ReturnType<typeof mountBoardArchive> {
-        return mountBoardArchive(byId("archive-results"), byId("archive-status"), {
+        return mountBoardArchive(byId("archive-history"), {
             snapshot,
             request,
-            open: reader.openSession,
+            project: browse.projectPresentation,
             date,
             announce,
             render,
@@ -187,9 +188,7 @@ export function startBoardPage(
             movingId,
             dragActive,
             editorOpen,
-            setSaving,
             invalidateSnapshot,
-            persist: (session, state, note) => edits.persist(session, state, note),
         });
     }
 
@@ -356,7 +355,7 @@ export function startBoardPage(
                 edit: edits.open,
                 assign: assignment.open,
                 archive: archive.submitCard,
-                archiveAll: archive.submit,
+                restorePlacement: archive.restorePlacement,
                 editorOpen,
                 announce,
                 move: edits.move,
@@ -409,7 +408,6 @@ export function startBoardPage(
                 unread,
                 sessions,
                 preference,
-                archiveCount: archive.count(sessions),
             };
         });
     }
@@ -441,7 +439,6 @@ export function startBoardPage(
             },
             moving: visible.some((session) => session.id === moving?.id) ? moving : null,
             unconfirmed: [...edits.unconfirmed.keys()],
-            archivePending: [...archive.pending],
         };
     }
 
@@ -450,10 +447,6 @@ export function startBoardPage(
         browse.filters.update(data);
         newTarget.update();
         board.update(boardModel(), resetState);
-        if (data.legacyMode)
-            byId("foot").textContent =
-                "拖动卡片修改状态，备注随会话保存。“待归档”和“已完成”均为人工状态。新建会话仅打开输入页。";
-        archive.updateStatus();
         health.render();
     };
     const load = (): Promise<void> =>
@@ -525,12 +518,8 @@ export function startBoardPage(
     const refresh = mountRefresh(replaceAccount, initial !== undefined);
     browse.filters.update(data);
     const poll = window.setInterval(load, 4000);
-    if (initial) {
-        applySnapshot(initial);
-        void archive.restore();
-    } else {
-        void load().then(() => (lifetime.signal.aborted ? undefined : archive.restore()));
-    }
+    if (initial) applySnapshot(initial);
+    else void load();
 
     return { unmount };
 }

@@ -12,7 +12,7 @@ function CardNotices({ session, actions }: { session: BoardSession; actions: Car
     return (
         <>
             {session.followUp && <div class="follow">有新输入，待复核</div>}
-            {actions.pendingArchive && <div class="follow">归档结果待核对</div>}
+            {actions.archiveMessage && <div class="follow">{actions.archiveMessage}</div>}
             {actions.readOnly && <div class="follow">当前仅供查看</div>}
             {session.observationError && <div class="follow">历史读取失败，保留原状态</div>}
             {session.observationWarning && <div class="follow">{session.observationWarning}</div>}
@@ -101,22 +101,59 @@ function CardFooter({
                         归入项目
                     </button>
                 )}
-                {actions.archive && (
+                {session.archiveRestorePending && (
                     <button
                         type="button"
                         class="row-action"
-                        data-action="archive"
-                        disabled={!actions.canSubmit}
-                        title={
-                            actions.archive === "confirm"
-                                ? "请先打开会话核对输入；确认仅保存待归档状态，不执行归档"
-                                : "直接归档此 Codex 会话"
-                        }
-                        onClick={() => dependencies.archive(session)}>
-                        {actions.archive === "confirm" ? "确认待归档" : "归档"}
+                        disabled={locked || !session.canOpen}
+                        onClick={() => dependencies.restorePlacement(session.id)}>
+                        完成恢复
                     </button>
                 )}
             </div>
+        </div>
+    );
+}
+
+function CardTitle({
+    session,
+    model,
+    dependencies,
+    actions,
+    pending,
+}: {
+    session: BoardSession;
+    model: BoardModel;
+    dependencies: BoardControls;
+    actions: CardActions;
+    pending: boolean;
+}) {
+    const preview = !dependencies.nativeConversation;
+    const archiveLabel = actions.spinning ? "正在归档会话" : "归档会话";
+    return (
+        <div class="card-title-row">
+            <button
+                class="title card-title"
+                type="button"
+                data-action={preview ? "preview" : "open-conversation"}
+                disabled={pending}
+                title={`${preview ? "预览回复" : "打开会话"}：${session.title}`}
+                aria-controls={preview ? "reply-reader" : undefined}
+                aria-expanded={preview ? model.selectedId === session.id : undefined}
+                onClick={(event) => dependencies.openCard(session, event.detail === 0)}>
+                {session.title}
+            </button>
+            <button
+                type="button"
+                class={["quiet", "archive-check", { spinning: actions.spinning }]}
+                data-action="archive"
+                aria-label={archiveLabel}
+                aria-busy={actions.spinning}
+                title={actions.archiveMessage ?? session.archiveReason ?? archiveLabel}
+                disabled={!actions.canSubmit}
+                onClick={() => dependencies.archive(session)}>
+                <span aria-hidden="true">{actions.spinning ? "" : "✓"}</span>
+            </button>
         </div>
     );
 }
@@ -145,7 +182,6 @@ export default defineComponent({
             const pending = model.moving?.id === session.id;
             const locked = model.saving || model.creating || pending;
             const actions = dependencies.actions(session);
-            const preview = !dependencies.nativeConversation;
             return (
                 <article
                     ref={setArticle}
@@ -163,17 +199,13 @@ export default defineComponent({
                     draggable={actions.canAdjust}
                     onDragstart={(event) => dependencies.drag.start(session, event)}
                     onDragend={dependencies.drag.cancel}>
-                    <button
-                        class="title card-title"
-                        type="button"
-                        data-action={preview ? "preview" : "open-conversation"}
-                        disabled={pending}
-                        title={`${preview ? "预览回复" : "打开会话"}：${session.title}`}
-                        aria-controls={preview ? "reply-reader" : undefined}
-                        aria-expanded={preview ? model.selectedId === session.id : undefined}
-                        onClick={(event) => dependencies.openCard(session, event.detail === 0)}>
-                        {session.title}
-                    </button>
+                    <CardTitle
+                        session={session}
+                        model={model}
+                        dependencies={dependencies}
+                        actions={actions}
+                        pending={pending}
+                    />
                     <CardProject project={dependencies.project(session)} />
                     <CardStatus
                         session={session}

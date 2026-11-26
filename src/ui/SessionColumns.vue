@@ -56,16 +56,6 @@
                 :disabled="model.saving || model.creating"
                 :can-change="dependencies.canSort"
                 :save="dependencies.saveSort"/>
-            <button
-                v-if="column.state === 'to_archive' && !model.legacyMode"
-                type="button"
-                class="row-action"
-                data-archive-all=""
-                :disabled="!column.archiveCount"
-                :title="`${model.scope}；只归档本列可归档的会话`"
-                @click="dependencies.archiveAll(column.sessions)">
-                归档 {{ column.archiveCount }} 条
-            </button>
         </div>
         <div class="cards">
             <SessionCard
@@ -83,9 +73,7 @@
                 class="empty-column">
                 {{ column.unread
                     ? "尚未读取会话，可查看连接详情"
-                    : column.state === "to_archive" && model.archivePending.length
-                        ? "暂无匹配的会话。归档结果待核对，见「归档结果」。"
-                        : "暂无匹配的会话" }}
+                    : "暂无匹配的会话" }}
             </div>
         </div>
     </section>

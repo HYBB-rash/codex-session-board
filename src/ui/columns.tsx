@@ -15,7 +15,6 @@ export interface BoardModel {
         sessions: BoardSession[];
         preference: SortPreference;
         unread: boolean;
-        archiveCount: number;
     }[];
     scope: string;
     unplaced: BoardSession[];
@@ -25,7 +24,6 @@ export interface BoardModel {
     selectedId: string | undefined;
     moving?: { id: string; state: string | null; from: string | null } | null;
     unconfirmed: string[];
-    archivePending: string[];
 }
 
 export interface BoardDependencies {
@@ -40,7 +38,7 @@ export interface BoardDependencies {
     edit: (id: string, state?: string, session?: BoardSession) => void;
     assign: (session: BoardSession) => void;
     archive: (session: BoardSession) => void;
-    archiveAll: (sessions: BoardSession[]) => void;
+    restorePlacement: (id: string) => void;
     editorOpen: () => boolean;
     refresh: () => void;
     announce: (message: string, error?: boolean) => void;

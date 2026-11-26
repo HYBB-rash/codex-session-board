@@ -28,7 +28,7 @@
         "method": "POST",
         "path": "/api/archive",
         "tool": "board_archive",
-        "title": "归档待归档会话",
+        "title": "归档一条会话",
         "readOnly": false
     },
     {
@@ -40,19 +40,19 @@
         "readOnly": true
     },
     {
-        "action": "ArchiveBatchStart",
+        "action": "ArchiveRead",
         "method": "POST",
-        "path": "/api/archive-batches",
-        "tool": "board_archive_batch_start",
-        "title": "登记归档批次",
-        "readOnly": false
+        "path": "/api/archive-read",
+        "tool": "board_archive_read",
+        "title": "读取已归档会话",
+        "readOnly": true
     },
     {
-        "action": "ArchiveBatchFinish",
+        "action": "ArchiveRestore",
         "method": "POST",
-        "path": "/api/archive-batches/finish",
-        "tool": "board_archive_batch_finish",
-        "title": "结束本批归档提交",
+        "path": "/api/archive-restore",
+        "tool": "board_archive_restore",
+        "title": "恢复已归档会话",
         "readOnly": false
     },
     {

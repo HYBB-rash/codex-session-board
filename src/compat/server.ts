@@ -210,11 +210,22 @@ async function respondMigration(
     request: IncomingMessage,
     response: ServerResponse,
 ) {
-    if (path === "/api/task-migration/preview" && request.method === "GET") {
+    if (
+        ["/api/task-migration/preview", "/api/archive-migration/preview"].includes(path) &&
+        request.method === "GET"
+    ) {
         json(response, 200, await runtime.options.request(path));
         return true;
     }
-    if (path !== "/api/task-migration/apply" || request.method !== "POST") return false;
+    if (
+        ![
+            "/api/task-migration/apply",
+            "/api/archive-migration/apply",
+            "/api/archive-migration/rollback",
+        ].includes(path) ||
+        request.method !== "POST"
+    )
+        return false;
     const input = (await body(request, 1024)) as { confirm?: unknown } | null;
     if (typeof input?.confirm !== "string") throw new RequestError(400, "缺少已核对的迁移确认值");
     json(response, 200, await runtime.options.request(path, { confirm: input.confirm }));
@@ -239,10 +250,7 @@ async function respond(runtime: Runtime, request: IncomingMessage, response: Ser
         (item) => item.path === path && item.method === request.method,
     );
     if (!operation) throw new RequestError(404, "接口不存在");
-    const payload =
-        operation.method === "POST"
-            ? await body(request, operation.action === "ArchiveBatchStart" ? 1024 * 1024 : 12000)
-            : {};
+    const payload = operation.method === "POST" ? await body(request, 12000) : {};
     json(
         response,
         operation.action === "Refresh" ? 202 : 200,
