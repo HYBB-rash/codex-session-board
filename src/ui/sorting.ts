@@ -38,7 +38,7 @@ export function sortColumn(
 ) {
     const preference: SortPreference = (state && saved?.[state]) || {
         field: "updated_at",
-        direction: state === "to_archive" ? "asc" : "desc",
+        direction: "desc",
         version: 0,
     };
     if (preference.field !== "updated_at") throw new Error("不支持的排序字段，请刷新看板。");

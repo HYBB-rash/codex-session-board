@@ -1,5 +1,5 @@
 import type { Thread, Turn } from "./desktop/connection.js";
-import { type BoardState, labels } from "./placement.js";
+import { type BoardState, labels, oldArchiveSection } from "./placement.js";
 
 export interface Phase {
     key: string;
@@ -92,7 +92,10 @@ export function phaseIsFromTurn(key: string | undefined, turnId: string): boolea
     return key?.startsWith(`${JSON.stringify([turnId]).slice(0, -1)},`) ?? false;
 }
 
-const knownPrefixes = Object.values(labels).flatMap((label) => [`[${label}]`, `【${label}】`]);
+const knownPrefixes = [...Object.values(labels), oldArchiveSection].flatMap((label) => [
+    `[${label}]`,
+    `【${label}】`,
+]);
 
 export function projectedTitle(title: string, state: BoardState | null): string {
     if (state !== null && !Object.hasOwn(labels, state)) throw new Error("未知状态");
