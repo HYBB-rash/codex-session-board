@@ -99,8 +99,6 @@ export interface LegacyPreferences {
     mode: "four" | "five" | "legacy";
     syncTitles: boolean;
     nativeSections: boolean;
-    autoArchiveSeconds: number | null;
-    remoteAutoArchiveSeconds: number | null;
     pollSeconds: number;
     runtimePollSeconds: number;
     pageSize: number;
@@ -142,8 +140,6 @@ interface OldConfig {
     four_columns?: unknown;
     native_sections?: unknown;
     sync_titles?: unknown;
-    auto_archive_seconds?: unknown;
-    remote_auto_archive_seconds?: unknown;
     poll_seconds?: unknown;
     runtime_poll_seconds?: unknown;
     page_size?: unknown;
@@ -223,8 +219,6 @@ function readPreferences(config: OldConfig): LegacyPreferences {
             config.legacy_mode === true ? "legacy" : config.four_columns === true ? "four" : "five",
         nativeSections: config.native_sections === true,
         syncTitles: config.sync_titles !== false,
-        autoArchiveSeconds: positive(config.auto_archive_seconds),
-        remoteAutoArchiveSeconds: positive(config.remote_auto_archive_seconds),
         pollSeconds: positive(config.poll_seconds) ?? 30,
         runtimePollSeconds: positive(config.runtime_poll_seconds) ?? 2,
         pageSize: positive(config.page_size) ?? 100,

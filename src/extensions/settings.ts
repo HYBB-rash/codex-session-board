@@ -4,8 +4,6 @@ export interface BoardSettings {
     mode: BoardMode;
     taskState?: "host" | "migration";
     syncTitles: boolean;
-    autoArchiveSeconds: number | null;
-    remoteAutoArchiveSeconds: number | null;
     pageSize: number;
     maxPages: number;
     historyPerPoll: number;
@@ -15,8 +13,6 @@ export interface BoardSettings {
 export const defaults: BoardSettings = {
     mode: "four",
     syncTitles: false,
-    autoArchiveSeconds: null,
-    remoteAutoArchiveSeconds: null,
     pageSize: 100,
     maxPages: 100,
     historyPerPoll: 20,
@@ -26,28 +22,35 @@ export function readSettings(raw: unknown): BoardSettings {
     if (raw === undefined) return defaults;
     const settings = raw as Partial<BoardSettings> | null;
     if (!settings || typeof settings !== "object") throw new Error("看板配置应为 JSON 对象");
-    const value = { ...defaults, ...settings };
-    const validInterval = (seconds: number | null) =>
-        seconds === null || (Number.isSafeInteger(seconds) && seconds > 0);
+    const { mode, taskState, syncTitles, pageSize, maxPages, historyPerPoll, writableThreadIds } = {
+        ...defaults,
+        ...settings,
+    };
     if (
-        !["four", "five", "legacy"].includes(value.mode) ||
-        (value.taskState !== undefined && !["host", "migration"].includes(value.taskState)) ||
-        typeof value.syncTitles !== "boolean" ||
-        !validInterval(value.autoArchiveSeconds) ||
-        !validInterval(value.remoteAutoArchiveSeconds) ||
-        !positiveInteger(value.pageSize) ||
-        value.pageSize > 0xffffffff ||
-        !positiveInteger(value.maxPages) ||
-        !positiveInteger(value.historyPerPoll) ||
-        (value.writableThreadIds !== undefined &&
-            (!Array.isArray(value.writableThreadIds) ||
-                !value.writableThreadIds.every(
+        !["four", "five", "legacy"].includes(mode) ||
+        (taskState !== undefined && !["host", "migration"].includes(taskState)) ||
+        typeof syncTitles !== "boolean" ||
+        !positiveInteger(pageSize) ||
+        pageSize > 0xffffffff ||
+        !positiveInteger(maxPages) ||
+        !positiveInteger(historyPerPoll) ||
+        (writableThreadIds !== undefined &&
+            (!Array.isArray(writableThreadIds) ||
+                !writableThreadIds.every(
                     (id) => typeof id === "string" && /^[\da-f-]{36}$/i.test(id),
                 )))
     ) {
-        throw new Error("看板状态模式、标题同步、归档周期或分页配置不合法");
+        throw new Error("看板状态模式、标题同步或分页配置不合法");
     }
-    return value;
+    return {
+        mode,
+        syncTitles,
+        pageSize,
+        maxPages,
+        historyPerPoll,
+        ...(taskState !== undefined && { taskState }),
+        ...(writableThreadIds !== undefined && { writableThreadIds }),
+    };
 }
 
 function positiveInteger(value: number): boolean {

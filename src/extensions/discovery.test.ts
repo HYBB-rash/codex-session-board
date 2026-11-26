@@ -662,44 +662,21 @@ test("remote host labels follow the native names without changing host or card i
     assert.equal(updated.health.remoteRegistry[0]?.hostLabel, "Work Mac");
 });
 
-test("archive deadlines follow the current host settings and configured time boundaries", async (testContext) => {
-    const { native, service, settings } = fixture(testContext);
+test("obsolete archive settings never schedule native writes on the local or SSH host", async (testContext) => {
+    const { native, service, settings, ledgers } = fixture(testContext);
     native.hosts = [localHostId, remoteName];
-    let time = 3601;
+    let time = 1;
     testContext.mock.method(Date, "now", () => time * 1000);
-    settings.autoArchiveSeconds = 1800;
-    settings.remoteAutoArchiveSeconds = 900;
-    type Schedule = [
-        seconds: number | null,
-        nextAt: number | undefined,
-        lastAt: number | undefined,
-    ];
-    async function expectSchedules(local: Schedule, remote: Schedule) {
-        await service.refresh();
-        const { health } = service.snapshot();
-        const remoteHealth = health.remoteConnections.find(({ hostId }) => hostId === remoteName);
-        assert.ok(remoteHealth);
-        const timing = [health, remoteHealth].map(
-            ({ autoArchiveSeconds, autoArchiveNextAt, autoArchiveLastRun }) => [
-                autoArchiveSeconds,
-                autoArchiveNextAt,
-                autoArchiveLastRun?.at,
-            ],
-        );
-        assert.deepEqual(timing, [local, remote]);
-    }
-    await expectSchedules([1800, 5400, undefined], [900, 4500, undefined]);
-    time = 4501;
-    settings.autoArchiveSeconds = 300;
-    await expectSchedules([300, 4800, undefined], [900, 5400, 4501]);
-    time = 6301;
-    settings.remoteAutoArchiveSeconds = null;
-    await expectSchedules([300, 6600, 6301], [null, undefined, 4501]);
-    settings.mode = "legacy";
-    await expectSchedules([null, undefined, 6301], [null, undefined, 4501]);
-    time = 6600;
-    settings.mode = "four";
-    await expectSchedules([300, 6900, 6301], [null, undefined, 4501]);
+    const obsolete = { autoArchiveSeconds: 1, remoteAutoArchiveSeconds: 1 };
+    assert.deepEqual(readSettings({ ...settings, ...obsolete }), settings);
+    Object.assign(settings, obsolete);
+    const { writes } = archiveFixture(native);
+    await service.refresh();
+    time = 90000;
+    await service.refresh();
+    assert.deepEqual(writes, []);
+    assert.equal(ledgers.size, 0);
+    assert.ok(!("to_archive" in service.snapshot().states));
 });
 
 test("opening rejects invalid, undiscovered and mismatched threads and uses the verified host", async (testContext) => {

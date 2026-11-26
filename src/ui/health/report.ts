@@ -1,9 +1,8 @@
-import type { AutoArchiveHealth } from "../archive/controls";
 import type { CatalogProject, HostCatalog, HostIdentity, HostOption } from "../browse/scope";
 import type { BoardSnapshot } from "../controller";
 import type { BoardSession } from "../session";
 
-interface HostHealth extends AutoArchiveHealth {
+interface HostHealth {
     error?: string | null;
     runtimeError?: string | null;
     nativeError?: string | null;
@@ -11,6 +10,7 @@ interface HostHealth extends AutoArchiveHealth {
     nativeStageError?: string | null;
     writeError?: string | null;
     archiveReadError?: string | null;
+    archiveMigrationError?: string | null;
     historyError?: string | null;
     lastSuccessAt?: number | null;
     lastScanAt?: number | null;
@@ -131,7 +131,7 @@ function summarizeDiagnostics(reading: HostReading) {
         ["目录归属", catalogIssues],
         ["轮次历史", current.historyError],
         ["归档历史", current.archiveReadError],
-        ["定时归档", current.autoArchiveError],
+        ["旧待归档迁移", current.archiveMigrationError],
     ]);
     if (catalog?.coverage) diagnostics.push(["目录覆盖", JSON.stringify(catalog.coverage)]);
     const incomplete = current.lastScanAt && !current.scanComplete && !current.refreshing;
@@ -181,7 +181,6 @@ function sessionStatus(reading: HostReading, diagnostic: HostDiagnostics) {
     if (projectError) return "项目列表暂不可读，保留上次分类";
     if (diagnostic.pendingProject) return "部分会话的项目归属待确认";
     if (current.historyError) return "部分会话历史暂不可读，保留已有记录";
-    if (current.autoArchiveError) return "本轮后台自动归档未完成";
     return sessionReadStatus(current, rows.length > 0);
 }
 
@@ -262,7 +261,7 @@ function hostEffects(
     cachedProjects: boolean,
     date: HealthSources["date"],
 ) {
-    const { current, catalog, projectError } = reading;
+    const { catalog, projectError } = reading;
     const effects = readingEffects(reading);
     if (projectError || cachedProjects) effects.push("项目资料来自上次记录，暂未确认更新。");
     if (diagnostic.pendingProject)
@@ -271,10 +270,6 @@ function hostEffects(
         effects.push(`目录快照时间：${date(catalog.capturedAt)}`);
         if (catalog.pending) effects.push("目录正在刷新，当前先显示上次可用结果。");
     }
-    if (current.autoArchiveSeconds)
-        effects.push(
-            `后台每 ${current.autoArchiveSeconds / 60} 分钟自动归档，下次 ${date(current.autoArchiveNextAt)}；不受筛选影响。`,
-        );
     return effects;
 }
 

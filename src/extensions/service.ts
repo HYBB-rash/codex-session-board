@@ -99,13 +99,8 @@ interface HostSnapshot {
 interface HistoryRead {
     sequence: number;
     error?: string;
-}
-
-interface AutoArchiveRun {
-    at: number;
-    archived: string[];
-    deferred: { id: string; reason: string }[];
-    error?: string;
+    turnId?: string | null;
+    inputKey?: string | null;
 }
 
 interface Edit {
@@ -457,11 +452,6 @@ function cardObservation(
     };
 }
 
-function archiveInterval(settings: BoardSettings, hostId: string) {
-    if (settings.mode === "legacy") return null;
-    return hostId === "local" ? settings.autoArchiveSeconds : settings.remoteAutoArchiveSeconds;
-}
-
 function draftHost(desktop: DesktopConnection, requested?: string, selected?: HostId): HostId {
     const host = selected ?? desktop.knownHosts().find((hostId) => hostId === localHostId);
     if (!host || (requested && requested !== host)) throw new Error("选定的 Codex 连接不可用");
@@ -514,8 +504,6 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             string,
             { projectId: string; result: Promise<TrackedDraftResult> }
         >(),
-        archiveDeadlines: new Map<HostId, number>(),
-        archiveRuns: new Map<HostId, AutoArchiveRun>(),
     };
     const taskStore = createTaskStore(desktop);
 
@@ -612,22 +600,13 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         const titleStartedAt = settings.syncTitles ? await ports.titleEpoch(account) : undefined;
         if (switched || settings.taskState !== runtime.settings.taskState)
             await loadAccount(account, settings.taskState !== undefined);
-        resetChangedArchiveIntervals(settings);
         runtime.settings = settings.taskState ? { ...settings, mode: "four" } : settings;
         runtime.titleStartedAt = titleStartedAt;
         runtime.context = context;
         ports.authority(account);
         await Promise.all(desktop.knownHosts().map((host) => refreshHost(host, context)));
         requireAccount(account);
-        if (hostTasks()) await rememberTasks(context);
-        if (settings.taskState !== "migration") autoArchive(context);
-    }
-
-    function resetChangedArchiveIntervals(settings: BoardSettings) {
-        for (const hostId of runtime.archiveDeadlines.keys()) {
-            if (archiveInterval(runtime.settings, hostId) !== archiveInterval(settings, hostId))
-                runtime.archiveDeadlines.delete(hostId);
-        }
+        await rememberTasks(context);
     }
 
     async function loadAccount(account: string, shared: boolean): Promise<void> {
@@ -660,8 +639,6 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         runtime.legacyCachedCards = legacyCachedCards;
         runtime.ledger = ledger;
         runtime.accountScope = accountScope;
-        runtime.archiveDeadlines.clear();
-        runtime.archiveRuns.clear();
     }
 
     function rememberHostTasks(hostId: HostId, host: HostSnapshot, context: SidebarContext) {
@@ -1238,7 +1215,6 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
 
     function health(hostId: HostId, host: HostSnapshot | undefined) {
         const connected = host !== undefined && isLive(desktop, host);
-        const run = runtime.archiveRuns.get(hostId);
         const bindings =
             connected && runtime.context
                 ? sectionBindings(runtime.context, hostId, runtime.settings.mode)
@@ -1267,10 +1243,6 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
                     : undefined,
             runtimeVerified: connected && host?.runtimeVerified === true,
             runtimeError: host?.runtimeError,
-            autoArchiveSeconds: archiveInterval(runtime.settings, hostId),
-            autoArchiveNextAt: runtime.archiveDeadlines.get(hostId),
-            autoArchiveLastRun: run,
-            autoArchiveError: run?.error,
             archiveReadError: host?.archiveError,
             taskStateError: host?.taskError,
             taskStateConfirmedAt: host?.taskConfirmedAt,
@@ -2232,57 +2204,6 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             mergeArchives(host, archived);
         }
         return verified;
-    }
-
-    function autoArchive(context: SidebarContext): void {
-        const now = Date.now() / 1000;
-        for (const [hostId, host] of runtime.hosts) {
-            const seconds = archiveInterval(runtime.settings, hostId);
-            if (!seconds || !isLive(desktop, host)) continue;
-            const next = (Math.floor(now / seconds) + 1) * seconds;
-            const deadline = runtime.archiveDeadlines.get(hostId) ?? next;
-            runtime.archiveDeadlines.set(hostId, deadline > now ? deadline : next);
-            if (deadline <= now) void autoArchiveHost(hostId, context);
-        }
-    }
-
-    async function autoArchiveHost(hostId: HostId, context: SidebarContext): Promise<void> {
-        const items = snapshot().sessions.filter(
-            (card) =>
-                card.hostId === hostId &&
-                card.state === "to_archive" &&
-                card.canArchive &&
-                !card.archivePending &&
-                !card.followUp,
-        );
-        const run: AutoArchiveRun = { at: Date.now() / 1000, archived: [], deferred: [] };
-        if (!items.length) {
-            runtime.archiveRuns.set(hostId, run);
-            return;
-        }
-        const id = crypto.randomUUID();
-        try {
-            const targets = items.map(({ id, title, version, inputVersion, sectionVersion }) => ({
-                id,
-                title,
-                version,
-                inputVersion,
-                sectionVersion,
-            }));
-            await archive.start(id, targets);
-            for (const item of targets) {
-                if (accountKey(context) !== accountKey(requiredContext())) return;
-                const result = await archive.submit(id, item);
-                if (result.status === "archived" || result.status === "verified")
-                    run.archived.push(item.id);
-                else run.deferred.push({ id: item.id, reason: result.message ?? result.status });
-            }
-            await archive.finish(id);
-        } catch (error) {
-            run.error = errorText(error);
-        }
-        if (accountKey(context) === accountKey(requiredContext()))
-            runtime.archiveRuns.set(hostId, run);
     }
 
     async function requestArchive(path: string, body: object | undefined) {
