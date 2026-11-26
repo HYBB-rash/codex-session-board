@@ -96,7 +96,16 @@ MCP 配置见 [.mcp.json](.mcp.json)。从另一目录调用时可以指定 `--s
 
 ## 设置与迁移
 
-在 `state/session-board/config.json` 设置 `mode`（`four`、`five` 或 `legacy`）、`syncTitles`、`autoArchiveSeconds`、`remoteAutoArchiveSeconds`。归档间隔用正整数秒，`null` 表示关闭。默认模式显示五列和未归列区，标题同步及定时归档关闭。
+在 `state/session-board/config.json` 设置 `mode`（`four`、`five` 或 `legacy`）和 `syncTitles`。默认显示进行中、待审阅、待处理、已阻塞和未归列区，标题同步默认关闭。卡片标题右侧的「归档会话」执行单条 Codex 归档，顶部「已归档会话」用于查找、查看和恢复由看板归档的会话。旧配置中的定时间隔不生效。
+
+升级时先保留原生「待归档」分区，再从当前 Enhancer 的 CLI 生成只读迁移清单。
+
+```bash
+codex-enhancer archive-migration preview
+codex-enhancer archive-migration apply <预览返回的token>
+```
+
+`apply` 确认迁移已启用。再次运行 `preview` 可查看剩余卡片和逐卡回执。迁移按宿主把仍在旧分区的活动会话移到「待审阅」，离线宿主接入后继续。分区重名、缺失或会话已经移动时，在清单或连接详情中报告冲突。历史批次只参与读回。有明确移动回执和位置版本的会话才能自动回退。需要回退时先关闭旧版两个定时归档设置，再重新生成预览，用新 token 执行 `codex-enhancer archive-migration rollback <token>`。回退会停止后续自动迁移。位置已变化或回执丢失后仅由读回确认的会话，请依据清单人工核对。
 
 使用「待处理」前，在 Codex 原生侧栏创建一个同名分区。看板通过当前 Codex 连接移卡，由 Codex 在首次需要时补建目标主机的分区。从看板移入时填写搁置原因，从原生侧栏直接移入后可以在看板补填。回到「待审阅」时手动移卡。
 

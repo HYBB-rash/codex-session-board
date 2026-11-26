@@ -45,7 +45,7 @@ function boardHost(frame, result, scope) {
                   },
               ]
             : undefined;
-    let session = { ...initialCard(), canDefer };
+    let session = { ...initialCard(), canDefer, canArchive: true };
     const calls = [];
     const snapshot = () => ({
         states: {
@@ -53,9 +53,9 @@ function boardHost(frame, result, scope) {
             review: "待审阅",
             deferred: "待处理",
             blocked: "已阻塞",
-            to_archive: "待归档",
         },
         sessions: [session],
+        archivedSessions: session.archived ? [session] : [],
         health: { connected: true, nativeVerified: true, unsupportedRemoteHosts },
         projectCatalog: { loaded: true, items: [] },
     });
@@ -69,6 +69,34 @@ function boardHost(frame, result, scope) {
     const operations = {
         board_preview_reply: () => ({ content: [], _meta: { previewReply } }),
         board_open: () => ({ content: [], structuredContent: { ok: true } }),
+        async board_archive() {
+            await sleep(350);
+            session = { ...session, archived: true, canRestore: true };
+            return { content: [], structuredContent: { item: { status: "archived" } } };
+        },
+        board_archive_read: () => ({
+            content: [],
+            _meta: {
+                archivedConversation: {
+                    turns: [
+                        {
+                            id: "fixture-turn",
+                            messages: [
+                                {
+                                    id: "answer",
+                                    text: "归档历史中的完整回复",
+                                    role: "agentMessage",
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        }),
+        board_archive_restore: () => {
+            session = { ...session, archived: false };
+            return { content: [], structuredContent: { restored: true } };
+        },
         board_update: ({ state, note = session.note, deferReason }) => {
             session = { ...session, state, note, deferReason, version: session.version + 1 };
             return { content: [], structuredContent: { ok: true, session } };
@@ -87,7 +115,7 @@ function boardHost(frame, result, scope) {
 }
 
 function messageHandler(frame, result, runTool) {
-    return ({ data, source, origin }) => {
+    return async ({ data, source, origin }) => {
         if (source !== frame.contentWindow || origin !== location.origin || data?.jsonrpc !== "2.0")
             return;
         if (data.id === undefined) return;
@@ -101,7 +129,7 @@ function messageHandler(frame, result, runTool) {
             };
         } else if (data.method === "tools/call") {
             const { name, arguments: args } = data.params;
-            response = runTool(name, args);
+            response = await runTool(name, args);
         }
         if (response) source.postMessage({ jsonrpc: "2.0", id: data.id, result: response }, origin);
         else {
@@ -284,6 +312,45 @@ async function checkRemoteControl({ find }) {
     requireInBrowser(!host.querySelector("button"), "unsupported host offered a connect action");
 }
 
+async function checkArchive({ find }, { calls, current }) {
+    const button = find('.card-title-row [data-action="archive"]');
+    requireInBrowser(
+        button?.getAttribute("aria-label") === "归档会话",
+        "missing title archive button",
+    );
+    const column = button.closest(".column");
+    button.click();
+    button.click();
+    await until(() => find(".archive-check.spinning:disabled"), "no per-card archive progress");
+    requireInBrowser(column.contains(find(".card")), "card moved before native confirmation");
+    await until(
+        () => current().archived && !find(".card"),
+        "confirmed archived card is still visible",
+    );
+    requireInBrowser(
+        calls.filter(({ name }) => name === "board_archive").length === 1,
+        "duplicate write",
+    );
+    find("#archive-history-open").click();
+    const row = `[data-archive-id="${current().id}"]`;
+    const search = find(".archive-history input");
+    search.value = "no matching record";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    await until(() => !find(row), "archive search didn't filter");
+    search.value = current().title.slice(0, 3);
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    await until(() => find(row), "archive search didn't find the same card");
+    find(`${row} button:first-child`).click();
+    await until(
+        () => find(".archive-transcript")?.textContent.includes("归档历史中的完整回复"),
+        "archived content missing",
+    );
+    find(".archive-history > button").click();
+    await until(() => find(`${row} button:last-child`), "return to archive list failed");
+    find(`${row} button:last-child`).click();
+    await until(() => !find(row) && find(".card"), "restored card didn't return");
+}
+
 async function fixture(scope) {
     const result = document.querySelector("output");
     const frame = document.querySelector("iframe");
@@ -298,6 +365,11 @@ async function fixture(scope) {
             style.display === "flex" && style.getPropertyValue("--bg"),
             "offline board styles are absent",
         );
+        if (scope === "archive") {
+            await checkArchive(controls, host);
+            result.textContent = "passed";
+            return;
+        }
         controls.drag(title, "dragstart");
         requireInBrowser(
             controls.transfer.getData("text/plain") === host.current().id,
@@ -331,6 +403,7 @@ async function check(context, scope) {
         checkDeferral,
         checkMissingDeferredSection,
         checkRemoteControl,
+        checkArchive,
         fixture,
     ].join("\n");
     const html = `<!doctype html><meta charset="utf-8"><title>Board interaction fixture</title>
@@ -370,3 +443,5 @@ test("dropping onto deferred reports a missing native section without changing t
     check(context, "missing-deferred"));
 test("the board explains that Remote Control requires switching to SSH", (context) =>
     check(context, "remote-control"));
+test("a card stays put while archiving, then can be found, opened and restored in history", (context) =>
+    check(context, "archive"));

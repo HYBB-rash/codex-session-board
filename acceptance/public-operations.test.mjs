@@ -237,14 +237,14 @@ test("MCP App and the web page read each other's saved board state", async (cont
             "X-CSRF-Token": requestToken,
             Origin: new URL(url).origin,
         },
-        body: JSON.stringify(board.edit("to_archive", "网页保存的备注")),
+        body: JSON.stringify(board.edit("review", "网页保存的备注")),
     });
     assert.equal(response.status, 200);
     const webSaved = (await response.json()).session;
     assert.equal(webSaved.id, initial.id);
     assert.equal(webSaved.version, initial.version + 1);
     assert.equal(webSaved.inputVersion, initial.inputVersion);
-    assert.equal(webSaved.state, "to_archive");
+    assert.equal(webSaved.state, "review");
     assert.equal(webSaved.note, "网页保存的备注");
     const [readBack, saved] = await mcp.call([
         call("board_snapshot"),
@@ -305,7 +305,7 @@ test("the MCP resource bundles its SDK and styles without linked scripts or fram
 test("MCP saves use the live state and input revisions across HTTP", async (context) => {
     const { board, client, mcpUpdate } = await liveBoard(context);
     const stale = board.edit("blocked", "stale");
-    const saved = await client.request("/api/state", board.edit("to_archive", "saved"));
+    const saved = await client.request("/api/state", board.edit("review", "saved"));
     assert.equal(saved.ok, true);
     assert.equal(saved.session.version, stale.version + 1);
     assert.equal(saved.session.inputVersion, stale.inputVersion);
@@ -320,7 +320,7 @@ test("MCP saves use the live state and input revisions across HTTP", async (cont
     assert.equal(after.version, outdatedInput.version + 1);
     assert.equal(after.inputVersion, outdatedInput.inputVersion + 1);
     assert.equal(after.note, "saved");
-    assert.equal(after.state, "to_archive");
+    assert.equal(after.state, "review");
     assert.equal(after.manual, true);
     assert.equal(after.followUp, true);
     assert.equal(board.persisted().writes, before.writes);
@@ -379,11 +379,8 @@ test("deferral requires a fresh reason and follows the confirmed native placemen
 
 test("new-input notices survive incomplete observations and clear only on manual confirmation", async (context) => {
     const { board, client } = await liveBoard(context);
-    const { session } = await client.request(
-        "/api/state",
-        board.edit("to_archive", "keep my note"),
-    );
-    const fresh = board.edit("to_archive", "keep my note");
+    const { session } = await client.request("/api/state", board.edit("review", "keep my note"));
+    const fresh = board.edit("review", "keep my note");
     board.controls.newInput = true;
     board.controls.laterTurn = true;
     await assert.rejects(client.request("/api/state", fresh), /卡片位置或输入已更新/);
@@ -397,10 +394,10 @@ test("new-input notices survive incomplete observations and clear only on manual
     assert.equal(board.card().inputVersion, pending.inputVersion);
     assert.equal(board.card().followUp, true);
     assert.equal(board.card().manual, true);
-    assert.equal(board.card().state, "to_archive");
+    assert.equal(board.card().state, "review");
     assert.equal(board.card().note, "keep my note");
     board.controls.incomplete = false;
-    const { session: confirmed } = await client.request("/api/state", board.edit("to_archive"));
+    const { session: confirmed } = await client.request("/api/state", board.edit("review"));
     assert.equal(confirmed.inputVersion, pending.inputVersion);
     assert.equal(confirmed.followUp, false);
     assert.equal(confirmed.note, "keep my note");
@@ -411,11 +408,11 @@ test("new-input notices survive incomplete observations and clear only on manual
 
 test("disabling title sync still saves state and never renames", async (context) => {
     const { board, mcpUpdate } = await liveBoard(context);
-    const saved = await mcpUpdate(board.edit("to_archive", "keep my note"));
+    const saved = await mcpUpdate(board.edit("in_progress", "keep my note"));
     assert.equal(saved.isError, undefined);
     assert.equal(saved.structuredContent.ok, true);
     assert.equal(saved.structuredContent.titleEnabled, false);
-    assert.equal(saved.structuredContent.session.state, "to_archive");
+    assert.equal(saved.structuredContent.session.state, "in_progress");
     assert.equal(saved.structuredContent.session.note, "keep my note");
     const moved = await mcpUpdate(board.edit("blocked"));
     assert.equal(moved.structuredContent.session.state, "blocked");
@@ -428,7 +425,7 @@ test("disabling title sync still saves state and never renames", async (context)
 
 test("manual confirmations append durable change records and rejected saves leave them alone", async (context) => {
     const { board, client, mcpUpdate } = await liveBoard(context);
-    const stale = board.edit("to_archive", "initial");
+    const stale = board.edit("review", "initial");
     const { session: first } = await client.request("/api/state", stale);
     const { structuredContent: second } = await mcpUpdate(board.edit("blocked"));
     assert.equal(second.session.note, "initial");
@@ -442,7 +439,7 @@ test("manual confirmations append durable change records and rejected saves leav
                 return change;
             }),
         [
-            { kind: "manual", state: "to_archive", note: "initial", version: first.version },
+            { kind: "manual", state: "review", note: "initial", version: first.version },
             { kind: "manual", state: "blocked", note: "initial", version: second.session.version },
             { kind: "manual", state: "blocked", note: "", version: third.version },
         ],
@@ -465,7 +462,7 @@ test("manual confirmations append durable change records and rejected saves leav
 
 test("confirmed automatic phases append their reasons once without replacing the saved note", async (context) => {
     const { board, client } = await liveBoard(context);
-    await client.request("/api/state", board.edit("to_archive", "keep"));
+    await client.request("/api/state", board.edit("review", "keep"));
     const count = changes(board).length;
     await board.step("input", 1010);
     const committed = changes(board);

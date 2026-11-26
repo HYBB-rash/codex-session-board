@@ -1,7 +1,7 @@
 {
     "schema_version": 1,
     "upstream_commit": "2cc4e6bb4e03d7cfabce0733a91a328004a9f3fc",
-    "operation_registry_sha256": "3329a6230a316a13f0d819e71a59e5e54845434a66d1fa368fdea5d9980d0671",
+    "operation_registry_sha256": "02373a736612033f127acce38cf36848fcd4486b37536e13d654a97b41194837",
     "evidence": {
         "native-move": {
             "file": "docs/session-board-native-checkpoint.md",
@@ -69,7 +69,7 @@
         },
         "archive-schedule-settings": {
             "file": "src/extensions/discovery.test.ts",
-            "test": "archive deadlines follow the current host settings and configured time boundaries"
+            "test": "obsolete archive settings never schedule native writes on the local or SSH host"
         },
         "legacy-archive-section-version": {
             "file": "src/extensions/discovery.test.ts",
@@ -617,10 +617,10 @@
         "Snapshot": "Fedora 已分别读取活动、归档、远程项目；补同 ID 冲突与真实重连后的缓存边界。",
         "Update": "0.3.7 已从 MCP App 写入并在另外两端读回；补各版本冲突和远端回执丢失。",
         "Sort": "安装版已用 HTTP 验证排序冲突和重启持久化，并用 MCP 读回相同值；补 MCP 提交与反向更新。",
-        "Archive": "本机手动和远程定时归档已实测读回；补已安装版本的筛选批次和新输入竞争。",
+        "Archive": "单卡手动归档。验收等待批准、重复提交和新轮次竞争。",
         "ArchiveBatches": "比较真实批次的未提交、待核对及已确认项，并重启读回。",
-        "ArchiveBatchStart": "验证原始顺序和所有目标字段一致时才重放登记，兼容已登记的旧分区版本。现场批次持久化待验。",
-        "ArchiveBatchFinish": "验证结束期间未提交项保持等待，已提交项正常收取原生回执。现场关闭页面与部分失败待验。",
+        "ArchiveRead": "从宿主读取已归档会话。验收同名跨主机与离线缓存行为。",
+        "ArchiveRestore": "恢复同一会话及其看板位置。验收原分区撤销和部分失败。",
         "ArchiveBatchCheck": "隔离夹具已验证仅核对已提交项；补真实回执丢失、迟到。",
         "Open": "已从归档定位原会话及主机；补同名跨主机和无新轮次的对照。",
         "PreviewReply": "已确认原生两端完整回复；补迟到回执越过卡片或宿主切换的拒绝。",
@@ -701,7 +701,7 @@
                 "archive-independent-readback",
                 "ipc-frame"
             ],
-            "remaining": "已确认关页期间观察器和定时归档；补已安装候选的订阅去重、标题失败重试。"
+            "remaining": "退役定时归档和旧批量提交。补已安装候选的结果读回、订阅去重、标题失败重试。"
         },
         "pwa-install": {
             "status": "partial",

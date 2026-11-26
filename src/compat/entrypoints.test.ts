@@ -47,13 +47,10 @@ const argumentsByAction: Record<string, object> = {
     Snapshot: {},
     Update: state,
     Sort: { state: "review", field: "updated_at", direction: "desc", version: 2 },
-    Archive: { ...byId, version: 2, inputVersion: 3, batchId: "batch" },
+    Archive: { ...byId, version: 2, inputVersion: 3, updatedAt: 10, attemptId: "attempt" },
     ArchiveBatches: {},
-    ArchiveBatchStart: {
-        id: "batch",
-        items: [{ ...byId, title: "A session", version: 2, inputVersion: 3 }],
-    },
-    ArchiveBatchFinish: { id: "batch" },
+    ArchiveRead: byId,
+    ArchiveRestore: byId,
     ArchiveBatchCheck: { id: "batch" },
     Open: byId,
     PreviewReply: byId,
@@ -147,20 +144,31 @@ test("HTTP and PWA use loopback, active origin and validated shared operations",
 test("offline account-specific snapshots never reissue writes or previews", async (test) => {
     let online = true;
     let updates = 0;
+    const previous = {
+        ...example,
+        states: { ...example.states, to_archive: "待归档" },
+        sessions: example.sessions.map((card) => ({ ...card, state: "to_archive" })),
+        archivedSessions: [{ id: "archived", canOpen: true, canRestore: true }],
+    };
     const { url, switchAccount } = await fixture(test, async (path) => {
         if (!online) throw new HostUnavailableError();
         if (path === "/api/state") updates++;
-        return example;
+        return previous;
     });
-    assert.deepEqual(await (await fetch(new URL("/api/sessions", url))).json(), example);
+    assert.deepEqual(await (await fetch(new URL("/api/sessions", url))).json(), previous);
     online = false;
     const stale = (await (await fetch(new URL("/api/sessions", url))).json()) as {
         offline: boolean;
-        sessions: { readOnly: boolean; canOpen: boolean }[];
+        states: object;
+        sessions: { state: string; readOnly: boolean; canOpen: boolean }[];
+        archivedSessions: { canRestore: boolean }[];
     };
     assert.equal(stale.offline, true);
     assert.equal(stale.sessions[0]?.readOnly, true);
     assert.equal(stale.sessions[0]?.canOpen, false);
+    assert.equal(stale.sessions[0]?.state, "review");
+    assert.ok(!Object.hasOwn(stale.states, "to_archive"));
+    assert.equal(stale.archivedSessions[0]?.canRestore, false);
     const info = (await (await fetch(new URL("/api/info", url))).json()) as {
         requestToken: string;
     };
@@ -210,12 +218,12 @@ function mcp(request: BoardRequest) {
 }
 
 function expectedToolResult(action: string, response: object) {
-    return action === "PreviewReply"
-        ? { content: [], _meta: { previewReply: response } }
-        : {
-              structuredContent: response,
-              content: [{ type: "text", text: JSON.stringify(response) }],
-          };
+    if (action === "PreviewReply") return { content: [], _meta: { previewReply: response } };
+    if (action === "ArchiveRead") return { content: [], _meta: { archivedConversation: response } };
+    return {
+        structuredContent: response,
+        content: [{ type: "text", text: JSON.stringify(response) }],
+    };
 }
 
 test("all 18 HTTP routes and MCP tools forward the same arguments and return the same result", async (test) => {

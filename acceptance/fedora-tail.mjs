@@ -84,38 +84,30 @@ async function archiveRemote(card) {
         version: card.version,
         inputVersion: card.inputVersion,
         sectionVersion: card.sectionVersion,
+        updatedAt: card.updatedAt,
+        ...(card.archiveTurnId !== undefined && { turnId: card.archiveTurnId }),
+        attemptId: crypto.randomUUID(),
     };
-    const { session } = await call("/api/state", { ...expected, state: "to_archive" });
-    assert.equal(session.state, "to_archive");
-    assert.equal(session.note, card.note);
-    console.log(
-        JSON.stringify({
-            phase: "archive-armed",
-            hostId,
-            version: session.version,
-            inputVersion: session.inputVersion,
-        }),
-    );
+    const { item } = await call("/api/archive", expected);
+    assert.ok(["archived", "verified", "pending"].includes(item.status), item.message);
     for (let attempt = 0; attempt < 48; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         const { remote, snapshot } = await ready();
-        const host = snapshot.health.remoteConnections.find((row) => row.hostId === hostId);
-        if (remote.archived && host?.autoArchiveLastRun?.archived?.includes(remote.id)) {
+        if (remote.archived && snapshot.archivedSessions.some(({ id }) => id === remote.id)) {
             assert.equal(remote.note, card.note);
             console.log(
                 JSON.stringify({
-                    phase: "timer-confirmed",
+                    phase: "manual-archive-confirmed",
                     hostId,
                     id: remote.threadId,
                     noteKept: true,
                     readBack: true,
-                    runAt: host.autoArchiveLastRun.at,
                 }),
             );
             return;
         }
     }
-    throw new Error("远程定时归档未在检查窗口内读回");
+    throw new Error("远程手动归档未在检查窗口内读回");
 }
 
 confirmTestCopy();
