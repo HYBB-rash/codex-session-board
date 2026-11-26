@@ -1,175 +1,157 @@
+import { createApp, shallowRef } from "vue";
 import type { BoardSnapshot } from "../controller";
 import type { BoardSession } from "../session";
-import type { ArchiveRequests, ArchiveTarget } from "./batches";
-import { mountArchiveResults } from "./results";
-
-export interface AutoArchiveHealth {
-    autoArchiveSeconds?: number;
-    autoArchiveNextAt?: number;
-    autoArchiveLastRun?: {
-        at: number;
-        archived: string[];
-        deferred: { id: string; reason: string }[];
-    } | null;
-    autoArchiveError?: string | null;
-}
+import type { ProjectTag } from "../shared/card/details";
+import ArchiveHistory from "./ArchiveHistory.vue";
 
 interface ArchivePorts {
-    request: ArchiveRequests["request"];
+    request(path: string, body?: object): Promise<unknown>;
     snapshot(): BoardSnapshot;
-    open(id: string): void;
+    project(session: BoardSession): ProjectTag;
     date(timestamp?: number): string;
-    persist(session: BoardSession, state: "to_archive", note: string): Promise<unknown>;
     busy(): boolean;
     movingId(): string | undefined;
     dragActive(): boolean;
     editorOpen(): boolean;
-    setSaving(value: boolean): void;
     invalidateSnapshot(): void;
     announce(message: string, error?: boolean): void;
     render(): void;
     load(): Promise<void>;
 }
 
-function mountResults(host: HTMLElement, ports: ArchivePorts) {
-    const { snapshot, render, load } = ports;
-    return mountArchiveResults(host, {
-        request: ports.request,
-        open: ports.open,
+interface ArchiveResult {
+    item?: { status: string; message?: string };
+}
+
+function message(error: unknown) {
+    return error instanceof Error ? error.message : String(error);
+}
+
+export function mountBoardArchive(host: HTMLElement, ports: ArchivePorts) {
+    const rows = shallowRef<BoardSession[]>([]);
+    const submitting = new Set<string>();
+    const uncertain = new Map<string, { attemptId: string; message: string }>();
+    let readingReceipts = false;
+    const app = createApp(ArchiveHistory, {
+        sessions: () => rows.value,
+        project: (session: BoardSession) => ports.project(session).label,
         date: ports.date,
-        changed: render,
-        refresh(ids) {
-            ports.invalidateSnapshot();
-            for (const card of snapshot().sessions)
-                if (ids.has(card.id)) card.archivePending = true;
-            render();
-            void load();
-        },
+        read: (id: string) => ports.request("/api/archive-read", { id }),
+        restore: restorePlacement,
     });
-}
+    app.mount(host);
 
-function actionsForCard(
-    session: BoardSession,
-    ports: ArchivePorts,
-    results: ReturnType<typeof mountResults>,
-) {
-    const readOnly = session.readOnly !== false;
-    const canAdjust = !readOnly && !ports.busy() && ports.movingId() !== session.id;
-    const pendingArchive = session.archivePending === true;
-    const archive =
-        session.state === "to_archive" && session.canArchive === true && !pendingArchive
-            ? session.followUp
-                ? "confirm"
-                : "archive"
-            : null;
-    const canSubmit = canAdjust && archive !== null && results.canSubmit;
-    return {
-        readOnly,
-        canAdjust,
-        pendingArchive,
-        archive,
-        canSubmit,
-        inBatch: canSubmit && archive === "archive",
-    };
-}
-
-async function confirmInputs(
-    session: BoardSession,
-    actions: ReturnType<typeof actionsForCard>,
-    ports: ArchivePorts,
-) {
-    const { render, load, announce } = ports;
-    if (
-        !actions.canSubmit ||
-        actions.archive !== "confirm" ||
-        ports.dragActive() ||
-        ports.editorOpen()
-    )
-        return;
-    ports.setSaving(true);
-    render();
-    try {
-        await ports.persist(session, "to_archive", session.note);
-        announce("已确认待归档。现在可以点击归档或一键归档。");
-    } catch (error) {
-        announce(error instanceof Error ? error.message : String(error), true);
-    } finally {
-        ports.setSaving(false);
-        render();
-        await load();
+    function cardActions(session: BoardSession) {
+        const readOnly = session.readOnly !== false;
+        const busy = ports.busy() || ports.movingId() === session.id;
+        const spinning = submitting.has(session.id) || session.archiveChecking === true;
+        const archiveMessage = spinning
+            ? undefined
+            : (session.archiveMessage ?? uncertain.get(session.id)?.message);
+        const pending = spinning || session.archivePending === true || uncertain.has(session.id);
+        return {
+            readOnly,
+            spinning,
+            archiveMessage,
+            canAdjust: !readOnly && !busy && !pending,
+            canSubmit:
+                !busy && !pending && !session.archiveRestorePending && session.canArchive === true,
+        };
     }
-}
 
-async function submitArchive(
-    sessions: BoardSession[],
-    eligible: (session: BoardSession) => boolean,
-    results: ReturnType<typeof mountResults>,
-    ports: ArchivePorts,
-) {
-    const { render, load, announce } = ports;
-    if (ports.busy() || ports.dragActive() || !results.canSubmit || ports.editorOpen()) return;
-    const items = sessions.filter(eligible).map(
-        ({ id, title, version, inputVersion, sectionVersion }): ArchiveTarget => ({
+    async function submitCard(session: BoardSession) {
+        if (!cardActions(session).canSubmit || ports.dragActive() || ports.editorOpen()) return;
+        const {
             id,
-            title,
             version,
             inputVersion,
-            sectionVersion: sectionVersion ?? null,
-        }),
-    );
-    if (!items.length) {
-        announce("当前列没有可归档的会话。");
-        return;
+            sectionVersion,
+            updatedAt,
+            archiveTurnId,
+            archiveInputKey,
+        } = session;
+        const attemptId = crypto.randomUUID();
+        submitting.add(id);
+        ports.invalidateSnapshot();
+        ports.render();
+        try {
+            const { item } = (await ports.request("/api/archive", {
+                id,
+                attemptId,
+                version,
+                inputVersion,
+                sectionVersion,
+                updatedAt,
+                ...(archiveTurnId !== undefined && { turnId: archiveTurnId }),
+                ...(archiveInputKey !== undefined && { inputKey: archiveInputKey }),
+            })) as ArchiveResult;
+            if (item?.status === "archived" || item?.status === "verified")
+                ports.announce("已归档会话");
+            else if (item?.status === "rejected" || item?.status === "newInput")
+                ports.announce(item.message ?? "宿主拒绝归档", true);
+        } catch (error) {
+            uncertain.set(id, { attemptId, message: `未收到归档回执：${message(error)}` });
+            await reconcileLostReceipts();
+        } finally {
+            await ports.load();
+            submitting.delete(id);
+            ports.render();
+        }
     }
-    ports.setSaving(true);
-    ports.invalidateSnapshot();
-    render();
-    try {
-        await results.submit(items);
-    } finally {
-        ports.setSaving(false);
-        render();
-        await load();
-    }
-}
 
-function updateStatus(status: HTMLElement, ports: ArchivePorts) {
-    const { autoArchiveSeconds, autoArchiveNextAt, autoArchiveLastRun, autoArchiveError } =
-        ports.snapshot().health;
-    status.hidden = !autoArchiveSeconds;
-    if (!autoArchiveSeconds) return;
-    const deferred = autoArchiveLastRun?.deferred ?? [];
-    status.className = `health${autoArchiveError || deferred.length ? " error" : ""}`;
-    let text = `本机每 ${autoArchiveSeconds / 60} 分钟自动归档待归档 · 下次 ${ports.date(autoArchiveNextAt)}`;
-    if (autoArchiveLastRun) {
-        const { at, archived } = autoArchiveLastRun;
-        text += ` · 上次 ${ports.date(at)}：归档 ${archived.length} 条，延后 ${deferred.length} 条`;
+    async function reconcileLostReceipts() {
+        if (readingReceipts || uncertain.size === 0) return;
+        readingReceipts = true;
+        try {
+            const { batches } = (await ports.request("/api/archive-batches")) as {
+                batches: { id: string; items: NonNullable<ArchiveResult["item"]>[] }[];
+            };
+            const receipts = new Map(batches.map(({ id, items }) => [id, items[0]]));
+            for (const [id, { attemptId }] of uncertain)
+                receiveReceipt(id, receipts.get(attemptId));
+        } catch (error) {
+            for (const request of uncertain.values())
+                request.message = `无法读回归档回执：${message(error)}`;
+        } finally {
+            readingReceipts = false;
+            ports.render();
+        }
     }
-    text += " · 不受当前筛选影响";
-    if (autoArchiveError) text += " · 本轮未完成，请查看连接详情";
-    status.textContent = text;
-    status.title = deferred.map((item) => `${item.id}：${item.reason}`).join("\n");
-}
 
-export function mountBoardArchive(host: HTMLElement, status: HTMLElement, ports: ArchivePorts) {
-    const results = mountResults(host, ports);
-    const cardActions = (session: BoardSession) => actionsForCard(session, ports, results);
-    const eligible = (session: BoardSession) => cardActions(session).inBatch;
-    const confirm = (session: BoardSession) => confirmInputs(session, cardActions(session), ports);
-    const submit = (sessions: BoardSession[]) => submitArchive(sessions, eligible, results, ports);
-    return {
-        cardActions,
-        confirmInputs: confirm,
-        submit,
-        updateStatus: () => updateStatus(status, ports),
-        unmount: results.unmount,
-        submitCard: (session: BoardSession) =>
-            cardActions(session).archive === "confirm" ? confirm(session) : submit([session]),
-        count: (sessions: BoardSession[]) => sessions.filter(eligible).length,
-        get pending() {
-            return results.pending;
-        },
-        updateBoard: results.updateBoard,
-        restore: () => (ports.snapshot().legacyMode === true ? undefined : results.restore()),
-    };
+    function receiveReceipt(id: string, item: ArchiveResult["item"]) {
+        if (!item || item.status === "awaiting") return;
+        if (item.status === "newInput" || item.status === "rejected")
+            ports.announce(item.message ?? "宿主拒绝归档", true);
+        uncertain.delete(id);
+    }
+
+    async function restorePlacement(id: string) {
+        if (submitting.has(id)) return;
+        submitting.add(id);
+        ports.invalidateSnapshot();
+        ports.render();
+        try {
+            const result = (await ports.request("/api/archive-restore", { id })) as {
+                message?: string;
+            };
+            ports.announce(result.message ?? "会话已恢复", Boolean(result.message));
+            return result.message;
+        } catch (error) {
+            ports.announce(message(error), true);
+            return message(error);
+        } finally {
+            await ports.load();
+            submitting.delete(id);
+            ports.render();
+        }
+    }
+
+    function updateBoard(next: BoardSnapshot) {
+        rows.value = next.archivedSessions ?? [];
+        for (const { id, archivePending, archived } of next.sessions)
+            if (archivePending || archived) uncertain.delete(id);
+        void reconcileLostReceipts();
+    }
+
+    return { cardActions, submitCard, restorePlacement, updateBoard, unmount: () => app.unmount() };
 }
