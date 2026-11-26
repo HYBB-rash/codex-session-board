@@ -2,24 +2,12 @@ import * as fs from "node:fs";
 import { createRequire } from "node:module";
 import * as path from "node:path";
 import type { App, IpcMain, IpcMainEvent, Session, WebContents } from "electron";
-import type { BoardLedger } from "../extensions/archive.js";
 import { boardDesktopRequest } from "../extensions/desktop/main.js";
-import {
-    type BoardRecords,
-    createBoardLedgers,
-    createBoardRecords,
-    createTaskCardCache,
-    type PhaseIntent,
-    type RecordWrite,
-    startTitleEpoch,
-    type TitleResolution,
-} from "../extensions/records.js";
-import type { Card } from "../extensions/service.js";
 import { inPlaceRuntime, logs, outputDir, stateDir } from "../installer/paths.js";
 import { runningVersion } from "../installer/release/store.js";
-import { createLegacyBoardRuntime, type LegacyBoardRuntime } from "../migration/runtime.js";
 import type { ExtensionApi, ExtensionModule, SidebarItemInput } from "./api.js";
 import { boardFrame, createBoardBroker } from "./board/broker.js";
+import { createBoardStorage } from "./board/storage.js";
 import { trustedAppFrame } from "./ipc/guard.js";
 import { createSidebarRegistry, type OwnedSidebarItem, type SidebarRegistry } from "./registry.js";
 
@@ -325,94 +313,38 @@ function registerIpc(
 }
 
 function registerBoardStorage(ipcMain: IpcMain): void {
-    const directory = path.join(stateDir, "session-board");
-    const boardRecords = createBoardRecords(path.join(directory, "records.json"));
-    const ledgers = createBoardLedgers(path.join(directory, "ledger.json"));
-    const taskCache = createTaskCardCache(path.join(directory, "task-cache.json"));
-    const titleEpochFile = path.join(directory, "title-activation.json");
-    const legacy = createLegacyBoardRuntime(directory);
+    const storage = createBoardStorage(path.join(stateDir, "session-board"));
     ipcMain.handle("codex-enhancer:task-cache", (event, account: unknown, cards?: unknown) => {
         if (!boardFrame(event) || typeof account !== "string")
             throw new Error("enhancer IPC rejected");
-        if (cards === undefined) return taskCache.read(account);
-        if (!Array.isArray(cards)) throw new Error("Invalid task cache");
-        taskCache.save(account, cards as Card[]);
-        return undefined;
+        return storage.taskCache(account, cards);
     });
     ipcMain.handle("codex-enhancer:board-ledger", (event, account, value) => {
         if (!boardFrame(event) || typeof account !== "string")
             throw new Error("enhancer IPC rejected");
-        const imported = legacy.forAccount(account)?.ledger;
-        if (value === undefined) return ledgers.load(account, imported);
-        if (
-            !isFields<BoardLedger>(value) ||
-            !Array.isArray(value.batches) ||
-            !isRecord(value.columnSorts)
-        ) {
-            throw new Error("Invalid board ledger");
-        }
-        ledgers.save(account, value, imported);
-        return null;
+        return storage.ledger(account, value);
     });
     ipcMain.handle("codex-enhancer:board-config", (event, account) => {
         if (!boardFrame(event) || typeof account !== "string")
             throw new Error("enhancer IPC rejected");
-        const config = path.join(directory, "config.json");
-        return legacy.settings(account, fs.existsSync(config) ? readJson(config) : undefined);
+        return storage.config(account);
     });
     ipcMain.handle("codex-enhancer:board-title-epoch", (event, account) => {
         if (!boardFrame(event) || typeof account !== "string")
             throw new Error("enhancer IPC rejected");
-        return startTitleEpoch(titleEpochFile, account, legacy.titleEpoch(account));
+        return storage.titleEpoch(account);
     });
-    registerBoardRecords(ipcMain, boardRecords, legacy);
-}
-
-function registerBoardRecords(
-    ipcMain: IpcMain,
-    boardRecords: BoardRecords,
-    legacy: LegacyBoardRuntime,
-): void {
     ipcMain.handle("codex-enhancer:board-phase-intent", (event, value) => {
-        if (
-            !boardFrame(event) ||
-            !isFields<PhaseIntent>(value) ||
-            typeof value.account !== "string" ||
-            typeof value.id !== "string" ||
-            !Number.isSafeInteger(value.expected) ||
-            typeof value.phaseKey !== "string"
-        )
-            throw new Error("Invalid board phase intent");
-        return boardRecords.preparePhase(value, legacy.forAccount(value.account)?.board.cards);
+        if (!boardFrame(event)) throw new Error("enhancer IPC rejected");
+        return storage.phaseIntent(value);
     });
     ipcMain.handle("codex-enhancer:board-records", (event, value) => {
         if (!boardFrame(event)) throw new Error("enhancer IPC rejected");
-        if (typeof value === "string") return legacy.loadRecords(value, boardRecords);
-        if (
-            !isFields<RecordWrite>(value) ||
-            typeof value.record?.note !== "string" ||
-            typeof value.account !== "string" ||
-            typeof value.id !== "string" ||
-            !Number.isSafeInteger(value.expected) ||
-            value.record.version !== value.expected + 1
-        ) {
-            throw new Error("Invalid board record");
-        }
-        boardRecords.write(value, legacy.forAccount(value.account)?.board.cards);
-        return null;
+        return storage.record(value);
     });
     ipcMain.handle("codex-enhancer:board-title-result", (event, value) => {
-        if (
-            !boardFrame(event) ||
-            !isFields<TitleResolution>(value) ||
-            typeof value.account !== "string" ||
-            typeof value.id !== "string" ||
-            !Number.isSafeInteger(value.expected) ||
-            (value.failure !== undefined && typeof value.failure !== "string")
-        ) {
-            throw new Error("Invalid board title result");
-        }
-        return boardRecords.settleTitle(value, legacy.forAccount(value.account)?.board.cards);
+        if (!boardFrame(event)) throw new Error("enhancer IPC rejected");
+        return storage.titleResult(value);
     });
 }
 

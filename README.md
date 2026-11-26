@@ -36,6 +36,32 @@ node dist/bin/codex-enhancer.js launch
 
 安装前可用 `CODEX_ENHANCER_SOURCE` 指定 Codex 客户端所在目录，启动时可用 `CODEX_CLI_PATH` 指定客户端使用的 Codex 命令路径。Linux 副本默认使用客户端随包命令，在 `XDG_RUNTIME_DIR` 下使用独立的桌面 socket。用 `CODEX_ENHANCER_BRIDGE_SOCKET` 可指定该副本的 socket 路径。相对命令和 socket 路径以调用启动器的目录为准。
 
+### macOS 已知限制
+
+本地重签后的应用使用新的签名身份。首次从官方 Codex 切换时，用户同意安装后，仍可能需要按 macOS 提示重新授权。
+
+同一张本机证书签署的两个 Enhancer 测试版本已验证可沿用授予旧版的麦克风权限。摄像头、录屏和辅助功能还没有逐项验证。当前 macOS 发行包仍采用 ad hoc 副本安装，固定证书原地安装尚未提供。
+
+### macOS 官方窗口接入（实验）
+
+这条路线直接启动 `/Applications/ChatGPT.app`，不复制、不修改、不重签应用包，只追加本机回环调试端口，再把现有看板运行时注入官方窗口。实验副本与官方包的 `app.asar` 摘要一致，深度严格验签通过。
+
+```zsh
+node dist/bin/codex-enhancer.js official start
+node dist/bin/codex-enhancer.js official status
+node dist/bin/codex-enhancer.js official check
+node dist/bin/codex-enhancer.js official stop
+node dist/bin/codex-enhancer.js official install-launcher
+```
+
+`start` 启动官方应用、注入「会话看板」侧栏入口并常驻看板服务。原生侧栏入口、看板页面、打开会话和拖拽移卡都走官方窗口自己的登录和连接，看板服务退出不会带走 Codex 窗口。调试端口只绑定 `127.0.0.1`，端口文件位于 Electron 用户目录，启动记录写在 `state/official/launch.json`，权限为 `0600`。
+
+`install-launcher` 生成 `~/Applications/Codex 看板.app`。把日常 Dock 图标换成它，启动时会自动执行 `official start`。第一次切换需要完全退出当前 Codex，再从新图标启动。`official check` 只读回账号、原生侧栏分区和已连接主机。
+
+官方自动更新会重启应用并丢掉调试参数。更新后先完全退出 Codex，再从启动器打开。若 Codex 已经在没有调试端口的情况下运行，`start` 会拒绝并提示先退出，不会静默改掉当前窗口。
+
+`--profile 目录` 可把 Electron 用户目录指向别处，但不隔离 `~/.codex` 登录和连接，仅用于并行试用；`--app 路径` 用于指定另一份官方签名副本。
+
 ## 更新和回退
 
 先核对候选归档的 `.sha256`，将解压后的 `release.json` 和 `dist/` 放入安装目录的 `state/update-candidate/`。在已安装看板里点击「更新」，完全退出并重新启动 Enhancer 副本，再打开看板核对版本。也可以从安装目录执行这些命令。

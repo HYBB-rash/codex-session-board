@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { detect, findSystemApp, formatDetection } from "../installer/detect.js";
 import { install } from "../installer/install.js";
 import { launchAndConfirm } from "../installer/launch.js";
+import { launchOfficial, officialStatus, stopOfficial } from "../installer/official/launch.js";
 import { outputDir, stateDir } from "../installer/paths.js";
 import { releasePlatform, releasePlatforms } from "../installer/release/manifest.js";
 import { packageRelease } from "../installer/release/package.js";
@@ -38,6 +39,128 @@ async function runInPlace(): Promise<void> {
             `看板版本 ${installer.adjustInPlaceRelease(candidate)}。请从原图标重启 Codex。`,
         );
     }
+}
+
+function officialFlags(rest: readonly string[]): Map<string, string> {
+    const values = new Map<string, string>();
+    for (let index = 0; index < rest.length; index += 2) {
+        const key = rest[index];
+        const value = rest[index + 1];
+        if (!key?.startsWith("--") || value === undefined)
+            throw new Error("官方 Codex 启动参数必须成对出现");
+        if (!["--app", "--data-dir", "--profile"].includes(key))
+            throw new Error(`未知的官方 Codex 启动参数：${key}`);
+        values.set(key, value);
+    }
+    return values;
+}
+
+function officialLaunchOptions(rest: readonly string[]) {
+    const values = officialFlags(rest);
+    const profile = values.get("--profile");
+    const appValue = values.get("--app");
+    const app = appValue ? resolve(appValue) : undefined;
+    const dataValue = values.get("--data-dir");
+    const dataDir =
+        (dataValue ? resolve(dataValue) : undefined) ?? (profile ? resolve(profile) : undefined);
+    return {
+        launch: {
+            ...(app ? { appDir: app } : {}),
+            ...(dataDir ? { dataDir } : {}),
+            ...(profile ? { extraArgs: [`--user-data-dir=${resolve(profile)}`] } : {}),
+        },
+        argv: [
+            ...(app ? ["--app", app] : []),
+            ...(dataDir ? ["--data-dir", dataDir] : []),
+            ...(profile ? ["--profile", resolve(profile)] : []),
+        ],
+    };
+}
+
+async function officialCheck(): Promise<object> {
+    const { attachOfficial, evaluate, sidebarContext } = await import(
+        "../installer/official/attach.js"
+    );
+    const { connection, port, page } = await attachOfficial();
+    try {
+        const window = await evaluate<{ ready: string; bridge: boolean }>(
+            connection,
+            `({ ready: document.readyState, bridge: typeof window.electronBridge === "object" })`,
+        );
+        const context = await sidebarContext(connection);
+        return {
+            port,
+            page: { id: page.id, url: page.url },
+            window,
+            signedIn: Boolean(context.accountId && context.userId),
+            sectionCount: context.sections.length,
+            hosts: Object.keys(context.remoteHostNames ?? {}),
+        };
+    } finally {
+        connection.close();
+    }
+}
+
+function launcherOptions(rest: readonly string[]) {
+    const index = rest.indexOf("--destination");
+    if (index < 0) return { startArgs: officialLaunchOptions(rest).argv };
+    const destination = rest[index + 1];
+    if (!destination) throw new Error("--destination 需要一个应用路径");
+    const remaining = [...rest.slice(0, index), ...rest.slice(index + 2)];
+    return { destination, startArgs: officialLaunchOptions(remaining).argv };
+}
+
+async function runOfficial(args: readonly string[]): Promise<void> {
+    if (process.platform !== "darwin") throw new Error("官方 Codex 启动器仅支持 macOS");
+    const [action = "status", ...rest] = args;
+    switch (action) {
+        case "launch":
+            console.log(
+                JSON.stringify(await launchOfficial(officialLaunchOptions(rest).launch), null, 2),
+            );
+            return;
+        case "start": {
+            const launch = await launchOfficial(officialLaunchOptions(rest).launch);
+            const { startOfficialBoard } = await import("../installer/official/board.js");
+            const service = await startOfficialBoard(launch.pid);
+            console.log(JSON.stringify({ launch, service }, null, 2));
+            return;
+        }
+        case "serve": {
+            const { serveOfficialBoard } = await import("../installer/official/board.js");
+            await serveOfficialBoard();
+            return;
+        }
+        case "install-launcher": {
+            const { installLauncher } = await import("../installer/official/launcher.js");
+            console.log(JSON.stringify(installLauncher(launcherOptions(rest)), null, 2));
+            return;
+        }
+        case "stop": {
+            const { stopOfficialBoard } = await import("../installer/official/board.js");
+            const board = await stopOfficialBoard();
+            const app = await stopOfficial();
+            console.log(JSON.stringify({ stopped: { board, app } }));
+            return;
+        }
+        case "status": {
+            const { boardStatus } = await import("../installer/official/board.js");
+            console.log(
+                JSON.stringify(
+                    { app: await officialStatus(), board: await boardStatus() },
+                    null,
+                    2,
+                ),
+            );
+            return;
+        }
+        case "check":
+            console.log(JSON.stringify(await officialCheck(), null, 2));
+            return;
+    }
+    throw new Error(
+        "用法：codex-enhancer official launch|start|serve|install-launcher|status|stop|check",
+    );
 }
 
 if (
@@ -84,6 +207,8 @@ if (
     }
 } else if (command === "launch") {
     void launchAndConfirm(process.argv.slice(3)).then((pid) => console.log(`pid: ${pid}`), fail);
+} else if (command === "official") {
+    void runOfficial(process.argv.slice(3)).catch(fail);
 } else if (command === "task-migration" || command === "archive-migration") {
     void (async () => {
         const [action, confirm, extra] = process.argv.slice(3);
@@ -139,7 +264,7 @@ if (
     }
 } else {
     console.log(
-        "Usage: codex-enhancer detect|install [--in-place]|uninstall [--in-place]|purge-in-place-data|status [--in-place]|launch|update [--in-place] <directory>|rollback [--in-place]|package <version> <output> [platform]",
+        "Usage: codex-enhancer detect|install [--in-place]|uninstall [--in-place]|purge-in-place-data|status [--in-place]|launch|official <launch|start|serve|install-launcher|status|stop|check>|update [--in-place] <directory>|rollback [--in-place]|package <version> <output> [platform]",
     );
     console.log(
         "       codex-enhancer archive-migration preview | archive-migration apply|rollback <token>",

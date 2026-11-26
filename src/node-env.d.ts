@@ -3,6 +3,7 @@ declare namespace NodeJS {
         CODEX_CLI_PATH?: string;
         CODEX_ENHANCER_AUTO_OPEN?: string;
         CODEX_ENHANCER_BRIDGE_SOCKET?: string;
+        CODEX_ENHANCER_DEBUG_BRIDGE?: string;
         CODEX_ENHANCER_LOG_STDOUT?: string;
         CODEX_ENHANCER_SOURCE?: string;
         CODEX_ENHANCER_STATE_DIR?: string;

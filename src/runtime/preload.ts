@@ -162,7 +162,7 @@ function relay(board: BoardService): void {
     });
 }
 
-function desktopBoard(mountBoard: MountBoard, mountTasks?: MountTasks): void {
+function desktopBoard(mountBoard: MountBoard, mountTasks?: MountTasks) {
     const desktop = createDesktopConnection({
         bootstrap: () => ipcRenderer.sendSync("codex_desktop:get-initial-sidebar-bootstrap"),
         send: (packet) => ipcRenderer.invoke("codex_desktop:message-from-view", packet),
@@ -172,7 +172,7 @@ function desktopBoard(mountBoard: MountBoard, mountTasks?: MountTasks): void {
     const board = connectBoard(desktop, () => closePage?.());
     relay(board);
     observeDesktop(desktop, board);
-    startUiHost({
+    return startUiHost({
         fetchState: () => ipcRenderer.invoke("codex-enhancer:ui-items"),
         subscribe(listener) {
             ipcRenderer.on("codex-enhancer:ui-items", (_event, payload) => listener(payload));
@@ -215,10 +215,17 @@ export function start(mountBoard: MountBoard, mountTasks?: MountTasks): void {
     )
         return;
     try {
-        desktopBoard(mountBoard, mountTasks);
+        window.__codexEnhancerHost?.stop();
+        window.__codexEnhancerHost = desktopBoard(mountBoard, mountTasks);
     } catch (error) {
         proof("preload-failed", {
             error: error instanceof Error ? (error.stack ?? error.message) : String(error),
         });
+    }
+}
+
+declare global {
+    interface Window {
+        __codexEnhancerHost?: ReturnType<typeof desktopBoard>;
     }
 }
