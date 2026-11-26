@@ -25,7 +25,6 @@ const sections = [
     { id: "review", name: "待审阅" },
     { id: "active", name: "进行中" },
     { id: "blocked", name: "已阻塞" },
-    { id: "archive", name: "待归档" },
 ].map(({ id, name }) => ({
     id: id as LogicalSectionId,
     name,
@@ -182,7 +181,7 @@ function fixture(testContext: TestContext) {
     return { reopen, names, threads, native, records, seed, config, titleEpoch };
 }
 
-function save(service: BoardService, state: "review" | "in_progress" | "to_archive", note: string) {
+function save(service: BoardService, state: "review" | "in_progress", note: string) {
     const card = service.snapshot().sessions.find(({ threadId }) => threadId === first);
     assert.ok(card);
     const { id, version, inputVersion, sectionVersion } = card;
@@ -501,7 +500,7 @@ test("passive history and queued text cannot start or finish a turn", async (tes
     const service = reopen();
     await service.refresh();
     const row = phaseThread(threads);
-    await save(service, "to_archive", "人工决定");
+    await save(service, "review", "人工决定");
     const previous = phaseCard(service);
     native.moved = () => assert.fail("没有真实执行，不得移卡");
     running(row, "queued", Date.now() / 1000);
@@ -514,7 +513,7 @@ test("passive history and queued text cannot start or finish a turn", async (tes
     turn.items.push({ id: "text", type: "agentMessage", phase: "commentary", text: "已完成" });
     await service.refresh();
     const card = phaseCard(service);
-    assert.equal(card.state, "to_archive");
+    assert.equal(card.state, "review");
     assert.equal(card.manual, true);
     assert.equal(card.note, "人工决定");
     assert.equal(card.inputVersion, previous.inputVersion + 2);
@@ -570,7 +569,7 @@ test("manual placement survives same-turn output and restart until the stage cha
     running(row, "continuing", now / 1000);
     await service.refresh();
     assert.equal(phaseCard(service).state, "in_progress");
-    await save(service, "to_archive", "手动优先");
+    await save(service, "review", "手动优先");
     const previous = phaseCard(service);
     const [turn] = row.turns;
     assert.ok(turn);
@@ -580,7 +579,7 @@ test("manual placement survives same-turn output and restart until the stage cha
     now += 10000;
     const reopened = reopen();
     await reopened.refresh();
-    assert.equal(phaseCard(reopened).state, "to_archive");
+    assert.equal(phaseCard(reopened).state, "review");
     assert.equal(phaseCard(reopened).manual, true);
     row.status.activeFlags = ["waitingOnApproval"];
     await reopened.refresh();

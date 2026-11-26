@@ -16,7 +16,7 @@ import {
 import type { DesktopCommand, DesktopRequest } from "./desktop/world.js";
 import type { CardRecord } from "./records.js";
 import { createBoardService } from "./service.js";
-import { defaults } from "./settings.js";
+import { defaults, readSettings } from "./settings.js";
 
 const remoteName = "remote-ssh-discovered:fixture";
 const independentHost = "remote-ssh-discovered:independent";
@@ -60,7 +60,9 @@ interface NativeFixture {
     accountId?: string;
     remoteHostNames?: SidebarContext["remoteHostNames"];
     sections?: SidebarContext["sections"];
-    archive?: (id: ThreadId) => void;
+    archive?: (id: ThreadId, host: string) => void | Promise<void>;
+    unarchive?: (id: ThreadId, host: string) => void;
+    move?: (command: Extract<DesktopCommand, { kind: "move" }>) => void;
     list(host: string, args: ListArgs): { data: Thread[]; nextCursor: string | null };
     history?: (id: ThreadId) => Turn[];
     read?: (host: string, id: ThreadId) => Thread | Promise<Thread>;
@@ -81,7 +83,11 @@ async function readFixture(native: NativeFixture, host: string, method: string, 
             return { thread: await native.read(host, params.threadId) };
         case "thread/archive":
             assert.ok(native.archive);
-            native.archive(params.threadId);
+            await native.archive(params.threadId, host);
+            return {};
+        case "thread/unarchive":
+            assert.ok(native.unarchive);
+            native.unarchive(params.threadId, host);
             return {};
         case "project/list":
             return { data: [], nextCursor: null };
@@ -100,6 +106,7 @@ function discoverySidebar(native: NativeFixture, command: DesktopRequest) {
             ...(native.remoteHostNames ? { remoteHostNames: native.remoteHostNames } : {}),
         };
     if (command.kind === "data-home") return native.dataHome?.(command.hostId);
+    if (command.kind === "move" && native.move) return native.move(command);
     assert.equal(command.kind, "open");
     assert.ok(native.open);
     return native.open(command);
@@ -136,7 +143,13 @@ function fixture(testContext: TestContext, maxPages = 3) {
                 desktop.receive({
                     type: "mcp-response",
                     hostId: packet.hostId,
-                    message: { id, error: { message: (error as Error).message } },
+                    message: {
+                        id,
+                        error: {
+                            message: (error as Error).message,
+                            code: (error as { code?: number }).code,
+                        },
+                    },
                 });
             }
         },
@@ -152,7 +165,7 @@ function fixture(testContext: TestContext, maxPages = 3) {
         preparePhase: async () => assert.fail("History must not prepare a native move"),
         loadLedger: async (account) => ledgers.get(account) ?? emptyLedger(),
         writeLedger: async (account, ledger) => {
-            assert.ok(native.archive, "Discovery must not write the ledger");
+            assert.ok(native.archive || native.move, "Discovery must not write the ledger");
             ledgers.set(account, ledger);
         },
         settings: async () => ({ ...settings }),
@@ -492,22 +505,23 @@ test("a stale card cannot save or register an archive after a switch to identica
     assert.notEqual(old.sectionVersion, current.sectionVersion);
     assert.notEqual(old.accountScope, current.accountScope);
 
-    const { id, title, version, inputVersion, sectionVersion } = old;
+    const { id, version, inputVersion, sectionVersion, updatedAt } = old;
     const revisions = { id, version, inputVersion, sectionVersion };
+    const archiveRequest = { ...revisions, attemptId: crypto.randomUUID(), updatedAt };
     await assert.rejects(
         service.request("/api/state", { ...revisions, state: null, note: "旧账号草稿" }),
         /卡片位置或输入已更新/,
     );
-    await assert.rejects(service.request("/api/archive", revisions), /卡片位置或输入已更新/);
+    await assert.rejects(service.request("/api/archive", archiveRequest), /卡片位置或输入已更新/);
     await assert.rejects(
         service.request("/api/archive-batches", {
             id: crypto.randomUUID(),
-            items: [{ ...revisions, title }],
+            items: [revisions],
         }),
-        /卡片位置或输入已更新/,
+        /归档请求不完整/,
     );
     await assert.rejects(
-        service.request("/api/archive", { ...revisions, sectionVersion: "[null,null,null]" }),
+        service.request("/api/archive", { ...archiveRequest, sectionVersion: "[null,null,null]" }),
         /卡片位置或输入已更新/,
     );
     assert.equal(records[first], undefined);
@@ -537,8 +551,252 @@ function archiveFixture(native: NativeFixture) {
         writes.push(id);
         archivedThreads.add(id);
     };
+    native.unarchive = (id) => {
+        archivedThreads.delete(id);
+    };
     return { archivedThreads, writes, sectionVersion: JSON.stringify([replica, section, 10]) };
 }
+
+function archiveClick(
+    card: ReturnType<ReturnType<typeof createBoardService>["snapshot"]>["sessions"][number],
+) {
+    const { id, updatedAt, version, inputVersion, sectionVersion, archiveTurnId, archiveInputKey } =
+        card;
+    return {
+        id,
+        updatedAt,
+        version,
+        inputVersion,
+        sectionVersion,
+        turnId: archiveTurnId,
+        inputKey: archiveInputKey,
+        attemptId: crypto.randomUUID(),
+    };
+}
+
+test("manual archive blocks waiting and stale turns and allows an explicit retry after a proven rejection", async (testContext) => {
+    const { native, service } = fixture(testContext);
+    const { archivedThreads, writes } = archiveFixture(native);
+    const before = row(second, { status: { type: "active", activeFlags: ["waitingOnApproval"] } });
+    let latest: Turn = { id: "turn-a", status: "completed", items: [] };
+    native.read = (_host, id) => (id === second ? before : row(id));
+    native.history = () => [latest];
+    native.list = (_host, { archived }) => ({
+        data: [first, second]
+            .filter((id) => archivedThreads.has(id) === archived)
+            .map((id) => (id === second ? before : row(id))),
+        nextCursor: null,
+    });
+    const current = () => {
+        const result = service.snapshot().sessions.find(({ id }) => id === second);
+        assert.ok(result);
+        return result;
+    };
+    await service.refresh();
+    assert.match(current().archiveReason ?? "", /等待批准/);
+    const blocked = (await service.request("/api/archive", archiveClick(current()))) as {
+        item: { status: string };
+    };
+    assert.equal(blocked.item.status, "rejected");
+    before.status = { type: "idle" };
+    await service.refresh();
+    const stale = archiveClick(current());
+    latest = { ...latest, id: "turn-b" };
+    const newTurn = (await service.request("/api/archive", stale)) as { item: { status: string } };
+    assert.equal(newTurn.item.status, "newInput");
+    assert.deepEqual(writes, []);
+    await service.refresh();
+
+    const original = native.archive;
+    assert.ok(original);
+    native.archive = () => {
+        throw Object.assign(new Error("no rollout found"), { code: -32600 });
+    };
+    const denied = (await service.request("/api/archive", archiveClick(current()))) as {
+        item: { status: string };
+    };
+    assert.equal(denied.item.status, "rejected");
+    assert.equal(current().archivePending, false);
+    native.archive = original;
+    const shown = archiveClick(current());
+    before.updatedAt += 1;
+    await service.request("/api/archive", shown);
+    assert.deepEqual(writes, [second]);
+    assert.deepEqual(
+        service.snapshot().archivedSessions.map(({ id }) => id),
+        [second],
+    );
+});
+
+test("an unconfirmed archive stays in the board until late native readback and never sends again", async (testContext) => {
+    const { native, service } = fixture(testContext);
+    const { archivedThreads } = archiveFixture(native);
+    let writes = 0;
+    native.archive = () => {
+        writes++;
+        throw new Error("ack lost");
+    };
+    await service.refresh();
+    const card = service.snapshot().sessions.find(({ id }) => id === second);
+    assert.ok(card);
+    const result = (await service.request("/api/archive", archiveClick(card))) as {
+        item: { status: string };
+    };
+    assert.equal(result.item.status, "pending");
+    assert.equal(
+        service.snapshot().sessions.find(({ id }) => id === second)?.archiveChecking,
+        true,
+    );
+    await service.refresh();
+    await assert.rejects(service.request("/api/archive", archiveClick(card)), /已有操作待核对/);
+    assert.equal(writes, 1);
+    archivedThreads.add(second);
+    await service.refresh();
+    const history = service.snapshot().archivedSessions;
+    assert.deepEqual(
+        history.map(({ id }) => id),
+        [second],
+    );
+    assert.equal(history[0]?.archivedAt, undefined);
+    assert.ok(history[0]?.checkedAt);
+    assert.equal(writes, 1);
+});
+
+test("host-owned archive claims permit a fresh archive of the same restored session", async (testContext) => {
+    const { native, service, settings } = fixture(testContext);
+    const directory = await taskFilesFixture(testContext, native);
+    await mkdir(join(directory, "one"));
+    settings.taskState = "host";
+    const { writes } = archiveFixture(native);
+    native.sections?.push({
+        id: "review" as SidebarContext["sections"][number]["id"],
+        name: "待审阅",
+        hostSectionIds: { local: "review-replica" as NonNullable<Thread["section"]>["id"] },
+        itemKeys: [],
+    });
+    const read = native.read;
+    assert.ok(read);
+    let moved = false;
+    function placementAfterRestore(thread: Thread) {
+        if (!moved) return thread;
+        return {
+            ...thread,
+            section: {
+                id: "review-replica" as NonNullable<Thread["section"]>["id"],
+                name: "待审阅",
+            },
+        };
+    }
+    native.move = () => {
+        moved = true;
+    };
+    native.read = async (host, id) => placementAfterRestore(await read(host, id));
+    await service.refresh();
+    const card = () => {
+        const current = service.snapshot().sessions.find(({ id }) => id === second);
+        assert.ok(current);
+        return current;
+    };
+    const initial = card();
+    assert.equal(initial.canArchive, true);
+    await service.request("/api/archive", archiveClick(initial));
+    assert.equal(card().archived, true);
+    assert.deepEqual(await service.request("/api/archive-restore", { id: second }), {
+        restored: true,
+    });
+    await service.refresh();
+    assert.equal(card().archivePending, false);
+    assert.equal(card().inputVersion, initial.inputVersion);
+    await service.request("/api/archive", archiveClick(card()));
+    assert.deepEqual(writes, [second, second]);
+    assert.deepEqual(
+        service.snapshot().archivedSessions.map(({ id }) => id),
+        [second],
+    );
+});
+
+test("archive migration is read-only in preview and continues once for a reconnected owning host", async (testContext) => {
+    const { native, service, desktop, records } = fixture(testContext);
+    const local = localHostId;
+    const remote = hostId(remoteName);
+    assert.ok(remote);
+    native.hosts = [local, remote];
+    native.sections = ["待归档", "待审阅"].map((name, index) => ({
+        id: `section-${index}` as SidebarContext["sections"][number]["id"],
+        name,
+        itemKeys: [],
+        hostSectionIds: {
+            [local]: `local-${index}` as NonNullable<Thread["section"]>["id"],
+            [remote]: `remote-${index}` as NonNullable<Thread["section"]>["id"],
+        },
+    }));
+    const placed = (host: string, index: number, at: number) => {
+        const section = native.sections?.[index];
+        assert.ok(section);
+        const id = section.hostSectionIds?.[host];
+        assert.ok(id);
+        return row(first, { section: { id, name: section.name }, sectionEnteredAt: at });
+    };
+    const sessions = new Map([
+        [local, placed(local, 0, 10)],
+        [remote, placed(remote, 0, 10)],
+    ]);
+    native.list = (host, { archived }) => ({
+        data: archived ? [] : [sessions.get(host as typeof local) as Thread],
+        nextCursor: null,
+    });
+    native.read = (host) => sessions.get(host as typeof local) as Thread;
+    native.history = () => [];
+    records[first] = {
+        note: "备注",
+        version: 3,
+        inputVersion: 1,
+        manual: true,
+        inputKey: "[2]",
+        confirmedInputKey: "[1]",
+    };
+    const moves: string[] = [];
+    native.move = ({ hostId: destination, to }) => {
+        const target = to === "section-1" ? 1 : 0;
+        moves.push(destination);
+        sessions.set(destination as typeof local, placed(destination, target, moves.length + 10));
+    };
+    await service.refresh();
+    const connectivity = (state: string) =>
+        desktop.receive({
+            type: "codex-app-server-connection-changed",
+            hostId: remote,
+            state,
+        });
+    connectivity("disconnected");
+    const preview = (await service.request("/api/archive-migration/preview")) as {
+        token: string;
+        hosts: { available: boolean }[];
+    };
+    assert.deepEqual(moves, []);
+    assert.deepEqual(
+        preview.hosts.map(({ available }) => available),
+        [true, false],
+    );
+    await service.request("/api/archive-migration/apply", { confirm: preview.token });
+    await service.refresh();
+    assert.deepEqual(moves, [local]);
+    connectivity("connected");
+    await service.refresh();
+    await service.refresh();
+    assert.deepEqual(moves, [local, remote]);
+    assert.ok(service.snapshot().sessions.every(({ state }) => state === "review"));
+    assert.equal(service.snapshot().sessions.find(({ hostId }) => hostId === local)?.note, "备注");
+    assert.equal(
+        service.snapshot().sessions.find(({ hostId }) => hostId === local)?.followUp,
+        true,
+    );
+    const roll = (await service.request("/api/archive-migration/preview")) as { token: string };
+    sessions.set(remote, placed(remote, 1, 50));
+    await service.request("/api/archive-migration/rollback", { confirm: roll.token });
+    assert.deepEqual(moves, [local, remote, local]);
+    assert.equal(sessions.get(remote)?.sectionEnteredAt, 50);
+});
 
 test("a previously registered unscoped archive batch keeps its pending and unsent semantics", async (testContext) => {
     const { native, service, ledgers } = fixture(testContext);
@@ -564,27 +822,38 @@ test("a previously registered unscoped archive batch keeps its pending and unsen
     const statuses = () => ledgers.get(account)?.batches[0]?.items.map(({ status }) => status);
     await service.refresh();
     const items = [{ ...target, id: first }, target];
-    const replay = await service.request("/api/archive-batches", { id, items });
-    assert.deepEqual(replay, { batch: previous.batches[0] });
+    await assert.rejects(service.request("/api/archive-batches", { id, items }), /归档请求不完整/);
     await service.request("/api/archive-batches/check", { id });
     assert.deepEqual(statuses(), ["verified", "awaiting"]);
     assert.deepEqual(writes, []);
-    await service.request("/api/archive", { ...target, batchId: id });
-    assert.deepEqual(writes, [second]);
-    assert.deepEqual(statuses(), ["verified", "archived"]);
+    await assert.rejects(
+        service.request("/api/archive", { ...target, batchId: id }),
+        /归档请求不完整/,
+    );
+    assert.deepEqual(writes, []);
+    assert.deepEqual(statuses(), ["verified", "awaiting"]);
 
-    archivedThreads.delete(second);
-    await service.refresh();
     const current = service.snapshot().sessions.find((card) => card.id === second);
     assert.ok(current?.canArchive);
     assert.notEqual(current.sectionVersion, sectionVersion);
-    const newTarget = { ...target, sectionVersion: current.sectionVersion };
-    const newBatch = crypto.randomUUID();
-    await service.request("/api/archive-batches", { id: newBatch, items: [newTarget] });
-    assert.deepEqual(statuses(), ["awaiting"]);
-    await service.request("/api/archive", { ...newTarget, batchId: newBatch });
-    assert.deepEqual(writes, [second, second]);
+    const newTarget = {
+        ...target,
+        sectionVersion: current.sectionVersion,
+        updatedAt: current.updatedAt,
+        attemptId: crypto.randomUUID(),
+    };
+    await service.request("/api/archive", newTarget);
+    await service.request("/api/archive", newTarget);
+    assert.deepEqual(writes, [second]);
     assert.deepEqual(statuses(), ["archived"]);
+    assert.ok(archivedThreads.has(second));
+    assert.deepEqual(
+        service
+            .snapshot()
+            .archivedSessions.map(({ id }) => id)
+            .sort(),
+        [first, second],
+    );
 });
 
 test("a reopened batch reconciles uncached submitted cards on connected hosts independently", async (testContext) => {
