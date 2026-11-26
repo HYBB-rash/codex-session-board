@@ -18,6 +18,7 @@ export interface BoardSession extends PreviewSession {
     archived?: boolean;
     canArchive?: boolean;
     archivePending?: boolean;
+    taskStateConfirmedAt?: number;
     presence?: string;
     catalogCurrent?: boolean;
     ordinary?: boolean;

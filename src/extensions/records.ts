@@ -6,14 +6,17 @@ import { type BoardLedger, emptyLedger } from "./archive.js";
 import type { ThreadRef } from "./desktop/connection.js";
 import type { DraftRecord } from "./drafts.js";
 import { type BoardState, labels } from "./placement.js";
+import type { Card } from "./service.js";
 
 export interface CardRecord {
+    state?: BoardState | null;
     note: string;
     version: number;
     inputVersion: number;
     inputKey?: string;
     confirmedInputKey?: string;
     manual?: boolean;
+    manualTurnId?: string;
     phaseKey?: string;
     pendingPhaseKey?: string;
     previewTurnId?: string;
@@ -77,6 +80,19 @@ function readRecord<T>(file: string): Record<string, T> {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
         return {};
     }
+}
+
+export function createTaskCardCache(file: string) {
+    return {
+        read(account: string) {
+            return readRecord<Card[]>(file)[account] ?? [];
+        },
+        save(account: string, cards: Card[]) {
+            const previous = readRecord<Card[]>(file);
+            if (isDeepStrictEqual(previous[account], cards)) return;
+            atomicWrite(file, { ...previous, [account]: cards });
+        },
+    };
 }
 
 function mergeDrafts(imported: DraftRecord[] = [], saved: DraftRecord[] = []): DraftRecord[] {

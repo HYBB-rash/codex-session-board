@@ -2,6 +2,7 @@ import type { BoardMode } from "./placement.js";
 
 export interface BoardSettings {
     mode: BoardMode;
+    taskState?: "host" | "migration";
     syncTitles: boolean;
     autoArchiveSeconds: number | null;
     remoteAutoArchiveSeconds: number | null;
@@ -30,6 +31,7 @@ export function readSettings(raw: unknown): BoardSettings {
         seconds === null || (Number.isSafeInteger(seconds) && seconds > 0);
     if (
         !["four", "five", "legacy"].includes(value.mode) ||
+        (value.taskState !== undefined && !["host", "migration"].includes(value.taskState)) ||
         typeof value.syncTitles !== "boolean" ||
         !validInterval(value.autoArchiveSeconds) ||
         !validInterval(value.remoteAutoArchiveSeconds) ||
