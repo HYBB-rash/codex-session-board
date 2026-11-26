@@ -149,16 +149,18 @@ test("a native archive check still stops on an account authority failure", async
     );
 });
 
-test("a second archive precondition failure remains distinct from a possible application", async () => {
+test("a definite archive failure allows a new click while replaying the old click stays read-only", async () => {
     const fixture = harness();
     const original = fixture.create();
     const candidate = item("rejected");
-    const first = await original.single(candidate);
+    const operation = crypto.randomUUID();
+    const first = await original.single(candidate, operation);
     assert.equal(first.status, "rejected");
     assert.equal(fixture.writes(), 0);
     assert.deepEqual(fixture.checked, []);
-    assert.deepEqual(await original.single(candidate), first);
-    assert.equal(original.batches().length, 1);
+    assert.deepEqual(await original.single(candidate, operation), first);
+    assert.equal((await original.single(candidate)).status, "rejected");
+    assert.equal(original.batches().length, 2);
 });
 
 test("an archive ledger update queued before an account switch cannot commit after it", async () => {

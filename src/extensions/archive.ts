@@ -1,9 +1,16 @@
+import type { DraftRecord } from "./drafts.js";
+import type { BoardState } from "./placement.js";
+
 export interface ArchiveTarget {
     id: string;
     title: string;
     version: number;
     inputVersion: number;
     sectionVersion: string | null;
+    updatedAt?: number;
+    turnId?: string | null;
+    inputKey?: string | null;
+    state?: BoardState | null;
 }
 
 export type ArchiveState =
@@ -17,6 +24,7 @@ export type ArchiveItem = ArchiveTarget & {
     status: ArchiveState;
     message?: string;
     checkedAt?: number;
+    archivedAt?: number;
 };
 
 export interface ArchiveBatch {
@@ -37,6 +45,23 @@ export interface BoardLedger {
     batches: ArchiveBatch[];
     columnSorts: Record<string, SortPreference>;
     pendingDrafts?: DraftRecord[];
+    archiveMigrationEnabled?: boolean;
+    archiveMoves?: Record<string, ArchiveMove>;
+    archiveRestores?: Record<string, ArchiveRestore>;
+}
+
+export interface ArchiveMove {
+    from: string;
+    to: string;
+    before: string;
+    after?: string;
+    observed?: string;
+    rolledBack?: true;
+}
+
+export interface ArchiveRestore {
+    state: BoardState;
+    sent?: true;
 }
 
 interface ArchivePorts {
@@ -73,6 +98,17 @@ function archiveItemStatus(
 
 function rejectedStatus(error: unknown): "newInput" | "rejected" {
     return error instanceof NewInputError ? "newInput" : "rejected";
+}
+
+export function archiveHistory(batches: ArchiveBatch[]) {
+    const history = new Map<string, ArchiveItem>();
+    for (const { items } of batches) {
+        for (const item of items) {
+            if (!history.has(item.id) && (item.status === "archived" || item.status === "verified"))
+                history.set(item.id, item);
+        }
+    }
+    return history;
 }
 
 export function createArchive(ports: ArchivePorts) {
@@ -176,6 +212,7 @@ export function createArchive(ports: ArchivePorts) {
         from: "awaiting" | "pending",
         status: ArchiveState,
         message?: string,
+        archivedAt?: number,
     ): Promise<{ item: ArchiveItem; changed: boolean }> {
         return change<{ item: ArchiveItem; changed: boolean }>((old) => {
             const batch = requireBatch(id);
@@ -184,6 +221,7 @@ export function createArchive(ports: ArchivePorts) {
             if (current.status !== from || (from === "awaiting" && batch.finishedAt !== null))
                 return { next: old, result: { item: current, changed: false } };
             const next = archiveItemStatus(current, from, status, Date.now() / 1000, message);
+            if (archivedAt !== undefined) next.archivedAt = archivedAt;
             const updated = {
                 ...batch,
                 items: batch.items.map((row) => (row.id === item.id ? next : row)),
@@ -202,6 +240,32 @@ export function createArchive(ports: ArchivePorts) {
         return batches().some((batch) =>
             batch.items.some((item) => item.id === id && item.status === "pending"),
         );
+    }
+
+    function pendingItem(id: string) {
+        return batches()
+            .flatMap((batch) => batch.items)
+            .find((item) => item.id === id && item.status === "pending");
+    }
+
+    function reconcile(ids: ReadonlySet<string>) {
+        const applies = (item: ArchiveItem) =>
+            item.status === "pending" && ids.has(item.id) && !submitted.has(item.id);
+        if (!batches().some(({ items }) => items.some(applies))) return Promise.resolve();
+        return change((old) => ({
+            next: {
+                ...old,
+                batches: old.batches.map((batch) => ({
+                    ...batch,
+                    items: batch.items.map((item) =>
+                        applies(item)
+                            ? archiveItemStatus(item, "pending", "verified", Date.now() / 1000)
+                            : item,
+                    ),
+                })),
+            },
+            result: undefined,
+        }));
     }
 
     async function checkPendingItem(batch: string, item: ArchiveItem, scope: string) {
@@ -227,21 +291,16 @@ export function createArchive(ports: ArchivePorts) {
         return requireBatch(id);
     }
 
-    async function single(candidate: ArchiveTarget): Promise<ArchiveItem> {
+    async function single(
+        candidate: ArchiveTarget,
+        attemptId: string = crypto.randomUUID(),
+    ): Promise<ArchiveItem> {
         const scope = ports.scope();
-        const version = ports.nativeVersion(candidate.sectionVersion);
-        const existing = batches().find(({ single, items }) => {
-            const item = items[0];
-            return (
-                single &&
-                item?.id === candidate.id &&
-                item.version === candidate.version &&
-                item.inputVersion === candidate.inputVersion &&
-                item.sectionVersion === version
-            );
-        });
-        const batch = existing ?? (await start(crypto.randomUUID(), [candidate], true));
+        const existing = batches().find(({ id }) => id === attemptId);
+        if (existing && !existing.single) throw new Error("归档操作编号已使用");
+        const batch = await start(attemptId, [candidate], true);
         requireScope(scope);
+        if (existing || batch.finishedAt !== null) return batch.items[0] as ArchiveItem;
         const item = await submit(batch.id, candidate);
         requireScope(scope);
         await finish(batch.id);
@@ -290,9 +349,11 @@ export function createArchive(ports: ArchivePorts) {
         const claimed = await set(batch, item, "awaiting", "pending");
         if (!claimed.changed) return claimed.item;
         let pending = claimed.item;
+        let acknowledged = false;
         try {
             requireScope(scope);
             await ports.archive(item);
+            acknowledged = true;
         } catch (error) {
             requireScope(scope);
             if (error instanceof ArchivePreconditionError) {
@@ -307,15 +368,26 @@ export function createArchive(ports: ArchivePorts) {
             }
             pending = (await set(batch, pending, "pending", "pending", String(error))).item;
         }
-        return confirmSubmission(batch, pending, scope);
+        if (acknowledged)
+            pending = (
+                await set(batch, pending, "pending", "pending", undefined, Date.now() / 1000)
+            ).item;
+        return confirmSubmission(batch, pending, scope, acknowledged);
     }
 
-    async function confirmSubmission(batch: string, item: ArchiveItem, scope: string) {
+    async function confirmSubmission(
+        batch: string,
+        item: ArchiveItem,
+        scope: string,
+        acknowledged: boolean,
+    ) {
         try {
             requireScope(scope);
             const archived = await ports.isArchived(item.id);
             requireScope(scope);
-            if (archived) return (await set(batch, item, "pending", "archived")).item;
+            if (archived)
+                return (await set(batch, item, "pending", acknowledged ? "archived" : "verified"))
+                    .item;
         } catch (error) {
             requireScope(scope);
             return (await set(batch, item, "pending", "pending", String(error))).item;
@@ -323,7 +395,19 @@ export function createArchive(ports: ArchivePorts) {
         return item;
     }
 
-    return { batches, change, start, finish, pending, check, single, submit };
+    return {
+        batches,
+        change,
+        start,
+        finish,
+        pending,
+        pendingItem,
+        reconcile,
+        check,
+        single,
+        submit,
+        submitting: (id: string) => submitted.has(id),
+    };
 }
 
 function sameArchiveTarget(item: ArchiveTarget, other: ArchiveTarget | undefined): boolean {
@@ -332,8 +416,9 @@ function sameArchiveTarget(item: ArchiveTarget, other: ArchiveTarget | undefined
         item.title === other.title &&
         item.version === other.version &&
         item.inputVersion === other.inputVersion &&
-        item.sectionVersion === other.sectionVersion
+        item.sectionVersion === other.sectionVersion &&
+        item.updatedAt === other.updatedAt &&
+        item.turnId === other.turnId &&
+        item.inputKey === other.inputKey
     );
 }
-
-import type { DraftRecord } from "./drafts.js";

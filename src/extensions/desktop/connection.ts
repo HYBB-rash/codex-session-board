@@ -43,7 +43,13 @@ export interface Turn {
     itemsView?: string;
     startedAt?: number | null;
     completedAt?: number | null;
-    items: { id: string; type: string; phase?: string; text?: string }[];
+    items: {
+        id: string;
+        type: string;
+        phase?: string;
+        text?: string;
+        content?: { type: string; text?: string }[];
+    }[];
 }
 
 export interface HostConnection {
@@ -69,7 +75,7 @@ interface NativePacket {
     state?: string;
     method?: string;
     params?: { threadId?: string; watchId?: string; changedPaths?: string[] };
-    message?: { id?: string; result?: unknown; error?: { message?: string } };
+    message?: { id?: string; result?: unknown; error?: { code?: number; message?: string } };
 }
 
 interface Pending {
@@ -165,6 +171,18 @@ export function interactiveThread(thread: Thread): boolean {
 
 export type DesktopConnection = ReturnType<typeof createDesktopConnection>;
 
+export const nativeRequestTimeoutMs = 15000;
+export function isDefiniteNativeWriteFailure(error: unknown) {
+    if (!(error instanceof Error)) return false;
+    if (error.name === "NativeRequestUnsent") return true;
+    return (
+        error.name === "NativeRequestRejected" &&
+        "code" in error &&
+        typeof error.code === "number" &&
+        [-32600, -32601, -32602].includes(error.code)
+    );
+}
+
 export function createDesktopConnection(transport: DesktopTransport) {
     const hosts = new Map<HostId, { epoch: number; connected: boolean; catalog: boolean }>();
     const requests = new Map<string, Pending>();
@@ -242,14 +260,18 @@ export function createDesktopConnection(transport: DesktopTransport) {
     ): void {
         const pending = requests.get(id);
         if (!pending) return;
-        const error =
-            pending.connection.hostId !== key
-                ? "Codex 回执主机不一致"
-                : reply.error
-                  ? (reply.error.message ?? "Codex 请求失败")
-                  : null;
-        if (error) {
-            fail(id, error);
+        if (pending.connection.hostId !== key) {
+            fail(id, "Codex 回执主机不一致");
+            return;
+        }
+        if (reply.error) {
+            fail(
+                id,
+                Object.assign(new Error(reply.error.message ?? "Codex 请求失败"), {
+                    name: "NativeRequestRejected",
+                    code: reply.error.code,
+                }),
+            );
             return;
         }
         window.clearTimeout(pending.timeout);
@@ -257,21 +279,27 @@ export function createDesktopConnection(transport: DesktopTransport) {
         pending.resolve(reply.result);
     }
 
-    function fail(id: string, message: string): void {
+    function fail(id: string, failure: string | Error): void {
         const pending = requests.get(id);
         if (!pending) return;
         window.clearTimeout(pending.timeout);
         requests.delete(id);
-        pending.reject(new Error(message));
+        pending.reject(typeof failure === "string" ? new Error(failure) : failure);
     }
 
     function request(
         connection: HostConnection,
         method: NativeMethod,
         params: object,
-        timeoutMs = 15000,
+        timeoutMs = nativeRequestTimeoutMs,
     ): Promise<unknown> {
-        assertCurrent(connection);
+        try {
+            assertCurrent(connection);
+        } catch (error) {
+            throw Object.assign(new Error(error instanceof Error ? error.message : String(error)), {
+                name: "NativeRequestUnsent",
+            });
+        }
         const id = crypto.randomUUID();
         return new Promise((resolve, reject) => {
             const timeout = window.setTimeout(
