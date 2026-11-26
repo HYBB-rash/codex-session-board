@@ -27,7 +27,9 @@ function version(): string {
 
 function checkSections(value: unknown) {
     const data = object<"health" | "states" | "offline">(value);
-    const health = object<"nativeVerified" | "sectionBindings" | "nativeError">(data?.health);
+    const health = object<
+        "nativeVerified" | "sectionBindings" | "nativeError" | "deferredSectionError"
+    >(data?.health);
     const states = object(data?.states);
     if (!states || data?.offline === true || health?.nativeVerified !== true) {
         throw new Error(
@@ -38,7 +40,12 @@ function checkSections(value: unknown) {
     }
     const bindings = Array.isArray(health.sectionBindings) ? health.sectionBindings : [];
     const sectionIds = new Set<string>();
-    const ids = Object.entries(states).map(([state, label], index) => {
+    const expected = Object.entries(states).filter(
+        ([state]) =>
+            state !== "deferred" ||
+            bindings.some((binding) => object<"state">(binding)?.state === state),
+    );
+    const ids = expected.map(([state, label], index) => {
         const binding = object<"state" | "label" | "sectionId">(bindings[index]);
         if (
             binding?.state !== state ||
@@ -60,6 +67,9 @@ function checkSections(value: unknown) {
         hostId: "local",
         nativeCatalogVerified: true,
         bindings: ids,
+        ...(typeof health.deferredSectionError === "string"
+            ? { deferredSectionError: health.deferredSectionError }
+            : {}),
     };
 }
 

@@ -103,6 +103,7 @@ interface Edit {
     id: string;
     state: BoardState | null;
     note?: string;
+    deferReason?: string;
     version: number;
     inputVersion: number;
     sectionVersion: string | null;
@@ -122,6 +123,8 @@ interface Card {
     version: number;
     inputVersion: number;
     note: string;
+    deferReason?: string | null;
+    canDefer?: boolean;
     manual: boolean;
     remote: boolean;
     ordinary: boolean;
@@ -198,14 +201,25 @@ function changedInput(current: CardRecord, input: string | null): input is strin
     return input !== null && input !== current.inputKey;
 }
 
-function observedRecord(current: CardRecord, turn: Turn | undefined, phase: Phase | null) {
+function observedRecord(
+    current: CardRecord,
+    turn: Turn | undefined,
+    phase: Phase | null,
+    leftDeferPlacement: boolean,
+) {
     const input = turnInput(turn);
     const inputChanged = changedInput(current, input);
     const phaseChanged =
         phase !== null &&
         (current.phaseKey !== phase.key || phaseIsFromTurn(current.pendingPhaseKey, phase.turnId));
     const answer = turn && finalAnswer(turn) ? turn.id : undefined;
-    if (!inputChanged && !phaseChanged && (!answer || answer === current.previewTurnId)) return;
+    if (
+        !inputChanged &&
+        !phaseChanged &&
+        !leftDeferPlacement &&
+        (!answer || answer === current.previewTurnId)
+    )
+        return;
     const next: CardRecord = {
         ...current,
         ...(input !== null ? { inputKey: input } : {}),
@@ -214,6 +228,7 @@ function observedRecord(current: CardRecord, turn: Turn | undefined, phase: Phas
         ...(phase ? { phaseKey: phase.key } : {}),
         ...(answer ? { previewTurnId: answer } : {}),
     };
+    if (leftDeferPlacement) delete next.deferred;
     return { next, phaseChanged };
 }
 
@@ -261,14 +276,41 @@ function addUnseenThreads(rows: Map<ThreadId, Thread>, threads: readonly Thread[
 
 function moveDestination(
     context: SidebarContext,
+    host: HostId,
     state: BoardState | null,
     mode: BoardSettings["mode"],
 ) {
-    const destination = state && sectionFor(context, state);
+    const destination =
+        state && sectionFor(context, state, state === "deferred" ? host : undefined);
     if (!destination || !Object.hasOwn(visibleStates(mode), state ?? "")) {
+        if (state === "deferred")
+            throw new Error("请在 Codex 侧栏为此主机准备唯一的「待处理」分区");
         throw new Error("当前 Codex 侧栏缺少唯一的目标状态分区");
     }
     return destination;
+}
+
+function savedDeferReason(record: CardRecord, position: Placement): string | null {
+    return record.deferred?.sectionVersion === position.version ? record.deferred.reason : null;
+}
+
+function leftDeferred(
+    record: CardRecord | undefined,
+    context: SidebarContext,
+    host: HostId,
+    thread: Thread,
+): boolean {
+    return Boolean(
+        record?.deferred &&
+            record.deferred.sectionVersion !== placement(context, host, thread).version,
+    );
+}
+
+function requiredDeferReason(input: unknown, saved: string | null): string {
+    const reason = input === undefined ? saved : input;
+    if (typeof reason !== "string" || !reason.trim()) throw new Error("请填写搁置原因");
+    if ([...reason].length > 2000) throw new Error("搁置原因不能超过 2000 字");
+    return reason.trim();
 }
 
 function moveProof(
@@ -643,14 +685,17 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         const threads = [...host.active.values()].filter(
             (thread) => host.currentActive.has(thread.id) && canWrite(runtime.settings, thread.id),
         );
-        const realtime = threads.filter(
-            (thread, index) =>
+        const realtime = threads.filter((thread, index) => {
+            const record =
+                runtime.records[cardId({ hostId: connection.hostId, threadId: thread.id })];
+            return (
                 dirty.has(thread.id) ||
                 thread.status?.type === "active" ||
-                runtime.records[cardId({ hostId: connection.hostId, threadId: thread.id })]
-                    ?.pendingPhaseKey !== undefined ||
-                (index < 12 && thread.updatedAt >= runtime.observationSince - 3),
-        );
+                record?.pendingPhaseKey !== undefined ||
+                leftDeferred(record, context, connection.hostId, thread) ||
+                (index < 12 && thread.updatedAt >= runtime.observationSince - 3)
+            );
+        });
         for (const thread of realtime) {
             try {
                 await observeThread(connection, thread, context);
@@ -712,7 +757,12 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             const latest = await readObservedTurn(connection, thread.id, id, historyTimeout);
             const current = runtime.records[id] ?? emptyRecord;
             const phase = phaseForObservation(thread, latest, historyTimeout);
-            const observation = observedRecord(current, latest, phase);
+            const observation = observedRecord(
+                current,
+                latest,
+                phase,
+                leftDeferred(current, context, connection.hostId, thread),
+            );
             if (!observation) return;
             const { next, phaseChanged } = observation;
             const change =
@@ -791,6 +841,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         const after = await moveCard(phase.state, connection, context, current);
         next.manual = false;
         next.reason = phase.reason;
+        delete next.deferred;
         const afterActivation =
             !phase.terminal ||
             (phase.at !== null &&
@@ -843,6 +894,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         const position = placement(context, hostId, thread);
         const state = presentState(context, position, runtime.settings.mode);
         const scope = requiredScope();
+        const canDefer = sectionFor(context, "deferred", hostId) !== null;
         return {
             id,
             accountScope: scope,
@@ -857,6 +909,8 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             version: record.version,
             inputVersion: record.inputVersion,
             note: record.note,
+            canDefer,
+            ...(state === "deferred" ? { deferReason: savedDeferReason(record, position) } : {}),
             manual: record.manual === true,
             remote: hostId !== "local",
             ordinary: true,
@@ -933,7 +987,10 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
                 ? sectionBindings(runtime.context, hostId, runtime.settings.mode)
                 : [];
         const missingSections = Object.entries(visibleStates(runtime.settings.mode))
-            .filter(([state]) => !bindings.some((binding) => binding.state === state))
+            .filter(
+                ([state]) =>
+                    state !== "deferred" && !bindings.some((binding) => binding.state === state),
+            )
             .map(([, label]) => label);
         return {
             lastScanAt: Date.now() / 1000,
@@ -944,6 +1001,10 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             nativeSections: true,
             nativeVerified: connected && missingSections.length === 0,
             sectionBindings: bindings,
+            deferredSectionError:
+                connected && runtime.context && !sectionFor(runtime.context, "deferred", hostId)
+                    ? "请在 Codex 侧栏为此主机准备唯一的「待处理」分区"
+                    : undefined,
             nativeError:
                 connected && missingSections.length
                     ? `Codex 侧栏缺少可确认的状态分区：${missingSections.join("、")}`
@@ -1148,16 +1209,30 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         ) {
             throw new Error("卡片位置或输入已更新，请刷新后重试");
         }
-        return { card, connection, context, before, latest, current, inputKey };
+        return { card, connection, context, before, from, latest, current, inputKey };
+    }
+
+    function reasonForEdit(
+        edit: Edit,
+        { card, context, from, current }: Awaited<ReturnType<typeof resolveEdit>>,
+    ) {
+        if (edit.state !== "deferred") return;
+        moveDestination(context, card.hostId, edit.state, runtime.settings.mode);
+        const saved =
+            presentState(context, from, runtime.settings.mode) === edit.state
+                ? savedDeferReason(current, from)
+                : null;
+        return requiredDeferReason(edit.deferReason, saved);
     }
 
     async function updateCard(edit: Edit) {
-        const { card, connection, context, before, latest, current, inputKey } =
-            await resolveEdit(edit);
+        const resolved = await resolveEdit(edit);
+        const { card, connection, context, before, latest, current, inputKey } = resolved;
+        const deferReason = reasonForEdit(edit, resolved);
         const after = await moveCard(edit.state, connection, context, before);
         desktop.assertCurrent(connection);
         const nextContext = await freshContext(context);
-        const record = {
+        const record: CardRecord = {
             note: edit.note?.trim() ?? current.note,
             version: current.version + 1,
             inputVersion: current.inputVersion,
@@ -1166,6 +1241,14 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             ...(latest && finalAnswer(latest) ? { previewTurnId: latest.id } : {}),
             manual: true,
             selectedAt: Date.now() / 1000,
+            ...(deferReason !== undefined
+                ? {
+                      deferred: {
+                          sectionVersion: placement(nextContext, card.hostId, after).version,
+                          reason: deferReason,
+                      },
+                  }
+                : {}),
             ...(runtime.settings.syncTitles ? { title: { state: edit.state } } : {}),
         };
         await commitRecord(context, card.id, current.version, record, {
@@ -1345,7 +1428,12 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     ): Promise<Thread> {
         const source = placement(context, connection.hostId, before);
         if (presentState(context, source, runtime.settings.mode) === state) return before;
-        const destination = moveDestination(context, state, runtime.settings.mode);
+        const destination = moveDestination(
+            context,
+            connection.hostId,
+            state,
+            runtime.settings.mode,
+        );
         let failure: unknown;
         try {
             await desktop.move(

@@ -60,7 +60,8 @@ export function createBoardFixture(directory, states, hooks = {}) {
     const sections = states.map(([state, label]) => ({
         id: section(state),
         name: label,
-        hostSectionIds: { [host]: replica(state) },
+        hostSectionIds:
+            hooks.lazyDeferred && state === "deferred" ? {} : { [host]: replica(state) },
         itemKeys: [],
     }));
     const thread = session("review", 1000);
@@ -131,11 +132,15 @@ export function createBoardFixture(directory, states, hooks = {}) {
             ({ hostSectionIds }) => hostSectionIds[host] === thread.section.id,
         );
         assert.equal(command.from, current?.id);
-        const target = sections.find(({ id }) => id === command.to);
-        assert.ok(target, "目标分区不存在");
-        thread.section = { id: target.hostSectionIds[host], name: target.name };
-        thread.sectionEnteredAt = Date.now() / 1000;
+        place(sections.find(({ id }) => id === command.to));
         writes += 1;
+    }
+
+    function place(target, enteredAt = Date.now() / 1000) {
+        assert.ok(target, "目标分区不存在");
+        target.hostSectionIds[host] ??= replica(target.id.slice("section-".length));
+        thread.section = { id: target.hostSectionIds[host], name: target.name };
+        thread.sectionEnteredAt = enteredAt;
     }
 
     async function step(event, clock) {
@@ -193,6 +198,13 @@ export function createBoardFixture(directory, states, hooks = {}) {
             return service;
         },
         reopen,
+        nativeMove: async (state, enteredAt) => {
+            place(
+                sections.find(({ id }) => id === section(state)),
+                enteredAt,
+            );
+            await service.refresh();
+        },
         step,
         card,
         flow,

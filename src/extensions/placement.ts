@@ -4,6 +4,7 @@ export const labels = {
     unknown: "待判断",
     in_progress: "进行中",
     review: "待审阅",
+    deferred: "待处理",
     blocked: "已阻塞",
     to_archive: "待归档",
     completed: "已完成",
@@ -28,8 +29,24 @@ function matchingSection(context: SidebarContext, state: BoardState) {
     return matches.length === 1 ? matches[0] : undefined;
 }
 
-export function sectionFor(context: SidebarContext, state: BoardState): LogicalSectionId | null {
-    return matchingSection(context, state)?.id ?? null;
+export function sectionFor(
+    context: SidebarContext,
+    state: BoardState,
+    host?: HostId,
+): LogicalSectionId | null {
+    const section = matchingSection(context, state);
+    if (!section) return null;
+    if (host !== undefined) {
+        const replica = section.hostSectionIds?.[host];
+        if (
+            replica &&
+            context.sections.some(
+                (other) => other !== section && other.hostSectionIds?.[host] === replica,
+            )
+        )
+            return null;
+    }
+    return section.id;
 }
 
 export function sectionBindings(context: SidebarContext, host: HostId, mode: BoardMode) {
@@ -37,7 +54,10 @@ export function sectionBindings(context: SidebarContext, host: HostId, mode: Boa
     const candidates = states.map((state) => ({
         state,
         label: labels[state],
-        sectionId: matchingSection(context, state)?.hostSectionIds?.[host],
+        sectionId:
+            state === "deferred" && !sectionFor(context, state, host)
+                ? undefined
+                : matchingSection(context, state)?.hostSectionIds?.[host],
     }));
     const duplicates = new Set(
         candidates
@@ -57,10 +77,11 @@ export interface Placement {
 
 export function placement(context: SidebarContext, host: HostId, thread: Thread): Placement {
     const replica = thread.section?.id ?? null;
-    const logical =
+    const matches =
         replica === null
-            ? undefined
-            : context.sections.find(({ hostSectionIds }) => hostSectionIds?.[host] === replica);
+            ? []
+            : context.sections.filter(({ hostSectionIds }) => hostSectionIds?.[host] === replica);
+    const logical = matches.find(({ name }) => name !== labels.deferred) ?? matches[0];
     return {
         sectionId: logical?.id ?? null,
         version: JSON.stringify([replica, logical?.id ?? null, thread.sectionEnteredAt]),

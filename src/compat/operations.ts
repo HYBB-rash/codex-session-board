@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { labels } from "../extensions/placement.js";
 
 export type BoardRequest = (path: string, body?: object) => Promise<unknown>;
 export const assetsDirectory = join(__dirname, "..", "board-assets");
@@ -33,7 +34,7 @@ const text = { type: "string" };
 const integer = { type: "integer", minimum: 0 };
 const nullableText = { type: ["string", "null"] };
 const confirmed = { type: "boolean", const: true };
-const states = ["unknown", "in_progress", "review", "blocked", "to_archive", "completed"];
+const states = Object.keys(labels);
 
 function fields(properties: Record<string, Schema> = {}, required: string[] = []): Schema {
     return { type: "object", properties, required, additionalProperties: false };
@@ -54,6 +55,7 @@ const schemas: Record<string, Schema> = {
             ...cardVersion,
             state: { ...nullableText, enum: [...states, null] },
             note: { ...text, maxLength: 2000 },
+            deferReason: { ...text, maxLength: 2000 },
         },
         [...cardRequired, "state"],
     ),

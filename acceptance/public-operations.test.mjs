@@ -74,12 +74,13 @@ function createPublicBoardFixture(directory, states) {
         return { id, state, note, version, inputVersion, sectionVersion };
     }
 
-    const board = createBoardFixture(directory, states, { transport, sidebar });
+    const board = createBoardFixture(directory, states, { transport, sidebar, lazyDeferred: true });
     return {
         get service() {
             return board.service;
         },
         reopen: board.reopen,
+        nativeMove: board.nativeMove,
         step: board.step,
         card: board.card,
         persisted: board.persisted,
@@ -328,6 +329,52 @@ test("MCP saves use the live state and input revisions across HTTP", async (cont
     await board.service.refresh();
     assert.equal(board.card().note, "saved");
     assert.equal(board.card().followUp, true);
+});
+
+test("deferral requires a fresh reason and follows the confirmed native placement", async (context) => {
+    const { board, client, mcpUpdate } = await liveBoard(context);
+    const edit = board.edit("deferred", "已有备注");
+    assert.equal(board.card().canDefer, true);
+    assert.ok(
+        !board.service.snapshot().health.sectionBindings.some(({ state }) => state === "deferred"),
+    );
+    const before = board.persisted();
+    await assert.rejects(client.request("/api/state", edit), /请填写搁置原因/);
+    const blank = await mcpUpdate({ ...edit, deferReason: "　\t\n" });
+    assert.equal(blank.isError, true);
+    assert.match(blank.content[0].text, /请填写搁置原因/);
+    assert.deepEqual(board.persisted(), before);
+
+    const deferred = await mcpUpdate({ ...edit, deferReason: " 等回复 " });
+    assert.equal(deferred.structuredContent.session.state, "deferred");
+    assert.equal(deferred.structuredContent.session.deferReason, "等回复");
+    assert.equal(deferred.structuredContent.session.note, "已有备注");
+    board.reopen();
+    await board.service.refresh();
+    assert.equal(board.card().deferReason, "等回复");
+    const old = board.edit("deferred");
+    const enteredAt = JSON.parse(old.sectionVersion)[2];
+    await board.nativeMove("review", enteredAt);
+    await board.nativeMove("deferred", enteredAt);
+    assert.equal(board.card().deferReason, null);
+    assert.equal(board.card().note, "已有备注");
+    await assert.rejects(
+        client.request("/api/state", { ...old, deferReason: "过期理由" }),
+        /卡片位置或输入已更新/,
+    );
+    await assert.rejects(client.request("/api/state", board.edit("deferred")), /请填写搁置原因/);
+    const checkpoint = board.persisted().writes;
+    const filled = await client.request("/api/state", {
+        ...board.edit("deferred"),
+        deferReason: "等新的回复",
+    });
+    assert.equal(filled.session.deferReason, "等新的回复");
+    assert.equal(board.persisted().writes, checkpoint);
+    await board.step("input", 1010);
+    assert.equal(board.card().state, "blocked");
+    assert.match(board.card().reason, /等待你回答/);
+    assert.equal(board.card().deferReason, undefined);
+    assert.equal(board.card().note, "已有备注");
 });
 
 test("new-input notices survive incomplete observations and clear only on manual confirmation", async (context) => {

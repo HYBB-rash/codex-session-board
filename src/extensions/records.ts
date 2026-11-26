@@ -19,6 +19,7 @@ export interface CardRecord {
     previewTurnId?: string;
     selectedAt?: number;
     reason?: string;
+    deferred?: { sectionVersion: string; reason: string };
     title?: { state: BoardState | null; error?: string };
 }
 

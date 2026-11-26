@@ -25,10 +25,11 @@ async function check(id, test) {
 }
 
 await check("state_names_and_display_order", () => {
-    assert.deepEqual(Object.entries(labels), input.states);
-    assert.deepEqual(Object.entries(visibleStates("legacy")), input.states);
-    assert.deepEqual(Object.entries(visibleStates("five")), input.states.slice(0, -1));
-    assert.deepEqual(Object.entries(visibleStates("four")), input.states.slice(1, -1));
+    const states = input.states.toSpliced(3, 0, ["deferred", "待处理"]);
+    assert.deepEqual(Object.entries(labels), states);
+    assert.deepEqual(Object.entries(visibleStates("legacy")), states);
+    assert.deepEqual(Object.entries(visibleStates("five")), states.slice(0, -1));
+    assert.deepEqual(Object.entries(visibleStates("four")), states.slice(1, -1));
 });
 
 function evaluateRuntime(rows, dated) {

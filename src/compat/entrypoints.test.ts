@@ -306,7 +306,7 @@ test("CLI mcp negotiates stdio, reads its packaged app and reports rejected save
 });
 
 test("CLI reuses the authorized instance and stop only closes its compatibility service", async (test) => {
-    let value = example;
+    let value: object = example;
     const { directory, url } = await fixture(test, async () => value);
     const binary = join(assetsDirectory, "..", "bin", "codex-session-board.js");
     const run = (action: string) =>
@@ -321,6 +321,14 @@ test("CLI reuses the authorized instance and stop only closes its compatibility 
     const checked = JSON.parse((await run("check-sections")).stdout);
     assert.equal(checked.nativeCatalogVerified, true);
     assert.deepEqual(checked.bindings, [reviewBinding]);
+    value = {
+        ...example,
+        states: { ...example.states, deferred: "待处理" },
+        health: { ...example.health, deferredSectionError: "待处理分区待创建" },
+    };
+    const upgrade = JSON.parse((await run("check-sections")).stdout);
+    assert.deepEqual(upgrade.bindings, [reviewBinding]);
+    assert.equal(upgrade.deferredSectionError, "待处理分区待创建");
     value = { ...example, health: { nativeVerified: true, sectionBindings: [] } };
     await assert.rejects(run("check-sections"), /本机原生分区绑定无效/);
     const running = readReceipt(directory);

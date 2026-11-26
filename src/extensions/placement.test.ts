@@ -7,7 +7,7 @@ import {
     localHostId,
     type SidebarContext,
 } from "./desktop/connection.js";
-import { sectionBindings } from "./placement.js";
+import { sectionBindings, sectionFor } from "./placement.js";
 
 test("section preflight only accepts unique replicas on the queried host", () => {
     function section(
@@ -25,7 +25,7 @@ test("section preflight only accepts unique replicas on the queried host", () =>
             itemKeys: [],
         };
     }
-    const context = {
+    const context: SidebarContext = {
         accountId: "account",
         userId: "user",
         sections: [
@@ -35,15 +35,22 @@ test("section preflight only accepts unique replicas on the queried host", () =>
             section("已阻塞"),
             section("待归档", undefined, "remote-archive"),
             section("待判断", "local-unknown"),
+            section("待处理", "local-deferred", "remote-review"),
         ],
     };
-    assert.deepEqual(sectionBindings(context, localHostId, "four"), []);
+    const localDeferred = { state: "deferred", label: "待处理", sectionId: "local-deferred" };
+    assert.deepEqual(sectionBindings(context, localHostId, "four"), [localDeferred]);
     assert.deepEqual(sectionBindings(context, localHostId, "five"), [
         { state: "unknown", label: "待判断", sectionId: "local-unknown" },
+        localDeferred,
     ]);
     assert.deepEqual(sectionBindings(context, "remote-test" as HostId, "four"), [
         { state: "in_progress", label: "进行中", sectionId: "remote-active" },
         { state: "review", label: "待审阅", sectionId: "remote-review" },
         { state: "to_archive", label: "待归档", sectionId: "remote-archive" },
     ]);
+    assert.equal(sectionFor(context, "deferred", "remote-test" as HostId), null);
+    assert.equal(sectionFor(context, "deferred", "new-host" as HostId), "待处理");
+    context.sections.push(section("待处理", "other-deferred"));
+    assert.deepEqual(sectionBindings(context, localHostId, "four"), []);
 });
