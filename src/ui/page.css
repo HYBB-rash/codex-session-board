@@ -146,39 +146,70 @@ dialog textarea {
     border-radius: 8px;
     background: var(--subtle);
 }
-.archive-results {
-    margin: 0 0 8px;
-    font-size: 12px;
-    overflow-wrap: anywhere;
+.archive-history {
+    width: min(680px, calc(100% - 32px));
+    overflow: auto;
 }
-.archive-summary {
-    margin: 0;
-    padding: 8px 10px;
-    background: var(--subtle);
-    border-radius: 8px;
+.archive-heading,
+.archive-entry-actions {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 8px;
 }
-.archive-results p {
-    margin: 4px 0;
+.archive-history input[type="search"] {
+    width: 100%;
 }
-.archive-batch {
-    padding: 6px 10px;
-    border-bottom: 1px solid var(--line);
-}
-.archive-items {
+.archive-entries {
     list-style: none;
     padding: 0;
-    margin: 4px 0 0;
+    margin: 12px 0 0;
 }
-.archive-items li {
+.archive-entries li {
     display: flex;
     justify-content: space-between;
     gap: 12px;
-    padding: 4px 0;
+    padding: 12px 0;
     border-top: 1px solid var(--line);
+    overflow-wrap: anywhere;
 }
-.archive-item-status {
-    color: var(--muted);
-    flex-shrink: 0;
+.archive-transcript section {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.card-title-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+}
+.card-title-row .card-title {
+    flex: 1;
+    min-width: 0;
+}
+.archive-check {
+    flex: 0 0 28px;
+    height: 28px;
+    padding: 0;
+}
+.archive-check.spinning span {
+    height: 14px;
+    width: 14px;
+    border: 2px solid var(--line);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: archive-spin 0.65s linear infinite;
+}
+@keyframes archive-spin {
+    to {
+        transform: rotate(1turn);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .archive-check.spinning span {
+        animation: none;
+    }
 }
 .health.error {
     background: transparent;
@@ -332,9 +363,6 @@ input[type="search"] {
 }
 .column.blocked {
     --accent: var(--danger);
-}
-.column.to_archive {
-    --accent: var(--purple);
 }
 .column.completed {
     --accent: var(--ink);

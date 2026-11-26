@@ -24,8 +24,6 @@ interface Sources {
 
 const histories = [
     { value: "active", label: "活动" },
-    { value: "archived", label: "归档" },
-    { value: "all", label: "全部" },
     { value: "cached", label: "历史缓存" },
 ];
 
@@ -151,11 +149,12 @@ export function mountBoardFilters(container: HTMLElement, scope: HTMLElement, so
 
     function updateSessions({ projectCatalog }: BoardSnapshot) {
         const sessions = sources.hostSessions(state.host).filter((session) => {
+            if (session.archived) return false;
             if (state.history === "cached") return session.presence === "cachedUnknown";
-            if (session.presence === "cachedUnknown" && !session.catalogCurrent) return false;
             return (
-                state.history === "all" ||
-                Boolean(session.archived) === (state.history === "archived")
+                session.presence !== "cachedUnknown" ||
+                session.catalogCurrent ||
+                session.archivePending
             );
         });
         view.total = sessions.length;
