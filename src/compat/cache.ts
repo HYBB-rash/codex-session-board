@@ -10,12 +10,13 @@ import {
     writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { migratedState } from "../extensions/placement.js";
 import { object } from "./operations.js";
 
 export function snapshot(value: unknown) {
     const input = object(value);
     if (!input) return null;
-    const { states, sessions, health, projectCatalog } = input;
+    const { states, sessions, health, projectCatalog, archivedSessions } = input;
     if (
         !object(states) ||
         !Array.isArray(sessions) ||
@@ -27,14 +28,35 @@ export function snapshot(value: unknown) {
         !object(projectCatalog)
     )
         return null;
-    return { ...input, states, sessions: sessions as object[], health, projectCatalog };
+    return {
+        ...input,
+        states,
+        sessions: sessions as object[],
+        health,
+        projectCatalog,
+        archivedSessions,
+    };
 }
 
 export function readOnlySnapshot(value: unknown, capturedAt: number) {
     const current = snapshot(value);
     if (!current) return null;
+    const { to_archive: _archive, ...states } = object<"to_archive">(current.states) ?? {};
+    const offlineCard = (session: object) => ({
+        ...session,
+        state: migratedState(object<"state">(session)?.state),
+        readOnly: true,
+        canOpen: false,
+        canArchive: false,
+        canRestore: false,
+        archiveChecking: false,
+        archiveReason: "Codex 窗口离线",
+        catalogCurrent: false,
+        presence: "cachedUnknown",
+    });
     return {
         ...current,
+        states,
         health: {
             ...object(current.health),
             error: "Codex 窗口离线，显示此前读取的只读快照",
@@ -47,14 +69,13 @@ export function readOnlySnapshot(value: unknown, capturedAt: number) {
             capturedAt,
         },
         projectCatalog: { ...object(current.projectCatalog), cached: true, pending: false },
-        sessions: current.sessions.map((session) => ({
-            ...session,
-            readOnly: true,
-            canOpen: false,
-            canArchive: false,
-            catalogCurrent: false,
-            presence: "cachedUnknown",
-        })),
+        sessions: current.sessions.map(offlineCard),
+        ...(Array.isArray(current.archivedSessions) && {
+            archivedSessions: current.archivedSessions.flatMap((row: unknown) => {
+                const session = object(row);
+                return session ? [offlineCard(session)] : [];
+            }),
+        }),
         offline: true,
     };
 }

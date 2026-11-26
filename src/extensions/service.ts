@@ -10,7 +10,9 @@ import {
     type ArchiveItem,
     ArchivePreconditionError,
     ArchiveReadUnavailable,
+    type ArchiveRestore,
     type ArchiveTarget,
+    archiveHistory,
     type BoardLedger,
     createArchive,
     emptyLedger,
@@ -93,6 +95,8 @@ interface HostSnapshot {
     projectRead?: boolean;
     projectError?: string;
     archiveError?: string;
+    archiveRead?: boolean;
+    archiveMigrationError?: string;
     runtimeError?: string;
     runtimeVerified?: boolean;
     historyError?: string;
@@ -424,10 +428,8 @@ function mergeArchives(host: HostSnapshot, archived: Map<ThreadId, Thread>): voi
         host.currentArchived.delete(id);
     }
     for (const id of host.currentArchived) host.active.delete(id);
-    for (const [id, thread] of host.archived) {
-        if (!host.currentActive.has(thread.id) && !archived.has(id)) archived.set(id, thread);
-    }
     host.archived = archived;
+    host.archiveRead = true;
 }
 
 function isLive(desktop: DesktopConnection, host: HostSnapshot): boolean {
@@ -526,6 +528,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             string,
             { projectId: string; result: Promise<TrackedDraftResult> }
         >(),
+        restoring: new Set<string>(),
     };
     const taskStore = createTaskStore(desktop);
 
@@ -645,12 +648,10 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
                 ports.load(account),
                 ports.loadLedger(account),
                 scopeDigest(account),
-                shared
-                    ? ports.loadTaskCache?.(account).catch((error: unknown) => {
-                          ports.proof("board-task-cache-failed", { error: errorText(error) });
-                          return [];
-                      })
-                    : undefined,
+                ports.loadTaskCache?.(account).catch((error: unknown) => {
+                    ports.proof("board-task-cache-failed", { error: errorText(error) });
+                    return [];
+                }),
             ],
         );
         if (account !== accountKey(await desktop.context())) throw new Error("Codex 账号已变更");
@@ -672,14 +673,26 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     }
 
     function rememberHostTasks(hostId: HostId, host: HostSnapshot, context: SidebarContext) {
-        if (!host.taskStore || host.taskError || !host.scanComplete || !isLive(desktop, host))
-            return;
-        for (const [id, card] of runtime.taskCache) {
-            if (card.hostId === hostId) runtime.taskCache.delete(id);
-        }
+        if (!host.scanComplete || !isLive(desktop, host)) return;
+        const activeReady = !hostTasks() || Boolean(host.taskStore && !host.taskError);
+        invalidateHostCache(hostId, host, activeReady);
         for (const card of hostCards(hostId, host, context)) {
-            if (card.presence === "present") runtime.taskCache.set(card.id, card);
+            if (card.presence === "present" && (card.archived ? host.archiveRead : activeReady))
+                runtime.taskCache.set(card.id, card);
         }
+    }
+
+    function invalidateHostCache(hostId: HostId, host: HostSnapshot, activeReady: boolean) {
+        for (const [id, card] of runtime.taskCache) {
+            if (card.hostId === hostId && replaceCachedCard(card, host, activeReady))
+                runtime.taskCache.delete(id);
+        }
+    }
+
+    function replaceCachedCard(card: Card, host: HostSnapshot, activeReady: boolean) {
+        return card.archived
+            ? host.archiveRead || host.currentActive.has(card.threadId)
+            : activeReady;
     }
 
     async function rememberTasks(context: SidebarContext) {
@@ -1348,9 +1361,12 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         const context = requiredContext();
         const local = runtime.hosts.get(localHostId);
         const states = visibleStates(runtime.settings.mode);
+        const boardSessions = sessions(context, states);
+        const history = archiveHistory(runtime.ledger.batches);
         const remoteIds = new Set([
             ...runtime.hosts.keys(),
             ...runtime.legacyCachedCards.map(({ hostId }) => hostId),
+            ...boardSessions.map(({ hostId }) => hostId),
         ]);
         const remoteHosts = [...remoteIds]
             .filter((key) => key !== localHostId && !hostManagementError(key))
@@ -1359,7 +1375,20 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             accountScope: requiredScope(),
             hostTaskState: hostTasks(),
             states,
-            sessions: sessions(context, states),
+            sessions: boardSessions,
+            archivedSessions: boardSessions.flatMap((card) => {
+                if (!card.archived) return [];
+                const receipt = history.get(card.id);
+                return receipt
+                    ? [
+                          {
+                              ...card,
+                              archivedAt: receipt.archivedAt,
+                              checkedAt: receipt.checkedAt,
+                          },
+                      ]
+                    : [];
+            }),
             health: {
                 ...health(localHostId, local),
                 nativeConnections: true,
@@ -1394,22 +1423,29 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             hostCards(hostId, host, context),
         );
         const discovered = new Set(native.map(({ id }) => id));
-        if (hostTasks()) {
-            const confirmed = [...runtime.taskCache.values()]
-                .filter((card) => !discovered.has(card.id) && !hostManagementError(card.hostId))
-                .map(
-                    (card): Card => ({
-                        ...card,
-                        readOnly: true,
-                        canOpen: false,
-                        canArchive: false,
-                        catalogCurrent: false,
-                        presence: "cachedUnknown",
-                    }),
-                );
-            for (const card of confirmed) discovered.add(card.id);
-            native.push(...confirmed);
-        }
+        const confirmed = [...runtime.taskCache.values()]
+            .filter((card) => !discovered.has(card.id) && !hostManagementError(card.hostId))
+            .map(
+                (card): Card => ({
+                    ...card,
+                    state: migratedState(card.state),
+                    readOnly: true,
+                    canOpen: false,
+                    canArchive: false,
+                    canRestore: false,
+                    archiveReason: "主机离线或会话目录暂不可核对",
+                    catalogCurrent: false,
+                    presence: "cachedUnknown",
+                    ...archiveProgress(
+                        card.id,
+                        runtime.hosts.get(card.hostId),
+                        card.threadId,
+                        card.archived,
+                    ),
+                }),
+            );
+        for (const card of confirmed) discovered.add(card.id);
+        native.push(...confirmed);
         const cached = runtime.legacyCachedCards
             .filter((card) => !discovered.has(cardId(card)) && !hostManagementError(card.hostId))
             .map((card) => cachedLegacyCard(card, states));
@@ -1669,6 +1705,14 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     function publishThread(hostId: HostId, thread: Thread): void {
         runtime.changed.set(cardId({ hostId, threadId: thread.id }), ++runtime.changes);
         runtime.hosts.get(hostId)?.active.set(thread.id, thread);
+    }
+
+    function publishRestoredThread(hostId: HostId, thread: Thread): void {
+        const host = runtime.hosts.get(hostId);
+        host?.archived.delete(thread.id);
+        host?.currentArchived.delete(thread.id);
+        host?.currentActive.add(thread.id);
+        publishThread(hostId, thread);
     }
 
     async function syncTitle(
@@ -2349,6 +2393,170 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         return verified;
     }
 
+    function archivedTarget(id: string) {
+        const result = target(id);
+        const receipt = archiveHistory(archive.batches()).get(id);
+        if (!result.card.archived || !receipt) throw new Error("当前目录未确认该插件归档");
+        return { ...result, receipt };
+    }
+
+    async function readArchived(id: string) {
+        const { card, connection } = archivedTarget(id);
+        const context = await freshContext();
+        const thread = await desktop.read(connection, card.threadId, true);
+        await freshContext(context);
+        desktop.assertCurrent(connection);
+        return {
+            turns: thread.turns.map(({ id: turnId, status, items }) => ({
+                id: turnId,
+                status,
+                messages: items.flatMap((item) => {
+                    const text =
+                        item.type === "userMessage"
+                            ? item.content
+                                  ?.filter(({ type }) => type === "text")
+                                  .map((content) => content.text ?? "")
+                                  .join("\n")
+                            : item.type === "agentMessage"
+                              ? item.text
+                              : undefined;
+                    return text?.trim() ? [{ id: item.id, role: item.type, text }] : [];
+                }),
+            })),
+        };
+    }
+
+    function archiveRestoreIntent(id: string, intent: ArchiveRestore | undefined) {
+        return archive.change((old) => {
+            const next = { ...old.archiveRestores };
+            if (intent) next[id] = intent;
+            else delete next[id];
+            return { next: { ...old, archiveRestores: next }, result: undefined };
+        });
+    }
+
+    function restoreState(card: Card, receipt: ArchiveItem, context: SidebarContext): BoardState {
+        const state = receipt.state ?? card.state;
+        if (!state || !Object.hasOwn(visibleStates(runtime.settings.mode), state)) return "review";
+        if (hostTasks()) return state;
+        const destination = sectionFor(context, state, card.hostId);
+        return destination && (!receipt.sectionVersion || card.state === state) ? state : "review";
+    }
+
+    async function activeThread(connection: HostConnection, threadId: ThreadId) {
+        const active = new Map<ThreadId, Thread>();
+        await readPages(connection, false, active);
+        desktop.assertCurrent(connection);
+        return active.get(threadId);
+    }
+
+    async function unarchiveOnce(
+        connection: HostConnection,
+        threadId: ThreadId,
+        id: string,
+        intent: ArchiveRestore,
+    ) {
+        const existing = await activeThread(connection, threadId);
+        if (existing) return { thread: existing, place: intent.sent === true };
+        if (intent.sent) throw new Error("宿主尚未确认恢复，重新连接后可以再次核对");
+        if (!(await isArchived(id))) throw new Error("宿主未确认此会话仍在归档中");
+        await archiveRestoreIntent(id, { ...intent, sent: true });
+        try {
+            await desktop.setArchived(connection, threadId, false);
+        } catch (error) {
+            return recoverRestoreFailure(connection, threadId, id, intent, error);
+        }
+        const restored = await activeThread(connection, threadId);
+        if (!restored) throw new Error("宿主尚未确认会话回到活动目录");
+        return { thread: restored, place: true };
+    }
+
+    async function recoverRestoreFailure(
+        connection: HostConnection,
+        threadId: ThreadId,
+        id: string,
+        intent: ArchiveRestore,
+        error: unknown,
+    ) {
+        if (definiteArchiveFailure(error)) await archiveRestoreIntent(id, intent);
+        else {
+            const restored = await activeThread(connection, threadId);
+            if (restored) return { thread: restored, place: true };
+        }
+        throw error;
+    }
+
+    async function placeRestoredThread(
+        connection: HostConnection,
+        context: SidebarContext,
+        thread: Thread,
+        state: BoardState,
+    ) {
+        const { hostId } = connection;
+        if (!hostTasks())
+            return thread.section?.name === labels[state]
+                ? thread
+                : moveCard(state, connection, context, thread);
+        const id = cardId({ hostId, threadId: thread.id });
+        const record = runtime.records[id] ?? emptyRecord;
+        if (record.state === state) return thread;
+        if (record.state && record.state !== "review") return thread;
+        if (state === "review" && (!thread.section || thread.section.name === oldArchiveSection))
+            thread = await moveCard(state, connection, context, thread);
+        await commitRecord(context, id, record.version, {
+            ...record,
+            state,
+            version: record.version + 1,
+        });
+        return thread;
+    }
+
+    async function restoreArchived(id: string) {
+        if (runtime.restoring.has(id)) throw new Error("会话正在恢复");
+        runtime.restoring.add(id);
+        try {
+            return await restoreArchivedOnce(id);
+        } finally {
+            runtime.restoring.delete(id);
+            publishSnapshot();
+        }
+    }
+
+    async function restoreArchivedOnce(id: string) {
+        const context = await freshContext();
+        const { card, connection } = target(id);
+        if (
+            !canWrite(runtime.settings, card.threadId) ||
+            (hostTasks() && !canEditHostTasks(runtime.hosts.get(card.hostId)))
+        )
+            throw new Error("此会话当前只读，无法恢复");
+        let intent = runtime.ledger.archiveRestores?.[id];
+        if (!intent) {
+            const { receipt } = archivedTarget(id);
+            intent = { state: restoreState(card, receipt, context) };
+        }
+        const { thread: restored, place } = await unarchiveOnce(
+            connection,
+            card.threadId,
+            id,
+            intent,
+        );
+        await freshContext(context);
+        publishRestoredThread(card.hostId, restored);
+        if (!place) return { restored: true };
+        try {
+            const placed = await placeRestoredThread(connection, context, restored, intent.state);
+            publishThread(card.hostId, placed);
+            await archiveRestoreIntent(id, undefined);
+            return { restored: true };
+        } catch (error) {
+            return {
+                restored: true,
+                message: `会话已恢复，当前位置 ${restored.section?.name ?? "未归列"}。${errorText(error)}`,
+            };
+        }
+    }
+
     async function requestArchive(path: string, body: object | undefined) {
         await freshContext();
         const args = body as
@@ -2368,6 +2576,10 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
                 return { batch: await archive.check(args.id) };
             case "/api/archive":
                 return { item: await submitArchive(args as ArchiveTarget, args.batchId) };
+            case "/api/archive-read":
+                return readArchived(args.id);
+            case "/api/archive-restore":
+                return restoreArchived(args.id);
         }
         throw new Error("归档请求不完整");
     }
