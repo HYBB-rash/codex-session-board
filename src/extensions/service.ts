@@ -55,7 +55,7 @@ import type {
     TitleResolution,
 } from "./records.js";
 import { type BoardSettings, defaults } from "./settings.js";
-import { createTaskStore } from "./task-store.js";
+import { createTaskStore, isTaskConflict } from "./task-store.js";
 
 interface BoardPorts {
     load(account: string): Promise<LoadedBoardRecords>;
@@ -551,6 +551,12 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             : savedDeferReason(record, position);
     }
 
+    function currentTaskTarget(connection: HostConnection) {
+        const host = runtime.hosts.get(connection.hostId);
+        if (host?.taskError || host?.taskStore?.connection.epoch !== connection.epoch)
+            throw new Error(host?.taskError ?? "目标主机的任务记录尚未确认");
+        return host.taskStore;
+    }
     const archive = createArchive({
         scope: () => accountKey(requiredContext()),
         ledger: () => runtime.ledger,
@@ -614,7 +620,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         await Promise.all(desktop.knownHosts().map((host) => refreshHost(host, context)));
         requireAccount(account);
         if (hostTasks()) await rememberTasks(context);
-        if (!hostTasks()) autoArchive(context);
+        if (settings.taskState !== "migration") autoArchive(context);
     }
 
     function resetChangedArchiveIntervals(settings: BoardSettings) {
@@ -789,7 +795,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         host: HostSnapshot,
         context: SidebarContext,
     ) {
-        if (!hostTasks())
+        if (!host.taskError && runtime.settings.taskState !== "migration")
             return observeHost(connection, host, context);
         return undefined;
     }
@@ -878,7 +884,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
                 dirty.has(thread.id) ||
                 thread.status?.type === "active" ||
                 record?.pendingPhaseKey !== undefined ||
-                leftDeferred(record, context, connection.hostId, thread) ||
+                (!hostTasks() && leftDeferred(record, context, connection.hostId, thread)) ||
                 (index < 12 && thread.updatedAt >= runtime.observationSince - 3)
             );
         });
@@ -947,12 +953,12 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
                 current,
                 latest,
                 phase,
-                leftDeferred(current, context, connection.hostId, thread),
+                !hostTasks() && leftDeferred(current, context, connection.hostId, thread),
             );
             if (!observation) return;
             const { next, phaseChanged } = observation;
             const change =
-                phase && isNewPhase(phase, current, runtime.observationSince)
+                phase && taskPhaseIsNew(phase, current)
                     ? await applyPhase(connection, thread, context, phase, next)
                     : undefined;
             if (phaseChanged) delete next.pendingPhaseKey;
@@ -962,6 +968,16 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             runtime.editing.delete(id);
         }
         if (queuedTitle) void retryTitle(connection, thread.id);
+    }
+
+    function taskPhaseIsNew(phase: Phase, current: CardRecord) {
+        return hostTasks()
+            ? phase.turnId !== current.manualTurnId &&
+                  phase.key !== current.phaseKey &&
+                  (!phase.terminal ||
+                      phaseIsFromTurn(current.phaseKey, phase.turnId) ||
+                      (phase.at !== null && phase.at >= Math.floor(runtime.observationSince)))
+            : isNewPhase(phase, current, runtime.observationSince);
     }
 
     function claimObservation(
@@ -1003,6 +1019,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         phase: Phase,
         next: CardRecord,
     ): Promise<RecordChange | undefined> {
+        if (hostTasks()) return applyHostPhase(connection, thread.id, phase, next);
         const position = placement(context, connection.hostId, thread);
         if (!position.managed) return;
         const current = await desktop.read(connection, thread.id, false);
@@ -1036,6 +1053,25 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         if (runtime.settings.syncTitles && (afterActivation || next.title))
             next.title = { state: phase.state };
         publishThread(connection.hostId, after);
+        return { kind: "automatic", state: phase.state };
+    }
+
+    async function applyHostPhase(
+        connection: HostConnection,
+        threadId: ThreadId,
+        phase: Phase,
+        next: CardRecord,
+    ): Promise<RecordChange> {
+        const current = await desktop.read(connection, threadId, false);
+        const latest = (await desktop.turns(connection, threadId, "summary")).data[0];
+        if (runtimePhase(current.status, latest)?.key !== phase.key)
+            throw new Error("会话执行状态已变更，等待重新观察");
+        next.state = phase.state;
+        next.manual = false;
+        next.reason = phase.reason;
+        delete next.manualTurnId;
+        delete next.deferred;
+        if (runtime.settings.syncTitles) next.title = { state: phase.state };
         return { kind: "automatic", state: phase.state };
     }
 
@@ -1081,7 +1117,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         const state = taskState(context, hostId, thread);
         const scope = requiredScope();
         const host = runtime.hosts.get(hostId);
-        const taskReady = !hostTasks();
+        const taskReady = !hostTasks() || canEditHostTasks(host);
         const canDefer = hostTasks() ? taskReady : sectionFor(context, "deferred", hostId) !== null;
         const editable = canEditCard(thread.id, live && taskReady && position.managed, archived);
         const archivePending = host?.archiveClaims?.has(
@@ -1136,6 +1172,12 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
 
     function confirmedTaskTime(confirmed: number | undefined) {
         return confirmed === undefined ? {} : { taskStateConfirmedAt: confirmed };
+    }
+
+    function canEditHostTasks(host: HostSnapshot | undefined) {
+        return Boolean(
+            host?.taskStore && !host.taskError && runtime.settings.taskState !== "migration",
+        );
     }
 
     function cachedLegacyCard(cached: LegacyCachedCard, states: Record<string, string>): Card {
@@ -1422,7 +1464,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         const latest = (await desktop.turns(connection, card.threadId, "summary")).data[0];
         await freshContext(context);
         desktop.assertCurrent(connection);
-        const from = placement(context, card.hostId, before);
+        const from = taskPlacement(context, card.hostId, before);
         const current = runtime.records[edit.id] ?? emptyRecord;
         const inputKey = turnInput(latest) ?? current.inputKey ?? null;
         if (changedInput(current, inputKey)) {
@@ -1451,40 +1493,32 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         { card, context, from, current }: Awaited<ReturnType<typeof resolveEdit>>,
     ) {
         if (edit.state !== "deferred") return;
-        moveDestination(context, card.hostId, edit.state, runtime.settings.mode);
+        if (!hostTasks()) moveDestination(context, card.hostId, edit.state, runtime.settings.mode);
         const saved =
-            presentState(context, from, runtime.settings.mode) === edit.state
-                ? savedDeferReason(current, from)
+            (hostTasks() ? current.state : presentState(context, from, runtime.settings.mode)) ===
+            edit.state
+                ? taskDeferred(current, from)
                 : null;
         return requiredDeferReason(edit.deferReason, saved);
     }
 
     async function updateCard(edit: Edit) {
         const resolved = await resolveEdit(edit);
-        const { card, connection, context, before, latest, current, inputKey } = resolved;
+        const { card, connection, context, before, current } = resolved;
         const deferReason = reasonForEdit(edit, resolved);
-        const after = await moveCard(edit.state, connection, context, before);
+        if (hostTasks() && edit.state !== null && !Object.hasOwn(visibleStates("four"), edit.state))
+            throw new Error("未知的任务状态");
+        const after = hostTasks()
+            ? before
+            : await moveCard(edit.state, connection, context, before);
         desktop.assertCurrent(connection);
         const nextContext = await freshContext(context);
-        const record: CardRecord = {
-            note: edit.note?.trim() ?? current.note,
-            version: current.version + 1,
-            inputVersion: current.inputVersion,
-            ...(inputKey === null ? {} : { inputKey, confirmedInputKey: inputKey }),
-            ...(current.phaseKey ? { phaseKey: current.phaseKey } : {}),
-            ...(latest && finalAnswer(latest) ? { previewTurnId: latest.id } : {}),
-            manual: true,
-            selectedAt: Date.now() / 1000,
-            ...(deferReason !== undefined
-                ? {
-                      deferred: {
-                          sectionVersion: placement(nextContext, card.hostId, after).version,
-                          reason: deferReason,
-                      },
-                  }
-                : {}),
-            ...(runtime.settings.syncTitles ? { title: { state: edit.state } } : {}),
-        };
+        const record = manualRecord(
+            edit,
+            resolved,
+            taskPlacement(nextContext, card.hostId, after),
+            deferReason,
+        );
         await commitRecord(context, card.id, current.version, record, {
             kind: "manual",
             state: edit.state,
@@ -1499,6 +1533,58 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         };
     }
 
+    function manualRecord(
+        edit: Edit,
+        { current, inputKey, latest }: Awaited<ReturnType<typeof resolveEdit>>,
+        position: Placement,
+        deferReason: string | undefined,
+    ): CardRecord {
+        const shared = hostTasks();
+        const manualTurnId = shared ? latest?.id : undefined;
+        const title = runtime.settings.syncTitles && { state: edit.state };
+        return {
+            note: edit.note?.trim() ?? current.note,
+            ...(shared && { state: edit.state }),
+            version: current.version + 1,
+            inputVersion: current.inputVersion,
+            ...(inputKey === null ? {} : { inputKey, confirmedInputKey: inputKey }),
+            ...(current.phaseKey ? { phaseKey: current.phaseKey } : {}),
+            ...(latest && finalAnswer(latest) ? { previewTurnId: latest.id } : {}),
+            manual: true,
+            ...(manualTurnId && { manualTurnId }),
+            selectedAt: Date.now() / 1000,
+            ...deferredRecord(position, deferReason),
+            ...(title && { title }),
+        };
+    }
+
+    function deferredRecord(position: Placement, reason: string | undefined) {
+        return reason === undefined
+            ? {}
+            : { deferred: { sectionVersion: position.version, reason } };
+    }
+
+    async function commitHostRecord(
+        id: string,
+        expected: number,
+        record: CardRecord,
+        account: string,
+    ) {
+        const { hostId, threadId } = cardThread(id);
+        const target = currentTaskTarget(desktop.capture(hostId));
+        const saved = { ...record, state: record.state ?? null };
+        if (saved.version !== expected + 1) throw new Error("任务提交版本无效");
+        try {
+            await taskStore.write(target, threadId, saved);
+        } catch (error) {
+            if (isTaskConflict(error)) void refresh().catch(() => undefined);
+            throw error;
+        }
+        requireAccount(account);
+        if ((runtime.records[id]?.version ?? 0) < saved.version) runtime.records[id] = saved;
+        publishSnapshot();
+    }
+
     async function commitRecord(
         context: SidebarContext,
         id: string,
@@ -1508,6 +1594,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     ): Promise<void> {
         await freshContext(context);
         const account = accountKey(context);
+        if (hostTasks()) return commitHostRecord(id, expected, record, account);
         await ports.save({
             account,
             id,
@@ -1635,15 +1722,48 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         const { updated, failure } = sync;
         if (!isCurrentTitleRecord(account, id, record)) return;
         scheduleTitleRetry(id, record.version, failure);
-        if (failure === undefined || failure !== title.error) {
-            const changed = await ports.settleTitle(
-                titleSettlement(account, id, record.version, failure),
-            );
-            if (!changed || runtime.records[id] !== record) return;
-            runtime.records[id] = settledTitleRecord(record, title, failure);
-        }
+        if (hostTasks() && shouldRecordTitleResult(title, failure))
+            return resolveHostTitle(connection, id, record, title, sync);
+        if (!(await resolveLegacyTitle(account, id, record, title, failure))) return;
         if (updated && !failure && !runtime.editing.has(id))
             publishThread(connection.hostId, updated);
+    }
+
+    function shouldRecordTitleResult(
+        title: NonNullable<CardRecord["title"]>,
+        failure: string | undefined,
+    ) {
+        return failure === undefined || failure !== title.error;
+    }
+
+    async function resolveLegacyTitle(
+        account: string,
+        id: string,
+        record: CardRecord,
+        title: NonNullable<CardRecord["title"]>,
+        failure: string | undefined,
+    ) {
+        if (!shouldRecordTitleResult(title, failure)) return true;
+        const changed = await ports.settleTitle(
+            titleSettlement(account, id, record.version, failure),
+        );
+        if (!changed || runtime.records[id] !== record) return false;
+        runtime.records[id] = settledTitleRecord(record, title, failure);
+        return true;
+    }
+
+    async function resolveHostTitle(
+        connection: HostConnection,
+        id: string,
+        record: CardRecord,
+        title: NonNullable<CardRecord["title"]>,
+        { updated, failure }: NonNullable<Awaited<ReturnType<typeof syncTitleWithinBudget>>>,
+    ) {
+        await commitRecord(requiredContext(), id, record.version, {
+            ...settledTitleRecord(record, title, failure),
+            version: record.version + 1,
+        });
+        if (updated && !failure) publishThread(connection.hostId, updated);
     }
 
     function isCurrentTitleRecord(account: string, id: string, record: CardRecord): boolean {
@@ -2016,8 +2136,36 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         const before = await desktop.read(connection, card.threadId, false);
         const latest = (await desktop.turns(connection, card.threadId, "summary")).data[0];
         requireAccount(accountKey(context));
-        const position = placement(context, card.hostId, before);
+        const position = taskPlacement(context, card.hostId, before);
         const record = runtime.records[item.id] ?? emptyRecord;
+        if (hostTasks()) await verifySharedVersion(connection, card.threadId, record.version);
+        verifyArchiveInput(item, record, before, latest);
+        if (
+            item.version !== record.version ||
+            item.sectionVersion !== position.version ||
+            !position.managed ||
+            taskState(context, card.hostId, before) !== "to_archive"
+        ) {
+            throw new Error("归档状态或位置已变更");
+        }
+        const after = await desktop.read(connection, card.threadId, false);
+        if (
+            after.status.type !== before.status.type ||
+            taskPlacement(context, card.hostId, after).version !== position.version
+        ) {
+            throw new Error("归档核对期间会话发生了变化");
+        }
+        await freshContext(context);
+        desktop.assertCurrent(connection);
+        return { connection, context, threadId: after.id };
+    }
+
+    function verifyArchiveInput(
+        item: ArchiveItem,
+        record: CardRecord,
+        before: Thread,
+        latest: Turn | undefined,
+    ) {
         const input = turnInput(latest);
         if (
             (record.confirmedInputKey && input !== record.confirmedInputKey) ||
@@ -2025,27 +2173,18 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             item.inputVersion !== record.inputVersion ||
             before.status.type === "active" ||
             latest?.status === "inProgress"
-        ) {
+        )
             throw new NewInputError("出现新输入或仍在执行，请重新核对");
-        }
-        if (
-            item.version !== record.version ||
-            item.sectionVersion !== position.version ||
-            !position.managed ||
-            presentState(context, position, runtime.settings.mode) !== "to_archive"
-        ) {
-            throw new Error("归档状态或位置已变更");
-        }
-        const after = await desktop.read(connection, card.threadId, false);
-        if (
-            after.status.type !== before.status.type ||
-            placement(context, card.hostId, after).version !== position.version
-        ) {
-            throw new Error("归档核对期间会话发生了变化");
-        }
-        await freshContext(context);
-        desktop.assertCurrent(connection);
-        return { connection, context, threadId: after.id };
+    }
+
+    async function verifySharedVersion(
+        connection: HostConnection,
+        threadId: ThreadId,
+        version: number,
+    ) {
+        const target = currentTaskTarget(connection);
+        if ((await taskStore.heads(target)).versions.get(threadId) !== version)
+            throw new Error("目标主机的任务状态已更新");
     }
 
     async function archiveThread(item: ArchiveItem): Promise<void> {
@@ -2055,6 +2194,16 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
                 throw new ArchivePreconditionError(errorText(error));
             },
         );
+        if (hostTasks()) {
+            const target = currentTaskTarget(connection);
+            const release = await taskStore.archiveClaim(target, threadId, item.inputVersion);
+            try {
+                await verifyArchive(item);
+            } catch (error) {
+                await release();
+                throw new ArchivePreconditionError(errorText(error));
+            }
+        }
         await desktop.setArchived(connection, threadId, true);
         await freshContext(context);
     }
