@@ -84,6 +84,10 @@ declare module "electron" {
         sendSync(channel: string, ...args: unknown[]): unknown;
         invoke(channel: string, ...args: unknown[]): Promise<unknown>;
         on(channel: string, listener: (event: unknown, ...args: unknown[]) => void): void;
+        removeListener(
+            channel: string,
+            listener: (event: unknown, ...args: unknown[]) => void,
+        ): void;
     }
 
     interface App {

@@ -18,6 +18,7 @@ export type DesktopCommand =
               | { kind: "open"; hostId: string; threadId: string; besideBoard?: boolean }
               | { kind: "new"; hostId: string; projectId: string | null; roots: string[] }
               | { kind: "draft"; draftId: string }
+              | { kind: "data-home"; hostId: string }
               | { kind: "settings" }
           ));
 
@@ -325,7 +326,7 @@ async function openComposer(
 }
 
 async function navigate(
-    command: Exclude<DesktopCommand, { kind: "context" | "move" | "draft" }>,
+    command: Exclude<DesktopCommand, { kind: "context" | "move" | "draft" | "data-home" }>,
     modules: DesktopModules,
     scope: DesktopScope,
 ) {
@@ -399,27 +400,47 @@ function remoteHostNames(modules: DesktopModules, scope: DesktopScope): Record<s
     );
 }
 
-function sidebarContext(modules: DesktopModules, scope: DesktopScope) {
+function desktopAccount(modules: DesktopModules, scope: DesktopScope) {
     const auth: AuthModule = exported(modules, [
         "chatGptAuthenticatedAccountId$:()=>",
         "chatGptAuthenticatedUserId$:()=>",
     ]);
-    const sidebar: SidebarModule = exported(modules, [
-        "sidebar-accountless-section-order-v1",
-        "threadHostId",
-        "wasPinned",
-    ]);
     const account = auth.chatGptAuthenticatedAccountId$;
     const user = auth.chatGptAuthenticatedUserId$;
-    const sections = sidebar.QV;
-    if (!account || !user || !sections)
-        throw new Error("Codex sidebar capabilities are incomplete");
+    if (!account || !user) throw new Error("Codex account capabilities are unavailable");
     const accountId = scope.get(account);
     const userId = scope.get(user);
-    const current = scope.get(sections);
-    if (!accountId || !userId || !Array.isArray(current))
-        throw new Error("Codex sign-in is required");
-    return { accountId, userId, sections: current, move: sidebar.f2 };
+    if (!accountId || !userId) throw new Error("Codex sign-in is required");
+    return { accountId, userId };
+}
+
+function sidebarContext(modules: DesktopModules, scope: DesktopScope) {
+    const sidebar: SidebarModule = exported(
+        modules,
+        ["sidebar-accountless-section-order-v1", "threadHostId", "wasPinned"],
+        false,
+    );
+    const current = sidebar.QV && scope.get(sidebar.QV);
+    return { sections: Array.isArray(current) ? current : [], move: sidebar.f2 };
+}
+
+async function executionDataHome(modules: DesktopModules, hostId: string) {
+    const paths = exported(modules, [
+        "executionPaths.readHomePaths",
+        "Home directory is unavailable",
+    ]);
+    const readers = Object.values(paths).filter(
+        (value): value is (id: string) => Promise<{ codexHome?: string }> =>
+            typeof value === "function" &&
+            /appServices\.executionPaths\.readHomePaths\(/.test(
+                Function.prototype.toString.call(value),
+            ),
+    );
+    if (readers.length !== 1) throw new Error("当前 Codex 版本的主机数据路径接口不可用");
+    const result = await readers[0]?.(hostId);
+    if (typeof result?.codexHome !== "string" || !result.codexHome.startsWith("/"))
+        throw new Error("目标主机未提供可用的 Codex 数据目录");
+    return result.codexHome;
 }
 
 async function boundDraft(scope: DesktopScope, draftId: string) {
@@ -443,14 +464,27 @@ async function desktopWorld(command: DesktopCommand): Promise<unknown> {
     }
     const modules = await loadedModules();
     const scope = appScope();
-    const { accountId, userId, sections, move } = sidebarContext(modules, scope);
+    const { accountId, userId } = desktopAccount(modules, scope);
     if (command.kind === "context")
-        return { accountId, userId, sections, remoteHostNames: remoteHostNames(modules, scope) };
+        return {
+            accountId,
+            userId,
+            sections: sidebarContext(modules, scope).sections,
+            remoteHostNames: remoteHostNames(modules, scope),
+        };
     if (accountId !== command.accountId || userId !== command.userId || scope !== appScope()) {
         throw new Error("Codex account retired");
     }
     if (command.kind === "draft") return boundDraft(scope, command.draftId);
+    if (command.kind === "data-home") {
+        const home = await executionDataHome(modules, command.hostId);
+        const current = desktopAccount(modules, appScope());
+        if (current.accountId !== accountId || current.userId !== userId)
+            throw new Error("Codex account retired");
+        return home;
+    }
     if (command.kind !== "move") return navigate(command, modules, scope);
+    const { sections, move } = sidebarContext(modules, scope);
     const itemKey = `codex:thread:local:${command.threadId}`;
     const sidebarPosition = sections.find((section) => section.itemKeys.includes(itemKey));
     if (!sections.some((section) => section.id === command.to) || typeof move !== "function") {
@@ -477,7 +511,9 @@ export function desktopWorldSource(command: DesktopCommand): string {
         loadedModules,
         exported,
         remoteHostNames,
+        desktopAccount,
         sidebarContext,
+        executionDataHome,
         boundDraft,
         desktopWorld,
     ].map((fn) => fn.toString());

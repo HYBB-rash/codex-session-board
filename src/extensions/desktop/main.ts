@@ -76,9 +76,12 @@ function parseDesktopCommand(value: unknown): DesktopRequest {
             return parseDraftCommand(command.draftId, account);
     }
     if (typeof hostId !== "string" || !parseHostId(hostId)) throw new Error("Invalid board host");
-    const target =
-        command.kind === "new" ? parseNewTarget(command.projectId, command.roots) : undefined;
-    if (target) return { kind: "new", ...account, hostId, ...target };
+    switch (command.kind) {
+        case "data-home":
+            return { kind: "data-home", ...account, hostId };
+        case "new":
+            return parseNewCommand(command.projectId, command.roots, { ...account, hostId });
+    }
     if (!validThreadId(threadId)) throw new Error("Invalid thread ID");
     if (command.kind === "open")
         return {
@@ -95,6 +98,16 @@ function parseDesktopCommand(value: unknown): DesktopRequest {
     )
         throw new Error("Invalid board desktop request");
     return { kind: "move", ...account, hostId, threadId, from, to };
+}
+
+function parseNewCommand(
+    projectId: unknown,
+    roots: unknown,
+    owner: { accountId: string; userId: string; hostId: string },
+): DesktopCommand {
+    const target = parseNewTarget(projectId, roots);
+    if (!target) throw new Error("Invalid project target");
+    return { kind: "new", ...owner, ...target };
 }
 
 export function boardDesktopRequest(event: IpcMainEvent, value: unknown): Promise<unknown> {

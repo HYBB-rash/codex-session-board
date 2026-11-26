@@ -68,7 +68,7 @@ interface NativePacket {
     hostId?: string;
     state?: string;
     method?: string;
-    params?: { threadId?: string };
+    params?: { threadId?: string; watchId?: string; changedPaths?: string[] };
     message?: { id?: string; result?: unknown; error?: { message?: string } };
 }
 
@@ -91,7 +91,19 @@ type NativeMethod =
     | "thread/name/set"
     | "thread/metadata/update"
     | "thread/archive"
-    | "thread/unarchive";
+    | "thread/unarchive"
+    | "fs/readDirectory"
+    | "fs/readFile"
+    | "fs/writeFile"
+    | "fs/remove"
+    | "fs/watch"
+    | "fs/unwatch"
+    | "command/exec";
+
+export interface HostFileEntry {
+    fileName: string;
+    isFile: boolean;
+}
 
 export interface HostProject {
     id: string;
@@ -109,6 +121,18 @@ export function hostId(value: string): HostId | null {
     return value === "local" || /^remote-(ssh|wsl|control)[-:]/.test(value)
         ? (value as HostId)
         : null;
+}
+
+export function hostManagementError(host: HostId): string | undefined {
+    if (host === localHostId || /^remote-ssh[-:]/.test(host)) return;
+    if (/^remote-control[-:]/.test(host))
+        return "本版本暂不支持通过 Remote Control 管理远程任务，请使用 SSH 连接。";
+    return "本版本仅支持通过 SSH 管理远程任务。";
+}
+
+export function requireManagedHost(host: HostId): void {
+    const error = hostManagementError(host);
+    if (error) throw new Error(error);
 }
 
 export function cardId(ref: ThreadRef): string {
@@ -147,12 +171,19 @@ export function createDesktopConnection(transport: DesktopTransport) {
 
     function knownHosts(): HostId[] {
         const bootstrap = transport.bootstrap() as { catalogHostIds?: string[] } | null;
-        if (!Array.isArray(bootstrap?.catalogHostIds)) return [...hosts.keys()];
-        const catalog = new Set(
-            bootstrap.catalogHostIds.map(hostId).filter((value) => value !== null),
-        );
-        synchronizeCatalog(catalog);
-        return [...hosts.keys()];
+        if (Array.isArray(bootstrap?.catalogHostIds)) {
+            synchronizeCatalog(
+                new Set(bootstrap.catalogHostIds.map(hostId).filter((value) => value !== null)),
+            );
+        }
+        return [...hosts.keys()].filter((key) => !hostManagementError(key));
+    }
+
+    function unsupportedHosts() {
+        return [...hosts].flatMap(([key, state]) => {
+            const reason = hostManagementError(key);
+            return reason && (state.catalog || state.connected) ? [{ hostId: key, reason }] : [];
+        });
     }
 
     function synchronizeCatalog(catalog: ReadonlySet<HostId>) {
@@ -168,6 +199,7 @@ export function createDesktopConnection(transport: DesktopTransport) {
     }
 
     function capture(key: HostId): HostConnection {
+        requireManagedHost(key);
         const state = hosts.get(key);
         if (!state?.connected) throw new Error(`Codex 连接已断开 (${key})`);
         return { hostId: key, epoch: state.epoch };
@@ -370,9 +402,82 @@ export function createDesktopConnection(transport: DesktopTransport) {
         return (await transport.sidebar({ kind: "context" })) as SidebarContext;
     }
 
+    async function dataHome(
+        connection: HostConnection,
+        identity: Pick<SidebarContext, "accountId" | "userId">,
+    ): Promise<string> {
+        assertCurrent(connection);
+        const home = await transport.sidebar({
+            kind: "data-home",
+            hostId: connection.hostId,
+            ...identity,
+        });
+        assertCurrent(connection);
+        if (typeof home !== "string" || !home.startsWith("/") || home.includes("\0"))
+            throw new Error("目标主机的 Codex 数据目录无效");
+        return home.replace(/\/+$/, "");
+    }
+
+    async function taskCommand(connection: HostConnection, cwd: string, command: string[]) {
+        const result = (await request(connection, "command/exec", {
+            command,
+            cwd,
+            timeoutMs: 5000,
+            outputBytesCap: 4096,
+            sandboxPolicy: {
+                type: "workspaceWrite",
+                writableRoots: [cwd],
+                networkAccess: false,
+                excludeTmpdirEnvVar: true,
+                excludeSlashTmp: true,
+            },
+        })) as { exitCode?: number; stderr?: string } | null;
+        if (!Number.isSafeInteger(result?.exitCode)) throw new Error("目标主机命令回执无效");
+        return result as { exitCode: number; stderr?: string };
+    }
+
+    const taskFiles = {
+        async list(connection: HostConnection, path: string): Promise<HostFileEntry[]> {
+            const reply = (await request(connection, "fs/readDirectory", { path })) as {
+                entries?: HostFileEntry[];
+            } | null;
+            if (!Array.isArray(reply?.entries)) throw new Error("目标主机目录回执无效");
+            return reply.entries;
+        },
+        async read(connection: HostConnection, path: string): Promise<string> {
+            const reply = (await request(connection, "fs/readFile", { path })) as {
+                dataBase64?: string;
+            } | null;
+            if (typeof reply?.dataBase64 !== "string") throw new Error("目标主机文件回执无效");
+            return new TextDecoder("utf-8", { fatal: true }).decode(
+                Uint8Array.from(atob(reply.dataBase64), (byte) => byte.charCodeAt(0)),
+            );
+        },
+        write(connection: HostConnection, path: string, text: string) {
+            const bytes = new TextEncoder().encode(text);
+            return request(connection, "fs/writeFile", {
+                path,
+                dataBase64: btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join("")),
+            });
+        },
+        remove(connection: HostConnection, path: string) {
+            return request(connection, "fs/remove", { path, force: true, recursive: false });
+        },
+        watch(connection: HostConnection, path: string, watchId: string) {
+            return request(connection, "fs/watch", { path, watchId });
+        },
+        unwatch(connection: HostConnection, watchId: string) {
+            return request(connection, "fs/unwatch", { watchId });
+        },
+    };
+
     async function navigate(
         command: Extract<DesktopCommand, { kind: "open" | "new" | "settings" | "draft" }>,
     ): Promise<unknown> {
+        if (command.kind === "open" || command.kind === "new") {
+            const target = hostId(command.hostId);
+            if (target) requireManagedHost(target);
+        }
         return transport.sidebar(command);
     }
 
@@ -403,6 +508,7 @@ export function createDesktopConnection(transport: DesktopTransport) {
 
     return {
         knownHosts,
+        unsupportedHosts,
         capture,
         assertCurrent,
         receive,
@@ -414,6 +520,9 @@ export function createDesktopConnection(transport: DesktopTransport) {
         setArchived,
         read,
         context,
+        dataHome,
+        taskCommand,
+        taskFiles,
         navigate,
         matchesLocalProjectRoot,
         move,
