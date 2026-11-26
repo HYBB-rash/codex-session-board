@@ -39,8 +39,8 @@ export interface BoardSnapshot {
 export type BoardRequest = (path: string, body?: object) => Promise<unknown>;
 
 export interface BoardConversation {
-    open(id: string): Promise<void>;
-    setVisible(visible: boolean): void;
+    open(id: string, origin?: HTMLElement): Promise<boolean>;
+    close(): void;
 }
 
 function date(value?: number) {
@@ -348,8 +348,11 @@ export function startBoardPage(
                 canAssign: assignment.canAssign,
                 nativeConversation: openConversation !== undefined,
                 openCard: openConversation
-                    ? (session) => {
-                          if (!creating) void reader.openSession(session.id, openConversation);
+                    ? (session, _focus, origin) => {
+                          if (!creating)
+                              void reader.openSession(session.id, (id) =>
+                                  openConversation(id, origin),
+                              );
                       }
                     : reader.openReply,
                 edit: edits.open,

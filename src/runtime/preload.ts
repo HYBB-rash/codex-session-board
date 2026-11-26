@@ -11,6 +11,7 @@ import {
 import type { LoadedBoardRecords } from "../extensions/records.js";
 import { type BoardService, type Card, createBoardService } from "../extensions/service.js";
 import { readSettings } from "../extensions/settings.js";
+import type { BoardConversation } from "../ui/controller";
 import type { BoardRelayRequest } from "./board/broker.js";
 import { startUiHost } from "./host.js";
 
@@ -22,10 +23,7 @@ export type MountBoard = (
     panel: HTMLElement,
     request: (path: string, body?: object) => Promise<unknown>,
     close: () => void,
-    conversation: {
-        open(id: string): Promise<void>;
-        setVisible(visible: boolean): void;
-    },
+    conversation: BoardConversation,
 ) => () => void;
 
 export type MountTasks = (container: HTMLElement, board: BoardService) => () => void;
@@ -181,7 +179,7 @@ function desktopBoard(mountBoard: MountBoard, mountTasks?: MountTasks) {
         ...(mountTasks
             ? { mountTasks: (container: HTMLElement) => mountTasks(container, board) }
             : {}),
-        mountPage(id, panel, close, showConversation) {
+        mountPage(id, panel, close, showConversation, openConversation) {
             if (id !== "session-board") return;
             closePage = close;
             const unmount = mountBoard(
@@ -192,10 +190,8 @@ function desktopBoard(mountBoard: MountBoard, mountTasks?: MountTasks) {
                         : board.request(path, body),
                 close,
                 {
-                    async open(id) {
-                        await board.openBesideBoard(id);
-                    },
-                    setVisible: showConversation,
+                    open: (id, origin) => openConversation(() => board.openBesideBoard(id), origin),
+                    close: () => showConversation(false),
                 },
             );
             return () => {

@@ -230,21 +230,16 @@ let unmount: (() => void) | undefined;
 
 onMounted(() => {
     if (!page.value) throw new Error("缺少看板页面");
-    const conversation = props.conversation;
     unmount = startBoardPage(
         page.value,
         props.request,
         props.replaceAccount,
         props.snapshot,
-        conversation &&
-            (async (id) => {
-                await conversation.open(id);
-                if (page.value) conversation.setVisible(true);
-            }),
+        props.conversation?.open,
     ).unmount;
 });
 onBeforeUnmount(() => {
-    props.conversation?.setVisible(false);
+    props.conversation?.close();
     unmount?.();
 });
 </script>

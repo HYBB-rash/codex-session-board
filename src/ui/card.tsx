@@ -140,7 +140,15 @@ function CardTitle({
                 title={`${preview ? "预览回复" : "打开会话"}：${session.title}`}
                 aria-controls={preview ? "reply-reader" : undefined}
                 aria-expanded={preview ? model.selectedId === session.id : undefined}
-                onClick={(event) => dependencies.openCard(session, event.detail === 0)}>
+                onClick={(event) =>
+                    dependencies.openCard(
+                        session,
+                        event.detail === 0,
+                        event.currentTarget instanceof HTMLElement
+                            ? (event.currentTarget.closest<HTMLElement>(".card") ?? undefined)
+                            : undefined,
+                    )
+                }>
                 {session.title}
             </button>
             <button
@@ -173,7 +181,8 @@ export default defineComponent({
             const { session, model, dependencies } = props;
             if (model.moving?.id === session.id || !(event.target instanceof Element)) return;
             const control = event.target.closest("button,a,input,select,textarea,details");
-            if (!control || !article.value?.contains(control)) dependencies.openCard(session);
+            if (!control || !article.value?.contains(control))
+                dependencies.openCard(session, false, article.value);
         }
         onMounted(() => article.value?.addEventListener("click", openFromBackground));
         onBeforeUnmount(() => article.value?.removeEventListener("click", openFromBackground));

@@ -16,6 +16,10 @@ export interface UiHostOptions {
         panel: HTMLElement,
         close: () => void,
         showConversation: (visible: boolean, mode?: "draft") => void,
+        openConversation: (
+            navigate: () => Promise<unknown>,
+            origin?: HTMLElement,
+        ) => Promise<boolean>,
     ): (() => void) | undefined;
 }
 
@@ -24,6 +28,21 @@ const DESTINATION = "[data-sidebar-destination]";
 const WORKSPACE = "[data-app-shell-workspace]";
 const MAIN_SURFACE = "[data-app-shell-main-surface]";
 const ACTIVE_MAIN = `${WORKSPACE} ${MAIN_SURFACE}:not(${MAIN_SURFACE} *, [data-app-shell-active-page="false"] *)`;
+const MAIN_LAYOUT = "[data-app-shell-main-content-layout]";
+const MAIN_PANE = '[data-app-shell-focus-area="main"]';
+const RIGHT_PANE = '[data-app-shell-focus-area="right-panel"]';
+const SUMMARY_TOGGLE = "[data-thread-summary-panel-toggle]";
+const POPOVER_CONTENT = '[data-slot="popover-content"]';
+const POPPER_WRAPPER = "[data-radix-popper-content-wrapper]";
+const SUMMARY_CONTENT = '[data-pip-obstacle="thread-summary-panel-popover"]';
+const SUMMARY_POPUP = `${POPOVER_CONTENT}:has(${SUMMARY_CONTENT})`;
+const INLINE_SUMMARY = '[data-pip-obstacle="thread-summary-panel"]';
+type SummaryPlacement = "popover" | "inline";
+const SUMMARY_INSET = 8;
+const SUMMARY_SPACE = 300 + SUMMARY_INSET * 2;
+const FULL_WIDTH_PANE = '[data-app-shell-right-panel-full-width="true"]';
+const CONVERSATION_CONTENT =
+    ':is([data-thread-find-target="conversation"], [data-thread-find-composer]):not([data-app-shell-focus-area="right-panel"] *)';
 const TITLEBAR = '[data-app-shell-titlebar]:not([data-app-shell-active-page="false"] *)';
 const DRAWER_TITLEBAR = "data-codex-enhancer-conversation-titlebar";
 const PAGE_SIDEBAR = "[data-app-shell-page-sidebar]";
@@ -31,12 +50,23 @@ const SIDEBAR_SCROLL = "[data-app-action-sidebar-scroll]";
 const ITEM = "data-codex-enhancer-item";
 const PAGE = "data-codex-enhancer-page";
 const SCRIM = "data-codex-enhancer-conversation-scrim";
+const LOADING = "data-codex-enhancer-conversation-loading";
 const NAVIGATION = `${RAIL}, ${DESTINATION}`;
 
 interface Mount {
     parent: HTMLElement;
     sample: Element | null;
     kind: "row" | "rail";
+}
+
+interface ConversationOverlay {
+    style: HTMLStyleElement;
+    scrim: HTMLButtonElement;
+    titlebar: HTMLElement | null;
+    background: HTMLElement | null;
+    previousFocus: HTMLElement | null;
+    centered: boolean;
+    loading: HTMLElement | null;
 }
 
 interface HostState {
@@ -46,13 +76,7 @@ interface HostState {
     autoOpened: boolean;
     activeId: string | null;
     panel: HTMLElement | null;
-    drawer: {
-        style: HTMLStyleElement;
-        scrim: HTMLButtonElement;
-        titlebar: HTMLElement | null;
-        background: HTMLElement | null;
-        previousFocus: HTMLElement | null;
-    } | null;
+    drawer: ConversationOverlay | null;
     unmount: (() => void) | undefined;
     tasks?: { container: HTMLElement; unmount: (() => void) | undefined };
     applying: boolean;
@@ -232,7 +256,7 @@ function contentBox(): DOMRect | null {
     return new DOMRect(left, bounds.top, width, bounds.height);
 }
 
-function drawerTitlebar(drawer: NonNullable<HostState["drawer"]>): number {
+function drawerTitlebar(drawer: ConversationOverlay): number {
     const surface = document.querySelector(ACTIVE_MAIN);
     const frame = surface?.closest("[data-app-shell-frame]") ?? document;
     const header = [...frame.querySelectorAll(TITLEBAR)].find(visible);
@@ -245,21 +269,70 @@ function drawerTitlebar(drawer: NonNullable<HostState["drawer"]>): number {
     return titlebar?.getBoundingClientRect().height ?? 0;
 }
 
-function placeDrawer(
-    box: DOMRect,
-    panel: HTMLElement,
-    drawer: NonNullable<HostState["drawer"]>,
-): void {
+function conversationBounds(box: DOMRect, centered: boolean, extraWidth: number): DOMRect {
     const inset = Math.min(16, Math.floor(box.width / 12));
     const availableWidth = box.width - inset * 2;
+    if (centered) {
+        const width = Math.min(availableWidth, Math.min(box.width * 0.88, 960) + extraWidth);
+        const height = box.height * 0.86;
+        return new DOMRect((box.width - width) / 2, (box.height - height) / 2, width, height);
+    }
     const width = Math.min(availableWidth, Math.max(400, Math.ceil(availableWidth * 0.87)));
-    const left = box.width - width - inset;
-    const top = 40;
-    const bottom = box.height - 12;
-    const right = left + width;
-    const radius = 10;
-    const titlebarHeight = Math.min(drawerTitlebar(drawer), Math.max(0, bottom - top - 1));
+    return new DOMRect(box.width - width - inset, 40, width, box.height - 52);
+}
+
+function rectangleStyle({ left, top, width, height }: DOMRect): Record<string, string> {
+    return { left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px` };
+}
+
+function conversationTabs() {
+    const surface = document.querySelector(ACTIVE_MAIN);
+    const pane = surface && [...surface.querySelectorAll(RIGHT_PANE)].find(visible);
+    if (isHtmlElement(pane)) {
+        return {
+            extraWidth: 420,
+            splitWidth: surface?.querySelector(FULL_WIDTH_PANE) ? null : pane.style.width,
+        };
+    }
+    return null;
+}
+
+function conversationSummary(titlebar: HTMLElement | null): SummaryPlacement | null {
+    const trigger =
+        titlebar?.querySelector(SUMMARY_TOGGLE) ??
+        document.querySelector(`${ACTIVE_MAIN} ${SUMMARY_TOGGLE}`);
+    const expanded = trigger?.getAttribute("aria-expanded");
+    if (expanded === "true") return "popover";
+    return expanded == null && trigger?.getAttribute("aria-pressed") === "true" ? "inline" : null;
+}
+
+function placeDrawer(box: DOMRect, panel: HTMLElement, drawer: ConversationOverlay): void {
+    const headerHeight = drawer.loading ? 0 : drawerTitlebar(drawer);
+    const showAccessories = drawer.centered && !drawer.loading;
+    const tabs = showAccessories ? conversationTabs() : null;
+    const summary = showAccessories ? conversationSummary(drawer.titlebar) : null;
+    const extraWidth = (tabs?.extraWidth ?? 0) + (summary ? SUMMARY_SPACE : 0);
+    const bounds = conversationBounds(box, drawer.centered, extraWidth);
+    if (drawer.loading) {
+        const viewportBounds = new DOMRect(
+            box.x + bounds.x,
+            box.y + bounds.y,
+            bounds.width,
+            bounds.height,
+        );
+        Object.assign(drawer.loading.style, rectangleStyle(viewportBounds));
+        return;
+    }
+    const { left, top, bottom, right, width } = bounds;
+    const radius = drawer.centered ? Math.min(16, bounds.height / 2, width / 2) : 10;
+    const titlebarHeight = Math.min(headerHeight, Math.max(0, bounds.height - 1));
     const drawerLeft = box.x + left;
+    const body = new DOMRect(
+        drawerLeft,
+        box.y + top + titlebarHeight,
+        width,
+        bounds.height - titlebarHeight,
+    );
     const rules = `
         ${ACTIVE_MAIN}, [${DRAWER_TITLEBAR}] {
             position: fixed !important;
@@ -269,14 +342,15 @@ function placeDrawer(
             background: var(--color-surface, Canvas) !important;
         }
         ${ACTIVE_MAIN} {
-            inset: ${box.y + top + titlebarHeight}px auto auto ${drawerLeft}px !important;
-            height: ${bottom - top - titlebarHeight}px !important;
+            inset: ${body.top}px auto auto ${drawerLeft}px !important;
+            height: ${body.height}px !important;
             border-radius: ${titlebarHeight ? 0 : radius}px ${titlebarHeight ? 0 : radius}px ${radius}px ${radius}px;
             overflow: hidden;
         }
-        ${ACTIVE_MAIN} [data-app-shell-main-content-layout] > :only-child {
+        ${ACTIVE_MAIN} ${MAIN_LAYOUT} > :is(:only-child, :has(${MAIN_PANE})) {
             width: 100% !important;
         }
+        ${showAccessories ? centeredConversationRules(body, tabs?.splitWidth ?? null, summary) : ""}
         [${DRAWER_TITLEBAR}] {
             inset: ${box.y + top}px auto auto ${drawerLeft}px !important;
             height: ${titlebarHeight}px !important;
@@ -290,7 +364,7 @@ function placeDrawer(
         [${SCRIM}]::before {
             content: "";
             position: absolute;
-            inset: ${top}px ${inset}px 12px ${left}px;
+            inset: ${top}px ${box.width - right}px ${box.height - bottom}px ${left}px;
             border-radius: ${radius}px;
             box-shadow: 0 8px 30px light-dark(#252b3a48, #0009);
         }
@@ -303,6 +377,79 @@ function placeDrawer(
         `H${left + radius}q-${radius} 0 -${radius} -${radius}` +
         `V${top + radius}q0 -${radius} ${radius} -${radius}Z`;
     panel.style.clipPath = `path(evenodd, "${outline} ${opening}")`;
+}
+
+function centeredConversationRules(
+    body: DOMRect,
+    nativeTabWidth: string | null,
+    summary: SummaryPlacement | null,
+) {
+    const columnWidth = Math.min(SUMMARY_SPACE, body.width / 3);
+    const reservedWidth = summary ? columnWidth : 0;
+    const sideLimit = `${(body.width - reservedWidth) * 0.46}px`;
+    const tabWidth = nativeTabWidth ? `min(${nativeTabWidth}, ${sideLimit})` : null;
+    return `
+        ${nativeTabWidth != null ? centeredSplitRules(tabWidth, sideLimit) : ""}
+        ${summary === "popover" ? summaryPopupRules(body, columnWidth, tabWidth ?? "0px") : ""}
+        ${summary === "inline" ? inlineSummaryRules(columnWidth) : ""}
+        ${POPPER_WRAPPER}:has(> ${POPOVER_CONTENT}[data-state="closed"] ${SUMMARY_CONTENT}) {
+            visibility: hidden !important;
+        }
+    `;
+}
+
+function inlineSummaryRules(columnWidth: number): string {
+    const layout = `${ACTIVE_MAIN} ${MAIN_LAYOUT}:not(${RIGHT_PANE} *)`;
+    return `
+        ${layout} [data-request-input-activity-root] {
+            width: calc(100% - ${columnWidth}px) !important;
+        }
+        ${layout} :has(> ${INLINE_SUMMARY}) {
+            max-width: ${columnWidth - SUMMARY_INSET}px !important;
+        }
+    `;
+}
+
+function summaryPopupRules(body: DOMRect, columnWidth: number, tabWidth: string): string {
+    const width = columnWidth - SUMMARY_INSET * 2;
+    return `
+        ${ACTIVE_MAIN} ${MAIN_LAYOUT}:not(${RIGHT_PANE} *) {
+            margin-inline-end: ${columnWidth}px !important;
+        }
+        ${POPPER_WRAPPER}:has(> ${POPOVER_CONTENT} ${SUMMARY_CONTENT}) {
+            left: calc(${body.right - columnWidth + SUMMARY_INSET}px - ${tabWidth}) !important;
+            top: ${body.top + SUMMARY_INSET}px !important;
+            transform: none !important;
+            --radix-popper-available-height: ${body.height - SUMMARY_INSET * 2}px !important;
+        }
+        ${SUMMARY_POPUP} {
+            clip-path: none !important;
+            width: ${width}px !important;
+        }
+        ${SUMMARY_POPUP} ${SUMMARY_CONTENT} {
+            max-width: 100% !important;
+        }
+    `;
+}
+
+function centeredSplitRules(tabWidth: string | null, sideLimit: string): string {
+    const titlebar = `[${DRAWER_TITLEBAR}]`;
+    const outerPane = `${RIGHT_PANE}:not(${RIGHT_PANE} *)`;
+    const headerPane = `${titlebar} ${outerPane}`;
+    const bodyPane = `${ACTIVE_MAIN} ${outerPane}`;
+    return `
+        ${bodyPane},
+        ${headerPane},
+        ${titlebar} [data-app-shell-header-slot="end"] {
+            min-width: 0 !important;
+            max-width: ${sideLimit} !important;
+        }
+        ${headerPane} > :only-child,
+        ${bodyPane} > div > div > div:has([data-app-shell-tab-panel-controller="right"]) {
+            width: 100% !important;
+        }
+        ${tabWidth ? `${titlebar} [data-app-shell-main-titlebar] { inset-inline-end: ${tabWidth} !important; }` : ""}
+    `;
 }
 
 function place(host: HostState): void {
@@ -336,27 +483,21 @@ function closeConversation(host: HostState, restoreFocus = false): void {
     host.drawer = null;
     drawer.style.remove();
     drawer.titlebar?.removeAttribute(DRAWER_TITLEBAR);
+    drawer.loading?.remove();
     drawer.scrim.remove();
     if (drawer.background) drawer.background.inert = false;
     place(host);
     if (restoreFocus) drawer.previousFocus?.focus({ preventScroll: true });
 }
 
-function showConversation(host: HostState, visible: boolean, mode?: "draft"): void {
-    if (!visible) {
-        closeConversation(host);
-        return;
-    }
-    const panel = host.panel;
-    const surface = document.querySelector(ACTIVE_MAIN);
-    if (host.drawer || !panel) return;
-    if (!isHtmlElement(surface) || !contentBox())
-        throw new Error("当前 Codex 窗口未提供会话区域。");
+function mountConversation(
+    host: HostState,
+    panel: HTMLElement,
+    loading: HTMLElement | null,
+    returnFocus: Element | null,
+) {
+    if (host.drawer) return null;
     const content = panel.firstElementChild;
-    const returnFocus =
-        mode === "draft"
-            ? content?.shadowRoot?.getElementById("new-session")
-            : (content?.shadowRoot?.activeElement ?? document.activeElement);
     const background = isHtmlElement(content) && !content.inert ? content : null;
     const scrim = document.createElement("button");
     scrim.type = "button";
@@ -370,17 +511,37 @@ function showConversation(host: HostState, visible: boolean, mode?: "draft"): vo
     scrim.append(label);
     scrim.addEventListener("click", () => closeConversation(host, true));
     const style = document.createElement("style");
-    host.drawer = {
+    const drawer: ConversationOverlay = {
         style,
         scrim,
         titlebar: null,
         background,
         previousFocus: isHtmlElement(returnFocus) ? returnFocus : null,
+        centered: loading !== null,
+        loading,
     };
+    host.drawer = drawer;
     if (background) background.inert = true;
     document.head.append(style);
     panel.append(scrim);
+    if (loading) panel.append(loading);
     place(host);
+    return drawer;
+}
+
+function showConversation(host: HostState, visible: boolean, mode?: "draft"): void {
+    if (!visible) {
+        closeConversation(host);
+        return;
+    }
+    const panel = host.panel;
+    if (host.drawer || !panel) return;
+    const surface = document.querySelector(ACTIVE_MAIN);
+    if (!isHtmlElement(surface) || !contentBox())
+        throw new Error("当前 Codex 窗口未提供会话区域。");
+    const root = panel.firstElementChild?.shadowRoot;
+    const trigger = mode === "draft" ? root?.getElementById("new-session") : root?.activeElement;
+    mountConversation(host, panel, null, trigger ?? document.activeElement);
     const editor =
         mode === "draft"
             ? [
@@ -388,6 +549,94 @@ function showConversation(host: HostState, visible: boolean, mode?: "draft"): vo
               ].find((element) => element.getClientRects().length > 0)
             : undefined;
     (editor ?? surface).focus({ preventScroll: true });
+}
+
+function loadingConversation(origin?: HTMLElement): HTMLElement {
+    const loading = document.createElement("section");
+    loading.setAttribute(LOADING, "");
+    loading.setAttribute("aria-label", origin?.getAttribute("aria-label") ?? "会话");
+    loading.style.cssText =
+        "position:fixed;z-index:2;margin:0;box-sizing:border-box;overflow:hidden;border:1px solid color-mix(in srgb,currentColor 14%,transparent);border-radius:16px;background:var(--color-surface,Canvas);box-shadow:0 18px 56px light-dark(#141b353b,#0009);";
+    const title = document.createElement("strong");
+    title.style.cssText =
+        "display:block;padding:14px 18px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+    title.textContent = origin?.getAttribute("aria-label") ?? "会话";
+    const status = document.createElement("div");
+    status.setAttribute("role", "status");
+    status.style.cssText =
+        "position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;opacity:.72;";
+    status.textContent = "正在打开会话…";
+    loading.append(title, status);
+    return loading;
+}
+
+async function animateConversation(drawer: ConversationOverlay, origin?: DOMRect): Promise<void> {
+    const loading = drawer.loading;
+    if (
+        !loading ||
+        !origin?.width ||
+        !origin.height ||
+        matchMedia("(prefers-reduced-motion: reduce)").matches
+    )
+        return;
+    const motion = loading.animate(
+        [{ ...rectangleStyle(origin), borderRadius: "10px", boxShadow: "none" }, {}],
+        { duration: 360, easing: "cubic-bezier(.22,.78,.24,1)" },
+    );
+    drawer.scrim.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 280 });
+    loading.lastElementChild?.animate(
+        [{ opacity: 0 }, { opacity: 0, offset: 0.34 }, { opacity: 0.72 }],
+        { duration: 350 },
+    );
+    await motion.finished;
+}
+
+async function waitForConversation(host: HostState, drawer: ConversationOverlay) {
+    const deadline = performance.now() + 5000;
+    while (host.drawer === drawer) {
+        const surface = document.querySelector(ACTIVE_MAIN);
+        if (
+            isHtmlElement(surface) &&
+            [...surface.querySelectorAll(CONVERSATION_CONTENT)].some(visible)
+        )
+            return surface;
+        if (performance.now() >= deadline) throw new Error("等待 Codex 会话加载超时。");
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
+    }
+    return null;
+}
+
+async function openConversation(
+    host: HostState,
+    navigate: () => Promise<unknown>,
+    origin?: HTMLElement,
+): Promise<boolean> {
+    const panel = host.panel;
+    if (!panel) return false;
+    const box = contentBox();
+    if (!box) throw new Error("当前 Codex 窗口未提供会话区域。");
+    const start = origin?.getBoundingClientRect();
+    const loading = loadingConversation(origin);
+    const root = panel.firstElementChild?.shadowRoot;
+    const focus = root?.activeElement ?? document.activeElement;
+    const trigger = origin && !origin.contains(focus) ? origin.querySelector("button") : focus;
+    const drawer = mountConversation(host, panel, loading, trigger);
+    if (!drawer) return false;
+    drawer.scrim.focus({ preventScroll: true });
+    try {
+        await Promise.all([animateConversation(drawer, start), navigate()]);
+        const surface = await waitForConversation(host, drawer);
+        if (!surface || host.drawer !== drawer) return false;
+        loading.remove();
+        drawer.loading = null;
+        place(host);
+        surface.focus({ preventScroll: true });
+        return true;
+    } catch (error) {
+        if (host.drawer !== drawer) return false;
+        closeConversation(host, true);
+        throw error;
+    }
 }
 
 function dismissOnEscape(host: HostState, event: KeyboardEvent): void {
@@ -455,6 +704,10 @@ function openPage(host: HostState, item: SidebarItemRegistration): void {
         (visible, mode) => {
             if (host.panel === panel) showConversation(host, visible, mode);
         },
+        (navigate, origin) =>
+            host.panel === panel
+                ? openConversation(host, navigate, origin)
+                : Promise.resolve(false),
     );
     if (!host.unmount) panel.append(pageContent(host, item));
     place(host);
@@ -580,7 +833,16 @@ function watchShell(host: HostState, observer: MutationObserver): void {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ["class", "style", "hidden", "inert", "aria-hidden"],
+        attributeFilter: [
+            "class",
+            "style",
+            "hidden",
+            "inert",
+            "aria-hidden",
+            "aria-expanded",
+            "aria-pressed",
+            "data-app-shell-right-panel-full-width",
+        ],
     });
     render(host);
 }
@@ -590,7 +852,8 @@ function shellChanged(mutation: MutationRecord): boolean {
     const element = mutation.target;
     return (
         isElement(element) &&
-        (element.matches(NAVIGATION) || element.querySelector(NAVIGATION) != null)
+        (element.matches(`${NAVIGATION}, ${SUMMARY_TOGGLE}, ${RIGHT_PANE}, ${MAIN_LAYOUT}`) ||
+            element.querySelector(NAVIGATION) != null)
     );
 }
 

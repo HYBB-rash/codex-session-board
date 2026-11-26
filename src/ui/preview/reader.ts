@@ -24,7 +24,7 @@ export function mountBoardSessionReader(container: HTMLElement, ports: ReaderPor
 
     async function openSession(
         id: string,
-        open: (id: string) => Promise<unknown> = (id) => ports.request("/api/open", { id }),
+        openInWindow?: (id: string) => Promise<boolean>,
     ): Promise<true | undefined> {
         if (blocked(id) || opening) return;
         if (sessionById(id)?.canOpen === false) {
@@ -32,9 +32,10 @@ export function mountBoardSessionReader(container: HTMLElement, ports: ReaderPor
             return;
         }
         opening = true;
-        ports.announce("正在打开 Codex 会话…");
         try {
-            await open(id);
+            if (openInWindow) return (await openInWindow(id)) || undefined;
+            ports.announce("正在打开 Codex 会话…");
+            await ports.request("/api/open", { id });
             ports.announce("已发送会话跳转请求。");
             return true;
         } catch (error) {
