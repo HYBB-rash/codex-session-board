@@ -486,7 +486,8 @@ async function desktopWorld(command: DesktopCommand): Promise<unknown> {
     if (command.kind !== "move") return navigate(command, modules, scope);
     const { sections, move } = sidebarContext(modules, scope);
     const itemKey = `codex:thread:local:${command.threadId}`;
-    const sidebarPosition = sections.find((section) => section.itemKeys.includes(itemKey));
+    const ownedKey = `codex:thread:${command.hostId}:${command.threadId}`;
+    const sidebarPosition = sections.find((section) => section.itemKeys.includes(ownedKey));
     if (!sections.some((section) => section.id === command.to) || typeof move !== "function") {
         throw new Error("Codex destination section is unavailable");
     }

@@ -47,7 +47,6 @@ test("section preflight only accepts unique replicas on the queried host", () =>
     assert.deepEqual(sectionBindings(context, "remote-test" as HostId, "four"), [
         { state: "in_progress", label: "进行中", sectionId: "remote-active" },
         { state: "review", label: "待审阅", sectionId: "remote-review" },
-        { state: "to_archive", label: "待归档", sectionId: "remote-archive" },
     ]);
     assert.equal(sectionFor(context, "deferred", "remote-test" as HostId), null);
     assert.equal(sectionFor(context, "deferred", "new-host" as HostId), "待处理");

@@ -270,7 +270,7 @@ test("projection retains revisions, pending work, and same thread IDs per explic
         assert.deepEqual(remote?.selectionUsers, ["msg-a", "msg-b"]);
         assert.equal(remote?.runtimePendingKey, "pending-phase");
         assert.equal(remote?.pendingPhaseKey, "pending-phase");
-        assert.equal(board.preferences.remoteAutoArchiveSeconds, 120);
+        assert.ok(!("remoteAutoArchiveSeconds" in board.preferences));
         assert.equal(board.preferences.mode, "four");
         assert.deepEqual(board.columnSorts.to_archive, {
             field: "updated_at",
@@ -428,13 +428,13 @@ function assertSeeded(runtime: ReturnType<typeof runtimeFixture>) {
     assert.equal(migration.forAccount(unrelated), undefined);
     const seeded = records.account(storedAccount, seed.board.cards);
     assert.equal(seeded[threadId]?.note, "local WAL note");
-    assert.equal(seeded[installedId]?.title?.state, "to_archive");
+    assert.equal(seeded[installedId]?.title?.state, "review");
     assert.equal(seeded[offlineId], undefined);
     assert.deepEqual(records.account(unrelated), {});
     const settings = migration.settings(storedAccount, { syncTitles: false });
     assert.equal(settings.syncTitles, false);
-    assert.equal(settings.remoteAutoArchiveSeconds, 120);
-    assert.equal(migration.settings(unrelated, {}).remoteAutoArchiveSeconds, null);
+    assert.ok(!("remoteAutoArchiveSeconds" in settings));
+    assert.ok(!("remoteAutoArchiveSeconds" in migration.settings(unrelated, {})));
     assert.equal(existsSync(recordsFile), false);
     assert.equal(existsSync(ledgersFile), false);
     const existing = ledgers.load(storedAccount, seed.ledger);
@@ -628,7 +628,7 @@ function assertOfflineCard(cached: BoardCard | undefined): asserts cached is Boa
         hostId: installedOffline,
         threadId,
         title: "fixture",
-        state: "to_archive",
+        state: "review",
         note: `${sourceOffline} WAL note`,
         version: 12,
         inputVersion: 7,
@@ -648,7 +648,13 @@ function assertOfflineCard(cached: BoardCard | undefined): asserts cached is Boa
 
 async function assertReadOnly(service: BoardService, cached: BoardCard) {
     for (const action of ["/api/open", "/api/preview-reply", "/api/state", "/api/archive"]) {
-        await assert.rejects(service.request(action, cached), /只显示缓存/);
+        await assert.rejects(
+            service.request(action, {
+                ...cached,
+                attemptId: crypto.randomUUID(),
+            }),
+            /只显示缓存/,
+        );
     }
     await assert.rejects(
         service.request("/api/project/assign", {
@@ -690,10 +696,10 @@ test("a bound remote migration is visible even if Codex has never connected", as
     hosts.push(installedOffline);
     await service.refresh();
     assert.match(service.snapshot().health.remoteConnections[0]?.error ?? "", /fixture offline/);
-    assert.deepEqual(
-        service.snapshot().sessions.find(({ id }) => id === offlineId),
-        cached,
-    );
+    const offline = service.snapshot().sessions.find(({ id }) => id === offlineId);
+    assertOfflineCard(offline);
+    assert.match(offline.archiveMessage ?? "", /fixture offline/);
+    assert.deepEqual({ ...offline, archiveMessage: cached.archiveMessage }, cached);
 });
 
 async function assertNoImportedCards(service: BoardService) {

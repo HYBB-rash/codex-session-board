@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { BoardLedger } from "../extensions/archive.js";
 import { hostId, localHostId, type ThreadId } from "../extensions/desktop/connection.js";
+import { migratedState } from "../extensions/placement.js";
 import type { BoardRecords, LegacyCachedCard, LoadedBoardRecords } from "../extensions/records.js";
 import { type BoardSettings, readSettings } from "../extensions/settings.js";
 import { readRegular, regularFile } from "./files.js";
@@ -47,6 +48,7 @@ function projectCachedCards(board: MigratedBoard): LegacyCachedCard[] {
     return Object.values(board.cards).flatMap((record) => {
         const host = hostId(record.hostId);
         if (!host || host === localHostId || !threadUuid.test(record.threadId)) return [];
+        const previousState = record.nativeState ?? record.selectedState ?? record.automaticState;
         return [
             {
                 hostId: host,
@@ -54,7 +56,8 @@ function projectCachedCards(board: MigratedBoard): LegacyCachedCard[] {
                 title: record.displayTitle,
                 cwd: record.cwd,
                 updatedAt: record.updatedAt,
-                state: record.nativeState ?? record.selectedState ?? record.automaticState,
+                state: migratedState(previousState),
+                ...(previousState === "to_archive" && { legacyArchivePlacement: true }),
                 archived: record.archived,
                 followUp: record.followUp,
             },

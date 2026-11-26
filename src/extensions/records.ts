@@ -5,7 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import { type BoardLedger, emptyLedger } from "./archive.js";
 import type { ThreadRef } from "./desktop/connection.js";
 import type { DraftRecord } from "./drafts.js";
-import { type BoardState, labels } from "./placement.js";
+import { type BoardState, labels, migrateArchiveRecord } from "./placement.js";
 import type { Card } from "./service.js";
 
 export interface CardRecord {
@@ -31,6 +31,7 @@ export interface LegacyCachedCard extends ThreadRef {
     cwd: string;
     updatedAt: number;
     state: BoardState | null;
+    legacyArchivePlacement?: boolean;
     archived: boolean;
     followUp: boolean;
 }
@@ -143,6 +144,11 @@ function changedLedger(ledger: BoardLedger, imported: BoardLedger): BoardLedger 
                 (draft) => !isDeepStrictEqual(seedDrafts.get(draftKey(draft)), draft),
             ),
         }),
+        ...(ledger.archiveMoves && { archiveMoves: ledger.archiveMoves }),
+        ...(ledger.archiveMigrationEnabled !== undefined && {
+            archiveMigrationEnabled: ledger.archiveMigrationEnabled,
+        }),
+        ...(ledger.archiveRestores && { archiveRestores: ledger.archiveRestores }),
     };
 }
 
@@ -161,6 +167,11 @@ export function createBoardLedgers(file: string) {
                 (left, right) => right.createdAt - left.createdAt,
             ),
             columnSorts: { ...imported.columnSorts, ...saved.columnSorts },
+            ...(saved.archiveMoves && { archiveMoves: saved.archiveMoves }),
+            ...(saved.archiveMigrationEnabled !== undefined && {
+                archiveMigrationEnabled: saved.archiveMigrationEnabled,
+            }),
+            ...(saved.archiveRestores && { archiveRestores: saved.archiveRestores }),
             ...((imported.pendingDrafts || saved.pendingDrafts) && {
                 pendingDrafts: mergeDrafts(imported.pendingDrafts, saved.pendingDrafts),
             }),
@@ -199,7 +210,7 @@ export function createBoardRecords(file: string) {
         const saved = Object.hasOwn(accounts, key) ? accounts[key] : undefined;
         const cards = Object.entries(saved ?? {}).map(([id, { changes: _changes, ...record }]) => [
             id,
-            record,
+            migrateArchiveRecord(record),
         ]);
         return { ...imported, ...Object.fromEntries(cards) };
     }

@@ -40,6 +40,9 @@ import {
 import { type DraftInput, type DraftRecord, stageDraft, unresolvedDrafts } from "./drafts.js";
 import {
     type BoardState,
+    labels,
+    migratedState,
+    oldArchiveSection,
     type Placement,
     placement,
     presentState,
@@ -545,9 +548,13 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
     }
 
     function taskState(context: SidebarContext, hostId: HostId, thread: Thread) {
+        const oldArchive = thread.section?.name === oldArchiveSection;
         return hostTasks()
-            ? (runtime.records[cardId({ hostId, threadId: thread.id })]?.state ?? null)
-            : presentState(context, placement(context, hostId, thread), runtime.settings.mode);
+            ? (migratedState(runtime.records[cardId({ hostId, threadId: thread.id })]?.state) ??
+                  (oldArchive ? "review" : null))
+            : oldArchive
+              ? "review"
+              : presentState(context, placement(context, hostId, thread), runtime.settings.mode);
     }
 
     function taskDeferred(record: CardRecord, position: Placement): string | null {
@@ -1834,7 +1841,11 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         before: Thread,
     ): Promise<Thread> {
         const source = placement(context, connection.hostId, before);
-        if (presentState(context, source, runtime.settings.mode) === state) return before;
+        if (
+            before.section?.name !== oldArchiveSection &&
+            presentState(context, source, runtime.settings.mode) === state
+        )
+            return before;
         const destination = moveDestination(
             context,
             connection.hostId,

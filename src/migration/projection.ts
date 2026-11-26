@@ -431,7 +431,10 @@ function readBoundDatabase(
         const jobState = state(job?.state);
         if (jobState && job?.version === record.version) {
             const error = text(job.error);
-            record.title = { state: jobState, ...(error ? { error } : {}) };
+            record.title = {
+                state: jobState === "to_archive" ? "review" : jobState,
+                ...(error ? { error } : {}),
+            };
         }
         addCard(board, record, history.get(id));
     }

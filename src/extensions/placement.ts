@@ -1,4 +1,5 @@
 import type { HostId, LogicalSectionId, SidebarContext, Thread } from "./desktop/connection.js";
+import type { CardRecord } from "./records.js";
 
 export const labels = {
     unknown: "待判断",
@@ -6,12 +7,26 @@ export const labels = {
     review: "待审阅",
     deferred: "待处理",
     blocked: "已阻塞",
-    to_archive: "待归档",
     completed: "已完成",
 } as const;
 
 export type BoardState = keyof typeof labels;
 export type BoardMode = "four" | "five" | "legacy";
+export const oldArchiveSection = "待归档";
+
+export function migratedState<T>(state: T): Exclude<T, "to_archive"> | "review" {
+    return state === "to_archive" ? "review" : (state as Exclude<T, "to_archive">);
+}
+
+export function migrateArchiveRecord(record: CardRecord): CardRecord {
+    return {
+        ...record,
+        ...(record.state !== undefined && { state: migratedState(record.state) }),
+        ...(record.title && {
+            title: { ...record.title, state: migratedState(record.title.state) },
+        }),
+    };
+}
 
 export function visibleStates(mode: BoardMode): Record<string, string> {
     return Object.fromEntries(
@@ -25,7 +40,11 @@ export function visibleStates(mode: BoardMode): Record<string, string> {
 }
 
 function matchingSection(context: SidebarContext, state: BoardState) {
-    const matches = context.sections.filter(({ name }) => name === labels[state]);
+    return uniqueSection(context, labels[state]);
+}
+
+export function uniqueSection(context: SidebarContext, name: string) {
+    const matches = context.sections.filter((section) => section.name === name);
     return matches.length === 1 ? matches[0] : undefined;
 }
 
@@ -88,7 +107,8 @@ export function placement(context: SidebarContext, host: HostId, thread: Thread)
         managed:
             replica === null ||
             (logical !== undefined &&
-                Object.values(labels).some((label) => label === logical.name)),
+                (logical.name === oldArchiveSection ||
+                    Object.values(labels).some((label) => label === logical.name))),
     };
 }
 
@@ -98,6 +118,7 @@ export function presentState(
     mode: BoardMode,
 ): BoardState | null {
     const name = context.sections.find(({ id }) => id === position.sectionId)?.name;
+    if (name === oldArchiveSection) return "review";
     const keys = Object.keys(visibleStates(mode)) as BoardState[];
     return keys.find((key) => labels[key] === name) ?? (mode === "four" ? null : "unknown");
 }
