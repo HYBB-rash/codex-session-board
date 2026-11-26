@@ -84,23 +84,29 @@ if (
     }
 } else if (command === "launch") {
     void launchAndConfirm(process.argv.slice(3)).then((pid) => console.log(`pid: ${pid}`), fail);
-} else if (command === "task-migration") {
+} else if (command === "task-migration" || command === "archive-migration") {
     void (async () => {
         const [action, confirm, extra] = process.argv.slice(3);
         if (
             extra ||
             !(action === "preview"
                 ? !confirm
-                : action === "apply" && /^[\da-f]{64}$/.test(confirm ?? ""))
+                : (action === "apply" ||
+                      (command === "archive-migration" && action === "rollback")) &&
+                  /^[\da-f]{64}$/.test(confirm ?? ""))
         )
-            throw new Error("用法：codex-enhancer task-migration preview|apply <迁移确认值>");
+            throw new Error(
+                `用法：codex-enhancer ${command} preview 或 ${command} ${
+                    command === "archive-migration" ? "apply|rollback" : "apply"
+                } <迁移确认值>`,
+            );
         const { connectBoard } = await import("../compat/client.js");
         const board = await connectBoard(stateDir);
         console.log(
             JSON.stringify(
                 await board.request(
-                    `/api/task-migration/${action}`,
-                    action === "apply" ? { confirm } : undefined,
+                    `/api/${command}/${action}`,
+                    action === "preview" ? undefined : { confirm },
                 ),
                 null,
                 2,
@@ -134,6 +140,9 @@ if (
 } else {
     console.log(
         "Usage: codex-enhancer detect|install [--in-place]|uninstall [--in-place]|purge-in-place-data|status [--in-place]|launch|update [--in-place] <directory>|rollback [--in-place]|package <version> <output> [platform]",
+    );
+    console.log(
+        "       codex-enhancer archive-migration preview | archive-migration apply|rollback <token>",
     );
     process.exitCode = command ? 1 : 0;
 }

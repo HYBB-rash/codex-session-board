@@ -8,6 +8,7 @@ import {
 } from "./activity.js";
 import {
     type ArchiveItem,
+    type ArchiveMove,
     ArchivePreconditionError,
     ArchiveReadUnavailable,
     type ArchiveRestore,
@@ -19,6 +20,7 @@ import {
     NewInputError,
     type SortPreference,
 } from "./archive.js";
+import { archiveMigrationDecision, canRollbackArchiveMove } from "./archive-migration.js";
 import {
     cardId,
     cardThread,
@@ -798,16 +800,26 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             const lastRead = next.scanComplete ? Date.now() / 1000 : last.lastRead;
             if (lastRead !== undefined) next.lastRead = lastRead;
             runtime.hosts.set(hostId, next);
-            if (hostTasks()) await refreshTasks(connection, next, context);
-            await Promise.all([
-                refreshArchives(connection, next),
-                refreshProjects(connection, next),
-                observeConnectedHost(connection, next, context),
-            ]);
+            await refreshHostDetails(connection, next, context);
         } catch (error) {
             const available = runtime.hosts.get(hostId) ?? last;
             runtime.hosts.set(hostId, failedHostScan(desktop, available, error));
         }
+    }
+
+    async function refreshHostDetails(
+        connection: HostConnection,
+        host: HostSnapshot,
+        context: SidebarContext,
+    ) {
+        if (hostTasks()) await refreshTasks(connection, host, context);
+        if (runtime.ledger.archiveMigrationEnabled)
+            await migrateArchiveHost(connection, host, context);
+        await Promise.all([
+            refreshArchives(connection, host),
+            refreshProjects(connection, host),
+            observeConnectedHost(connection, host, context),
+        ]);
     }
 
     function observeConnectedHost(
@@ -1345,6 +1357,7 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
             runtimeVerified: connected && host?.runtimeVerified === true,
             runtimeError: host?.runtimeError,
             archiveReadError: host?.archiveError,
+            archiveMigrationError: host?.archiveMigrationError,
             taskStateError: host?.taskError,
             taskStateConfirmedAt: host?.taskConfirmedAt,
             historyError: host?.historyError,
@@ -2591,6 +2604,267 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         return archive.single({ ...candidate, title: card.title });
     }
 
+    function archiveMoveIntent(id: string, move: ArchiveMove) {
+        return archive.change((old) => ({
+            next: { ...old, archiveMoves: { ...old.archiveMoves, [id]: move } },
+            result: undefined,
+        }));
+    }
+
+    function archiveMoveDecision(context: SidebarContext, hostId: HostId, thread: Thread) {
+        const id = cardId({ hostId, threadId: thread.id });
+        const state = migratedState(runtime.records[id]?.state);
+        return archiveMigrationDecision(
+            context,
+            hostId,
+            thread,
+            runtime.ledger.archiveMoves?.[id],
+            canWrite(runtime.settings, thread.id) &&
+                (!hostTasks() ||
+                    (Boolean(runtime.hosts.get(hostId)?.taskStore) &&
+                        (!state || state === "review"))),
+        );
+    }
+
+    async function confirmArchiveMove(
+        context: SidebarContext,
+        connection: HostConnection,
+        thread: Thread,
+        from: LogicalSectionId,
+        to: LogicalSectionId,
+    ) {
+        await desktop.move(connection, context, thread.id, from, to);
+        const after = await desktop.read(connection, thread.id, false);
+        const fresh = await freshContext(context);
+        const proof = moveProof(connection.hostId, thread, after, fresh, to);
+        ports.proof("board-archive-section-move", proof);
+        if (!proof.confirmed) throw new Error("宿主尚未确认原生分区");
+        return { after, version: placement(fresh, connection.hostId, after).version };
+    }
+
+    async function migrateArchiveCard(
+        connection: HostConnection,
+        thread: Thread,
+        context: SidebarContext,
+    ) {
+        const { hostId } = connection;
+        const id = cardId({ hostId, threadId: thread.id });
+        const before = await desktop.read(connection, thread.id, false);
+        const fresh = await freshContext(context);
+        const decision = archiveMoveDecision(fresh, hostId, before);
+        if (decision.action === "unchanged") return;
+        if (decision.action === "conflict") throw new Error(decision.reason);
+        if (decision.action === "observed") {
+            await saveMigratedArchiveState(fresh, id);
+            await archiveMoveIntent(id, {
+                ...decision.attempt,
+                observed: placement(fresh, hostId, before).version,
+            });
+            return;
+        }
+        if (placement(fresh, hostId, thread).version !== decision.attempt.before)
+            throw new Error("卡片在重新核对时已移动");
+        await archiveMoveIntent(id, decision.attempt);
+        const { attempt } = decision;
+        const { after, version } = await confirmArchiveMove(
+            fresh,
+            connection,
+            before,
+            attempt.from,
+            attempt.to,
+        );
+        publishThread(hostId, after);
+        await saveMigratedArchiveState(fresh, id);
+        await archiveMoveIntent(id, { ...attempt, after: version });
+    }
+
+    async function saveMigratedArchiveState(context: SidebarContext, id: string) {
+        if (!hostTasks()) return;
+        const current = runtime.records[id];
+        if (current?.state === "review") return;
+        if (current?.state) throw new Error("会话已在看板移入其他位置");
+        const previous = current ?? runtime.migrationRecords[id] ?? emptyRecord;
+        await commitRecord(context, id, current?.version ?? 0, {
+            ...previous,
+            state: "review",
+            version: (current?.version ?? 0) + 1,
+        });
+    }
+
+    async function migrateArchiveHost(
+        connection: HostConnection,
+        host: HostSnapshot,
+        context: SidebarContext,
+    ) {
+        if (!host.scanComplete) return;
+        const failures: string[] = [];
+        for (const threadId of host.currentActive) {
+            if (!runtime.ledger.archiveMigrationEnabled) break;
+            const thread = host.active.get(threadId);
+            if (!thread) continue;
+            const failure = await migrateEditableArchiveCard(connection, thread, context);
+            if (failure) failures.push(failure);
+        }
+        if (failures.length) host.archiveMigrationError = failures.join("\n");
+    }
+
+    async function migrateEditableArchiveCard(
+        connection: HostConnection,
+        thread: Thread,
+        context: SidebarContext,
+    ): Promise<string | undefined> {
+        const { hostId } = connection;
+        const id = cardId({ hostId, threadId: thread.id });
+        if (
+            runtime.editing.has(id) ||
+            archiveMoveDecision(context, hostId, thread).action === "unchanged"
+        )
+            return undefined;
+        runtime.editing.add(id);
+        try {
+            await migrateArchiveCard(connection, thread, context);
+        } catch (error) {
+            return `${thread.name ?? thread.id}：${errorText(error)}`;
+        } finally {
+            runtime.editing.delete(id);
+        }
+        return undefined;
+    }
+
+    async function archiveMigrationHostPreview(hostId: HostId, context: SidebarContext) {
+        const old = archive
+            .batches()
+            .flatMap(({ items }) => items)
+            .filter(({ id }) => cardThread(id).hostId === hostId);
+        const pending = [
+            ...new Set(old.filter(({ status }) => status === "pending").map(({ id }) => id)),
+        ];
+        const unsubmitted = [
+            ...new Set(old.filter(({ status }) => status === "awaiting").map(({ id }) => id)),
+        ];
+        try {
+            const connection = desktop.capture(hostId);
+            const active = new Map<ThreadId, Thread>();
+            await readPages(connection, false, active);
+            desktop.assertCurrent(connection);
+            const candidates = [...active.values()]
+                .flatMap((thread) => {
+                    const id = cardId({ hostId, threadId: thread.id });
+                    const decision = archiveMoveDecision(context, hostId, thread);
+                    if (decision.action === "unchanged") return [];
+                    return [{ id, title: thread.name ?? thread.preview, ...decision }];
+                })
+                .sort((left, right) => left.id.localeCompare(right.id));
+            return { hostId, available: true, candidates, pending, unsubmitted };
+        } catch (error) {
+            return {
+                hostId,
+                available: false,
+                cachedLegacyCards: cachedArchiveMigrationCards(hostId),
+                error: errorText(error),
+                pending,
+                unsubmitted,
+            };
+        }
+    }
+
+    function cachedArchiveMigrationCards(hostId: HostId) {
+        const all = [...runtime.legacyCachedCards, ...runtime.taskCache.values()];
+        const cards = all.filter(
+            (card) => card.hostId === hostId && !card.archived && card.legacyArchivePlacement,
+        );
+        return [
+            ...new Map(
+                cards.map((card) => {
+                    const id = cardId(card);
+                    return [id, { id, title: card.title }];
+                }),
+            ).values(),
+        ].sort((left, right) => left.id.localeCompare(right.id));
+    }
+
+    async function archiveMigrationPreview() {
+        const context = await freshContext();
+        const hosts = [
+            ...new Set([
+                ...desktop.knownHosts(),
+                ...runtime.hosts.keys(),
+                ...runtime.legacyCachedCards.map(({ hostId }) => hostId),
+                ...[...runtime.taskCache.values()].map(({ hostId }) => hostId),
+            ]),
+        ]
+            .filter((host) => !hostManagementError(host))
+            .sort();
+        const report = {
+            accountScope: requiredScope(),
+            enabled: runtime.ledger.archiveMigrationEnabled === true,
+            hosts: await Promise.all(
+                hosts.map((host) => archiveMigrationHostPreview(host, context)),
+            ),
+            completed: Object.entries(runtime.ledger.archiveMoves ?? {}).sort(([left], [right]) =>
+                left.localeCompare(right),
+            ),
+        };
+        await freshContext(context);
+        const consent = {
+            ...report,
+            hosts: report.hosts.map(({ error: _diagnostic, ...host }) => host),
+        };
+        return { ...report, token: await scopeDigest(JSON.stringify(consent)) };
+    }
+
+    function archiveMigrationEnabled(enabled: boolean) {
+        return archive.change((old) => ({
+            next: { ...old, archiveMigrationEnabled: enabled },
+            result: undefined,
+        }));
+    }
+
+    async function rollbackArchiveMoves(context: SidebarContext) {
+        const results = [];
+        for (const [id, move] of Object.entries(runtime.ledger.archiveMoves ?? {})) {
+            if (move.rolledBack || !move.after) continue;
+            const { hostId, threadId } = cardThread(id);
+            try {
+                const connection = desktop.capture(hostId);
+                const before = await activeThread(connection, threadId);
+                const fresh = await freshContext(context);
+                if (!before || !canRollbackArchiveMove(fresh, hostId, before, move))
+                    throw new Error("原生分区或会话位置已变更");
+                const { after } = await confirmArchiveMove(
+                    fresh,
+                    connection,
+                    before,
+                    move.to as LogicalSectionId,
+                    move.from as LogicalSectionId,
+                );
+                await archiveMoveIntent(id, { ...move, rolledBack: true });
+                publishThread(hostId, after);
+                results.push({ id, rolledBack: true });
+            } catch (error) {
+                results.push({ id, rolledBack: false, error: errorText(error) });
+            }
+        }
+        await freshContext(context);
+        publishSnapshot();
+        return { results };
+    }
+
+    async function requestArchiveMigration(path: string, body?: object) {
+        if (path === "/api/archive-migration/preview") return archiveMigrationPreview();
+        const preview = await archiveMigrationPreview();
+        if (preview.token !== (body as { confirm?: unknown } | undefined)?.confirm)
+            throw new Error("迁移清单已变更，请重新预览");
+        const enabled = path === "/api/archive-migration/apply";
+        await archiveMigrationEnabled(enabled);
+        if (!enabled) {
+            await runtime.refreshing;
+            return rollbackArchiveMoves(requiredContext());
+        }
+        queueArchiveRead();
+        return { enabled: true };
+    }
+
     async function openConnectionSettings() {
         const owner = await freshContext();
         await desktop.navigate({
@@ -2756,6 +3030,14 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
 
     async function request(path: string, body?: object, account?: string): Promise<unknown> {
         if (account !== undefined) requireAccount(account);
+        if (
+            [
+                "/api/archive-migration/preview",
+                "/api/archive-migration/apply",
+                "/api/archive-migration/rollback",
+            ].includes(path)
+        )
+            return requestArchiveMigration(path, body);
         if (path.startsWith("/api/archive")) return requestArchive(path, body);
         const input = body as (DraftInput & { id?: string }) | undefined;
         switch (path) {

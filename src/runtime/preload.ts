@@ -39,6 +39,12 @@ function observeDesktop(desktop: DesktopConnection, board: BoardService): void {
         const paths = packet?.params?.changedPaths;
         if (
             host &&
+            packet?.type === "codex-app-server-connection-changed" &&
+            packet.state === "connected"
+        )
+            board.archiveHostReconnected(host);
+        if (
+            host &&
             packet?.type === "mcp-notification" &&
             packet.method === "fs/changed" &&
             typeof watch === "string" &&
