@@ -7,6 +7,7 @@ interface HostHealth extends AutoArchiveHealth {
     error?: string | null;
     runtimeError?: string | null;
     nativeError?: string | null;
+    deferredSectionError?: string | null;
     nativeStageError?: string | null;
     writeError?: string | null;
     archiveReadError?: string | null;
@@ -118,6 +119,7 @@ function summarizeDiagnostics(reading: HostReading) {
         ["会话列表", listError],
         ["自动状态", current.runtimeError],
         ["状态分组", current.nativeError],
+        ["待处理", current.deferredSectionError],
         ["状态更新", current.nativeStageError],
         ["修改权限", current.writeError],
         ["项目列表", projectError],
@@ -131,6 +133,7 @@ function summarizeDiagnostics(reading: HostReading) {
     const faults = diagnostics.some(
         ([label]) =>
             label !== "目录覆盖" &&
+            label !== "待处理" &&
             (label !== "自动状态" ||
                 current.lastScanAt ||
                 current.lastSuccessAt ||
@@ -141,6 +144,7 @@ function summarizeDiagnostics(reading: HostReading) {
         !idle &&
         Boolean(
             faults ||
+                current.deferredSectionError ||
                 blocked ||
                 readonly ||
                 incomplete ||

@@ -33,13 +33,14 @@ function initialCard() {
     };
 }
 
-function boardHost(frame, result) {
-    let session = initialCard();
+function boardHost(frame, result, canDefer) {
+    let session = { ...initialCard(), canDefer };
     const calls = [];
     const snapshot = () => ({
         states: {
             in_progress: "进行中",
             review: "待审阅",
+            deferred: "待处理",
             blocked: "已阻塞",
             to_archive: "待归档",
         },
@@ -57,8 +58,8 @@ function boardHost(frame, result) {
     const operations = {
         board_preview_reply: () => ({ content: [], _meta: { previewReply } }),
         board_open: () => ({ content: [], structuredContent: { ok: true } }),
-        board_update: ({ state, note }) => {
-            session = { ...session, state, note, version: session.version + 1 };
+        board_update: ({ state, note = session.note, deferReason }) => {
+            session = { ...session, state, note, deferReason, version: session.version + 1 };
             return { content: [], structuredContent: { ok: true, session } };
         },
     };
@@ -176,8 +177,9 @@ function assertSavedCard({ name, args }, original) {
     requireInBrowser(
         name === "board_update" &&
             args.id === original.id &&
-            args.state === "blocked" &&
-            args.note === "" &&
+            args.state === "deferred" &&
+            args.note === original.note &&
+            args.deferReason === "等回复" &&
             args.version === original.version &&
             args.inputVersion === original.inputVersion &&
             args.sectionVersion === original.sectionVersion,
@@ -185,47 +187,83 @@ function assertSavedCard({ name, args }, original) {
     );
 }
 
-async function checkBlocked({ find, drag, child }, { calls, current }) {
+async function checkDeferral({ find, drag, child, title }, { calls, current }) {
     const initial = current();
-    const destination = find('#board .column[data-state="blocked"] .column-heading');
-    requireInBrowser(destination, "blocked column is absent");
-    drag(destination, "dragover");
-    drag(destination, "drop");
-    const dialog = await until(() => find("#editor[open]"), "blocked drop did not open the editor");
-    const note = dialog.querySelector("#note");
-    const hint = dialog.querySelector(`#${note.getAttribute("aria-describedby")}`)?.textContent;
-    requireInBrowser(
-        dialog.querySelector("#state").value === "blocked",
-        "blocked state was not selected",
-    );
-    requireInBrowser(note.value === initial.note, "opened editor lost the saved note");
-    requireInBrowser(
-        !note.required && /请说明.*不填也可以保存/u.test(hint ?? ""),
-        "no guidance that the reason is optional",
-    );
-    note.value = "";
-    note.dispatchEvent(new child.Event("input", { bubbles: true }));
-    await sleep(80);
-    requireInBrowser(dialog.querySelector("form").checkValidity(), "blank reason prevents saving");
+    const drop = (state) => {
+        const destination = find(`#board .column[data-state="${state}"] .column-heading`);
+        requireInBrowser(destination, `${state} column is absent`);
+        drag(destination, "dragover");
+        drag(destination, "drop");
+    };
+    const open = async () => {
+        drop("deferred");
+        return until(() => find("#editor[open]"), "deferred drop did not open the editor");
+    };
+    let dialog = await open();
+    const column = () => find("article.card")?.closest(".column")?.dataset.state;
+    const setReason = (value) => {
+        const field = dialog.querySelector("#defer-reason");
+        field.value = value;
+        field.dispatchEvent(new child.Event("input", { bubbles: true }));
+    };
+    requireInBrowser(dialog.querySelector("#state").value === "deferred", "wrong target");
+    requireInBrowser(dialog.querySelector("#note").value === initial.note, "lost the saved note");
+    requireInBrowser(!dialog.querySelector("form").checkValidity(), "empty reason is accepted");
+    setReason("　 ");
+    dialog.querySelector("#save").click();
+    await until(() => find("#notice")?.textContent, "whitespace reason is accepted");
     requireInBrowser(
         calls.length === 0 && current() === initial,
-        "opening or editing the form saved state or notes",
+        "whitespace reason saved state or notes",
     );
-    const column = () => find("article.card")?.closest(".column")?.dataset.state;
     requireInBrowser(column() === initial.state, "unsaved card moved");
+    dialog.querySelector("#cancel").click();
+    await until(() => !find("#editor[open]"), "cancel did not close the form");
+    requireInBrowser(calls.length === 0 && column() === initial.state, "cancel saved the card");
+    drag(title(), "dragstart");
+    dialog = await open();
+    setReason(" 等回复 ");
     dialog.querySelector("#save").click();
     await until(
         () => calls.length === 1 && !find("#editor[open]"),
         "explicit save did not complete",
     );
     assertSavedCard(calls[0], initial);
-    await until(() => column() === "blocked", "saved card did not move");
+    await until(() => column() === "deferred", "saved card did not move");
+    requireInBrowser(
+        find("article.card").textContent.includes("搁置原因：等回复"),
+        "reason absent",
+    );
+    drag(title(), "dragstart");
+    drop("blocked");
+    await until(() => calls.length === 2 && column() === "blocked", "blocked drop did not save");
+    requireInBrowser(!find("#editor[open]"), "blocked drop opened a reason form");
+    requireInBrowser(current().note === initial.note, "blocked drop lost the saved note");
+}
+
+async function checkMissingDeferredSection({ find, drag, transfer }, { calls, current }) {
+    const initial = current();
+    const destination = find("#column-deferred .column-heading");
+    requireInBrowser(destination, "deferred column is absent");
+    Object.defineProperty(transfer, "dropEffect", { value: "none", writable: true });
+    const cancelled = !drag(destination, "dragover");
+    requireInBrowser(cancelled && transfer.dropEffect === "move", "browser would suppress drop");
+    drag(destination, "drop");
+    await until(
+        () => find("#feedback.error")?.textContent.includes("「待处理」分区"),
+        "missing sidebar section was not reported",
+    );
+    requireInBrowser(!find("#editor[open]"), "opened an editor for an unavailable destination");
+    requireInBrowser(
+        calls.length === 0 && current() === initial,
+        "changed the card without a section",
+    );
 }
 
 async function fixture(scope) {
     const result = document.querySelector("output");
     const frame = document.querySelector("iframe");
-    const host = boardHost(frame, result);
+    const host = boardHost(frame, result, scope !== "missing-deferred");
     frame.src = "/mcp.html";
     const controls = pageControls(frame);
     try {
@@ -242,7 +280,12 @@ async function fixture(scope) {
             "title did not initiate a card drag",
         );
         await until(() => controls.find(".drag-active"), "board did not enter drag state");
-        await (scope === "navigation" ? checkNavigation : checkBlocked)(controls, host);
+        const checks = {
+            navigation: checkNavigation,
+            deferral: checkDeferral,
+            "missing-deferred": checkMissingDeferredSection,
+        };
+        await checks[scope](controls, host);
         if (result.textContent === "waiting") result.textContent = "passed";
     } catch (error) {
         result.textContent = `${error.message}; tools: ${host.calls.map(({ name }) => name).join(", ")}`;
@@ -260,7 +303,8 @@ async function check(context, scope) {
         pageControls,
         checkNavigation,
         assertSavedCard,
-        checkBlocked,
+        checkDeferral,
+        checkMissingDeferredSection,
         fixture,
     ].join("\n");
     const html = `<!doctype html><meta charset="utf-8"><title>Board interaction fixture</title>
@@ -294,5 +338,7 @@ async function check(context, scope) {
 
 test("dragging the card title suppresses preview and navigation without disabling nearby controls", (context) =>
     check(context, "navigation"));
-test("the blocked editor accepts an optional reason and sends no update until explicit save", (context) =>
-    check(context, "blocked"));
+test("deferral requires a reason while blocked drag saves directly", (context) =>
+    check(context, "deferral"));
+test("dropping onto deferred reports a missing native section without changing the card", (context) =>
+    check(context, "missing-deferred"));

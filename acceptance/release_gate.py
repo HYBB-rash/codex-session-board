@@ -51,7 +51,6 @@ ACCEPTANCE_TEST_FILES = {
     },
     "acceptance/board-interaction.test.mjs": {
         "title-drag-control-isolation": "dragging the card title suppresses preview and navigation without disabling nearby controls",
-        "blocked-editor-explicit-save": "the blocked editor accepts an optional reason and sends no update until explicit save",
     },
 }
 ACCEPTANCE_TESTS = {

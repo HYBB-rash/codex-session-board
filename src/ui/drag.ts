@@ -73,7 +73,8 @@ export function createCardDrag(viewport: HTMLElement, dependencies: BoardDepende
     function over(state: string, event: DragEvent) {
         if (!dragged.value || !event.dataTransfer) return;
         event.preventDefault();
-        const accepts = dragged.value.state !== state || state === "blocked";
+        const accepts =
+            dragged.value.state !== state || (state === "deferred" && !dragged.value.deferReason);
         destination.value = accepts ? state : null;
         event.dataTransfer.dropEffect = accepts ? "move" : "none";
     }
@@ -92,9 +93,15 @@ export function createCardDrag(viewport: HTMLElement, dependencies: BoardDepende
         event.preventDefault();
         end();
         if (!dependencies.actions(session).canAdjust) return;
-        if (state === "blocked") {
+        if (state === "deferred" && session.canDefer === false) {
+            dependencies.announce(
+                "无法移入待处理。请确认 Codex 原生侧栏有且只有一个「待处理」分区，然后刷新看板。",
+                true,
+            );
+            dependencies.refresh();
+        } else if (state === "deferred" && (session.state !== state || !session.deferReason)) {
             dependencies.edit(session.id, state, session);
-            dependencies.announce("请说明卡在哪里，暂时不填也可以保存。");
+            dependencies.announce("请填写搁置原因后保存。");
         } else if (session.state === state) {
             dependencies.announce("状态未改变。");
             dependencies.refresh();

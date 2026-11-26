@@ -43,7 +43,7 @@ export interface BoardDependencies {
     archiveAll: (sessions: BoardSession[]) => void;
     editorOpen: () => boolean;
     refresh: () => void;
-    announce: (message: string) => void;
+    announce: (message: string, error?: boolean) => void;
     move: (session: BoardSession, state: string) => void;
 }
 

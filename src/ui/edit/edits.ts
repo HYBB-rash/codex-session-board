@@ -38,6 +38,7 @@ async function persist(
     session: BoardSession,
     state: string | null,
     note?: string,
+    deferReason?: string,
 ) {
     ports.invalidateSnapshot();
     const { version, inputVersion, sectionVersion } = session;
@@ -45,6 +46,7 @@ async function persist(
         id: session.id,
         state,
         note,
+        deferReason,
         version,
         inputVersion,
         sectionVersion,
@@ -94,6 +96,7 @@ async function save(
     session: BoardSession,
     state: string | null,
     note?: string,
+    deferReason?: string,
 ) {
     const { announce, render } = ports;
     ports.setSaving(true);
@@ -101,7 +104,7 @@ async function save(
     const operation = panel.start(session, state);
     let saved = false;
     try {
-        const result = await persist(ports, session, state, note);
+        const result = await persist(ports, session, state, note, deferReason);
         operation.state = result.session.state;
         saved = true;
         const notice = result.titleEnabled
@@ -133,9 +136,9 @@ function mountEditor(
     unconfirmed: Map<string, BoardSession>,
 ) {
     return mountCardEditor(host, {
-        save(session, state, note) {
+        save(session, state, note, deferReason) {
             if (ports.busy()) throw new Error("已有操作正在执行，请稍后保存。");
-            return save(ports, unconfirmed, session, state, note);
+            return save(ports, unconfirmed, session, state, note, deferReason);
         },
         async refresh(session) {
             const data = (await ports.request("/api/sessions")) as BoardSnapshot;

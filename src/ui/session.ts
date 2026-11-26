@@ -4,6 +4,8 @@ export interface BoardSession extends PreviewSession {
     accountScope?: string;
     state: string | null;
     note: string;
+    deferReason?: string | null;
+    canDefer?: boolean;
     threadId?: string;
     version: number;
     inputVersion: number;

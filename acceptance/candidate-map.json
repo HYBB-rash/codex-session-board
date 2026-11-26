@@ -491,7 +491,7 @@
                 "src/ui/drag.ts"
             ],
             "evidence": ["native-move", "http-security"],
-            "remaining": "覆盖拖入与在阻塞列内拖放、取消、纯空白、主动清空、保留遗漏备注、自动与人工原因和三种版本冲突。"
+            "remaining": "冻结契约中的阻塞原因弹窗已由手动待处理流程替代。新版交互和接口有独立用例，发布前需确认使用新版验收口径。"
         },
         "UI-003": {
             "status": "pending",

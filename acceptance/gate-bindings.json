@@ -96,7 +96,7 @@
         "APP-001": [[], ["mcp-shared-board-state"], []],
         "UI-001": [[], [], []],
         "UI-002": [
-            ["blocked-editor-explicit-save"],
+            [],
             ["manual-change-history"],
             ["manual-change-history", "automatic-change-history"],
             ["mcp-real-revisions", "manual-change-history"]

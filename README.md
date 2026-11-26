@@ -96,7 +96,9 @@ MCP 配置见 [.mcp.json](.mcp.json)。从另一目录调用时可以指定 `--s
 
 ## 设置与迁移
 
-在 `state/session-board/config.json` 设置 `mode`（`four`、`five` 或 `legacy`）、`syncTitles`、`autoArchiveSeconds`、`remoteAutoArchiveSeconds`。归档间隔用正整数秒，`null` 表示关闭。初始为四列和未归列区，标题同步及定时归档关闭。
+在 `state/session-board/config.json` 设置 `mode`（`four`、`five` 或 `legacy`）、`syncTitles`、`autoArchiveSeconds`、`remoteAutoArchiveSeconds`。归档间隔用正整数秒，`null` 表示关闭。默认模式显示五列和未归列区，标题同步及定时归档关闭。
+
+使用「待处理」前，在 Codex 原生侧栏创建一个同名分区。看板通过当前 Codex 连接移卡，由 Codex 在首次需要时补建目标主机的分区。从看板移入时填写搁置原因，从原生侧栏直接移入后可以在看板补填。回到「待审阅」时手动移卡。
 
 `pageSize` 和 `maxPages` 默认均为 100，达到分页上限时会报告扫描未完成。`historyPerPoll` 默认为 20，控制每轮每台主机的历史补读数量。
 

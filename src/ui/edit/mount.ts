@@ -3,7 +3,12 @@ import type { BoardSession } from "../session";
 import CardEditor from "./SessionEditor.vue";
 
 export interface EditorPorts {
-    save: (session: BoardSession, state: string | null, note: string) => Promise<void>;
+    save: (
+        session: BoardSession,
+        state: string | null,
+        note: string,
+        deferReason?: string,
+    ) => Promise<void>;
     refresh: (session: BoardSession) => Promise<BoardSession>;
     closed: (session: BoardSession) => void;
 }

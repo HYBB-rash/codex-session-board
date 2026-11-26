@@ -50,6 +50,12 @@ function CardStatus({
                 <div class="move-label">上次保存未收到确认，请核对实际位置</div>
             )}
             {session.note && <CardNote note={session.note} />}
+            {session.state === "deferred" &&
+                (session.deferReason ? (
+                    <CardNote note={`搁置原因：${session.deferReason}`} />
+                ) : (
+                    <div class="card-note">待补搁置原因</div>
+                ))}
             {!session.manual && session.state === "blocked" && (
                 <div class="card-note">{session.reason}</div>
             )}

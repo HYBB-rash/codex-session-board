@@ -17,9 +17,12 @@
             :state="state"
             :unplaced="session?.state === null"
             :note="note"
+            :defer-reason="deferReason"
+            :can-defer="session?.canDefer !== false"
             :busy="busy"
             @state="state = $event"
-            @note="changeNote"/>
+            @note="changeNote"
+            @defer-reason="changeDeferReason"/>
         <div id="reason" class="reason">{{ session?.placementReason || session?.reason }}</div>
         <div id="notice" class="notice" role="alert">{{ notice }}</div>
         <div class="dialog-actions">
@@ -53,11 +56,13 @@ const session = shallowRef<BoardSession>();
 const states = shallowRef<Record<string, string>>({});
 const state = ref("");
 const note = ref("");
+const deferReason = ref("");
 const notice = ref("");
 const busy = ref(false);
 const failed = ref(false);
 let retained: string | null = null;
 let noteEdited = false;
+let deferReasonEdited = false;
 
 async function open(card: BoardSession, options: Record<string, string>, target?: string) {
     if (session.value || !dialog.value) return;
@@ -66,12 +71,20 @@ async function open(card: BoardSession, options: Record<string, string>, target?
     retained = readDraft(card);
     noteEdited = retained !== null;
     note.value = retained ?? card.note;
+    deferReason.value = card.deferReason ?? "";
+    deferReasonEdited = false;
     state.value = target || card.state || "";
     failed.value = false;
     notice.value = retained === null ? "" : "已恢复上次未保存的备注，请核对当前状态后保存。";
     dialog.value.showModal();
     await nextTick();
-    dialog.value?.querySelector("textarea")?.focus();
+    const field = state.value === "deferred" ? "#defer-reason" : "#note";
+    dialog.value?.querySelector<HTMLTextAreaElement>(field)?.focus();
+}
+
+function changeDeferReason(value: string) {
+    deferReasonEdited = true;
+    deferReason.value = value;
 }
 
 function changeNote(value: string) {
@@ -103,6 +116,24 @@ function closed() {
     if (card) ports.closed(card);
 }
 
+function reasonForSave() {
+    if (state.value !== "deferred") return;
+    const reason = deferReason.value.trim();
+    if (!reason) {
+        notice.value = "请填写搁置原因";
+        dialog.value?.querySelector<HTMLTextAreaElement>("#defer-reason")?.focus();
+    }
+    return reason;
+}
+
+function retainFailedNote(card: BoardSession) {
+    if (!noteEdited) return " 请重新核对当前状态和备注。";
+    retained = note.value;
+    return writeDraft(card, note.value)
+        ? " 备注草稿已保留，请重新核对后保存。"
+        : " 备注仍在编辑框中，请保留后重新核对。";
+}
+
 async function save() {
     const card = session.value;
     if (
@@ -111,23 +142,19 @@ async function save() {
         (!Object.hasOwn(states.value, state.value) && state.value !== "auto")
     )
         return;
+    const reason = reasonForSave();
+    if (reason === "") return;
     busy.value = true;
     notice.value = "";
     try {
-        await ports.save(card, state.value === "auto" ? null : state.value, note.value);
+        await ports.save(card, state.value === "auto" ? null : state.value, note.value, reason);
         if (session.value !== card) return;
         writeDraft(card, null);
         dismiss();
     } catch (error) {
         if (session.value !== card) return;
         failed.value = true;
-        notice.value = (error as Error).message;
-        if (noteEdited) {
-            retained = note.value;
-            notice.value += writeDraft(card, note.value)
-                ? " 备注草稿已保留，请重新核对后保存。"
-                : " 备注仍在编辑框中，请保留后重新核对。";
-        } else notice.value += " 请重新核对当前状态和备注。";
+        notice.value = (error as Error).message + retainFailedNote(card);
     } finally {
         busy.value = false;
     }
@@ -143,6 +170,7 @@ async function refresh() {
         session.value = latest;
         state.value = latest.state || "";
         if (!noteEdited) note.value = latest.note;
+        if (!deferReasonEdited) deferReason.value = latest.deferReason ?? "";
         failed.value = false;
         notice.value = noteEdited
             ? "已读取当前状态，备注草稿已保留。请核对后保存。"
