@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { link, mkdir, mkdtemp, readdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { type TestContext, test } from "node:test";
 import { type BoardLedger, emptyLedger } from "./archive.js";
 import {
@@ -16,6 +19,9 @@ import { createBoardService } from "./service.js";
 import { defaults } from "./settings.js";
 
 const remoteName = "remote-ssh-discovered:fixture";
+const independentHost = "remote-ssh-discovered:independent";
+const controlHost = "remote-control:fixture";
+const wslHost = "remote-wsl:fixture";
 const first = "00000000-0000-4000-8000-000000000011" as ThreadId;
 const second = "00000000-0000-4000-8000-000000000012" as ThreadId;
 const vscode = "00000000-0000-4000-8000-000000000015" as ThreadId;
@@ -60,6 +66,8 @@ interface NativeFixture {
     read?: (host: string, id: ThreadId) => Thread | Promise<Thread>;
     open?: (command: Extract<DesktopCommand, { kind: "open" }>) => void;
     closePage?: () => void;
+    dataHome?: (host: string) => string;
+    files?: (method: string, params: object) => Promise<object>;
 }
 
 async function readFixture(native: NativeFixture, host: string, method: string, params: ListArgs) {
@@ -78,6 +86,7 @@ async function readFixture(native: NativeFixture, host: string, method: string, 
         case "project/list":
             return { data: [], nextCursor: null };
         default:
+            if (native.files) return native.files(method, params);
             return assert.fail(method);
     }
 }
@@ -90,6 +99,7 @@ function discoverySidebar(native: NativeFixture, command: DesktopRequest) {
             sections: native.sections ?? [],
             ...(native.remoteHostNames ? { remoteHostNames: native.remoteHostNames } : {}),
         };
+    if (command.kind === "data-home") return native.dataHome?.(command.hostId);
     assert.equal(command.kind, "open");
     assert.ok(native.open);
     return native.open(command);
@@ -101,7 +111,7 @@ function fixture(testContext: TestContext, maxPages = 3) {
     testContext.after(() => Reflect.set(globalThis, "window", oldWindow));
     const records: Record<string, CardRecord> = {};
     const ledgers = new Map<string, BoardLedger>();
-    const settings = { ...defaults, maxPages, pageSize: 2, historyPerPoll: 1 };
+    const settings: typeof defaults = { ...defaults, maxPages, pageSize: 2, historyPerPoll: 1 };
     const native: NativeFixture = {
         hosts: [localHostId],
         list: () => ({ data: [], nextCursor: null }),
@@ -115,12 +125,20 @@ function fixture(testContext: TestContext, maxPages = 3) {
                 request: { id: string; method: string; params: ListArgs };
             };
             const { id, method, params } = packet.request;
-            const result = await readFixture(native, packet.hostId, method, params);
-            desktop.receive({
-                type: "mcp-response",
-                hostId: packet.hostId,
-                message: { id, result },
-            });
+            try {
+                const result = await readFixture(native, packet.hostId, method, params);
+                desktop.receive({
+                    type: "mcp-response",
+                    hostId: packet.hostId,
+                    message: { id, result },
+                });
+            } catch (error) {
+                desktop.receive({
+                    type: "mcp-response",
+                    hostId: packet.hostId,
+                    message: { id, error: { message: (error as Error).message } },
+                });
+            }
         },
     });
     const service = createBoardService(desktop, {
@@ -164,6 +182,232 @@ function pauseRead(native: NativeFixture) {
     };
     return { started: started.promise, release: () => reply.resolve(row(first)) };
 }
+
+async function taskFixtureCommand(command: string[]) {
+    if (command[0] === "/bin/sh" && command[4]) {
+        await mkdir(command[4], { recursive: true });
+        return { exitCode: 0 };
+    }
+    if (command[0] === "/bin/ln" && command[1] && command[2]) {
+        assert.equal(dirname(command[1]), dirname(command[2]));
+        try {
+            await link(command[1], command[2]);
+            return { exitCode: 0 };
+        } catch {
+            return { exitCode: 1 };
+        }
+    }
+    assert.fail("Unexpected fixture command");
+}
+
+async function taskFilesFixture(testContext: TestContext, native: NativeFixture) {
+    const directory = await mkdtemp(join(tmpdir(), "enhancer-task-records-"));
+    testContext.after(() => rm(directory, { recursive: true, force: true }));
+    native.files = async (method, params) => {
+        const { path, command, dataBase64 } = params as {
+            path?: string;
+            command?: string[];
+            dataBase64?: string;
+        };
+        if (command) return taskFixtureCommand(command);
+        if (method === "fs/watch" || method === "fs/unwatch") return {};
+        assert.ok(path?.startsWith(`${directory}/`));
+        assert.ok(path);
+        if (method === "fs/readDirectory")
+            return {
+                entries: (await readdir(path, { withFileTypes: true })).map((entry) => ({
+                    fileName: entry.name,
+                    isFile: entry.isFile(),
+                })),
+            };
+        if (method === "fs/readFile") return { dataBase64: await readFile(path, "base64") };
+        if (method === "fs/writeFile" && dataBase64) await writeFile(path, dataBase64, "base64");
+        else if (method === "fs/remove") await unlink(path);
+        else assert.fail(method);
+        return {};
+    };
+    native.dataHome = (host) => join(directory, host === independentHost ? "other" : "one");
+    return directory;
+}
+
+test("host tasks share confirmed status across aliases and isolate equal IDs on other hosts", async (testContext) => {
+    const { native, service, settings, desktop } = fixture(testContext);
+    const directory = await taskFilesFixture(testContext, native);
+    await Promise.all(["one", "other"].map((name) => mkdir(join(directory, name))));
+    native.hosts.push(remoteName, independentHost);
+    native.list = (_host, { archived }) => ({
+        data: archived ? [] : [row(first)],
+        nextCursor: null,
+    });
+    native.history = () => [];
+    native.read = () => row(first);
+    settings.taskState = "host";
+    await service.refresh();
+    const [local, remote] = ["local", remoteName].map((id) =>
+        service.snapshot().sessions.find(({ hostId }) => hostId === id),
+    );
+    assert.ok(local && remote && !local.readOnly && !remote.readOnly);
+    const edit = ({ id, version, inputVersion, sectionVersion }: typeof local, reason: string) => ({
+        id,
+        version,
+        inputVersion,
+        sectionVersion,
+        state: "deferred" as const,
+        note: reason,
+        deferReason: reason,
+    });
+    const contested = await Promise.allSettled([
+        service.update(edit(local, "local edit")),
+        service.update(edit(remote, "remote edit")),
+    ]);
+    assert.deepEqual(contested.map(({ status }) => status).sort(), ["fulfilled", "rejected"]);
+    await service.refresh();
+    const after = service.snapshot().sessions;
+    assert.equal(after.find(({ hostId }) => hostId === independentHost)?.state, null);
+    const updated = after.filter(({ hostId }) => hostId !== independentHost);
+    assert.equal(updated.length, 2);
+    assert.ok(updated.every(({ state }) => state === "deferred"));
+    assert.equal(updated[0]?.deferReason, updated[1]?.deferReason);
+    desktop.receive({
+        type: "codex-app-server-connection-changed",
+        hostId: remoteName,
+        state: "disconnected",
+    });
+    await service.refresh();
+    const cached = service.snapshot().sessions.find(({ hostId }) => hostId === remoteName);
+    assert.equal(cached?.state, "deferred");
+    assert.equal(cached?.readOnly, true);
+    assert.equal(
+        service.snapshot().sessions.find(({ hostId }) => hostId === "local")?.readOnly,
+        false,
+    );
+});
+
+test("only local and SSH hosts participate in the board and task migration", async (testContext) => {
+    const { native, service, settings, desktop } = fixture(testContext);
+    const directory = await taskFilesFixture(testContext, native);
+    await mkdir(join(directory, "one"));
+    native.hosts.push(remoteName, controlHost, wslHost);
+    native.remoteHostNames = { [controlHost]: "MacBook Remote Control" };
+    const scanned = new Set<string>();
+    native.list = (host, { archived }) => {
+        scanned.add(host);
+        return { data: archived ? [] : [row(first)], nextCursor: null };
+    };
+    settings.taskState = "migration";
+    await service.refresh();
+    const view = service.snapshot();
+    assert.deepEqual([...scanned].sort(), [localHostId, remoteName]);
+    assert.deepEqual(
+        view.sessions.map(({ hostId }) => hostId),
+        [localHostId, remoteName],
+    );
+    assert.deepEqual(
+        view.projectCatalog.remoteHosts.map(({ hostId }) => hostId),
+        [remoteName],
+    );
+    const [control, wsl] = view.health.unsupportedRemoteHosts;
+    assert.equal(control?.hostLabel, "MacBook Remote Control");
+    assert.match(control?.reason ?? "", /Remote Control.*暂不支持|暂不支持.*Remote Control/);
+    assert.match(wsl?.reason ?? "", /仅支持.*SSH/);
+    const preview = (await service.request("/api/task-migration/preview")) as {
+        hosts: { hostId: string }[];
+    };
+    assert.deepEqual(
+        preview.hosts.map(({ hostId }) => hostId),
+        [localHostId, remoteName],
+    );
+    const id = JSON.stringify([controlHost, first]);
+    await assert.rejects(service.request("/api/open", { id }), /Remote Control.*SSH/);
+    await assert.rejects(
+        service.request("/api/connect", { hostId: controlHost }),
+        /Remote Control.*SSH/,
+    );
+    await assert.rejects(
+        service.request("/api/new", { hostId: controlHost }),
+        /Remote Control.*SSH/,
+    );
+    const controlId = hostId(controlHost);
+    assert.ok(controlId);
+    assert.throws(() => desktop.capture(controlId), /Remote Control.*SSH/);
+});
+
+test("host task migration previews and preserves existing shared records", async (testContext) => {
+    const { native, service, settings, records } = fixture(testContext);
+    const directory = await taskFilesFixture(testContext, native);
+    await mkdir(join(directory, "one"));
+    native.list = (_host, { archived }) => ({
+        data: archived ? [] : [row(first)],
+        nextCursor: null,
+    });
+    native.history = () => [];
+    native.read = () => row(first);
+    records[first] = { note: "Original note", version: 8, inputVersion: 3 };
+    settings.taskState = "migration";
+    const preview = (await service.request("/api/task-migration/preview")) as {
+        token: string;
+        hosts: { candidates: { id: string; action: string }[] }[];
+    };
+    assert.equal(preview.hosts[0]?.candidates[0]?.action, "import");
+    assert.equal(service.snapshot().sessions[0]?.note, "");
+    assert.equal(service.snapshot().sessions[0]?.readOnly, true);
+    assert.deepEqual(
+        await service.request("/api/task-migration/apply", { confirm: preview.token }),
+        { token: preview.token, imported: [first], pending: [] },
+    );
+    assert.equal(service.snapshot().sessions[0]?.note, "Original note");
+    await assert.rejects(
+        service.request("/api/task-migration/apply", { confirm: preview.token }),
+        /迁移清单已变更/,
+    );
+    records[first] = { note: "Alternate old note", version: 9, inputVersion: 3 };
+    const again = (await service.request("/api/task-migration/preview")) as typeof preview;
+    assert.equal(again.hosts[0]?.candidates[0]?.action, "conflict");
+    assert.deepEqual(await service.request("/api/task-migration/apply", { confirm: again.token }), {
+        token: again.token,
+        imported: [],
+        pending: [],
+    });
+    assert.equal(service.snapshot().sessions[0]?.note, "Original note");
+});
+
+test("a late host phase cannot undo a manual deferral made on that turn", async (testContext) => {
+    const { native, service, settings } = fixture(testContext);
+    const directory = await taskFilesFixture(testContext, native);
+    await mkdir(join(directory, "one"));
+    settings.taskState = "host";
+    const startedAt = Date.now() / 1000;
+    let session = row(first, { status: { type: "active" }, updatedAt: startedAt });
+    let turn: Turn = { id: "turn-one", status: "inProgress", startedAt, items: [] };
+    native.read = () => session;
+    native.list = (_host, { archived }) => ({
+        data: archived ? [] : [session],
+        nextCursor: null,
+    });
+    native.history = () => [turn];
+    await service.refresh();
+    const running = service.snapshot().sessions[0];
+    assert.equal(running?.state, "in_progress");
+    assert.ok(running);
+    await service.update({
+        id: running.id,
+        version: running.version,
+        inputVersion: running.inputVersion,
+        sectionVersion: running.sectionVersion,
+        state: "deferred",
+        deferReason: "Wait for the owner",
+    });
+    turn = { ...turn, status: "completed", completedAt: startedAt + 30 };
+    session = row(first, { status: { type: "idle" }, updatedAt: startedAt + 30 });
+    service.notice(localHostId, first);
+    await service.refresh();
+    assert.equal(service.snapshot().sessions[0]?.state, "deferred");
+    turn = { id: "turn-two", status: "inProgress", startedAt: startedAt + 60, items: [] };
+    session = row(first, { status: { type: "active" }, updatedAt: startedAt + 60 });
+    service.notice(localHostId, first);
+    await service.refresh();
+    assert.equal(service.snapshot().sessions[0]?.state, "in_progress");
+});
 
 test("an in-flight same-column edit cannot persist after the active Codex account switches", async (testContext) => {
     const { native, service, records } = fixture(testContext);
