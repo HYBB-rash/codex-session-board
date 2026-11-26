@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import { detect, findSystemApp, formatDetection } from "../installer/detect.js";
 import { install } from "../installer/install.js";
 import { launchAndConfirm } from "../installer/launch.js";
-import { outputDir } from "../installer/paths.js";
+import { outputDir, stateDir } from "../installer/paths.js";
 import { releasePlatform, releasePlatforms } from "../installer/release/manifest.js";
 import { packageRelease } from "../installer/release/package.js";
 import { activateRelease, activeRelease, rollbackRelease } from "../installer/release/store.js";
@@ -84,6 +84,29 @@ if (
     }
 } else if (command === "launch") {
     void launchAndConfirm(process.argv.slice(3)).then((pid) => console.log(`pid: ${pid}`), fail);
+} else if (command === "task-migration") {
+    void (async () => {
+        const [action, confirm, extra] = process.argv.slice(3);
+        if (
+            extra ||
+            !(action === "preview"
+                ? !confirm
+                : action === "apply" && /^[\da-f]{64}$/.test(confirm ?? ""))
+        )
+            throw new Error("用法：codex-enhancer task-migration preview|apply <迁移确认值>");
+        const { connectBoard } = await import("../compat/client.js");
+        const board = await connectBoard(stateDir);
+        console.log(
+            JSON.stringify(
+                await board.request(
+                    `/api/task-migration/${action}`,
+                    action === "apply" ? { confirm } : undefined,
+                ),
+                null,
+                2,
+            ),
+        );
+    })().catch(fail);
 } else if (command === "update" || command === "rollback") {
     try {
         const candidate = process.argv[3];

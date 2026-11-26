@@ -31,6 +31,7 @@ const acceptanceFiles = [
     "acceptance",
     "src",
     "scripts",
+    "docs/session-board-host-tasks.md",
     "docs/session-board-native-checkpoint.md",
     "docs/session-board-typescript-acceptance.md",
 ];

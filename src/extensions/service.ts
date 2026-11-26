@@ -2339,11 +2339,157 @@ export function createBoardService(desktop: DesktopConnection, ports: BoardPorts
         throw new Error(unsupportedOperation);
     }
 
+    function migrationFields(record: CardRecord) {
+        return {
+            state: record.state ?? null,
+            note: record.note,
+            deferReason: record.deferred?.reason ?? null,
+        };
+    }
+
+    function migrationAction(
+        id: string,
+        native: ReturnType<typeof migrationFields>,
+        review: boolean,
+    ) {
+        const current = runtime.records[id];
+        if (current)
+            return JSON.stringify(migrationFields(current)) === JSON.stringify(native)
+                ? "unchanged"
+                : "conflict";
+        const submitted = runtime.ledger.batches.some(({ items }) =>
+            items.some((item) => item.id === id && item.status === "pending"),
+        );
+        return review || submitted ? "review" : "import";
+    }
+
+    function migrationCandidate(context: SidebarContext, hostId: HostId, thread: Thread) {
+        const id = cardId({ hostId, threadId: thread.id });
+        const previous = runtime.migrationRecords[id] ?? emptyRecord;
+        const position = placement(context, hostId, thread);
+        const state = presentState(context, position, "four");
+        const reason = state === "deferred" ? savedDeferReason(previous, position) : null;
+        const { title: _title, pendingPhaseKey: _phase, deferred: _deferred, ...old } = previous;
+        const record: CardRecord = {
+            ...old,
+            version: 1,
+            state,
+            ...(reason ? { deferred: { reason, sectionVersion: position.version } } : {}),
+        };
+        const source = migrationFields({ ...previous, state });
+        const existing = runtime.records[id];
+        const destination = existing ? migrationFields(existing) : undefined;
+        const needsReview =
+            (thread.section !== null && state === null) ||
+            (state === "deferred" && !reason) ||
+            Boolean(previous.deferred && !reason) ||
+            !canWrite(runtime.settings, thread.id);
+        return {
+            id,
+            action: migrationAction(id, source, needsReview),
+            source,
+            destination,
+            section: thread.section,
+            record,
+        };
+    }
+
+    function nativeArchiveOutcome(id: string) {
+        const { hostId, threadId } = cardThread(id);
+        const host = runtime.hosts.get(hostId);
+        if (!host || !isLive(desktop, host) || host.archiveError) return "unknown";
+        if (host.currentArchived.has(threadId)) return "archived";
+        return host.currentActive.has(threadId) ? "active" : "unknown";
+    }
+
+    function oldArchiveEvidence() {
+        return runtime.ledger.batches.map((batch) => ({
+            ...batch,
+            items: batch.items.map((item) => ({
+                ...item,
+                nativeOutcome: nativeArchiveOutcome(item.id),
+            })),
+        }));
+    }
+
+    function migrationHosts(context: SidebarContext) {
+        return [...runtime.hosts].map(([hostId, host]) => ({
+            hostId,
+            store: host.taskStore?.id ?? null,
+            available: Boolean(
+                isLive(desktop, host) && host.scanComplete && host.taskStore && !host.taskError,
+            ),
+            candidates: [...host.active.values()]
+                .filter((thread) => host.currentActive.has(thread.id))
+                .map((thread) => migrationCandidate(context, hostId, thread))
+                .sort((left, right) => left.id.localeCompare(right.id)),
+        }));
+    }
+
+    async function taskMigration(confirm?: unknown) {
+        await refresh();
+        if (runtime.settings.taskState !== "migration")
+            throw new Error("请先在隔离配置中启用任务迁移模式");
+        const context = requiredContext();
+        const account = accountKey(context);
+        const { records } = await ports.load(account);
+        await freshContext(context);
+        runtime.migrationRecords = records;
+        const report = migrationHosts(context);
+        const reviewed = new Set(
+            report.flatMap(({ candidates }) => candidates.map(({ id }) => id)),
+        );
+        const preview = {
+            accountScope: requiredScope(),
+            hosts: report,
+            unsupportedRemoteHosts: unsupportedRemoteHosts(),
+            missingLegacyRecords: Object.keys(records)
+                .filter((id) => !reviewed.has(id))
+                .sort(),
+            oldArchiveBatches: oldArchiveEvidence(),
+            columnSorts: runtime.ledger.columnSorts,
+        };
+        const token = await scopeDigest(JSON.stringify(preview));
+        if (confirm === undefined) return { ...preview, token };
+        if (confirm !== token) throw new Error("迁移清单已变更，请重新预览");
+        return applyMigration(context, report, token);
+    }
+
+    async function applyMigration(
+        context: SidebarContext,
+        report: ReturnType<typeof migrationHosts>,
+        token: string,
+    ) {
+        const account = accountKey(context);
+        const imported = [];
+        const pending = [];
+        const candidates = report
+            .filter(({ available }) => available)
+            .flatMap(({ candidates }) => candidates.filter(({ action }) => action === "import"));
+        for (const item of candidates) {
+            requireAccount(account);
+            try {
+                await commitRecord(context, item.id, 0, item.record);
+                imported.push(item.id);
+            } catch (error) {
+                pending.push({ id: item.id, error: errorText(error) });
+            }
+        }
+        return { token, imported, pending };
+    }
+
     async function request(path: string, body?: object, account?: string): Promise<unknown> {
         if (account !== undefined) requireAccount(account);
         if (path.startsWith("/api/archive")) return requestArchive(path, body);
         const input = body as (DraftInput & { id?: string }) | undefined;
         switch (path) {
+            case "/api/task-migration/preview":
+                return taskMigration();
+            case "/api/task-migration/apply": {
+                const confirm = (body as { confirm?: unknown } | undefined)?.confirm;
+                if (typeof confirm !== "string") throw new Error("缺少已核对的迁移确认值");
+                return taskMigration(confirm);
+            }
             case "/api/sessions":
             case "/api/refresh":
                 return refreshSnapshot(account);

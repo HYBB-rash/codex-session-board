@@ -204,6 +204,23 @@ async function respondStop(runtime: Runtime, request: IncomingMessage, response:
     json(response, 202, { stopping: true, instance: runtime.receipt.instance });
 }
 
+async function respondMigration(
+    runtime: Runtime,
+    path: string,
+    request: IncomingMessage,
+    response: ServerResponse,
+) {
+    if (path === "/api/task-migration/preview" && request.method === "GET") {
+        json(response, 200, await runtime.options.request(path));
+        return true;
+    }
+    if (path !== "/api/task-migration/apply" || request.method !== "POST") return false;
+    const input = (await body(request, 1024)) as { confirm?: unknown } | null;
+    if (typeof input?.confirm !== "string") throw new RequestError(400, "缺少已核对的迁移确认值");
+    json(response, 200, await runtime.options.request(path, { confirm: input.confirm }));
+    return true;
+}
+
 async function respond(runtime: Runtime, request: IncomingMessage, response: ServerResponse) {
     headers(response, runtime.receipt.instance);
     const client = enforceOrigin(request, runtime);
@@ -217,8 +234,7 @@ async function respond(runtime: Runtime, request: IncomingMessage, response: Ser
     ) {
         throw new RequestError(403, "看板请求令牌已失效，请重新打开页面");
     }
-    if (path === "/api/service/stop" && request.method === "POST" && client)
-        return respondStop(runtime, request, response);
+    if (client && (await respondControl(runtime, path, request, response))) return;
     const operation = runtime.operations.find(
         (item) => item.path === path && item.method === request.method,
     );
@@ -232,6 +248,19 @@ async function respond(runtime: Runtime, request: IncomingMessage, response: Ser
         operation.action === "Refresh" ? 202 : 200,
         await dispatch(runtime, operation, payload),
     );
+}
+
+async function respondControl(
+    runtime: Runtime,
+    path: string,
+    request: IncomingMessage,
+    response: ServerResponse,
+) {
+    if (path === "/api/service/stop" && request.method === "POST") {
+        await respondStop(runtime, request, response);
+        return true;
+    }
+    return respondMigration(runtime, path, request, response);
 }
 
 function listen(server: Server, port: number): Promise<URL> {
