@@ -389,6 +389,9 @@ function centeredConversationRules(
     const sideLimit = `${(body.width - reservedWidth) * 0.46}px`;
     const tabWidth = nativeTabWidth ? `min(${nativeTabWidth}, ${sideLimit})` : null;
     return `
+        ${ACTIVE_MAIN} ${MAIN_LAYOUT} [data-app-action-timeline-scroll]:not(${RIGHT_PANE} *) {
+            scrollbar-width: none !important;
+        }
         ${nativeTabWidth != null ? centeredSplitRules(tabWidth, sideLimit) : ""}
         ${summary === "popover" ? summaryPopupRules(body, columnWidth, tabWidth ?? "0px") : ""}
         ${summary === "inline" ? inlineSummaryRules(columnWidth) : ""}
