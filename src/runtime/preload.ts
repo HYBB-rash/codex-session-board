@@ -9,7 +9,7 @@ import {
     type ThreadId,
 } from "../extensions/desktop/connection.js";
 import type { LoadedBoardRecords } from "../extensions/records.js";
-import { type BoardService, createBoardService } from "../extensions/service.js";
+import { type BoardService, type Card, createBoardService } from "../extensions/service.js";
 import { readSettings } from "../extensions/settings.js";
 import type { BoardRelayRequest } from "./board/broker.js";
 import { startUiHost } from "./host.js";
@@ -28,12 +28,29 @@ export type MountBoard = (
     },
 ) => () => void;
 
+export type MountTasks = (container: HTMLElement, board: BoardService) => () => void;
+
 function observeDesktop(desktop: DesktopConnection, board: BoardService): void {
-    window.addEventListener("message", ({ data, origin, source }) => {
-        if (source !== window || origin !== location.origin) return;
+    const receive = (data: unknown) => {
         const packet = desktop.receive(data);
         const host = packet?.hostId && hostId(packet.hostId);
         const thread = packet?.params?.threadId;
+        const watch = packet?.params?.watchId;
+        const paths = packet?.params?.changedPaths;
+        if (
+            host &&
+            packet?.type === "mcp-notification" &&
+            packet.method === "fs/changed" &&
+            typeof watch === "string" &&
+            Array.isArray(paths) &&
+            board.taskChanged(host, watch, paths)
+        ) {
+            void board
+                .refresh()
+                .catch((error: unknown) =>
+                    proof("board-observation-failed", { error: String(error) }),
+                );
+        }
         if (
             packet?.type === "mcp-notification" &&
             host &&
@@ -45,7 +62,13 @@ function observeDesktop(desktop: DesktopConnection, board: BoardService): void {
         ) {
             board.notice(host, thread as ThreadId);
         }
+    };
+    window.addEventListener("message", ({ data, origin, source }) => {
+        if (source === window && origin === location.origin) receive(data);
     });
+    const nativeChannel = "codex_desktop:message-for-view";
+    const receiveNative = (_event: unknown, data: unknown) => receive(data);
+    ipcRenderer.on(nativeChannel, receiveNative);
     const timer = window.setInterval(() => {
         if (document.querySelector("[data-app-shell-workspace]")) {
             void board
@@ -55,7 +78,14 @@ function observeDesktop(desktop: DesktopConnection, board: BoardService): void {
                 );
         }
     }, 4000);
-    window.addEventListener("pagehide", () => window.clearInterval(timer), { once: true });
+    window.addEventListener(
+        "pagehide",
+        () => {
+            window.clearInterval(timer);
+            ipcRenderer.removeListener(nativeChannel, receiveNative);
+        },
+        { once: true },
+    );
 }
 
 function connectBoard(desktop: DesktopConnection, closePage: () => void): BoardService {
@@ -65,6 +95,12 @@ function connectBoard(desktop: DesktopConnection, closePage: () => void): BoardS
                 "codex-enhancer:board-records",
                 account,
             )) as LoadedBoardRecords;
+        },
+        async loadTaskCache(account) {
+            return (await ipcRenderer.invoke("codex-enhancer:task-cache", account)) as Card[];
+        },
+        async saveTaskCache(account, cards) {
+            await ipcRenderer.invoke("codex-enhancer:task-cache", account, cards);
         },
         async save(update) {
             await ipcRenderer.invoke("codex-enhancer:board-records", update);
@@ -120,7 +156,7 @@ function relay(board: BoardService): void {
     });
 }
 
-function desktopBoard(mountBoard: MountBoard): void {
+function desktopBoard(mountBoard: MountBoard, mountTasks?: MountTasks): void {
     const desktop = createDesktopConnection({
         bootstrap: () => ipcRenderer.sendSync("codex_desktop:get-initial-sidebar-bootstrap"),
         send: (packet) => ipcRenderer.invoke("codex_desktop:message-from-view", packet),
@@ -136,6 +172,9 @@ function desktopBoard(mountBoard: MountBoard): void {
             ipcRenderer.on("codex-enhancer:ui-items", (_event, payload) => listener(payload));
         },
         proof,
+        ...(mountTasks
+            ? { mountTasks: (container: HTMLElement) => mountTasks(container, board) }
+            : {}),
         mountPage(id, panel, close, showConversation) {
             if (id !== "session-board") return;
             closePage = close;
@@ -161,7 +200,7 @@ function desktopBoard(mountBoard: MountBoard): void {
     });
 }
 
-export function start(mountBoard: MountBoard): void {
+export function start(mountBoard: MountBoard, mountTasks?: MountTasks): void {
     proof("preload-entered", { protocol: location.protocol, top: window.top === window });
     if (
         location.origin !== "app://-" ||
@@ -170,7 +209,7 @@ export function start(mountBoard: MountBoard): void {
     )
         return;
     try {
-        desktopBoard(mountBoard);
+        desktopBoard(mountBoard, mountTasks);
     } catch (error) {
         proof("preload-failed", {
             error: error instanceof Error ? (error.stack ?? error.message) : String(error),

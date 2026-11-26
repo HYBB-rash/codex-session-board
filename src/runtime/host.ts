@@ -10,6 +10,7 @@ export interface UiHostOptions {
     fetchState(): Promise<unknown>;
     subscribe(listener: (payload: unknown) => void): void;
     proof(stage: string, extra?: Record<string, unknown>): void;
+    mountTasks?(container: HTMLElement): (() => void) | undefined;
     mountPage?(
         id: string,
         panel: HTMLElement,
@@ -53,6 +54,7 @@ interface HostState {
         previousFocus: HTMLElement | null;
     } | null;
     unmount: (() => void) | undefined;
+    tasks?: { container: HTMLElement; unmount: (() => void) | undefined };
     applying: boolean;
     sawMount: boolean;
     reportedMissing: boolean;
@@ -535,6 +537,7 @@ function render(host: HostState): void {
     if (host.applying) return;
     host.applying = true;
     try {
+        placeTasks(host);
         const mount = chooseMount();
         if (mount == null) {
             removeAllItems();
@@ -549,6 +552,18 @@ function render(host: HostState): void {
     } finally {
         host.applying = false;
     }
+}
+
+function placeTasks(host: HostState): void {
+    if (!host.options.mountTasks) return;
+    const scroll = [...document.querySelectorAll(SIDEBAR_SCROLL)].find(visible);
+    if (!scroll) return;
+    if (!host.tasks) {
+        const container = document.createElement("section");
+        container.setAttribute("data-codex-enhancer-tasks", "");
+        host.tasks = { container, unmount: host.options.mountTasks(container) };
+    }
+    if (host.tasks.container.parentElement !== scroll) scroll.prepend(host.tasks.container);
 }
 
 function apply(host: HostState, payload: unknown): void {
@@ -582,6 +597,8 @@ function shellChanged(mutation: MutationRecord): boolean {
 function stop(host: HostState, observer: MutationObserver): void {
     observer.disconnect();
     closePage(host);
+    host.tasks?.unmount?.();
+    host.tasks?.container.remove();
     for (const node of document.querySelectorAll(`[${ITEM}]`)) node.remove();
 }
 

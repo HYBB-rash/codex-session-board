@@ -110,11 +110,12 @@ export function mountBoardHealth(ui: HealthElements, ports: HealthPorts) {
         item.open = expanded.has(host.key) || firstExpanded;
         const summary = element("summary", `${host.label}：${oldRecord}${host.status}`);
         summary.setAttribute("data-focus", host.key);
+        item.append(summary);
+        if (host.unsupported) return item;
         const lastRead = host.lastRead
             ? `上次成功读取：${ports.date(host.lastRead)}`
             : "缓存时间未提供，不能确认资料是否最新。";
         item.append(
-            summary,
             element("p", host.effects.join("\n")),
             element("p", lastRead, "reason"),
             element("p", hostReadInstructions(host), "reason"),
@@ -167,7 +168,11 @@ export function mountBoardHealth(ui: HealthElements, ports: HealthPorts) {
             current = reports.find((host) => host.key === selectedHost);
         const readState = ports.readState();
         const others = reports.filter(
-            (host) => host.key !== selectedHost && host.key !== "service" && host.attention,
+            (host) =>
+                host.key !== selectedHost &&
+                host.key !== "service" &&
+                host.attention &&
+                !host.unsupported,
         ).length;
         const attention = reports.some((host) => host.attention);
         const ready = current?.ready && !attention;
@@ -176,7 +181,8 @@ export function mountBoardHealth(ui: HealthElements, ports: HealthPorts) {
         const readError = reports.some((host) => host.key === "service")
             ? " · 另有资料读取问题"
             : "";
-        const message = `${summary}${otherHosts}${readError}`;
+        const managementNotices = unsupportedNotices(reports);
+        const message = [`${summary}${otherHosts}${readError}`, ...managementNotices].join(" · ");
         if (ui.summary.textContent !== message) ui.summary.textContent = message;
         ui.banner.className = `health${attention ? " error" : ready ? " ready" : ""}`;
         if (ui.detail.open) renderDetails(reports);
@@ -218,4 +224,8 @@ export function mountBoardHealth(ui: HealthElements, ports: HealthPorts) {
 
     bind();
     return { render };
+}
+
+function unsupportedNotices(reports: HealthReport[]) {
+    return [...new Set(reports.filter((host) => host.unsupported).map(({ status }) => status))];
 }

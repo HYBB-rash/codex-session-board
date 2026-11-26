@@ -8,11 +8,13 @@ import {
     type BoardRecords,
     createBoardLedgers,
     createBoardRecords,
+    createTaskCardCache,
     type PhaseIntent,
     type RecordWrite,
     startTitleEpoch,
     type TitleResolution,
 } from "../extensions/records.js";
+import type { Card } from "../extensions/service.js";
 import { inPlaceRuntime, logs, outputDir, stateDir } from "../installer/paths.js";
 import { runningVersion } from "../installer/release/store.js";
 import { createLegacyBoardRuntime, type LegacyBoardRuntime } from "../migration/runtime.js";
@@ -326,8 +328,17 @@ function registerBoardStorage(ipcMain: IpcMain): void {
     const directory = path.join(stateDir, "session-board");
     const boardRecords = createBoardRecords(path.join(directory, "records.json"));
     const ledgers = createBoardLedgers(path.join(directory, "ledger.json"));
+    const taskCache = createTaskCardCache(path.join(directory, "task-cache.json"));
     const titleEpochFile = path.join(directory, "title-activation.json");
     const legacy = createLegacyBoardRuntime(directory);
+    ipcMain.handle("codex-enhancer:task-cache", (event, account: unknown, cards?: unknown) => {
+        if (!boardFrame(event) || typeof account !== "string")
+            throw new Error("enhancer IPC rejected");
+        if (cards === undefined) return taskCache.read(account);
+        if (!Array.isArray(cards)) throw new Error("Invalid task cache");
+        taskCache.save(account, cards as Card[]);
+        return undefined;
+    });
     ipcMain.handle("codex-enhancer:board-ledger", (event, account, value) => {
         if (!boardFrame(event) || typeof account !== "string")
             throw new Error("enhancer IPC rejected");

@@ -1,0 +1,40 @@
+.tasks {
+    margin: 0.25rem 0.5rem;
+    color: inherit;
+    font: inherit;
+}
+
+.tasks summary {
+    cursor: pointer;
+    padding: 0.25rem;
+}
+
+.task-group {
+    padding-inline-start: 0.75rem;
+}
+
+.task-group summary span,
+.task-row small {
+    opacity: 0.7;
+}
+
+.task-row {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding-inline-start: 0.5rem;
+}
+
+.task-row button {
+    padding: 0.15rem 0.35rem;
+    font: inherit;
+}
+
+.task-title {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    text-align: start;
+}

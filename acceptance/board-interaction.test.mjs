@@ -33,7 +33,18 @@ function initialCard() {
     };
 }
 
-function boardHost(frame, result, canDefer) {
+function boardHost(frame, result, scope) {
+    const canDefer = scope !== "missing-deferred";
+    const unsupportedRemoteHosts =
+        scope === "remote-control"
+            ? [
+                  {
+                      hostId: "remote-control:fixture",
+                      hostLabel: "测试 MacBook",
+                      reason: "本版本暂不支持通过 Remote Control 管理远程任务，请使用 SSH 连接。",
+                  },
+              ]
+            : undefined;
     let session = { ...initialCard(), canDefer };
     const calls = [];
     const snapshot = () => ({
@@ -45,7 +56,7 @@ function boardHost(frame, result, canDefer) {
             to_archive: "待归档",
         },
         sessions: [session],
-        health: { connected: true, nativeVerified: true },
+        health: { connected: true, nativeVerified: true, unsupportedRemoteHosts },
         projectCatalog: { loaded: true, items: [] },
     });
     const background = {
@@ -260,10 +271,23 @@ async function checkMissingDeferredSection({ find, drag, transfer }, { calls, cu
     );
 }
 
+async function checkRemoteControl({ find }) {
+    const notice = find("#health-summary")?.textContent;
+    requireInBrowser(
+        notice?.includes("暂不支持通过 Remote Control") && notice.includes("请使用 SSH"),
+        "board does not surface the SSH requirement",
+    );
+    find("#health-more").click();
+    await until(() => find("#health-details[open]"), "connection details did not open");
+    const host = find('[data-key="remote-control:fixture"]');
+    requireInBrowser(host?.textContent.includes("测试 MacBook"), "missing unsupported host");
+    requireInBrowser(!host.querySelector("button"), "unsupported host offered a connect action");
+}
+
 async function fixture(scope) {
     const result = document.querySelector("output");
     const frame = document.querySelector("iframe");
-    const host = boardHost(frame, result, scope !== "missing-deferred");
+    const host = boardHost(frame, result, scope);
     frame.src = "/mcp.html";
     const controls = pageControls(frame);
     try {
@@ -284,6 +308,7 @@ async function fixture(scope) {
             navigation: checkNavigation,
             deferral: checkDeferral,
             "missing-deferred": checkMissingDeferredSection,
+            "remote-control": checkRemoteControl,
         };
         await checks[scope](controls, host);
         if (result.textContent === "waiting") result.textContent = "passed";
@@ -305,6 +330,7 @@ async function check(context, scope) {
         assertSavedCard,
         checkDeferral,
         checkMissingDeferredSection,
+        checkRemoteControl,
         fixture,
     ].join("\n");
     const html = `<!doctype html><meta charset="utf-8"><title>Board interaction fixture</title>
@@ -342,3 +368,5 @@ test("deferral requires a reason while blocked drag saves directly", (context) =
     check(context, "deferral"));
 test("dropping onto deferred reports a missing native section without changing the card", (context) =>
     check(context, "missing-deferred"));
+test("the board explains that Remote Control requires switching to SSH", (context) =>
+    check(context, "remote-control"));

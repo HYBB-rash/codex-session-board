@@ -20,6 +20,8 @@ interface HostHealth extends AutoArchiveHealth {
     runtimeVerified?: boolean;
     nativeSections?: boolean;
     nativeVerified?: boolean;
+    taskStateError?: string;
+    taskStateConfirmedAt?: number;
 }
 
 export interface BoardHealth extends HostHealth {
@@ -32,6 +34,7 @@ export interface BoardHealth extends HostHealth {
     remoteConnectionErrors?: (HostIdentity & { error?: string })[];
     remoteHosts?: (HostIdentity & { connectionRequired?: boolean; error?: string })[];
     remoteRegistry?: HostIdentity[];
+    unsupportedRemoteHosts?: { hostId: string; hostLabel: string; reason: string }[];
 }
 
 type Diagnostic = [label: string, error: string];
@@ -51,6 +54,7 @@ export interface HealthReport {
     lastRead?: number | null | undefined;
     canConnect?: boolean;
     hostId?: string | undefined;
+    unsupported?: boolean;
 }
 
 interface HealthSources {
@@ -119,6 +123,7 @@ function summarizeDiagnostics(reading: HostReading) {
         ["会话列表", listError],
         ["自动状态", current.runtimeError],
         ["状态分组", current.nativeError],
+        ["任务记录", current.taskStateError],
         ["待处理", current.deferredSectionError],
         ["状态更新", current.nativeStageError],
         ["修改权限", current.writeError],
@@ -319,9 +324,20 @@ function hostHealth(host: HostOption, sources: HealthSources): HealthReport {
 }
 
 function healthReports(sources: HealthSources) {
-    const { remoteError, remoteCacheErrors } = sources.snapshot().health;
+    const { remoteError, remoteCacheErrors, unsupportedRemoteHosts } = sources.snapshot().health;
     const selectedHost = sources.selectedHost();
     const reports = sources.hostOptions().map((host) => hostHealth(host, sources));
+    for (const { hostId, hostLabel, reason } of unsupportedRemoteHosts ?? []) {
+        reports.push({
+            key: hostId,
+            label: hostLabel,
+            status: reason,
+            attention: true,
+            effects: [],
+            diagnostics: [],
+            unsupported: true,
+        });
+    }
     const global = diagnosticsFrom([
         ["远程项目读取", remoteError],
         ["远程缓存读取", remoteCacheErrors?.length ? JSON.stringify(remoteCacheErrors) : null],
